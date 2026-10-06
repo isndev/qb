@@ -116,7 +116,8 @@ policy.
   sides built at 64-byte alignment). A round trip costs 1.7 µs on a polling MSVC loop and 12.4 µs on a parked one, 13.3
   and 26.8 µs on WSL2, where a pool thread's wake from its condition variable is the cost; a burst through the two
   threads, 0.48 and 1.07 µs an offload (`tests/io/benchmark/coroutine/offload-roundtrip.cpp`). Pinned by
-  `tests/io/system/coroutine/offload.cpp` (nine cases, on the per-backend matrix),
+  `tests/io/system/coroutine/offload.cpp` (eight cases, on the per-backend matrix), `offload-pool.cpp` (the pool's lazy
+  start and sizing, alone in its binary: ctest shuffles a binary's cases, and the pool starts once per process),
   `tests/core/system/coroutine/coroutine-offload.cpp` and a case of `core-park-wake.cpp`, which catch each of eleven
   defects planted one at a time; `examples/03-coroutines/15-offloading-blocking-work.cpp` measures a 5 ms heartbeat
   beside a 300 ms call: inline, its worst gap is the call; offloaded, one tick.

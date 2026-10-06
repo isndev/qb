@@ -11,9 +11,8 @@
  * @file system/coroutine/offload.cpp
  * @brief `co_await offload(fn, args...)` (qb/io/async/coroutine/offload.h, Huly QB-69) on a real loop.
  *
- * What the header promises, each asserted where it can be observed:
- *  - no pool thread before the first offload, and `set_offload_threads` honoured before it only
- *    (the FIRST case of this binary: gtest runs a file's cases in order, and this binary runs alone);
+ * What the header promises, each asserted where it can be observed (the pool's lazy start and its sizing are in
+ * offload-pool.cpp, alone in its binary: they need a process nothing has offloaded from, and ctest shuffles the cases):
  *  - the call runs on a pool thread, the coroutine resumes on the awaiting thread, values cross
  *    (a move-only result, copied and moved arguments), an exception is rethrown by `co_await`;
  *  - the callable and its arguments die on the pool thread, the result on the awaiting loop;
@@ -118,42 +117,6 @@ using offload_test::death_place;
 using offload_test::Gate;
 using offload_test::Offload;
 using offload_test::ThreadStamp;
-
-// ---------------------------------------------------------------------------
-// The pool: lazy, sized before it starts, never after (FIRST in this binary)
-// ---------------------------------------------------------------------------
-
-TEST_F(Offload, NoThreadBeforeTheFirstOffloadAndTheSizeIsTakenOnlyBeforeIt) {
-    ASSERT_EQ(current_offload_stats().threads, 0u) << "a pool thread exists before any offload";
-    EXPECT_FALSE(set_offload_threads(0)) << "a pool of zero threads was accepted";
-    ASSERT_TRUE(set_offload_threads(3));
-    ASSERT_EQ(current_offload_stats().threads, 0u) << "sizing the pool started it";
-
-    // Three calls that each wait until all three run at once: they finish only if the pool really
-    // has three threads (with two, the third never starts while the first two wait, and each call
-    // gives up after its limit and reports it).
-    std::mutex              m;
-    std::condition_variable cv;
-    int                     arrived    = 0;
-    auto                    rendezvous = [&m, &cv, &arrived] {
-        std::unique_lock lk(m);
-        ++arrived;
-        cv.notify_all();
-        return cv.wait_for(lk, 5s, [&arrived] { return arrived == 3; });
-    };
-    std::atomic<int> together{0};
-    std::atomic<int> done{0};
-    for (int i = 0; i < 3; ++i)
-        coro_scheduler().spawn([&rendezvous, &together, &done]() -> task<void> {
-            if (co_await offload(rendezvous))
-                together.fetch_add(1);
-            done.fetch_add(1);
-        });
-    ASSERT_TRUE(qb::io::test::pump_until([&] { return done.load() == 3; }, 10s)) << "the three offloads never completed";
-    EXPECT_EQ(together.load(), 3) << "the three calls never ran at once: the pool does not have the three threads it was given";
-    EXPECT_EQ(current_offload_stats().threads, 3u);
-    EXPECT_FALSE(set_offload_threads(4)) << "the pool was resized after it started";
-}
 
 // ---------------------------------------------------------------------------
 // Where things run, and what crosses

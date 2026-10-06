@@ -202,3 +202,8 @@ qb_add_test(MODULE qb-io TIER system NAME tls-ocsp-callbacks SOURCES tls/tls-ocs
 # SO_REUSEPORT asked for by name (Huly QB-78): reuse_address shares no port any more, reuse_port and the listen option
 # share one only when every listener asked, Windows refuses with ENOPROTOOPT, and Linux balances the accept.
 qb_add_test(MODULE qb-io TIER system NAME listen-reuse-port SOURCES tcp/listen-reuse-port.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+
+# The offload pool's lazy start and its sizing (Huly QB-69), ALONE in its binary: the pool is process-wide and starts
+# once, so the case needs a process nothing has offloaded from -- and ctest shuffles a binary's cases (QB_TESTS_SHUFFLE),
+# which made "first in offload.cpp" fail whenever another case drew the earlier slot.
+qb_add_test(MODULE qb-io TIER system NAME offload-pool SOURCES coroutine/offload-pool.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

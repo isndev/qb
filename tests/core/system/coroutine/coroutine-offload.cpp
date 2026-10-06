@@ -112,6 +112,13 @@ public:
 };
 
 TEST(CoroutineOffload, AKillEndsTheWaitAtOnceAndTheResultIsDiscardedOnTheCore) {
+    // From a clean slate, so a second run in the same process (`--gtest_repeat`) asserts what the first one did.
+    for (auto *flag : {&g_call_started, &g_call_returned, &g_unwound, &g_continued, &g_keeper_timed_out})
+        flag->store(false, std::memory_order_release);
+    {
+        std::lock_guard lk(g_gate_m);
+        g_gate_open = false;
+    }
     g_discarded_before.store(qb::io::async::current_offload_stats().discarded, std::memory_order_release);
 
     qb::Main main;
