@@ -589,7 +589,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :885, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:471, :892, :84, :95)_
+- **OCSP goes through the Context too (3.3): `on_ocsp_staple` (server) / `on_ocsp_response` (client).** The
+  client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
+  for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed
+  callback and its raw setter share one OpenSSL slot (last set wins); a typed callback that throws fails closed
+  instead of terminating. _(ssl/context.h:218-226, :235-246)_
 - **A certificate is renewed with `listener.reload_context(ctx)` (3.3), on the thread that accepts.** The next
   accept presents it, every open connection keeps its own. Build the replacement WHOLE through `Context` (cert, key,
   ALPN, verification: what the listener's raw setters wrote into the old one does not carry over); `false` means it

@@ -214,6 +214,7 @@ bool disable_client_session_cache(SSL_CTX *ctx);
  * @param verification_mode The verification mode to set (e.g., SSL_VERIFY_PEER).
  *                          This is passed to SSL_CTX_set_verify along with the callback.
  * @return true if the callback and mode were set, false on error (e.g., null context).
+ * @note Writes the slot `Context::on_verify` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
  */
 bool set_custom_verify_callback(SSL_CTX *ctx, int (*callback)(int, X509_STORE_CTX *), int verification_mode);
 
@@ -226,6 +227,8 @@ bool set_custom_verify_callback(SSL_CTX *ctx, int (*callback)(int, X509_STORE_CT
  *                 `SSL_get_tlsext_status_ocsp_resp()`.
  * @param arg User-defined argument to be passed to the callback.
  * @return true if the callback was set, false otherwise.
+ * @note Writes the context's ONE status callback, shared by both roles with `set_ocsp_stapling_responder_server` and `Context::on_ocsp_staple`
+ * / `on_ocsp_response`: whichever was set last is the one OpenSSL calls.
  */
 bool set_ocsp_stapling_client_callback(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg);
 
@@ -238,6 +241,8 @@ bool set_ocsp_stapling_client_callback(SSL_CTX *ctx, int (*callback)(SSL *s, voi
  *                 `SSL_set_tlsext_status_ocsp_resp()`.
  * @param arg User-defined argument to be passed to the callback.
  * @return true if the callback was set, false otherwise.
+ * @note Writes the context's ONE status callback, shared by both roles with `set_ocsp_stapling_client_callback` and `Context::on_ocsp_staple` /
+ * `on_ocsp_response`: whichever was set last is the one OpenSSL calls.
  */
 bool set_ocsp_stapling_responder_server(SSL_CTX *ctx, int (*callback)(SSL *s, void *arg), void *arg);
 
@@ -250,6 +255,7 @@ bool set_ocsp_stapling_responder_server(SSL_CTX *ctx, int (*callback)(SSL *s, vo
  *                 It should return `SSL_TLSEXT_ERR_OK` on success.
  * @param arg User-defined argument to be passed to the callback.
  * @return true if the callback was set, false otherwise.
+ * @note Writes the slot `Context::on_sni` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
  */
 bool set_sni_hostname_selection_callback_server(SSL_CTX *ctx, int (*callback)(SSL *s, int *al, void *arg), void *arg);
 
@@ -260,6 +266,7 @@ bool set_sni_hostname_selection_callback_server(SSL_CTX *ctx, int (*callback)(SS
  * @param callback The keylog callback function `void (*cb)(const SSL *ssl, const char *line)`.
  *                 This function will be called with lines of text representing key material.
  * @return true if the callback was set, false on error (e.g., null context).
+ * @note Writes the slot `Context::on_keylog` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
  */
 bool set_keylog_callback(SSL_CTX *ctx, SSL_CTX_keylog_cb_func callback);
 
@@ -773,8 +780,8 @@ public:
      *          `ssl::Context`), the request is DEFERRED and applied when the handle is created at connect.
      * @param enable Set to true to request OCSP stapling, false to not request (or clear previous request).
      * @return true when the request is applied or deferred; false only if enabling it on an existing handle failed.
-     * @note The actual handling of the OCSP response needs to be done via a callback
-     *       set on the SSL_CTX using `qb::io::ssl::set_ocsp_stapling_client_callback`.
+     * @note The response is judged by the context's `Context::on_ocsp_response` (which also asks for it on every connection
+     *       of that context, so this call is then redundant) or by the raw `qb::io::ssl::set_ocsp_stapling_client_callback`.
      */
     bool request_ocsp_stapling(bool enable = true) noexcept;
 

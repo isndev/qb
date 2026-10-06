@@ -140,6 +140,17 @@ policy.
   race), which catches a reload that changes nothing and one that installs a falsy context; a reload that rewrites
   the served context in place is caught only by its identity check, since OpenSSL copies the certificate into each
   `SSL` at accept -- its harm is the race with the other holders of the context, which no single-thread test shows.
+- **OCSP stapling, typed on `qb::io::ssl::Context` (Huly QB-83).** `on_ocsp_staple(fn(servername) -> DER)` staples
+  the response a server returns (an empty vector staples none); `on_ocsp_response(fn(OcspContext&) -> bool)` makes
+  every connection of a client context ask for a staple and judges it -- `false` fails the handshake -- through a
+  view holding the DER response (empty when none was stapled), the SNI name and the `SSL` for OpenSSL's `OCSP_*`
+  checks. The `Context` claimed typed callbacks replace OpenSSL's raw C pointers, yet OCSP existed only as
+  `int(*)(SSL*, void*)` plus a `void*`. The raw setters stay, as escape hatches; each typed callback shares its
+  OpenSSL slot with the raw setter of the same job (both OCSP roles share one), so on one context the last set
+  wins -- now said on both sides. Pinned by `tests/io/system/tls/tls-ocsp-callbacks.cpp` on a generated CA and
+  leaf with a real GOOD response that the client check verifies: OpenSSL 3.6 parses staples on both ends and
+  staples nothing for a self-signed certificate, so no stand-in bytes. The single-thread TLS harness it shares
+  with `tls-context-reload.cpp` moved to `tests/io/shared/tls_pump.h`.
 
 ### Changed
 
@@ -180,6 +191,14 @@ policy.
   signature and the value are unchanged; the router now loads the destination once.
 
 ### Fixed
+
+- **A typed TLS callback that throws no longer terminates the process (Huly QB-83).** `Context::on_verify`,
+  `on_sni` and `on_keylog` were called from OpenSSL's C code with nothing between the user's `std::function` and
+  those frames: an exception crossed them, reached qb's `noexcept` handshake and `std::terminate` ended the process
+  (measured: exit code 3 on MSVC, with each `catch` removed in turn). Each trampoline now catches and fails closed --
+  a verify that throws rejects the handshake, an SNI router that throws aborts it (`internal_error`), a keylog
+  line is lost -- and the new OCSP callbacks are held to the same rule (a check that throws rejects, a stapler
+  that throws staples nothing). A user can reach it with any callback that throws.
 
 - **`qb::Supervisor` no longer kills an unrelated actor after it gives up on a child (Huly QB-51).** Past its
   restart-intensity cap the supervisor escalated and kept the dead child's id in its slot. Ids are reused -- the next

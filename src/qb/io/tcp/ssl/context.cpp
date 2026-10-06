@@ -23,6 +23,7 @@
 #include <qb/io/system/file.h>    // qb::io::sys::resolve_resource
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
+#include <cstring>
 #include <system_error>
 #include <utility>
 
@@ -48,11 +49,13 @@ ctx_with_reason(std::string what) {
 // server ALPN wire buffer at a stable heap address reachable from any SSL.
 // ---------------------------------------------------------------------------
 struct ctx_state {
-    std::function<void(std::string_view)>      keylog;
-    std::function<bool(bool, VerifyContext &)> verify;
-    std::function<Context(std::string_view)>   sni;
-    std::vector<unsigned char>                 alpn_wire; ///< Server accept-list (length-prefixed).
-    bool                                       is_server = false;
+    std::function<void(std::string_view)>                       keylog;
+    std::function<bool(bool, VerifyContext &)>                  verify;
+    std::function<Context(std::string_view)>                    sni;
+    std::function<std::vector<unsigned char>(std::string_view)> ocsp_staple; ///< Server: the response to staple.
+    std::function<bool(OcspContext &)>                          ocsp_check;  ///< Client: the stapled response judged.
+    std::vector<unsigned char>                                  alpn_wire;   ///< Server accept-list (length-prefixed).
+    bool                                                        is_server = false;
 };
 
 // OpenSSL calls this when an SSL_CTX carrying our ex-data slot is finally freed.
@@ -137,28 +140,88 @@ ctx_verify_trampoline(int preverify_ok, X509_STORE_CTX *store) {
     if (!st || !st->verify)
         return preverify_ok;
     VerifyContext vc{store};
-    return st->verify(preverify_ok != 0, vc) ? 1 : 0;
+    try {
+        return st->verify(preverify_ok != 0, vc) ? 1 : 0;
+    } catch (...) {
+        return 0; // an exception must not cross OpenSSL's C frames: a verify that throws rejects
+    }
 }
 
 void
 ctx_keylog_trampoline(const SSL *ssl, const char *line) {
     auto *st = ctx_get_state(SSL_get_SSL_CTX(const_cast<SSL *>(ssl)));
-    if (st && st->keylog && line)
-        st->keylog(std::string_view{line});
+    if (st && st->keylog && line) {
+        try {
+            st->keylog(std::string_view{line});
+        } catch (...) {
+            // the line is lost; the handshake is not the sink's to stop
+        }
+    }
 }
 
 int
-ctx_sni_trampoline(SSL *ssl, int *, void *) {
+ctx_sni_trampoline(SSL *ssl, int *alert, void *) {
     auto *st = ctx_get_state(SSL_get_SSL_CTX(ssl));
     if (!st || !st->sni)
         return SSL_TLSEXT_ERR_OK;
-    const char *name     = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
-    Context     selected = st->sni(name ? std::string_view{name} : std::string_view{});
+    const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+    Context     selected;
+    try {
+        selected = st->sni(name ? std::string_view{name} : std::string_view{});
+    } catch (...) {
+        // A router that throws decided nothing: serving the default certificate could be the wrong one.
+        if (alert)
+            *alert = SSL_AD_INTERNAL_ERROR;
+        return SSL_TLSEXT_ERR_ALERT_FATAL;
+    }
     // SSL_set_SSL_CTX up-refs the selected context, so it stays alive even after `selected` dies;
     // its ex-data state rides along on that context. Callers typically keep per-host Contexts anyway.
     if (selected && selected.native())
         SSL_set_SSL_CTX(ssl, selected.native());
     return SSL_TLSEXT_ERR_OK;
+}
+
+// OpenSSL keeps ONE status callback per SSL_CTX and calls it in both roles -- on a server when a client asks for
+// a staple, on a client once the server's certificate (and its staple, if any) arrived -- so one trampoline
+// serves `on_ocsp_staple` and `on_ocsp_response`, by the role of the SSL at hand.
+int
+ctx_ocsp_trampoline(SSL *ssl, void *) {
+    auto *st = ctx_get_state(SSL_get_SSL_CTX(ssl));
+    if (SSL_is_server(ssl)) {
+        if (!st || !st->ocsp_staple)
+            return SSL_TLSEXT_ERR_NOACK;
+        std::vector<unsigned char> der;
+        try {
+            const char *name = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
+            der              = st->ocsp_staple(name ? std::string_view{name} : std::string_view{});
+        } catch (...) {
+            return SSL_TLSEXT_ERR_NOACK; // a stapler that throws staples nothing
+        }
+        if (der.empty())
+            return SSL_TLSEXT_ERR_NOACK;
+        auto *copy = static_cast<unsigned char *>(OPENSSL_malloc(der.size()));
+        if (!copy)
+            return SSL_TLSEXT_ERR_NOACK; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        std::memcpy(copy, der.data(), der.size());
+        SSL_set_tlsext_status_ocsp_resp(ssl, copy, static_cast<long>(der.size())); // the SSL owns `copy` now
+        return SSL_TLSEXT_ERR_OK;
+    }
+    if (!st || !st->ocsp_check)
+        return 1;
+    try {
+        OcspContext view{ssl};
+        return st->ocsp_check(view) ? 1 : 0;
+    } catch (...) {
+        return 0; // a check that throws rejects
+    }
+}
+
+// (Re)install the status trampoline while either role's callback is set.
+void
+ctx_install_ocsp(SSL_CTX *c, const ctx_state &st) {
+    // SSL_CTX_set_tlsext_status_cb is a macro that C-casts its argument: pick the callback into a typed variable.
+    int (*cb)(SSL *, void *) = (st.ocsp_staple || st.ocsp_check) ? &ctx_ocsp_trampoline : nullptr;
+    SSL_CTX_set_tlsext_status_cb(c, cb);
 }
 
 int
@@ -227,6 +290,25 @@ VerifyContext::current_certificate() const {
     }
     ret.version = X509_get_version(cert);
     return ret;
+}
+
+// ---------------------------------------------------------------------------
+// OcspContext
+// ---------------------------------------------------------------------------
+
+std::span<const unsigned char>
+OcspContext::response() const noexcept {
+    unsigned char *der = nullptr; // borrowed: the SSL keeps it
+    const long     len = _ssl ? SSL_get_tlsext_status_ocsp_resp(_ssl, &der) : -1;
+    if (len <= 0 || !der)
+        return {};
+    return {der, static_cast<std::size_t>(len)};
+}
+
+std::string_view
+OcspContext::servername() const noexcept {
+    const char *name = _ssl ? SSL_get_servername(_ssl, TLSEXT_NAMETYPE_host_name) : nullptr;
+    return name ? std::string_view{name} : std::string_view{};
 }
 
 // ---------------------------------------------------------------------------
@@ -521,6 +603,37 @@ Context::on_sni(std::function<Context(std::string_view)> cb) {
     // bind to the cast by precedence — pick the callback into a typed variable first.
     int (*sni_cb)(SSL *, int *, void *) = st->sni ? &ctx_sni_trampoline : nullptr;
     SSL_CTX_set_tlsext_servername_callback(_ctx.get(), sni_cb);
+    return *this;
+}
+
+Context &
+Context::on_ocsp_staple(std::function<std::vector<unsigned char>(std::string_view)> cb) {
+    if (!usable())
+        return *this;
+    auto *st = ctx_require_state(_ctx.get());
+    if (!st) {
+        fail("on_ocsp_staple: could not attach context state"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return *this;
+    }
+    st->ocsp_staple = std::move(cb);
+    ctx_install_ocsp(_ctx.get(), *st);
+    return *this;
+}
+
+Context &
+Context::on_ocsp_response(std::function<bool(OcspContext &)> cb) {
+    if (!usable())
+        return *this;
+    auto *st = ctx_require_state(_ctx.get());
+    if (!st) {
+        fail("on_ocsp_response: could not attach context state"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        return *this;
+    }
+    st->ocsp_check = std::move(cb);
+    // A check needs something to judge: every client of this context asks for a staple while it is set. -1 is
+    // OpenSSL's "nothing" status type (TLSEXT_STATUSTYPE_nothing in its sources, not exported by 3.x headers).
+    SSL_CTX_set_tlsext_status_type(_ctx.get(), st->ocsp_check ? TLSEXT_STATUSTYPE_ocsp : -1);
+    ctx_install_ocsp(_ctx.get(), *st);
     return *this;
 }
 

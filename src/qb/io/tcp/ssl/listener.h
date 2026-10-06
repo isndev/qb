@@ -249,6 +249,7 @@ public:
      * @param callback User-defined callback: `int callback(int preverify_ok, X509_STORE_CTX *x509_ctx)`.
      * @param verification_mode Verification mode (e.g., SSL_VERIFY_PEER).
      * @return true on success, false if context is not initialized.
+     * @note Writes the slot `Context::on_verify` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
      */
     bool set_custom_client_verify_callback(int (*callback)(int, X509_STORE_CTX *), int verification_mode);
 
@@ -257,6 +258,8 @@ public:
      * @param callback Callback: `int (*cb)(SSL *, void *)`. Responsible for SSL_set_tlsext_status_ocsp_resp().
      * @param arg User-defined argument for the callback.
      * @return true on success, false if context is not initialized.
+     * @note Writes the context's ONE status callback, shared by both roles with `ssl::set_ocsp_stapling_client_callback` and
+     * `Context::on_ocsp_staple` / `on_ocsp_response`: whichever was set last is the one OpenSSL calls.
      */
     bool set_ocsp_stapling_responder_callback(int (*callback)(SSL *s, void *arg), void *arg);
 
@@ -265,6 +268,7 @@ public:
      * @param callback Callback: `int (*cb)(SSL *s, int *al, void *arg)`. Can switch SSL_CTX.
      * @param arg User-defined argument for the callback.
      * @return true on success, false if context is not initialized.
+     * @note Writes the slot `Context::on_sni` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
      */
     bool set_sni_selection_callback(int (*callback)(SSL *s, int *al, void *arg), void *arg);
 
@@ -272,6 +276,7 @@ public:
      * @brief Set the SSL/TLS key log callback function for debugging.
      * @param callback Keylog callback: `void (*cb)(const SSL *ssl, const char *line)`.
      * @return true on success, false if context is not initialized.
+     * @note Writes the slot `Context::on_keylog` uses. On one context, whichever of the two was set last is the one OpenSSL calls.
      */
     bool set_keylog_callback(SSL_CTX_keylog_cb_func callback);
 

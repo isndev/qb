@@ -194,3 +194,7 @@ qb_add_test(MODULE qb-io TIER system NAME connect-fallback SOURCES tcp/connect-f
 # A listener's TLS context replaced while it serves (Huly QB-205): the next accept presents the new certificate,
 # a connection accepted before keeps its own, a context that failed to load is refused.
 qb_add_test(MODULE qb-io TIER system NAME tls-context-reload SOURCES tls/tls-context-reload.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+
+# OCSP through qb::io::ssl::Context's typed callbacks (Huly QB-83): the staple reaches the client check byte for byte,
+# the check decides, every typed callback that throws fails closed, a typed callback and its raw setter share one slot.
+qb_add_test(MODULE qb-io TIER system NAME tls-ocsp-callbacks SOURCES tls/tls-ocsp-callbacks.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)

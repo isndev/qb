@@ -148,11 +148,13 @@ llm/qb.llm.md	request.h:225-225	caff73e28888	qb::io::async::pin_frame_copy(req);
 llm/qb.llm.md	resilience.h:428-428	322b61e18000	qb::io::async::pin_frame_copy(req);                                  ...
 llm/qb.llm.md	scheduler.h:343-363	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
 llm/qb.llm.md	scheduler.h:550-579	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
-llm/qb.llm.md	ssl/context.h:128-128	3b96c5ab4fe6	class QB_API Context {
+llm/qb.llm.md	ssl/context.h:157-157	3b96c5ab4fe6	class QB_API Context {
+llm/qb.llm.md	ssl/context.h:218-226	77b1eca342a4	// --- typed callbacks (no raw C function pointer, no void* arg) ---
+llm/qb.llm.md	ssl/context.h:235-246	8f8ec340851e	/**
 llm/qb.llm.md	ssl/listener.h:121-149	568219875e9c	/**
-llm/qb.llm.md	ssl/socket.h:464-464	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
+llm/qb.llm.md	ssl/socket.h:471-471	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
-llm/qb.llm.md	ssl/socket.h:885-885	0e2c7a135bf8	void set_insecure() noexcept;
+llm/qb.llm.md	ssl/socket.h:892-892	0e2c7a135bf8	void set_insecure() noexcept;
 llm/qb.llm.md	ssl/socket.h:95-95	c1d7b0697db7	SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesys...
 llm/qb.llm.md	string.h:201-201	f11444169765	_size = static_cast<size_type>(std::min(size, static_cast<std::size_t...
 llm/qb.llm.md	sys__socket.cpp:254-271	8f3204ff5821	// SO_REUSEADDR means different things on POSIX and Windows, so guard...

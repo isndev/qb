@@ -44,6 +44,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -102,6 +103,34 @@ public:
     [[nodiscard]] X509_STORE_CTX *
     native() const noexcept {
         return _raw;
+    }
+};
+
+/**
+ * @class OcspContext
+ * @ingroup SSL
+ * @brief Typed, borrowing view a client's `on_ocsp_response` callback receives: the OCSP response the
+ *        server stapled to its certificate, if any.
+ * @details The response the server stapled, DER. OpenSSL 3.6 parses a staple as it arrives and fails the handshake on one that
+ *          does not parse, before any check runs. Judging it -- signature, issuer, the certificate's status, freshness -- is
+ *          OpenSSL's `OCSP_*` API on `native()` (`SSL_get0_peer_certificate`, the chain). The view is valid for the callback only.
+ */
+class QB_API OcspContext {
+    SSL *_ssl;
+
+public:
+    /** @brief Wrap the client `SSL` OpenSSL hands to the status callback. */
+    explicit OcspContext(SSL *ssl) noexcept
+        : _ssl(ssl) {}
+
+    /** @brief The stapled OCSP response, DER-encoded; empty when the server stapled none. */
+    [[nodiscard]] std::span<const unsigned char> response() const noexcept;
+    /** @brief The server name this client asked for (its SNI), or empty. */
+    [[nodiscard]] std::string_view servername() const noexcept;
+    /** @brief Borrow the raw `SSL` for any OpenSSL call this view does not wrap. */
+    [[nodiscard]] SSL *
+    native() const noexcept {
+        return _ssl;
     }
 };
 
@@ -187,6 +216,15 @@ public:
     Context &session_timeout(std::chrono::seconds timeout); ///< Session lifetime.
 
     // --- typed callbacks (no raw C function pointer, no void* arg) ---
+    //
+    // Each one occupies the OpenSSL slot its raw counterpart writes -- on_verify: `SSL_CTX_set_verify`'s callback
+    // (`ssl::set_custom_verify_callback`, `listener::set_custom_client_verify_callback`); on_sni: the servername
+    // callback (`listener::set_sni_selection_callback`); on_keylog: `listener::set_keylog_callback`; on_ocsp_staple
+    // AND on_ocsp_response: the ONE status callback both roles share (`ssl::set_ocsp_stapling_client_callback`,
+    // `ssl::set_ocsp_stapling_responder_server`, `listener::set_ocsp_stapling_responder_callback`). On one context,
+    // whichever was set last is the one OpenSSL calls. A callback that throws is caught where OpenSSL calls it and
+    // fails closed: a verify or an OCSP check rejects the handshake, an SNI router aborts it, a stapler staples
+    // nothing, a keylog line is lost (Huly QB-83).
 
     /** @brief Receive TLS key material lines (SSLKEYLOGFILE format) for debugging/inspection. */
     Context &on_keylog(std::function<void(std::string_view line)> cb);
@@ -194,6 +232,18 @@ public:
     Context &on_verify(std::function<bool(bool preverified, VerifyContext &ctx)> cb);
     /** @brief Server SNI router: map the client's requested host name to the `Context` to switch to. */
     Context &on_sni(std::function<Context(std::string_view servername)> cb);
+    /**
+     * @brief Server OCSP stapling: the DER `OCSPResponse` to staple to this handshake's certificate, or an empty vector for none.
+     *        Called when a client asks, with its SNI name (after an `on_sni` switch, the selected context's stapler answers).
+     *        OpenSSL 3.6 staples only a response that parses and names the certificate, never one for a self-signed certificate.
+     */
+    Context &on_ocsp_staple(std::function<std::vector<unsigned char>(std::string_view servername)> cb);
+    /**
+     * @brief Client OCSP check: ask every server for a stapled response, and judge what came -- `false` fails the
+     *        handshake. Called once the server's certificate arrived, with an empty response when it stapled none
+     *        (a must-staple client rejects that). An empty `cb` stops asking.
+     */
+    Context &on_ocsp_response(std::function<bool(OcspContext &ocsp)> cb);
 
     // --- introspection / escape hatch ---
 
