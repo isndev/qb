@@ -182,7 +182,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `coroutine/coroutine-pipeline.cpp` | `coroutine-pipeline` | Coroutine pipelines — channels, streams, generators. |
 | `crypto/crypto-primitives.cpp` | `crypto-primitives` | OpenSSL-backed crypto helpers (hashing, HMAC, AEAD). Built only when `QB_HAS_SSL` (`REQUIRES ssl`). |
 | `crypto/crypto-extras.cpp` | `crypto-extras` | Crypto KDFs, asymmetric signatures, and JWT. Built only when `QB_HAS_SSL` (`REQUIRES ssl`). |
-| `compression/compress-codecs.cpp` | `compress-codecs` | Compression providers and pipe adapters. Built only when `QB_HAS_COMPRESSION` (`REQUIRES compression`). |
+| `compression/compress-codecs.cpp` | `compress-codecs` | Compression providers and pipe adapters; the `Codec` cases run every codec the build registers (zstd and brotli too, 3.3) on JSON and HTML text, a provider per stream as a server makes one per response, and report each one's speed and `compress_ratio` (Huly QB-93). Built only when `QB_HAS_COMPRESSION` (`REQUIRES compression`). |
 | `protocol/framing-scanners.cpp` | `framing-scanners` | Protocol framing and message-boundary scanning primitives. |
 | `serialization/json-pipe-serialize.cpp` | `json-pipe-serialize` | JSON pipe serialization workloads. |
 | `uri/uri-parse-encode.cpp` | `uri-parse-encode` | `qb::io::uri` parsing, encoding, and normalization. |

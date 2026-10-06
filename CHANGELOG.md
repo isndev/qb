@@ -152,7 +152,13 @@ policy.
   `compression-zstd`, `compression-brotli`, and gzip and deflate in `compression-codec`: any input piece and output
   window, a truncated stream never done, a corrupt one refused, `reset()` reusable. It catches four defects planted one
   at a time in the providers: zstd reporting `done` early when compressing and when decompressing, brotli fed new input
-  while a flush still drains (which brotli refuses), and the zlib early return under Fixed.
+  while a flush still drains (which brotli refuses), and the zlib early return under Fixed. On Windows a brotli body
+  given whole in its first call is encoded with the narrowest window that holds it (Huly QB-93): there the wide
+  window's hasher is allocated on fresh pages at every stream, and a 4 KiB body compressed in 38 us instead of 268, a
+  64 KiB one 20 % faster, at the same ratio; on glibc the wide hasher is the faster one (4 KiB in 30 us against 33), so
+  the window stays as configured -- `compression-brotli` checks the window each platform writes. The `compress-codecs`
+  bench's `Codec` cases measure every registered codec on JSON and HTML, a provider per stream as a server makes one
+  per response; that is what ordered qbm-http's preference lists.
 - **One listener per core on one port: `tcp::listen_options{.reuse_port = true}` (Huly QB-78).** Every `listen`
   overload takes it (a defaulted last parameter), and `socket::reuse_port(bool)` is its low-level twin; both set
   `SO_REUSEPORT` before the bind. On Linux the kernel balances the accept across the listeners sharing the port --

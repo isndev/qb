@@ -436,6 +436,13 @@ public:
         // brotli refuses a change of operation, or a longer input, while a flush or the finish is still draining: a
         // flush that did not fit goes on draining -- fed only what is left of ITS input -- before anything else, and
         // once the finish has begun every call finishes.
+        if (!m_started) {
+            m_started = true;
+#if defined(_WIN32)
+            if (hint == operation_hint::is_last)
+                fit_window(input_size);
+#endif
+        }
         BrotliEncoderOperation op   = BROTLI_OPERATION_FLUSH;
         std::size_t            feed = input_size;
         if (m_flushing)
@@ -466,6 +473,7 @@ public:
         BrotliEncoderDestroyInstance(m_state);
         m_state = nullptr;
         open();
+        m_started    = false;
         m_done       = false;
         m_flushing   = false;
         m_finishing  = false;
@@ -473,6 +481,22 @@ public:
     }
 
 private:
+#if defined(_WIN32)
+    // A stream given whole in its first call -- a response body -- needs no window wider than itself, and at 16 bits
+    // or under brotli takes a far lighter hasher. On Windows the wide hasher's allocation lands on fresh pages at every
+    // stream: fitted, a 4 KiB body compressed 7 times faster (268 -> 38 us) and a 64 KiB one 20 % faster, at the same
+    // ratio. glibc reuses the block, and there the light hasher is the slower one (4 KiB 30 -> 33 us, measured through
+    // brotli's own API), so only Windows fits (Huly QB-93). Nothing is encoded yet, so the parameter still applies;
+    // were it refused, the configured window would stay, as correct and only slower.
+    void
+    fit_window(std::size_t input_size) {
+        int bits = BROTLI_MIN_WINDOW_BITS;
+        while (bits < m_window_bits && (std::size_t{1} << bits) < input_size)
+            ++bits;
+        static_cast<void>(BrotliEncoderSetParameter(m_state, BROTLI_PARAM_LGWIN, static_cast<uint32_t>(bits)));
+    }
+#endif
+
     void
     open() {
         m_state = BrotliEncoderCreateInstance(nullptr, nullptr, nullptr);
@@ -489,6 +513,7 @@ private:
     BrotliEncoderState *m_state = nullptr;
     int                 m_quality;
     int                 m_window_bits;
+    bool                m_started    = false; ///< the first call has come (the window is fixed from then on)
     bool                m_done       = false;
     bool                m_flushing   = false; ///< a flush is still draining
     bool                m_finishing  = false; ///< the finish has begun

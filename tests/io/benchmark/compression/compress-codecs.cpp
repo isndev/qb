@@ -4,7 +4,10 @@
  *
  * Compression is optional and only built when QB_HAS_COMPRESSION is enabled.
  * The scenarios compare gzip and deflate across compressible and mixed data,
- * including one-shot helpers, decompression, and streaming providers.
+ * including one-shot helpers, decompression, and streaming providers; the
+ * Codec scenarios run every codec the build registers -- zstd and brotli too,
+ * in a build with QB_HAS_ZSTD / QB_HAS_BROTLI -- through the provider path a
+ * server pays per response, on JSON and HTML text.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -27,9 +30,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <qb/io/compression.h>
 #include <qb/system/allocator/pipe.h>
@@ -37,10 +43,88 @@
 namespace {
 
 enum class Codec : std::uint8_t { Gzip, Deflate };
-enum class PayloadKind : std::uint8_t { HttpText, Binary, RepeatedPattern };
+enum class PayloadKind : std::uint8_t { HttpText, Binary, RepeatedPattern, Json, Html };
+
+// Text with the redundancy of a real response and not more: words drawn from a vocabulary by a fixed generator,
+// numbers that vary, markup that repeats. The HttpText and RepeatedPattern shapes repeat one line, which every codec
+// reduces to almost nothing, and so cannot rank codecs against each other.
+std::string
+make_text(std::size_t size, PayloadKind kind) {
+    static constexpr std::string_view words[] = {"account", "active",  "address",  "amount",  "archive",  "balance", "billing", "browser",
+                                                 "cache",   "channel", "client",   "cluster", "comment",  "config",  "content", "country",
+                                                 "created", "credit",  "customer", "default", "delivery", "device",  "display", "domain",
+                                                 "draft",   "editor",  "enabled",  "event",   "expires",  "feature", "filter",  "gateway",
+                                                 "group",   "history", "invoice",  "label",   "language", "latency", "library", "limit",
+                                                 "message", "metric",  "mobile",   "network", "order",    "owner",   "payload", "payment",
+                                                 "pending", "profile", "project",  "quota",   "region",   "release", "report",  "request",
+                                                 "service", "session", "status",   "storage", "summary",  "ticket",  "update",  "version"};
+    std::uint32_t                     x       = 0x9e3779b9u;
+    auto                              next    = [&x] {
+        x = x * 1664525u + 1013904223u;
+        return x >> 8u;
+    };
+    auto word = [&] {
+        return std::string(words[next() % std::size(words)]);
+    };
+    // A braced list is evaluated left to right; the operands of a `+` chain are not, and g++ and clang draw the
+    // generator in different orders there -- the payload, and every ratio, would depend on the compiler.
+    auto append = [](std::string &to, std::initializer_list<std::string> pieces) {
+        for (const auto &piece : pieces)
+            to += piece;
+    };
+
+    std::string out;
+    out.reserve(size + 512);
+    if (kind == PayloadKind::Json) {
+        out += "{\"items\":[";
+        for (std::uint32_t id = 1; out.size() < size; ++id) {
+            append(out, {"{\"id\":",
+                         std::to_string(id),
+                         ",\"name\":\"",
+                         word(),
+                         "-",
+                         word(),
+                         "\",\"email\":\"",
+                         word(),
+                         std::to_string(next() % 10000),
+                         "@example.com\",\"active\":",
+                         next() & 1u ? "true" : "false",
+                         ",\"score\":",
+                         std::to_string(next() % 100000),
+                         ",\"tags\":[\"",
+                         word(),
+                         "\",\"",
+                         word(),
+                         "\"],\"created\":\"2026-",
+                         std::to_string(1 + next() % 12),
+                         "-",
+                         std::to_string(1 + next() % 28),
+                         "T",
+                         std::to_string(next() % 24),
+                         ":",
+                         std::to_string(next() % 60),
+                         ":00Z\"},"});
+        }
+    } else {
+        out += "<!doctype html><html><head><title>Items</title></head><body><main>\n";
+        for (std::uint32_t id = 1; out.size() < size; ++id) {
+            append(out, {"<article class=\"card\" data-id=\"", std::to_string(id), "\"><h2>", word(), " ", word(), "</h2><p>"});
+            for (int w = 0; w < 24; ++w) {
+                out += word();
+                out += ' ';
+            }
+            append(out, {"</p><a href=\"/", word(), "/", std::to_string(next() % 100000), "\">", word(), "</a></article>\n"});
+        }
+    }
+    out.resize(size);
+    return out;
+}
 
 std::string
 make_payload(std::size_t size, PayloadKind kind) {
+    if (kind == PayloadKind::Json || kind == PayloadKind::Html)
+        return make_text(size, kind);
+
     std::string out;
     out.reserve(size);
 
@@ -215,6 +299,83 @@ BM_Compression_DataShape(benchmark::State &state, Codec codec, PayloadKind kind)
         state.counters["compress_ratio"] = static_cast<double>(last_compressed) / static_cast<double>(size);
 }
 
+// One whole stream through a provider made by name, as qbm-http's Body::compress makes it; 0 if the window was too
+// small to finish (the caller reports it rather than timing a partial stream).
+std::size_t
+compress_stream(qb::compression::compress_provider &c, std::string const &in, std::vector<std::uint8_t> &out) {
+    std::size_t consumed = 0, produced = 0;
+    bool        done = false;
+    while (!done && produced < out.size()) {
+        std::size_t used = 0;
+        produced += c.compress(reinterpret_cast<const std::uint8_t *>(in.data()) + consumed, in.size() - consumed, out.data() + produced,
+                               out.size() - produced, qb::compression::is_last, used, done);
+        consumed += used;
+    }
+    return done ? produced : 0;
+}
+
+void
+BM_Compression_Codec(benchmark::State &state, const char *algorithm, PayloadKind kind) {
+    const auto size    = static_cast<std::size_t>(state.range(0));
+    const auto payload = make_payload(size, kind);
+    if (!qb::compression::builtin::make_compressor(algorithm)) {
+        state.SkipWithError("codec not registered in this build");
+        return;
+    }
+    std::vector<std::uint8_t> out(size + size / 2 + 1024);
+    std::size_t               last_compressed = 0;
+    // A provider per stream, as Body::compress makes one per response: its allocation is part of what a server pays,
+    // and it is not the same for every codec on every allocator.
+    for (auto _ : state) {
+        auto compressor = qb::compression::builtin::make_compressor(algorithm);
+        last_compressed = compress_stream(*compressor, payload, out);
+        benchmark::DoNotOptimize(out.data());
+    }
+    if (!last_compressed) {
+        state.SkipWithError("the output window did not hold the whole stream");
+        return;
+    }
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+    state.counters["compress_ratio"] = static_cast<double>(last_compressed) / static_cast<double>(size);
+}
+
+void
+BM_Compression_CodecUncompress(benchmark::State &state, const char *algorithm, PayloadKind kind) {
+    const auto size       = static_cast<std::size_t>(state.range(0));
+    const auto payload    = make_payload(size, kind);
+    auto       compressor = qb::compression::builtin::make_compressor(algorithm);
+    if (!compressor || !qb::compression::builtin::make_decompressor(algorithm)) {
+        state.SkipWithError("codec not registered in this build");
+        return;
+    }
+    std::vector<std::uint8_t> compressed(size + size / 2 + 1024);
+    compressed.resize(compress_stream(*compressor, payload, compressed));
+
+    // Room past the payload: a decoder may need one more call, after the last byte, to read its trailer and say done.
+    std::vector<std::uint8_t> out(size + 64);
+    std::size_t               produced = 0;
+    bool                      done     = false;
+    for (auto _ : state) {
+        auto        decompressor = qb::compression::builtin::make_decompressor(algorithm); // one per body, as Body::uncompress
+        std::size_t consumed     = 0;
+        produced                 = 0;
+        done                     = false;
+        while (!done && produced < out.size()) {
+            std::size_t used = 0;
+            produced += decompressor->decompress(compressed.data() + consumed, compressed.size() - consumed, out.data() + produced,
+                                                 out.size() - produced, qb::compression::is_last, used, done);
+            consumed += used;
+        }
+        benchmark::DoNotOptimize(out.data());
+    }
+    // Out-of-loop correctness assert: decompression must reproduce the payload.
+    if (!done || produced != size || std::memcmp(out.data(), payload.data(), size) != 0) {
+        state.SkipWithError("the codec did not round-trip the payload");
+        return;
+    }
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+}
+
 } // namespace
 
 BENCHMARK_CAPTURE(BM_Compression_Compress, gzip_compressible, Codec::Gzip, true)
@@ -299,5 +460,35 @@ BENCHMARK_CAPTURE(BM_Compression_DataShape, deflate_repeated_pattern, Codec::Def
     ->Args({256 * 1024})
     ->ArgName("bytes")
     ->Unit(benchmark::kMicrosecond);
+
+// Every codec this build registers, on the two text shapes a server answers with most, at a small, a typical and a
+// large response: the speed and the ratio that rank them in qbm-http's CompressionOptions preference list.
+#define QB_BENCH_CODEC(name, algorithm)                                                          \
+    BENCHMARK_CAPTURE(BM_Compression_Codec, name##_json, algorithm, PayloadKind::Json)           \
+        ->Args({4 * 1024})                                                                       \
+        ->Args({64 * 1024})                                                                      \
+        ->Args({1024 * 1024})                                                                    \
+        ->ArgName("bytes")                                                                       \
+        ->Unit(benchmark::kMicrosecond);                                                         \
+    BENCHMARK_CAPTURE(BM_Compression_Codec, name##_html, algorithm, PayloadKind::Html)           \
+        ->Args({4 * 1024})                                                                       \
+        ->Args({64 * 1024})                                                                      \
+        ->Args({1024 * 1024})                                                                    \
+        ->ArgName("bytes")                                                                       \
+        ->Unit(benchmark::kMicrosecond);                                                         \
+    BENCHMARK_CAPTURE(BM_Compression_CodecUncompress, name##_json, algorithm, PayloadKind::Json) \
+        ->Args({64 * 1024})                                                                      \
+        ->Args({1024 * 1024})                                                                    \
+        ->ArgName("bytes")                                                                       \
+        ->Unit(benchmark::kMicrosecond)
+
+QB_BENCH_CODEC(gzip, "gzip");
+QB_BENCH_CODEC(deflate, "deflate");
+#if defined(QB_HAS_ZSTD)
+QB_BENCH_CODEC(zstd, "zstd");
+#endif
+#if defined(QB_HAS_BROTLI)
+QB_BENCH_CODEC(br, "br");
+#endif
 
 BENCHMARK_MAIN();
