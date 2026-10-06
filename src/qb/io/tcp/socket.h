@@ -26,7 +26,10 @@
 #define QB_IO_TCP_SOCKET_H_
 #include "../system/sys__socket.h"
 #include "../uri.h"
+#include <cstddef>
 #include <filesystem>
+#include <string>
+#include <vector>
 #include <qb/system/time.h>
 
 namespace qb::io::tcp {
@@ -158,9 +161,31 @@ public:
     int connect(qb::io::endpoint const &ep, qb::duration wtimeout) noexcept;
 
     /**
+     * @brief Connect to the first of `endpoints` that answers, trying them in order (since 3.3).
+     * @param endpoints Addresses to try; an empty list is a failure.
+     * @return 0 once one connected; otherwise the last attempt's result (`get_last_errno()` is its
+     *         error), -1 for an empty list.
+     * @details The fallback every connect by name runs (Huly QB-164): an address that refuses or does
+     *          not route is closed and the next is tried. Only a descriptor this socket opens itself is
+     *          replaced between two attempts -- a socket already open when the call begins may carry
+     *          options a fresh descriptor would not, so it gets the first address only.
+     */
+    int connect(std::vector<qb::io::endpoint> const &endpoints) noexcept;
+
+    /**
+     * @brief `connect(endpoints)` within `wtimeout`, shared between the attempts.
+     * @details Each attempt gets `connect_attempt_budget(time left, addresses left)`: an address that does
+     *          not answer gives way to the next before the whole bound is spent. Non-positive `wtimeout`:
+     *          one immediate check of the first address, as `connect(ep, wtimeout)` does.
+     */
+    int connect(std::vector<qb::io::endpoint> const &endpoints, qb::duration wtimeout) noexcept;
+
+    /**
      * @brief Connect to a remote TCP endpoint specified by a URI.
      * @param u The `qb::io::uri` of the remote server.
      * @return 0 on success, or a non-zero error code on failure.
+     * @details A host name is resolved to every address of the URI's family, tried in order with
+     *          `connect(endpoints)` (since 3.3; before, the first address only).
      */
     int connect(uri const &u) noexcept;
 
@@ -269,6 +294,29 @@ public:
      */
     int disconnect() const noexcept;
 };
+
+/**
+ * @brief The endpoints `host:port` resolves to in family `af`, in the resolver's order.
+ * @param af   `AF_INET` or `AF_INET6`: only addresses of that family are kept (the family a URI names --
+ *             `AF_INET` by default for a host name).
+ * @param host A host name or a numeric address.
+ * @param port The port every endpoint carries.
+ * @return Every address the resolver returns for that family; empty when the name does not resolve.
+ * @details The list a connect falls back through, since 3.3 (Huly QB-164): each `connect_in` and the
+ *          asynchronous connector try the next address when one refuses or does not answer, where they
+ *          used to stop at the first. A blocking `getaddrinfo` call, like the resolution it replaces.
+ */
+std::vector<qb::io::endpoint> resolve_endpoints(int af, std::string const &host, uint16_t port);
+
+/**
+ * @brief How long one connect attempt may take when `left` endpoints remain to try within `remaining`.
+ * @return `remaining` shared equally between the `left` attempts, but never less than two seconds unless
+ *         `remaining` itself is shorter; all of `remaining` when `left` is 1 or 0.
+ * @details The rule of Go's dialer: an address that drops SYNs no longer eats the whole deadline before
+ *          the next is tried, and a slow but live one still gets a fair attempt. Non-positive `remaining`:
+ *          zero.
+ */
+qb::duration connect_attempt_budget(qb::duration remaining, std::size_t left) noexcept;
 
 } // namespace qb::io::tcp
 

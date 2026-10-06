@@ -55,9 +55,13 @@
 #include <atomic>
 #include <chrono>
 #include <concepts>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 // <coroutine> belongs here, not beside the coroutine section further down: an #include
 // processed inside `namespace qb::io::async::tcp` would declare
@@ -129,6 +133,14 @@ concept StarttlsNegotiator = requires(N n, qb::io::tcp::socket &s, int revents) 
  * the user callback (so the object is not destroyed while libev still references
  * it).
  *
+ * **Fallback through the addresses (3.3, Huly QB-164).** A host name is resolved to every address of
+ * the URI's family, and the addresses are tried in the resolver's order: one whose TCP connect is
+ * refused, does not route, fails later (`SO_ERROR`) or does not answer within its share of the deadline
+ * (`tcp::connect_attempt_budget`) is closed and the next is tried; the deadline stays the whole
+ * connect's. A failure past the TCP connect -- the TLS handshake, a STARTTLS negotiation -- is final: the
+ * next address would present the same server. Only a descriptor the connector opens itself is replaced:
+ * a socket handed over already open keeps its one attempt.
+ *
  * @note **Completion ordering:** `on(event::io const &)` always unregisters the I/O
  *       watcher using `event._interface` *before* checking whether another path
  *       (e.g. deadline) already completed. Returning early *without* unregistering
@@ -146,6 +158,19 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     const double deadline_;
     /** When false, disable TLS peer verification on a secure socket (opt-out). */
     bool verify_peer_{true};
+
+    /** The addresses tried in order (Huly QB-164): given to the endpoint-list constructor, or resolved
+     *  by `run()` from the URI in its family. Empty for an AF_UNIX remote, which has its one attempt. */
+    std::vector<qb::io::endpoint> endpoints_;
+    std::string                   host_;          ///< SNI / verification name for TLS, and the name logged
+    bool                          listed_{false}; ///< the endpoints were given, not resolved from `remote_`
+    std::size_t                   next_{0};       ///< index of the next endpoint to try
+    bool                          own_fd_{true};  ///< the descriptor is the connector's to replace between attempts
+    std::uint32_t                 attempt_{0};    ///< generation of the running attempt: a stale attempt timer finds another
+
+    /// A socket the connector can point at one address: `n_connect(endpoint)`. One without it (a custom
+    /// socket type) resolves its URI itself and gets the single `n_connect(uri)` attempt it always had.
+    static constexpr bool endpoint_capable = requires(Socket_ &s, qb::io::endpoint const &ep) { s.n_connect(ep); };
 
     bool                       completed_{false};
     bool                       deadline_armed_{false};
@@ -288,6 +313,124 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         }
     }
 
+    /// Start one TCP connect: the next endpoint, or the remote URI itself when there is no list (an AF_UNIX
+    /// remote, or a socket that resolves its URI itself). Returns `n_connect`'s result; the errno is the
+    /// caller's to read.
+    int
+    connect_step() {
+        if constexpr (Negotiator_::enabled) {
+            auto &raw = static_cast<qb::io::tcp::socket &>(socket_); // the TLS state waits for the negotiation
+            return endpoints_.empty() ? raw.n_connect(remote_) : raw.n_connect(endpoints_[next_ - 1]);
+        } else if constexpr (endpoint_capable) {
+            if (endpoints_.empty())
+                return socket_.n_connect(remote_);
+            auto const &ep = endpoints_[next_ - 1];
+            if constexpr (requires(Socket_ &s, qb::io::endpoint const &e, std::string const &h) { s.n_connect(e, h); })
+                return socket_.n_connect(ep, host_); // TLS: the client state, with SNI and verification for `host_`
+            else
+                return socket_.n_connect(ep);
+        } else {
+            return socket_.n_connect(remote_);
+        }
+    }
+
+    /// Arm the running attempt's share of the deadline, when an address is left after it.
+    void
+    arm_attempt_deadline() {
+        if (deadline_ <= 0. || endpoints_.empty() || !own_fd_)
+            return;
+        const std::size_t left = endpoints_.size() - next_ + 1; // this attempt and the ones after it
+        if (left <= 1)
+            return;
+        const qb::duration remaining = qb::detail::from_ev_seconds(deadline_ - ev_time());
+        const qb::duration budget    = qb::io::tcp::connect_attempt_budget(remaining, left);
+        if (budget >= remaining)
+            return; // the whole deadline is this attempt's anyway
+        std::weak_ptr<connector> w = this->shared_from_this();
+        qb::io::async::callback(
+            [w, generation = attempt_]() {
+                if (auto self = w.lock())
+                    self->on_attempt_deadline(generation);
+            },
+            budget);
+    }
+
+    /**
+     * @brief Try addresses until one connects, or one is in progress (its completion comes back through
+     *        `on()`); deliver the failure when none is left.
+     * @details An address refused at once leaves its place to the next. Between two attempts the descriptor
+     *          is closed -- a failed connect leaves it unusable -- unless it was handed over open, in which
+     *          case that one attempt is all there is.
+     */
+    void
+    start_next() {
+        for (;;) {
+            if (completed_)
+                return;
+            if (!endpoints_.empty()) {
+                if (next_ >= endpoints_.size())
+                    break;
+                if (next_ > 0) {
+                    if (!own_fd_)
+                        break;
+                    socket_.disconnect();
+                    if constexpr (requires { socket_.close(); })
+                        socket_.close(); // a failed connect leaves the descriptor unusable: the next attempt opens its own
+                }
+                ++next_;
+            } else if (attempt_ > 0) {
+                break; // AF_UNIX: the one attempt
+            }
+            ++attempt_;
+            const int ret = connect_step();
+            const int err = qb::io::socket::get_last_errno();
+            if constexpr (Negotiator_::enabled) {
+                if (ret && !socket_no_error(err)) {
+                    QB_LOG_DEBUG("STARTTLS connect to " << host_ << " refused at once err=" << err);
+                    continue;
+                }
+                sphase_ = ret ? sphase::connecting : sphase::negotiating;
+                if (arm_io(EV_WRITE)) {
+                    arm_deadline();
+                    arm_attempt_deadline();
+                    return;
+                }
+                continue;
+            } else {
+                if (!ret) {
+                    switch (finalize_transport_connect()) {
+                        case finalize_result::done:
+                            if (!mark_completed_once())
+                                return;
+                            QB_LOG_DEBUG("Connected directly to " << host_);
+                            deliver(std::move(socket_));
+                            return;
+                        case finalize_result::pending:
+                            if (arm_io(EV_READ | EV_WRITE)) {
+                                arm_deadline();
+                                return; // the TCP part is done: no attempt timer, what follows is final
+                            }
+                            break;
+                        case finalize_result::failed:
+                            QB_LOG_DEBUG("Failed to finalize direct connect to " << host_);
+                            break;
+                    }
+                    ++attempt_;
+                    deliver_failure_deferred(); // past the TCP connect: final
+                    return;
+                }
+                if (socket_no_error(err) && arm_io(EV_WRITE)) {
+                    arm_deadline();
+                    arm_attempt_deadline();
+                    return;
+                }
+                QB_LOG_DEBUG("Failed to connect to " << host_ << " err=" << err);
+            }
+        }
+        ++attempt_;
+        deliver_failure_deferred();
+    }
+
 public:
     /**
      * @brief Constructs a connector and stores parameters (does not connect yet).
@@ -300,7 +443,8 @@ public:
         : func_(std::forward<Func_>(func))
         , remote_(std::move(remote))
         , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
-        , verify_peer_(verify_peer) {}
+        , verify_peer_(verify_peer)
+        , host_(remote_.host()) {}
 
     /**
      * @brief Constructs a connector with an existing socket (does not connect yet).
@@ -315,54 +459,69 @@ public:
         , socket_(std::move(existing))
         , remote_(std::move(remote))
         , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
-        , verify_peer_(verify_peer) {}
+        , verify_peer_(verify_peer)
+        , host_(remote_.host()) {}
 
     /**
-     * @brief Runs `n_connect` and either completes immediately or registers `EV_WRITE`
-     *        (and optionally a deadline callback).
+     * @brief Constructs a connector over a list of endpoints, tried in order (since 3.3; does not connect yet).
+     * @param func Callback invoked exactly once on completion
+     * @param endpoints Addresses to try, in order; an empty list completes with a failure
+     * @param host Name for TLS (SNI and certificate verification); ignored by a plain socket
+     * @param timeout_sec Same semantics as the other constructors: the whole connect's deadline
+     * @param verify_peer When false, disables TLS peer verification (secure sockets only).
+     */
+    connector(Func_ &&func, std::vector<qb::io::endpoint> endpoints, std::string host, double timeout_sec, bool verify_peer = true)
+        : func_(std::forward<Func_>(func))
+        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , verify_peer_(verify_peer)
+        , endpoints_(std::move(endpoints))
+        , host_(std::move(host))
+        , listed_(true) {
+        static_assert(endpoint_capable, "connecting over an endpoint list needs a socket with n_connect(endpoint)");
+    }
+
+    /**
+     * @brief The endpoint-list constructor with an existing socket (since 3.3; does not connect yet).
+     * @details The socket is moved in -- one built from a `qb::io::ssl::Context` carries its TLS policy. A
+     *          socket that is not open yet falls back through the list; one already open gets the first
+     *          address only (see the class note).
+     */
+    connector(Func_ &&func, Socket_ &&existing, std::vector<qb::io::endpoint> endpoints, std::string host, double timeout_sec,
+              bool verify_peer = true)
+        : func_(std::forward<Func_>(func))
+        , socket_(std::move(existing))
+        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , verify_peer_(verify_peer)
+        , endpoints_(std::move(endpoints))
+        , host_(std::move(host))
+        , listed_(true) {
+        static_assert(endpoint_capable, "connecting over an endpoint list needs a socket with n_connect(endpoint)");
+    }
+
+    /**
+     * @brief Resolves the remote when it is a host name, then starts the first attempt.
+     * @details Each attempt runs `n_connect` and either completes at once, registers `EV_WRITE` (and the
+     *          deadlines), or -- refused at once -- leaves its address for the next (see the class note).
      */
     void
     run() {
-        if constexpr (Negotiator_::enabled) {
-            run_starttls();
-            return;
-        }
-        QB_LOG_DEBUG("Started async connect to " << remote_.source());
+        QB_LOG_DEBUG("Started async connect to " << host_);
         // Apply the TLS verification policy before the (non-blocking) connect so
         // it is in effect when the handshake starts. No-op for plain sockets.
         if constexpr (requires { socket_.set_insecure(); }) {
             if (!verify_peer_)
                 socket_.set_insecure();
         }
-        auto ret = socket_.n_connect(remote_);
-        if (!ret) {
-            switch (finalize_transport_connect()) {
-                case finalize_result::done:
-                    if (!mark_completed_once())
-                        return;
-                    QB_LOG_DEBUG("Connected directly to " << remote_.source());
-                    deliver(std::move(socket_));
-                    break;
-                case finalize_result::pending:
-                    if (arm_io(EV_READ | EV_WRITE)) {
-                        arm_deadline();
-                    } else {
-                        deliver_failure_deferred();
-                    }
-                    break;
-                case finalize_result::failed:
-                    QB_LOG_DEBUG("Failed to finalize direct connect to " << remote_.source());
-                    deliver_failure_deferred();
-            }
+        own_fd_                 = !socket_.is_open();
+        const bool by_endpoints = listed_ || ((endpoint_capable || Negotiator_::enabled) && remote_.af() != AF_UNIX);
+        if (by_endpoints && !listed_)
+            endpoints_ = qb::io::tcp::resolve_endpoints(remote_.af(), host_, remote_.u_port());
+        if (by_endpoints && endpoints_.empty()) {
+            QB_LOG_DEBUG("No address to connect to for " << host_);
+            deliver_failure_deferred();
             return;
         }
-        if (socket_no_error(qb::io::socket::get_last_errno()) && arm_io(EV_WRITE)) {
-            arm_deadline();
-            return;
-        }
-
-        QB_LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << qb::io::socket::get_last_errno());
-        deliver_failure_deferred();
+        start_next();
     }
 
     /**
@@ -376,19 +535,18 @@ public:
             return;
         }
         int err = 0;
-        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
-            socket_.disconnect();
+        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err))
             err = 1;
-        }
 
         if (!err || err == EISCONN) {
+            ++attempt_; // the TCP connect is up: what follows is final, an attempt timer must not move on
             switch (finalize_transport_connect()) {
                 case finalize_result::done:
                     listener::current.unregisterEvent(event._interface);
                     io_iface_ = nullptr;
                     if (!mark_completed_once())
                         return;
-                    QB_LOG_DEBUG("Connected async to " << remote_.source());
+                    QB_LOG_DEBUG("Connected async to " << host_);
                     deliver(std::move(socket_));
                     return;
                 case finalize_result::pending:
@@ -397,16 +555,22 @@ public:
                 case finalize_result::failed:
                     break;
             }
-
+            // Past the TCP connect (the TLS handshake): final -- the next address would present the same server.
             socket_.disconnect();
+            listener::current.unregisterEvent(event._interface);
+            io_iface_ = nullptr;
+            if (!mark_completed_once())
+                return;
+            QB_LOG_DEBUG("Failed to finalize the connect to " << host_);
+            deliver(Socket_{});
+            return;
         }
 
+        // The TCP connect failed: the next address, if there is one.
         listener::current.unregisterEvent(event._interface);
         io_iface_ = nullptr;
-        if (!mark_completed_once())
-            return;
-        QB_LOG_DEBUG("Failed to connect to " << remote_.source() << " err=" << err);
-        deliver(Socket_{});
+        QB_LOG_DEBUG("Async connect to " << host_ << " (address " << next_ << "/" << endpoints_.size() << ") failed err=" << err);
+        start_next();
     }
 
     /**
@@ -415,6 +579,7 @@ public:
      */
     void
     on_deadline() {
+        ++attempt_; // an attempt timer still pending finds another generation
         if (io_iface_) {
             listener::current.unregisterEvent(io_iface_);
             io_iface_ = nullptr;
@@ -424,8 +589,25 @@ public:
         if (!mark_completed_once())
             return;
 
-        QB_LOG_DEBUG("Async connect deadline for " << remote_.source());
+        QB_LOG_DEBUG("Async connect deadline for " << host_);
         deliver(Socket_{});
+    }
+
+    /**
+     * @brief One attempt's share of the deadline elapsed (`tcp::connect_attempt_budget`): its address is
+     *        given up and the next is tried. Ignored when another attempt, or the end, came first.
+     */
+    void
+    on_attempt_deadline(std::uint32_t const generation) {
+        if (generation != attempt_ || completed_)
+            return;
+        if (io_iface_) {
+            listener::current.unregisterEvent(io_iface_);
+            io_iface_ = nullptr;
+        }
+        QB_LOG_DEBUG("Async connect to " << host_ << " (address " << next_ << "/" << endpoints_.size()
+                                         << ") did not answer within its share of the deadline");
+        start_next();
     }
 
     // =========================================================================
@@ -440,10 +622,10 @@ public:
     //     -> on "fail": abort.
     // =========================================================================
 
-    /// SNI / verification hostname for the TLS upgrade (the remote URI host).
+    /// SNI / verification hostname for the TLS upgrade (the remote URI host, or the endpoint list's name).
     std::string
     starttls_host() const {
-        return std::string(remote_.host());
+        return host_;
     }
 
     /// Unregister the watcher and deliver exactly once (success -> the socket,
@@ -460,41 +642,25 @@ public:
     }
 
     void
-    run_starttls() {
-        QB_LOG_DEBUG("Started async STARTTLS connect to " << remote_.source());
-        if (!verify_peer_)
-            socket_.set_insecure();
-        // Connect the underlying TCP layer ONLY. ssl::socket::n_connect() would set
-        // up the SSL client state immediately; that must wait until after the
-        // cleartext negotiation agrees to upgrade, so go through the tcp base.
-        auto &raw = static_cast<qb::io::tcp::socket &>(socket_);
-        auto  ret = raw.n_connect(remote_);
-        if (ret && !socket_no_error(qb::io::socket::get_last_errno())) {
-            deliver_failure_deferred();
-            return;
-        }
-        sphase_ = ret ? sphase::connecting : sphase::negotiating;
-        if (arm_io(EV_WRITE))
-            arm_deadline();
-        else
-            deliver_failure_deferred();
-    }
-
-    void
     on_starttls(event::io const &event) {
         auto &mutable_event = const_cast<event::io &>(event);
         int   err           = 0;
-        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)) {
-            finish_starttls(event, false);
-            return;
-        }
-        if (err && err != EISCONN) {
+        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)
+            || (err && err != EISCONN)) {
+            if (sphase_ == sphase::connecting) { // the TCP connect itself failed: the next address, if any
+                listener::current.unregisterEvent(event._interface);
+                io_iface_ = nullptr;
+                QB_LOG_DEBUG("STARTTLS connect to " << host_ << " failed err=" << err);
+                start_next();
+                return;
+            }
             finish_starttls(event, false);
             return;
         }
 
         if (sphase_ == sphase::connecting)
             sphase_ = sphase::negotiating; // TCP connect just completed
+        ++attempt_;                        // past the TCP connect: final, an attempt timer must not move on
 
         if (sphase_ == sphase::negotiating) {
             switch (neg_.advance(static_cast<qb::io::tcp::socket &>(socket_), event._revents)) {
@@ -597,6 +763,54 @@ connect(Socket_ &&existing_socket, uri const &remote, Func_ &&func, qb::duration
 }
 
 /**
+ * @brief Initiates an asynchronous TCP connection to the first of `endpoints` that answers (since 3.3)
+ *
+ * The addresses are tried in order, exactly as the connector falls back through the ones a host name
+ * resolves to (see `connector`): a refused, unrouted or silent address is closed and the next is tried,
+ * each within its share of `timeout`; a TLS failure is final. The form for a caller that resolved the
+ * name itself -- on the offload pool (`co_await offload(...)` around `qb::io::socket::resolve`), from a
+ * cache, from service discovery.
+ *
+ * @tparam Socket_ The socket class type to use for the connection
+ * @tparam Func_ The callback function type, invoked once with the connected socket or an empty one
+ * @param endpoints Addresses to try, in order; an empty list completes with a failure
+ * @param host Name for TLS -- SNI and certificate verification; ignored by a plain socket
+ * @param func Callback function to call when connection completes
+ * @param timeout The whole connect's deadline (`0` = none: each attempt waits as long as the system does)
+ * @param verify_peer For secure transports, whether to verify the server certificate chain + `host`
+ */
+// Constrained like the uri overloads, for the same reason (see the note on the first one).
+template <typename Socket_, typename Func_>
+requires std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
+void
+connect(std::vector<qb::io::endpoint> endpoints, std::string host, Func_ &&func, qb::duration timeout = qb::duration::zero(),
+        bool verify_peer = true) {
+    auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(endpoints), std::move(host),
+                                                          qb::detail::to_ev_seconds(timeout), verify_peer);
+    QB_LOG_DEBUG("Connector: Initializing over an endpoint list");
+    op->run();
+}
+
+/**
+ * @brief The endpoint-list connect with an existing socket (since 3.3)
+ *
+ * As `connect(endpoints, host, func, ...)`, with `existing_socket` moved into the connector first -- a
+ * secure socket built from a `qb::io::ssl::Context` (custom trust, client certificate) keeps its policy.
+ * A socket not open yet falls back through the list; one already open gets the first address only: its
+ * descriptor may carry options a fresh one would not.
+ */
+template <typename Socket_, typename Func_>
+requires std::invocable<std::remove_reference_t<Func_> &, Socket_ &&>
+void
+connect(Socket_ &&existing_socket, std::vector<qb::io::endpoint> endpoints, std::string host, Func_ &&func,
+        qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
+    auto op = std::make_shared<connector<Socket_, Func_>>(std::forward<Func_>(func), std::move(existing_socket), std::move(endpoints),
+                                                          std::move(host), qb::detail::to_ev_seconds(timeout), verify_peer);
+    QB_LOG_DEBUG("Connector: Initializing with existing socket over an endpoint list");
+    op->run();
+}
+
+/**
  * @brief Initiate an asynchronous opportunistic-TLS (STARTTLS) connection.
  *
  * Connects the TCP layer in cleartext, runs @p Negotiator_ 's plaintext negotiation
@@ -686,14 +900,26 @@ class connect_awaiter {
         bool                                 active{true};
     };
 
-    uri                      _remote;
-    qb::duration             _timeout;
-    bool                     _verify_peer{true};
-    std::shared_ptr<state_t> _state{std::make_shared<state_t>()};
+    uri                           _remote;
+    std::vector<qb::io::endpoint> _endpoints; ///< the endpoint-list form (since 3.3): tried in order
+    std::string                   _host;      ///< its TLS name
+    bool                          _listed{false};
+    qb::duration                  _timeout;
+    bool                          _verify_peer{true};
+    std::shared_ptr<state_t>      _state{std::make_shared<state_t>()};
 
 public:
     explicit connect_awaiter(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)
         : _remote(std::move(remote))
+        , _timeout(timeout)
+        , _verify_peer(verify_peer) {}
+
+    /// The endpoint-list form (since 3.3): the first of `endpoints` that answers, `host` for TLS.
+    connect_awaiter(std::vector<qb::io::endpoint> endpoints, std::string host, qb::duration timeout = qb::duration::zero(),
+                    bool verify_peer = true)
+        : _endpoints(std::move(endpoints))
+        , _host(std::move(host))
+        , _listed(true)
         , _timeout(timeout)
         , _verify_peer(verify_peer) {}
 
@@ -709,28 +935,29 @@ public:
         if (!_state->scheduler)
             _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
 
-        auto state = _state;
-        ::qb::io::async::tcp::connect<Socket_>(
-            _remote,
-            [state](Socket_ &&socket) {
-                if (!state->active)
-                    return;
-                if (socket.is_open()) {
-                    state->result = std::move(socket);
-                }
-                state->ready = true;
-                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
-                // thread-local fallback this awaiter built when nothing was bound yet, which
-                // `listener::run()` never pumps. See the long note on
-                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
-                // callback runs on the loop thread, so the current scheduler is the pumped one.
-                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
-                                                                                      : state->scheduler;
-                    target && state->handle) {
-                    target->schedule_resume(state->handle);
-                }
-            },
-            _timeout, _verify_peer);
+        auto state      = _state;
+        auto on_connect = [state](Socket_ &&socket) {
+            if (!state->active)
+                return;
+            if (socket.is_open()) {
+                state->result = std::move(socket);
+            }
+            state->ready = true;
+            // Resolve the scheduler NOW, not at suspend time: the cached one may be the
+            // thread-local fallback this awaiter built when nothing was bound yet, which
+            // `listener::run()` never pumps. See the long note on
+            // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
+            // callback runs on the loop thread, so the current scheduler is the pumped one.
+            if (auto *target =
+                    ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr() : state->scheduler;
+                target && state->handle) {
+                target->schedule_resume(state->handle);
+            }
+        };
+        if (_listed)
+            ::qb::io::async::tcp::connect<Socket_>(std::move(_endpoints), std::move(_host), std::move(on_connect), _timeout, _verify_peer);
+        else
+            ::qb::io::async::tcp::connect<Socket_>(_remote, std::move(on_connect), _timeout, _verify_peer);
     }
 
     [[nodiscard]] std::optional<Socket_>
@@ -759,6 +986,29 @@ template <typename Transport = qb::io::transport::tcp>
 connect(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
     using socket_type = typename Transport::transport_io_type;
     return connect_awaiter<socket_type>{std::move(remote), timeout, verify_peer};
+}
+
+/**
+ * @brief Factory for the endpoint-list connect awaiter (since 3.3): the first of `endpoints` that answers
+ * @ingroup CoroutineTCP
+ * @tparam Transport The transport type (default: transport::tcp)
+ * @param endpoints Addresses to try, in order (see the callback form for the fallback rules)
+ * @param host Name for TLS -- SNI and certificate verification; ignored by a plain socket
+ * @param timeout The whole connect's deadline (default: none)
+ * @code
+ * auto eps  = co_await qb::io::async::offload([](std::string h) {   // resolve off the loop
+ *     std::vector<qb::io::endpoint> out;
+ *     qb::io::socket::resolve_v4(out, h.c_str(), 6379);
+ *     return out;
+ * }, std::string{"cache.internal"});
+ * auto sock = co_await qb::io::async::tcp::connect(std::move(eps), "cache.internal", std::chrono::seconds{5});
+ * @endcode
+ */
+template <typename Transport = qb::io::transport::tcp>
+[[nodiscard]] auto
+connect(std::vector<qb::io::endpoint> endpoints, std::string host, qb::duration timeout = qb::duration::zero(), bool verify_peer = true) {
+    using socket_type = typename Transport::transport_io_type;
+    return connect_awaiter<socket_type>{std::move(endpoints), std::move(host), timeout, verify_peer};
 }
 
 /**

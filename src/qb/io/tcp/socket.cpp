@@ -22,6 +22,8 @@
  * @ingroup IO
  */
 
+#include <algorithm>
+#include <chrono>
 #include <limits>
 #include <qb/io/tcp/socket.h>
 
@@ -69,36 +71,86 @@ socket::bind(io::uri const &u) noexcept {
     return -1;
 }
 
-int
-socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
-    auto ret = -1;
+std::vector<qb::io::endpoint>
+resolve_endpoints(int const af, std::string const &host, uint16_t const port) {
+    std::vector<qb::io::endpoint> endpoints;
     qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = connect(ep);
-                return true;
-            }
-            return false;
+        [&](const auto &ep) {
+            if (ep.af() == af)
+                endpoints.push_back(ep);
+            return false; // every address of the family, in the resolver's order
         },
         host.c_str(), port, af, SOCK_STREAM);
+    return endpoints;
+}
 
+qb::duration
+connect_attempt_budget(qb::duration const remaining, std::size_t const left) noexcept {
+    if (remaining <= qb::duration::zero())
+        return qb::duration::zero();
+    if (left <= 1)
+        return remaining;
+    constexpr qb::duration floor = std::chrono::seconds{2};
+    return std::min(remaining, std::max(remaining / static_cast<qb::duration::rep>(left), floor));
+}
+
+// The three connects by name fall back through every address of the family (Huly QB-164): one that
+// refuses, does not route or does not answer in its share of the time is closed and the next is tried.
+// Only a descriptor this socket opens itself is replaced -- one that was already open when the connect
+// began may carry options (a bind, a socket option) a fresh descriptor would not, so it gets the one
+// attempt it always had. A name that resolves to nothing leaves -1, as before.
+
+int
+socket::connect(std::vector<qb::io::endpoint> const &endpoints) noexcept {
+    const bool own_fd = !is_open();
+    auto       ret    = -1;
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+        if (i > 0) {
+            if (!own_fd)
+                break;
+            close(); // a failed connect leaves the descriptor unusable: the next attempt opens its own
+        }
+        ret = connect(endpoints[i]);
+        if (ret == 0)
+            break;
+    }
     return ret;
 }
 
 int
-socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept {
-    auto ret = -1;
-    qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = connect(ep, wtimeout);
-                return true;
-            }
-            return false;
-        },
-        host.c_str(), port, af, SOCK_STREAM);
-
+socket::connect(std::vector<qb::io::endpoint> const &endpoints, qb::duration wtimeout) noexcept {
+    const bool own_fd   = !is_open();
+    auto const deadline = qb::mono_now() + wtimeout;
+    auto       ret      = -1;
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+        if (i > 0) {
+            if (!own_fd || qb::mono_now() >= deadline)
+                break;
+            close();
+        }
+        ret = connect(endpoints[i], connect_attempt_budget(deadline - qb::mono_now(), endpoints.size() - i));
+        if (ret == 0)
+            break;
+    }
     return ret;
+}
+
+int
+socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
+    try {
+        return connect(resolve_endpoints(af, host, port));
+    } catch (...) {
+        return -1; // the address list could not be allocated
+    }
+}
+
+int
+socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept {
+    try {
+        return connect(resolve_endpoints(af, host, port), wtimeout);
+    } catch (...) {
+        return -1;
+    }
 }
 
 int
@@ -166,20 +218,29 @@ socket::connect_un(std::filesystem::path const &path) noexcept {
 
 // non blocking version
 
+// Non-blocking: an address is left for the next only when its connect fails AT ONCE (a refusal Windows
+// reports synchronously on loopback, a family or route the host cannot reach); one in progress is the
+// caller's to complete -- `async::tcp::connector` falls back on a later failure itself.
 int
 socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
-    auto ret = -1;
-    qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = n_connect(ep);
-                return true;
+    try {
+        const bool own_fd    = !is_open();
+        auto const endpoints = resolve_endpoints(af, host, port);
+        auto       ret       = -1;
+        for (std::size_t i = 0; i < endpoints.size(); ++i) {
+            if (i > 0) {
+                if (!own_fd)
+                    break;
+                close(); // a failed connect leaves the descriptor unusable: the next attempt opens its own
             }
-            return false;
-        },
-        host.c_str(), port, af, SOCK_STREAM);
-
-    return ret;
+            ret = n_connect(endpoints[i]);
+            if (ret == 0 || socket_no_error(qb::io::socket::get_last_errno()))
+                break; // connected, or in progress: the errno is the caller's to read
+        }
+        return ret;
+    } catch (...) {
+        return -1;
+    }
 }
 
 int

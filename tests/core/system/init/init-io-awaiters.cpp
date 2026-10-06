@@ -15,7 +15,7 @@
  * library — whose awaiters resolve their scheduler at RESUME time through
  * `schedule_via_current` (scheduler.h:888-902). This file covers the other family: a qb-io
  * awaiter that CACHES a scheduler pointer at SUSPEND time and resumes through the cached copy
- * (`connect_awaiter`, connector.h:708-710 and 722-724; `awaiter_base`, awaiter.h:329-333 and
+ * (`connect_awaiter`, connector.h:934-936 and 722-724; `awaiter_base`, awaiter.h:329-333 and
  * 191-193). Nothing exercised that combination, and it did not work.
  *
  * WHAT WAS WRONG

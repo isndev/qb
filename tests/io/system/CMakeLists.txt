@@ -185,3 +185,8 @@ endif ()
 
 # A teardown completes when a handler throws, or when an acceptor has none (Huly QB-256).
 qb_add_test(MODULE qb-io TIER system NAME teardown-throwing-handlers SOURCES tcp/teardown-throwing-handlers.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+
+# A connect falls back through a list of addresses (Huly QB-164): the async connector, callback and coroutine
+# forms, past a refused address and within an attempt's share of the deadline past a silent one; a socket handed
+# over open gets one attempt; TLS falls back on TCP only and a TLS failure is final; the blocking twins.
+qb_add_test(MODULE qb-io TIER system NAME connect-fallback SOURCES tcp/connect-fallback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)

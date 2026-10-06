@@ -749,36 +749,70 @@ socket::handCheck() noexcept {
     return 1;
 }
 
+// The TCP connect falls back through the addresses as tcp::socket's does (Huly QB-164); the TLS layer is set
+// up once, on the address that answered. A TLS failure is not a reason to try the next address -- the same
+// certificate and the same server would answer -- so the fallback is TCP only, and only on a descriptor
+// this socket opens itself.
+
+int
+socket::connect(std::vector<qb::io::endpoint> const &endpoints, std::string const &hostname) noexcept {
+    if (endpoints.empty())
+        return -1;
+    const bool own_fd = !is_open();
+    auto       ret    = -1;
+    auto       err    = 0;
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+        if (i > 0) {
+            if (!own_fd)
+                break;
+            close(); // a failed connect leaves the descriptor unusable: the next attempt opens its own
+        }
+        ret = tcp::socket::connect(endpoints[i]);
+        err = qb::io::socket::get_last_errno();
+        if (ret == 0 || err == EISCONN)
+            break;
+    }
+    return finish_client_connect_(ret, err, hostname);
+}
+
+int
+socket::connect(std::vector<qb::io::endpoint> const &endpoints, std::string const &hostname, qb::duration wtimeout) noexcept {
+    if (endpoints.empty())
+        return -1;
+    const bool own_fd   = !is_open();
+    auto const deadline = qb::mono_now() + wtimeout;
+    auto       ret      = -1;
+    auto       err      = 0;
+    for (std::size_t i = 0; i < endpoints.size(); ++i) {
+        if (i > 0) {
+            if (!own_fd || qb::mono_now() >= deadline)
+                break;
+            close();
+        }
+        ret = tcp::socket::connect(endpoints[i], tcp::connect_attempt_budget(deadline - qb::mono_now(), endpoints.size() - i));
+        err = qb::io::socket::get_last_errno();
+        if (ret == 0 || err == EISCONN)
+            break;
+    }
+    return finish_client_connect_(ret, err, hostname);
+}
+
 int
 socket::connect_in(int af, std::string const &host, uint16_t port) noexcept {
-    auto ret = -1;
-    qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = connect(ep, host);
-                return true;
-            }
-            return false;
-        },
-        host.c_str(), port, af, SOCK_STREAM);
-
-    return ret;
+    try {
+        return connect(tcp::resolve_endpoints(af, host, port), host);
+    } catch (...) {
+        return -1;
+    }
 }
 
 int
 socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration wtimeout) noexcept {
-    auto ret = -1;
-    qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = connect(ep, host, wtimeout);
-                return true;
-            }
-            return false;
-        },
-        host.c_str(), port, af, SOCK_STREAM);
-
-    return ret;
+    try {
+        return connect(tcp::resolve_endpoints(af, host, port), host, wtimeout);
+    } catch (...) {
+        return -1;
+    }
 }
 
 // Shared completion for the two blocking connect() overloads, which differ ONLY in whether the TCP
@@ -855,20 +889,28 @@ socket::connect_un(std::filesystem::path const &path) noexcept {
 }
 
 // NON BLOCKING
+// Non-blocking: an address is left for the next only when its TCP connect fails at once (see tcp::socket);
+// one in progress, or connected, gets the client TLS state here and is the caller's to complete.
 int
 socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
-    auto ret = -1;
-    qb::io::socket::resolve_i(
-        [&, this](const auto &ep) {
-            if (ep.af() == af) {
-                ret = n_connect(ep, host);
-                return true;
+    try {
+        const bool own_fd    = !is_open();
+        auto const endpoints = tcp::resolve_endpoints(af, host, port);
+        auto       ret       = -1;
+        for (std::size_t i = 0; i < endpoints.size(); ++i) {
+            if (i > 0) {
+                if (!own_fd)
+                    break;
+                close();
             }
-            return false;
-        },
-        host.c_str(), port, af, SOCK_STREAM);
-
-    return ret;
+            ret = n_connect(endpoints[i], host);
+            if (ret == 0 || socket_no_error(qb::io::socket::get_last_errno()))
+                break;
+        }
+        return ret;
+    } catch (...) {
+        return -1;
+    }
 }
 
 int

@@ -94,34 +94,58 @@ policy.
   so the death of the outgoing child is never taken for its replacement's, which most likely reuses its id -- a
   double restart, and an orphaned child, that the three strategies' watch-mode tests count, and catch when the
   unwatch is taken out.
-- **`co_await qb::io::async::offload(fn, args...)`: a call that blocks runs on a pool, and the coroutine resumes on
-  its own loop (Huly QB-69).** A blocking file read, a `getaddrinfo`, a KDF sized for a login endpoint, the
-  compression of megabytes: on a qb-io loop each held the thread -- under qb-core, every actor of the core -- and the
-  book's remedy was a thread of your own and an event back. `offload` (`<qb/io/async/coroutine/offload.h>`, through
-  `<qb/io/async.h>`) copies the callable and its arguments at the call, runs it on a process-wide pool, destroys it
-  there, and hands the result -- a value, never a reference -- back by `co_await` on the thread that awaited, rethrowing
-  what the call threw. The pool is qb-io's first worker threads, confined: none exists before the first `offload`, two
-  by default (`set_offload_threads(n)` before that), FIFO; `current_offload_stats()` reads its counters. A running
-  call is never interrupted: a frame destroyed while it runs is not resumed, its result is destroyed on its loop and
-  counted `discarded`. Inside an actor, `ScopedCoroContext::offload` is the form: a kill ends the wait at once with
+- **`co_await qb::io::async::offload(fn, args...)`: a call that blocks runs on a pool, and the coroutine resumes on its
+  own loop (Huly QB-69).** A blocking file read, a `getaddrinfo`, a KDF sized for a login endpoint, the compression of
+  megabytes: on a qb-io loop each held the thread -- under qb-core, every actor of the core -- and the book's remedy was
+  a thread of your own and an event back. `offload` (`<qb/io/async/coroutine/offload.h>`, through `<qb/io/async.h>`)
+  copies the callable and its arguments at the call, runs it on a process-wide pool, destroys it there, and hands the
+  result -- a value, never a reference -- back by `co_await` on the thread that awaited, rethrowing what the call threw.
+  The pool is qb-io's first worker threads, confined: none exists before the first `offload`, two by default
+  (`set_offload_threads(n)` before that), FIFO; `current_offload_stats()` reads its counters. A running call is never
+  interrupted: a frame destroyed while it runs is not resumed, its result is destroyed on its loop and counted
+  `discarded`. Inside an actor, `ScopedCoroContext::offload` is the form: a kill ends the wait at once with
   `cancelled_error` (a bare `offload`, like a bare `sleep`, waits through a kill). Each awaiting thread gets a
-  completion port, its own `ev_async` on its loop, started while an offload of the thread is in flight: the loop
-  counts as busy then, so a `VirtualCore` parks inside it and the pool's send ends the park, and the send is made
-  under the port's mutex, which keeps it off a loop being destroyed. No existing path changed to make room for it --
-  `has_work()`, the non-blocking pass's gate and the park already treat a referenced `ev_async` and a cross-thread
-  send as work. Nobody pays for it who does not call it: no instruction of the hot path changed -- the linked
-  qb-vs-others binaries compared function by function on g++-14 (the core, the loop, the mailbox and the scheduler
-  only moved, by multiples of 64 bytes) and every recompiled function on MSVC 19.51 (18 898 identical, 298 new) --
-  and the Savina cells and the pass, ask and push probes measured level on both hosts (`fib` one-core +1.4 % on g++
-  was placement: -0.3 % with both sides built at 64-byte alignment). A round trip costs 1.7 µs on a polling MSVC loop
-  and 12.4 µs on a parked one, 13.3 and 26.8 µs on WSL2, where a pool thread's wake from its condition variable is
-  the cost; a burst through the two threads, 0.48 and 1.07 µs an offload
-  (`tests/io/benchmark/coroutine/offload-roundtrip.cpp`). Pinned by `tests/io/system/coroutine/offload.cpp` (nine cases, on the per-backend matrix),
+  completion port, its own `ev_async` on its loop, started while an offload of the thread is in flight: the loop counts
+  as busy then, so a `VirtualCore` parks inside it and the pool's send ends the park, and the send is made under the
+  port's mutex, which keeps it off a loop being destroyed. No existing path changed to make room for it -- `has_work()`,
+  the non-blocking pass's gate and the park already treat a referenced `ev_async` and a cross-thread send as work.
+  Nobody pays for it who does not call it: no instruction of the hot path changed -- the linked qb-vs-others binaries
+  compared function by function on g++-14 (the core, the loop, the mailbox and the scheduler only moved, by multiples of
+  64 bytes) and every recompiled function on MSVC 19.51 (18 898 identical, 298 new) -- and the Savina cells and the
+  pass, ask and push probes measured level on both hosts (`fib` one-core +1.4 % on g++ was placement: -0.3 % with both
+  sides built at 64-byte alignment). A round trip costs 1.7 µs on a polling MSVC loop and 12.4 µs on a parked one, 13.3
+  and 26.8 µs on WSL2, where a pool thread's wake from its condition variable is the cost; a burst through the two
+  threads, 0.48 and 1.07 µs an offload (`tests/io/benchmark/coroutine/offload-roundtrip.cpp`). Pinned by
+  `tests/io/system/coroutine/offload.cpp` (nine cases, on the per-backend matrix),
   `tests/core/system/coroutine/coroutine-offload.cpp` and a case of `core-park-wake.cpp`, which catch each of eleven
   defects planted one at a time; `examples/03-coroutines/15-offloading-blocking-work.cpp` measures a 5 ms heartbeat
   beside a 300 ms call: inline, its worst gap is the call; offloaded, one tick.
+- **Connect over a list of addresses (Huly QB-164).** `qb::io::async::tcp::connect(std::vector<endpoint>, host, func,
+  timeout, verify_peer)` -- also with an existing socket (one built from an `ssl::Context` keeps its policy) and as a
+  coroutine, `co_await tcp::connect<Transport>(endpoints, host, timeout)` -- and the blocking
+  `tcp::socket::connect(endpoints[, timeout])` / `ssl::socket::connect(endpoints, hostname[, timeout])` connect to the
+  first address that answers, with the fallback below; `host` is TLS's SNI and verification name. The form for addresses
+  resolved off the loop: `co_await offload(...)` around `qb::io::socket::resolve_v4`, then connect. With them,
+  `qb::io::tcp::resolve_endpoints` and `qb::io::tcp::connect_attempt_budget`.
 
 ### Changed
+
+- **A connect by name tries every address, not the first (Huly QB-164).** Each connect that resolves a host name -- the
+  async connector (callback, coroutine, STARTTLS) and the blocking and non-blocking socket connects -- used to stop at
+  the first address of the resolver's answer: a dead first address in a DNS round-robin failed the connect. It now tries
+  them in order, within the URI's family as before (IPv4 for a host name); an address that refuses, does not route,
+  fails later (`SO_ERROR`) or does not answer within its share of the deadline is closed and the next is tried. The
+  share is `connect_attempt_budget`: the time left over the addresses left, never under two seconds unless less is left
+  -- a silent first address no longer eats the whole deadline, which stays the whole connect's. Unchanged: a failure
+  past the TCP connect (the TLS handshake, a STARTTLS negotiation) is final; a socket handed over already open gets the
+  first address only, its descriptor possibly carrying options; a socket type without `n_connect(endpoint)` keeps its
+  own resolution and its single attempt. When the last address's TCP connect fails later (`SO_ERROR`), the failure is
+  delivered at the tail of the loop turn, as a refusal at once already was -- it was delivered from inside the io
+  callback before; a deadline or a TLS failure is delivered as before. Pinned by
+  `tests/io/system/tcp/connect-fallback.cpp`, hermetic (given addresses: a closed port, a listener, and on Linux a
+  listener whose full accept queue drops SYNs), which catches each of seven defects planted one at a time; the eighth --
+  reusing a descriptor a failed connect left instead of closing it -- passes on Windows and Linux, which both accept it,
+  and is kept for the systems that leave that state unspecified.
 
 - **Undelivered events are logged with their reason, and the log thins out (Huly QB-163).** The WARN `failed to send
   event[...]` for a unicast whose type no actor of the core registered, and the per-event `activation stash full`

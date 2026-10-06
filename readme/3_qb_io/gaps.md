@@ -16,8 +16,8 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 |---|---|---|
 | `co_await sleep(qb::duration)` | a `ev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
-| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:759` |
-| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:944` |
+| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:986` |
+| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:1194` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:619` |
 | `co_await offload(fn, args...)` | a pool thread running the call; the coroutine resumes on its own loop | `coroutine/offload.h:299` |
 
@@ -92,22 +92,24 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 `qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1438-1466`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
-That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:568-572`). `run()` reaches `socket_.n_connect(remote_)` (`src/qb/io/async/tcp/connector.h:337`); and for a hostname URI that reaches `n_connect_in`, which resolves through `resolve_i` before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:169-181`, `:204-212`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread.
+That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:734-738`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:518`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:75-85`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
 
 There is no asynchronous resolver in the tree, so the honest options are:
 
-- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:186`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
-- Resolve on the offload pool, then connect to the numeric address it returns — the lookup blocks a pool thread, not the loop:
+- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:247`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
+- Resolve on the offload pool, then connect to the addresses it returns, with the same fallback -- the lookup blocks a pool thread, not the loop:
 
   ```cpp
-  // src: derived from qb/src/qb/io/async/coroutine/offload.h:299 (offload), qb/src/qb/io/system/sys__socket.h:1377 (resolve)
+  // src: derived from qb/src/qb/io/async/coroutine/offload.h:299 (offload), qb/src/qb/io/system/sys__socket.h:1388 (resolve_v4), qb/src/qb/io/async/tcp/connector.h:1009 (connect over a list)
   auto endpoints = co_await qb::io::async::offload(
       [](std::string host, unsigned short port) {
           std::vector<qb::io::endpoint> out;
-          qb::io::socket::resolve(out, host.c_str(), port);   // getaddrinfo, on a pool thread
+          qb::io::socket::resolve_v4(out, host.c_str(), port);   // getaddrinfo, on a pool thread
           return out;
       },
       std::string{"example.com"}, static_cast<unsigned short>(443));
+  auto socket = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(   // tried in order
+      std::move(endpoints), "example.com", std::chrono::seconds{5});              // the name: SNI + verification
   ```
 - Resolve once, at startup, and cache the `endpoint`.
 - Accept the stall where the thread is yours to block — a `main()`, a CLI, a test fixture.

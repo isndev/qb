@@ -155,8 +155,9 @@ Lifecycle and addressing:
 | `bind(endpoint const&)` / `bind(uri const&)` | `int` | Bind to a local endpoint or URI. |
 | `connect(endpoint const&)` | `int` | Blocking connect to a remote endpoint. |
 | `connect(endpoint const&, qb::duration wtimeout)` | `int` | Connect with a wall-clock bound on the TCP handshake. |
-| `connect(uri const&)` / `connect(uri const&, qb::duration)` | `int` | Connect (optionally timed) to a URI. |
-| `connect_v4(host, port)` / `connect_v6(host, port)` / `connect_un(std::filesystem::path const&)` | `int` | Blocking connect to a v4/v6/Unix target. |
+| `connect(std::vector<endpoint> const&)` / `connect(std::vector<endpoint> const&, qb::duration)` | `int` | Since 3.3: connect to the first address of the list that answers; a refused or unrouted one is closed and the next is tried, the timed form giving each attempt `tcp::connect_attempt_budget(time left, addresses left)`. `-1` for an empty list. |
+| `connect(uri const&)` / `connect(uri const&, qb::duration)` | `int` | Connect (optionally timed) to a URI; a host name is tried at every address of the URI's family, in order (3.3). |
+| `connect_v4(host, port)` / `connect_v6(host, port)` / `connect_un(std::filesystem::path const&)` | `int` | Blocking connect to a v4/v6/Unix target; `connect_v4` / `connect_v6` try every address of the host, in order (3.3). |
 | `n_connect(endpoint const&)` / `n_connect(uri const&)` | `int` | Begin a non-blocking connect. |
 | `n_connect_v4` / `n_connect_v6` / `n_connect_un(std::filesystem::path const&)` | `int` | Non-blocking connect to a v4/v6/Unix target. |
 | `connected()` | `void` | No-op finalizer for a non-blocking connect; overridden by `ssl::socket` to drive the handshake. |
@@ -174,6 +175,8 @@ A return of `0` from `connect`-family calls is success; `qb::io::SocketStatus::D
 The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::listener::listen_un` / `udp::socket::bind_un`, and the `ssl::socket` mirrors) take a `std::filesystem::path`, so a `std::filesystem::path`, a `std::string`, or a string literal all bind without an explicit conversion.
 
 The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is read through the static base accessor `qb::io::socket::get_last_errno()` (it is not re-exported as a typed-socket member).
+
+Only a descriptor the `connect` over a list opens itself is replaced between two attempts: a socket already open before the call -- its descriptor may carry options -- gets the first address only (`src/qb/io/tcp/socket.cpp:104-117`). The by-name connects build their list with `qb::io::tcp::resolve_endpoints(af, host, port)`, every address of the family in the resolver's order (`src/qb/io/tcp/socket.cpp:75-85`); resolve on the [offload pool](./coroutines.md#offloading-blocking-work) and pass the list yourself when the lookup must stay off the loop.
 
 <!-- src: qb/src/qb/io/tcp/socket.h -->
 

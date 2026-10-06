@@ -39,7 +39,7 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 
 <!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
 <!-- src: src/qb/io/system/sys__socket.h:851,859,873,879 (copy deleted / move kept), :894 (~socket) -->
-<!-- src: src/qb/io/tcp/socket.h:94 (copy deleted), :99 (move ctor), :105 (move assign) -->
+<!-- src: src/qb/io/tcp/socket.h:97 (copy deleted), :102 (move ctor), :108 (move assign) -->
 <!-- src: src/qb/io/tcp/ssl/socket.h:339 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 
 ### The actor destruction guarantee
@@ -195,8 +195,8 @@ client.transport().set_insecure();
 
 Two further facts shape correct TLS lifetime management:
 
-- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:857-871`)
-- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:780-781`)
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:871-885`)
+- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:794-795`)
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 

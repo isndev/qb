@@ -354,12 +354,12 @@ with I/O lifetime are:
 - The transport sockets follow the same rule: `tcp::socket`, `udp::socket`,
   `ssl::socket`, and `ssl::listener` all delete the copy constructor and default
   the move operations; ownership of the native handle (and `SSL*`) transfers on
-  move (`src/qb/io/tcp/socket.h:94-105`). `tcp::socket` inherits non-publicly
+  move (`src/qb/io/tcp/socket.h:97-108`). `tcp::socket` inherits non-publicly
   from `qb::io::socket`, so only its re-exported accessors are public
-  (`src/qb/io/tcp/socket.h:44`).
+  (`src/qb/io/tcp/socket.h:47`).
 - A default-constructed socket is **uninitialized**; call `init()` before any
   connect/accept/read/write. The success conventions differ and cannot be
-  treated uniformly (`src/qb/io/tcp/socket.h:127`,
+  treated uniformly (`src/qb/io/tcp/socket.h:130`,
   `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:505`):
   - `tcp::socket::init(int af)` returns `int` (`0` = success).
   - `udp::socket::init(int af)` returns `bool` (`true` = success).
@@ -373,11 +373,11 @@ with I/O lifetime are:
   the detach.
 - All socket timeout parameters are `qb::duration`
   (`std::chrono::nanoseconds`); a non-positive wait is clamped to "poll once"
-  in the timed connect/recv/send paths (`src/qb/io/tcp/socket.h:155-158`).
+  in the timed connect/recv/send paths (`src/qb/io/tcp/socket.h:158-161`).
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`src/qb/io/tcp/ssl/socket.h:527-529,539-541`,
+  returns `0` (`src/qb/io/tcp/ssl/socket.h:527-529,553-555`,
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but

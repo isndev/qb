@@ -1333,7 +1333,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
 // ===========================================================================
 // Post-handshake authentication success leg.
 //
-// FRAMEWORK CONTRACT (verified against source/io/src/tcp/ssl/socket.cpp:1200): the
+// FRAMEWORK CONTRACT (verified against source/io/src/tcp/ssl/socket.cpp:1242): the
 // misleadingly-named socket::request_client_post_handshake_auth() wraps OpenSSL's
 // SSL_verify_client_post_handshake(), which is a SERVER-ONLY operation — it makes the
 // *server* send a post-handshake CertificateRequest to the client. It must therefore be

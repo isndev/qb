@@ -269,6 +269,21 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   `queued` without starting it. _(offload.h:107-130)_ A loop with an offload in flight counts as busy
   (`has_work()`): a `VirtualCore` parks INSIDE it and the pool's `ev_async` send ends the park.
   _(offload.h:49-59)_
+- **A connect by name resolves ON the loop, then tries every address (3.3).** `tcp::connect(uri, ...)` and
+  its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
+  each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
+  answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1009; tcp/socket.cpp:88-95)_
+
+```cpp
+auto eps = co_await qb::io::async::offload([](std::string h) {
+    std::vector<qb::io::endpoint> out;
+    qb::io::socket::resolve_v4(out, h.c_str(), 443); // getaddrinfo, on a pool thread
+    return out;
+}, std::string{"api.example.com"});
+auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move(eps), "api.example.com",
+                                                                       std::chrono::seconds{5});
+```
 
 ### Network actors via `qb::io::use<>`
 
@@ -589,7 +604,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :871, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :885, :84, :95)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),
@@ -1193,9 +1208,11 @@ Reliable stream socket (IPv4/IPv6/Unix). `constexpr is_secure() == false`. Re-ex
 *   `int init(int af = AF_INET) noexcept` — open SOCK_STREAM; 0 on success.
 *   `int connect(const qb::io::endpoint& ep) noexcept` — blocking; 0 on success.
 *   `int connect(const qb::io::endpoint& ep, qb::duration wtimeout) noexcept` — bound the handshake; timeout via `get_last_errno()`.
-*   `int connect(const uri& u) noexcept` / `int connect(const uri& u, qb::duration wtimeout) noexcept`
+*   `int connect(const uri& u) noexcept` / `int connect(const uri& u, qb::duration wtimeout) noexcept` — a host name is resolved to every address of the URI's family (`AF_INET` by default) and they are tried in order (since 3.3; before, the first only).
+*   `int connect(const std::vector<qb::io::endpoint>& endpoints) noexcept` / `connect(endpoints, qb::duration wtimeout)` — since 3.3: the first address that answers; a refused or unrouted one is closed and the next tried, the timed form giving each attempt `connect_attempt_budget(time left, addresses left)`. Only a descriptor the call opens itself is replaced: a socket open before the call gets the first address only. -1 for an empty list.
 *   `int connect_v4(const std::string& host, uint16_t port) noexcept` / `connect_v6(...)` / `connect_un(const std::filesystem::path& path) noexcept` (UDS needs `QB_ENABLE_UDS`).
-*   Non-blocking: `int n_connect(const qb::io::endpoint&) noexcept` / `n_connect(const uri&)` / `n_connect_v4`/`n_connect_v6`/`n_connect_un`.
+*   Non-blocking: `int n_connect(const qb::io::endpoint&) noexcept` / `n_connect(const uri&)` / `n_connect_v4`/`n_connect_v6`/`n_connect_un` — by name, an address refused AT ONCE gives way to the next; one in progress is the caller's to complete (the async connector falls back on a later failure itself).
+*   Free helpers (namespace `qb::io::tcp`, since 3.3): `std::vector<qb::io::endpoint> resolve_endpoints(int af, const std::string& host, uint16_t port)` — every address of the family, in the resolver's order; `qb::duration connect_attempt_budget(qb::duration remaining, std::size_t left) noexcept` — `remaining / left`, never under 2 s unless `remaining` is shorter (Go's dialer).
 *   `void connected() noexcept` — no-op for plain TCP (overridden by ssl).
 *   `int read(void* dest, std::size_t len) const noexcept` / `int write(const void* data, std::size_t size) const noexcept` — read 0 = peer shutdown, negative = error/EWOULDBLOCK.
 *   `int bind(const qb::io::endpoint&) noexcept` / `int bind(const qb::io::uri&) noexcept` / `int disconnect() const noexcept`.
@@ -1403,11 +1420,14 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `[T] class server<_Derived, _Session, _Prot> : public acceptor<...>, public io_handler<_Derived, _Session>` — TCP server. `server() = default`. `void on(typename acceptor_type::accepted_socket_type&& new_io)` (registers a session). `void on(event::disconnected&&)`.
 *   `[T] class client<_Derived, _Transport, _Server = void> : public io<_Derived>, _Transport` — TCP client/session. Server-associated form: `client() = delete`, `explicit client(_Server& server)`. `using transport_io_type = typename _Transport::transport_io_type;`, `using IOServer = _Server;`, `constexpr static bool has_server = true`. Methods: `_Server& server()` / `const _Server& server() const`, `const uuid& id() const noexcept`, `auto shared()`, `auto ip()`, `auto port()`.
 *   `template <_Derived,_Transport> class client<_Derived,_Transport,void>` — standalone client. `client() noexcept`; `has_server = false`.
-*   `[T] class connector<Socket_, Func_>` — drives a non-blocking connect, self-held until one completion.
+*   `[T] class connector<Socket_, Func_>` — drives a non-blocking connect, self-held until one completion. Since 3.3 it falls back through the addresses (Huly QB-164): a host name resolves to every address of the URI's family; one whose TCP connect is refused, fails (`SO_ERROR`) or does not answer within its share of the deadline (`tcp::connect_attempt_budget`) is closed and the next tried; the deadline stays the whole connect's. A TLS or STARTTLS failure past the TCP connect is final. A socket handed over already open gets the first address only. A `Socket_` without `n_connect(endpoint)` keeps its single `n_connect(uri)` attempt.
 *   Free `connect` overloads:
     *   `[T<Socket_,Func_>] void connect(const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — async connect; `func` called once with the socket (empty on failure/timeout).
     *   `[T<Socket_,Func_>] void connect(Socket_&& existing_socket, const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)`
+    *   `[T<Socket_,Func_>] void connect(std::vector<qb::io::endpoint> endpoints, std::string host, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — since 3.3: the first of `endpoints` that answers, same fallback; `host` is TLS's SNI / verification name (ignored by a plain socket). An empty list fails.
+    *   `[T<Socket_,Func_>] void connect(Socket_&& existing_socket, std::vector<qb::io::endpoint> endpoints, std::string host, Func_&& func, qb::duration timeout = {}, bool verify_peer = true)` — since 3.3, with a caller-built socket (an `ssl::Context`); falls back only if the socket is not open yet.
     *   `[T<Transport = qb::io::transport::tcp>] auto connect(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — coroutine overload; → `connect_awaiter<socket_type>` resolving to `std::optional<Socket_>`.
+    *   `[T<Transport = qb::io::transport::tcp>] auto connect(std::vector<qb::io::endpoint> endpoints, std::string host, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — since 3.3, the coroutine form over a list: resolve off the loop (`co_await offload(...)` around `qb::io::socket::resolve_v4`), then connect with fallback.
     *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(const uri& remote, Func_&& func, qb::duration timeout = {}, bool verify_peer = true)` — opportunistic TLS (PostgreSQL `SSLRequest`, SMTP/IMAP `STARTTLS`): connect cleartext, run `Negotiator_`'s upgrade, then the TLS handshake; `func` gets the ready (secure) socket.
     *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(Socket_&& existing, const uri& remote, Func_&& func, qb::duration timeout = {})` — STARTTLS with a caller-built socket carrying its own `ssl::Context` (custom CA / client-cert mTLS / verify); the Context governs verification, so there is **no** `verify_peer` bool (fails CLOSED on a broken Context).
     *   `[T] class connect_awaiter<Socket_>` — C++20 coroutine awaiter resuming with `std::optional<Socket_>`.

@@ -254,6 +254,21 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   `queued` without starting it. _(offload.h:107-130)_ A loop with an offload in flight counts as busy
   (`has_work()`): a `VirtualCore` parks INSIDE it and the pool's `ev_async` send ends the park.
   _(offload.h:49-59)_
+- **A connect by name resolves ON the loop, then tries every address (3.3).** `tcp::connect(uri, ...)` and
+  its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
+  each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
+  answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1009; tcp/socket.cpp:88-95)_
+
+```cpp
+auto eps = co_await qb::io::async::offload([](std::string h) {
+    std::vector<qb::io::endpoint> out;
+    qb::io::socket::resolve_v4(out, h.c_str(), 443); // getaddrinfo, on a pool thread
+    return out;
+}, std::string{"api.example.com"});
+auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move(eps), "api.example.com",
+                                                                       std::chrono::seconds{5});
+```
 
 ### Network actors via `qb::io::use<>`
 
@@ -574,7 +589,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :871, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:128; ssl/socket.h:464, :885, :84, :95)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),

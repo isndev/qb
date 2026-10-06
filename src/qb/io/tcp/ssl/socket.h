@@ -533,6 +533,20 @@ public:
      * @param u The `qb::io::uri` of the remote server. The URI's host is used for SNI if not overridden.
      * @return 0 on success, non-zero error code on failure.
      */
+    /**
+     * @brief Connect over TLS to the first of `endpoints` whose TCP connect succeeds (since 3.3).
+     * @param endpoints Addresses to try, in order.
+     * @param hostname Name for SNI and certificate verification.
+     * @return 0 once the TLS handshake on the answering address succeeded; non-zero otherwise.
+     * @details The TCP fallback of `tcp::socket::connect(endpoints)` (an open socket gets the first address
+     *          only), then the client TLS state and the handshake once, on the address that answered. A TLS
+     *          failure does not move to the next address: it would present the same server.
+     */
+    int connect(std::vector<qb::io::endpoint> const &endpoints, std::string const &hostname) noexcept;
+
+    /** @brief `connect(endpoints, hostname)` with the TCP part bounded by `wtimeout`, shared between attempts. */
+    int connect(std::vector<qb::io::endpoint> const &endpoints, std::string const &hostname, qb::duration wtimeout) noexcept;
+
     int connect(uri const &u) noexcept;
 
     /**
