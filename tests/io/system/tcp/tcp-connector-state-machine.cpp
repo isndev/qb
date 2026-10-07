@@ -466,7 +466,9 @@ TEST_F(TcpConnectorStateMachineTest, DeadlineCompletesPendingHandshakeOnce) {
 // ---------------------------------------------------------------------------
 // Pending connect whose handshake script is {0,1}: the first EV_WRITE turn reports
 // pending (re-arms EV_READ|EV_WRITE), the second reports done and delivers an open
-// socket. ≥2 get_optval probes (one per readiness turn), and NO disconnect.
+// socket. EXACTLY one get_optval probe -- SO_ERROR is read for the TCP connect, the
+// second turn is the handshake's (a probe there took a peer's reset during the
+// handshake for a failed connect, Huly QB-164) -- and NO disconnect.
 // ---------------------------------------------------------------------------
 TEST_F(TcpConnectorStateMachineTest, IoEventCompletesPendingHandshake) {
 #ifdef _WIN32
@@ -501,7 +503,7 @@ TEST_F(TcpConnectorStateMachineTest, IoEventCompletesPendingHandshake) {
 
     EXPECT_EQ(completions.load(), 1);
     EXPECT_TRUE(connected);
-    EXPECT_GE(shared->get_optval_calls, 2);
+    EXPECT_EQ(shared->get_optval_calls, 1) << "SO_ERROR was read again past the TCP connect";
     EXPECT_EQ(shared->disconnect_calls, 0);
 }
 

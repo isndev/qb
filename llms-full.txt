@@ -273,7 +273,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1009; tcp/socket.cpp:88-95)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1018; tcp/socket.cpp:88-95)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {

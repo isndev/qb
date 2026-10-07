@@ -224,7 +224,7 @@ Key behaviors verified in the header:
   asynchronous equivalent of calling `set_insecure()` yourself. The `qbm`
   PostgreSQL (`ssl_root_cert`/`ssl_cert`/`ssl_key`) and Redis (`set_ssl_root_cert` /
   `set_ssl_client_certificate`) clients drive exactly this path.
-  <!-- src: qb/src/qb/io/async/tcp/connector.h:848-851 (starttls_connect, Negotiator_ not deducible), :734 (connect verify_peer), :758 (connect with existing socket), :511-514 (verify_peer applies set_insecure) -->
+  <!-- src: qb/src/qb/io/async/tcp/connector.h:857-860 (starttls_connect, Negotiator_ not deducible), :743 (connect verify_peer), :767 (connect with existing socket), :514-517 (verify_peer applies set_insecure) -->
 - **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success — the
   value of `qb::io::SocketStatus::Done` — and non-zero on failure, generically
   `SocketStatus::Error` (`-1`). `n_connect*` returns the underlying non-blocking TCP

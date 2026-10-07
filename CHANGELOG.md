@@ -211,7 +211,12 @@ policy.
   `tests/io/system/tcp/connect-fallback.cpp`, hermetic (given addresses: a closed port, a listener, and on Linux a
   listener whose full accept queue drops SYNs), which catches each of seven defects planted one at a time; the eighth --
   reusing a descriptor a failed connect left instead of closing it -- passes on Windows and Linux, which both accept it,
-  and is kept for the systems that leave that state unspecified.
+  and is kept for the systems that leave that state unspecified. A reset the peer sends during the TLS handshake is
+  final too: the connector reads `SO_ERROR` for the TCP connect only, where it read it on every event and took such a
+  reset for a failed connect, trying the next address -- an arm64 CI runner hit it when the closing server's reset
+  beat the client's read. `AResetDuringTheTlsHandshakeIsFinal` replays that race twenty times (it failed twenty of
+  twenty with the old connector on Linux), and `tcp-connector-state-machine` now holds the connector to one `SO_ERROR`
+  probe per attempt.
 
 - **Undelivered events are logged with their reason, and the log thins out (Huly QB-163).** The WARN `failed to send
   event[...]` for a unicast whose type no actor of the core registered, and the per-event `activation stash full`

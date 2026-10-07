@@ -167,6 +167,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     std::size_t                   next_{0};       ///< index of the next endpoint to try
     bool                          own_fd_{true};  ///< the descriptor is the connector's to replace between attempts
     std::uint32_t                 attempt_{0};    ///< generation of the running attempt: a stale attempt timer finds another
+    bool                          tcp_up_{false}; ///< the running attempt's TCP connect is up: what fails from here is final
 
     /// A socket the connector can point at one address: `n_connect(endpoint)`. One without it (a custom
     /// socket type) resolves its URI itself and gets the single `n_connect(uri)` attempt it always had.
@@ -382,6 +383,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
                 break; // AF_UNIX: the one attempt
             }
             ++attempt_;
+            tcp_up_       = false;
             const int ret = connect_step();
             const int err = qb::io::socket::get_last_errno();
             if constexpr (Negotiator_::enabled) {
@@ -407,6 +409,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
                             return;
                         case finalize_result::pending:
                             if (arm_io(EV_READ | EV_WRITE)) {
+                                tcp_up_ = true;
                                 arm_deadline();
                                 return; // the TCP part is done: no attempt timer, what follows is final
                             }
@@ -534,12 +537,18 @@ public:
             on_starttls(event);
             return;
         }
+        // Once the TCP connect is up, every event is the TLS handshake's, and so is any error: SO_ERROR is read for
+        // the connect only. Read again, a reset the peer sends during the handshake took the attempt for a failed TCP
+        // connect and moved on to the next address (Huly QB-164).
         int err = 0;
-        if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err))
+        if (!tcp_up_ && (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)))
             err = 1;
 
-        if (!err || err == EISCONN) {
-            ++attempt_; // the TCP connect is up: what follows is final, an attempt timer must not move on
+        if (tcp_up_ || !err || err == EISCONN) {
+            if (!tcp_up_) {
+                tcp_up_ = true;
+                ++attempt_; // the TCP connect is up: what follows is final, an attempt timer must not move on
+            }
             switch (finalize_transport_connect()) {
                 case finalize_result::done:
                     listener::current.unregisterEvent(event._interface);

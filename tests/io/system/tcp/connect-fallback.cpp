@@ -356,9 +356,47 @@ struct ClosingServer {
     }
 };
 
+/// Accepts one connection, reads the client's first TLS bytes, then RESETS it -- SO_LINGER 0 and no shutdown, so a
+/// reset and no FIN: the TCP connect succeeded and the reset lands in the middle of the handshake, deterministically.
+struct ResettingServer {
+    qb::io::tcp::listener lst;
+    std::uint16_t         port = 0;
+    std::thread           thread;
+    std::atomic<bool>     hello_read{false};
+    ResettingServer() {
+        if (lst.listen_v4(0, "127.0.0.1") != 0)
+            return;
+        port   = lst.local_endpoint().port();
+        thread = std::thread([this] {
+            qb::io::tcp::socket s;
+            if (lst.accept(s) != 0)
+                return;
+            char       buf[512];
+            const auto until = std::chrono::steady_clock::now() + 5s;
+            while (!hello_read && std::chrono::steady_clock::now() < until) {
+                if (s.read(buf, sizeof(buf)) > 0)
+                    hello_read = true;
+                else
+                    std::this_thread::sleep_for(1ms);
+            }
+            const ::linger hard{1, 0};
+            (void) s.set_optval(SOL_SOCKET, SO_LINGER, hard);
+            s.close(QB_SD_NONE);
+        });
+    }
+    ~ResettingServer() {
+        if (thread.joinable() && port != 0)
+            wake_accept(port);
+        lst.disconnect();
+        if (thread.joinable())
+            thread.join();
+    }
+};
+
 } // namespace connect_fallback_test
 
 using connect_fallback_test::ClosingServer;
+using connect_fallback_test::ResettingServer;
 using connect_fallback_test::TlsServer;
 
 TEST_F(ConnectFallback, TheTlsConnectorFallsBackPastARefusedAddress) {
@@ -397,6 +435,33 @@ TEST_F(ConnectFallback, ATlsFailureOnAnAddressThatAnsweredIsFinal) {
     ASSERT_TRUE(qb::io::test::pump_until([&] { return done.load(); }, 10s)) << "the connect never completed";
     EXPECT_FALSE(got.has_value()) << "a TLS failure was taken as a reason to try the next address";
     EXPECT_EQ(second.accepted.load(), 0) << "the second address was tried after a TLS failure";
+}
+
+// The same rule when the peer RESETS the connection during the handshake. The connector read SO_ERROR on every event,
+// handshake events included, so the reset read as a failed TCP connect and the next address was tried -- what the
+// case above did on a CI runner whenever the closing server's reset beat the client's read (Huly QB-164). Whether the
+// reset reaches SO_ERROR or the TLS read first is a race, lost about one time in three on Linux: the case runs it
+// twenty times, which a connector that reads SO_ERROR past the TCP connect fails with near certainty.
+TEST_F(ConnectFallback, AResetDuringTheTlsHandshakeIsFinal) {
+    for (int round = 0; round < 20; ++round) {
+        SCOPED_TRACE("round " + std::to_string(round));
+        ResettingServer first;
+        TlsServer       second(1);
+        ASSERT_NE(first.port, 0);
+        ASSERT_NE(second.port, 0);
+
+        std::optional<qb::io::tcp::ssl::socket> got;
+        std::atomic<bool>                       done{false};
+        qb::io::async::listener::current.coro_scheduler().spawn([&]() -> qb::io::async::task<void> {
+            got = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(
+                std::vector<endpoint>{loopback(first.port), loopback(second.port)}, "localhost", 5s, /*verify_peer*/ false);
+            done = true;
+        });
+        ASSERT_TRUE(qb::io::test::pump_until([&] { return done.load(); }, 10s)) << "the connect never completed";
+        EXPECT_TRUE(first.hello_read.load()) << "the first server never read the client's hello: the reset did not land mid-handshake";
+        ASSERT_FALSE(got.has_value()) << "a reset during the TLS handshake was taken as a failed TCP connect";
+        ASSERT_EQ(second.accepted.load(), 0) << "the second address was tried after a reset during the handshake";
+    }
 }
 
 TEST_F(ConnectFallback, ATlsHandshakeLongerThanTheShareIsNotCutShort) {
