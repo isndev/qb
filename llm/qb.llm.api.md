@@ -99,7 +99,7 @@ Alias: `qb::CoreInitializerMap = qb::unordered_map<CoreId, CoreInitializer>`.
 ### `class qb::Main` (alias `qb::engine`) (`<qb/core/Main.h>`)
 Engine controller: configures cores, spawns worker threads, runs the actor system. Configure all actors/cores **before** `start()`.
 *   `Main() noexcept` — no cores spawned yet.
-*   `void start(bool async = true) noexcept` — start all VirtualCore threads; `async=true` returns immediately (then `join()`), `async=false` blocks the calling thread until stopped.
+*   `void start(bool async = true) noexcept` — start all VirtualCore threads; `async=true` returns after the startup barrier (then `join()`); a pre-loop failure joins failed workers before returning. `async=false` runs a worker on the calling thread and normally blocks until it stops.
 *   `[[nodiscard]] bool hasError() const noexcept` — true if any core failed to start / died early; check after `join()`.
 *   `static void stop() noexcept` — async-signal-safe graceful shutdown (raises SIGINT's generation, so every core delivers a `SignalEvent{SIGINT}` that no later signal can hide); callable from any thread / signal handler.
 *   `void join()` — block until all worker threads terminate (after async `start`).

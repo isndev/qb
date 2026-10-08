@@ -369,6 +369,14 @@ static_assert(std::atomic<unsigned int>::is_always_lock_free, "Main signal gener
 std::array<std::atomic<unsigned int>, Main::SignalSlots> Main::_signal_raised{};
 std::atomic<unsigned int>                                Main::_signal_generation{0};
 
+namespace {
+// A worker can fail in __workflow__ immediately after the startup barrier and
+// overwrite its ready count before Main::start reads it. Keep that runtime
+// error distinct from every startup sentinel plus the maximum barrier count.
+constexpr uint64_t kRuntimeExceptionThrown = static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) | (1ull << 13u);
+static_assert(kRuntimeExceptionThrown > static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) + qb::MaxCores);
+} // namespace
+
 void
 Main::onSignal(int const signum) noexcept {
     static_assert(static_cast<std::size_t>(SIGINT) < SignalSlots && static_cast<std::size_t>(SIGTERM) < SignalSlots,
@@ -452,6 +460,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         }
     } exit_guard{params.shared_com, core._resolved_index, core};
 
+    bool entered_workflow = false;
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
@@ -472,16 +481,17 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         initializer.clear();
         if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))
             return;
+        entered_workflow = true;
         core.__workflow__();
     } catch (const std::exception &e) {
         QB_LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
-        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+        params.sync_start.store(entered_workflow ? kRuntimeExceptionThrown : VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     } catch (...) {
         // A non-std::exception throw would otherwise escape this noexcept
         // function and std::terminate — and skip the stopped-flag publish.
         QB_LOG_CRIT("Non-standard exception thrown on " << core);
-        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+        params.sync_start.store(entered_workflow ? kRuntimeExceptionThrown : VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     }
 }
@@ -599,7 +609,12 @@ Main::start(bool async) noexcept {
         Main::install_default_signals();
     }
 
-    if (hasError()) {
+    // A runtime exception can overtake this load after every core passed the
+    // barrier. Only a startup failure requires joining here: on a runtime
+    // failure another core may still be live and need the caller to stop it.
+    const auto start_state = _sync_start.load(std::memory_order_acquire);
+    if (start_state >= VirtualCore::Error::BadInit && start_state < kRuntimeExceptionThrown) {
+        join(); // keep shared resources and initializers alive until every failed worker exits
         _is_running = false;
         QB_LOG_CRIT("[Main] Init Failed");
         std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;

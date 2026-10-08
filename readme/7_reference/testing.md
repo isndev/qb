@@ -99,7 +99,7 @@ Some qb-io suites exist only when their optional dependency is present:
 
 <!-- src: qb/tests/io/unit/CMakeLists.txt:65-72 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. The QUIC suites are gated the same way, by `REQUIRES quic ssl network` (`qb/tests/io/system/CMakeLists.txt:90-91`), so they too are simply not registered without QUIC; their *cases* additionally carry a `QB_HAS_QUIC` `#ifdef` so the file still asserts the negative contract when it is compiled without it (`qb/tests/io/system/quic/quic-handshake.cpp:86-98`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:179-182`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. The QUIC suites are gated the same way, by `REQUIRES quic ssl network` (`qb/tests/io/system/CMakeLists.txt:90-91`), so they too are simply not registered without QUIC; their *cases* additionally carry a `QB_HAS_QUIC` `#ifdef` so the file still asserts the negative contract when it is compiled without it (`qb/tests/io/system/quic/quic-handshake.cpp:86-98`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
 ### Running under sanitizers
 
@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning immediately, after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:950,975`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:950`, `qb/src/qb/core/Main.cpp:575-580`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:950,975`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until the engine stops (`qb/src/qb/core/Main.h:950`, `qb/src/qb/core/Main.cpp:585-590`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.

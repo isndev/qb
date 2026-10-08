@@ -232,6 +232,14 @@ policy.
 
 ### Fixed
 
+- **A pre-loop `Main::start()` failure joins its workers before releasing their resources (Huly QB-259).**
+  The startup error flag used to let `start(true)` return while a worker was still tearing down; `_is_running`
+  became false, so `~Main()` skipped its explicit join and member destruction freed shared mailboxes before the
+  worker threads' automatic joins. The startup-failure branch now joins every worker before allowing reconfiguration,
+  destruction or another start. An exception after the startup barrier uses a distinct internal error marker:
+  `hasError()` still reports it, while `start()` leaves other live cores for the caller to stop. The existing
+  `main-lifecycle` suite gates a failed actor destructor and a post-barrier throw with a live peer; both caught the
+  prior behavior before the fix.
 - **A zlib decompressor called with no input hands back what it was still holding (Huly QB-464).** A decompress call
   with an empty input returned at once, so output that an earlier call had no room for -- a match copy cut by a full
   window -- stayed inside inflate until more input came, and a caller whose input was all consumed could never get it.

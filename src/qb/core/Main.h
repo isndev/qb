@@ -941,10 +941,10 @@ public:
     /*!
      * @brief Start the engine and its VirtualCore worker threads.
      * @ingroup Engine
-     * @param async If `true` (default), the engine starts asynchronously, and this call returns immediately.
-     *              The main application thread continues execution. `join()` should be called later to wait.
-     *              If `false`, the calling thread becomes one of the VirtualCore worker threads (typically core 0).
-     *              This call will block until the engine is stopped.
+     * @param async If `true` (default), workers start asynchronously and this call returns after their startup barrier.
+     *              A pre-loop startup failure joins failed workers before returning; later runtime errors do not join live peers.
+     *              If `false`, the calling thread becomes one of the VirtualCore workers and normally blocks until it stops.
+     *              Use `join()` after a successful asynchronous start to wait for every worker.
      * @note All actors and core configurations (affinity, latency) must be set up *before* calling `start()`.
      */
     void start(bool async = true) noexcept;
