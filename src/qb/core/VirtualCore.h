@@ -1498,7 +1498,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:513`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:610-619`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it
@@ -1572,6 +1572,18 @@ actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
 template <typename Func>
 void
 Actor::spawn_detached(Func &&func) const {
+    spawn_detached(std::string_view{}, std::forward<Func>(func));
+}
+
+template <typename Func>
+void
+Actor::spawn(Func &&func) const {
+    spawn(std::string_view{}, std::forward<Func>(func));
+}
+
+template <typename Func>
+void
+Actor::spawn_detached(std::string_view name, Func &&func) const {
     __resolve_coro_scheduler__();
     __ensure_coro_counter__(); // lazily allocate the shared census on first use.
 
@@ -1579,13 +1591,13 @@ Actor::spawn_detached(Func &&func) const {
     CoroContext ctx(this);
 
     // actor_coro_wrapper takes func BY VALUE → stored in the coroutine frame.
-    // The scheduler takes ownership of the wrapper task's handle via spawn().
-    coro_scheduler_->spawn(detail::actor_coro_wrapper(std::forward<Func>(func), ctx, active_coroutines_));
+    // The scheduler takes ownership of the wrapper task's handle via spawn(); an empty name stores nothing.
+    coro_scheduler_->spawn(name, detail::actor_coro_wrapper(std::forward<Func>(func), ctx, active_coroutines_));
 }
 
 template <typename Func>
 void
-Actor::spawn(Func &&func) const {
+Actor::spawn(std::string_view name, Func &&func) const {
     __resolve_coro_scheduler__();
     __ensure_coro_scope__(); // lazily allocate the real cancellation token on first use.
     __ensure_coro_counter__();
@@ -1596,7 +1608,7 @@ Actor::spawn(Func &&func) const {
     // outlives the actor.
     ScopedCoroContext ctx(this, _coro_scope);
 
-    coro_scheduler_->spawn(detail::actor_scoped_coro_wrapper(std::forward<Func>(func), std::move(ctx), active_coroutines_));
+    coro_scheduler_->spawn(name, detail::actor_scoped_coro_wrapper(std::forward<Func>(func), std::move(ctx), active_coroutines_));
 }
 
 } // namespace qb

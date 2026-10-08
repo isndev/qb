@@ -79,6 +79,7 @@
 #include <atomic>
 #include <coroutine>
 #include "promise_access.h" // handle_from_promise / promise_of: right for an over-aligned promise on clang-cl (QB-200)
+#include "tracking.h"       // opt-in suspension tracking (QB-71)
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
@@ -140,7 +141,7 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // awaits the frame, so `await_resume()` (the only place that rethrows) never runs and the
 // exception dies with the promise. `Actor::spawn` / `spawn_detached` already report through
 // `qb::detail::report_unhandled_coroutine_exception` because their wrapper coroutines CATCH
-// (VirtualCore.h:1281-1288, 1302-1310) and therefore leave the wrapper promise clean — so they do
+// (VirtualCore.h:1538-1545, 1559-1567) and therefore leave the wrapper promise clean — so they do
 // not reach here and cannot double-report. The free-function path,
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
@@ -619,14 +620,19 @@ public:
             return std::get<2>(result_);
         }
 
+        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
+        QB_MSVC_FORCEINLINE ~promise_type() {
+            detail::track_frame_destroyed(detail::handle_from_promise(*this).address());
 #ifdef QB_DEBUG_COROUTINES
-        ~promise_type() {
             QB_CORO_TRACE(coro_id_, "promise_destroyed");
-        }
 #endif
+        }
     };
 
     using handle_type = std::coroutine_handle<promise_type>;
+
+    /// What a coroutine awaiting this task waits on (suspension tracking, coroutine/tracking.h).
+    static constexpr char const *qb_suspension_kind = "task";
 
     /**
      * @brief Default-construct an empty task (null handle).
@@ -715,6 +721,10 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
+        // Suspension tracking: recorded LAST, on the cold branch (coroutine/tracking.h, track_then), once the
+        // continuation is set and before the transfer -- nothing resumes in between.
+        if (detail::tracking_on()) [[unlikely]]
+            return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
         // Symmetric transfer: return the handle to resume
         // The compiler will resume it directly without recursion
         return handle_;
@@ -918,14 +928,19 @@ public:
             return exception_ != nullptr;
         }
 
+        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
+        QB_MSVC_FORCEINLINE ~promise_type() {
+            detail::track_frame_destroyed(detail::handle_from_promise(*this).address());
 #ifdef QB_DEBUG_COROUTINES
-        ~promise_type() {
             QB_CORO_TRACE(coro_id_, "promise_destroyed");
-        }
 #endif
+        }
     };
 
     using handle_type = std::coroutine_handle<promise_type>;
+
+    /// What a coroutine awaiting this task waits on (suspension tracking, coroutine/tracking.h).
+    static constexpr char const *qb_suspension_kind = "task";
 
     /** @brief Default-construct an empty task (null handle); owns nothing. */
     task() noexcept
@@ -986,6 +1001,9 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
+        // Suspension tracking: recorded last, on the cold branch, as in task<T>::await_suspend.
+        if (detail::tracking_on()) [[unlikely]]
+            return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
         // Symmetric transfer: return the handle to resume
         return handle_;
     }
@@ -1038,8 +1056,8 @@ private:
 // forget_frame_if_current) are DEFINED in scheduler.h, which cannot be included above because it
 // needs a complete task<T>. Pulling it here -- after task<T> is complete, still inside the guard
 // -- is the position that works in BOTH orders: entering through task.h completes task<T> and
-// then scheduler.h; entering through scheduler.h reaches task.h at its line 63, and this include
-// is a no-op because scheduler.h's own guard is already set.
+// then scheduler.h; entering through scheduler.h reaches task.h at its own #include "task.h", and
+// this include is a no-op because scheduler.h's own guard is already set.
 //
 // Without it, task.h ALONE (and generator.h, which calls forget_frame_if_current and includes
 // only task.h) compiles clean and cannot link ~task<T> -- i.e. cannot destroy the very type the
