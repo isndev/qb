@@ -950,7 +950,7 @@ What to know before reading a dump:
   coroutine frame destroyed there is looked up in the name table (a hash lookup), and every frame destroyed on
   another thread reads a thread-local flag. Suspensions pay nothing for names, and a program that names nothing
   pays nothing for them: the test is the one the promise destructor already makes for the records.
-- `dump()` allocates and its cost is linear in the parked coroutines: a diagnostic, not a hot-path call.
+- `dump()` allocates and sorts the parked coroutines: a diagnostic, not a hot-path call.
 
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:337 (parked_coroutine), :611/:618 (spawn with a name), :633/:637 (set_suspension_tracking/suspension_tracking), :647/:651 (dump/dump to a stream); qb/src/qb/io/async/coroutine/tracking.h:125 (the branch), :164 (track_suspension for your own awaitable); qb/src/qb/io/async/coroutine/tracking.cpp:342 (longest waits first); qb/src/qb/core/Actor.h:1491/:1495 (spawn/spawn_detached with a name) -->
 
