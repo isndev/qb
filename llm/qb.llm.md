@@ -490,7 +490,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
   `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
   or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
-  is *Activating*. _(Actor.h:461-474)_
+  is *Activating*. The listener scheduler is bound before the first resume, so an immediate
+  `sleep(0)` or inline callback completes on the loop's next ready drain. _(Actor.h:461-474; VirtualCore.cpp:708-712)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a

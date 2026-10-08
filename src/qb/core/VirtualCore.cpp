@@ -705,10 +705,10 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
     auto h = init.handle();
     if (unlikely(!h))
         return InitOutcome::ReadyTrue; // defensive: a null task ⇒ trivially successful
-    // `task`'s initial_suspend is `suspend_always`, so the body has not run yet: resume
-    // once to reach the first `co_await` or the `co_return`. Drive the handle DIRECTLY
-    // (never `scheduler.spawn()` it) so a synchronously-ready init keeps no scheduler
-    // continuation and its frame is freed the instant the owning `task` is destroyed.
+    // `task` starts suspended. Bind the listener scheduler before the first direct
+    // resume: zero sleep or inline completion can queue during await_suspend, and
+    // the TLS fallback queue is never drained. Synchronous init keeps no continuation.
+    (void) qb::io::async::listener::current.coro_scheduler();
     h.resume();
     if (h.done()) {
         auto &p = qb::io::async::detail::promise_of(h);
@@ -731,11 +731,11 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
 
 void
 VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept {
-    // A suspended onInit is driven directly (not via scheduler.spawn), so this core may not
-    // have a coroutine scheduler yet. Its awaiters resume via schedule_via_current (e.g.
-    // qb::ask's reply/timeout delivery), which requires the TLS scheduler to exist — force
-    // it now, before any reply/timer can fire on the next iteration.
-    (void) qb::io::async::listener::current.coro_scheduler();
+    // The scheduler was bound before __drive_init__ resumed the frame, so any
+    // immediate completion is already queued for listener::run(). Keep the frame
+    // alive here until that loop drains the continuation and the activation pump
+    // observes its verdict; never resume it inline from this activation path.
+    // In particular, a ready continuation still owns the suspended init frame.
     // The actor is now Activating: gate its inbound unicast and keep its frame alive.
     actor._activated = false;
     const auto now   = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));

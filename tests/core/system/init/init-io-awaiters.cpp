@@ -11,64 +11,40 @@
  * @file system/init/init-io-awaiters.cpp
  * @brief `onInit()` may `co_await` a qb-io awaiter as its FIRST suspension.
  *
- * The other init tests all suspend on the actor surface — `qb::ask`, `ctx.sleep`, the pattern
- * library — whose awaiters resolve their scheduler at RESUME time through
- * `schedule_via_current` (scheduler.h:1206-1221). This file covers the other family: a qb-io
- * awaiter that CACHES a scheduler pointer at SUSPEND time and resumes through the cached copy
- * (`connect_awaiter`, connector.h:946-948 and 722-724; `awaiter_base`, awaiter.h:331-335 and
- * 191-193). Nothing exercised that combination, and it did not work.
+ * `__drive_init__` resumes the first `onInit()` directly. If that first suspension completes
+ * inline, `await_suspend` queues the continuation before `__begin_activation__` can run.
+ * Previously no listener scheduler was bound yet: the continuation landed on a thread-local
+ * fallback that the actor loop never drains. A positive timer/connect may mask the defect
+ * because its callback arrives after the listener scheduler is installed.
  *
- * WHAT WAS WRONG
- * --------------
- * `__drive_init__` resumes the `onInit()` frame directly and deliberately never `spawn()`s it,
- * so on the pre-loop path no coroutine scheduler was bound to the thread yet.
- * `Actor::spawn` binds one as its first act (`Actor::__resolve_coro_scheduler__`,
- * Actor.cpp:252-255) — which is why the very same `co_await` resumed normally inside `spawn()`
- * and not inside `onInit()`. Finding null, the awaiter fell back to
- * `CoroutineScheduler::current()`, which lazily creates a THREAD-LOCAL FALLBACK
- * (scheduler.h:702-703) and cached that. `__begin_activation__` then called
- * `listener::current.coro_scheduler()`, whose first call `set_current()`s the LISTENER's
- * scheduler (listener.h:890), and `listener::run()` pumps only that one (listener.h:777-778).
- * The completion callback queued the resume into the orphaned fallback and it was never drained.
- *
- * The symptom was deceptive from every angle: the awaited operation SUCCEEDED (the TCP connect
- * completed and the server saw its session), the actor never failed, and the activation deadline
- * did not reap it either — `__pump_activations__` cancels the actor's coro scope, and an awaiter
- * parked on a plain completion callback holds no cancellation token, so the frame never reached
- * `done()`. A hang with a healthy-looking connection on both ends.
+ * WHY THE FIX WORKS
+ * -----------------
+ * Bind the listener scheduler before that first resume. Keep `onInit()` owned by the activation
+ * record until a later listener turn drains its continuation; resuming inline would re-enter
+ * actor initialization and change the coroutine scheduling contract.
  *
  * WHAT IS ASSERTED
  * ----------------
  *   1. `ConnectInInit`      — `co_await async::tcp::connect<>(uri, timeout)` as the FIRST
  *                             suspension of `onInit()` resumes, and hands back an open socket.
- *   2. `SleepInInit`        — the same for `qb::io::async::sleep`, the other cached-scheduler
- *                             awaiter, so the fix is proven at the family level and not at one
- *                             call site. This is the shape AGENTS.md already warned about.
- *   3. `ConnectInSpawn`     — the control: the identical expression inside `spawn()` still works.
- *                             If the fix ever regresses to "bind only on the spawn path" this
- *                             stays green while 1 and 2 go red, which is the original bug.
- *   4. `ConnectInDynamicInit` — the `addRefActor` path, which reaches the same funnel through
+ *   2. `SleepInInit`        — positive delay, and zero/negative delay on a fresh core. The
+ *                             latter two queue during the first `await_suspend`, before
+ *                             `__begin_activation__` has a chance to run.
+ *   3. `InlineCallbackInFirstInit` — an `async_awaiter<int>` whose callback completes inline
+ *                             must resume on the loop's ready drain, not re-enter `onInit`.
+ *   4. `ConnectInSpawn`     — the control: the identical expression inside `spawn()` still works.
+ *   5. `ConnectInDynamicInit` — the `addRefActor` path, which reaches the same funnel through
  *                             `initActor()` rather than `__init__actors__()`.
+ *   6. Synchronous first init and standalone immediate awaiters remain working controls.
  *
- * Every assertion is mirrored to a post-`join()` atomic and read after `join()`.
+ * Actor assertions are mirrored to post-`join()` atomics and read after `join()`.
  *
  * HOW A REGRESSION REPORTS, MEASURED RATHER THAN ASSUMED
  * -----------------------------------------------------
- * It HANGS. That was the first thing written here as "a regression fails rather than hangs", and
- * neutralising the fix and re-running disproved it: the whole binary wedged and had to be killed.
- * The reason is the second half of the finding, and nothing in this file can route around it.
- * `WatchdogActor` broadcasts a `KillEvent`; a `KillEvent` does reach an Activating actor (the gate
- * lets it through, VirtualCore.cpp:182) and does cancel its coro scope — but a `connect_awaiter`
- * parked on a plain completion callback registers with no cancellation token, so the frame never
- * reaches `done()`, `_activating` never empties, the core never leaves `__workflow__`, and
- * `Main::join()` blocks for ever. The engine has no in-band way to end that run, which is exactly
- * why the activation deadline could not reap the original defect either.
- *
- * So the watchdog earns its place for the OTHER shapes — a subject that resumes but produces the
- * wrong value, a partial regression on one of the four paths — and the ctest `TIMEOUT` is what
- * reports a total one. That timeout is given EXPLICITLY at the call site (120 s, against a healthy
- * 23 ms) rather than inherited: the `requires-multicore` floor is 600 s, and waiting ten minutes
- * for a hang whose healthy runtime is milliseconds is a worse report, not a safer one.
+ * A lost continuation hangs in `Main::join()` because the actor remains Activating. The
+ * watchdog bounds wrong results and partial regressions; the explicit CTest TIMEOUT 120
+ * bounds a fully wedged init. The pre-fix zero, negative and inline cases each timed out
+ * under a separate three-second process watchdog; the positive/sync/standalone controls passed.
  *
  * tier=system. Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the coroutine suites.
  */
@@ -93,9 +69,10 @@ namespace init_io_awaiters_test {
 
 // Observed from inside the actors, read after join(). `resumed` is the whole question: the
 // defect left it 0 while `connected` (the peer's view) was already 1.
-std::atomic<int> g_resumed{0};
-std::atomic<int> g_socket_open{0};
-std::atomic<int> g_slept{0};
+std::atomic<int>  g_resumed{0};
+std::atomic<int>  g_socket_open{0};
+std::atomic<int>  g_slept{0};
+std::atomic<bool> g_inline_callback_returned{false};
 // Raised by the subject the moment its work is observable. The watchdog watches THIS, not the
 // clock, on the healthy path — otherwise the watchdog itself keeps its core alive for the whole
 // budget and every run costs the timeout even when nothing is wrong.
@@ -179,11 +156,43 @@ public:
 
 // 2. `sleep` as the first suspension — the same family, the shape AGENTS.md names.
 class SleepInInitActor final : public qb::Actor {
+    const qb::duration _delay;
+
+public:
+    explicit SleepInInitActor(qb::duration delay = 20ms)
+        : _delay(delay) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        co_await qb::io::async::sleep(_delay);
+        g_slept.fetch_add(1, std::memory_order_relaxed);
+        g_done.store(true, std::memory_order_release);
+        kill();
+        co_return true;
+    }
+};
+
+class InlineCallbackInInitActor final : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() final {
-        co_await qb::io::async::sleep(20ms);
-        g_slept.fetch_add(1, std::memory_order_relaxed);
+        const int value = co_await qb::io::async::async_awaiter<int>([](auto callback) {
+            callback(17);
+            g_inline_callback_returned.store(true, std::memory_order_release);
+        });
+        if (value == 17 && g_inline_callback_returned.load(std::memory_order_acquire))
+            g_resumed.fetch_add(1, std::memory_order_relaxed);
+        g_done.store(true, std::memory_order_release);
+        kill();
+        co_return true;
+    }
+};
+
+class SynchronousInitActor final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_resumed.fetch_add(1, std::memory_order_relaxed);
         g_done.store(true, std::memory_order_release);
         kill();
         co_return true;
@@ -239,6 +248,7 @@ reset_counters() {
     g_resumed.store(0, std::memory_order_relaxed);
     g_socket_open.store(0, std::memory_order_relaxed);
     g_slept.store(0, std::memory_order_relaxed);
+    g_inline_callback_returned.store(false, std::memory_order_relaxed);
     g_done.store(false, std::memory_order_release);
 }
 
@@ -276,6 +286,62 @@ TEST(InitIoAwaiters, SleepInInitResumes) {
     main.join();
 
     EXPECT_EQ(g_slept.load(std::memory_order_relaxed), 1) << "onInit() never resumed after co_await sleep(...)";
+}
+
+TEST(InitIoAwaiters, ZeroSleepInFirstInitResumes) {
+    reset_counters();
+
+    qb::Main main;
+    main.addActor<SleepInInitActor>(0, qb::duration::zero());
+    main.addActor<WatchdogActor>(1, qb::duration{15s});
+    main.start();
+    main.join();
+
+    EXPECT_EQ(g_slept.load(std::memory_order_relaxed), 1) << "zero sleep queued on an unpumped scheduler";
+}
+
+TEST(InitIoAwaiters, NegativeSleepInFirstInitResumes) {
+    reset_counters();
+
+    qb::Main main;
+    main.addActor<SleepInInitActor>(0, qb::duration{-1ms});
+    main.addActor<WatchdogActor>(1, qb::duration{15s});
+    main.start();
+    main.join();
+
+    EXPECT_EQ(g_slept.load(std::memory_order_relaxed), 1) << "negative sleep queued on an unpumped scheduler";
+}
+
+TEST(InitIoAwaiters, InlineCallbackInFirstInitResumes) {
+    reset_counters();
+
+    qb::Main main;
+    main.addActor<InlineCallbackInInitActor>(0);
+    main.addActor<WatchdogActor>(1, qb::duration{15s});
+    main.start();
+    main.join();
+
+    EXPECT_EQ(g_resumed.load(std::memory_order_relaxed), 1) << "inline callback queued on an unpumped scheduler";
+}
+
+TEST(InitIoAwaiters, SynchronousFirstInitStillCompletes) {
+    reset_counters();
+
+    qb::Main main;
+    main.addActor<SynchronousInitActor>(0);
+    main.addActor<WatchdogActor>(1, qb::duration{15s});
+    main.start();
+    main.join();
+
+    EXPECT_EQ(g_resumed.load(std::memory_order_relaxed), 1);
+}
+
+TEST(InitIoAwaiters, StandaloneImmediateAwaitersStillResume) {
+    auto operation = []() -> qb::io::async::task<int> {
+        co_await qb::io::async::sleep(qb::duration::zero());
+        co_return co_await qb::io::async::async_awaiter<int>([](auto callback) { callback(17); });
+    };
+    EXPECT_EQ(qb::io::async::run_sync(operation()), 17);
 }
 
 // --- 3. the control ----------------------------------------------------------------------

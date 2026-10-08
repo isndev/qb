@@ -163,7 +163,7 @@ qb::io::async::task<bool> onInit() override {
 
 Use `context()` rather than a bare `qb::io::async::sleep`. It returns a `qb::ScopedCoroContext` carrying this actor's cancellation scope, so a kill during init throws `cancelled_error` and unwinds the frame cleanly instead of leaving it parked (`src/qb/core/Actor.h:1499-1515`, `:2191-2195`).
 
-**The common case costs nothing.** `__drive_init__` resumes the coroutine exactly once. If it runs to `co_return` without suspending — no `co_await` anywhere — the verdict is read immediately and the frame is freed; none of the activation machinery below is entered (`src/qb/core/VirtualCore.cpp:704-730`).
+`__drive_init__` binds the core's listener scheduler before resuming `onInit()` for the first time. This lets `sleep(0)`, a negative sleep or a callback completed inline queue its continuation on the scheduler that the loop will drain (`src/qb/core/VirtualCore.cpp:708-712`). The scheduler is allocated once per core on this cold path (`src/qb/io/async/listener.h:1283-1291`). A synchronous `co_return` still frees its frame immediately and skips the activation map (`src/qb/core/VirtualCore.cpp:713-729`).
 
 ### Activating: what is deferred, what is withheld, what is not
 
