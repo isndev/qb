@@ -112,6 +112,7 @@ llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** 
 llm/qb.llm.md	VirtualCore.cpp:1266-1273	9419691a00a7	VirtualCore::time() const noexcept {
 llm/qb.llm.md	VirtualCore.cpp:1493-1512	8fb16371faf9	void
 llm/qb.llm.md	VirtualCore.cpp:1558-1586	7a659f6f6e11	void
+llm/qb.llm.md	VirtualCore.cpp:603-607	81c8e88b9cbe	// `task` starts suspended. Bind the listener scheduler before the fi...
 llm/qb.llm.md	VirtualCore.h:1113-1136	b36934211a5d	template <typename _ServiceActor>
 llm/qb.llm.md	VirtualCore.h:1574-1574	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.md	VirtualCore.h:1588-1588	0a7c96426fa0	Actor::spawn(Func &&func) const {

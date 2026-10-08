@@ -232,6 +232,12 @@ policy.
 
 ### Fixed
 
+- **A first actor's `onInit()` now resumes after an immediate qb-io await (Huly QB-271).**
+  The core binds its listener scheduler before the first coroutine resume. `sleep(0)`, a negative
+  sleep and a callback completed inline therefore queue their continuation on the scheduler
+  that the actor loop drains, instead of an orphaned thread-local fallback. Positive waits and
+  synchronous initialization keep their behavior; the scheduler is allocated once on the cold
+  first-init path, with no change to per-pass dispatch.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion
