@@ -33,6 +33,9 @@ jobs:
       - name: Install dependencies
         run: ./scripts/ci-install-linux-dependencies.sh --profile build
 
+      - name: Check static ngtcp2 link order
+        run: bash scripts/check-ngtcp2-static-link.sh
+
       # ── Mode 1: install, then find_package(qb) from a separate project ──────
       - name: Build and install qb
         run: |
