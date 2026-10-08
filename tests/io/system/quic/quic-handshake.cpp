@@ -59,6 +59,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -1456,5 +1457,83 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     EXPECT_TRUE(client_saw_finished) << "the peer (which learned the FIN through recv_stream_data_cb) must observe stream_closed(finished)";
     EXPECT_FALSE(client_synthesised) << "the peer must NOT synthesise a FIN: it already received one via recv_stream_data_cb";
 }
+
+class QuicReadStopRetransmissionTest : public ::testing::TestWithParam<bool> {};
+
+/**
+ * @test A lost packet is retransmitted intact whether the local read half stays open or stops
+ * @brief The open-read case is the packet-loss control. The stop-read case must keep
+ *        the same unacknowledged TX storage alive until ngtcp2 can retransmit it.
+ */
+TEST_P(QuicReadStopRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
+    ASSERT_TRUE(require_ssl_files());
+
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    const qb::io::endpoint server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint client_endpoint{"127.0.0.1", 54321};
+
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool       client_connected = false;
+    const auto connection_id    = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(connection_id, 0u);
+
+    const auto        stream = client->open_stream(qb::io::quic::stream_direction::bidirectional);
+    const std::string opener = "open";
+    client->send_stream_data(0, stream, std::span<const std::byte>{reinterpret_cast<const std::byte *>(opener.data()), opener.size()}, false);
+    bool server_saw_opener = false;
+    for (int i = 0; i < 64 && !server_saw_opener; ++i) {
+        deliver_quic_packets(*client, *server);
+        deliver_quic_packets(*server, *client);
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.stream_id == stream && !event.payload.empty())
+                server_saw_opener = true;
+        }
+        (void) client->drain_events();
+    }
+    ASSERT_TRUE(server_saw_opener);
+
+    const std::string payload(512, 'Q');
+    server->send_stream_data(connection_id, stream,
+                             std::span<const std::byte>{reinterpret_cast<const std::byte *>(payload.data()), payload.size()}, false);
+    auto lost_packets = server->drain_packets();
+    ASSERT_FALSE(lost_packets.empty()) << "the TX witness needs an unacknowledged packet to lose";
+    if (GetParam())
+        server->stop_stream(connection_id, stream, 0x29);
+
+    std::string received;
+    const auto  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (int i = 0; i < 12 && received.size() < payload.size() && std::chrono::steady_clock::now() < deadline; ++i) {
+        const auto expiry = server->next_timeout();
+        ASSERT_NE(expiry, std::chrono::steady_clock::time_point::max());
+        if (expiry > deadline)
+            break;
+        if (expiry > std::chrono::steady_clock::now())
+            std::this_thread::sleep_until(expiry);
+        server->on_timeout(std::chrono::steady_clock::now());
+        deliver_quic_packets(*server, *client);
+        deliver_quic_packets(*client, *server);
+        for (auto const &event : client->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.stream_id == stream) {
+                received.append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
+            }
+        }
+        (void) server->drain_events();
+    }
+
+    EXPECT_EQ(received.size(), payload.size());
+    EXPECT_TRUE(received == payload) << "retransmission used bytes from a retired TX buffer";
+}
+
+INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadStopRetransmissionTest, ::testing::Values(false, true));
 
 #endif // QB_HAS_QUIC
