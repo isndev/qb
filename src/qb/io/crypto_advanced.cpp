@@ -170,8 +170,10 @@ crypto::argon2_kdf(const std::string &password, size_t key_length, const Argon2P
     // Use higher iteration count as fallback
     int iterations = 100000; // Higher iterations to compensate for weaker memory hardness
 
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt_bytes.data(), salt_bytes.size(), iterations, EVP_sha256(), key_length,
-                          output.data())
+    // PKCS5_PBKDF2_HMAC's lengths are ints: checked, never wrapped (Huly QB-973).
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), detail::openssl_int_length(password.length(), "PBKDF2 password"), salt_bytes.data(),
+                          detail::openssl_int_length(salt_bytes.size(), "PBKDF2 salt"), iterations, EVP_sha256(),
+                          detail::openssl_int_length(key_length, "PBKDF2 key length"), output.data())
         != 1) {
         throw std::runtime_error("PBKDF2 key derivation failed (Argon2 fallback)");
     }
@@ -189,8 +191,11 @@ crypto::derive_key(const std::string &password, const std::vector<unsigned char>
             // Utiliser PKCS5_PBKDF2_HMAC au lieu de l'API EVP_PKEY
             std::vector<unsigned char> output(key_length, 0);
 
-            if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), key_length,
-                                  output.data())
+            // PKCS5_PBKDF2_HMAC's lengths are ints: a key_length past INT_MAX used to wrap and derive
+            // only its remainder into a buffer of the full size (Huly QB-973) -- checked now.
+            if (PKCS5_PBKDF2_HMAC(password.c_str(), detail::openssl_int_length(password.length(), "PBKDF2 password"), salt.data(),
+                                  detail::openssl_int_length(salt.size(), "PBKDF2 salt"), iterations, EVP_sha256(),
+                                  detail::openssl_int_length(key_length, "PBKDF2 key length"), output.data())
                 != 1) {
                 throw std::runtime_error("PBKDF2 key derivation failed");
             }
@@ -428,8 +433,8 @@ crypto::hash_password(const std::string &password, Argon2Variant variant) {
 
     // Generate the hash with PBKDF2
     std::vector<unsigned char> hash_bytes(key_length);
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), key_length,
-                          hash_bytes.data())
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), detail::openssl_int_length(password.length(), "PBKDF2 password"), salt.data(),
+                          detail::openssl_int_length(salt.size(), "PBKDF2 salt"), iterations, EVP_sha256(), key_length, hash_bytes.data())
         != 1) {
         throw std::runtime_error("PBKDF2 password hashing failed (Argon2 fallback)");
     }
@@ -524,8 +529,12 @@ crypto::verify_password(const std::string &password, const std::string &hash) {
 
     // Generate hash with the same parameters
     std::vector<unsigned char> computed_hash(stored_hash.size());
-    if (PKCS5_PBKDF2_HMAC(password.c_str(), password.length(), salt.data(), salt.size(), iterations, EVP_sha256(), stored_hash.size(),
-                          computed_hash.data())
+    constexpr auto             int_max = static_cast<std::size_t>(std::numeric_limits<int>::max());
+    if (password.length() > int_max || salt.size() > int_max || stored_hash.size() > int_max) {
+        return false; // an OpenSSL int length would wrap (Huly QB-973): not a verifiable hash
+    }
+    if (PKCS5_PBKDF2_HMAC(password.c_str(), static_cast<int>(password.length()), salt.data(), static_cast<int>(salt.size()), iterations,
+                          EVP_sha256(), static_cast<int>(stored_hash.size()), computed_hash.data())
         != 1) {
         return false;
     }
@@ -626,14 +635,14 @@ crypto::decrypt_with_metadata(const std::string &ciphertext, const std::vector<u
         // Convert metadata to bytes
         std::vector<unsigned char> metadata_bytes(metadata.begin(), metadata.end());
 
-        // Decrypt the data with metadata as AAD
-        std::vector<unsigned char> plaintext = decrypt(encrypted_data, key, iv, algorithm, metadata_bytes);
-
-        if (plaintext.empty()) {
+        // Decrypt the data with metadata as AAD. std::nullopt is an authentication failure; an empty
+        // plaintext is a valid envelope (Huly QB-346) -- decrypt() returns an empty vector for both.
+        auto plaintext = decrypt_authenticated(encrypted_data, key, iv, algorithm, metadata_bytes);
+        if (!plaintext) {
             return std::nullopt; // Authentication failed
         }
 
-        return std::make_pair(plaintext, metadata);
+        return std::make_pair(std::move(*plaintext), std::move(metadata));
 
     } catch (const std::exception &) {
         return std::nullopt; // Any exception results in decryption failure

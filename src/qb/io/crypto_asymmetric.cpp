@@ -41,6 +41,11 @@
 
 namespace qb {
 
+// Every OpenSSL handle below goes into its detail::openssl_ptr owner the line it is created, before any
+// allocation or call that may throw (Huly QB-345): the hand-written free on each error path missed every
+// throw that was not one of them -- a key_to_pem() failure, a std::vector or std::string allocation --
+// and leaked the handles it held.
+
 // Helper function for OpenSSL error handling
 static std::string
 get_openssl_asymmetric_error() {
@@ -53,49 +58,39 @@ get_openssl_asymmetric_error() {
 // Helper to convert EVP_PKEY to string
 static std::string
 key_to_pem(EVP_PKEY *pkey, bool is_private) {
-    BIO *bio = BIO_new(BIO_s_mem());
+    const detail::openssl_ptr<BIO> bio{BIO_new(BIO_s_mem())};
     if (!bio) {
         throw std::runtime_error("Failed to allocate memory for key conversion"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     int result;
     if (is_private) {
-        result = PEM_write_bio_PrivateKey(bio, pkey, NULL, NULL, 0, NULL, NULL);
+        result = PEM_write_bio_PrivateKey(bio.get(), pkey, NULL, NULL, 0, NULL, NULL);
     } else {
-        result = PEM_write_bio_PUBKEY(bio, pkey);
+        result = PEM_write_bio_PUBKEY(bio.get(), pkey);
     }
 
     if (result != 1) {
-        BIO_free(bio);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Failed to write key to PEM: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                  get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    char       *pem_ptr;
-    long        pem_size = BIO_get_mem_data(bio, &pem_ptr);
-    std::string pem_str(pem_ptr, pem_size);
-
-    BIO_free(bio);
-    return pem_str;
+    char      *pem_ptr;
+    const long pem_size = BIO_get_mem_data(bio.get(), &pem_ptr);
+    return std::string(pem_ptr, static_cast<std::size_t>(pem_size));
 }
 
 // Helper to convert PEM string to EVP_PKEY
-static EVP_PKEY *
+static detail::openssl_ptr<EVP_PKEY>
 pem_to_key(const std::string &pem_str, bool is_private) {
-    BIO *bio = BIO_new_mem_buf(pem_str.c_str(), -1);
+    const detail::openssl_ptr<BIO> bio{BIO_new_mem_buf(pem_str.c_str(), -1)};
     if (!bio) {
         throw std::runtime_error("Failed to allocate memory for key parsing"); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    EVP_PKEY *pkey;
-    if (is_private) {
-        pkey = PEM_read_bio_PrivateKey(bio, NULL, NULL, NULL);
-    } else {
-        pkey = PEM_read_bio_PUBKEY(bio, NULL, NULL, NULL);
-    }
-
-    BIO_free(bio);
-
+    detail::openssl_ptr<EVP_PKEY> pkey{
+        is_private ? PEM_read_bio_PrivateKey(bio.get(), NULL, NULL, NULL) : PEM_read_bio_PUBKEY(bio.get(), NULL, NULL, NULL)
+    };
     if (!pkey) {
         throw std::runtime_error("Failed to parse PEM key: " + get_openssl_asymmetric_error());
     }
@@ -128,6 +123,36 @@ get_raw_key_bytes(EVP_PKEY *pkey, bool is_private) {
     return key_bytes;
 }
 
+// The PEM key pair of a freshly generated key of type `type`, `configure` applied to the keygen context
+// first (the RSA bits, the EC curve). The four generate_*_keypair() below share it.
+template <typename Configure>
+static std::pair<std::string, std::string>
+generate_pem_keypair(int type, const char *name, Configure &&configure) {
+    const detail::openssl_ptr<EVP_PKEY_CTX> ctx{EVP_PKEY_CTX_new_id(type, NULL)};
+    if (!ctx) {
+        throw std::runtime_error(std::string("Failed to create ") + name + " context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (EVP_PKEY_keygen_init(ctx.get()) != 1) {
+        throw std::runtime_error(std::string("Failed to initialize ") + name + " key generation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    configure(ctx.get());
+
+    EVP_PKEY *generated = NULL;
+    if (EVP_PKEY_keygen(ctx.get(), &generated) != 1) {
+        throw std::runtime_error(std::string(name) + " key generation failed: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+    const detail::openssl_ptr<EVP_PKEY> pkey{generated};
+
+    std::string private_key_pem = key_to_pem(pkey.get(), true);
+    std::string public_key_pem  = key_to_pem(pkey.get(), false);
+    return std::make_pair(std::move(private_key_pem), std::move(public_key_pem));
+}
+
 // Implementation of RSA key pair generation (PEM format).
 // Declared in crypto.h but previously had no definition — any caller failed to
 // link. Mirrors generate_ed25519_keypair's EVP keygen + key_to_pem flow.
@@ -137,37 +162,12 @@ crypto::generate_rsa_keypair(int bits) {
         throw std::runtime_error("RSA key size must be at least 2048 bits");
     }
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-    if (!ctx) {
-        throw std::runtime_error("Failed to create RSA context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (EVP_PKEY_keygen_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize RSA key generation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to set RSA key size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    EVP_PKEY *pkey = NULL;
-    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("RSA key generation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    std::string private_key_pem = key_to_pem(pkey, true);
-    std::string public_key_pem  = key_to_pem(pkey, false);
-
-    EVP_PKEY_free(pkey);
-    EVP_PKEY_CTX_free(ctx);
-
-    return std::make_pair(private_key_pem, public_key_pem);
+    return generate_pem_keypair(EVP_PKEY_RSA, "RSA", [bits](EVP_PKEY_CTX *ctx) {
+        if (EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) != 1) {
+            throw std::runtime_error("Failed to set RSA key size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+    });
 }
 
 // Implementation of EC key pair generation (PEM format). Curve is a short name
@@ -180,72 +180,18 @@ crypto::generate_ec_keypair(const std::string &curve) {
         throw std::runtime_error("Unknown EC curve: " + curve);
     }
 
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_EC, NULL);
-    if (!ctx) {
-        throw std::runtime_error("Failed to create EC context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (EVP_PKEY_keygen_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize EC key generation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, nid) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to set EC curve: " +     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    EVP_PKEY *pkey = NULL;
-    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("EC key generation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    std::string private_key_pem = key_to_pem(pkey, true);
-    std::string public_key_pem  = key_to_pem(pkey, false);
-
-    EVP_PKEY_free(pkey);
-    EVP_PKEY_CTX_free(ctx);
-
-    return std::make_pair(private_key_pem, public_key_pem);
+    return generate_pem_keypair(EVP_PKEY_EC, "EC", [nid](EVP_PKEY_CTX *ctx) {
+        if (EVP_PKEY_CTX_set_ec_paramgen_curve_nid(ctx, nid) != 1) {
+            throw std::runtime_error("Failed to set EC curve: " +     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                     get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+        }
+    });
 }
 
 // Implementation of Ed25519 key pair generation (PEM format)
 std::pair<std::string, std::string>
 crypto::generate_ed25519_keypair() {
-    // Create key context for Ed25519
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, NULL);
-    if (!ctx) {
-        throw std::runtime_error("Failed to create Ed25519 context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize key generation operation
-    if (EVP_PKEY_keygen_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize Ed25519 key generation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Generate the key pair
-    EVP_PKEY *pkey = NULL;
-    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Ed25519 key generation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Convert to PEM format
-    std::string private_key_pem = key_to_pem(pkey, true);
-    std::string public_key_pem  = key_to_pem(pkey, false);
-
-    // Cleanup
-    EVP_PKEY_free(pkey);
-    EVP_PKEY_CTX_free(ctx);
-
-    return std::make_pair(private_key_pem, public_key_pem);
+    return generate_pem_keypair(EVP_PKEY_ED25519, "Ed25519", [](EVP_PKEY_CTX *) {});
 }
 
 // Implementation of Ed25519 key pair generation (raw bytes)
@@ -254,222 +200,97 @@ crypto::generate_ed25519_keypair_bytes() {
     // First generate the key pair in PEM format
     auto [private_key_pem, public_key_pem] = generate_ed25519_keypair();
 
-    // Convert private key to EVP_PKEY
-    EVP_PKEY *pkey = pem_to_key(private_key_pem, true);
+    const auto pkey = pem_to_key(private_key_pem, true);
+    return std::make_pair(get_raw_key_bytes(pkey.get(), true), get_raw_key_bytes(pkey.get(), false));
+}
 
-    // Extract raw key bytes
-    std::vector<unsigned char> private_key_bytes = get_raw_key_bytes(pkey, true);
-    std::vector<unsigned char> public_key_bytes  = get_raw_key_bytes(pkey, false);
+// The one-shot signature of `data` with `pkey` (Ed25519 signs the message itself, no digest).
+static std::vector<unsigned char>
+ed25519_sign_with(EVP_PKEY *pkey, const std::vector<unsigned char> &data) {
+    const detail::openssl_ptr<EVP_MD_CTX> md_ctx{EVP_MD_CTX_new()};
+    if (!md_ctx) {
+        throw std::runtime_error("Failed to create signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-    // Cleanup
-    EVP_PKEY_free(pkey);
+    if (EVP_DigestSignInit(md_ctx.get(), NULL, NULL, NULL, pkey) != 1) {
+        throw std::runtime_error("Failed to initialize signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-    return std::make_pair(private_key_bytes, public_key_bytes);
+    // Determine the signature size
+    size_t sig_len;
+    if (EVP_DigestSign(md_ctx.get(), NULL, &sig_len, data.data(), data.size()) != 1) {
+        throw std::runtime_error("Failed to determine signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    std::vector<unsigned char> signature(sig_len);
+    if (EVP_DigestSign(md_ctx.get(), signature.data(), &sig_len, data.data(), data.size()) != 1) {
+        throw std::runtime_error("Signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    // Resize to actual signature length (which might be smaller than initially allocated)
+    signature.resize(sig_len);
+    return signature;
+}
+
+// Whether `signature` is `pkey`'s Ed25519 signature of `data`.
+static bool
+ed25519_verify_with(EVP_PKEY *pkey, const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature) {
+    const detail::openssl_ptr<EVP_MD_CTX> md_ctx{EVP_MD_CTX_new()};
+    if (!md_ctx) {
+        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (EVP_DigestVerifyInit(md_ctx.get(), NULL, NULL, NULL, pkey) != 1) {
+        throw std::runtime_error("Failed to initialize verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    return EVP_DigestVerify(md_ctx.get(), signature.data(), signature.size(), data.data(), data.size()) == 1;
 }
 
 // Implementation of Ed25519 signing with PEM key
 std::vector<unsigned char>
 crypto::ed25519_sign(const std::vector<unsigned char> &data, const std::string &private_key_pem) {
-    // Parse the private key
-    EVP_PKEY *pkey = pem_to_key(private_key_pem, true);
-
-    // Create signing context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the signing operation
-    if (EVP_DigestSignInit(md_ctx, NULL, NULL, NULL, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Determine the signature size
-    size_t sig_len;
-    if (EVP_DigestSign(md_ctx, NULL, &sig_len, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Create the signature
-    std::vector<unsigned char> signature(sig_len);
-    if (EVP_DigestSign(md_ctx, signature.data(), &sig_len, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Resize to actual signature length (which might be smaller than initially
-    // allocated)
-    signature.resize(sig_len);
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return signature;
+    return ed25519_sign_with(pem_to_key(private_key_pem, true).get(), data);
 }
 
 // Implementation of Ed25519 signing with raw key bytes
 std::vector<unsigned char>
 crypto::ed25519_sign(const std::vector<unsigned char> &data, const std::vector<unsigned char> &private_key_bytes) {
-    // Create key from raw bytes
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, private_key_bytes.data(), private_key_bytes.size());
+    const detail::openssl_ptr<EVP_PKEY> pkey{EVP_PKEY_new_raw_private_key(EVP_PKEY_ED25519, NULL, private_key_bytes.data(),
+                                                                          private_key_bytes.size())};
     if (!pkey) {
         throw std::runtime_error("Failed to create key from raw bytes: " + get_openssl_asymmetric_error());
     }
-
-    // Create signing context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the signing operation
-    if (EVP_DigestSignInit(md_ctx, NULL, NULL, NULL, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Determine the signature size
-    size_t sig_len;
-    if (EVP_DigestSign(md_ctx, NULL, &sig_len, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());         // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Create the signature
-    std::vector<unsigned char> signature(sig_len);
-    if (EVP_DigestSign(md_ctx, signature.data(), &sig_len, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Resize to actual signature length
-    signature.resize(sig_len);
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return signature;
+    return ed25519_sign_with(pkey.get(), data);
 }
 
 // Implementation of Ed25519 verification with PEM key
 bool
 crypto::ed25519_verify(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature, const std::string &public_key_pem) {
-    // Parse the public key
-    EVP_PKEY *pkey = pem_to_key(public_key_pem, false);
-
-    // Create verification context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the verification operation
-    if (EVP_DigestVerifyInit(md_ctx, NULL, NULL, NULL, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Verify the signature
-    int result = EVP_DigestVerify(md_ctx, signature.data(), signature.size(), data.data(), data.size());
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return (result == 1);
+    return ed25519_verify_with(pem_to_key(public_key_pem, false).get(), data, signature);
 }
 
 // Implementation of Ed25519 verification with raw key bytes
 bool
 crypto::ed25519_verify(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature,
                        const std::vector<unsigned char> &public_key_bytes) {
-    // Create key from raw bytes
-    EVP_PKEY *pkey = EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL, public_key_bytes.data(), public_key_bytes.size());
+    const detail::openssl_ptr<EVP_PKEY> pkey{EVP_PKEY_new_raw_public_key(EVP_PKEY_ED25519, NULL, public_key_bytes.data(),
+                                                                         public_key_bytes.size())};
     if (!pkey) {
         throw std::runtime_error("Failed to create key from raw bytes: " + get_openssl_asymmetric_error());
     }
-
-    // Create verification context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the verification operation
-    if (EVP_DigestVerifyInit(md_ctx, NULL, NULL, NULL, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Verify the signature
-    int result = EVP_DigestVerify(md_ctx, signature.data(), signature.size(), data.data(), data.size());
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return (result == 1);
+    return ed25519_verify_with(pkey.get(), data, signature);
 }
 
 // Implementation of X25519 key pair generation (PEM format)
 std::pair<std::string, std::string>
 crypto::generate_x25519_keypair() {
-    // Create key context for X25519
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_X25519, NULL);
-    if (!ctx) {
-        throw std::runtime_error("Failed to create X25519 context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize key generation operation
-    if (EVP_PKEY_keygen_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize X25519 key generation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Generate the key pair
-    EVP_PKEY *pkey = NULL;
-    if (EVP_PKEY_keygen(ctx, &pkey) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("X25519 key generation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Convert to PEM format
-    std::string private_key_pem = key_to_pem(pkey, true);
-    std::string public_key_pem  = key_to_pem(pkey, false);
-
-    // Cleanup
-    EVP_PKEY_free(pkey);
-    EVP_PKEY_CTX_free(ctx);
-
-    return std::make_pair(private_key_pem, public_key_pem);
+    return generate_pem_keypair(EVP_PKEY_X25519, "X25519", [](EVP_PKEY_CTX *) {});
 }
 
 // Implementation of X25519 key pair generation (raw bytes)
@@ -478,33 +299,52 @@ crypto::generate_x25519_keypair_bytes() {
     // First generate the key pair in PEM format
     auto [private_key_pem, public_key_pem] = generate_x25519_keypair();
 
-    // Convert private key to EVP_PKEY
-    EVP_PKEY *pkey = pem_to_key(private_key_pem, true);
+    const auto pkey = pem_to_key(private_key_pem, true);
+    return std::make_pair(get_raw_key_bytes(pkey.get(), true), get_raw_key_bytes(pkey.get(), false));
+}
 
-    // Extract raw key bytes
-    std::vector<unsigned char> private_key_bytes = get_raw_key_bytes(pkey, true);
-    std::vector<unsigned char> public_key_bytes  = get_raw_key_bytes(pkey, false);
+// The shared secret of `priv_key` with `pub_key` (whose types the caller has made agree).
+static std::vector<unsigned char>
+derive_shared_secret(EVP_PKEY *priv_key, EVP_PKEY *pub_key) {
+    const detail::openssl_ptr<EVP_PKEY_CTX> ctx{EVP_PKEY_CTX_new(priv_key, NULL)};
+    if (!ctx) {
+        throw std::runtime_error("Failed to create key exchange context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-    // Cleanup
-    EVP_PKEY_free(pkey);
+    if (EVP_PKEY_derive_init(ctx.get()) != 1) {
+        throw std::runtime_error("Failed to initialize key derivation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
 
-    return std::make_pair(private_key_bytes, public_key_bytes);
+    if (EVP_PKEY_derive_set_peer(ctx.get(), pub_key) != 1) {
+        throw std::runtime_error("Failed to set peer key: " + get_openssl_asymmetric_error());
+    }
+
+    // Determine buffer length for shared secret
+    size_t secret_len;
+    if (EVP_PKEY_derive(ctx.get(), NULL, &secret_len) != 1) {
+        throw std::runtime_error("Failed to determine shared secret length: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    std::vector<unsigned char> shared_secret(secret_len);
+    if (EVP_PKEY_derive(ctx.get(), shared_secret.data(), &secret_len) != 1) {
+        throw std::runtime_error("Key derivation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    // Resize to actual secret length
+    shared_secret.resize(secret_len);
+    return shared_secret;
 }
 
 // Implementation of X25519 key exchange with PEM keys
 std::vector<unsigned char>
 crypto::x25519_key_exchange(const std::string &private_key_pem, const std::string &peer_public_key_pem) {
-    // Parse the keys. priv_key is allocated first; if parsing the peer key throws
-    // (e.g. an incompatible / malformed PEM), free priv_key before propagating so it
-    // does not leak.
-    EVP_PKEY *priv_key = pem_to_key(private_key_pem, true);
-    EVP_PKEY *pub_key  = nullptr;
-    try {
-        pub_key = pem_to_key(peer_public_key_pem, false);
-    } catch (...) {
-        EVP_PKEY_free(priv_key);
-        throw;
-    }
+    // Parse the keys. Both are owned, so a malformed peer PEM throwing after the private key parsed
+    // leaks nothing.
+    const auto priv_key = pem_to_key(private_key_pem, true);
+    const auto pub_key  = pem_to_key(peer_public_key_pem, false);
 
     // Reject a peer key of the wrong ALGORITHM here, before OpenSSL ever sees it.
     //
@@ -532,138 +372,30 @@ crypto::x25519_key_exchange(const std::string &private_key_pem, const std::strin
     // The raw-bytes overload below needs no equivalent guard: it builds BOTH keys itself with
     // EVP_PKEY_new_raw_{private,public}_key(EVP_PKEY_X25519, ...), so the types match by
     // construction and a wrong-algorithm peer cannot be expressed.
-    if (EVP_PKEY_base_id(priv_key) != EVP_PKEY_base_id(pub_key)) {
-        EVP_PKEY_free(priv_key);
-        EVP_PKEY_free(pub_key);
+    if (EVP_PKEY_base_id(priv_key.get()) != EVP_PKEY_base_id(pub_key.get())) {
         throw std::runtime_error("x25519_key_exchange: peer public key algorithm does not match the private key's");
     }
 
-    // Create key exchange context
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(priv_key, NULL);
-    if (!ctx) {
-        EVP_PKEY_free(priv_key);                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create key exchange context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize key derivation
-    if (EVP_PKEY_derive_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize key derivation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Set peer key
-    if (EVP_PKEY_derive_set_peer(ctx, pub_key) != 1) {
-        EVP_PKEY_CTX_free(ctx);
-        EVP_PKEY_free(priv_key);
-        EVP_PKEY_free(pub_key);
-        throw std::runtime_error("Failed to set peer key: " + get_openssl_asymmetric_error());
-    }
-
-    // Determine buffer length for shared secret
-    size_t secret_len;
-    if (EVP_PKEY_derive(ctx, NULL, &secret_len) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine shared secret length: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Derive the shared secret
-    std::vector<unsigned char> shared_secret(secret_len);
-    if (EVP_PKEY_derive(ctx, shared_secret.data(), &secret_len) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Key derivation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Resize to actual secret length
-    shared_secret.resize(secret_len);
-
-    // Cleanup
-    EVP_PKEY_CTX_free(ctx);
-    EVP_PKEY_free(priv_key);
-    EVP_PKEY_free(pub_key);
-
-    return shared_secret;
+    return derive_shared_secret(priv_key.get(), pub_key.get());
 }
 
 // Implementation of X25519 key exchange with raw key bytes
 std::vector<unsigned char>
 crypto::x25519_key_exchange(const std::vector<unsigned char> &private_key_bytes, const std::vector<unsigned char> &peer_public_key_bytes) {
     // Create keys from raw bytes
-    EVP_PKEY *priv_key = EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL, private_key_bytes.data(), private_key_bytes.size());
+    const detail::openssl_ptr<EVP_PKEY> priv_key{EVP_PKEY_new_raw_private_key(EVP_PKEY_X25519, NULL, private_key_bytes.data(),
+                                                                              private_key_bytes.size())};
     if (!priv_key) {
         throw std::runtime_error("Failed to create private key from raw bytes: " + get_openssl_asymmetric_error());
     }
 
-    EVP_PKEY *pub_key = EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, NULL, peer_public_key_bytes.data(), peer_public_key_bytes.size());
+    const detail::openssl_ptr<EVP_PKEY> pub_key{EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, NULL, peer_public_key_bytes.data(),
+                                                                            peer_public_key_bytes.size())};
     if (!pub_key) {
-        EVP_PKEY_free(priv_key);
         throw std::runtime_error("Failed to create public key from raw bytes: " + get_openssl_asymmetric_error());
     }
 
-    // Create key exchange context
-    EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new(priv_key, NULL);
-    if (!ctx) {
-        EVP_PKEY_free(priv_key);                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create key exchange context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize key derivation
-    if (EVP_PKEY_derive_init(ctx) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize key derivation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Set peer key
-    if (EVP_PKEY_derive_set_peer(ctx, pub_key) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to set peer key: " +     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Determine buffer length for shared secret
-    size_t secret_len;
-    if (EVP_PKEY_derive(ctx, NULL, &secret_len) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine shared secret length: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Derive the shared secret
-    std::vector<unsigned char> shared_secret(secret_len);
-    if (EVP_PKEY_derive(ctx, shared_secret.data(), &secret_len) != 1) {
-        EVP_PKEY_CTX_free(ctx);                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(priv_key);                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pub_key);                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Key derivation failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Resize to actual secret length
-    shared_secret.resize(secret_len);
-
-    // Cleanup
-    EVP_PKEY_CTX_free(ctx);
-    EVP_PKEY_free(priv_key);
-    EVP_PKEY_free(pub_key);
-
-    return shared_secret;
+    return derive_shared_secret(priv_key.get(), pub_key.get());
 }
 
 // Implementation of ECIES encryption with raw key bytes
@@ -764,232 +496,103 @@ crypto::ecies_decrypt(const std::vector<unsigned char> &encrypted_data, const st
     return decrypted_data;
 }
 
-// Implementation of RSA signature
-std::vector<unsigned char>
-crypto::rsa_sign(const std::vector<unsigned char> &data, const std::string &private_key, DigestAlgorithm digest) {
-    // Parse the private key from PEM format
-    EVP_PKEY *pkey = pem_to_key(private_key, true);
+// The digest signature of `data` with the PEM private key, `name` ("RSA", "EC") in the messages. The key
+// is parsed first, so a malformed PEM is reported before an invalid digest, as before.
+static std::vector<unsigned char>
+digest_sign_pem(const std::vector<unsigned char> &data, const std::string &private_key, crypto::DigestAlgorithm digest, const char *name) {
+    const auto pkey = pem_to_key(private_key, true);
 
-    // Get the EVP_MD for the digest algorithm
-    const EVP_MD *md = get_evp_md(digest);
+    const EVP_MD *md = crypto::get_evp_md(digest);
     if (!md) {
-        EVP_PKEY_free(pkey);
-        throw std::runtime_error("Invalid digest algorithm for RSA signing");
+        throw std::runtime_error(std::string("Invalid digest algorithm for ") + name + " signing");
     }
 
-    // Create signature context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
+    const detail::openssl_ptr<EVP_MD_CTX> md_ctx{EVP_MD_CTX_new()};
     if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
         throw std::runtime_error("Failed to create signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
                                  get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    // Initialize the signing operation
-    if (EVP_DigestSignInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize RSA signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (EVP_DigestSignInit(md_ctx.get(), nullptr, md, nullptr, pkey.get()) != 1) {
+        throw std::runtime_error(std::string("Failed to initialize ") + name + " signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    // Update the context with the data to be signed
-    if (EVP_DigestSignUpdate(md_ctx, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to update RSA signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (EVP_DigestSignUpdate(md_ctx.get(), data.data(), data.size()) != 1) {
+        throw std::runtime_error(std::string("Failed to update ") + name + " signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    // Determine the signature size
     size_t sig_len = 0;
-    if (EVP_DigestSignFinal(md_ctx, nullptr, &sig_len) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                  // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine RSA signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (EVP_DigestSignFinal(md_ctx.get(), nullptr, &sig_len) != 1) {
+        throw std::runtime_error(std::string("Failed to determine ") + name + " signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                   // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
-    // Allocate memory for the signature
     std::vector<unsigned char> signature(sig_len);
-
-    // Get the signature
-    if (EVP_DigestSignFinal(md_ctx, signature.data(), &sig_len) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("RSA signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (EVP_DigestSignFinal(md_ctx.get(), signature.data(), &sig_len) != 1) {
+        throw std::runtime_error(std::string(name) + " signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
 
     // Resize to actual signature length
     signature.resize(sig_len);
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
     return signature;
+}
+
+// Whether `signature` is the digest signature of `data` by the PEM public key, `name` in the messages.
+static bool
+digest_verify_pem(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature, const std::string &public_key,
+                  crypto::DigestAlgorithm digest, const char *name) {
+    const auto pkey = pem_to_key(public_key, false);
+
+    const EVP_MD *md = crypto::get_evp_md(digest);
+    if (!md) {
+        throw std::runtime_error(std::string("Invalid digest algorithm for ") + name + " verification");
+    }
+
+    const detail::openssl_ptr<EVP_MD_CTX> md_ctx{EVP_MD_CTX_new()};
+    if (!md_ctx) {
+        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (EVP_DigestVerifyInit(md_ctx.get(), nullptr, md, nullptr, pkey.get()) != 1) {
+        throw std::runtime_error(std::string("Failed to initialize ") + name + " verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    if (EVP_DigestVerifyUpdate(md_ctx.get(), data.data(), data.size()) != 1) {
+        throw std::runtime_error(std::string("Failed to update ") + name + " verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+                                 get_openssl_asymmetric_error());                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    }
+
+    return EVP_DigestVerifyFinal(md_ctx.get(), signature.data(), signature.size()) == 1;
+}
+
+// Implementation of RSA signature
+std::vector<unsigned char>
+crypto::rsa_sign(const std::vector<unsigned char> &data, const std::string &private_key, DigestAlgorithm digest) {
+    return digest_sign_pem(data, private_key, digest, "RSA");
 }
 
 // Implementation of RSA verification
 bool
 crypto::rsa_verify(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature, const std::string &public_key,
                    DigestAlgorithm digest) {
-    // Parse the public key from PEM format
-    EVP_PKEY *pkey = pem_to_key(public_key, false);
-
-    // Get the EVP_MD for the digest algorithm
-    const EVP_MD *md = get_evp_md(digest);
-    if (!md) {
-        EVP_PKEY_free(pkey);
-        throw std::runtime_error("Invalid digest algorithm for RSA verification");
-    }
-
-    // Create verification context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the verification operation
-    if (EVP_DigestVerifyInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize RSA verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Update the context with the data to be verified
-    if (EVP_DigestVerifyUpdate(md_ctx, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to update RSA verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Verify the signature
-    int result = EVP_DigestVerifyFinal(md_ctx, signature.data(), signature.size());
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return (result == 1);
+    return digest_verify_pem(data, signature, public_key, digest, "RSA");
 }
 
 // Implementation of EC signature
 std::vector<unsigned char>
 crypto::ec_sign(const std::vector<unsigned char> &data, const std::string &private_key, DigestAlgorithm digest) {
-    // Parse the private key from PEM format
-    EVP_PKEY *pkey = pem_to_key(private_key, true);
-
-    // Get the EVP_MD for the digest algorithm
-    const EVP_MD *md = get_evp_md(digest);
-    if (!md) {
-        EVP_PKEY_free(pkey);
-        throw std::runtime_error("Invalid digest algorithm for EC signing");
-    }
-
-    // Create signature context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());       // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the signing operation
-    if (EVP_DigestSignInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize EC signing operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Update the context with the data to be signed
-    if (EVP_DigestSignUpdate(md_ctx, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                           // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to update EC signing context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Determine the signature size
-    size_t sig_len = 0;
-    if (EVP_DigestSignFinal(md_ctx, nullptr, &sig_len) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                             // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to determine EC signature size: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Allocate memory for the signature
-    std::vector<unsigned char> signature(sig_len);
-
-    // Get the signature
-    if (EVP_DigestSignFinal(md_ctx, signature.data(), &sig_len) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                              // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("EC signing failed: " + get_openssl_asymmetric_error()); // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Resize to actual signature length
-    signature.resize(sig_len);
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return signature;
+    return digest_sign_pem(data, private_key, digest, "EC");
 }
 
 // Implementation of EC verification
 bool
 crypto::ec_verify(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature, const std::string &public_key,
                   DigestAlgorithm digest) {
-    // Parse the public key from PEM format
-    EVP_PKEY *pkey = pem_to_key(public_key, false);
-
-    // Get the EVP_MD for the digest algorithm
-    const EVP_MD *md = get_evp_md(digest);
-    if (!md) {
-        EVP_PKEY_free(pkey);
-        throw std::runtime_error("Invalid digest algorithm for EC verification");
-    }
-
-    // Create verification context
-    EVP_MD_CTX *md_ctx = EVP_MD_CTX_new();
-    if (!md_ctx) {
-        EVP_PKEY_free(pkey);                                                 // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to create verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());            // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Initialize the verification operation
-    if (EVP_DigestVerifyInit(md_ctx, nullptr, md, nullptr, pkey) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                      // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                          // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to initialize EC verification operation: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());                     // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Update the context with the data to be verified
-    if (EVP_DigestVerifyUpdate(md_ctx, data.data(), data.size()) != 1) {
-        EVP_MD_CTX_free(md_ctx);                                                // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        EVP_PKEY_free(pkey);                                                    // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-        throw std::runtime_error("Failed to update EC verification context: " + // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-                                 get_openssl_asymmetric_error());               // LCOV_EXCL_LINE GCOVR_EXCL_LINE
-    }
-
-    // Verify the signature
-    int result = EVP_DigestVerifyFinal(md_ctx, signature.data(), signature.size());
-
-    // Cleanup
-    EVP_MD_CTX_free(md_ctx);
-    EVP_PKEY_free(pkey);
-
-    return (result == 1);
+    return digest_verify_pem(data, signature, public_key, digest, "EC");
 }
 
 } // namespace qb

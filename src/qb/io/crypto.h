@@ -60,17 +60,126 @@
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
 #endif
+#include <cstddef>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <array>
 
 #undef hex_to_string
 
 namespace qb {
+
+#ifdef QB_HAS_SSL
+namespace detail {
+
+/**
+ * @brief The largest length one call of an OpenSSL function with an `int` length may receive.
+ *
+ * `EVP_EncryptUpdate`, `EVP_DecryptUpdate`, `RAND_bytes`, `BIO_write`, `BIO_read`, `BIO_new_mem_buf`,
+ * `PKCS5_PBKDF2_HMAC` ... take an `int` length while qb's buffers are `size_t`. Handed over unchecked, a
+ * length wraps modulo 2^32: 4 GiB + k became k and the call SUCCEEDED on k bytes -- an AEAD ciphertext of
+ * a 17-byte prefix with a valid tag, a random buffer left zero past its first bytes (Huly QB-973, QB-344).
+ * Every such call in qb goes through for_each_openssl_chunk() or openssl_int_length() below.
+ *
+ * INT_MAX rounded down to a multiple of 64: a chunk is a whole number of blocks for every block size
+ * OpenSSL's ciphers and digests use, so a chunked update never splits a block it would have to buffer.
+ */
+inline constexpr std::size_t openssl_max_chunk = static_cast<std::size_t>(std::numeric_limits<int>::max()) & ~std::size_t{63};
+
+/**
+ * @brief Hands [0, total) to an OpenSSL call that takes an `int` length, one chunk at a time.
+ * @param total     The number of bytes to hand over.
+ * @param step      Called as `step(std::size_t offset, int length)` for each consecutive chunk, in order;
+ *                  returns false to stop (an OpenSSL failure).
+ * @param max_chunk The chunk bound, at most openssl_max_chunk (a smaller one exists for the tests).
+ * @return true once every byte was handed over (immediately, with no call, when @p total is 0); false
+ *         as soon as @p step returned false.
+ */
+template <typename Step>
+constexpr bool
+for_each_openssl_chunk(std::size_t total, Step &&step, std::size_t max_chunk = openssl_max_chunk) {
+    const std::size_t bound = max_chunk == 0 || max_chunk > openssl_max_chunk ? openssl_max_chunk : max_chunk;
+    for (std::size_t offset = 0; offset < total;) {
+        const std::size_t length = total - offset < bound ? total - offset : bound;
+        if (!step(offset, static_cast<int>(length)))
+            return false;
+        offset += length;
+    }
+    return true;
+}
+
+/**
+ * @brief A length for an OpenSSL call that cannot be split (a key, a salt, a one-shot derivation).
+ * @throws std::length_error naming @p what when @p length exceeds INT_MAX -- never a wrapped value.
+ */
+inline int
+openssl_int_length(std::size_t length, const char *what) {
+    if (length > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::length_error(std::string(what) + ": length exceeds INT_MAX, the limit of OpenSSL's int-length API");
+    return static_cast<int>(length);
+}
+
+/**
+ * @brief The deleter of every OpenSSL handle qb owns.
+ *
+ * Each handle goes into its owner the line it is created, before any allocation that may throw (Huly
+ * QB-345: a `std::vector` allocated between a raw `EVP_CIPHER_CTX_new()` and the `try` that freed it
+ * leaked the context on `bad_alloc`). One stateless functor overloaded per type: no function-pointer
+ * member, and no function address in a constant expression, which an OpenSSL imported from a DLL
+ * (`__declspec(dllimport)`) does not allow on MSVC.
+ */
+struct openssl_free {
+    void
+    operator()(EVP_CIPHER_CTX *p) const noexcept {
+        EVP_CIPHER_CTX_free(p);
+    }
+    void
+    operator()(EVP_MD_CTX *p) const noexcept {
+        EVP_MD_CTX_free(p);
+    }
+    void
+    operator()(EVP_PKEY *p) const noexcept {
+        EVP_PKEY_free(p);
+    }
+    void
+    operator()(EVP_PKEY_CTX *p) const noexcept {
+        EVP_PKEY_CTX_free(p);
+    }
+    void
+    operator()(EVP_MAC *p) const noexcept {
+        EVP_MAC_free(p);
+    }
+    void
+    operator()(EVP_MAC_CTX *p) const noexcept {
+        EVP_MAC_CTX_free(p);
+    }
+    void
+    operator()(BIO *p) const noexcept {
+        BIO_free_all(p);
+    } ///< a chain is owned by its head
+    void
+    operator()(ECDSA_SIG *p) const noexcept {
+        ECDSA_SIG_free(p);
+    }
+    void
+    operator()(BIGNUM *p) const noexcept {
+        BN_free(p);
+    }
+};
+
+/** @brief An owned OpenSSL handle: `openssl_ptr<EVP_PKEY> key{EVP_PKEY_new()};`. */
+template <typename T>
+using openssl_ptr = std::unique_ptr<T, openssl_free>;
+
+} // namespace detail
+#endif // QB_HAS_SSL
 
 #if _MSC_VER == 1700 // MSVS 2012 has no definition for round()
 /**
@@ -127,23 +236,31 @@ public:
     /** @brief Character range for lowercase hexadecimal values (0-9, a-f) */
     constexpr static const std::string_view range_hex_lower = "0123456789abcdef";
 
-    /** @brief Character range for binary bytes (0-255) */
-    constexpr static const std::string_view range_byte = "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F"
-                                                         "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
-                                                         "\x20\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2A\x2B\x2C\x2D\x2E\x2F"
-                                                         "\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x3A\x3B\x3C\x3D\x3E\x3F"
-                                                         "\x40\x41\x42\x43\x44\x45\x46\x47\x48\x49\x4A\x4B\x4C\x4D\x4E\x4F"
-                                                         "\x50\x51\x52\x53\x54\x55\x56\x57\x58\x59\x5A\x5B\x5C\x5D\x5E\x5F"
-                                                         "\x60\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6A\x6B\x6C\x6D\x6E\x6F"
-                                                         "\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E\x7F"
-                                                         "\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8A\x8B\x8C\x8D\x8E\x8F"
-                                                         "\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9A\x9B\x9C\x9D\x9E\x9F"
-                                                         "\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF"
-                                                         "\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\xBB\xBC\xBD\xBE\xBF"
-                                                         "\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\xCE\xCF"
-                                                         "\xD0\xD1\xD2\xD3\xD4\xD5\xD6\xD7\xD8\xD9\xDA\xDB\xDC\xDD\xDE\xDF"
-                                                         "\xE0\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF"
-                                                         "\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF";
+    /**
+     * @brief Character range for binary bytes (0-255)
+     *
+     * Its first character is a NUL, so the view is built with its explicit length: the `const char *`
+     * constructor stops at the first NUL and left this alphabet EMPTY (Huly QB-342).
+     */
+    constexpr static const std::string_view range_byte{
+        "\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F"
+        "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F"
+        "\x20\x21\x22\x23\x24\x25\x26\x27\x28\x29\x2A\x2B\x2C\x2D\x2E\x2F"
+        "\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x3A\x3B\x3C\x3D\x3E\x3F"
+        "\x40\x41\x42\x43\x44\x45\x46\x47\x48\x49\x4A\x4B\x4C\x4D\x4E\x4F"
+        "\x50\x51\x52\x53\x54\x55\x56\x57\x58\x59\x5A\x5B\x5C\x5D\x5E\x5F"
+        "\x60\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6A\x6B\x6C\x6D\x6E\x6F"
+        "\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7A\x7B\x7C\x7D\x7E\x7F"
+        "\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8A\x8B\x8C\x8D\x8E\x8F"
+        "\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9A\x9B\x9C\x9D\x9E\x9F"
+        "\xA0\xA1\xA2\xA3\xA4\xA5\xA6\xA7\xA8\xA9\xAA\xAB\xAC\xAD\xAE\xAF"
+        "\xB0\xB1\xB2\xB3\xB4\xB5\xB6\xB7\xB8\xB9\xBA\xBB\xBC\xBD\xBE\xBF"
+        "\xC0\xC1\xC2\xC3\xC4\xC5\xC6\xC7\xC8\xC9\xCA\xCB\xCC\xCD\xCE\xCF"
+        "\xD0\xD1\xD2\xD3\xD4\xD5\xD6\xD7\xD8\xD9\xDA\xDB\xDC\xDD\xDE\xDF"
+        "\xE0\xE1\xE2\xE3\xE4\xE5\xE6\xE7\xE8\xE9\xEA\xEB\xEC\xED\xEE\xEF"
+        "\xF0\xF1\xF2\xF3\xF4\xF5\xF6\xF7\xF8\xF9\xFA\xFB\xFC\xFD\xFE\xFF",
+        256
+    };
 
     /** @brief Supported symmetric cipher algorithms */
     enum class SymmetricAlgorithm { AES_128_CBC, AES_192_CBC, AES_256_CBC, AES_128_GCM, AES_192_GCM, AES_256_GCM, CHACHA20_POLY1305 };
@@ -178,37 +295,44 @@ public:
      * Creates a random string of the specified length using only characters
      * from the provided range.
      *
-     * @tparam T The type of the character range
+     * @tparam T The type of the character range (`size()` and `operator[]`: std::string_view,
+     *           std::string, std::array<char, N> ...; a C array or a string literal takes the overload below)
      * @param len The length of the random string to generate
      * @param range The range of characters to use in the string
      * @return A random string of the specified length
+     * @throws std::invalid_argument if @p range is empty, as generate_secure_random_string() does
+     *         (an empty range used to build `uniform_int_distribution{0, SIZE_MAX}` and read past it)
      */
     template <typename T>
     static std::string
     generate_random_string(std::size_t len, T const &range) {
+        if (range.size() == 0)
+            throw std::invalid_argument("Character range cannot be empty");
         thread_local auto rng    = random_generator<>();
-        auto              dist   = std::uniform_int_distribution{{}, range.size() - 1};
+        auto              dist   = std::uniform_int_distribution<std::size_t>{0, range.size() - 1};
         auto              result = std::string(len, '\0');
         std::generate_n(std::begin(result), len, [&]() { return range[dist(rng)]; });
         return result;
     }
 
     /**
-     * @brief Generate a random string using characters from the specified array
+     * @brief Generate a random string using characters from a character array or a string literal
      *
-     * Creates a random string of the specified length using only characters
-     * from the provided array.
+     * The array is taken by reference, so its extent is known: every character is in the alphabet,
+     * except a trailing NUL, which is read as a literal's terminator and dropped (`"abc"` is the
+     * three-letter alphabet). It used to take `const T range[N]` -- adjusted to a pointer, `N` never
+     * deduced, not even `static` -- so the call it documents did not compile (Huly QB-343).
      *
-     * @tparam T The type of the character array elements
-     * @tparam N The size of the character array
+     * @tparam N The extent of the character array
      * @param len The length of the random string to generate
      * @param range The array of characters to use in the string
      * @return A random string of the specified length
+     * @throws std::invalid_argument if the alphabet is empty (`""`)
      */
-    template <typename T, std::size_t N>
-    std::string
-    generate_random_string(std::size_t len, const T range[N]) {
-        return generate_random_string(len, std::string_view(range, sizeof(range) - 1));
+    template <std::size_t N>
+    static std::string
+    generate_random_string(std::size_t len, const char (&range)[N]) {
+        return generate_random_string(len, std::string_view(range, N - (range[N - 1] == '\0' ? 1 : 0)));
     }
 
 #ifdef QB_HAS_SSL
@@ -998,6 +1122,21 @@ public:
                                                     const std::vector<unsigned char> &recipient_private_key,
                                                     const std::vector<unsigned char> &optional_shared_info = {},
                                                     ECIESMode                         mode                 = ECIESMode::AES_GCM);
+
+private:
+    /**
+     * @brief decrypt()'s body, with an AEAD authentication failure kept apart from an empty plaintext
+     *
+     * decrypt() returns an empty vector for both, which is its documented contract; the metadata envelope
+     * needs the difference -- read as a failure, an authentic envelope over an empty plaintext never
+     * opened (Huly QB-346).
+     * @return The plaintext (possibly empty), or std::nullopt when AEAD authentication failed; every other
+     *         failure throws, exactly as decrypt() does.
+     */
+    static std::optional<std::vector<unsigned char>> decrypt_authenticated(const std::vector<unsigned char> &ciphertext,
+                                                                           const std::vector<unsigned char> &key,
+                                                                           const std::vector<unsigned char> &iv, SymmetricAlgorithm algorithm,
+                                                                           const std::vector<unsigned char> &aad);
 #endif // QB_HAS_SSL
 };
 } // namespace qb

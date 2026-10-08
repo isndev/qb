@@ -448,6 +448,51 @@ policy.
   default transport and `false` -- when the hook extracted or replaced it. `registerSession()` likewise returns
   `nullptr` when its server's `on(session&)` hook took the session away, instead of a pointer to a session that died
   as the call returned.
+- **AEAD encryption of 4 GiB or more no longer encrypts only a fraction of it, and every other `int` length
+  `qb::crypto` hands OpenSSL is checked (Huly QB-973, QB-344).** OpenSSL's update functions, `RAND_bytes`, the base64
+  BIO calls and `PKCS5_PBKDF2_HMAC` take an `int` length and qb passed its `size_t` sizes unchecked, so they wrapped
+  modulo 2^32: `encrypt()` of 4 GiB + 17 bytes returned the AES-GCM ciphertext of 17 bytes with a valid tag
+  (measured: 33 bytes out, no error), `generate_random_bytes()` / `secure_random_fill()` past 4 GiB left the buffer
+  zero beyond its first bytes, and the base64 codecs failed past INT_MAX. Every such call now goes through one
+  helper, `qb::detail::for_each_openssl_chunk`: `encrypt()` / `decrypt()` feed their AAD and data a chunk of whole
+  blocks at a time (one cipher stream, so the output is the same), `RAND_bytes` fills a chunk at a time, the base64
+  encoders write with `EVP_EncodeBlock` straight into the result -- the memory BIO they used could not grow past
+  ~1.6 GB at all -- and the decoders read a chunk of whole quanta at a time. A length that cannot be split (the
+  PBKDF2 password, salt and key length -- `derive_key()` past INT_MAX used to derive the remainder into a full-size
+  buffer --, an HMAC key) throws `std::length_error` instead of wrapping, `pbkdf2()` (noexcept) returning its empty
+  failure result and `verify_password()` false. `decrypt()` no longer copies the ciphertext. Below INT_MAX nothing
+  changes. Proven by opt-in multi-GiB cases (`CryptoBeyondIntMax.*`, run by name with
+  `--gtest_also_run_disabled_tests`; ~13 GB of memory), red on the old code and green on MSVC and g++, and by an
+  always-on test of the chunking.
+- **No OpenSSL handle of `qb::crypto` leaks when an allocation or a nested call throws (Huly QB-345).**
+  `encrypt()`, `decrypt()` and some fifteen asymmetric paths -- Ed25519 / X25519 / RSA / EC key generation, sign,
+  verify and exchange, the JWT ECDSA signature conversions -- held raw contexts and keys while allocating a
+  `std::vector` or calling a helper that throws (`key_to_pem`), and freed them by hand on the error paths they knew
+  about. Every handle is now owned (`qb::detail::openssl_ptr`) from the line it is created. qb has no
+  allocation-failure hook to witness the leak: the proof is the review and the suites clean under ASan/LSan.
+- **`crypto::range_byte` holds the 256 byte values, and `generate_random_string` refuses an empty alphabet
+  (Huly QB-342).** The alphabet was built with `std::string_view`'s `const char *` constructor and its first
+  character is a NUL: it was empty, so `generate_secure_random_string(n, range_byte)` threw and
+  `generate_random_string(n, range_byte)` indexed past it (an access violation on MSVC, a null-pointer offset
+  under UBSan). The plain generator now throws `std::invalid_argument` on an empty alphabet, as the secure one does.
+- **`generate_random_string` accepts a string literal or a character array (Huly QB-343).** The documented array
+  overload took `const T range[N]` -- a pointer, `N` never deduced, not even `static` -- so no such call compiled.
+  It is now `static`, takes the array by reference and draws from every element but a literal's terminating NUL.
+- **`decrypt_with_metadata` opens an envelope sealed over an empty plaintext (Huly QB-346).** `decrypt()` returns
+  an empty vector both for an AEAD authentication failure and for an empty plaintext, and the envelope read every
+  empty result as a failure: what `encrypt_with_metadata` had just sealed never opened. It now tells the two apart;
+  a wrong key or a tampered metadata still fails. `decrypt()`'s own contract is unchanged.
+- **A JWT `nbf` or `exp` above INT64_MAX is `INVALID_FORMAT`, not a negative date (Huly QB-348).** nlohmann's
+  `is_number_integer()` is also true for an unsigned value and was tested first, so `nbf: 18446744073709551615`
+  was read as -1 and a far-future not-before passed as already active (`verify_not_before` is on by default).
+  Unsigned is read first now, and a value past INT64_MAX fails closed.
+- **`jwt::verify` and `jwt::decode` take exactly three non-empty segments (Huly QB-349).** The `std::getline` split
+  dropped a final empty field, so a valid token with one more `.` still verified, and an empty header or payload
+  got past the format check. Such tokens are now `INVALID_FORMAT` (`decode` throws `std::runtime_error`).
+- **`qb::to_number_prefix` reads one sign, as `strtol` does (Huly QB-359).** It skipped a leading `+` and let
+  `std::from_chars` accept the `-` after it: `"+-7"` parsed as -7, all three bytes consumed. It is now no conversion
+  (`std::nullopt`). Reached through the JWT string NumericDate, qbm-http's parameter validator and the pgsql text
+  decoders.
 
 ### Documentation
 

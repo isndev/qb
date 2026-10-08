@@ -640,6 +640,45 @@ TEST(CryptoJWT, DecodeAndVerifyRejectMalformedTokens) {
     EXPECT_EQ(jwt::verify(invalid_payload, verify_options).error, jwt::ValidationError::INVALID_FORMAT);
 }
 
+// The compact serialization is exactly three non-empty segments (Huly QB-349). The getline split
+// dropped a final empty field, so a valid token with one more '.' still split into three parts and
+// VERIFIED (the bytes the signature covers were unchanged), and an empty header or payload segment
+// reached the decoders instead of the format check.
+TEST(CryptoJWT, CompactFormIsExactlyThreeNonEmptySegments) {
+    jwt::CreateOptions create_options;
+    create_options.algorithm = jwt::Algorithm::HS256;
+    create_options.key       = "secret";
+    jwt::VerifyOptions verify_options;
+    verify_options.algorithm = jwt::Algorithm::HS256;
+    verify_options.key       = "secret";
+
+    const std::string token = jwt::create({{"user_id", "1"}}, create_options);
+    ASSERT_TRUE(jwt::verify(token, verify_options).is_valid());
+    ASSERT_NO_THROW(jwt::decode(token));
+
+    const std::size_t first = token.find('.');
+    const std::size_t last  = token.rfind('.');
+    ASSERT_NE(first, last);
+    const std::string header    = token.substr(0, first);
+    const std::string payload   = token.substr(first + 1, last - first - 1);
+    const std::string signature = token.substr(last + 1);
+
+    const std::vector<std::string> malformed = {
+        token + ".",                     // a trailing dot: VERIFIED before the fix
+        token + "..",                    // two trailing dots
+        token + ".x",                    // a fourth segment
+        "." + token,                     // a leading dot
+        "." + payload + "." + signature, // empty header
+        header + ".." + signature,       // empty payload
+        header + "." + payload + ".",    // empty signature
+        header + "." + payload,          // two segments
+    };
+    for (const auto &bad : malformed) {
+        EXPECT_EQ(jwt::verify(bad, verify_options).error, jwt::ValidationError::INVALID_FORMAT) << bad;
+        EXPECT_THROW(jwt::decode(bad), std::runtime_error) << bad;
+    }
+}
+
 TEST(CryptoJWT, NumericDateClaimsRejectMalformedValues) {
     jwt::CreateOptions create_options;
     create_options.algorithm = jwt::Algorithm::HS256;
@@ -827,16 +866,43 @@ TEST(CryptoJWT, NumericTypedNbfIntegerAndFloatBranches) {
     verify_options.key               = secret;
     verify_options.verify_not_before = true;
 
-    // nbf as a raw JSON integer in the future -> read_numeric_date's integer
-    // branch (src 464-466; nlohmann's is_number_integer() is true for unsigned
-    // too and is checked first, so the is_number_unsigned-only branch at src
-    // 468-471 is unreachable through any JSON literal). The token is not yet active.
+    // nbf as a raw JSON integer in the future: nlohmann stores a non-negative literal as an
+    // UNSIGNED number, so read_numeric_date's unsigned branch reads it (checked first since
+    // Huly QB-348 -- NumericDateBeyondInt64FailsClosed below). The token is not yet active.
     const std::string future_int = make_hs256_token("{\"nbf\":" + std::to_string(unix_now_seconds() + 3600) + "}", secret);
     EXPECT_EQ(jwt::verify(future_int, verify_options).error, jwt::ValidationError::TOKEN_NOT_ACTIVE);
 
     // nbf as a JSON float in the past -> float branch (src 472-475), active now.
     const std::string past_float = make_hs256_token("{\"nbf\":" + std::to_string(unix_now_seconds() - 100) + ".0}", secret);
     EXPECT_TRUE(jwt::verify(past_float, verify_options).is_valid());
+}
+
+// A NumericDate beyond int64 fails closed (Huly QB-348). nlohmann's is_number_integer() is true for
+// an UNSIGNED value too and was tested first, so `nbf: 18446744073709551615` was read as int64 -1:
+// a far-future not-before passed as already active, through verify_not_before's default `true`.
+TEST(CryptoJWT, NumericDateBeyondInt64FailsClosed) {
+    const std::string secret = "secret";
+
+    jwt::VerifyOptions nbf_options;
+    nbf_options.algorithm         = jwt::Algorithm::HS256;
+    nbf_options.key               = secret;
+    nbf_options.verify_not_before = true;
+
+    EXPECT_EQ(jwt::verify(make_hs256_token("{\"nbf\":18446744073709551615}", secret), nbf_options).error, jwt::ValidationError::INVALID_FORMAT)
+        << "UINT64_MAX is not a NumericDate an int64 clock can compare: read as -1, it verified";
+    EXPECT_EQ(jwt::verify(make_hs256_token("{\"nbf\":9223372036854775808}", secret), nbf_options).error, jwt::ValidationError::INVALID_FORMAT)
+        << "INT64_MAX + 1 read as INT64_MIN verified as long past";
+    EXPECT_EQ(jwt::verify(make_hs256_token("{\"nbf\":9223372036854775807}", secret), nbf_options).error, jwt::ValidationError::TOKEN_NOT_ACTIVE)
+        << "INT64_MAX itself is representable: a not-before in the far future";
+
+    jwt::VerifyOptions exp_options;
+    exp_options.algorithm         = jwt::Algorithm::HS256;
+    exp_options.key               = secret;
+    exp_options.verify_expiration = true;
+
+    EXPECT_EQ(jwt::verify(make_hs256_token("{\"exp\":18446744073709551615}", secret), exp_options).error, jwt::ValidationError::INVALID_FORMAT)
+        << "an unrepresentable exp is a malformed claim, not an expired one";
+    EXPECT_TRUE(jwt::verify(make_hs256_token("{\"exp\":9223372036854775807}", secret), exp_options).is_valid());
 }
 
 TEST(CryptoJWT, NonNumericExpClaimIsRejectedAsInvalidFormat) {

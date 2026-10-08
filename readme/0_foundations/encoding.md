@@ -18,7 +18,7 @@ template <class T> std::optional<T> to_number_prefix(std::string_view s,
                                                      int base = 10) noexcept;
 }
 ```
-<!-- src: qb/src/qb/system/parse.h:108-159 -->
+<!-- src: qb/src/qb/system/parse.h:108-163 -->
 
 Both are built on `std::from_chars`, take a `std::string_view`, allocate nothing, and return `std::optional<T>` where `T` is any non-`bool` integral or floating-point type. A `static_assert` on `qb::detail::is_parsable_number_v<T>` rejects everything else, `bool` included — a boolean on a wire is a keyword like `"true"`/`"t"`, not a number, and parsing it as one is a domain decision that does not belong here (`qb/src/qb/system/parse.h:59-61`).
 
@@ -52,18 +52,19 @@ qb::to_number<double>("inf");             // parses — also "infinity", "nan", 
 
 The strictness is the feature: this is what you point at untrusted input. `"300"` into a `uint8_t` is `std::nullopt` rather than `44`, and `" 42"` fails rather than quietly tolerating a smuggled leading byte. The check is `r.ec != std::errc{} || r.ptr != last` — the parse must succeed *and* consume everything (`qb/src/qb/system/parse.h:117-118`).
 
-**`to_number_prefix<T>` is lenient** — the `strtol` idiom, faithfully: skip leading whitespace, accept a leading `+`, take the longest numeric prefix, ignore the rest.
+**`to_number_prefix<T>` is lenient** — the `strtol` idiom, faithfully: skip leading whitespace, accept one sign (`+` or `-`), take the longest numeric prefix, ignore the rest.
 
 ```cpp
 std::size_t used = 0;
 qb::to_number_prefix<long>("  42 rest", &used);   // 42,  used == 4
 qb::to_number_prefix<int>("+7abc", &used);        //  7,  used == 2
 qb::to_number_prefix<int>("abc");                 // nullopt — no number at all
+qb::to_number_prefix<int>("+-7");                 // nullopt — two signs, as strtol
 ```
 
 `consumed` counts from the **start of the input**, including the skipped whitespace and the sign — which is what makes it usable as a cursor through a larger buffer. That is exactly how the date and time-of-day parsers on [the time page](./time.md#the-component-codecs-underneath) walk `"YYYY-MM-DD"` without `sscanf`: `qb::detail::scan_int_field` is a thin wrapper over it (`qb/src/qb/system/time.h:215-226`).
 
-`std::from_chars` itself rejects a leading `+` for both integral and floating types, so `to_number_prefix` skips one explicitly to match the `sto*` family it replaces (`qb/src/qb/system/parse.h:148-149`).
+`std::from_chars` itself rejects a leading `+` for both integral and floating types, so `to_number_prefix` skips one explicitly to match the `sto*` family it replaces (`qb/src/qb/system/parse.h:149-153`) — and only one sign: `from_chars` would accept the `-` of `"+-7"` and read -7, where `strtol` performs no conversion, so a `-` right after the skipped `+` is no number (Huly QB-359).
 
 Every result above was compiled and executed against this checkout.
 
@@ -136,9 +137,9 @@ qb::uuid id = qb::generate_random_uuid();
 ## Pitfalls
 
 - **`to_number` returns `std::nullopt` for "out of range", and so does "malformed".** They are the same answer. If your error message needs to distinguish a typo from an overflow, check the shape of the input yourself first (`qb/src/qb/system/parse.h:117-118`).
-- **`to_number` rejects a leading `+` and any surrounding whitespace.** That is deliberate for untrusted input, and it is the most common reason a call that "obviously should work" returns `std::nullopt`. Reach for `to_number_prefix` when the input legitimately carries either (`qb/src/qb/system/parse.h:144-149`).
+- **`to_number` rejects a leading `+` and any surrounding whitespace.** That is deliberate for untrusted input, and it is the most common reason a call that "obviously should work" returns `std::nullopt`. Reach for `to_number_prefix` when the input legitimately carries either (`qb/src/qb/system/parse.h:144-153`).
 - **`to_number<bool>` does not compile.** Deliberately (`qb/src/qb/system/parse.h:59-61`).
-- **`consumed` includes skipped whitespace and the sign**, so it is an offset from the start of the view, not a count of digits (`qb/src/qb/system/parse.h:156-157`).
+- **`consumed` includes skipped whitespace and the sign**, so it is an offset from the start of the view, not a count of digits (`qb/src/qb/system/parse.h:160-161`).
 - **The endian detectors are `consteval`.** `if (qb::endian::is_little_endian())` is fine — it is a constant — but you cannot take their address, pass them as a callback, or call them on a runtime value.
 - **Byte-swapping a `float` swaps bytes, not representations.** It works, and it only means something if both ends share an IEEE-754 layout (`qb/src/qb/system/endian.h:97-104`).
 - **A UUID is not a secret.** `generate_random_uuid()` draws from a Mersenne Twister, not a CSPRNG (`qb/src/qb/io/io.cpp:42-52`), so a sequence of UUIDs makes the next one predictable. Never use one as a token.

@@ -375,6 +375,31 @@ TEST_F(CryptoKdfAndTokensTest, MetadataEnvelopeRoundTripsAndAuthenticates) {
     EXPECT_FALSE(qb::crypto::decrypt_with_metadata(corrupted, test_key).has_value());
 }
 
+// An empty plaintext seals and opens (Huly QB-346). decrypt() returns an empty vector both for an
+// AEAD authentication failure and for a successfully decrypted empty plaintext, and the envelope
+// read every empty result as a failure: what encrypt_with_metadata had just sealed,
+// decrypt_with_metadata refused to open.
+TEST_F(CryptoKdfAndTokensTest, MetadataEnvelopeRoundTripsAnEmptyPlaintext) {
+    const std::string metadata = "{\"kind\":\"marker\"}";
+    for (const auto algorithm : {qb::crypto::SymmetricAlgorithm::AES_256_GCM, qb::crypto::SymmetricAlgorithm::CHACHA20_POLY1305}) {
+        const auto        key    = qb::crypto::generate_key(algorithm);
+        const std::string sealed = qb::crypto::encrypt_with_metadata({}, key, metadata, algorithm);
+
+        const auto opened = qb::crypto::decrypt_with_metadata(sealed, key, algorithm);
+        ASSERT_TRUE(opened.has_value()) << "an authentic envelope over an empty plaintext must open";
+        EXPECT_TRUE(opened->first.empty());
+        EXPECT_EQ(opened->second, metadata);
+
+        // Its authentication is not weakened: a wrong key and a tampered metadata still fail.
+        EXPECT_FALSE(qb::crypto::decrypt_with_metadata(sealed, qb::crypto::generate_key(algorithm), algorithm).has_value());
+        std::string tampered = sealed;
+        const auto  pos      = tampered.find("marker");
+        ASSERT_NE(pos, std::string::npos);
+        tampered.replace(pos, 6, "market");
+        EXPECT_FALSE(qb::crypto::decrypt_with_metadata(tampered, key, algorithm).has_value());
+    }
+}
+
 TEST_F(CryptoKdfAndTokensTest, MetadataEnvelopeRejectsMalformedAndMismatchedAlgorithms) {
     const std::vector<unsigned char> plaintext = {'s', 'e', 'c', 'r', 'e', 't'};
     const std::string                metadata  = "{\"scope\":\"coverage\"}";

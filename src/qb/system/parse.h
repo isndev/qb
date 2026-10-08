@@ -23,7 +23,7 @@
  *  - ::qb::to_number — STRICT: the whole string must be one canonical number
  *    (no surrounding whitespace, no leading '+', no trailing characters).
  *  - ::qb::to_number_prefix — LENIENT: the `std::stoi`/`std::strtol` idiom —
- *    skip leading whitespace, accept a leading '+', parse the longest numeric
+ *    skip leading whitespace, accept one '+' or '-' sign, parse the longest numeric
  *    prefix, ignore trailing characters; reports how many bytes were consumed.
  *
  * @author qb - C++ Actor Framework
@@ -122,7 +122,7 @@ to_number(std::string_view s, int base = 10) noexcept {
 /**
  * @brief Lenient prefix conversion — the `std::stoi` / `std::strtol` idiom.
  *
- * Skips leading whitespace, accepts a leading '+', parses the longest valid
+ * Skips leading whitespace, accepts ONE sign ('+' or '-'), parses the longest valid
  * numeric prefix, and IGNORES any trailing characters. This is the faithful,
  * non-throwing replacement for `std::stoi` / `std::stoll` / `std::strtod` at a
  * call site that intentionally tolerates trailing data (e.g. "12abc" -> 12).
@@ -144,9 +144,13 @@ to_number_prefix(std::string_view s, std::size_t *consumed = nullptr, int base =
     std::string_view body   = detail::ltrim_ascii_ws(s);
     // std::from_chars rejects a leading '+' (for both integral and floating
     // types); the std::sto* family accepts it. Skip it so a positive sign is
-    // tolerated identically.
-    if (!body.empty() && body.front() == '+')
+    // tolerated identically -- ONE sign: from_chars would accept the '-' of
+    // "+-7" and read -7, where strtol performs no conversion (Huly QB-359).
+    if (!body.empty() && body.front() == '+') {
         body.remove_prefix(1);
+        if (!body.empty() && body.front() == '-')
+            return std::nullopt;
+    }
     T           value{};
     const char *first = body.data();
     const char *last  = body.data() + body.size();

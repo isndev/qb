@@ -38,7 +38,7 @@ These are the facilities that need `qb::io` linked, an optional third-party libr
 
 `qb::crypto` is a static toolbox: every entry point is a static member of `class crypto` (it is a class in namespace `qb`, not a namespace — `using namespace qb::crypto;` does not compile). **Almost** everything documented below is OpenSSL-backed and needs `QB_WITH_SSL` → `QB_HAS_SSL`; those members are removed from the class in a no-SSL build, so the failure lands at the call site rather than at the include.
 
-What survives a no-SSL build is everything declared before the first `#ifdef QB_HAS_SSL` inside the class (which opens at `qb/src/qb/io/crypto.h:214`) plus the members inside the region the header marks *OpenSSL-free* — a region that still nests `#ifdef` stretches of its own, so membership is per declaration, not per line range. Concretely: the hex codec `to_hex_string` / `hex_value` / `hex_to_string`, `xor_bytes`, `constant_time_compare`, `random_generator<T>()`, both `generate_random_string` overloads, the eight `range_*` character-set constants, and the enums (`SymmetricAlgorithm`, `DigestAlgorithm`, `KdfAlgorithm`, `Argon2Params`, `Argon2Variant`, `ECIESMode`, `EnvelopeFormat`). Read the gate per member, not per page. _(`qb/src/qb/io/crypto.h:39-44` and `:95` for the gate and the class; the marked region opens at `:265-268` and closes at `:585`; the hex/compare five are `:281`, `:292`, `:302`, `:481`, `:583`; the random helpers are `:163-173`, `:186-194`, `:208-212`; the ranges `:101-146`.)_
+What survives a no-SSL build is everything declared before the first `#ifdef QB_HAS_SSL` inside the class (which opens at `qb/src/qb/io/crypto.h:338`) plus the members inside the region the header marks *OpenSSL-free* — a region that still nests `#ifdef` stretches of its own, so membership is per declaration, not per line range. Concretely: the hex codec `to_hex_string` / `hex_value` / `hex_to_string`, `xor_bytes`, `constant_time_compare`, `random_generator<T>()`, both `generate_random_string` overloads, the eight `range_*` character-set constants, and the enums (`SymmetricAlgorithm`, `DigestAlgorithm`, `KdfAlgorithm`, `Argon2Params`, `Argon2Variant`, `ECIESMode`, `EnvelopeFormat`). Read the gate per member, not per page. _(`qb/src/qb/io/crypto.h:39-44` and `:204` for the gate and the class; the marked region opens at `:389-392` and closes at `:709`; the hex/compare five are `:405`, `:416`, `:426`, `:605`, `:707`; the random helpers are `:280-290`, `:306-316`, `:332-336`; the ranges `:210-263`.)_
 
 ### Hashing and encoding
 
@@ -68,9 +68,9 @@ std::string b64url = qb::crypto::base64url_encode(data);
 ```
 <!-- src: qb/tests/io/unit/crypto/crypto-primitives.cpp:149-155 -->
 
-> **The `std::string` digest overloads return raw bytes, not hex.** `sha256(const std::string&)` resizes its result to `SHA256_DIGEST_LENGTH` and writes the digest straight in — no encoding step (`qb/src/qb/io/crypto.cpp:174-184`); `md5`, `sha1` and `sha512` have the same shape (`:123-131`, `:149-159`, `:199-209`), as does the `std::istream` family through `crypto::evp` (`:94-115`). The Doxygen on those four declarations says "as a hexadecimal string" and is wrong. The suite is the honest reference: every digest assertion in `qb/tests/io/unit/crypto/crypto-primitives.cpp:149-155` wraps the call in `to_hex_string(..., range_hex_lower)` to get hex, and the test at `:250-253` states the raw-bytes behaviour outright. Two consequences: a length check against 64 characters fails, and `to_hex_string`'s default `range` is `range_hex_upper` (`qb/src/qb/io/crypto.h:281`), so lowercase hex needs the explicit argument shown above.
+> **The `std::string` digest overloads return raw bytes, not hex.** `sha256(const std::string&)` resizes its result to `SHA256_DIGEST_LENGTH` and writes the digest straight in — no encoding step (`qb/src/qb/io/crypto.cpp:180-190`); `md5`, `sha1` and `sha512` have the same shape (`:129-137`, `:155-165`, `:205-215`), as does the `std::istream` family through `crypto::evp` (`:102-123`). The Doxygen on those four declarations says "as a hexadecimal string" and is wrong. The suite is the honest reference: every digest assertion in `qb/tests/io/unit/crypto/crypto-primitives.cpp:149-155` wraps the call in `to_hex_string(..., range_hex_lower)` to get hex, and the test at `:250-253` states the raw-bytes behaviour outright. Two consequences: a length check against 64 characters fails, and `to_hex_string`'s default `range` is `range_hex_upper` (`qb/src/qb/io/crypto.h:405`), so lowercase hex needs the explicit argument shown above.
 
-The `std::string` hashing overloads take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:152,327-411`.)_
+The `std::string` hashing overloads take an `iterations` count (default `1`). `DigestAlgorithm` covers `MD5`, `SHA1`, `SHA224`, `SHA256`, `SHA384`, `SHA512`, `BLAKE2B512`, and `BLAKE2S256`. _(`qb/src/qb/io/crypto.h:269,451-535`.)_
 
 ### Random data
 
@@ -81,9 +81,9 @@ The `std::string` hashing overloads take an `iterations` count (default `1`). `D
 | `generate_salt(size_t)` | OpenSSL `RAND_bytes` (CSPRNG) | Argon2/PBKDF2 salts. |
 | `generate_random_string(len, range)` | `std::mt19937` | Non-cryptographic only (e.g. test fixtures). |
 
-`generate_random_string` is seeded from `std::random_device` but uses a Mersenne Twister and is **not** cryptographically secure; use `generate_secure_random_string` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242,492,819`.)_
+`generate_random_string` is seeded from `std::random_device` but uses a Mersenne Twister and is **not** cryptographically secure; use `generate_secure_random_string` for any security-sensitive value. Its alphabet is anything with `size()` and `operator[]` (`std::string_view`, `std::string`, `std::array<char, N>`) or a string literal / `char` array, whose terminating NUL is not drawn; both generators throw `std::invalid_argument` on an empty alphabet. `range_byte` is the 256 byte values (Huly QB-342, QB-343). _(`qb/src/qb/io/crypto.h:292-365,616,943`.)_
 
-Note which of the four survives a no-SSL build: only `generate_random_string`, the one you must not use for anything security-sensitive. The three CSPRNG-backed entries are inside `#ifdef QB_HAS_SSL` (`qb/src/qb/io/crypto.h:229`, `:492`, `:819`), so a build without OpenSSL does not get a weaker secure generator — it does not get one at all, and the call site fails to compile.
+Note which of the four survives a no-SSL build: only `generate_random_string`, the one you must not use for anything security-sensitive. The three CSPRNG-backed entries are inside `#ifdef QB_HAS_SSL` (`qb/src/qb/io/crypto.h:353`, `:616`, `:943`), so a build without OpenSSL does not get a weaker secure generator — it does not get one at all, and the call site fails to compile.
 
 ### Symmetric encryption (AEAD)
 
@@ -102,9 +102,11 @@ auto pt = C::decrypt(ct,        key, iv, C::SymmetricAlgorithm::AES_256_GCM, aad
 // pt is EMPTY if the GCM authentication tag fails — treat empty as authentication
 // failure, never as "decrypted to nothing".
 ```
-<!-- src: qb/src/qb/io/crypto.h:527-546 -->
+<!-- src: qb/src/qb/io/crypto.h:651-670 -->
 
-`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/src/qb/io/crypto.h:149,527-546`.)_
+`SymmetricAlgorithm` covers AES-CBC and AES-GCM at 128/192/256-bit, plus `CHACHA20_POLY1305`. For AEAD modes, `encrypt` appends and `decrypt` verifies the authentication tag; a failed tag yields an empty result. _(`qb/src/qb/io/crypto.h:266,651-670`.)_
+
+**No buffer is too large.** OpenSSL's update functions, `RAND_bytes` and its base64 calls take an `int` length. Handed over unchecked, a `size_t` wraps modulo 2^32 — `encrypt` of 4 GiB + 17 bytes used to return the ciphertext of 17 bytes with a valid tag, and no error (Huly QB-973). Every such length now goes through one helper, `qb::detail::for_each_openssl_chunk`: `encrypt`/`decrypt`, `generate_random_bytes`/`secure_random_fill` and the base64 codecs process buffers of any size, a chunk of whole blocks at a time (the output is the same as one call). A length OpenSSL cannot take in pieces — a PBKDF2 password, salt or key length, an HMAC key — throws `std::length_error` past INT_MAX rather than wrapping. `qb/tests/io/unit/crypto/crypto-primitives.cpp` proves the 4 GiB round trips in its opt-in `CryptoBeyondIntMax.*` cases (about 13 GB of memory; run by name with `--gtest_also_run_disabled_tests`).
 
 ### Key derivation and password hashing
 
@@ -121,11 +123,11 @@ auto salt = C::generate_salt(16);
 auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
                           C::KdfAlgorithm::Argon2);   // or PBKDF2 / HKDF
 ```
-<!-- src: qb/src/qb/io/crypto.h:762-764 -->
+<!-- src: qb/src/qb/io/crypto.h:886-888 -->
 
-`KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/src/qb/io/crypto.h:425,669-690,724,741,762-764`.)_
+`KdfAlgorithm` is `PBKDF2`, `HKDF`, or `Argon2`; `derive_key` defaults to `Argon2` with `iterations = 10000` (used only by PBKDF2) and a default `Argon2Params`. Dedicated entry points exist for each primitive: `pbkdf2`, `hkdf`, `argon2_kdf`. `Argon2Params` defaults to `t_cost = 3`, `m_cost = 1 << 16` KiB, `parallelism = 1`; `Argon2Variant` is `Argon2d`, `Argon2i`, or `Argon2id`. _(`qb/src/qb/io/crypto.h:549,793-814,848,865,886-888`.)_
 
-> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:127-142`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix — `$pbkdf2-sha256$i=…` instead of `$argon2…$`) rather than failing or warning (`qb/src/qb/io/crypto_advanced.cpp:158-178` for `argon2_kdf`, `:420-446` for `hash_password`, whose `#else` branch writes that prefix at `:443`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
+> **Argon2 is an optional dependency.** The `QB_HAS_ARGON2` macro is set only when the Argon2 library is found, and that probe runs only when OpenSSL is present (`qb/cmake/qbDependencies.cmake:127-142`). When Argon2 is absent, `hash_password` and Argon2-mode `derive_key` **silently fall back to PBKDF2-HMAC-SHA256** (with a different self-describing hash prefix — `$pbkdf2-sha256$i=…` instead of `$argon2…$`) rather than failing or warning (`qb/src/qb/io/crypto_advanced.cpp:158-180` for `argon2_kdf`, `:425-451` for `hash_password`, whose `#else` branch writes that prefix at `:448`). The stored-hash format therefore depends on how the framework was built: a build with SSL but without the Argon2 library stores PBKDF2 hashes even though the API defaults read as "Argon2id". `verify_password` is gated the same way, so it only validates the format its own build produces — a hash written by one build configuration will not verify against a binary built the other way. Confirm `QB_HAS_ARGON2` if you require Argon2id, and keep the build configuration consistent across any services that share a hash store.
 
 ### Asymmetric cryptography
 
@@ -136,7 +138,7 @@ auto dk   = C::derive_key("password", salt, /*key_length*/ 32,
 - **Key agreement:** `x25519_key_exchange` — two overloads, one taking raw-byte keys and one taking PEM strings, both returning the shared secret as `std::vector<unsigned char>`. There is **no** `ecdh_derive_secret`: X25519 is the only key agreement qb implements, and an ECDH over a `generate_ec_keypair` curve is not exposed.
 - **Hybrid encryption:** `ecies_encrypt`/`ecies_decrypt` (`ECIESMode::STANDARD | AES_GCM | CHACHA20`, default `AES_GCM`). These take **raw-byte keys only** — there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter, so a `generate_ec_keypair` PEM will not fit; use `generate_x25519_keypair_bytes()`. `ecies_encrypt` returns `{ephemeral_public_key, ciphertext}` **in that order**, while `ecies_decrypt(ciphertext, ephemeral_public_key, recipient_private_key, …)` takes them the other way round — passing the pair straight through throws `Failed to create public key from raw bytes`. Prefer the AEAD modes: `STANDARD` is AES-256-CBC with no MAC (see the warning on `ECIESMode`).
 
-_(`qb/src/qb/io/crypto.h:594-648,846-901,910-1000`.)_
+_(`qb/src/qb/io/crypto.h:718-772,970-1025,1034-1124`.)_
 
 > **`envelope_encrypt` / `envelope_decrypt` do not exist.** This page used to list them, and so did
 > `llm/qb.llm.api.md`, complete with default arguments. Nothing of the sort was ever declared in
@@ -145,9 +147,9 @@ _(`qb/src/qb/io/crypto.h:594-648,846-901,910-1000`.)_
 > feature that was never written. For authenticated encryption that binds unencrypted metadata to
 > the ciphertext — the job the name suggests — use the pair below instead.
 
-**Authenticated encryption with associated metadata.** `encrypt_with_metadata(plaintext, key, metadata, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns a structured `std::string` carrying IV, AAD and tag; the `metadata` travels in the clear but is authenticated, so tampering with it fails decryption. `decrypt_with_metadata(ciphertext, key, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns `std::optional<std::pair<std::vector<unsigned char>, std::string>>` — `{plaintext, metadata}` on success, and an **empty optional** on any authentication failure, so check it before using either half.
+**Authenticated encryption with associated metadata.** `encrypt_with_metadata(plaintext, key, metadata, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns a structured `std::string` carrying IV, AAD and tag; the `metadata` travels in the clear but is authenticated, so tampering with it fails decryption. `decrypt_with_metadata(ciphertext, key, algorithm = SymmetricAlgorithm::AES_256_GCM)` returns `std::optional<std::pair<std::vector<unsigned char>, std::string>>` — `{plaintext, metadata}` on success, and an **empty optional** on any authentication failure, so check it before using either half. An envelope sealed over an empty plaintext opens to an empty vector: unlike `decrypt`, whose empty result means a failed tag, the optional keeps the two apart (Huly QB-346).
 
-<!-- src: qb/src/qb/io/crypto.h:969-970 (encrypt_with_metadata), :984-986 (decrypt_with_metadata) -->
+<!-- src: qb/src/qb/io/crypto.h:1093-1094 (encrypt_with_metadata), :1108-1110 (decrypt_with_metadata) -->
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -161,7 +163,7 @@ if (auto opened = qb::crypto::decrypt_with_metadata(sealed, key)) {
 
 ### Constant-time comparison and secure tokens
 
-`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:583,777-790`.)_
+`constant_time_compare(a, b)` compares two byte vectors without short-circuiting (use it for HMACs and password hashes). `generate_token(payload, key, ttl)` produces an encrypted, authenticated token; `verify_token(token, key)` returns the payload or an empty string on any failure (tampering, malformed input, or expiry). _(`qb/src/qb/io/crypto.h:707,901-914`.)_
 
 ```cpp
 auto key = qb::crypto::generate_key(qb::crypto::SymmetricAlgorithm::AES_256_GCM);
@@ -171,9 +173,9 @@ std::string token = qb::crypto::generate_token("session:abc", key, qb::duration{
 
 std::string payload = qb::crypto::verify_token(token, key);  // "" if invalid/expired
 ```
-<!-- src: qb/src/qb/io/crypto.h:777-790 -->
+<!-- src: qb/src/qb/io/crypto.h:901-914 -->
 
-`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:232,236-238`.)_
+`generate_token` takes its `ttl` as a `qb::duration` (`qb::duration::zero()` disables expiry). The embedded `exp` claim is `duration_cast` to whole seconds and uses wall-clock time (`system_clock`), so sub-second TTL precision is lost and expiry is subject to system clock changes — consistent with the canonical model where expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_advanced.cpp:237,241-243`.)_
 
 ---
 
@@ -218,9 +220,9 @@ if (result.is_valid()) {
 ```
 <!-- src: qb/tests/io/unit/crypto/crypto-jwt.cpp:212-236 -->
 
-`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:79-103,195-198`; `qb/src/qb/io/crypto_jwt.cpp:389-395`.)_
+`create_token` takes `expires_in` and `not_before` as `std::chrono::seconds` offsets from "now" (RFC 7519 NumericDate is seconds). `exp` is emitted only when `expires_in.count() > 0` and `nbf` only when `not_before.count() > 0`; passing zero omits the claim. `verify` returns a `ValidationResult` whose `error` is one of `NONE`, `INVALID_FORMAT`, `INVALID_SIGNATURE`, `TOKEN_EXPIRED`, `TOKEN_NOT_ACTIVE`, `INVALID_ISSUER`, `INVALID_AUDIENCE`, `INVALID_SUBJECT`, or `CLAIM_MISMATCH`; `is_valid()` is `error == NONE`. _(`qb/src/qb/io/crypto_jwt.h:79-103,195-198`; `qb/src/qb/io/crypto_jwt.cpp:414-420`.)_
 
-`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values. `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token. _(`qb/src/qb/io/crypto_jwt.h:158,207,209-216`; `qb/src/qb/io/crypto_jwt.cpp:550-590,592-605`.)_
+`VerifyOptions::clock_skew` is a `std::chrono::seconds` tolerance (default `0`) applied to the *current-time* side of the `exp`/`nbf` comparison — not to the token-supplied claim — to absorb clock drift without overflowing on extreme claim values. `verify` accepts `exp`/`nbf` as either a JSON number or a numeric string and fails closed (`INVALID_FORMAT`) on malformed values — a number past INT64_MAX included, which an earlier version read as a negative date (Huly QB-348). A token is exactly three non-empty `.`-separated segments: one more `.`, or an empty segment, is `INVALID_FORMAT` (Huly QB-349). `decode(token)` returns the `TokenParts` (header, payload, signature) *without* verification and throws `std::runtime_error` on a malformed token, by the same three-segment rule. _(`qb/src/qb/io/crypto_jwt.h:158,207,209-216`; `qb/src/qb/io/crypto_jwt.cpp:562-608,610-623`.)_
 
 ---
 
@@ -389,11 +391,11 @@ qb::io::cout() << "core " << id << " ready\n";   // whole line flushed under one
 
 ## Pitfalls
 
-- **The `std::string` digest overloads return raw bytes.** `sha256("x")` is 32 bytes, not 64 hex characters, and the header's own Doxygen says otherwise. Hex is a separate `to_hex_string` call whose default range is **uppercase**. _(`qb/src/qb/io/crypto.cpp:174-184`; `qb/src/qb/io/crypto.h:281`.)_
-- **Empty result means authentication failure — for AEAD only.** `crypto::decrypt` returns an empty vector when a GCM or ChaCha20-Poly1305 tag fails _(`qb/src/qb/io/crypto.h:542-546`)_, and `verify_token` returns an empty string on a failed check _(`qb/src/qb/io/crypto.h:790`)_. A **CBC** algorithm does not: a failed final block **throws** `std::runtime_error` instead. `encrypt` and `decrypt` also throw `std::invalid_argument` on a wrong-size key or IV — the length requirement is exact, not a minimum. Branch on emptiness *and* be ready for the throw. _(`qb/src/qb/io/crypto_modern.cpp:47-61`, `:379`, `:382`.)_
-- **Everything on this page is synchronous, and some of it is expensive.** `hash_password` defaults to Argon2id with the 64 MiB `Argon2Params` memory cost, and its no-libargon2 fallback is 100 000 PBKDF2 iterations _(`qb/src/qb/io/crypto.h:669-679`, `:828`; `qb/src/qb/io/crypto_advanced.cpp:426`)_; `generate_rsa_keypair(2048)` is the most expensive call in the header; decompression with no `max` is unbounded. None of these belongs on a `VirtualCore` — see [what has no coroutine form](./gaps.md#cryptography-and-compression-are-cpu-work-on-the-calling-thread).
-- **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:175-242`.)_
-- **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:777-790`.)_
+- **The `std::string` digest overloads return raw bytes.** `sha256("x")` is 32 bytes, not 64 hex characters, and the header's own Doxygen says otherwise. Hex is a separate `to_hex_string` call whose default range is **uppercase**. _(`qb/src/qb/io/crypto.cpp:180-190`; `qb/src/qb/io/crypto.h:405`.)_
+- **Empty result means authentication failure — for AEAD only.** `crypto::decrypt` returns an empty vector when a GCM or ChaCha20-Poly1305 tag fails _(`qb/src/qb/io/crypto.h:666-670`)_, and `verify_token` returns an empty string on a failed check _(`qb/src/qb/io/crypto.h:914`)_. A **CBC** algorithm does not: a failed final block **throws** `std::runtime_error` instead. `encrypt` and `decrypt` also throw `std::invalid_argument` on a wrong-size key or IV — the length requirement is exact, not a minimum. Branch on emptiness *and* be ready for the throw. _(`qb/src/qb/io/crypto_modern.cpp:47-61`, `:268`, `:370-371`.)_
+- **Everything on this page is synchronous, and some of it is expensive.** `hash_password` defaults to Argon2id with the 64 MiB `Argon2Params` memory cost, and its no-libargon2 fallback is 100 000 PBKDF2 iterations _(`qb/src/qb/io/crypto.h:793-803`, `:952`; `qb/src/qb/io/crypto_advanced.cpp:431`)_; `generate_rsa_keypair(2048)` is the most expensive call in the header; decompression with no `max` is unbounded. None of these belongs on a `VirtualCore` — see [what has no coroutine form](./gaps.md#cryptography-and-compression-are-cpu-work-on-the-calling-thread).
+- **`generate_random_string` is not cryptographic.** It is a Mersenne Twister. Use `generate_secure_random_string`, `generate_random_bytes`, or `generate_salt` for any security-sensitive value. _(`qb/src/qb/io/crypto.h:292-365`.)_
+- **JWT and token TTLs are wall-clock seconds.** `create_token`'s `expires_in`/`not_before` and `generate_token`'s `ttl` resolve to whole-second `exp`/`nbf` claims evaluated against `system_clock`. Sub-second precision is lost and expiry follows wall-clock changes — by design, since expiry is a `wall_time` concept. _(`qb/src/qb/io/crypto_jwt.h:189-197`; `qb/src/qb/io/crypto.h:901-914`.)_
 - **`u_port()` returns `0` on failure.** A missing, malformed, or out-of-range port yields `0`, which is indistinguishable from an explicit `:0`. Check `is_valid()` and the raw `port()` string if `0` is meaningful in your scheme. _(`qb/src/qb/io/uri.h:474-484`.)_
 - **URI accessors borrow from the URI.** `scheme()`, `host()`, `path()`, etc. return `std::string_view` into the URI's owned source string; do not let them outlive the `uri` object. _(the owned `_source` and the views into it are `qb/src/qb/io/uri.h:182-190`; `scheme()` is `:437-440`, `host()` is `:455-457`, `path()` is `:490-492`.)_
 - **The dependency gate is not the same shape in all three headers.** `crypto_jwt.h` without `QB_HAS_SSL` and `compression.h` without `QB_HAS_COMPRESSION` `#error` at the include. `crypto.h` compiles either way — its OpenSSL-backed members are simply absent from `class crypto`, so a no-SSL build fails at the call site (`no member named 'md5'`) instead. Guard optional features behind those defines rather than relying on an include-time failure. _(`qb/src/qb/io/crypto.h:39-44`, `qb/src/qb/io/crypto_jwt.h:36-38`, `qb/src/qb/io/compression.h:37-39`.)_

@@ -22,7 +22,11 @@
 #include <qb/io/crypto_jwt.h>
 #include <qb/json.h>
 #include <qb/system/parse.h>
+#include <array>
 #include <cmath>
+#include <limits>
+#include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 
@@ -32,6 +36,15 @@
 namespace qb {
 
 namespace {
+
+// The buffer i2d_ECDSA_SIG allocates, freed with OPENSSL_free -- a macro, so it gets its own deleter.
+struct der_free {
+    void
+    operator()(unsigned char *p) const noexcept {
+        OPENSSL_free(p);
+    }
+};
+using der_owner = std::unique_ptr<unsigned char, der_free>;
 
 // --- JOSE ECDSA signature encoding (RFC 7518 §3.4) -------------------------
 // `crypto::ec_sign`/`ec_verify` speak OpenSSL's native ASN.1 DER ECDSA-Sig-Value
@@ -63,17 +76,18 @@ std::vector<unsigned char>
 ecdsa_der_to_raw(const std::vector<unsigned char> &der, std::size_t coord_len) {
     if (coord_len == 0 || der.empty())
         return {};
-    const unsigned char *p   = der.data();
-    ECDSA_SIG           *sig = d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()));
+    // d2i takes a long, the BIGNUM calls an int; coord_len is at most 66 (es_coordinate_length) and a
+    // DER signature a few bytes more, so neither length can wrap.
+    const unsigned char                 *p = der.data();
+    const detail::openssl_ptr<ECDSA_SIG> sig{d2i_ECDSA_SIG(nullptr, &p, static_cast<long>(der.size()))};
     if (!sig)
         return {};
     const BIGNUM *r = nullptr;
     const BIGNUM *s = nullptr;
-    ECDSA_SIG_get0(sig, &r, &s);
-    std::vector<unsigned char> raw(2 * coord_len, 0);
+    ECDSA_SIG_get0(sig.get(), &r, &s);
+    std::vector<unsigned char> raw(2 * coord_len, 0); // may throw: `sig` is owned (Huly QB-345)
     const bool                 ok = r && s && BN_bn2binpad(r, raw.data(), static_cast<int>(coord_len)) == static_cast<int>(coord_len)
                                     && BN_bn2binpad(s, raw.data() + coord_len, static_cast<int>(coord_len)) == static_cast<int>(coord_len);
-    ECDSA_SIG_free(sig);
     if (!ok)
         return {};
     return raw;
@@ -85,25 +99,36 @@ std::vector<unsigned char>
 ecdsa_raw_to_der(const std::vector<unsigned char> &raw, std::size_t coord_len) {
     if (coord_len == 0 || raw.size() != 2 * coord_len)
         return {};
-    ECDSA_SIG *sig = ECDSA_SIG_new();
+    const detail::openssl_ptr<ECDSA_SIG> sig{ECDSA_SIG_new()};
     if (!sig)
         return {};
-    BIGNUM *r = BN_bin2bn(raw.data(), static_cast<int>(coord_len), nullptr);
-    BIGNUM *s = BN_bin2bn(raw.data() + coord_len, static_cast<int>(coord_len), nullptr);
-    if (!r || !s || ECDSA_SIG_set0(sig, r, s) != 1) { // set0 takes ownership of r,s only on success
-        BN_free(r);
-        BN_free(s);
-        ECDSA_SIG_free(sig);
+    detail::openssl_ptr<BIGNUM> r{BN_bin2bn(raw.data(), static_cast<int>(coord_len), nullptr)};
+    detail::openssl_ptr<BIGNUM> s{BN_bin2bn(raw.data() + coord_len, static_cast<int>(coord_len), nullptr)};
+    if (!r || !s || ECDSA_SIG_set0(sig.get(), r.get(), s.get()) != 1) // set0 takes ownership of r,s only on success
         return {};
-    }
-    unsigned char             *der     = nullptr; // i2d allocates
-    const int                  der_len = i2d_ECDSA_SIG(sig, &der);
-    std::vector<unsigned char> out;
-    if (der_len > 0)
-        out.assign(der, der + der_len);
-    OPENSSL_free(der);
-    ECDSA_SIG_free(sig); // frees r,s (owned via set0)
-    return out;
+    (void) r.release(); // owned by `sig` from here
+    (void) s.release();
+    unsigned char  *der_bytes = nullptr; // i2d allocates
+    const int       der_len   = i2d_ECDSA_SIG(sig.get(), &der_bytes);
+    const der_owner der{der_bytes}; // the copy below may throw (Huly QB-345)
+    if (der_len <= 0)
+        return {};
+    return std::vector<unsigned char>(der.get(), der.get() + der_len);
+}
+
+// The compact serialization's three segments (RFC 7515 §7.1): exactly two '.', none of the three
+// empty. The former std::getline split dropped a final empty field, so a valid token with one more '.'
+// still split into three parts and VERIFIED -- the bytes its signature covers were unchanged -- and an
+// empty header or payload reached the decoders instead of this check (Huly QB-349).
+std::optional<std::array<std::string, 3>>
+split_compact(const std::string &token) {
+    const std::size_t first  = token.find('.');
+    const std::size_t second = first == std::string::npos ? std::string::npos : token.find('.', first + 1);
+    if (second == std::string::npos || token.find('.', second + 1) != std::string::npos)
+        return std::nullopt;
+    if (first == 0 || second == first + 1 || second + 1 == token.size())
+        return std::nullopt;
+    return std::array<std::string, 3>{token.substr(0, first), token.substr(first + 1, second - first - 1), token.substr(second + 1)};
 }
 
 } // namespace
@@ -420,19 +445,12 @@ jwt::create_token(const std::map<std::string, std::string> &payload, const std::
 
 jwt::TokenParts
 jwt::decode(const std::string &token) {
-    // Split token into parts
-    std::vector<std::string> parts;
-    std::stringstream        ss(token);
-    std::string              part;
-
-    while (std::getline(ss, part, '.')) {
-        parts.push_back(part);
-    }
-
-    // JWT should have 3 parts: header, payload, signature
-    if (parts.size() != 3) {
+    // JWT has exactly 3 non-empty parts: header, payload, signature
+    const auto split = split_compact(token);
+    if (!split) {
         throw std::runtime_error("Invalid JWT format");
     }
+    const auto &parts = *split;
 
     TokenParts token_parts;
 
@@ -461,19 +479,12 @@ jwt::decode(const std::string &token) {
 jwt::ValidationResult
 jwt::verify(const std::string &token, const VerifyOptions &options) {
     try {
-        // Split token
-        std::vector<std::string> parts;
-        std::stringstream        ss(token);
-        std::string              part;
-
-        while (std::getline(ss, part, '.')) {
-            parts.push_back(part);
-        }
-
-        // JWT should have 3 parts: header, payload, signature
-        if (parts.size() != 3) {
+        // JWT has exactly 3 non-empty parts: header, payload, signature
+        const auto split = split_compact(token);
+        if (!split) {
             return ValidationResult(ValidationError::INVALID_FORMAT);
         }
+        const auto &parts = *split;
 
         // Keep the raw encoded parts for signature verification
         std::string header_b64url    = parts[0];
@@ -557,12 +568,19 @@ jwt::verify(const std::string &token, const VerifyOptions &options) {
         // is not rejected, and fail closed (INVALID_FORMAT) on a non-numeric or
         // malformed value instead of relying on a thrown exception.
         const auto read_numeric_date = [](const nlohmann::json &v, int64_t &out) -> bool {
-            if (v.is_number_integer()) {
-                out = v.get<int64_t>();
+            // UNSIGNED first: nlohmann's is_number_integer() is true for an unsigned value too, and
+            // nlohmann stores every non-negative literal as unsigned. Read as int64, 18446744073709551615
+            // became -1 and a far-future nbf passed as long past (Huly QB-348); a value past INT64_MAX
+            // is not a NumericDate this clock can compare -- fail closed.
+            if (v.is_number_unsigned()) {
+                const auto value = v.get<uint64_t>();
+                if (value > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()))
+                    return false;
+                out = static_cast<int64_t>(value);
                 return true;
             }
-            if (v.is_number_unsigned()) {
-                out = static_cast<int64_t>(v.get<uint64_t>());
+            if (v.is_number_integer()) {
+                out = v.get<int64_t>();
                 return true;
             }
             if (v.is_number_float()) {

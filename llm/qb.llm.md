@@ -672,7 +672,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   removed from the class, so misuse fails at the **call site** (`no member named 'md5' in 'qb::crypto'`) rather
   than at the `#include`. These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
   CMake options, when enabled, define the `QB_HAS_SSL`/`QB_HAS_COMPRESSION` macros. AEAD `decrypt`/`verify_token`
-  return empty on auth failure — treat empty as rejection, never as "decrypted to nothing". _(crypto.h:33-44; compression.h:37-39; crypto.h:542-544, :784-790)_
+  return empty on auth failure — treat empty as rejection, never as "decrypted to nothing"; `decrypt_with_metadata`
+  is the one that tells them apart (`nullopt` = rejected, an engaged empty vector = an empty plaintext). No length
+  is handed to OpenSSL's `int` parameters unchecked: buffers past INT_MAX are processed in chunks (crypto.h:105-116),
+  an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973). _(crypto.h:33-44;
+  compression.h:37-39; crypto.h:666-668, :908-914)_
 
 ## Build / integration
 

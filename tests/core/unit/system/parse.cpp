@@ -140,6 +140,30 @@ TEST(QbToNumberPrefix, IntPrefixFailureAndRange) {
     EXPECT_FALSE(to_number_prefix<std::int16_t>("99999").has_value());
 }
 
+// One sign, as std::strtol reads it (Huly QB-359). Stripping the '+' used to hand "-7" to
+// std::from_chars, which accepted its own '-': "+-7" parsed as -7, all three bytes consumed, where
+// strtol performs no conversion at all. Reached through the JWT string NumericDate, the qbm-http
+// parameter validator and the pgsql text decoders.
+TEST(QbToNumberPrefix, PrefixAcceptsOneSignOnly) {
+    EXPECT_FALSE(to_number_prefix<int>("+-7").has_value());
+    EXPECT_FALSE(to_number_prefix<int>("  +-7").has_value());
+    EXPECT_FALSE(to_number_prefix<long long>("+-0").has_value());
+    EXPECT_FALSE(to_number_prefix<double>("+-1.5").has_value());
+    EXPECT_FALSE(to_number_prefix<double>("+-inf").has_value());
+    // Two signs were already refused in every other order; they stay refused.
+    EXPECT_FALSE(to_number_prefix<int>("++7").has_value());
+    EXPECT_FALSE(to_number_prefix<int>("-+7").has_value());
+    EXPECT_FALSE(to_number_prefix<int>("--7").has_value());
+    EXPECT_FALSE(to_number_prefix<unsigned>("+-7").has_value());
+    // One sign of either kind still parses, with the same consumed count.
+    std::size_t consumed = 0;
+    EXPECT_EQ(to_number_prefix<int>(" +7x", &consumed), 7);
+    EXPECT_EQ(consumed, 3u);
+    EXPECT_EQ(to_number_prefix<int>(" -7x", &consumed), -7);
+    EXPECT_EQ(consumed, 3u);
+    EXPECT_DOUBLE_EQ(*to_number_prefix<double>("+1.5"), 1.5);
+}
+
 TEST(QbToNumberPrefix, FloatPrefixTolerance) {
     std::size_t consumed = 0;
     EXPECT_DOUBLE_EQ(*to_number_prefix<double>("2.5 extra", &consumed), 2.5);

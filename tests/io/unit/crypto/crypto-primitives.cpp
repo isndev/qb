@@ -45,8 +45,13 @@
  * @ingroup Tests
  */
 
+#include <algorithm>
+#include <array>
+#include <climits>
+#include <cstdint>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -505,6 +510,115 @@ TEST_F(CryptoPrimitivesTest, SecureRandomStringValidatesRangeAndLength) {
     EXPECT_NE(qb::crypto::generate_secure_random_string(64), qb::crypto::generate_secure_random_string(64));
 }
 
+// range_byte holds the 256 byte values (Huly QB-342). It was built with string_view's `const char *`
+// constructor, which stops at the first NUL -- and its first character IS a NUL: the alphabet was
+// empty, so the secure generator refused it and the plain one indexed past it.
+TEST_F(CryptoPrimitivesTest, RangeByteHoldsEveryByteValueOnce) {
+    ASSERT_EQ(qb::crypto::range_byte.size(), 256u);
+    for (std::size_t i = 0; i < qb::crypto::range_byte.size(); ++i)
+        EXPECT_EQ(static_cast<unsigned char>(qb::crypto::range_byte[i]), i) << "at " << i;
+
+    EXPECT_EQ(qb::crypto::generate_secure_random_string(64, qb::crypto::range_byte).size(), 64u);
+    EXPECT_EQ(qb::crypto::generate_random_string(64, qb::crypto::range_byte).size(), 64u);
+}
+
+// The plain generator refuses an empty alphabet, as the secure one does (Huly QB-342): it used to
+// build uniform_int_distribution{0, size() - 1} = {0, SIZE_MAX} and read range[huge].
+TEST_F(CryptoPrimitivesTest, RandomStringRejectsAnEmptyAlphabet) {
+    EXPECT_THROW(qb::crypto::generate_random_string(8, std::string_view{}), std::invalid_argument);
+    EXPECT_THROW(qb::crypto::generate_random_string(8, std::string{}), std::invalid_argument);
+    EXPECT_THROW(qb::crypto::generate_random_string(8, ""), std::invalid_argument);
+    EXPECT_TRUE(qb::crypto::generate_random_string(0, std::string_view{"ab"}).empty());
+}
+
+// Every alphabet form the generator documents compiles and draws only from the alphabet (Huly
+// QB-343). The C-array overload took `const T range[N]` -- adjusted to a pointer, N never deduced --
+// so a string literal or a named array did not compile at all.
+TEST_F(CryptoPrimitivesTest, RandomStringAcceptsEveryAlphabetForm) {
+    const auto only_from = [](const std::string &drawn, std::string_view alphabet) {
+        return drawn.find_first_not_of(alphabet) == std::string::npos;
+    };
+
+    const std::string literal = qb::crypto::generate_random_string(64, "xyz"); // the terminator is not drawn
+    ASSERT_EQ(literal.size(), 64u);
+    EXPECT_TRUE(only_from(literal, "xyz"));
+
+    const char named[] = "abc";
+    EXPECT_TRUE(only_from(qb::crypto::generate_random_string(64, named), "abc"));
+
+    const char unterminated[] = {'k', 'l'}; // no terminator: every element is in the alphabet
+    EXPECT_TRUE(only_from(qb::crypto::generate_random_string(64, unterminated), "kl"));
+
+    const std::array<char, 2> array{'p', 'q'};
+    EXPECT_TRUE(only_from(qb::crypto::generate_random_string(64, array), "pq"));
+    EXPECT_TRUE(only_from(qb::crypto::generate_random_string(64, std::string("mn")), "mn"));
+    EXPECT_TRUE(only_from(qb::crypto::generate_random_string(64, std::string_view("uv")), "uv"));
+
+    // Both letters of a two-letter alphabet are drawn: the extent is the whole alphabet, not 1.
+    const std::string two = qb::crypto::generate_random_string(256, "ab");
+    EXPECT_NE(two.find('a'), std::string::npos);
+    EXPECT_NE(two.find('b'), std::string::npos);
+}
+
+// The chunking every OpenSSL int-length call goes through (Huly QB-973, QB-344) -- the always-on witness
+// of the contract the opt-in CryptoBeyondIntMax cases prove end to end: each chunk an int in
+// (0, INT_MAX], consecutive, covering exactly [0, total).
+TEST(CryptoOpensslChunks, ChunksCoverEveryByteWithinAnInt) {
+    using qb::detail::for_each_openssl_chunk;
+    using qb::detail::openssl_max_chunk;
+    ASSERT_LE(openssl_max_chunk, static_cast<std::size_t>(INT_MAX));
+    ASSERT_EQ(openssl_max_chunk % 64u, 0u) << "a chunk is a whole number of cipher blocks";
+
+    const std::size_t totals[] = {
+        0u,
+        1u,
+        openssl_max_chunk - 1u,
+        openssl_max_chunk,
+        openssl_max_chunk + 1u,
+        static_cast<std::size_t>(INT_MAX),
+        static_cast<std::size_t>(INT_MAX) + 1u,
+        (std::size_t{1} << 32) + 17u, // the length that wrapped to 17
+        (std::size_t{1} << 33) + 5u
+    };
+    for (const std::size_t total : totals) {
+        std::size_t next  = 0;
+        std::size_t calls = 0;
+        const bool  done  = for_each_openssl_chunk(total, [&](std::size_t offset, int length) {
+            EXPECT_EQ(offset, next) << "chunks are consecutive";
+            EXPECT_GT(length, 0);
+            next += static_cast<std::size_t>(length);
+            ++calls;
+            return true;
+        });
+        EXPECT_TRUE(done);
+        EXPECT_EQ(next, total) << "every byte handed over, none twice";
+        EXPECT_EQ(calls, (total + openssl_max_chunk - 1) / openssl_max_chunk) << "at " << total;
+    }
+
+    // A failing step stops the walk at once and is reported.
+    std::size_t calls  = 0;
+    const bool  failed = !for_each_openssl_chunk(std::size_t{1} << 33, [&](std::size_t, int) { return ++calls < 2; });
+    EXPECT_TRUE(failed);
+    EXPECT_EQ(calls, 2u);
+
+    // The bound is honoured below openssl_max_chunk (and clamped above it).
+    std::size_t lengths = 0;
+    EXPECT_TRUE(for_each_openssl_chunk(
+        10,
+        [&](std::size_t, int length) {
+            EXPECT_LE(length, 4);
+            lengths += 1;
+            return true;
+        },
+        4));
+    EXPECT_EQ(lengths, 3u);
+
+    // A length that cannot be split is checked, never wrapped.
+    EXPECT_EQ(qb::detail::openssl_int_length(static_cast<std::size_t>(INT_MAX), "test"), INT_MAX);
+    EXPECT_THROW(qb::detail::openssl_int_length(static_cast<std::size_t>(INT_MAX) + 1u, "test"), std::length_error);
+    EXPECT_THROW(qb::detail::openssl_int_length((std::size_t{1} << 32) + 17u, "test"), std::length_error);
+}
+
 TEST_F(CryptoPrimitivesTest, RandomGeneratorFactoryIsSeededAndUsable) {
     // crypto::random_generator<T>() builds a std::seed_seq from std::random_device and
     // returns a freshly-seeded engine of the requested type. Exercise the default
@@ -590,6 +704,79 @@ TEST(Crypto, HmacWithRejectedKeyThrowsWithoutDoubleFree) {
     const auto                       mac = qb::crypto::hmac(data, good_key, qb::crypto::DigestAlgorithm::SHA256);
     EXPECT_EQ(mac.size(), 32u);
     EXPECT_EQ(qb::crypto::hmac(data, good_key, qb::crypto::DigestAlgorithm::SHA256), mac) << "HMAC must be deterministic";
+}
+
+// =============================================================================
+// LENGTHS PAST INT_MAX (Huly QB-973, QB-344) — OPT-IN, never run by default
+//
+// OpenSSL's EVP update functions, RAND_bytes and the BIO calls take an `int` length. A size_t handed
+// over unchecked wraps modulo 2^32: 4 GiB + k bytes became k, and the call succeeded on k bytes --
+// a ciphertext of a 17-byte prefix with a valid tag, a random buffer left zero past its first bytes.
+// These cases move real multi-GiB buffers (about 13 GB of memory, a few seconds each), so they are
+// DISABLED_ and run by name on a host that has the memory:
+//
+//   qb-io-test-unit-crypto-primitives --gtest_also_run_disabled_tests --gtest_filter='CryptoBeyondIntMax.*'
+//
+// The always-on witness of the same contract is CryptoOpensslChunks below, at the helper's level.
+// =============================================================================
+
+TEST(CryptoBeyondIntMax, DISABLED_AeadRoundTripsMoreThan4GiB) {
+    static_assert(sizeof(std::size_t) >= 8, "a buffer past 4 GiB needs a 64-bit size_t");
+    const std::size_t size = (std::size_t{1} << 32) + 17;
+
+    std::vector<unsigned char> plaintext(size);
+    for (std::size_t i = 0; i < size; i += 4096)
+        plaintext[i] = static_cast<unsigned char>((i >> 12) * 131u + 7u); // a dropped or misplaced chunk changes the bytes
+    plaintext.back() = 0xA5;
+
+    const auto algorithm = qb::crypto::SymmetricAlgorithm::AES_256_GCM;
+    const auto key       = qb::crypto::generate_key(algorithm);
+    const auto iv        = qb::crypto::generate_iv(algorithm);
+
+    auto ciphertext = qb::crypto::encrypt(plaintext, key, iv, algorithm);
+    ASSERT_EQ(ciphertext.size(), size + 16u) << "the whole plaintext is encrypted, then the 16-byte tag";
+
+    const auto decrypted = qb::crypto::decrypt(ciphertext, key, iv, algorithm);
+    ciphertext           = {};
+    ASSERT_EQ(decrypted.size(), size);
+    EXPECT_TRUE(decrypted == plaintext);
+}
+
+TEST(CryptoBeyondIntMax, DISABLED_RandomBytesFillMoreThan4GiB) {
+    const std::size_t size  = (std::size_t{1} << 32) + 4096;
+    const auto        bytes = qb::crypto::generate_random_bytes(size);
+    ASSERT_EQ(bytes.size(), size);
+    const auto random_window = [&bytes](std::size_t from) {
+        return std::any_of(bytes.begin() + static_cast<std::ptrdiff_t>(from), bytes.begin() + static_cast<std::ptrdiff_t>(from + 4096),
+                           [](unsigned char b) { return b != 0; });
+    };
+    EXPECT_TRUE(random_window(std::size_t{1} << 31)) << "2 GiB in: RAND_bytes must have written here";
+    EXPECT_TRUE(random_window(size - 4096)) << "the last 4 KiB: a wrapped length filled only the first 4096 bytes";
+}
+
+TEST(CryptoBeyondIntMax, DISABLED_Base64RoundTripsPastIntMax) {
+    // 2 GiB + 5 bytes of input: the encode writes more than INT_MAX bytes and the decode reads a
+    // 2.67 GiB text, past INT_MAX on both sides.
+    const std::size_t size = (std::size_t{1} << 31) + 5;
+    {
+        std::vector<unsigned char> data(size);
+        for (std::size_t i = 0; i < size; i += 4096)
+            data[i] = static_cast<unsigned char>(i >> 12);
+        data.back()            = 0x5A;
+        const std::string text = qb::crypto::base64_encode(data.data(), data.size());
+        ASSERT_EQ(text.size(), (size + 2) / 3 * 4);
+        const auto round = qb::crypto::base64_decode(text);
+        EXPECT_TRUE(round == data) << "base64_encode / base64_decode round-trip " << size << " bytes";
+    }
+    {
+        std::string data(size, '\0');
+        for (std::size_t i = 0; i < size; i += 4096)
+            data[i] = static_cast<char>(i >> 12);
+        data.back()            = 'Z';
+        const std::string text = qb::crypto::base64::encode(data);
+        ASSERT_EQ(text.size(), (size + 2) / 3 * 4) << "the noexcept class API encodes the whole input";
+        EXPECT_TRUE(qb::crypto::base64::decode(text) == data);
+    }
 }
 
 } // namespace
