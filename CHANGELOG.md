@@ -232,6 +232,12 @@ policy.
 
 ### Fixed
 
+- **`with_deadline` owns a temporary operation before its returned task is awaited (Huly QB-270).**
+  Its `task<T>&&` parameter formerly remained a reference in a lazy coroutine frame; storing or
+  returning the wrapper destroyed the temporary operation at the end of the call expression.
+  An eager factory now moves it into an owning coroutine frame while preserving the public
+  signature and the absolute deadline. Stored value, void, exception, timeout and cancellation
+  paths are covered in `deadline-combinator.cpp`.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion

@@ -338,6 +338,11 @@ actor can be destroyed, and the coroutine frame outlives it. So:
   temporary closure dies at the end of the full expression, and the coroutine — whose
   `initial_suspend` is `suspend_always`, so it has not started yet — resumes on freed captures. That
   is ASan-invisible stack corruption. `qb/scripts/check-spawn-dangling-closure.py` lints for it.
+- **A lazy coroutine that accepts `task<T>&&` can outlive its operand.** `with_deadline` takes
+  ownership at the call, so a temporary operation remains alive when the returned wrapper is
+  stored and awaited later. When writing another wrapper coroutine, take a task parameter by
+  value or move it into an owning frame before returning. _(coroutine/cancellation.h:1043,
+  :1101-1102)_
 
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
