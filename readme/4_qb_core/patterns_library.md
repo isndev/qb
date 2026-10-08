@@ -54,15 +54,15 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1459-1461`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1513`, `:2311-2315`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1515`, `:2313-2317`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1655,1675,1687,1696,1703,1711`) plus the scope token and cancellation-aware `sleep`
+  `qb/src/qb/core/Actor.h:1657,1677,1689,1698,1705,1713`) plus the scope token and cancellation-aware `sleep`
   (`qb/src/qb/core/Actor.h:2192-2193,2205-2207,2235-2237`). **Never capture `this` past a `co_await`** — capture by
-  value (`qb/src/qb/core/Actor.h:1461-1463`).
+  value (`qb/src/qb/core/Actor.h:1463-1465`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:771-772`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1725`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  (`qb/src/qb/core/Actor.h:1727`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:794,813`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
@@ -152,7 +152,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:369-374`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1533-1549`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1535-1551`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -225,7 +225,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1533-1549 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1535-1551 -->
 
 ---
 
@@ -798,7 +798,7 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1497-1513`,
+continuation registry (`qb/src/qb/core/Actor.h:1499-1515`,
 `qb/src/qb/core/Event.h:764-768`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).

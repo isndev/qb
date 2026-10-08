@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1480-1481,2233-2235, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1482-1483,2235-2237, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
