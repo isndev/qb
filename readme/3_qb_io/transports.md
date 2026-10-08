@@ -34,7 +34,7 @@ sequenceDiagram
     IO->>S: on(pending_read) or on(input_drained)
     IO->>T: write() if anything was published
 ```
-<!-- src: qb/src/qb/io/async/io.h:2880-2952 (the io handler), :2695-2759 (the framing loop); qb/src/qb/io/stream.h:152-173 (read), :183-198 (flush/eof) -->
+<!-- src: qb/src/qb/io/async/io.h:2880-2952 (the io handler), :2719-2797 (the framing loop); qb/src/qb/io/stream.h:152-173 (read), :183-198 (flush/eof) -->
 
 Five things are worth noticing in that picture, because each one is a rule somewhere else:
 
