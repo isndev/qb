@@ -97,7 +97,7 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib); `compression-zstd` / `compression-brotli` (`REQUIRES compression zstd` / `brotli`, 3.3) only with the opt-in codec, all three on the shared `codec_contract.h`.
 
-<!-- src: qb/tests/io/unit/CMakeLists.txt:65-72 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:70-77 -->
 
 Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. The QUIC suites are gated the same way, by `REQUIRES quic ssl network` (`qb/tests/io/system/CMakeLists.txt:90-91`), so they too are simply not registered without QUIC; their *cases* additionally carry a `QB_HAS_QUIC` `#ifdef` so the file still asserts the negative contract when it is compiled without it (`qb/tests/io/system/quic/quic-handshake.cpp:87-99`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
