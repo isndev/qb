@@ -182,10 +182,13 @@ public:
         return d.out();
     }
 
+    // Returns the component, not publish()'s raw buffer: every operand of `*this << a << b` passes the
+    // write-buffer cap and the disconnection check, as in async::io (Huly QB-292).
     template <typename T>
-    auto &
+    _Derived &
     operator<<(T &&data) {
-        return publish(std::forward<T>(data));
+        publish(std::forward<T>(data));
+        return derived();
     }
 
     void

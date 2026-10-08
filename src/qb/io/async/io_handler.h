@@ -243,8 +243,14 @@ public:
         session->transport() = std::move(new_io);
         auto &registered     = *session;
         registered.start();
-        if constexpr (qb::has_on<_Derived, _Session &>)
+        if constexpr (qb::has_on<_Derived, _Session &>) {
             static_cast<_Derived &>(*this).on(registered);
+            // The hook may have extracted or replaced the session: `session` alone keeps it alive
+            // until this returns, so a pointer to it would dangle in the caller (Huly QB-306).
+            const auto still = _sessions.find(registered.id());
+            if (still == _sessions.cend() || still->second != session)
+                return nullptr;
+        }
         return &registered;
     }
 
@@ -272,16 +278,25 @@ public:
      */
     [[nodiscard]] std::pair<typename _Session::transport_io_type, bool>
     extractSession(uuid const &ident) {
-        auto it = _sessions.find(ident);
-        if (it != _sessions.cend()) {
-            auto keep_alive = it->second;
-            if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>)
-                keep_alive->on(qb::io::async::event::extracted{});
+        const auto it = _sessions.find(ident);
+        if (it == _sessions.cend())
+            return {typename _Session::transport_io_type{}, false};
+        auto keep_alive = it->second;
+        if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>) {
+            // The hook may register or extract sessions: no iterator survives it (a rehash frees the
+            // bucket array, an erase frees the node -- Huly QB-306). Look the session up again.
+            keep_alive->on(qb::io::async::event::extracted{});
+            const auto still = _sessions.find(ident);
+            if (still == _sessions.cend() || still->second != keep_alive)
+                return {typename _Session::transport_io_type{}, false}; // extracted or replaced inside its hook
+            auto t_io = std::move(keep_alive->transport());
+            _sessions.erase(still);
+            return {std::move(t_io), true};
+        } else {
             auto t_io = std::move(keep_alive->transport());
             _sessions.erase(it);
             return {std::move(t_io), true};
         }
-        return {typename _Session::transport_io_type{}, false};
     }
 
     /**

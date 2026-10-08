@@ -114,7 +114,7 @@ registry, or as a member — never relocate them.
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
-  (`src/qb/io/async/io.h:1428-1429`). This is intra-thread re-entrance
+  (`src/qb/io/async/io.h:1441-1442`). This is intra-thread re-entrance
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
@@ -216,9 +216,9 @@ registry, or as a member — never relocate them.
 - `disconnect(0)` is remapped to `user_initiated` (`1`) because internally
   `_reason == 0` is the sentinel for "no disconnect pending"; the `peer_closed`
   (`0`) code is generated automatically on kernel EOF
-  (`src/qb/io/async/io.h:1288`).
+  (`src/qb/io/async/io.h:1292`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1505-1508`). It fires `on(event::disconnected)` if the
+  (`src/qb/io/async/io.h:1513-1516`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then notifies
   `server().disconnected(id())`, otherwise it stops the watcher and fires
   `on(event::dispose)`.
@@ -235,7 +235,7 @@ registry, or as a member — never relocate them.
   logs a CRIT line, as `tcp::server` does; it used to throw.
 - For the entire duration of `on(event::io)`, the handler holds a
   `std::shared_ptr<void> _self_guard` to itself — acquired before any branch
-  that can reach `dispose()` (`src/qb/io/async/io.h:1426-1438`). This means a user
+  that can reach `dispose()` (`src/qb/io/async/io.h:1439-1451`). This means a user
   who releases the last external `shared_ptr` from inside `on(disconnected)`
   cannot trigger a use-after-free in the rest of `dispose()`. The guard is typed
   `shared_ptr<void>` so it works even when `_Derived` inherits
@@ -291,7 +291,7 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
   upgrade) and leave the old protocol dangling — the flush must use the old
-  protocol's policy (`src/qb/io/async/io.h:1344-1345`).
+  protocol's policy (`src/qb/io/async/io.h:1348-1349`).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer
@@ -384,7 +384,7 @@ with I/O lifetime are:
   qev's `ev_stat` stores the narrow `const char *` it is given **without
   copying** (`src/qb/ev/ev++.h:762`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
-  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:615-616`, `:779-780`).
+  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:615-616`, `:783-784`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and
   do not reassign or shrink `_watched_path` while the watcher is armed — the
   pointer libev holds would dangle and the next stat poll would read freed memory.

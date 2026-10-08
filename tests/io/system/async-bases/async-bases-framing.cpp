@@ -26,6 +26,7 @@
 #include <gtest/gtest.h>
 
 #include <qb/io/async/io.h>
+#include <qb/io/protocol/base.h>
 #include <qb/io/system/sys__socket.h>
 #include <qb/io/tcp/listener.h>
 #include <qb/io/tcp/socket.h>
@@ -40,6 +41,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -579,9 +581,20 @@ public:
         ++eof_events;
     }
 
+    // Huly QB-294: the eos hook leaves the thread's last socket error at would-block, as any
+    // non-blocking call that found nothing to do in it would (Windows reads WSAGetLastError()).
+    bool stale_would_block_in_eos = false;
+
     void
     on(qb::io::async::event::eos &&) noexcept {
         ++eos_events;
+        if (stale_would_block_in_eos) {
+#ifdef _WIN32
+            qb::io::socket::set_last_errno(QB_WINDOWS_WOULDBLOCK_ERROR);
+#else
+            qb::io::socket::set_last_errno(EWOULDBLOCK);
+#endif
+        }
     }
 
     // Huly QB-256: both teardown hooks throw, after counting.
@@ -721,6 +734,72 @@ public:
     }
     void
     onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+};
+
+// The real length-prefixed framer of qb (qb/io/protocol/base.h): a zero-length header is a framing
+// error it reports by marking itself not-ok and returning 0 from getMessageSize() -- the one way a
+// framer can invalidate itself without a message being delivered (Huly QB-293).
+class SizedInputProtocol : public qb::protocol::base::size_as_header<PipeInputProbe, std::uint32_t> {
+public:
+    explicit SizedInputProtocol(PipeInputProbe &io) noexcept
+        : size_as_header(io) {}
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        _io.messages.emplace_back(_io.in().begin(), size);
+    }
+};
+
+class SizedDuplexProtocol : public qb::protocol::base::size_as_header<PipeDuplexProbe, std::uint32_t> {
+    bool _reply;
+
+public:
+    explicit SizedDuplexProtocol(PipeDuplexProbe &io, bool reply = false) noexcept
+        : size_as_header(io)
+        , _reply(reply) {}
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        _io.messages.emplace_back(_io.in().begin(), size);
+        if (_reply)
+            _io.publish(std::string_view{"pong"});
+    }
+};
+
+// A frame: a 4-byte network-order length, then the payload.
+std::string
+sized_frame(std::string_view payload) {
+    const auto  header = qb::protocol::base::size_as_header<PipeInputProbe, std::uint32_t>::Header(payload.size());
+    std::string frame(reinterpret_cast<char const *>(&header), sizeof(header));
+    frame.append(payload);
+    return frame;
+}
+
+const std::string kZeroHeader(4, '\0');
+
+// Answers its first message with `reply` and then asks to close once that is delivered.
+class ReplyThenCloseDuplexProtocol : public qb::io::async::AProtocol<PipeDuplexProbe> {
+    std::string _reply;
+
+public:
+    ReplyThenCloseDuplexProtocol(PipeDuplexProbe &io, std::string reply) noexcept
+        : AProtocol(io)
+        , _reply(std::move(reply)) {}
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return _io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        _io.messages.emplace_back(_io.in().begin(), size);
+        _io.publish(std::string_view{_reply});
+        _io.close_after_deliver();
+    }
+
     void
     reset() noexcept final {}
 };
@@ -1397,6 +1476,188 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowCompletesWhenItsHooksThrow) {
 
     ASSERT_EQ(pair.peer.write("data", 4), 4);
     EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-292 -- `component << a << b` admitted only `a`: operator<< returned the RAW output
+// buffer, so every later operand skipped the write-buffer cap and the disconnection check.
+// ---------------------------------------------------------------------------------------------
+
+TEST_F(AsyncIoBaseTest, OutputChainedInsertionAdmitsEveryOperand) {
+    EXPECT_TRUE((std::is_same_v<decltype(std::declval<PipeOutputProbe &>() << std::string_view{}), PipeOutputProbe &>) )
+        << "operator<< must return the component, so the next operand of the chain is admitted too";
+
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
+    output.set_max_write_buffer_size(4u);
+    output.base().start();
+
+    output << std::string_view{"ab"} << std::string_view{"cdef"}; // the SECOND operand crosses the cap
+    EXPECT_EQ(std::string_view(output.out().begin(), output.out().size()), "abcd") << "rolled back to the cap";
+    EXPECT_EQ(output.base().disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+
+    output << std::string_view{"x"} << std::string_view{"y"};
+    EXPECT_EQ(std::string_view(output.out().begin(), output.out().size()), "abcd") << "nothing is appended once refused";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexChainedInsertionAdmitsEveryOperand) {
+    EXPECT_TRUE((std::is_same_v<decltype(std::declval<PipeDuplexProbe &>() << std::string_view{}), PipeDuplexProbe &>) )
+        << "operator<< must return the component, so the next operand of the chain is admitted too";
+
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    session.set_max_write_buffer_size(4u);
+    session.base().start();
+
+    session << std::string_view{"ab"} << std::string_view{"cdef"};
+    EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd") << "rolled back to the cap";
+    EXPECT_EQ(session.base().disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+
+    session << std::string_view{"x"} << std::string_view{"y"};
+    EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "abcd") << "nothing is appended once refused";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-293 -- a framer that rejects its input invalidates itself and answers 0 (qb's own
+// size_as_header on a zero-length header). The framing loop took that 0 for "need more bytes" and
+// reported success: the connection outlived the protocol error until another event -- never, from a
+// silent peer. Each case below ends with the peer silent, so only the event that carried the bad
+// bytes can deliver the verdict.
+// ---------------------------------------------------------------------------------------------
+
+TEST_F(AsyncIoBaseTest, InputDisconnectsOnAFramingErrorInTheEventThatCarriedIt) {
+    auto           pair = make_stream_pair();
+    PipeInputProbe input{pair.probe};
+    ASSERT_NE(input.base().switch_protocol<SizedInputProtocol>(input), nullptr);
+    input.base().start();
+
+    const auto bytes = sized_frame("abc") + kZeroHeader; // a good frame, then a zero-length header
+    ASSERT_EQ(pair.peer.write(bytes.data(), bytes.size()), static_cast<int>(bytes.size()));
+    run_nowait_iterations();
+
+    EXPECT_EQ(input.messages, (std::vector<std::string>{"abc"})) << "the frame before the error is delivered";
+    EXPECT_EQ(input.disconnected_events, 1u);
+    EXPECT_EQ(input.last_disconnect_reason, -1) << "a protocol error";
+    EXPECT_FALSE(input.base().is_connected());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnAFramingErrorInTheEventThatCarriedIt) {
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<SizedDuplexProtocol>(session), nullptr);
+        session.base().start();
+
+        ASSERT_EQ(pair.peer.write(kZeroHeader.data(), kZeroHeader.size()), 4);
+        run_nowait_iterations();
+
+        EXPECT_TRUE(session.messages.empty());
+        EXPECT_EQ(session.disconnected_events, 1u);
+        EXPECT_EQ(session.last_disconnect_reason, -1) << "a protocol error, with nothing left to deliver";
+        EXPECT_FALSE(session.base().is_connected());
+    }
+    {
+        // Output published for the frames before the error is delivered first, then the connection
+        // ends -- the verdict the in-loop protocol check already gave (close-after-deliver).
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<SizedDuplexProtocol>(session, true), nullptr);
+        session.base().start();
+
+        const auto bytes = sized_frame("abc") + kZeroHeader;
+        ASSERT_EQ(pair.peer.write(bytes.data(), bytes.size()), static_cast<int>(bytes.size()));
+        run_nowait_iterations();
+
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"abc"}));
+        EXPECT_EQ(session.disconnected_events, 1u);
+        EXPECT_FALSE(session.base().is_connected());
+
+        std::array<char, 8> buffer{};
+        ASSERT_EQ(pair.peer.read(buffer.data(), buffer.size()), 4);
+        EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-294 -- the graceful close of close_after_deliver() is the one way the io base reaches its
+// error label with no reason. On Windows that label returned without disposing whenever the thread's
+// LAST socket error read would-block -- a stale value any earlier call leaves (here: the eos hook) --
+// and the connection never closed. POSIX never had the exemption: there this case is the control.
+// ---------------------------------------------------------------------------------------------
+
+TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDisposesWhateverTheLastSocketErrorSays) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    session.stale_would_block_in_eos = true;
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true), nullptr);
+    session.base().start();
+
+    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    run_nowait_iterations();
+
+    EXPECT_EQ(session.eos_events, 1u) << "the final delivery is reported first";
+    EXPECT_EQ(session.disconnected_events, 1u) << "then the connection ends, whatever the last socket error";
+    EXPECT_EQ(session.dispose_events, 1u);
+    EXPECT_FALSE(session.base().is_connected());
+
+    std::array<char, 8> buffer{};
+    ASSERT_EQ(pair.peer.read(buffer.data(), buffer.size()), 4);
+    EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+}
+
+// The same graceful close, with an output larger than the socket takes at once and a peer that keeps
+// writing: a read readiness then arrives ALONE (the socket is full, so no EV_WRITE comes with it). The
+// read is skipped (the protocol is closing), nothing is written, and the event fell to the error label
+// with no reason: the connection was disposed at once and the undelivered output lost. Before QB-294
+// a stale would-block masked this on Windows; on POSIX it always happened.
+TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDeliversEverythingWhileThePeerKeepsWriting) {
+    constexpr std::size_t kReply = std::size_t{64} << 20; // far more than both socket buffers hold
+    std::string           reply(kReply, 'r');
+    reply.back() = '!';
+
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    session.set_max_chunk(std::size_t{1} << 20);
+    ASSERT_NE(session.base().switch_protocol<ReplyThenCloseDuplexProtocol>(session, reply), nullptr);
+    session.base().start();
+    ASSERT_EQ(pair.peer.write("data", 4), 4);
+
+    // Write until the socket is full: the pending output stops falling.
+    std::size_t last   = static_cast<std::size_t>(-1);
+    int         stable = 0;
+    for (int i = 0; i < 100000 && stable < 200; ++i) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        const auto now = session.pendingWrite();
+        stable         = now == last ? stable + 1 : 0;
+        last           = now;
+    }
+    ASSERT_EQ(session.messages, (std::vector<std::string>{"data"}));
+    ASSERT_GT(session.pendingWrite(), 0u) << "the socket buffers must be full for this test to prove anything";
+    ASSERT_EQ(session.disconnected_events, 0u);
+
+    ASSERT_EQ(pair.peer.write("more", 4), 4); // a read readiness, alone: the probe's socket is full
+    for (int i = 0; i < 50; ++i)
+        qb::io::async::run(EVRUN_NOWAIT);
+    EXPECT_EQ(session.disconnected_events, 0u) << "a read event during the delivery must not end the connection";
+
+    // The peer drains: every byte arrives, then the connection ends.
+    pair.peer.set_nonblocking(true);
+    std::vector<char> buffer(std::size_t{1} << 20);
+    std::size_t       received  = 0;
+    char              last_byte = 0;
+    for (int i = 0; i < 1000000 && received < kReply; ++i) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        const auto n = pair.peer.read(buffer.data(), buffer.size());
+        if (n > 0) {
+            received += static_cast<std::size_t>(n);
+            last_byte = buffer[static_cast<std::size_t>(n) - 1];
+        }
+    }
+    EXPECT_EQ(received, kReply) << "the whole reply must be delivered before the close";
+    EXPECT_EQ(last_byte, '!');
+    run_nowait_iterations();
+    EXPECT_EQ(session.disconnected_events, 1u) << "and the connection ends once it is";
+    EXPECT_EQ(session.pendingWrite(), 0u);
 }
 
 #ifndef NDEBUG

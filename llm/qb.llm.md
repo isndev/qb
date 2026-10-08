@@ -612,7 +612,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `substr` throw). _(string.h:201)_
 - **DoS bounds are enforced:** read/write buffers cap at 200 MB (`QB_MAX_READ/WRITE_BUFFER_SIZE`), a
   message at 100 MB (`QB_MAX_MESSAGE_SIZE`); exceeding them marks the protocol `not_ok()` and closes the
-  connection. A protocol signals unrecoverable framing errors via `not_ok()`. _(config.h:251, :265, :175; base.h:276)_
+  connection. A protocol signals unrecoverable framing errors via `not_ok()` -- from `getMessageSize()` as from
+  `onMessage()`, the connection closes on the event that carried the bad bytes, after a reply already queued
+  (3.3, Huly QB-293). _(config.h:251, :265, :175; base.h:276)_
 - **TLS is secure-by-default; prefer the value-semantic `qb::io::ssl::Context`.** `Context::client()` /
   `Context::server(cert,key).alpn({...})` — copy = share one `SSL_CTX`, **no user `SSL_CTX_free`**,
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
@@ -651,7 +653,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2205-2234, :2676-2683, :3059-3063)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2219-2248, :2700-2707, :3104-3108)_
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,

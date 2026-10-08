@@ -267,6 +267,15 @@ policy.
   A sender reclaimed after its wake (a `when_any` loser) has therefore sent, exactly once, as a `send_for` woken
   before its timer always had. Every send path -- `send()`'s fast path, both `try_send`s and the wake -- now goes
   through one hand-off, `channel::deliver()`.
+- **`operator<<` on an io component returns the component, not its output buffer (Huly QB-292).** `async::output<>`,
+  `async::io<>` and `async::buffered_io<>` returned what `publish()` returns -- the raw `out()` pipe -- so in
+  `*this << a << b` every operand after the first went to the pipe directly: past the write-buffer cap, and appended
+  even once the component had refused the first one and was disconnecting. Each operand of a chain is now published
+  and admitted as the first was; `io_handler::stream()` / `stream_if()` fan out through the same chain, so every
+  argument of a broadcast is admitted too. A chain still compiles unchanged; code that kept the returned reference as a
+  pipe (`auto &p = (*this << x);`) no longer does -- `publish()` still returns the raw buffer, for that use. Pinned by
+  `OutputChainedInsertionAdmitsEveryOperand`, `DuplexChainedInsertionAdmitsEveryOperand` and
+  `BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap`.
 
 ### Fixed
 
@@ -415,6 +424,30 @@ policy.
   (`base_pipe::allocate_back_from` / `allocate_from`); the path with room does the same work (MSVC listing: 41
   instructions executed against 42). A self-move-assignment (`p = std::move(p)`) freed the buffer and kept the pointer;
   it now leaves the pipe as it was.
+- **A framing error closes the connection on the event that carried it (Huly QB-293).** A framer that rejects its
+  input marks itself not-ok and answers 0 -- qb's own `size_as_header` on a zero-length header -- which ended the
+  framing loop of `async::input<>` and `async::io<>` like "need more bytes": the read reported success and the
+  connection outlived the protocol error until another event, which a silent peer never sends. The loop now checks the
+  protocol once more on its way out and gives the verdict it gives after `onMessage()`: reason `-1` and disposal on this
+  event, or -- `io<>` with a reply already queued -- the reply delivered first. The file watcher's reader reports the
+  same failure instead of success. One predicted branch per read event.
+- **A graceful close is never swallowed, nor cut short (Huly QB-294).** On Windows, the error label of the io bases
+  returned without disposing when the thread's last socket error read `WSAEWOULDBLOCK` and no reason was set: a genuine
+  would-block never reaches it (the read and write paths return first, on the same error), so the one path it caught
+  was the graceful close of `close_after_deliver()`, reading a stale error some earlier call left -- the connection
+  stayed open, its peer never saw the close. The exemption is gone from `input<>`, `output<>` and `io<>`. The same close
+  was cut short on every platform: with an output larger than the socket takes at once and a peer still writing, a
+  read readiness that arrived alone fell to that label and disposed at once, losing the undelivered output; the
+  component now stops watching reads and finishes the delivery. Pinned by
+  `DuplexCloseAfterDeliverDisposesWhateverTheLastSocketErrorSays` and
+  `DuplexCloseAfterDeliverDeliversEverythingWhileThePeerKeepsWriting` (64 MiB delivered, the peer writing meanwhile).
+- **`io_handler::extractSession()` survives an `extracted` hook that changes the registry (Huly QB-306).** It kept the
+  registry iterator across the session's `on(event::extracted&&)`: a hook that registered sessions rehashed the table
+  and the erase that followed used a freed bucket array; a hook that extracted the same session freed the node first
+  (ASan: `heap-use-after-free` both ways). It now looks the session up again after the hook, and reports failure -- a
+  default transport and `false` -- when the hook extracted or replaced it. `registerSession()` likewise returns
+  `nullptr` when its server's `on(session&)` hook took the session away, instead of a pointer to a session that died
+  as the call returned.
 
 ### Documentation
 

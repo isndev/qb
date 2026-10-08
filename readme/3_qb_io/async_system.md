@@ -277,7 +277,7 @@ public:
 
 ## Watching the filesystem
 
-`file_watcher<Derived>` (`src/qb/io/async/io.h:530`) and `directory_watcher<Derived>` (`src/qb/io/async/io.h:751`) wrap an `event::file` — a libev `ev::stat` watcher — to watch a path for attribute changes such as size or modification time.
+`file_watcher<Derived>` (`src/qb/io/async/io.h:530`) and `directory_watcher<Derived>` (`src/qb/io/async/io.h:755`) wrap an `event::file` — a libev `ev::stat` watcher — to watch a path for attribute changes such as size or modification time.
 
 ```cpp
 #include <qb/io/async.h>
@@ -306,14 +306,14 @@ public:
 };
 ```
 
-- **`start(std::filesystem::path const&, qb::duration interval = 100ms)`** begins watching (`src/qb/io/async/io.h:612`, `:776`). `interval` is the polling cadence **where the path is polled** — macOS, Windows, and a Linux path on a filesystem libev does not know to be local; there, shorter is more responsive and costs more CPU, and libev raises anything under ~0.107 s to that floor. On a local Linux filesystem inotify wakes the watcher at once and `interval` is unused. Either way the event is two `stat`s, never an inotify record ([the details](./gaps.md#file-io-is-watched-metadata-plus-a-blocking-read)).
-- **The watcher owns the path string.** `ev_stat` stores the path *pointer* without copying it, so `start()` copies the path into a member `std::string` that lives as long as the watcher (`src/qb/io/async/io.h:611-615`, member at `:700`). You may safely pass a temporary.
+- **`start(std::filesystem::path const&, qb::duration interval = 100ms)`** begins watching (`src/qb/io/async/io.h:612`, `:780`). `interval` is the polling cadence **where the path is polled** — macOS, Windows, and a Linux path on a filesystem libev does not know to be local; there, shorter is more responsive and costs more CPU, and libev raises anything under ~0.107 s to that floor. On a local Linux filesystem inotify wakes the watcher at once and `interval` is unused. Either way the event is two `stat`s, never an inotify record ([the details](./gaps.md#file-io-is-watched-metadata-plus-a-blocking-read)).
+- **The watcher owns the path string.** `ev_stat` stores the path *pointer* without copying it, so `start()` copies the path into a member `std::string` that lives as long as the watcher (`src/qb/io/async/io.h:611-615`, member at `:704`). You may safely pass a temporary.
 - **`disconnect()`** stops the watcher (`src/qb/io/async/io.h:626`).
 - **The payload** carries `attr` (the current `ev_statdata`) and `prev` (the previous snapshot), both members of the libev watcher (`src/qb/ev/ev.h:462-463`). `attr.st_nlink == 0` means the path is gone.
 
 The difference between the two: `file_watcher` also **reads and frames file content** (`do_read == true`, `src/qb/io/async/io.h:538`). When the watched file grows, its internal handler calls `read_all()` (`src/qb/io/async/io.h:652`), which loops `read()` → the active `IProtocol`'s `getMessageSize()`/`onMessage()` → `flush()` until the file is drained, enforcing `max_message_size()` on the way. `directory_watcher` (`do_read == false`) only forwards the notification. `async::file<Derived>` (`src/qb/io/async/file.h`) composes `file_watcher` with `transport::file`.
 
-The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *decrease* on the watched path makes the handler `lseek` back to the start (`src/qb/io/async/io.h:724`). Both are capability limits rather than bugs, and both matter on a `VirtualCore` — see [What has no coroutine form](./gaps.md#file-io-is-watched-metadata-plus-a-blocking-read).
+The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *decrease* on the watched path makes the handler `lseek` back to the start (`src/qb/io/async/io.h:728`). Both are capability limits rather than bugs, and both matter on a `VirtualCore` — see [What has no coroutine form](./gaps.md#file-io-is-watched-metadata-plus-a-blocking-read).
 
 ## The event vocabulary
 
@@ -343,7 +343,7 @@ The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *de
 | Code | Named constant | Set by |
 |---|---|---|
 | `0` | `peer_closed` | normal shutdown — peer closed, or the local side closed cleanly |
-| `1` | `user_initiated` | `disconnect()` from application code — including `disconnect(0)`, which is remapped (`src/qb/io/async/io.h:1288`) |
+| `1` | `user_initiated` | `disconnect()` from application code — including `disconnect(0)`, which is remapped (`src/qb/io/async/io.h:1292`) |
 | `> 1` | *(application-defined)* | your code (`qbm-http` uses this range) |
 | `-1` | `protocol_error` | the protocol marked itself `not_ok()` |
 | `-2` | `message_too_large` | `getMessageSize()` reported more than `max_message_size()`, or more than the bytes actually buffered |
@@ -363,7 +363,7 @@ void on(qb::io::async::event::disconnected &&ev) {
 }
 ```
 
-`error_code` is populated only when a real system error was captured — `disconnected::with_error(reason, errno)` builds it from `std::system_category()` (`src/qb/io/async/event/disconnected.h:116`). A protocol-initiated graceful close reports **no** system error, deliberately, so a stale `errno` from an earlier non-fatal write is not surfaced as a failure (`src/qb/io/async/io.h:2927-2935`).
+`error_code` is populated only when a real system error was captured — `disconnected::with_error(reason, errno)` builds it from `std::system_category()` (`src/qb/io/async/event/disconnected.h:116`). A protocol-initiated graceful close reports **no** system error, deliberately, so a stale `errno` from an earlier non-fatal write is not surfaced as a failure (`src/qb/io/async/io.h:2972-2980`).
 
 ### Handler signatures, and the one that fails silently
 

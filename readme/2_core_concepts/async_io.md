@@ -100,7 +100,7 @@ You rarely instantiate these directly. The `qb::io::use<_Derived>` helper (`qb/i
 `qb::io::async::io<_Derived>` is the workhorse. A derived class supplies a transport (a socket) and a protocol (the wire framing), then drives the component:
 
 - `start()` — sets the transport non-blocking and arms the watcher for `EV_READ`; resets the disconnection reason and system-error state. Call it after `connect()` or `accept()`.
-- `publish(args...)` / `operator<<` — append to the output buffer and arm `EV_WRITE`; the loop flushes when the socket is writable. `publish` enforces the configured maximum write-buffer size and disconnects with `buffer_overflow` if it is exceeded.
+- `publish(args...)` / `operator<<` — append to the output buffer and arm `EV_WRITE`; the loop flushes when the socket is writable. `publish` enforces the configured maximum write-buffer size and disconnects with `buffer_overflow` if it is exceeded. `operator<<` publishes one operand and returns the component, so every operand of `*this << a << b` passes that check (since 3.3); `publish` returns the raw output buffer, which checks nothing.
 - `disconnect(int reason = 1)` / `disconnect(event::disconnect_reason)` — request a graceful shutdown. The reason is recorded and the loop runs the cleanup path on the next dispatch.
 - `close_after_deliver()` — flush all pending output, then disconnect.
 - `stop()` — pause the watcher without running disconnection cleanup, so the component can be restarted with `start()`.

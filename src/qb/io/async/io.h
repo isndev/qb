@@ -675,6 +675,10 @@ public:
                     return -1;
                 Derived.flush(msg_size);
             }
+            // A framer that rejected the bytes invalidated itself and answered 0: report it now, not on
+            // a next file event that may never come (Huly QB-293).
+            if (unlikely(!this->_protocol->ok()))
+                return -1;
             Derived.eof();
             if constexpr (qb::has_on<_Derived, event::pending_read> || qb::has_on<_Derived, event::eof>) {
                 const auto pendingRead = Derived.pendingRead();
@@ -1368,6 +1372,15 @@ private:
                 Derived.flush(ret);
         }
         _on_message = false;
+        // A framer that rejects its input invalidates itself and answers 0 -- a zero-length size
+        // header, a malformed frame start -- which ends the loop above like "need more bytes". Seen
+        // here, on the event that carried the bad bytes, or the connection would wait for another
+        // event that a silent peer never sends (Huly QB-293). One predicted branch per read event.
+        if (unlikely(!this->_protocol->ok())) {
+            _system_error = 0;
+            _reason       = -1; // Protocol error
+            return false;
+        }
         return true;
     }
 
@@ -1473,14 +1486,9 @@ private:
             return;
         }
     error:
-#ifdef _WIN32
-        // Ignore a spurious would-block only when no explicit reason is pending.
-        // When _reason is set (user disconnect(), protocol error, DoS guard), the
-        // last WSA error is unrelated/stale — letting it suppress dispose() would
-        // silently drop the disconnection and leave a zombie session.
-        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
-            return;
-#endif
+        // No Windows would-block exemption (Huly QB-294): a genuine would-block returns above on
+        // not_recv_error(), against the same last error, and every other path here either set a reason
+        // or carries a real socket error -- a WSAEWOULDBLOCK seen here could only be a stale one.
         if (!_reason)
             _system_error = qb::io::socket::get_last_errno();
         dispose();
@@ -1827,7 +1835,9 @@ public:
      * @brief Publishes data to the output buffer and ensures write readiness.
      * @tparam _Args Variadic template arguments for the data to be published.
      * @param args Data arguments to stream into `_Derived::out()` buffer (typically a `qb::allocator::pipe<char>`).
-     * @return A reference to the `_Derived::out()` buffer after the data has been added.
+     * @return A reference to the `_Derived::out()` buffer after the data has been added: the RAW buffer,
+     *         which admits nothing (no write-buffer cap, no disconnection check) -- chain with
+     *         `operator<<`, or pass every operand to this one call.
      * @details Calls `ready_to_write()` to ensure the event loop is monitoring for write readiness,
      *          then streams all `args` into the output buffer provided by `_Derived::out()`.
      */
@@ -1865,10 +1875,18 @@ public:
         return Derived.out();
     }
 
+    /**
+     * @brief Publishes one operand and returns the component, so that EVERY operand of a chain
+     *        `*this << a << b` passes the admission `publish()` applies to the first: the write-buffer
+     *        cap, and nothing appended once the component is disconnecting (Huly QB-292).
+     * @return The component (it returned the raw output buffer before 3.3, which let every operand
+     *         after the first bypass both checks).
+     */
     template <typename T>
-    auto &
+    _Derived &
     operator<<(T &&data) {
-        return publish(std::forward<T>(data));
+        publish(std::forward<T>(data));
+        return Derived;
     }
 
     /**
@@ -1974,14 +1992,10 @@ private:
             return;
         }
     error:
-#ifdef _WIN32
-        // Ignore a spurious would-block only when no explicit reason is pending.
-        // When _reason is set (user disconnect(), protocol error, DoS guard), the
-        // last WSA error is unrelated/stale — letting it suppress dispose() would
-        // silently drop the disconnection and leave a zombie session.
-        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
-            return;
-#endif
+        // No Windows would-block exemption (Huly QB-294): a genuine would-block returns above on
+        // not_send_error(), against the same last error, and every other path here either set a reason
+        // or carries a real socket error (EV_ERROR included) -- a WSAEWOULDBLOCK seen here could only be
+        // a stale one, and honouring it left the component undisposed.
         if (!_reason)
             _system_error = qb::io::socket::get_last_errno();
         dispose();
@@ -2571,7 +2585,9 @@ public:
      * @brief Publishes data to the output buffer and ensures write readiness.
      * @tparam _Args Types of data to publish.
      * @param args Data arguments to stream into `_Derived::out()`.
-     * @return Reference to `_Derived::out()` buffer.
+     * @return Reference to `_Derived::out()` buffer: the RAW buffer, which admits nothing (no
+     *         write-buffer cap, no disconnection check) -- chain with `operator<<`, or pass every
+     *         operand to this one call.
      */
     template <typename... _Args>
     inline auto &
@@ -2604,10 +2620,18 @@ public:
         return Derived.out();
     }
 
+    /**
+     * @brief Publishes one operand and returns the component, so that EVERY operand of a chain
+     *        `*this << a << b` passes the admission `publish()` applies to the first: the write-buffer
+     *        cap, and nothing appended once the component is disconnecting (Huly QB-292).
+     * @return The component (it returned the raw output buffer before 3.3, which let every operand
+     *         after the first bypass both checks).
+     */
     template <typename T>
-    auto &
+    _Derived &
     operator<<(T &&data) {
-        return publish(std::forward<T>(data));
+        publish(std::forward<T>(data));
+        return Derived;
     }
 
     /**
@@ -2755,6 +2779,20 @@ private:
                 Derived.flush(ret);
         }
         _on_message = false;
+        // A framer that rejects its input invalidates itself and answers 0 -- a zero-length size
+        // header, a malformed frame start -- which ends the loop above like "need more bytes". Seen
+        // here, on the event that carried the bad bytes, or the connection would wait for another
+        // event that a silent peer never sends (Huly QB-293). The verdict is the in-loop one: output
+        // already published for earlier messages is delivered first, as for close_after_deliver().
+        if (unlikely(!this->_protocol->ok())) {
+            if (Derived.pendingWrite()) {
+                this->ready_to_write();
+                return true;
+            }
+            _system_error = 0;
+            _reason       = -1; // Protocol error
+            return false;
+        }
         return true;
     }
 
@@ -2915,15 +2953,22 @@ private:
 
         if (ok)
             return;
-    error:
-#ifdef _WIN32
-        // Ignore a spurious would-block only when no explicit reason is pending.
-        // When _reason is set (user disconnect(), protocol error, DoS guard), the
-        // last WSA error is unrelated/stale — letting it suppress dispose() would
-        // silently drop the disconnection and leave a zombie session.
-        if (!_reason && qb::io::socket::get_last_errno() == QB_WINDOWS_WOULDBLOCK_ERROR)
+        // A read readiness that came alone while close_after_deliver() waits for its output to drain
+        // (the protocol is not-ok, so the read above was skipped, and the socket was full, so no
+        // EV_WRITE came with it): not an error, the delivery is still under way. Stop watching reads
+        // -- the protocol will read nothing more, and a level-triggered backend would report the same
+        // unread bytes on every pass -- and let EV_WRITE finish the delivery and dispose. It used to
+        // fall to `error:` and dispose at once, dropping the undelivered output (Huly QB-294).
+        if (!_reason && !(event._revents & EV_ERROR) && !_protocol->ok() && Derived.pendingWrite()) {
+            this->_async_event.set(EV_WRITE);
             return;
-#endif
+        }
+    error:
+        // No Windows would-block exemption here (Huly QB-294): a genuine would-block never reaches this
+        // label -- the read and write paths return on not_recv_error() / not_send_error() first, against
+        // the same last error -- so the only path that arrived here with no reason and a WSAEWOULDBLOCK
+        // in the thread's last error was the graceful close of close_after_deliver(), reading a STALE
+        // error some earlier call left: it returned without disposing and the session never closed.
         if (!_reason) {
             // io-defect-3: a protocol-initiated graceful close (close_after_deliver() marked the
             // protocol not-ok, all output flushed — handle_write returned false with no _reason) is

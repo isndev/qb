@@ -63,10 +63,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -373,4 +376,200 @@ TEST(IoHandler, BroadcastReachesAllSessionsAndExtractRemovesOne) {
         qb::io::async::run_for(10ms);
 
     qb::io::async::listener::current.clear();
+}
+
+// ===========================================================================
+// PART C — io_handler under re-entrant hooks (Huly QB-306) and the broadcast's admission (Huly QB-292)
+// ===========================================================================
+
+namespace {
+
+class HookServer;
+
+// A session whose `extracted` hook and whose server's registration hook run what the test hands them.
+class HookSession : public qb::io::use<HookSession>::tcp::client<HookServer> {
+public:
+    using Protocol = qb::protocol::text::command<HookSession>;
+
+    std::function<void()> on_extracted; // runs once
+    std::size_t           write_cap = QB_MAX_WRITE_BUFFER_SIZE;
+
+    explicit HookSession(IOServer &server)
+        : client(server) {}
+
+    // publish() reads the cap through the derived session (the transport's own setter is not public on
+    // a tcp::client session).
+    [[nodiscard]] std::size_t
+    max_write_buffer_size() const noexcept {
+        return write_cap;
+    }
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(qb::io::async::event::extracted &&) {
+        if (auto hook = std::exchange(on_extracted, nullptr))
+            hook();
+    }
+};
+
+class HookServer : public qb::io::use<HookServer>::tcp::server<HookSession> {
+public:
+    std::function<void(IOSession &)> on_registered; // runs once
+
+    void
+    on(IOSession &session) {
+        if (auto hook = std::exchange(on_registered, nullptr))
+            hook(session);
+    }
+};
+
+// One connected client on a worker thread, for as long as the guard lives.
+class OneClient {
+    std::atomic<bool> _stop{false};
+    std::atomic<bool> _connected{false};
+    std::thread       _worker;
+
+public:
+    explicit OneClient(std::uint16_t port)
+        : _worker([this, port] {
+            qb::io::async::init();
+            ProbeClient client;
+            if (client.transport().connect_v4("127.0.0.1", port) == qb::io::SocketStatus::Done) {
+                client.start();
+                _connected.store(true);
+            }
+            while (!_stop.load())
+                qb::io::async::run_for(5ms);
+        }) {}
+
+    ~OneClient() {
+        _stop.store(true);
+        _worker.join();
+    }
+
+    [[nodiscard]] bool
+    connected() const noexcept {
+        return _connected.load();
+    }
+};
+
+void
+drain_after_clients() {
+    for (int i = 0; i < 20; ++i)
+        qb::io::async::run_for(5ms);
+    qb::io::async::listener::current.clear();
+}
+
+} // namespace
+
+// The `extracted` hook grows the registry: a rehash frees the bucket array the extraction's iterator
+// pointed into, and the erase that followed used it (ASan: heap-use-after-free).
+TEST(IoHandler, ExtractSessionSurvivesAHookThatGrowsTheRegistry) {
+    qb::io::async::init();
+    HookServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    server.start();
+    {
+        OneClient client(server.transport().local_endpoint().port());
+        ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
+        const auto id = server.sessions().begin()->first;
+
+        std::vector<qb::uuid> added;
+        server.session(id)->on_extracted = [&] {
+            for (int i = 0; i < 64; ++i) { // enough to rehash the registry several times over
+                auto extra = std::make_shared<HookSession>(server);
+                added.push_back(extra->id());
+                server.sessions().emplace(extra->id(), std::move(extra));
+            }
+        };
+
+        auto [io, ok] = server.extractSession(id);
+        EXPECT_TRUE(ok);
+        EXPECT_TRUE(io.is_open()) << "the extracted transport is handed over live";
+        EXPECT_EQ(server.session(id), nullptr) << "the extracted session no longer resolves";
+        EXPECT_EQ(server.session_count(), added.size()) << "exactly the extracted session left the registry";
+        for (auto const &extra : added)
+            EXPECT_NE(server.session(extra), nullptr) << "every session the hook added stays registered";
+        io.close();
+        server.sessions().clear();
+    }
+    drain_after_clients();
+}
+
+// The `extracted` hook extracts the same session again: the inner call takes it, and the outer one --
+// which erased the node the inner call had already freed -- must report it has nothing left.
+TEST(IoHandler, ExtractSessionFromItsOwnHookHandsTheTransportOverOnce) {
+    qb::io::async::init();
+    HookServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    server.start();
+    {
+        OneClient client(server.transport().local_endpoint().port());
+        ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
+        const auto id = server.sessions().begin()->first;
+
+        decltype(server.extractSession(id)) inner{};
+        server.session(id)->on_extracted = [&] {
+            inner = server.extractSession(id);
+        };
+
+        auto [io, ok] = server.extractSession(id);
+        EXPECT_TRUE(inner.second) << "the inner extraction took the session";
+        EXPECT_TRUE(inner.first.is_open());
+        EXPECT_FALSE(ok) << "the outer extraction has nothing left to hand over";
+        EXPECT_FALSE(io.is_open());
+        EXPECT_EQ(server.session_count(), 0u);
+        inner.first.close();
+    }
+    drain_after_clients();
+}
+
+// The registration hook extracts the session it was handed: registerSession() then returned a pointer
+// to a session that died as it returned.
+TEST(IoHandler, RegisterSessionReportsASessionItsHookTookAway) {
+    qb::io::async::init();
+    HookServer server; // never listens: the test registers a connected socket itself
+
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    qb::io::tcp::socket client;
+    ASSERT_EQ(client.connect_v4("127.0.0.1", listener.local_endpoint().port()), qb::io::SocketStatus::Done);
+    qb::io::tcp::socket accepted;
+    ASSERT_EQ(listener.accept(accepted), qb::io::SocketStatus::Done);
+
+    decltype(server.extractSession(qb::uuid{})) taken{};
+    server.on_registered = [&](HookSession &session) {
+        taken = server.extractSession(session.id());
+    };
+
+    auto *registered = server.registerSession(std::move(accepted));
+    EXPECT_TRUE(taken.second) << "the hook extracted the session";
+    EXPECT_EQ(registered, nullptr) << "a session its hook took away is not reported as registered";
+    EXPECT_EQ(server.session_count(), 0u);
+
+    taken.first.close();
+    client.disconnect();
+    drain_after_clients();
+}
+
+// stream() writes each argument through `*session << ...`: every one of them, not only the first,
+// must pass the session's write-buffer cap (Huly QB-292).
+TEST(IoHandler, BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap) {
+    qb::io::async::init();
+    HookServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    server.start();
+    {
+        OneClient client(server.transport().local_endpoint().port());
+        ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
+        auto session       = server.sessions().begin()->second;
+        session->write_cap = 6u;
+
+        server.stream(std::string("abcd"), std::string("efgh")); // the SECOND argument crosses the cap
+        EXPECT_LE(session->out().size(), 6u) << "the cap holds for every argument of the broadcast";
+        EXPECT_EQ(session->disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    }
+    drain_after_clients();
 }
