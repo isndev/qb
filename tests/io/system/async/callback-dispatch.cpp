@@ -10,7 +10,7 @@
  *   - a non-positive timeout (`<= 0`) runs the callable SYNCHRONOUSLY, in-call, before `callback()`
  *     returns — no loop iteration is required;
  *   - a positive timeout schedules a self-deleting `Timeout<F>` that fires exactly once when the loop
- *     reaches the deadline, and not before.
+ *     reaches the deadline, and not before — owning its own copy of a named callable (Huly QB-972).
  *
  * Restructured from the dissolved system/test-async-io.cpp (CallbackImmediateExecution,
  * CallbackScheduledExecution). The hand-rolled `for(i){run(EVRUN_ONCE);sleep_for()}` poll is replaced
@@ -106,6 +106,29 @@ TEST_F(CallbackDispatchTest, ScheduledCallbackFiresViaLoopAndNotBefore) {
     // And it must fire exactly once — pump further to prove no re-fire.
     EXPECT_FALSE(pump_until([&] { return fired.load() > 1; }, 100ms)) << "deferred callback fired more than once";
     EXPECT_EQ(fired.load(), 1);
+}
+
+// A NAMED callable handed to the timed overload is copied into the timer. `callback()` used to
+// instantiate `Timeout<L&>` for an lvalue, whose member is a REFERENCE to the caller's object: the
+// timer then fired through a dangling reference once the caller's callable was gone (Huly QB-972).
+// Here the callable is the only owner of `state` besides the local, so a reference-holding timer is
+// seen at once: both owners die with the scope and the weak pointer expires before anything fires.
+TEST_F(CallbackDispatchTest, ScheduledCallbackOwnsACopyOfANamedCallable) {
+    std::atomic<int>   fired{0};
+    std::weak_ptr<int> state_alive;
+    {
+        auto state  = std::make_shared<int>(42);
+        state_alive = state;
+        auto named  = [state, &fired]() {
+            fired.fetch_add(*state == 42 ? 1 : 100);
+        };
+        async::callback(named, 20ms); // an lvalue: the timer must take its own copy
+    } // `named` and `state` are gone; only the timer's copy can keep `*state` alive
+    ASSERT_FALSE(state_alive.expired()) << "the pending timer must own a copy of the callable and its captures";
+
+    EXPECT_TRUE(pump_until([&] { return fired.load() != 0; })) << "the timed callback never fired";
+    EXPECT_EQ(fired.load(), 1) << "the timer's copy saw the wrong captured state";
+    EXPECT_TRUE(state_alive.expired()) << "the self-deleting timer must release its copy once it has fired";
 }
 
 // =============================================================================

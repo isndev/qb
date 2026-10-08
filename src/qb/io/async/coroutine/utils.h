@@ -336,7 +336,9 @@ run_sync(Awaitable &&awaitable)
         std::exception_ptr        error;
         coro_scheduler().spawn([&awaitable, &result, &done, &error]() -> task<void> {
             try {
-                result = co_await awaitable;
+                // emplace, not assign: a move-constructible, non-assignable result (a lock or permit
+                // guard) is a valid result -- the slot is empty, there is nothing to assign over.
+                result.emplace(co_await awaitable);
             } catch (...) {
                 error = std::current_exception();
             }

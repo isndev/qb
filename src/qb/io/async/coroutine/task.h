@@ -677,16 +677,19 @@ public:
 
     /**
      * @brief Move assignment
+     * @details Takes the new frame first, then releases the old one (`std::unique_ptr::reset`'s
+     *          order): a self-move leaves `handle_` unchanged -- the inner exchange empties it, the
+     *          outer one puts it back -- and destroys nothing; a source living inside the released
+     *          frame is emptied before that frame is freed (Huly QB-360).
      */
     task &
     operator=(task &&other) noexcept {
-        if (handle_) {
-            if (!handle_.done()) {
-                forget_frame_if_current(handle_); // see ~task: scrub a still-queued frame before free
+        if (const handle_type old = std::exchange(handle_, std::exchange(other.handle_, {}))) {
+            if (!old.done()) {
+                forget_frame_if_current(old); // see ~task: scrub a still-queued frame before free
             }
-            handle_.destroy();
+            old.destroy();
         }
-        handle_ = std::exchange(other.handle_, {});
         return *this;
     }
 
@@ -963,15 +966,16 @@ public:
     task(task &&other) noexcept
         : handle_(std::exchange(other.handle_, {})) {}
 
+    // Same order as task<T>::operator=(task&&): take the new frame, then release the old one, so a
+    // self-move destroys nothing (Huly QB-360).
     task &
     operator=(task &&other) noexcept {
-        if (handle_) {
-            if (!handle_.done()) {
-                forget_frame_if_current(handle_); // see ~task: scrub a still-queued frame before free
+        if (const handle_type old = std::exchange(handle_, std::exchange(other.handle_, {}))) {
+            if (!old.done()) {
+                forget_frame_if_current(old); // see ~task: scrub a still-queued frame before free
             }
-            handle_.destroy();
+            old.destroy();
         }
-        handle_ = std::exchange(other.handle_, {});
         return *this;
     }
 

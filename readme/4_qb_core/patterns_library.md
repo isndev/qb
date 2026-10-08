@@ -129,7 +129,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   Every one of these pattern coroutines opens with `qb::io::async::pin_frame_copy(req)`: clang older than 22 lays
   a never-written by-value parameter out at the wrong alignment on x86-64 Linux and Intel macOS (LLVM
   issue 159571) — the shield, and the rule for a coroutine of your own, are in
-  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:231`, `coroutine/utils.h:376`). `qb::ask` itself
+  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:231`, `coroutine/utils.h:378`). `qb::ask` itself
   is no coroutine since 3.2: it returns the exchange as an awaitable that lives in the awaiting frame —
   `ask_operation<E>` holds the context, the target, the request and the timeout, engages the `ask_awaiter` in
   place at `await_suspend()` and hands the reply over with one move (`request.h:110-160`, the emplace form's

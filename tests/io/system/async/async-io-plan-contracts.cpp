@@ -17,7 +17,8 @@
  *            the incoming socket (proven here with `fcntl(F_GETFD) == -1 && errno == EBADF`, the
  *            stronger guarantee the old test conceded it skipped);
  *   - 2.12 — `io_handler::stream()` reuses its broadcast scratch buffer with no corruption across calls;
- *   - 2.14 — `scoped_callback` fires exactly once and is cancellable by destroying the handle;
+ *   - 2.14 — `scoped_callback` fires exactly once and is cancellable by destroying the handle, and
+ *            (Huly QB-295) takes a named callable, keeping its own copy;
  *   - 2.17 — `disconnect_reason` keeps its int-backed ABI values;
  *   - 2.18 — `acceptor::listen()` auto-starts the accept watcher;
  *   - 2.19 — `handshake::onMessage()` consumes the cached size without re-driving the SSL machine;
@@ -49,6 +50,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <memory>
 #include <string>
 #include <type_traits>
 
@@ -371,6 +373,30 @@ TEST_F(IoPlanContractsTest, ScopedCallbackDestructionCancelsPendingTimer) {
     EXPECT_FALSE(pump_until([&] { return fired.load() > 0; }, 250ms))
         << "destroying a ScopedTimeout before its deadline must cancel the callback";
     EXPECT_EQ(fired.load(), 0);
+}
+
+// Huly QB-295: scoped_callback is a forwarding-reference factory, but ScopedTimeout's constructor
+// took only `_Func &&` of the decayed type, so a NAMED callable (an lvalue) did not compile. The
+// timer now copies an lvalue and moves an rvalue; `use_count` shows a copy, not a reference.
+TEST_F(IoPlanContractsTest, ScopedCallbackTakesANamedCallableAndOwnsACopy) {
+    std::atomic<int> fired{0};
+    auto             state = std::make_shared<int>(7);
+    auto             named = [state, &fired] {
+        fired.fetch_add(*state);
+    };
+    const auto cnamed = named;
+    ASSERT_EQ(state.use_count(), 3); // the local, `named`'s capture, `cnamed`'s capture
+
+    auto timer = async::scoped_callback(named, 20ms);                                               // a mutable lvalue: copied
+    auto idle  = async::scoped_callback(cnamed, 1h);                                                // a const lvalue: copied
+    auto moved = async::scoped_callback([owned = std::make_unique<int>(1)] { (void) *owned; }, 1h); // a move-only rvalue: moved
+    EXPECT_EQ(state.use_count(), 5) << "each timer must hold its own copy of the named callable";
+
+    EXPECT_TRUE(pump_until([&] { return fired.load() == 7; })) << "the timer built from a named callable never fired";
+    timer.reset();
+    idle.reset();
+    moved.reset();
+    EXPECT_EQ(state.use_count(), 3) << "destroying the timers must release their copies";
 }
 
 // =============================================================================

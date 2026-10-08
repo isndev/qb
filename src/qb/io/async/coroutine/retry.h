@@ -231,7 +231,7 @@ requires(!std::same_as<typename std::invoke_result_t<F>::value_type, void>)
         bool                       success = false;
 
         try {
-            result  = co_await f();
+            result.emplace(co_await f()); // emplace: a non-assignable result is valid (see run_sync)
             success = true;
         } catch (const std::exception &e) {
             last_error = std::current_exception();

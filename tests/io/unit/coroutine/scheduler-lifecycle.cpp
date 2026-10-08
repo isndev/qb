@@ -51,6 +51,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -175,6 +176,70 @@ TEST_F(CoroutineSchedulerTests, TaskIsMoveOnly) {
     EXPECT_TRUE(t2.handle());
     EXPECT_FALSE(static_cast<bool>(t1));
     EXPECT_TRUE(static_cast<bool>(t2));
+}
+
+/// The frame oracle of the move-assignment test below: a coroutine parameter lives in the frame, so
+/// it is destroyed exactly when (and as many times as) the frame is. Moved-from copies do not count.
+struct task_frame_witness {
+    int *destroyed;
+    explicit task_frame_witness(int *d) noexcept
+        : destroyed(d) {}
+    task_frame_witness(task_frame_witness &&other) noexcept
+        : destroyed(std::exchange(other.destroyed, nullptr)) {}
+    task_frame_witness &operator=(task_frame_witness &&) = delete;
+    ~task_frame_witness() {
+        if (destroyed)
+            ++*destroyed;
+    }
+};
+
+/**
+ * @test Self move-assignment keeps the frame (Huly QB-360)
+ * @brief `t = std::move(t)` released the task's own frame and then took the very handle it had just
+ *        destroyed, so the task owned a dangling frame that its destructor destroyed a second time.
+ *        It is a no-op now, for both specialisations; a distinct move-assignment still releases the
+ *        assigned-over frame exactly once and empties the source.
+ */
+TEST_F(CoroutineSchedulerTests, TaskSelfMoveAssignmentKeepsItsFrame) {
+    int destroyed = 0;
+    {
+        auto t = [](task_frame_witness) -> task<int> {
+            co_return 7;
+        }(task_frame_witness{&destroyed});
+        auto &self = t; // an alias, so -Wself-move does not reject the statement under test
+        t          = std::move(self);
+        EXPECT_EQ(destroyed, 0) << "task<int>: a self move-assignment must not destroy the task's own frame";
+        EXPECT_TRUE(static_cast<bool>(t)) << "task<int>: the task must still own its frame";
+    }
+    EXPECT_EQ(destroyed, 1) << "task<int>: the frame is destroyed once, by the task's destructor";
+
+    destroyed = 0;
+    {
+        auto t = [](task_frame_witness) -> task<void> {
+            co_return;
+        }(task_frame_witness{&destroyed});
+        auto &self = t;
+        t          = std::move(self);
+        EXPECT_EQ(destroyed, 0) << "task<void>: a self move-assignment must not destroy the task's own frame";
+        EXPECT_TRUE(static_cast<bool>(t)) << "task<void>: the task must still own its frame";
+    }
+    EXPECT_EQ(destroyed, 1) << "task<void>: the frame is destroyed once, by the task's destructor";
+
+    // Control: distinct tasks. The assigned-over frame goes at once, the source is emptied, and the
+    // moved-in frame is destroyed once more at scope end -- two frames, two destructions.
+    destroyed = 0;
+    {
+        auto make = [](task_frame_witness) -> task<int> {
+            co_return 1;
+        };
+        auto a = make(task_frame_witness{&destroyed});
+        auto b = make(task_frame_witness{&destroyed});
+        a      = std::move(b);
+        EXPECT_EQ(destroyed, 1) << "the assigned-over frame is released by the move-assignment";
+        EXPECT_FALSE(static_cast<bool>(b)) << "the source is emptied";
+        EXPECT_TRUE(static_cast<bool>(a));
+    }
+    EXPECT_EQ(destroyed, 2);
 }
 
 /**

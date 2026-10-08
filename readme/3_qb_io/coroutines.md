@@ -106,18 +106,18 @@ task<void> caller() {
 
 | Property | Detail | Source |
 |---|---|---|
-| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:436`, `:814` |
+| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:436`, `:817` |
 | Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:508-509` |
-| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:675-676`, `:694-695` |
-| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:572`, `:753-754` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:721-722` |
+| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:675-676`, `:697-698` |
+| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:572`, `:756-757` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:724-725` |
 | Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:201` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:745-763 -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:748-766 -->
 
 > `task<T>` is move-only. Pass it to `spawn` (or any consumer) with `std::move`. `coro_scheduler().spawn(t)` is a compile error; write `coro_scheduler().spawn(std::move(t))`. See the [`spawn(Callable)` overload](#the-scheduler) for the case where you want to hand a lambda directly.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:694-695; scheduler.h:458 (Factbook) -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:697-698; scheduler.h:458 (Factbook) -->
 
 ### `shared_task<T>` — one computation, many awaiters
 
@@ -393,7 +393,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:625`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:903`) | connect success, failure, or the connector's own deadline |
 | `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
-| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:722`) | the inner coroutine finishing |
+| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:725`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:438`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:767`) | whichever comes first |
@@ -868,7 +868,7 @@ for (int i = 0; i < 5; ++i) {
 ```
 
 Three rules cover every case: function parameters are copied into the coroutine frame, so passing data as an argument is always safe; the `spawn(Callable)` and `coroutine_scope::spawn(Callable)` overloads move the closure into an owning frame for you; and a coroutine local lives until `co_return`, not until the frame is destroyed. Note that a coroutine's locals are destroyed at `co_return` — not when the spawned frame is later freed — so anything a deferred operation needs must be owned by the frame (a parameter or a capture), not borrowed from a caller stack.
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:573-604 (spawn Callable), :1036 (invoke_owned_), task.h:694-695; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:601 -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:573-604 (spawn Callable), :1036 (invoke_owned_), task.h:697-698; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:601 -->
 
 > **Scheduler teardown.** `~CoroutineScheduler` destroys only ready-queue frames it owns plus deferred completed frames; *suspended* frames are intentionally left alone because their libev watchers still reference them. Stop the event loop before destroying the scheduler. The listener does this on its own destruction (`reset_coro_scheduler()` runs `destroy_all_suspended()` first, so a frame parked on the listener's scheduler is destroyed, not abandoned); a scheduler owned directly and destroyed with frames still suspended abandons them, and says so in every build: one WARNING line on `qb::io::cerr` and the count added to `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally (Huly QB-84).
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:364-394 (rationale), :395-434 (teardown, the abandoned-frame report at :424-425), task.h:150-164 (report_abandoned_coroutine_frames / abandoned_coroutine_frames_total) -->
@@ -880,7 +880,7 @@ A parameter taken by value is copied into the coroutine frame, which is what mak
 `qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. The asm emits no instruction; the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward when a pattern hands the request to an inner coroutine — and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern coroutine opens with it on its request (`qb::ask` itself is an awaitable, not a coroutine, since 3.2); a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
 
 ```cpp
-// src: derived from qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:466-467 (ask_guarded)
+// src: derived from qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:466-467 (ask_guarded)
 struct Order  : qb::Event { int amount{0}; };   // every qb::Event is 64-byte aligned
 struct Placed : qb::Event { int amount{0}; };
 
@@ -890,7 +890,7 @@ qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Ord
     ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
 }
 ```
-<!-- src: qb/src/qb/io/async/coroutine/utils.h:376 (pin_frame_copy); qb/src/qb/core/patterns/request.h:231 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:314 (pin_frame_copy) -->
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:231 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:314 (pin_frame_copy) -->
 
 ## Seeing what a coroutine waits on
 

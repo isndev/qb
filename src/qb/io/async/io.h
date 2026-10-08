@@ -33,6 +33,7 @@
 #include <filesystem>
 #include <memory>
 #include <new>
+#include <type_traits>
 #include <qb/system/time.h>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/type_traits.h>
@@ -205,10 +206,15 @@ private:
  * slab (QB_IO_PLAN 2.13), a steady-state `callback()` burns exactly zero
  * `malloc`/`free` calls.
  *
- * @tparam _Func The function type (or callable object type) to execute after the timeout.
+ * @tparam _Func The function type (or callable object type) to execute after the timeout -- a VALUE
+ *               type: the timer owns its callable (`async::callback` instantiates it decayed).
  */
 template <typename _Func>
 class Timeout : public with_timeout<Timeout<_Func>> {
+    static_assert(!std::is_reference_v<_Func>,
+                  "Timeout owns its callable: instantiate it with the decayed type (async::callback does), never a "
+                  "reference -- a reference member would outlive the caller's object it points to");
+
     _Func _func; /**< The callable (function, lambda, functor) to execute upon timeout. */
     bool  _delete_only = false;
 
@@ -304,14 +310,16 @@ public:
 
     /**
      * @brief Constructor that schedules a function to be called after a timeout.
-     * @param func The function to execute. It will be moved into the Timeout object.
+     * @param func The function to execute: copied into the Timeout from an lvalue, moved from an rvalue.
      * @param timeout Timeout duration in seconds before execution. If `0.0` or less,
      *                the function is executed immediately (or in the next loop iteration,
      *                depending on `with_timeout` behavior) and this `Timeout` object is deleted.
      */
-    Timeout(_Func &&func, qb::duration timeout)
+    template <typename F>
+    requires std::is_constructible_v<_Func, F &&>
+    Timeout(F &&func, qb::duration timeout)
         : with_timeout<Timeout<_Func>>(timeout > qb::duration::zero() ? timeout : qb::duration::zero())
-        , _func(std::forward<_Func>(func)) {
+        , _func(std::forward<F>(func)) {
         // Register as a loop-owned object: this Timeout self-`delete`s only when its
         // one-shot timer fires, so a listener teardown (`clear()`) before that fire
         // would otherwise orphan it. The deleter lets `clear()` reclaim it instead.
@@ -369,9 +377,23 @@ callback(_Func &&func) {
     func();
 }
 
+/**
+ * @brief Run a callable once, after `timeout`, on this thread's event loop (a self-deleting timer).
+ * @ingroup Async
+ * @param func The callable. The timer keeps its OWN copy -- copied from an lvalue, moved from an
+ *             rvalue -- so nothing of the caller's object is referenced once `callback` returns.
+ * @param timeout The delay; a non-positive one runs `func` inline, before `callback` returns.
+ * @details Bound to no actor: a closure that captures `this` of an actor fires after `~Actor()`.
+ *          Inside an actor, wait with `spawn` + `co_await ctx.sleep(d)`, or keep a `scoped_callback`
+ *          handle as a member (destroying it cancels).
+ */
 template <typename _Func, typename Rep, typename Period>
 void
 callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
+    using Fn = std::decay_t<_Func>;
+    static_assert(std::is_constructible_v<Fn, _Func &&>,
+                  "qb::io::async::callback: the timer keeps its own copy of the callable -- an lvalue must be "
+                  "copy-constructible; std::move a move-only callable in");
     const qb::duration d = std::chrono::duration_cast<qb::duration>(timeout);
     if (d <= qb::duration::zero()) {
         func();
@@ -383,7 +405,7 @@ callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
     // worst case. `event::timer::start` (which `with_timeout`'s constructor calls) refreshes the
     // loop's clock before arming, so the requested delay is honoured whatever the owning thread
     // did since the loop last ran.
-    new Timeout<_Func>(std::forward<_Func>(func), d);
+    new Timeout<Fn>(std::forward<_Func>(func), d);
 }
 
 /**
@@ -405,13 +427,18 @@ callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
  */
 template <typename _Func>
 class ScopedTimeout : public with_timeout<ScopedTimeout<_Func>> {
+    static_assert(!std::is_reference_v<_Func>, "ScopedTimeout owns its callable: instantiate it with the decayed type (scoped_callback does)");
+
     _Func _func;
     bool  _fired = false;
 
 public:
-    ScopedTimeout(_Func &&func, qb::duration timeout)
+    /// @param func The callable: copied from an lvalue, moved from an rvalue.
+    template <typename F>
+    requires std::is_constructible_v<_Func, F &&>
+    ScopedTimeout(F &&func, qb::duration timeout)
         : with_timeout<ScopedTimeout<_Func>>(timeout > qb::duration::zero() ? timeout : qb::duration::zero())
-        , _func(std::forward<_Func>(func)) {
+        , _func(std::forward<F>(func)) {
         if (timeout <= qb::duration::zero()) {
             _fired = true;
             try {
@@ -455,7 +482,8 @@ public:
  * @ingroup Async
  *
  * @tparam _Func Callable invoked when the timer expires.
- * @param  func  The callable to execute.
+ * @param  func  The callable to execute: the timer keeps its own copy (copied from an lvalue,
+ *               moved from an rvalue).
  * @param  timeout Timer duration in seconds (0 or less → fires immediately).
  * @return `std::unique_ptr<ScopedTimeout<std::decay_t<_Func>>>` owning the timer.
  *
@@ -466,6 +494,9 @@ template <typename _Func>
 [[nodiscard]] auto
 scoped_callback(_Func &&func) {
     using Timer = ScopedTimeout<std::decay_t<_Func>>;
+    static_assert(std::is_constructible_v<std::decay_t<_Func>, _Func &&>,
+                  "qb::io::async::scoped_callback: the timer keeps its own copy of the callable -- an lvalue must be "
+                  "copy-constructible; std::move a move-only callable in");
     return std::make_unique<Timer>(std::forward<_Func>(func), qb::duration::zero());
 }
 
@@ -477,6 +508,9 @@ template <typename _Func, typename Rep, typename Period>
 [[nodiscard]] auto
 scoped_callback(_Func &&func, std::chrono::duration<Rep, Period> timeout) {
     using Timer = ScopedTimeout<std::decay_t<_Func>>;
+    static_assert(std::is_constructible_v<std::decay_t<_Func>, _Func &&>,
+                  "qb::io::async::scoped_callback: the timer keeps its own copy of the callable -- an lvalue must be "
+                  "copy-constructible; std::move a move-only callable in");
     return std::make_unique<Timer>(std::forward<_Func>(func), std::chrono::duration_cast<qb::duration>(timeout));
 }
 

@@ -353,6 +353,53 @@ TEST_F(SiblingApiParity, WithLockAndWithSemaphoreStillAcceptEveryLegitimateShape
 }
 
 // ===========================================================================
+// The result slots of the composition helpers (Huly QB-290)
+//
+// run_sync, with_retry, coro_with_timeout, parallel, parallel_map and capture_result each park the
+// awaited value in an EMPTY std::optional before handing it on. They assigned it
+// (`slot = co_await ...`), and optional's value assignment requires an ASSIGNABLE T even with
+// nothing to assign over -- so a value a plain `co_await` takes (a lock or permit guard:
+// move-constructible, deliberately not assignable) could pass through none of them. They emplace
+// now; the six are pinned together, with the framework's own guard for run_sync.
+// ===========================================================================
+
+struct non_assignable {
+    int v;
+    explicit non_assignable(int x) noexcept
+        : v(x) {}
+    non_assignable(non_assignable &&) noexcept            = default;
+    non_assignable &operator=(non_assignable &&) noexcept = delete;
+};
+static_assert(std::is_move_constructible_v<non_assignable> && !std::is_move_assignable_v<non_assignable>);
+static_assert(std::is_move_constructible_v<async_mutex::guard> && !std::is_move_assignable_v<async_mutex::guard>);
+
+task<non_assignable>
+make_non_assignable(int v) {
+    co_return non_assignable{v};
+}
+
+TEST_F(SiblingApiParity, EveryResultSlotTakesAMoveOnlyNonAssignableValue) {
+    async_mutex mtx;
+    {
+        auto guard = run_sync(mtx.scoped_lock());
+        EXPECT_TRUE(mtx.is_locked()) << "run_sync must hand back the guard that holds the lock";
+    }
+    EXPECT_FALSE(mtx.is_locked()) << "the guard run_sync returned releases the lock when it goes";
+
+    const int sum = run_sync([]() -> task<int> {
+        auto a      = co_await with_retry([] { return make_non_assignable(1); });
+        auto b      = co_await coro_with_timeout(make_non_assignable(2), 1s);
+        auto [c, d] = co_await parallel(make_non_assignable(3), make_non_assignable(4));
+        const std::vector<int>        items{5};
+        auto                          e = co_await parallel_map(items, [](int v) { return make_non_assignable(v); });
+        std::optional<non_assignable> f;
+        co_await capture_result(make_non_assignable(6), f);
+        co_return a.v + b.v + c.v + d.v + e.at(0).v + f->v;
+    }());
+    EXPECT_EQ(sum, 21); // 1 + 2 + 3 + 4 + 5 + 6: every helper delivered its own value
+}
+
+// ===========================================================================
 // PAIR 5 — check_cancelled vs yield_or_cancel
 //
 // These two MUST differ, and the trap is that the name says otherwise:

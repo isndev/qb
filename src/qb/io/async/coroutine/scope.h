@@ -651,7 +651,7 @@ public:
 template <typename T>
 task<void>
 capture_result(task<T> t, std::optional<T> &result) {
-    result = co_await std::move(t);
+    result.emplace(co_await std::move(t)); // emplace: a move-constructible, non-assignable T is valid
 }
 
 namespace detail {
@@ -667,9 +667,9 @@ task<void>
 capture_result_shared(task<T> t, std::shared_ptr<std::optional<value_slot_t<T>>> result) {
     if constexpr (std::is_void_v<T>) {
         co_await std::move(t);
-        *result = std::monostate{};
+        result->emplace();
     } else {
-        *result = co_await std::move(t);
+        result->emplace(co_await std::move(t)); // emplace: a non-assignable T is valid
     }
 }
 
@@ -758,9 +758,9 @@ parallel_map_worker(std::shared_ptr<semaphore> sem, F fn, std::shared_ptr<std::v
     auto guard = co_await sem->scoped_acquire();
     if constexpr (std::is_same_v<R, std::monostate>) {
         co_await fn(item);
-        (*results)[idx] = std::monostate{};
+        (*results)[idx].emplace();
     } else {
-        (*results)[idx] = co_await fn(item);
+        (*results)[idx].emplace(co_await fn(item)); // emplace: a non-assignable R is valid
     }
 }
 

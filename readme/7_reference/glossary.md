@@ -219,7 +219,7 @@ The object a `co_await` expression operates on. It exposes `await_ready()`, `awa
 <a id="callback-io-qbioasynccallback"></a>
 #### `callback` (I/O — `qb::io::async::callback`)
 
-A `qb-io` utility that runs a callable on the current thread. With a positive [`qb::duration`](#qbduration) it arms a one-shot timer on the event loop; **with no delay (or a non-positive one) it calls the callable inline and immediately — it does not schedule and does not defer.** To continue after the current handler unwinds, use [`defer`](#defer-qbioasyncdefer). Distinct from an [actor callback](#callback-actor-qbicallback). Defined in `src/qb/io/async/io.h:348,368`. See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that runs a callable on the current thread. With a positive [`qb::duration`](#qbduration) it arms a one-shot timer on the event loop; **with no delay (or a non-positive one) it calls the callable inline and immediately — it does not schedule and does not defer.** To continue after the current handler unwinds, use [`defer`](#defer-qbioasyncdefer). Distinct from an [actor callback](#callback-actor-qbicallback). Defined in `src/qb/io/async/io.h:356,376`. See [Async system](../3_qb_io/async_system.md).
 
 <a id="defer-qbioasyncdefer"></a>
 #### `defer` (`qb::io::async::defer`)

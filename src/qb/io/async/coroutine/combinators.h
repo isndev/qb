@@ -794,7 +794,7 @@ class timeout_awaiter {
     static task<void>
     run_task(std::shared_ptr<state_t> state) {
         try {
-            state->result = co_await state->inner_task;
+            state->result.emplace(co_await state->inner_task); // emplace: a non-assignable T is valid
         } catch (...) {
             state->exception = std::current_exception();
         }

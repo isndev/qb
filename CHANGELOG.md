@@ -386,6 +386,26 @@ policy.
   of capacity 0. Same for `send_for`. The wake now hands the value over (see Changed).
   `WokenSenderOwnsTheSlotItsWakeFreedSoANewcomerCannotTakeIt`, `TimedSenderWokenByAFreedSlotOwnsItToo` and
   `RendezvousSenderWokenByAReceiverHandsItsValueToThatReceiver` failed before.
+- **`async::callback(fn, delay)` keeps its own copy of a named callable (Huly QB-972).** Given an lvalue, it
+  instantiated `Timeout<F&>`, whose member is a reference to the caller's object: once that object was gone -- a
+  local lambda, the usual case -- the timer fired through a dangling reference. The timer is now
+  `Timeout<std::decay_t<F>>` and copies an lvalue (moves an rvalue); `Timeout` and `ScopedTimeout` refuse a
+  reference type at compile time, and a move-only lvalue is rejected with a message saying to `std::move` it in;
+  `std::ref(fn)` still shares one callable deliberately. Pinned by
+  `CallbackDispatchTest.ScheduledCallbackOwnsACopyOfANamedCallable`.
+- **`async::scoped_callback` accepts a named callable (Huly QB-295).** The factory forwarded an lvalue to a
+  `ScopedTimeout` constructor that took only an rvalue of the decayed type, so `scoped_callback(fn, d)` with a named
+  `fn` did not compile; both timers' constructors now take any argument the callable is constructible from.
+- **`run_sync`, `with_retry`, `coro_with_timeout`, `parallel`, `parallel_map` and `capture_result` take a
+  move-constructible, non-assignable result (Huly QB-290)** -- the lock and permit guards of `sync.h`, for one. Each
+  parked the awaited value in an empty `std::optional` by assigning it, which requires an assignable type with
+  nothing to assign over; they emplace it. Pinned together by
+  `SiblingApiParity.EveryResultSlotTakesAMoveOnlyNonAssignableValue` (`run_sync(mtx.scoped_lock())` among them).
+- **A self move-assignment of `task<T>` / `task<void>` is a no-op (Huly QB-360).** `t = std::move(t)` destroyed the
+  task's frame and then kept the handle it had just freed, which the destructor destroyed again. The move-assignment
+  now takes the new frame before releasing the old one (`std::unique_ptr::reset`'s order), which also empties a
+  source living inside the released frame before that frame is freed. It adds no instruction: at `-O2`, 21 against
+  22 with g++-14, 24 against 24 with clang-19.
 
 ### Documentation
 
