@@ -1020,6 +1020,9 @@ public:
 private:
     // A service constructor may add another service before either reaches `_actors`.
     std::vector<ServiceId> _constructing_services;
+    // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
+    ActorId *_constructing_actor_id_out = nullptr;
+    void     __rollback_failed_admission__(ActorId id) noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1095,6 +1098,22 @@ VirtualCore::addReferencedActor(_Init &&...init) {
         return nullptr;
     };
 
+    struct AdmissionGuard {
+        VirtualCore &core;
+        ActorId     &id;
+        ActorId     *previous_id_out;
+        bool         service;
+        bool         admitted = false;
+        ~AdmissionGuard() noexcept {
+            if (!admitted && id.is_valid())
+                core.__rollback_failed_admission__(id);
+            if (service)
+                core._constructing_services.pop_back();
+            else
+                core._constructing_actor_id_out = previous_id_out;
+        }
+    };
+
     if constexpr (service_type<_Actor>) {
         // A service's constructor may register custom events. Constructing a duplicate
         // would replace the live service's router entry before appendActor rejects it,
@@ -1108,26 +1127,24 @@ VirtualCore::addReferencedActor(_Init &&...init) {
             return nullptr;
         }
         _constructing_services.push_back(sid);
-        struct AdmissionGuard {
-            VirtualCore &core;
-            ServiceId    sid;
-            bool         admitted = false;
-            ~AdmissionGuard() noexcept {
-                // A constructor or failed init can leave events, callbacks or watches.
-                // The admission check ruled out an earlier owner of this id.
-                if (!admitted) {
-                    core.__unregisterCallback(ActorId(sid, core._index));
-                    core.unregisterEvents(ActorId(sid, core._index));
-                    core.__on_actor_down__(ActorId(sid, core._index), DownReason::init_failed);
-                }
-                core._constructing_services.pop_back();
-            }
-        } guard{*this, sid};
-        auto *const actor = construct();
-        guard.admitted    = actor != nullptr;
+        ActorId        admission_id(sid, _index);
+        AdmissionGuard guard{*this, admission_id, nullptr, true};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        return actor;
+    } else {
+        // A failed ordinary constructor has no pointer to return, but Actor::Actor()
+        // already reserved an ID. Nested adds temporarily replace this output slot.
+        ActorId        admission_id    = ActorId::NotFound;
+        ActorId *const previous_id_out = _constructing_actor_id_out;
+        _constructing_actor_id_out     = &admission_id;
+        AdmissionGuard guard{*this, admission_id, previous_id_out, false};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        // Do not recycle a failed constructor's ID here: an event published from
+        // its body may still be queued and must not reach the next actor.
         return actor;
     }
-    return construct();
 }
 
 template <typename _Actor>

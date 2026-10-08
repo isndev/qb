@@ -236,7 +236,9 @@ policy.
   Runtime `addRefActor<Service>()` checks the occupied or in-construction service ID before constructing another instance.
   A constructor that registers a custom event therefore cannot leave the router pointing at the
   destroyed duplicate; the existing service keeps receiving its events. If a constructor throws
-  after registering events, a loop callback or a death watch, admission is released and the partial registrations are removed.
+  after registering events, a loop callback or a death watch, the partial registrations and
+  pending self-kill are removed. An ordinary actor constructor that throws receives the same
+  cleanup; its ID remains reserved so already queued events cannot hit a replacement.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion

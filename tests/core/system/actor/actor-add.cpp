@@ -688,6 +688,171 @@ TEST(AddReferencedActor, ThrowingServiceConstructorWithdrawsDeathWatchBeforeRetr
     EXPECT_TRUE(g_external_down_reason_unknown.load());
 }
 
+struct OrdinaryPoisonPoke : qb::Event {};
+std::atomic<std::uint32_t> g_ordinary_poison_id{0};
+std::atomic<std::uint32_t> g_ordinary_nested_id{0};
+std::atomic<std::uint32_t> g_ordinary_healthy_id{0};
+std::atomic<int>           g_ordinary_poison_events{0};
+std::atomic<int>           g_ordinary_poison_callbacks{0};
+std::atomic<int>           g_ordinary_healthy_events{0};
+std::atomic<bool>          g_ordinary_poison_caught{false};
+
+class OrdinaryNested : public qb::Actor {};
+
+class OrdinaryPoison
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    OrdinaryPoison() {
+        g_ordinary_poison_id.store(static_cast<std::uint32_t>(id()));
+        const auto nested = addRefActor<OrdinaryNested>();
+        g_ordinary_nested_id.store(static_cast<std::uint32_t>(nested.id()));
+        registerEvent<OrdinaryPoisonPoke>(*this);
+        registerCallback(*this);
+        throw std::runtime_error("ordinary constructor failed");
+    }
+
+    void
+    on(OrdinaryPoisonPoke &) {
+        g_ordinary_poison_events.fetch_add(1);
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        g_ordinary_poison_callbacks.fetch_add(1);
+    }
+};
+
+class OrdinaryHealthy : public qb::Actor {
+public:
+    OrdinaryHealthy() {
+        g_ordinary_healthy_id.store(static_cast<std::uint32_t>(id()));
+        registerEvent<OrdinaryPoisonPoke>(*this);
+    }
+    void
+    on(OrdinaryPoisonPoke &) {
+        g_ordinary_healthy_events.fetch_add(1);
+    }
+};
+
+class OrdinaryPoisonDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<OrdinaryPoison>();
+        } catch (std::runtime_error const &) {
+            g_ordinary_poison_caught.store(true);
+            push<OrdinaryPoisonPoke>(qb::ActorId(g_ordinary_poison_id.load()));
+            push<qb::KillEvent>(qb::ActorId(g_ordinary_nested_id.load()));
+        }
+        const auto healthy = addRefActor<OrdinaryHealthy>();
+        if (healthy.valid())
+            push<qb::KillEvent>(healthy.id());
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, OrdinaryConstructorFailureClearsRegistrationsAndKeepsIdReserved) {
+    g_ordinary_poison_id.store(0);
+    g_ordinary_nested_id.store(0);
+    g_ordinary_healthy_id.store(0);
+    g_ordinary_poison_events.store(0);
+    g_ordinary_poison_callbacks.store(0);
+    g_ordinary_healthy_events.store(0);
+    g_ordinary_poison_caught.store(false);
+
+    qb::Main main;
+    main.addActor<OrdinaryPoisonDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_ordinary_poison_caught.load());
+    EXPECT_NE(g_ordinary_poison_id.load(), 0u);
+    EXPECT_NE(g_ordinary_nested_id.load(), 0u);
+    EXPECT_NE(g_ordinary_healthy_id.load(), 0u);
+    EXPECT_NE(g_ordinary_nested_id.load(), g_ordinary_poison_id.load());
+    EXPECT_NE(g_ordinary_healthy_id.load(), g_ordinary_poison_id.load());
+    EXPECT_EQ(g_ordinary_poison_events.load(), 0);
+    EXPECT_EQ(g_ordinary_poison_callbacks.load(), 0);
+    EXPECT_EQ(g_ordinary_healthy_events.load(), 0);
+}
+
+struct KillThenThrowServiceTag {};
+struct KillThenThrowPoke : qb::Event {};
+std::atomic<int>  g_kill_then_throw_ctors{0};
+std::atomic<int>  g_kill_then_throw_pokes{0};
+std::atomic<bool> g_kill_then_throw_retry_admitted{false};
+std::atomic<bool> g_kill_then_throw_retry_survived{false};
+
+class KillThenThrowService : public qb::ServiceActor<KillThenThrowServiceTag> {
+public:
+    KillThenThrowService() {
+        if (g_kill_then_throw_ctors.fetch_add(1) == 0) {
+            kill();
+            throw std::runtime_error("service killed before construction failed");
+        }
+        registerEvent<KillThenThrowPoke>(*this);
+    }
+
+    void
+    on(KillThenThrowPoke &) {
+        g_kill_then_throw_pokes.fetch_add(1);
+    }
+};
+
+class KillThenThrowDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _retry_id;
+
+public:
+    KillThenThrowDriver() {
+        registerCallback(*this);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<KillThenThrowService>();
+        } catch (std::runtime_error const &) {
+        }
+        const auto retry = addRefActor<KillThenThrowService>();
+        g_kill_then_throw_retry_admitted.store(retry.valid());
+        _retry_id = retry.id();
+        if (retry.valid())
+            push<KillThenThrowPoke>(retry.id());
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        g_kill_then_throw_retry_survived.store(_retry_id.is_valid() && is_actor_alive(_retry_id));
+        if (_retry_id.is_valid())
+            push<qb::KillEvent>(_retry_id);
+        kill();
+    }
+};
+
+TEST(AddReferencedActor, FailedServiceConstructorCannotKillItsReplacement) {
+    g_kill_then_throw_ctors.store(0);
+    g_kill_then_throw_pokes.store(0);
+    g_kill_then_throw_retry_admitted.store(false);
+    g_kill_then_throw_retry_survived.store(false);
+
+    qb::Main main;
+    main.addActor<KillThenThrowDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_kill_then_throw_ctors.load(), 2);
+    EXPECT_TRUE(g_kill_then_throw_retry_admitted.load());
+    EXPECT_TRUE(g_kill_then_throw_retry_survived.load());
+    EXPECT_EQ(g_kill_then_throw_pokes.load(), 1);
+}
+
 TEST(AddReferencedActor, ShouldReturnNullptrIfActorFailedToInit) {
     reset_atoms();
     qb::Main main;

@@ -147,13 +147,27 @@ VirtualCore::__generate_id__() noexcept {
     const auto sid = _ids.acquire();
     if (sid == ActorId::BroadcastSid)
         return ActorId(ActorId::NotFound);
-    return ActorId(sid, _index);
+    const ActorId id(sid, _index);
+    if (_constructing_actor_id_out != nullptr)
+        *_constructing_actor_id_out = id;
+    return id;
 }
 
 // Event Management
 void
 VirtualCore::unregisterEvents(ActorId const id) const noexcept {
     _router.unsubscribe(id);
+}
+
+void
+VirtualCore::__rollback_failed_admission__(ActorId const id) noexcept {
+    // An actor may have published registrations and killed itself before its constructor
+    // threw or onInit failed. No earlier actor owns this ID while an admission is active.
+    __unregisterCallback(id);
+    unregisterEvents(id);
+    if (unlikely(!_watchers_of.empty() || !_watching.empty()))
+        __on_actor_down__(id, DownReason::init_failed);
+    std::erase(_actor_to_remove, id);
 }
 
 // __getPipe__ is defined inline at the tail of VirtualCore.h: it is called on every push
