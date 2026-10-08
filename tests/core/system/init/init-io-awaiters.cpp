@@ -13,9 +13,9 @@
  *
  * The other init tests all suspend on the actor surface — `qb::ask`, `ctx.sleep`, the pattern
  * library — whose awaiters resolve their scheduler at RESUME time through
- * `schedule_via_current` (scheduler.h:888-902). This file covers the other family: a qb-io
+ * `schedule_via_current` (scheduler.h:1206-1221). This file covers the other family: a qb-io
  * awaiter that CACHES a scheduler pointer at SUSPEND time and resumes through the cached copy
- * (`connect_awaiter`, connector.h:943-945 and 722-724; `awaiter_base`, awaiter.h:329-333 and
+ * (`connect_awaiter`, connector.h:946-948 and 722-724; `awaiter_base`, awaiter.h:331-335 and
  * 191-193). Nothing exercised that combination, and it did not work.
  *
  * WHAT WAS WRONG
@@ -26,7 +26,7 @@
  * Actor.cpp:252-255) — which is why the very same `co_await` resumed normally inside `spawn()`
  * and not inside `onInit()`. Finding null, the awaiter fell back to
  * `CoroutineScheduler::current()`, which lazily creates a THREAD-LOCAL FALLBACK
- * (scheduler.h:631-632) and cached that. `__begin_activation__` then called
+ * (scheduler.h:702-703) and cached that. `__begin_activation__` then called
  * `listener::current.coro_scheduler()`, whose first call `set_current()`s the LISTENER's
  * scheduler (listener.h:890), and `listener::run()` pumps only that one (listener.h:777-778).
  * The completion callback queued the resume into the orphaned fallback and it was never drained.

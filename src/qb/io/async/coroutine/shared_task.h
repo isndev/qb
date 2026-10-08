@@ -146,6 +146,8 @@ public:
     // Awaiter
     // -----------------------------------------------------------------------
     struct awaiter {
+        static constexpr char const *qb_suspension_kind = "shared task"; ///< suspension tracking (coroutine/tracking.h)
+
         std::shared_ptr<state>  s;
         std::coroutine_handle<> _parked{}; ///< set when queued in s->_waiters
 
@@ -178,6 +180,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             // Same safety check — if the state is null, the caller
             // `co_await`ed an invalid handle. Fail loudly rather than
             // silently corrupt.
@@ -290,6 +293,8 @@ public:
     }
 
     struct awaiter {
+        static constexpr char const *qb_suspension_kind = "shared task"; ///< suspension tracking (coroutine/tracking.h)
+
         std::shared_ptr<state>  s;
         std::coroutine_handle<> _parked{}; ///< set when queued in s->_waiters
 
@@ -317,6 +322,7 @@ public:
         }
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             if (!s) {
                 throw std::logic_error("co_await on default-constructed shared_task<void>");
             }

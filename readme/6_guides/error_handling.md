@@ -254,7 +254,7 @@ The rest of the contract — `unwatch()` is final even for an answer already on 
 
 ### Learning that an actor is stuck: a health check
 
-Death watch reports death. An actor that is alive but stuck — a handler in an endless loop, a blocking call — answers nothing, and neither does anything else on its core, so no notification can come from there. Ask instead, from another core, with a deadline: `co_await qb::ping(ctx, id, timeout)` answers `false` when no reply came in time (`src/qb/core/patterns/discovery.h:174-175`).
+Death watch reports death. An actor that is alive but stuck — a handler in an endless loop, a blocking call — answers nothing, and neither does anything else on its core, so no notification can come from there. Ask instead, from another core, with a deadline: `co_await qb::ping(ctx, id, timeout)` answers `false` when no reply came in time (`src/qb/core/patterns/discovery.h:177-178`).
 
 ```cpp
 struct Unresponsive : qb::Event {

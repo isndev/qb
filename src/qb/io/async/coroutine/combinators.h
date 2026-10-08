@@ -97,6 +97,8 @@ using to_task_t = decltype(detail::to_task(std::declval<T>()));
  */
 template <typename... Tasks>
 class when_all_awaiter {
+    static constexpr char const *qb_suspension_kind = "when_all"; ///< suspension tracking (coroutine/tracking.h)
+
 public:
     // `void` branches get a `std::monostate` slot (detail::value_slot_t) so `task<void>` —
     // the default task type — composes here exactly like a value-returning task, and a
@@ -198,6 +200,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation = h;
         start_all(std::make_index_sequence<N>{});
     }
@@ -228,6 +231,8 @@ when_all(Tasks... tasks) {
 // dangle when the awaiter is destroyed while spawned coroutines are still running.
 template <typename T>
 class when_all_vector_awaiter {
+    static constexpr char const *qb_suspension_kind = "when_all"; ///< suspension tracking (coroutine/tracking.h)
+
 public:
     // See the variadic when_all_awaiter: `void` maps to a `std::monostate` slot so a
     // `std::vector<task<void>>` composes like any other.
@@ -252,6 +257,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation           = h;
         const size_t             n     = _state->tasks.size();
         std::shared_ptr<state_t> state = _state;
@@ -430,6 +436,8 @@ namespace qb::io::async {
  */
 template <typename... Tasks>
 class when_any_awaiter {
+    static constexpr char const *qb_suspension_kind = "when_any"; ///< suspension tracking (coroutine/tracking.h)
+
 public:
     using result_type         = when_any_result;
     static constexpr size_t N = sizeof...(Tasks);
@@ -557,6 +565,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation = h;
         start_all(std::make_index_sequence<N>{});
     }
@@ -586,6 +595,8 @@ when_any(Tasks... tasks) {
 // a free function with explicit index parameter stored in the coroutine frame.
 template <typename T>
 class when_any_vector_awaiter {
+    static constexpr char const *qb_suspension_kind = "when_any"; ///< suspension tracking (coroutine/tracking.h)
+
 public:
     using result_type = std::pair<size_t, std::any>;
 
@@ -607,6 +618,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation           = h;
         const size_t             n     = _state->tasks.size();
         std::shared_ptr<state_t> state = _state;
@@ -738,6 +750,8 @@ public:
  */
 template <typename T>
 class timeout_awaiter {
+    static constexpr char const *qb_suspension_kind = "timeout"; ///< suspension tracking (coroutine/tracking.h)
+
     struct state_t {
         task<T>            inner_task;
         std::optional<T>   result;
@@ -858,6 +872,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
         // Arm a single self-stopping ev_timer instead of spawning a `co_await sleep`
@@ -915,6 +930,8 @@ coro_with_timeout(task<T> &&t, qb::duration timeout) {
  */
 template <>
 class timeout_awaiter<void> {
+    static constexpr char const *qb_suspension_kind = "timeout"; ///< suspension tracking (coroutine/tracking.h)
+
     struct state_t {
         task<void>              inner_task;
         std::exception_ptr      exception;
@@ -1011,6 +1028,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
         auto loop             = listener::current.loop();

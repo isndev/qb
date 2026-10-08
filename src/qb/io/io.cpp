@@ -80,6 +80,7 @@ generate_random_uuid() {
 #endif
 #include "async/listener.cpp"
 #include "async/offload.cpp"
+#include "async/coroutine/tracking.cpp"
 #include "stream.cpp"
 #include "udp/socket.cpp"
 

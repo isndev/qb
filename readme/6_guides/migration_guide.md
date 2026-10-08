@@ -367,7 +367,7 @@ child->doWork();
 
 // After
 auto child = addRefActor<ChildHelper>(args);           // qb::ActorHandle<ChildHelper>
-push<Task>(child.id(), ...);                            // always safe (stashed if Activating)
+if (child.valid()) push<Task>(child.id(), ...);          // stashed if Activating
 if (child.ready()) child->doWork();                    // direct call only when active
 // async-init child: if (co_await child.ready_async(context())) child->doWork();
 ```

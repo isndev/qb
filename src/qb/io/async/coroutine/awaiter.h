@@ -179,15 +179,15 @@ struct awaiter_base {
      * scheduler that will be PUMPED. The case that bites is an actor's `onInit()` whose first
      * suspension is one of these awaiters: `VirtualCore::__drive_init__` resumes the frame
      * directly and never `spawn()`s it, so no scheduler is bound yet, `CoroutineScheduler::current()`
-     * lazily builds a thread-local FALLBACK (scheduler.h:631-632) and we cache that — and then
+     * lazily builds a thread-local FALLBACK (scheduler.h:856-857) and we cache that — and then
      * `__begin_activation__` calls `listener::current.coro_scheduler()`, whose first call
-     * `set_current()`s the LISTENER's scheduler (listener.h:890). `listener::run()` pumps only
-     * `_coro_scheduler` (listener.h:777-778), so a resume queued into the orphaned fallback is
+     * `set_current()`s the LISTENER's scheduler (listener.h:1288). `listener::run()` pumps only
+     * `_coro_scheduler` (listener.h:1039-1040), so a resume queued into the orphaned fallback is
      * never drained: the awaited operation succeeds and the coroutine never wakes.
      *
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
-     * of qb-io already does — see listener.h:761, "every waker in qb-io defers through
+     * of qb-io already does — see listener.h:1015, "every waker in qb-io defers through
      * `schedule_via_current`". This one and the tcp connector's were the exceptions.
      *
      * The cached pointer stays as the FALLBACK (and `unregister_suspended` still uses it, since
@@ -290,6 +290,8 @@ struct awaiter_base {
  * @ingroup Coroutine
  */
 struct timer_awaiter : awaiter_base {
+    static constexpr char const *qb_suspension_kind = "sleep"; ///< suspension tracking (coroutine/tracking.h)
+
     /**
      * @brief libev timer watcher
      */
@@ -344,6 +346,7 @@ struct timer_awaiter : awaiter_base {
      */
     void
     await_suspend(std::coroutine_handle<> h) override {
+        detail::track_suspension(h.address(), qb_suspension_kind);
         handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {
@@ -463,6 +466,8 @@ struct timer_awaiter : awaiter_base {
  * @ingroup Coroutine
  */
 struct socket_awaiter : awaiter_base {
+    static constexpr char const *qb_suspension_kind = "io"; ///< suspension tracking (coroutine/tracking.h)
+
     /**
      * @brief File descriptor
      */
@@ -522,6 +527,7 @@ struct socket_awaiter : awaiter_base {
      */
     void
     await_suspend(std::coroutine_handle<> h) override {
+        detail::track_suspension(h.address(), qb_suspension_kind);
         handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {
@@ -617,6 +623,8 @@ struct socket_awaiter : awaiter_base {
  */
 template <typename ResultType>
 struct async_awaiter : awaiter_base {
+    static constexpr char const *qb_suspension_kind = "async"; ///< suspension tracking (coroutine/tracking.h)
+
     using callback_type = std::function<void(ResultType)>;
 
     /**
@@ -657,6 +665,7 @@ struct async_awaiter : awaiter_base {
      */
     void
     await_suspend(std::coroutine_handle<> h) override {
+        detail::track_suspension(h.address(), qb_suspension_kind);
         handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_) {

@@ -12,13 +12,13 @@
  * @brief An exception escaping a DETACHED coroutine is reported, not silently dropped.
  *
  * `exception-propagation.cpp` covers the OWNED case: a `task<T>` someone awaits stores the
- * exception in its promise and `await_resume()` rethrows it (task.h:716-717). This file covers
+ * exception in its promise and `await_resume()` rethrows it (task.h:753-754). This file covers
  * the case with no owner — `qb::io::async::coro_scheduler().spawn(t)` — where that rethrow
  * never runs, because nothing awaits the frame.
  *
  * WHAT WAS WRONG
  * --------------
- * `spawn()` detaches the handle (scheduler.h:954-967); `unhandled_exception()` stores the
+ * `spawn()` detaches the handle (scheduler.h:1025-1038); `unhandled_exception()` stores the
  * exception in the promise (task.h); the frame later reaches `final_suspend` with no
  * continuation and is handed straight to `defer_frame_destruction`. The exception was destroyed
  * with the promise, unobserved: the program simply stopped in the middle of the coroutine with

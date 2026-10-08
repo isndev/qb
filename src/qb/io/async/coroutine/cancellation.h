@@ -414,6 +414,8 @@ public:
  * @see cancellation_token::throw_if_cancelled — the synchronous, non-suspending poll
  */
 struct cancellation_awaiter {
+    static constexpr char const *qb_suspension_kind = "cancellation"; ///< suspension tracking (coroutine/tracking.h)
+
     cancellation_token      token;
     std::coroutine_handle<> _handle;
     // No liveness flag: the destructor's `remove_on_cancel` guarantees the callback never
@@ -434,6 +436,7 @@ struct cancellation_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _handle    = h;
         _cancel_id = token.on_cancel([h]() { schedule_via_current(h); });
     }
@@ -469,6 +472,8 @@ check_cancelled(const cancellation_token &token) {
  * without allocating an intermediate coroutine.
  */
 struct yield_awaiter {
+    static constexpr char const *qb_suspension_kind = "yield"; ///< suspension tracking (coroutine/tracking.h)
+
     cancellation_token token;
 
     [[nodiscard]] bool
@@ -478,6 +483,7 @@ struct yield_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         enqueue_for_later_via_current(h);
     }
 
@@ -536,6 +542,8 @@ public:
         , _throw_on_cancel(throw_on_cancel) {}
 
     struct awaiter {
+        static constexpr char const *qb_suspension_kind = "cancellable"; ///< suspension tracking (coroutine/tracking.h)
+
         std::shared_ptr<shared_state> state;
         cancellation_token            token;
         bool                          throw_on_cancel;
@@ -578,6 +586,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             state->continuation  = h;
             state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
             if (throw_on_cancel) {
@@ -683,6 +692,8 @@ public:
         , _throw_on_cancel(throw_on_cancel) {}
 
     struct awaiter {
+        static constexpr char const *qb_suspension_kind = "cancellable"; ///< suspension tracking (coroutine/tracking.h)
+
         std::shared_ptr<shared_state> state;
         cancellation_token            token;
         bool                          throw_on_cancel;
@@ -716,6 +727,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             state->continuation  = h;
             state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
             if (throw_on_cancel) {
@@ -811,6 +823,8 @@ make_cancellable(task<T> &&task, cancellation_token token, bool throw_on_cancel 
  * parameters — not via a lambda closure that could dangle when await_suspend returns.
  */
 struct cancellable_sleep_awaiter {
+    static constexpr char const *qb_suspension_kind = "sleep"; ///< suspension tracking (coroutine/tracking.h)
+
     // Plain bool: single-thread cooperative — the on_cancel callback and the
     // timer_task coroutine run on the same thread and never concurrently.
     struct sleep_state {
@@ -862,6 +876,7 @@ struct cancellable_sleep_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         // Member (not a local) so the destructor can reclaim the detached timer on a
         // destroy-while-parked teardown — the awaiter keeps its own ref to the shared state.
         state               = std::make_shared<sleep_state>();
@@ -932,6 +947,8 @@ struct with_deadline_timeout_state {
 };
 
 struct with_deadline_timeout_awaiter {
+    static constexpr char const *qb_suspension_kind = "deadline"; ///< suspension tracking (coroutine/tracking.h)
+
     std::shared_ptr<with_deadline_timeout_state> state;
     std::chrono::steady_clock::time_point        deadline;
     cancellation_token                           token;
@@ -974,6 +991,7 @@ struct with_deadline_timeout_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         state->handle = h;
         _cancel_id    = token.on_cancel([s = state]() {
             if (!s->completed) {
