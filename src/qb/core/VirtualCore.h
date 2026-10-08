@@ -1572,6 +1572,18 @@ actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
 template <typename Func>
 void
 Actor::spawn_detached(Func &&func) const {
+    spawn_detached(std::string_view{}, std::forward<Func>(func));
+}
+
+template <typename Func>
+void
+Actor::spawn(Func &&func) const {
+    spawn(std::string_view{}, std::forward<Func>(func));
+}
+
+template <typename Func>
+void
+Actor::spawn_detached(std::string_view name, Func &&func) const {
     __resolve_coro_scheduler__();
     __ensure_coro_counter__(); // lazily allocate the shared census on first use.
 
@@ -1579,13 +1591,13 @@ Actor::spawn_detached(Func &&func) const {
     CoroContext ctx(this);
 
     // actor_coro_wrapper takes func BY VALUE → stored in the coroutine frame.
-    // The scheduler takes ownership of the wrapper task's handle via spawn().
-    coro_scheduler_->spawn(detail::actor_coro_wrapper(std::forward<Func>(func), ctx, active_coroutines_));
+    // The scheduler takes ownership of the wrapper task's handle via spawn(); an empty name stores nothing.
+    coro_scheduler_->spawn(name, detail::actor_coro_wrapper(std::forward<Func>(func), ctx, active_coroutines_));
 }
 
 template <typename Func>
 void
-Actor::spawn(Func &&func) const {
+Actor::spawn(std::string_view name, Func &&func) const {
     __resolve_coro_scheduler__();
     __ensure_coro_scope__(); // lazily allocate the real cancellation token on first use.
     __ensure_coro_counter__();
@@ -1596,7 +1608,7 @@ Actor::spawn(Func &&func) const {
     // outlives the actor.
     ScopedCoroContext ctx(this, _coro_scope);
 
-    coro_scheduler_->spawn(detail::actor_scoped_coro_wrapper(std::forward<Func>(func), std::move(ctx), active_coroutines_));
+    coro_scheduler_->spawn(name, detail::actor_scoped_coro_wrapper(std::forward<Func>(func), std::move(ctx), active_coroutines_));
 }
 
 } // namespace qb

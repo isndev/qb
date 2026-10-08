@@ -238,12 +238,15 @@ make_offload_job(F &&fn, Args &&...args) {
  */
 template <typename R>
 class offload_awaiter final : public awaiter_base {
+    static constexpr char const *qb_suspension_kind = "offload"; ///< suspension tracking (coroutine/tracking.h)
+
 public:
     explicit offload_awaiter(detail::offload_result<R> *job) noexcept
         : job_(job) {}
 
     void
     await_suspend(std::coroutine_handle<> h) override {
+        detail::track_suspension(h.address(), qb_suspension_kind);
         handle_    = h;
         scheduler_ = CoroutineScheduler::current_ptr();
         if (!scheduler_)

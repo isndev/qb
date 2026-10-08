@@ -60,7 +60,7 @@
  *
  * I1 — ORDER assertions are immune to jitter because jitter is COMMON MODE.
  *      `CoroutineScheduler::spawn` does not start the body: `spawn_tracked` only enqueues
- *      (`ready_queue_.push_back({handle, true})`, scheduler.h:965), so every task spawned before a
+ *      (`ready_queue_.push_back({handle, true})`, scheduler.h:1036), so every task spawned before a
  *      pump starts in ONE `run_ready()` drain and arms its timer in ONE loop turn, into libev's
  *      single deadline-ordered heap. `timers_reify` then pops strictly in deadline order
  *      (`ANHE_at(timers[HEAP0]) < mn_now`, ev/qev.c:4418). A stall therefore delays every
@@ -90,7 +90,7 @@
  *      fires EARLY on the clock the test reads. That is excluded by construction:
  *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — it never
  *          rounds a requested delay down;
- *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:347-348) and `async::callback`
+ *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:350-351) and `async::callback`
  *          (async/io.h:390) both force `ev_now_update` immediately before `ev_timer_start`, so
  *          the deadline is a FRESH clock read plus the delay, never a stale cached one;
  *        - `timers_reify` fires only once `mn_now` is strictly PAST that deadline (qev.c:4418),

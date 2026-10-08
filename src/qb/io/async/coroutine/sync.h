@@ -99,6 +99,8 @@ public:
      * no other coroutine can observe or modify _available / _waiters.
      */
     struct acquire_awaiter {
+        static constexpr char const *qb_suspension_kind = "semaphore"; ///< suspension tracking (coroutine/tracking.h)
+
         semaphore            &sem;
         waiter_node           node{}; // default-init so the brace-init stays -Wmissing-field-initializers clean
         bool                  _completed = false;
@@ -144,6 +146,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             node.h = h;
             // In the unlikely case where await_ready saw no permit but the
             // scheduler re-interleaved (it won't under the single-thread
@@ -175,6 +178,8 @@ public:
      *          the node is erased from the queue so `release()` skips it and serves the next waiter.
      */
     struct cancel_acquire_awaiter {
+        static constexpr char const *qb_suspension_kind = "semaphore"; ///< suspension tracking (coroutine/tracking.h)
+
         semaphore                  &sem;
         cancellation_token          token;
         waiter_node                 node;
@@ -215,6 +220,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             node.h = h;
             if (token.is_cancelled()) {
                 schedule_via_current(h);
@@ -454,6 +460,8 @@ public:
      * only one coroutine is active at a time, giving natural mutual exclusion.
      */
     struct lock_awaiter {
+        static constexpr char const *qb_suspension_kind = "mutex"; ///< suspension tracking (coroutine/tracking.h)
+
         async_mutex            &mtx;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
@@ -483,6 +491,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             if (!mtx._locked) {
                 mtx._locked = true;
                 _completed  = true;
@@ -680,6 +689,8 @@ public:
      * @brief Awaiter for read lock
      */
     struct read_lock_awaiter {
+        static constexpr char const *qb_suspension_kind = "read lock"; ///< suspension tracking (coroutine/tracking.h)
+
         async_rw_lock          &rw;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
@@ -709,6 +720,7 @@ public:
         // No OS lock: single-thread cooperative scheduler.
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             if (!rw._write_locked && rw._write_waiters.empty()) {
                 ++rw._readers;
                 _completed = true;
@@ -727,6 +739,8 @@ public:
     };
 
     struct write_lock_awaiter {
+        static constexpr char const *qb_suspension_kind = "write lock"; ///< suspension tracking (coroutine/tracking.h)
+
         async_rw_lock          &rw;
         bool                    _completed = false;
         bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
@@ -754,6 +768,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             if (!rw._write_locked && rw._readers == 0) {
                 rw._write_locked = true;
                 _completed       = true;
@@ -968,6 +983,8 @@ public:
     barrier &operator=(const barrier &) = delete;
 
     struct arrive_awaiter {
+        static constexpr char const *qb_suspension_kind = "barrier"; ///< suspension tracking (coroutine/tracking.h)
+
         barrier                &b;
         std::coroutine_handle<> _parked{}; ///< set when queued in _waiters
         std::shared_ptr<bool>   _b_alive;  ///< barrier liveness; skip retract when false
@@ -992,6 +1009,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             // Finding 2.C.12: help users spot barriers that were not reset
             // between phases — an unexpected await after all arrivals have
             // happened is almost always a missing `reset()`.
@@ -1117,6 +1135,8 @@ public:
      * executes between await_ready() and await_suspend().
      */
     struct wait_awaiter {
+        static constexpr char const *qb_suspension_kind = "event"; ///< suspension tracking (coroutine/tracking.h)
+
         async_event            &_ev;
         bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
         std::coroutine_handle<> _parked{};        ///< set when queued in _waiters
@@ -1150,6 +1170,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             if (_ev._signaled) {
                 if (_ev._auto_reset)
                     _ev._signaled = false;
@@ -1310,6 +1331,8 @@ public:
     }
 
     struct wait_awaiter {
+        static constexpr char const *qb_suspension_kind = "latch"; ///< suspension tracking (coroutine/tracking.h)
+
         async_latch            &_latch;
         std::coroutine_handle<> _parked{};    ///< set when queued in _waiters
         std::shared_ptr<bool>   _latch_alive; ///< latch liveness; skip retract when false
@@ -1330,6 +1353,7 @@ public:
         }
         void
         await_suspend(std::coroutine_handle<> h) {
+            detail::track_suspension(h.address(), qb_suspension_kind);
             if (_latch._count == 0)
                 schedule_via_current(h);
             else {
