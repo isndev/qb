@@ -60,3 +60,7 @@ qb_add_test(MODULE qb-core TIER unit NAME thread-arena SOURCES system/thread-are
 # sync waiter lists (QB-215): order across wrap-around and growth, one live element per held item (moved on growth,
 # destroyed on pop / erase_at / with the ring), 64-byte slots, the ordered erase.
 qb_add_test(MODULE qb-core TIER unit NAME growable-ring SOURCES system/growable-ring.cpp DEPENDS ${PROJECT_NAME})
+# ring-buffer pins qb::ring_buffer, the fixed-capacity circular FIFO, untested until 3.3: a full ring builds the
+# replacement before it evicts the oldest element (a throwing constructor leaves it untouched, push_back(front()) is
+# valid — Huly QB-278), the evict-first fallback for a move that may throw, Overwrite=false, the wrap, clear().
+qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buffer.cpp DEPENDS ${PROJECT_NAME})

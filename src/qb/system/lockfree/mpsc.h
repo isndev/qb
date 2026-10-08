@@ -89,7 +89,7 @@ public:
     template <size_t _Index, bool _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
-        return _producers[_Index]._ringbuffer.enqueue(t, size);
+        return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
     /**
@@ -194,8 +194,8 @@ public:
 
     /**
      * @brief Does any producer ring hold at least one unread item?
-     * @details Consumer-side query for a park/unpark decision: reads each ring's published
-     *          indices (`spsc::ringbuffer::empty()`) and nothing else — no snapshot, no lock.
+     * @details Consumer thread only, for a park/unpark decision: each ring's `empty()` reads the
+     *          producer's published write index and the consumer's own private read index; no lock.
      *          Meant to be evaluated AFTER a `std::atomic_thread_fence(seq_cst)` by the consumer
      *          that has just announced it is about to block (the Dekker half of a race-free
      *          wait), so that a producer's enqueue is either seen here or sees the announcement.
@@ -465,8 +465,8 @@ public:
 
     /**
      * @brief Does any producer ring hold at least one unread item?
-     * @details Consumer-side query for a park/unpark decision: reads each ring's published
-     *          indices (`spsc::ringbuffer::empty()`) and nothing else — no snapshot, no lock.
+     * @details Consumer thread only, for a park/unpark decision: each ring's `empty()` reads the
+     *          producer's published write index and the consumer's own private read index; no lock.
      *          Meant to be evaluated AFTER a `std::atomic_thread_fence(seq_cst)` by the consumer
      *          that has just announced it is about to block (the Dekker half of a race-free
      *          wait), so that a producer's enqueue is either seen here or sees the announcement.

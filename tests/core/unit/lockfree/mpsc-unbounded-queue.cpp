@@ -39,6 +39,10 @@
  *     rest. Payloads count their own live instances, so a missed or doubled destructor is visible
  *     as a non-zero balance (and ASan sees the node leak directly).
  *   - **Move-only and non-copyable payloads** instantiate at all (the compile-probe half).
+ *   - **A throwing move-assignment in `pop()` leaves the queue as it was** (Huly QB-281): the item stays at
+ *     the head, counted and poppable, and no node is orphaned. `pop()` used to advance `head_` first, so the
+ *     same throw left `size() == 1` on a queue that `empty()` called empty and that popped nothing, and the
+ *     old dummy node (with its payload) leaked — both visible in `ThrowingMoveAssignmentLeavesTheItemAtTheHead`.
  */
 
 #include <algorithm>
@@ -47,6 +51,7 @@
 #include <cstddef>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -153,6 +158,65 @@ TEST(MpscUnboundedQueue, DestructorReclaimsUndrainedPayloads) {
         EXPECT_EQ(out.value, 15);
     }
     EXPECT_EQ(g_payload_live.load(std::memory_order_relaxed), 0) << "queue teardown must destroy the payloads still parked in its nodes";
+}
+
+// A payload whose move-ASSIGNMENT can be armed to throw (before touching anything, so the source keeps its
+// value). Its move constructor stays noexcept: `push` builds the node with it and is not under test here.
+std::atomic<int> g_assign_live{0};
+bool             g_throw_on_assign = false;
+
+struct ThrowOnAssign {
+    int value = 0;
+
+    ThrowOnAssign() {
+        g_assign_live.fetch_add(1, std::memory_order_relaxed);
+    }
+    explicit ThrowOnAssign(int v)
+        : value(v) {
+        g_assign_live.fetch_add(1, std::memory_order_relaxed);
+    }
+    ThrowOnAssign(ThrowOnAssign &&o) noexcept
+        : value(o.value) {
+        g_assign_live.fetch_add(1, std::memory_order_relaxed);
+    }
+    ThrowOnAssign &
+    operator=(ThrowOnAssign &&o) {
+        if (g_throw_on_assign)
+            throw std::runtime_error("ThrowOnAssign::operator=(&&) armed to throw");
+        value = o.value;
+        return *this;
+    }
+    ThrowOnAssign(ThrowOnAssign const &)            = delete;
+    ThrowOnAssign &operator=(ThrowOnAssign const &) = delete;
+    ~ThrowOnAssign() {
+        g_assign_live.fetch_sub(1, std::memory_order_relaxed);
+    }
+};
+
+TEST(MpscUnboundedQueue, ThrowingMoveAssignmentLeavesTheItemAtTheHead) {
+    g_assign_live.store(0, std::memory_order_relaxed);
+    {
+        mpsc_unbounded_queue<ThrowOnAssign> q;
+        q.push(ThrowOnAssign{7});
+        q.push(ThrowOnAssign{8});
+
+        ThrowOnAssign out;
+        g_throw_on_assign = true;
+        EXPECT_THROW(q.pop(out), std::runtime_error);
+        g_throw_on_assign = false;
+
+        EXPECT_EQ(q.size(), 2u) << "the item whose move threw must still be counted";
+        EXPECT_FALSE(q.empty()) << "the queue must still hold the item whose move threw";
+        ASSERT_TRUE(q.pop(out)) << "the item whose move threw must still be poppable";
+        EXPECT_EQ(out.value, 7) << "and it must come out first, FIFO unchanged";
+        ASSERT_TRUE(q.pop(out));
+        EXPECT_EQ(out.value, 8);
+        EXPECT_FALSE(q.pop(out));
+        EXPECT_TRUE(q.empty());
+        EXPECT_EQ(q.size(), 0u);
+    }
+    EXPECT_EQ(g_assign_live.load(std::memory_order_relaxed), 0)
+        << "a node (and the payload it carries) was orphaned by the throw instead of being freed";
 }
 
 // ---------------------------------------------------------------------------

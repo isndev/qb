@@ -109,23 +109,18 @@ public:
         Node *node = head_.load(std::memory_order_acquire);
         Node *next = node->next.load(std::memory_order_acquire);
 
-        if (next) {
-            head_.store(next, std::memory_order_release);
-            out = std::move(next->value);
-            count_.fetch_sub(1, std::memory_order_relaxed);
-            delete node;
-            return true;
+        if (!next) {
+            if (tail_.load(std::memory_order_acquire) == node)
+                return false;
+            while (!(next = node->next.load(std::memory_order_acquire)))
+                qb::spin_loop_pause();
         }
-
-        if (tail_.load(std::memory_order_acquire) == node) {
-            return false;
-        }
-
-        while (!(next = node->next.load(std::memory_order_acquire))) {
-            qb::spin_loop_pause();
-        }
-        head_.store(next, std::memory_order_release);
+        // The value first, the structure after: a move-assignment that throws leaves the queue exactly as it
+        // was, the item still at its head and counted (Huly QB-281 — head_ used to advance first, so a throw
+        // leaked the old dummy node and left size() at 1 on a queue that pops nothing). Producers never read
+        // head_, so the order of these stores is invisible to them.
         out = std::move(next->value);
+        head_.store(next, std::memory_order_release);
         count_.fetch_sub(1, std::memory_order_relaxed);
         delete node;
         return true;

@@ -455,16 +455,10 @@ protected:
 
 public:
     /**
-     * @brief Check if the buffer is empty
-     *
-     * Reads the published indices, never a snapshot, so either thread may ask.
-     *
-     * @return true if the buffer is empty, false otherwise
-     */
-    /**
      * @brief Consumer-side poll: is there nothing to dequeue right now?
      * @details The consumer's own index comes from its private line; the producer's from the
      *          published one — the only line of the peer's this poll ever reads. Consumer thread only.
+     * @return true when the consumer has nothing to dequeue.
      */
     [[nodiscard]] bool
     empty() const noexcept {

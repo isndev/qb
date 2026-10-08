@@ -86,8 +86,8 @@ A bounded, wait-free single-producer/single-consumer FIFO. The producer advances
 ### Type requirements and capacity
 
 - **`T` must be trivially copyable.** A `static_assert` enforces this, because the bulk enqueue/dequeue paths move elements with `std::memcpy` (`src/qb/system/lockfree/spsc.h:90-91`). The single-element `enqueue(T const&)` placement-news a copy, but for the trivially-copyable `T` the type allows, that is byte-equivalent to the bulk `memcpy`; no per-element constructor or destructor runs on the bulk path.
-- **One slot is reserved.** A buffer of requested capacity *N* allocates *N + 1* slots: the extra slot disambiguates full from empty (the buffer is full when advancing the write index would collide with the read index). Usable capacity equals the requested `_MaxSize` (fixed variant) or the constructor argument (runtime variant) (`src/qb/system/lockfree/spsc.h:493`).
-- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:610-612`).
+- **One slot is reserved.** A buffer of requested capacity *N* allocates *N + 1* slots: the extra slot disambiguates full from empty (the buffer is full when advancing the write index would collide with the read index). Usable capacity equals the requested `_MaxSize` (fixed variant) or the constructor argument (runtime variant) (`src/qb/system/lockfree/spsc.h:487`).
+- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:604-606`).
 
 ### Interface
 
@@ -112,7 +112,7 @@ public:
     template <typename Func>
     size_t consume_all(Func const &func) noexcept;             // func(segment, len) per segment
 
-    // --- either side, but observe the contract below ---
+    // --- consumer side only: reads the consumer's private read index ---
     [[nodiscard]] bool empty() const noexcept;
 };
 }
@@ -243,9 +243,9 @@ public:
 ### Contract and behavior
 
 - **`push()` is lock-free and multi-producer-safe.** Any number of threads may push concurrently. A push allocates one heap node and links it via an atomic `exchange` on the tail (`src/qb/system/lockfree/mpsc_unbounded_queue.h:80-84`).
-- **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty (`src/qb/system/lockfree/mpsc_unbounded_queue.h:107-113`).
+- **`pop()` is single-consumer only.** Only the one designated consumer thread may call `pop()`; it moves the value into `out` and returns `false` when the queue is empty, and a move-assignment that throws leaves the queue exactly as it was — the item still at its head and counted (`src/qb/system/lockfree/mpsc_unbounded_queue.h:107-127`; 3.3, Huly QB-281).
 - **`T` must be movable.** `push` takes `T` by value and moves it into the node; `pop` moves the node's value into `out` (`src/qb/system/lockfree/mpsc_unbounded_queue.h:43`).
-- **`size()` and `empty()` are approximate, and the direction of the error is fixed.** The producer increments the counter *before* publishing the node, so `size()` can only ever over-estimate — an item is counted a few instructions before it becomes poppable (`src/qb/system/lockfree/mpsc_unbounded_queue.h:98-99`). Ordering it the other way round leaves a one-instruction window in which the consumer's `fetch_sub` runs against a counter that was never incremented, and on an unsigned counter at zero that wraps to `SIZE_MAX`. Only the consumer should consult either, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:135-148`).
+- **`size()` and `empty()` are approximate, and the direction of the error is fixed.** The producer increments the counter *before* publishing the node, so `size()` can only ever over-estimate — an item is counted a few instructions before it becomes poppable (`src/qb/system/lockfree/mpsc_unbounded_queue.h:98-99`). Ordering it the other way round leaves a one-instruction window in which the consumer's `fetch_sub` runs against a counter that was never incremented, and on an unsigned counter at zero that wraps to `SIZE_MAX`. Only the consumer should consult either, and only as a hint (`src/qb/system/lockfree/mpsc_unbounded_queue.h:130-143`).
 - **A sentinel node always remains.** The constructor allocates one sentinel and points both `head_` and `tail_` at it; the destructor walks from `head_` deleting every remaining node (`src/qb/system/lockfree/mpsc_unbounded_queue.h:64-68`, `:70-77`). Each `push` adds a heap node; each `pop` frees the consumed one. This trades the ring buffer's zero-allocation steady state for unbounded capacity.
 
 ## The CPU layer underneath
@@ -278,7 +278,7 @@ Two RAII helpers also live in this header, for no reason other than that this is
 - **The MPSC indexed enqueue overloads take no lock.** `enqueue<_Index>` and `enqueue(index, …)` are safe only when one thread owns that index. If multiple unbound threads must push, use the round-robin `enqueue(T const&)` overloads, which take the per-producer `SpinLock`. The two families share a name; confirm which one you are calling.
 - **A non-trivially-copyable `T` will not compile in an SPSC/MPSC ring.** The `static_assert` is deliberate: the bulk paths `memcpy` (`src/qb/system/lockfree/spsc.h:90-91`). Store handles, pointers, or trivially-copyable structs; for arbitrary movable types use `mpsc_unbounded_queue`.
 - **A spinlock under real contention wastes a core.** `SpinLock::lock()` never sleeps. Use it only for sections of a few instructions with rare contention; otherwise prefer `std::mutex`.
-- **`mpsc_unbounded_queue::size()` over-estimates and can change between the call and the next line.** It is a hint for the consumer, never a loop bound (`src/qb/system/lockfree/mpsc_unbounded_queue.h:135-148`).
+- **`mpsc_unbounded_queue::size()` over-estimates and can change between the call and the next line.** It is a hint for the consumer, never a loop bound (`src/qb/system/lockfree/mpsc_unbounded_queue.h:130-143`).
 - **`mpsc_unbounded_queue` allocates on every push.** It is unbounded by design; if you need a fixed memory ceiling or zero steady-state allocation, the bounded `mpsc::ringbuffer` is the right tool.
 - **`setAffinity` can be a silent no-op.** Ask `qb::CPU::ThreadPinningSupported()` before attributing a performance result to pinning (`src/qb/system/cpu.h:159-189`).
 - **Do not reach for these in application code.** For inter-actor and inter-core messaging, use `push`, `send`, `reply`, and `broadcast` ([The event system](../2_core_concepts/event_system.md)). They enforce the threading contract for you and are the supported, type-checked path.

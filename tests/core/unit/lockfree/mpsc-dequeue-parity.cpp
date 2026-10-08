@@ -10,7 +10,8 @@
 /**
  * @file unit/lockfree/mpsc-dequeue-parity.cpp
  * @brief Pins the two drain contracts of `mpsc::ringbuffer` — one bounded, one not — against
- *        each other, and against the spsc primitive whose name they used to borrow.
+ *        each other, and against the spsc primitive whose name they used to borrow; and the
+ *        `_All` policy every bulk-enqueue overload must forward (Huly QB-280).
  *
  * Two operations, deliberately different, and since 3.0 differently named:
  *
@@ -294,6 +295,74 @@ TEST(MpscDequeueParity, SpscFunctorDequeueIsBoundedUnlikeTheMpscLoop) {
 
     EXPECT_EQ(mpsc_n, kBudget * kProducers);
     EXPECT_NE(n, mpsc_n) << "same third argument, same spelling before 3.0, different contract";
+}
+
+// ---------------------------------------------------------------------------
+// Bulk enqueue: every overload forwards `_All` (Huly QB-280)
+// ---------------------------------------------------------------------------
+
+/// Each producer ring of `R` holds `capacity - 2` items, so a request for more than two can only
+/// be taken whole (`_All = true`: nothing) or in part (`_All = false`: exactly the two that fit).
+template <typename R>
+void
+leave_two_free(R &ring, std::size_t producers, std::size_t capacity) {
+    for (std::size_t p = 0; p < producers; ++p)
+        for (std::size_t i = 0; i + 2 < capacity; ++i)
+            ASSERT_TRUE(ring.enqueue(p, static_cast<int>(p * 100 + i)));
+}
+
+TEST(MpscDequeueParity, EveryBulkEnqueueOverloadForwardsAll) {
+    // One of the six bulk overloads (the fixed-producer one with a compile-time index) used to
+    // call the spsc ring's `enqueue(t, size)` without its `_All`, so `enqueue<0, false>` was
+    // silently all-or-nothing and returned 0 where two items fit. Every overload callable with an
+    // explicit `_All` is asserted in both polarities, so another written the same way fails here too.
+    constexpr std::size_t kSmall = 8;
+    // Five asked, two free: more than fits, less than the ring holds (a request wider than the ring makes
+    // g++-14 see an unreachable over-long memcpy on the all-or-nothing path, -Wstringop-overflow).
+    const int items[5]{90, 91, 92, 93, 94};
+
+    using Fixed   = qb::lockfree::mpsc::ringbuffer<int, kSmall, 2>;
+    using Dynamic = qb::lockfree::mpsc::ringbuffer<int, kSmall, 0>;
+
+    {
+        Fixed ring;
+        leave_two_free(ring, 2, kSmall);
+        EXPECT_EQ((ring.enqueue<0, true>(items, 5)), 0u) << "fixed, compile-time index, _All=true: none";
+        EXPECT_EQ((ring.enqueue<0, false>(items, 5)), 2u) << "fixed, compile-time index, _All=false: the two that fit";
+        int  tail[kSmall]{};
+        auto n = ring.ringOf(0).dequeue(tail, kSmall);
+        ASSERT_EQ(n, kSmall);
+        EXPECT_EQ(tail[kSmall - 2], 90) << "the partial enqueue took the FIRST items, in order";
+        EXPECT_EQ(tail[kSmall - 1], 91);
+    }
+    {
+        Fixed ring;
+        leave_two_free(ring, 2, kSmall);
+        EXPECT_EQ(ring.enqueue<true>(1, items, 5), 0u) << "fixed, runtime index, _All=true: none";
+        EXPECT_EQ(ring.enqueue<false>(1, items, 5), 2u) << "fixed, runtime index, _All=false";
+    }
+    // The round-robin bulk form is reachable only with its default `_All = true`: an explicit
+    // `enqueue<false>(t, n)` is ambiguous with `enqueue<_Index = 0>(t, n)` (`false` converts to the
+    // index) on every compiler, so its partial mode cannot be called at all — reported, not
+    // papered over here. Its default is asserted, on both variants.
+    {
+        Fixed ring;
+        leave_two_free(ring, 2, kSmall); // round-robin picks either ring: both have exactly two free
+        EXPECT_EQ(ring.enqueue(items, 5), 0u) << "fixed, round-robin, default _All=true: none";
+    }
+    {
+        Dynamic ring(2);
+        leave_two_free(ring, 2, kSmall);
+        EXPECT_EQ((ring.enqueue<0, true>(items, 5)), 0u) << "runtime-count, compile-time index, _All=true: none";
+        EXPECT_EQ((ring.enqueue<0, false>(items, 5)), 2u) << "runtime-count, compile-time index, _All=false";
+        EXPECT_EQ(ring.enqueue<true>(1, items, 5), 0u) << "runtime-count, runtime index, _All=true: none";
+        EXPECT_EQ(ring.enqueue<false>(1, items, 5), 2u) << "runtime-count, runtime index, _All=false";
+    }
+    {
+        Dynamic ring(2);
+        leave_two_free(ring, 2, kSmall);
+        EXPECT_EQ(ring.enqueue(items, 5), 0u) << "runtime-count, round-robin, default _All=true: none";
+    }
 }
 
 } // namespace mpsc_dequeue_parity_test

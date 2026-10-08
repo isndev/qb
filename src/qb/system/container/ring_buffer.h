@@ -2,9 +2,9 @@
  * @file qb/system/container/ring_buffer.h
  * @brief Ring buffer implementation
  *
- * This file provides a fixed-size circular buffer implementation that offers
- * efficient FIFO operations. The ring buffer supports both fixed-size and
- * dynamic-size configurations, and provides thread-safe operations.
+ * This file provides a fixed-capacity circular buffer with efficient FIFO operations.
+ * The capacity is a template parameter. The buffer is NOT synchronised: one thread at
+ * a time (the cross-thread queues are under qb/system/lockfree/).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -32,7 +32,9 @@
                    // installed-header gate said "'ptrdiff_t' does not name a type".
 #include <cstring>
 #include <iterator> // std::forward_iterator_tag — iterator_category below
+#include <new>      // placement new in push_back_impl / copy_impl
 #include <type_traits>
+#include <utility> // std::forward, std::move
 
 namespace qb {
 
@@ -274,6 +276,13 @@ public:
      * If the buffer is full and Overwrite is true, the oldest element will be
      * overwritten. If the buffer is full and Overwrite is false, the element will be
      * discarded.
+     *
+     * Exception safety: a ring that is not full is untouched by a throwing constructor. A full
+     * ring (Overwrite) builds the replacement BEFORE it evicts the oldest element, so a throwing
+     * constructor leaves it untouched too, and @p value may name an element of the ring itself —
+     * `push_back(front())` included. The eviction then completes with T's move constructor; when
+     * that may throw (or T is not movable), the oldest element is dropped first and a throw
+     * leaves `capacity() - 1` elements, every one of them live (Huly QB-278).
      *
      * @tparam U Type of the value to add
      * @param value The value to add
@@ -517,17 +526,37 @@ private:
     template <typename U>
     void
     push_back_impl(U &&value) {
-        if (full())
-            destroy_at(head_);
-
-        new (elements_ + head_ * sizeof(T)) T{std::forward<U>(value)};
-        head_ = (head_ + 1) % N;
-
-        if (full())
-            tail_ = (tail_ + 1) % N;
-
-        if (!full())
+        if (!full()) {
+            // Nothing is counted before the object exists: a throwing constructor leaves the ring as it was.
+            ::new (static_cast<void *>(elements_ + head_ * sizeof(T))) T{std::forward<U>(value)};
+            head_ = (head_ + 1) % N;
             ++size_;
+            return;
+        }
+        // Full, Overwrite: head_ == tail_ is the slot of the oldest element, the one evicted. Until 3.3 it was
+        // destroyed FIRST — a throwing constructor then left a dead slot counted live (destroyed again by
+        // clear()), and `push_back(front())` read the victim after its destructor ran (Huly QB-278). The
+        // replacement is now built while the victim is still alive.
+        if constexpr (std::is_move_constructible_v<T>) {
+            T replacement{std::forward<U>(value)};
+            if constexpr (std::is_nothrow_move_constructible_v<T>) {
+                destroy_at(head_);
+                ::new (static_cast<void *>(elements_ + head_ * sizeof(T))) T(std::move(replacement));
+                head_ = tail_ = (head_ + 1) % N; // still full: the next slot holds the oldest element now
+            } else {
+                pop_front(); // a move that may throw: evict first, so a throw leaves N - 1 live elements
+                ::new (static_cast<void *>(elements_ + head_ * sizeof(T))) T(std::move(replacement));
+                head_ = (head_ + 1) % N;
+                ++size_;
+            }
+        } else {
+            // An immovable T can only be built in place: evict, then construct. A throw leaves N - 1 live
+            // elements; here, and only here, `value` must not name the evicted element.
+            pop_front();
+            ::new (static_cast<void *>(elements_ + head_ * sizeof(T))) T{std::forward<U>(value)};
+            head_ = (head_ + 1) % N;
+            ++size_;
+        }
     }
 
     /// Storage for elements with proper alignment

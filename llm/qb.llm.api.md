@@ -440,7 +440,7 @@ Fixed-capacity inline string with a std::string-like API. Truncates silently to 
 *   `[T] using icase_unordered_map<Value,_Trait=string_to_lower>` = `icase_basic_map<qb::unordered_map<std::string,Value>,_Trait>`.
 *   `[T] class icase_basic_map<_Map,_Trait>` — lowercases keys via `_Trait` before delegating: `emplace`/`try_emplace`/`at`/`operator[]`/`find`/`has`/`erase`/iterators/`clear`/`size`/`empty`; `static std::string convert_key(T&&)`.
 *   `class string_to_lower` — ASCII case-folding trait; `static std::string convert(...)`.
-*   `[T] class ring_buffer<T, N, bool Overwrite = true>` — fixed-capacity circular FIFO: `push_back` (overwrites oldest if full and `Overwrite`, else discards), `pop_front`, `front`/`back`/`operator[]`, `begin`/`end`/`cbegin`/`cend`, `empty`/`full`/`capacity`/`clear`. Single-threaded.
+*   `[T] class ring_buffer<T, N, bool Overwrite = true>` — fixed-capacity circular FIFO: `push_back` (overwrites oldest if full and `Overwrite`, else discards), `pop_front`, `front`/`back`/`operator[]`, `begin`/`end`/`cbegin`/`cend`, `empty`/`full`/`size`/`capacity`/`clear`. Single-threaded. A full ring builds the replacement before evicting the oldest element: a throwing constructor leaves it untouched and `push_back(front())` is valid (3.3, Huly QB-278).
 *   `[T] class growable_ring<T>` — growable single-thread FIFO ring (`<qb/system/container/growable_ring.h>`): power-of-two storage aligned for `T`, doubled when full (elements moved; copied when `T`'s move may throw, the `std::vector` rule, and the ring is intact after a throw), never shrunk, no allocation per element; an `emplace_back` argument may name an element of the ring; `emplace_back`/`push_back`/`pop_front`/`front`/`operator[]`/iterators/`erase(it)`/`erase_at(i)`/`clear`/`size`/`empty`/`capacity`; destroys what it holds. What `ask_stream` buffers chunks in and what `channel<T>` and the coroutine sync primitives park waiters in since 3.2 — MSVC's `std::deque` holds one element per block past 8 bytes (Huly QB-215). _(container/growable_ring.h:60)_
 
 ### Allocator pipe (`<qb/system/allocator/pipe.h>`)
@@ -465,23 +465,24 @@ Single-producer single-consumer ring. Fixed (`std::array`) or dynamic (`explicit
 *   `bool enqueue(const T&) noexcept`, `bool dequeue(T*) noexcept`
 *   `[T<_All=true>] size_t enqueue(const T*, size_t) noexcept`, `size_t dequeue(T*, size_t) noexcept`
 *   `[T<Func>] size_t dequeue(const Func&, T*, size_t) noexcept`, `[T<Func>] size_t consume_all(const Func&) noexcept`
-*   `[[nodiscard]] bool empty() const noexcept`
+*   `[[nodiscard]] bool empty() const noexcept` — consumer thread only (it reads the consumer's private read index).
 
 #### `qb::lockfree::mpsc::ringbuffer<T,max_size,nb_producer>` / `<T,max_size,0>` (`mpsc.h`)
 Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`explicit ringbuffer(size_t nb_producer)`, asserts `> 0`).
-*   `[T<_Index>] bool enqueue(const T&)` — by compile-time producer index (no lock).
-*   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index).
+*   `[T<_Index>] bool enqueue(const T&)` — by compile-time producer index (no lock); `[T<_Index,_All=true>] size_t enqueue(const T*, size_t)` its bulk form (fixed-producer variant).
+*   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index); `[T<_All=true>] size_t enqueue(size_t index, const T*, size_t)` its bulk form. Every bulk overload forwards `_All`: `true` enqueues all or none, `false` as many as fit (3.3, Huly QB-280). The round-robin bulk form is callable only with its default: an explicit `enqueue<false>(t, n)` is ambiguous with the compile-time-index form (`false` converts to `_Index`).
 *   `size_t enqueue(const T&)` — round-robin under that producer's SpinLock.
 *   `[T<_All=true>] size_t enqueue(const T*, size_t)` — round-robin bulk.
 *   `size_t dequeue(T*, size_t)` — `ret` is the OUTPUT, producers append, `size` is a **total** budget, return ≤ `size`.
 *   `[T<Func>] size_t consume_all(const Func&, T* scratch, size_t chunk)` — `scratch` is rewritten from index 0 per producer, so `chunk` is a **per-producer** batch limit and the return is a total that **may exceed** it (up to `nb_producer * chunk`). This is the overload the engine drains mailboxes with, and the per-producer form is what stops one saturated core starving the rest. Spelled `dequeue(Func, T*, size_t)` before 3.0; renamed, with no alias.
 *   `[T<Func>] size_t consume_all(const Func&)` — in-place walk, no copy; splits an item that spans the ring's wrap, so use the scratch overload for multi-slot items.
 *   `auto& ringOf(size_t index)` — direct per-producer spsc ring.
+*   `[[nodiscard]] bool has_data() const noexcept` — consumer thread only: does any producer ring hold an unread item (the park/unpark predicate).
 
 #### `[T] class qb::lockfree::mpsc_unbounded_queue<T> : public nocopy` (`mpsc_unbounded_queue.h`)
 Unbounded lock-free Michael-Scott MPSC queue.
 *   `void push(T item)` — multi-producer safe (moves into a node).
-*   `bool pop(T& out)` — single-consumer; `false` if empty.
+*   `bool pop(T& out)` — single-consumer; `false` if empty. A move-assignment that throws leaves the queue as it was, the item still at its head and counted (3.3, Huly QB-281).
 *   `[[nodiscard]] std::size_t size() const` (approximate), `[[nodiscard]] bool empty() const` (approximate; consumer-only).
 
 ### Event routers (`<qb/system/event/router.h>`, namespace `qb::router`)

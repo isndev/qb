@@ -494,6 +494,23 @@ policy.
   (`std::nullopt`). Reached through the JWT string NumericDate, qbm-http's parameter validator and the pgsql text
   decoders.
 
+- **`qb::ring_buffer` no longer destroys the element it evicts before the replacement exists (Huly QB-278).** A
+  full ring (`Overwrite = true`) destroyed its oldest element and then constructed the new one in that slot: a
+  constructor that threw left a dead slot still counted live, destroyed a second time by `clear()` or the destructor,
+  and `push_back(front())` -- or any value naming the oldest element -- was read after its destructor had run. The
+  replacement is now built first, while the victim is alive, then moved into the slot; a throwing constructor leaves
+  the ring untouched. When `T`'s move constructor may throw (or `T` is not movable) the oldest element is dropped
+  first and a throw leaves `capacity() - 1` live elements. Proven by `tests/core/unit/container/ring-buffer.cpp`,
+  the container's first test.
+- **`mpsc_unbounded_queue::pop` leaves the queue intact when the move-assignment throws (Huly QB-281).** It advanced
+  `head_` before moving the value out, so a throwing move-assignment orphaned the old dummy node (a leak) and left an
+  item counted but unreachable: `size()` stuck at 1 on a queue whose `pop` returned `false`. The value is now moved
+  first and the queue committed after; the item stays at the head, still counted, and the next `pop` returns it.
+- **The fixed-producer `mpsc::ringbuffer::enqueue<Index, false>(items, n)` takes as many items as fit (Huly
+  QB-280).** That one bulk overload dropped its `_All` argument and always enqueued all-or-nothing, returning 0 where
+  a partial enqueue was asked for; it now forwards `_All` like its three siblings. The engine's mailbox is the
+  runtime-count variant and never reached it.
+
 ### Documentation
 
 - **`6_guides/error_handling.md`'s supervision section rewritten with death watch (Huly QB-51).** It said qb-core
@@ -518,6 +535,12 @@ policy.
   wrong: it listed `Actor::kill()` among what destroys a parked frame. A kill cancels the actor's scope, which wakes
   the cancellation-aware operations of its context -- `ctx.cancellable` and `ctx.offload` destroy the frame they
   wrapped -- and destroys nothing else: a spawned coroutine parked on anything else is neither woken nor reclaimed.
+- **The SPSC ring's `empty()` is documented consumer-only everywhere (Huly QB-282).** A stale comment above it
+  ("reads the published indices ... so either thread may ask") predated the 3.2 private-line layout -- `empty()` reads
+  the consumer's private read index -- and the readme's API block filed it under "either side"; the MPSC
+  `has_data()` comments said the same. All now say consumer thread only, which is how the engine calls them.
+- **`0_foundations/containers.md`: `qb::ring_buffer` has a `size()`** -- the page said it had none and that the live
+  count came from the iterators; the accessor has existed since 3.0 and the example uses it.
 
 ## [3.2.1] - 2026-09-24
 
