@@ -522,6 +522,7 @@ RFC 3986 URI. Parsed on construction.
 *   ctors / assignment from `std::string` (+ optional address family, default `AF_INET`).
 *   `static uri parse(const std::string& str, int af = AF_INET) noexcept` — factory.
 *   Accessors: `scheme()`, `user_info()`, `host()`, `port()` (string), `[[nodiscard]] uint16_t u_port()` (numeric; 0 if malformed/>65535), `path()`, `fragment()`, `encoded_queries()`, `queries()`, `source()`, `af()`.
+*   A registered scheme's implicit port is matched without ASCII case (`hTtP` → 80, `HtTpS` → 443); `scheme()` and `source()` retain their original bytes. An explicit port overrides the default; an unregistered scheme without a port has `u_port() == 0` (`uri.cpp:1045-1084`).
 *   `[T<T>] const std::string& query(T&& name, std::size_t index = 0) const` — on a miss returns a reference to a static empty string, so the reference is always safe to keep.
 *   `[T<T>] std::string query_or(T&& name, std::string fallback, std::size_t index = 0) const` — the same lookup with a caller-supplied fallback; returns **by value**, so a literal or temporary fallback is safe.
 *   `[[nodiscard]] bool is_valid() const noexcept` — false if last parse rejected input.

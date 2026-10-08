@@ -259,6 +259,9 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
   `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1018; tcp/socket.cpp:88-95)_
+- **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
+  and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
+  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1045-1084; uri.h:473-483)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {

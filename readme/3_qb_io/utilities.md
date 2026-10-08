@@ -274,11 +274,13 @@ if (u.is_valid()) {
 std::string enc = qb::io::uri::encode("a b/c");   // "a+b%2Fc"
 std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
-<!-- src: qb/tests/io/unit/core/uri-parse.cpp:431-453 -->
+<!-- src: qb/tests/io/unit/core/uri-parse.cpp:471-493 -->
 
 `u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:474,500-568,577-591`.)_
 
-> **`encode` is two functions with different answers.** The `std::string_view` overload shown above is the form-encoding one: space becomes `+`, and everything outside the unreserved set is percent-encoded, `/` included (`qb/src/qb/io/uri.cpp:1172-1197`); its `decode` maps `+` back to a space (`:1159-1161`). The **iterator-pair template** of the same name leaves every reserved character alone — `/` stays `/` — and emits `%20` for a space (`qb/src/qb/io/uri.h:313-335`), and its `decode` does not touch `+` (`:274-296`). So `uri::encode("a b/c")` is `"a+b%2Fc"` while `uri::encode(s.begin(), s.end())` on the same input is `"a%20b/c"`. Pick by which layer you are encoding for — a form field, or a path segment.
+For a registered scheme without an explicit port, the parser finds the service port without ASCII case: `hTtP://host/` gets 80 and `HtTpS://host/` gets 443. `scheme()` and `source()` still return the original spelling, and a written `:port` takes precedence. An unregistered scheme remains syntactically valid but has no implicit port (`u_port() == 0`), so a client must supply one before connecting. The lowercase lookup remains the direct path; a mixed-case miss folds a short scheme on the stack without allocation. _(`qb/src/qb/io/uri.cpp:1045-1084`; `qb/tests/io/unit/core/uri-parse.cpp`.)_
+
+> **`encode` is two functions with different answers.** The `std::string_view` overload shown above is the form-encoding one: space becomes `+`, and everything outside the unreserved set is percent-encoded, `/` included (`qb/src/qb/io/uri.cpp:1204-1229`); its `decode` maps `+` back to a space (`:1191-1193`). The **iterator-pair template** of the same name leaves every reserved character alone — `/` stays `/` — and emits `%20` for a space (`qb/src/qb/io/uri.h:313-335`), and its `decode` does not touch `+` (`:274-296`). So `uri::encode("a b/c")` is `"a+b%2Fc"` while `uri::encode(s.begin(), s.end())` on the same input is `"a%20b/c"`. Pick by which layer you are encoding for — a form field, or a path segment.
 
 ---
 

@@ -143,8 +143,15 @@ INSTANTIATE_TEST_SUITE_P(
         ResolveCase{
             "https://www.example.com/section1/section2/action?query1=value1&query2=value2", "https", "", "www.example.com", 443, AF_INET
         },
+        ResolveCase{"hTtP://www.example.com/section1/section2/action?query1=value1&query2=value2", "hTtP", "", "www.example.com", 80, AF_INET},
+        ResolveCase{
+            "HtTpS://www.example.com/section1/section2/action?query1=value1&query2=value2", "HtTpS", "", "www.example.com", 443, AF_INET
+        },
         ResolveCase{
             "https://www.example.com:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "www.example.com", 8080, AF_INET
+        },
+        ResolveCase{
+            "HtTpS://www.example.com:9443/section1/section2/action?query1=value1&query2=value2", "HtTpS", "", "www.example.com", 9443, AF_INET
         },
         ResolveCase{"https://localhost/section1/section2/action?query1=value1&query2=value2", "https", "", "localhost", 443, AF_INET},
         ResolveCase{"https://localhost:8080/section1/section2/action?query1=value1&query2=value2", "https", "", "localhost", 8080, AF_INET},
@@ -175,6 +182,39 @@ INSTANTIATE_TEST_SUITE_P(
             "https://user:password@[::1]:8080/section1/section2/action?query1=value1&query2=value2", "https", "user:password", "::1", 8080,
             AF_INET6
         }));
+
+TEST(UriParse, DefaultPortLookupPreservesSourceSchemeAndRejectsUnknownDefault) {
+    const uri mixed_http("hTtP://example.com/resource");
+    const uri mixed_https("HtTpS://example.com/resource");
+    const uri lowercase_http("http://example.com/resource");
+    const uri lowercase_https("https://example.com/resource");
+    const uri long_known("PrOmEtHeUs-AlErTmAnAgEr://example.com/resource");
+    const uri unknown("x-custom://example.com/resource");
+
+    ASSERT_TRUE(mixed_http.is_valid());
+    ASSERT_TRUE(mixed_https.is_valid());
+    EXPECT_EQ(mixed_http.source(), "hTtP://example.com/resource");
+    EXPECT_EQ(mixed_https.source(), "HtTpS://example.com/resource");
+    EXPECT_EQ(mixed_http.scheme(), "hTtP");
+    EXPECT_EQ(mixed_https.scheme(), "HtTpS");
+    EXPECT_EQ(mixed_http.port(), lowercase_http.port());
+    EXPECT_EQ(mixed_https.port(), lowercase_https.port());
+    EXPECT_EQ(mixed_http.u_port(), 80u);
+    EXPECT_EQ(mixed_https.u_port(), 443u);
+    EXPECT_EQ(long_known.u_port(), 9093u); // longest current default-port scheme also fits the stack key
+    EXPECT_TRUE(unknown.is_valid());       // syntactically valid; no default service is registered
+    EXPECT_TRUE(unknown.port().empty());
+    EXPECT_EQ(unknown.u_port(), 0u); // caller must supply a port for an unknown scheme
+
+    std::string long_scheme(80, 'a');
+    long_scheme[0]                = 'A';
+    const std::string long_source = long_scheme + "://example.com/resource";
+    const uri         long_unknown(long_source);
+    EXPECT_TRUE(long_unknown.is_valid());
+    EXPECT_EQ(long_unknown.source(), long_source);
+    EXPECT_TRUE(long_unknown.port().empty());
+    EXPECT_EQ(long_unknown.u_port(), 0u); // rare >64-byte path has no default and preserves bytes
+}
 
 // =============================================================================
 // RELATIVE / UNIX / DEFAULT / COPY-MOVE / PORT CONTRACTS
