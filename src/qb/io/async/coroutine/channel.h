@@ -199,98 +199,30 @@ public:
                 // Stay !_completed so await_resume throws channel_closed.
                 return true;
             }
-            // 1. Satisfy a direct recv waiter
-            if (!ch._recv_waiters.empty()) {
-                auto [recv_h, result_ptr] = ch._recv_waiters.front();
-                ch._recv_waiters.pop_front();
-                *result_ptr = std::move(value);
-                _completed  = true;
-                schedule_via_current(recv_h);
-                return true;
-            }
-            // 2. Satisfy a select waiter (lazy-clean stale resolved entries)
-            if (ch.offer_to_select_waiter(std::move(value))) {
-                _completed = true;
-                return true;
-            }
-            // 3. Buffer
-            if (ch._buffer.size() < ch._capacity) {
-                ch._buffer.push_back(std::move(value));
-                _completed = true;
-                return true;
-            }
-            return false;
+            // A waiting receiver, then a waiting select waiter, then the buffer -- deliver() is the one hand-off.
+            _completed = ch.deliver(std::move(value));
+            return _completed;
         }
 
+        // Only parks: await_ready() has just found nobody to take the value, and nothing can run in between. The
+        // entry carries the value itself: the wake that finds room for it hands it over (wake_one_sender()).
         void
         await_suspend(std::coroutine_handle<> h) {
             ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-            // Channel was closed while we were queued or between await_ready()
-            // and await_suspend() (cannot actually happen under the cooperative
-            // model since no other code runs, but guard defensively).
-            if (ch._closed) {
-                // Do NOT mark _completed: await_resume will throw.
-                schedule_via_current(h);
-                return;
-            }
-            if (!ch._recv_waiters.empty()) {
-                auto [recv_h, result_ptr] = ch._recv_waiters.front();
-                ch._recv_waiters.pop_front();
-                *result_ptr = std::move(value);
-                _completed  = true;
-                schedule_via_current(recv_h);
-                schedule_via_current(h);
-                return;
-            }
-            if (ch.offer_to_select_waiter(std::move(value))) {
-                _completed = true;
-                schedule_via_current(h);
-                return;
-            }
-            if (ch._buffer.size() < ch._capacity) {
-                ch._buffer.push_back(std::move(value));
-                _completed = true;
-                schedule_via_current(h);
-            } else {
-                _parked = h;
-                ch._send_waiters.push_back({h, nullptr});
-            }
+            _parked = h;
+            ch._send_waiters.push_back({h, nullptr, &value, &_completed});
         }
 
         void
         await_resume() {
-            // The channel was destroyed while we were parked: the send could not be
-            // delivered, so fail it the same way a close() does — without touching the
-            // freed channel.
-            if (!*_ch_alive)
-                throw channel_closed();
-            // Finding 2.C.1: after a close() has happened (before or after the
-            // suspension), the value must be rejected loudly rather than
-            // silently dropped. This matches try_send's boolean-false contract
-            // and the Doxygen "@throws channel_closed" on send().
-            if (ch._closed && !_completed) {
-                throw channel_closed();
-            }
-            if (!_completed) {
-                // Woken by a recv that freed buffer space, or by a select/recv_for that registered
-                // after we parked — deliver our value with the same priority as a direct send:
-                // a waiting receiver first, then a waiting select waiter, else buffer it.
-                if (!ch._recv_waiters.empty()) {
-                    auto [recv_h, result_ptr] = ch._recv_waiters.front();
-                    ch._recv_waiters.pop_front();
-                    *result_ptr = std::move(value);
-                    schedule_via_current(recv_h);
-                    _completed = true;
-                } else {
-                    // Hand off to the first non-stale select waiter (resolve() schedules its outer).
-                    if (ch.offer_to_select_waiter(std::move(value)))
-                        _completed = true;
-                    if (!_completed) {
-                        ch._buffer.push_back(std::move(value));
-                        _completed = true;
-                    }
-                }
-            }
+            // Delivered -- at once, or by the wake that resumed us (the value moved into the channel or straight to a
+            // receiver then, Huly QB-272). Nothing of the channel is touched here: it may already be gone.
+            if (_completed)
+                return;
+            // Resumed without a hand-off: close() woke us, or the channel was destroyed (whose destructor closes it).
+            // Finding 2.C.1: the value must be rejected loudly rather than silently dropped -- the
+            // "@throws channel_closed" of send(), the counterpart of try_send's false.
+            throw channel_closed();
         }
     };
 
@@ -380,9 +312,8 @@ public:
                 schedule_via_current(h);
             } else {
                 ch._recv_waiters.push_back({h, &_result});
-                // Rendezvous fix (capacity==0 sender-first):
-                // if a sender was already suspended, wake one immediately so it
-                // can hand off directly to this newly parked receiver.
+                // Rendezvous (capacity==0) sender-first: if a sender is already parked,
+                // wake one -- the wake hands its value straight to this newly parked receiver.
                 ch.wake_one_sender();
             }
         }
@@ -425,23 +356,7 @@ public:
     try_send(const T &value) {
         if (_closed)
             return false;
-        if (!_recv_waiters.empty()) {
-            auto [recv_h, result_ptr] = _recv_waiters.front();
-            _recv_waiters.pop_front();
-            *result_ptr = value;
-            schedule_via_current(recv_h);
-            return true;
-        }
-        // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
-        // Without this, try_send returned false on a cap-0 channel (or a full buffer) even when a
-        // select waiter was ready, deadlocking a rendezvous (the send path already handles both).
-        if (offer_to_select_waiter(value))
-            return true;
-        if (_buffer.size() < _capacity) {
-            _buffer.push_back(value);
-            return true;
-        }
-        return false;
+        return deliver(value);
     }
 
     /**
@@ -453,21 +368,7 @@ public:
     try_send(T &&value) {
         if (_closed)
             return false;
-        if (!_recv_waiters.empty()) {
-            auto [recv_h, result_ptr] = _recv_waiters.front();
-            _recv_waiters.pop_front();
-            *result_ptr = std::move(value);
-            schedule_via_current(recv_h);
-            return true;
-        }
-        // Satisfy a parked select()/recv_for() waiter before the buffer — mirrors send_awaiter.
-        if (offer_to_select_waiter(std::move(value)))
-            return true;
-        if (_buffer.size() < _capacity) {
-            _buffer.push_back(std::move(value));
-            return true;
-        }
-        return false;
+        return deliver(std::move(value));
     }
 
     /**
@@ -559,10 +460,9 @@ public:
         }
         _select_waiters.push_back({std::move(state), idx});
         // Rendezvous (capacity==0) sender-first: if a sender is already parked with a value, wake one
-        // so its await_resume hands the value to this select/recv_for waiter. Without this, select()
-        // and recv_for() never observe a pending rendezvous value that recv()/try_recv() would (the
-        // send_awaiter only delivers to recv_waiters on a direct send, not to a select registered
-        // afterwards). Mirrors recv_awaiter::await_suspend.
+        // -- the wake hands its value to this select/recv_for waiter. Without this, select() and
+        // recv_for() never observe a pending rendezvous value that recv()/try_recv() would (a parked
+        // sender is only ever served by a wake). Mirrors recv_awaiter::await_suspend.
         wake_one_sender();
     }
 
@@ -675,9 +575,8 @@ public:
                 }
                 state->outer = h;
                 ch._select_waiters.push_back({state, 0});
-                // Rendezvous (capacity==0) sender-first: wake a parked sender so it delivers to this
-                // recv_for waiter (its await_resume now hands off to select waiters). Mirrors
-                // register_select_waiter / recv_awaiter::await_suspend.
+                // Rendezvous (capacity==0) sender-first: wake a parked sender -- the wake hands its value
+                // to this recv_for waiter. Mirrors register_select_waiter / recv_awaiter::await_suspend.
                 ch.wake_one_sender();
                 coro_scheduler().spawn(channel_timer(state, h, timeout_ms));
             }
@@ -726,32 +625,28 @@ public:
         }
 
         // Slow path: wait for space or timeout.
-        // guard: shared flag — whichever wakes us first (recv or timer) sets it
+        // guard: shared flag — whichever wakes us first (the hand-off or the timer) sets it
         // to true, preventing the other from double-scheduling the handle.
         auto guard = std::make_shared<bool>(false);
-        auto fired = std::make_shared<bool>(false);
 
         struct timed_send_awaiter {
             channel<T>           &ch;
             T                     val;
             std::shared_ptr<bool> guard;
-            std::shared_ptr<bool> fired;
             qb::duration          timeout_ms;
-            std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
-            bool                  _resumed = false;
+            bool                  _delivered = false; ///< set by wake_one_sender() when it hands `val` over
+            bool                  _resumed   = false;
 
-            timed_send_awaiter(channel<T> &c, T v, std::shared_ptr<bool> g, std::shared_ptr<bool> f, qb::duration t)
+            timed_send_awaiter(channel<T> &c, T v, std::shared_ptr<bool> g, qb::duration t)
                 : ch(c)
                 , val(std::move(v))
                 , guard(std::move(g))
-                , fired(std::move(f))
-                , timeout_ms(t)
-                , _ch_alive(c._alive) {}
+                , timeout_ms(t) {}
 
             // Frame-destruction guard: if the send_for frame is destroyed while
             // parked, set *guard so neither send_timer nor wake_one_sender()
-            // schedules the dangling handle (the stale _send_waiters entry is
-            // lazily discarded by the guard check).
+            // schedules the dangling handle or reads its value (the stale _send_waiters
+            // entry is lazily discarded by the guard check).
             ~timed_send_awaiter() {
                 if (!_resumed && guard && !*guard)
                     *guard = true;
@@ -765,46 +660,22 @@ public:
             void
             await_suspend(std::coroutine_handle<> h) {
                 ::qb::io::async::detail::track_suspension(h.address(), "channel send");
-                ch._send_waiters.push_back(send_waiter_entry{h, guard});
-                coro_scheduler().spawn(send_timer(guard, fired, h, timeout_ms));
+                ch._send_waiters.push_back(send_waiter_entry{h, guard, &val, &_delivered});
+                coro_scheduler().spawn(send_timer(guard, h, timeout_ms));
             }
 
+            // True when the wake that resumed us handed the value over (Huly QB-272: the hand-off happens at the wake,
+            // with the same priority as a direct send -- a waiting receiver, then a select/recv_for waiter, then the
+            // buffer). Resumed without it: the timer fired, close() woke us, or the channel was destroyed -- false,
+            // and nothing of the channel is touched (it may already be gone).
             bool
-            await_resume() {
+            await_resume() noexcept {
                 _resumed = true; // normal resume path: destructor must not re-arm guard
-                // The channel was destroyed while we were parked: close() scheduled
-                // this resume, then ~channel freed the channel. The send could not be
-                // delivered, so report failure without touching the freed channel
-                // (mirrors send_awaiter / recv_awaiter's _ch_alive guard).
-                if (!*_ch_alive)
-                    return false;
-                if (*fired)
-                    return false;
-                if (ch._closed)
-                    return false;
-                // Deliver with the SAME priority as a direct/woken untimed send (send_awaiter):
-                // a waiting receiver first, then a waiting select/recv_for waiter, else buffer.
-                // The select hand-off is essential: a select()/recv_for() that woke us via
-                // wake_one_sender() registered in _select_waiters, NOT _recv_waiters. Without it
-                // the value would land in the buffer, the select/recv_for waiter would never observe
-                // it and would time out — a silently lost rendezvous message. Mirrors
-                // send_awaiter::await_resume.
-                if (!ch._recv_waiters.empty()) {
-                    auto [recv_h, result_ptr] = ch._recv_waiters.front();
-                    ch._recv_waiters.pop_front();
-                    *result_ptr = std::move(val);
-                    schedule_via_current(recv_h);
-                    return true;
-                }
-                // Hand off to the first non-stale select waiter (resolve() schedules its outer).
-                if (ch.offer_to_select_waiter(std::move(val)))
-                    return true;
-                ch._buffer.push_back(std::move(val));
-                return true;
+                return _delivered;
             }
         };
 
-        co_return co_await timed_send_awaiter{*this, std::move(value), guard, fired, timeout};
+        co_return co_await timed_send_awaiter{*this, std::move(value), guard, timeout};
     }
 
 private:
@@ -858,11 +729,10 @@ private:
     }
 
     static task<void>
-    send_timer(std::shared_ptr<bool> guard, std::shared_ptr<bool> fired, std::coroutine_handle<> h, qb::duration delay) {
+    send_timer(std::shared_ptr<bool> guard, std::coroutine_handle<> h, qb::duration delay) {
         co_await sleep(delay);
         if (!*guard) {
             *guard = true;
-            *fired = true;
             schedule_via_current(h);
         }
     }
@@ -872,7 +742,9 @@ private:
 
     struct send_waiter_entry {
         std::coroutine_handle<> handle;
-        std::shared_ptr<bool>   guard; // set to true on wake (prevents timer double-schedule)
+        std::shared_ptr<bool>   guard;     // send_for only: set to true on wake (prevents timer double-schedule)
+        T                      *value;     // the parked sender's value, handed over by wake_one_sender()
+        bool                   *delivered; // set by wake_one_sender() once `value` is handed over
     };
 
     struct select_waiter_entry {
@@ -880,16 +752,62 @@ private:
         size_t                                index;
     };
 
+    /**
+     * @brief Hand `value` to whoever can take it NOW: the first waiting receiver, else the first live `select()` /
+     *        `recv_for()` waiter, else a free buffer slot.
+     * @return `false` when nobody can (no waiter, buffer full or rendezvous): `value` is then left untouched.
+     *
+     * THE single send-side hand-off: `send()`'s fast path, both `try_send` overloads and the wake of a parked sender
+     * all go through it, so the priority cannot drift between them -- it did, before: `try_send` once skipped the
+     * select waiters and returned false on a rendezvous a parked `select()` was ready for.
+     */
+    template <typename U>
+    bool
+    deliver(U &&value) {
+        if (!_recv_waiters.empty()) {
+            auto [recv_h, result_ptr] = _recv_waiters.front();
+            _recv_waiters.pop_front();
+            *result_ptr = std::forward<U>(value);
+            schedule_via_current(recv_h);
+            return true;
+        }
+        if (offer_to_select_waiter(std::forward<U>(value)))
+            return true;
+        if (_buffer.size() < _capacity) {
+            _buffer.push_back(std::forward<U>(value));
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * @brief Called wherever room for a parked sender may have appeared (a slot freed, a receiver or a select waiter
+     *        parked): the first parked sender's value is handed over HERE, then the sender is resumed, already done.
+     *
+     * The wake is the delivery (Huly QB-272). Waking the sender to let it deliver on resume left a window: anything
+     * that ran before that resume -- a `try_send`, another sender's fast path -- saw the room as free and took it;
+     * the woken sender then buffered past the capacity, behind the newcomer, or on a capacity-0 channel. Handing the
+     * value over before anything else runs keeps the capacity and the senders' FIFO order, and leaves nothing to give
+     * back: a sender whose frame is reclaimed before it resumes (a `when_any` loser) has sent -- as a `send_for` woken
+     * before its timer always had. The receive side mirrors it: a receiver handed a value that never resumes
+     * re-buffers it (~recv_awaiter). Either way a value is delivered exactly once.
+     */
     void
     wake_one_sender() {
         while (!_send_waiters.empty()) {
-            auto entry = _send_waiters.front();
-            _send_waiters.pop_front();
-            if (entry.guard && *entry.guard)
-                continue; // already woken by timer
+            auto &entry = _send_waiters.front();
+            if (entry.guard && *entry.guard) {
+                _send_waiters.pop_front(); // a send_for whose timer fired or whose frame is gone: its value is not ours
+                continue;
+            }
+            if (!deliver(std::move(*entry.value)))
+                return; // no room after all: it stays parked, first in line
+            *entry.delivered = true;
             if (entry.guard)
-                *entry.guard = true;
-            schedule_via_current(entry.handle);
+                *entry.guard = true; // its timer must not resume it a second time
+            const auto h = entry.handle;
+            _send_waiters.pop_front();
+            schedule_via_current(h);
             return;
         }
     }

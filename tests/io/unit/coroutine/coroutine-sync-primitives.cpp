@@ -35,6 +35,7 @@
  */
 
 #include <atomic>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
@@ -385,6 +386,38 @@ TEST_F(CoroutineSyncPrimitives, MutexWaitersCountReflectsContention) {
     EXPECT_FALSE(mtx.is_locked());
 }
 
+TEST_F(CoroutineSyncPrimitives, MutexHandOffIsNeverBargedByANewcomer) {
+    // A free lock is taken without suspending (Huly QB-287), so FIFO rests on the other half of the contract: unlock()
+    // HANDS the lock to the first waiter without ever freeing it. A newcomer arriving between that hand-off and the
+    // waiter's resume must queue behind the waiter -- were the lock free for that instant, the newcomer's synchronous
+    // fast path would take it first and the waiter would resume into a lock someone else holds.
+    std::vector<int> order;
+    bool             done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        async_mutex m;
+        EXPECT_TRUE(m.try_lock()); // this coroutine holds the lock
+        auto waiter = [&]() -> task<void> {
+            co_await m.lock();
+            order.push_back(1);
+            m.unlock();
+        };
+        auto newcomer = [&]() -> task<void> {
+            co_await m.lock();
+            order.push_back(2);
+            m.unlock();
+        };
+        coro_scheduler().spawn(waiter);
+        co_await sleep(0ms); // a yield: the waiter runs and parks behind the held lock
+        EXPECT_EQ(m.waiters_count(), 1u);
+        m.unlock();          // hands the lock to the waiter, which is queued, not yet resumed
+        co_await newcomer(); // starts at once: arrives while that hand-off is in flight
+        EXPECT_FALSE(m.is_locked());
+        done = true;
+    });
+    EXPECT_TRUE(pump_until([&] { return done; })) << "the hand-off never completed";
+    EXPECT_EQ(order, (std::vector<int>{1, 2})) << "the newcomer barged ahead of the waiter it found queued";
+}
+
 TEST_F(CoroutineSyncPrimitives, MutexWithHelperReturnsResultAndUnlocks) {
     std::atomic<bool> done{false};
     coro_scheduler().spawn([&]() -> task<void> {
@@ -551,6 +584,38 @@ TEST_F(CoroutineSyncPrimitives, RWLockLastReaderReleaseWakesQueuedWriter) {
     EXPECT_TRUE(pump_until([&] { return done.load() && writer_acquired.load(); }))
         << "the queued writer was never woken when the last reader released";
     EXPECT_TRUE(reader_released.load());
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockNewReaderQueuesBehindWaitingWriterAndNoHandOffIsBarged) {
+    // The rw-lock is writer-preferring -- a reader arriving while a writer WAITS queues behind it -- and, its free paths
+    // being synchronous (Huly QB-287), each hand-off must keep the lock held: a reader arriving while the write lock is
+    // being handed to the parked writer queues too. Expected order: the writer, then both readers, admitted together.
+    std::vector<char> order;
+    bool              done = false;
+    coro_scheduler().spawn([&]() -> task<void> {
+        async_rw_lock rw;
+        co_await rw.lock_read(); // this coroutine holds a read lock (free: taken without suspending)
+        auto writer = [&]() -> task<void> {
+            co_await rw.lock_write();
+            order.push_back('W');
+            rw.unlock_write();
+        };
+        auto reader = [&](char tag) -> task<void> {
+            co_await rw.lock_read();
+            order.push_back(tag);
+            rw.unlock_read();
+        };
+        coro_scheduler().spawn(writer);
+        co_await sleep(0ms); // the writer parks behind the read lock
+        coro_scheduler().spawn([&] { return reader('a'); });
+        co_await sleep(0ms); // a reader arriving while the writer WAITS queues behind it (writer preference)
+        EXPECT_TRUE(order.empty()) << "a reader was admitted past a waiting writer";
+        rw.unlock_read();     // last reader leaves: the write lock is handed to the parked writer
+        co_await reader('b'); // arrives while that hand-off is in flight: must queue, not barge
+        done = true;
+    });
+    EXPECT_TRUE(pump_until([&] { return done; })) << "the hand-offs never completed";
+    EXPECT_EQ(order, (std::vector<char>{'W', 'a', 'b'}));
 }
 
 TEST_F(CoroutineSyncPrimitives, RWLockGuardsExplicitUnlockReleaseEarly) {
@@ -1150,6 +1215,155 @@ TEST_F(CoroutineSyncPrimitives, RwLockReadReusableAfterGrantedWaiterReclaimed) {
         reusable = acquired->load();
     });
     EXPECT_TRUE(reusable) << "rwlock leaked a reader slot after a granted-then-reclaimed reader (writers starve)";
+}
+
+// ---------------------------------------------------------------------------
+// A FREE lock is taken without suspending (Huly QB-287). Until 3.3 lock(), lock_read() and lock_write() suspended
+// even on a free lock: they granted it, queued the coroutine and suspended -- and an awaiter granted on that path was
+// not "parked", so if its branch was reclaimed before it resumed (here: a when_any whose other branch completes in
+// the same drain), the grant was returned to nobody. The mutex stayed locked with no holder, the reader count
+// leaked, the write lock stuck. No sleep anywhere: both branches are queued by when_any, the lock branch runs first.
+// ---------------------------------------------------------------------------
+TEST_F(CoroutineSyncPrimitives, MutexFreeLockIsTakenWithoutSuspendingSoNoReclaimCanLeakIt) {
+    bool        free_after = false;
+    std::size_t winner     = 99;
+    run_reclaim_driver([&]() -> task<void> {
+        auto m      = std::make_shared<async_mutex>();
+        auto locker = [](std::shared_ptr<async_mutex> mm) -> task<int> {
+            co_await mm->lock(); // free: taken at once, no suspension
+            mm->unlock();
+            co_return 1;
+        };
+        auto instant = []() -> task<int> {
+            co_return 2;
+        };
+        auto r     = co_await when_any(locker(m), instant());
+        winner     = r.index;
+        free_after = !m->is_locked();
+    });
+    EXPECT_TRUE(free_after) << "the mutex is left locked with no holder: a free lock() suspended and its grant was lost";
+    EXPECT_EQ(winner, 0u) << "lock() on a free mutex must not suspend: the locking branch completes before the other runs";
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockFreeReadLockIsTakenWithoutSuspendingSoNoReclaimCanLeakIt) {
+    bool        writer_admitted = false;
+    std::size_t winner          = 99;
+    run_reclaim_driver([&]() -> task<void> {
+        auto rw     = std::make_shared<async_rw_lock>();
+        auto reader = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_await r->lock_read(); // free: taken at once, no suspension
+            r->unlock_read();
+            co_return 1;
+        };
+        auto instant = []() -> task<int> {
+            co_return 2;
+        };
+        auto r = co_await when_any(reader(rw), instant());
+        winner = r.index;
+        // A leaked reader count keeps every writer out forever. The writer below is free to enter only if it is 0.
+        auto admitted = std::make_shared<bool>(false);
+        coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r, std::shared_ptr<bool> a) -> task<void> {
+            co_await r->lock_write();
+            *a = true;
+            r->unlock_write();
+        }(rw, admitted));
+        for (int i = 0; i < 4 && !*admitted; ++i)
+            co_await sleep(0ms); // yields: the writer runs in the next drain
+        writer_admitted = *admitted;
+    });
+    EXPECT_TRUE(writer_admitted) << "a reader count leaked: a free lock_read() suspended and its grant was lost";
+    EXPECT_EQ(winner, 0u) << "lock_read() on a free rw-lock must not suspend";
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockFreeWriteLockIsTakenWithoutSuspendingSoNoReclaimCanLeakIt) {
+    bool        writer_admitted = false;
+    std::size_t winner          = 99;
+    run_reclaim_driver([&]() -> task<void> {
+        auto rw     = std::make_shared<async_rw_lock>();
+        auto writer = [](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            co_await r->lock_write(); // free: taken at once, no suspension
+            r->unlock_write();
+            co_return 1;
+        };
+        auto instant = []() -> task<int> {
+            co_return 2;
+        };
+        auto r        = co_await when_any(writer(rw), instant());
+        winner        = r.index;
+        auto admitted = std::make_shared<bool>(false);
+        coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r, std::shared_ptr<bool> a) -> task<void> {
+            co_await r->lock_write();
+            *a = true;
+            r->unlock_write();
+        }(rw, admitted));
+        for (int i = 0; i < 4 && !*admitted; ++i)
+            co_await sleep(0ms);
+        writer_admitted = *admitted;
+    });
+    EXPECT_TRUE(writer_admitted) << "the write lock stuck held: a free lock_write() suspended and its grant was lost";
+    EXPECT_EQ(winner, 0u) << "lock_write() on a free rw-lock must not suspend";
+}
+
+// ---------------------------------------------------------------------------
+// Readers parked behind the LAST waiting writer are admitted when that writer is reclaimed (Huly QB-288). They queued
+// only because a writer was waiting (writer preference); the reclaim retracts it, and only unlock_write() used to
+// admit queued readers -- with no writer left to ever run it, they stayed parked forever. A second test keeps the
+// other side honest: while ANOTHER writer still waits, the readers stay behind it.
+// ---------------------------------------------------------------------------
+TEST_F(CoroutineSyncPrimitives, RwLockReadersQueuedBehindAReclaimedLastWriterAreAdmitted) {
+    bool reader_admitted = false;
+    run_reclaim_driver([&reader_admitted]() -> task<void> {
+        auto rw = std::make_shared<async_rw_lock>();
+        co_await rw->lock_read(); // this coroutine holds a read lock: a writer must park
+        auto admitted = std::make_shared<bool>(false);
+        // The race's other branch parks a reader behind the waiting writer, then completes: the writer is reclaimed.
+        auto parks_a_reader_then_wins = [](std::shared_ptr<async_rw_lock> r, std::shared_ptr<bool> a) -> task<int> {
+            coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r2, std::shared_ptr<bool> a2) -> task<void> {
+                co_await r2->lock_read(); // a writer waits: this reader queues behind it
+                *a2 = true;
+                r2->unlock_read();
+            }(r, a));
+            co_await sleep(0ms); // a yield: the reader runs and parks
+            EXPECT_FALSE(*a) << "a reader was admitted past a waiting writer";
+            co_return 99;
+        };
+        auto r = co_await when_any(park_write(*rw), parks_a_reader_then_wins(rw, admitted));
+        EXPECT_EQ(r.index, 1u);
+        rw->unlock_read(); // the read lock this coroutine held
+        for (int i = 0; i < 4 && !*admitted; ++i)
+            co_await sleep(0ms);
+        reader_admitted = *admitted;
+    });
+    EXPECT_TRUE(reader_admitted) << "a reader queued behind a reclaimed last writer is never admitted";
+}
+
+TEST_F(CoroutineSyncPrimitives, RwLockWriterPriorityHoldsWhenOneOfTwoWaitingWritersIsReclaimed) {
+    std::vector<char> order;
+    run_reclaim_driver([&order]() -> task<void> {
+        auto rw = std::make_shared<async_rw_lock>();
+        co_await rw->lock_read(); // this coroutine holds a read lock: writers must park
+        auto queue_a_writer_and_a_reader_then_win = [&order](std::shared_ptr<async_rw_lock> r) -> task<int> {
+            coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r2, std::vector<char> *o) -> task<void> {
+                co_await r2->lock_write();
+                o->push_back('W');
+                r2->unlock_write();
+            }(r, &order));
+            coro_scheduler().spawn([](std::shared_ptr<async_rw_lock> r2, std::vector<char> *o) -> task<void> {
+                co_await r2->lock_read();
+                o->push_back('R');
+                r2->unlock_read();
+            }(r, &order));
+            co_await sleep(0ms); // a yield: the second writer, then the reader, park
+            co_return 99;
+        };
+        auto r = co_await when_any(park_write(*rw), queue_a_writer_and_a_reader_then_win(rw));
+        EXPECT_EQ(r.index, 1u);
+        EXPECT_TRUE(order.empty()) << "the reader was admitted while another writer still waits";
+        rw->unlock_read(); // the remaining writer is handed the lock, then the reader
+        for (int i = 0; i < 6 && order.size() < 2; ++i)
+            co_await sleep(0ms);
+    });
+    EXPECT_EQ(order, (std::vector<char>{'W', 'R'}));
 }
 
 // Auto-reset async_event wake-token-loss: set() consumes the one-shot signal to wake a single waiter;

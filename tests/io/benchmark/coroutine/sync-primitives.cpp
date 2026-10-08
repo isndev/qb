@@ -17,7 +17,11 @@
  * atomic on exit; a one-shot out-of-loop probe asserts `counter == N` (every critical section ran —
  * a wedged park/wake would leave a worker parked and the count short). The counter is also the
  * anti-elision sink. NB: the scheduler is cooperative and the critical sections contain no
- * `co_await`, so this is a completion guard, not a mutual-exclusion proof.
+ * `co_await`, so this is a completion guard, not a mutual-exclusion proof -- and, for the same reason,
+ * every worker finds the primitive FREE: a free semaphore permit, mutex or rw-lock is taken without
+ * suspending (the mutex and the rw-lock since 3.3, Huly QB-287), so the semaphore, mutex and rw-lock
+ * cells price the uncontended path; only the latch cell parks. A contended cell has to hold the
+ * primitive across a suspension.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -151,7 +155,8 @@ BM_Sync_Semaphore_Uncontended(benchmark::State &state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(n)));
 }
 
-// Semaphore PARK/WAKE PATH: permits == 1 ⇒ N-1 workers park and are resumed on release.
+// Semaphore, permits == 1: despite the name, NOT a park/wake path -- each worker runs to completion
+// before the next starts and finds the permit free (see the file header). Kept as the one-permit control.
 void
 BM_Sync_Semaphore_Contended(benchmark::State &state) {
     const auto n = static_cast<int>(state.range(0));
@@ -180,7 +185,8 @@ BM_Sync_Semaphore_Contended(benchmark::State &state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(n)));
 }
 
-// async_mutex: N workers serialize through the mutex (each after the first parks + wakes).
+// async_mutex: N workers lock and unlock in turn. Each runs to completion before the next starts, so
+// each finds the mutex free and takes it without suspending (3.3, QB-287): the uncontended path.
 void
 BM_Sync_AsyncMutex(benchmark::State &state) {
     const auto n = static_cast<int>(state.range(0));
@@ -239,7 +245,7 @@ BM_Sync_RwLock_Read(benchmark::State &state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(n)));
 }
 
-// async_rw_lock WRITE path: N exclusive writers serialize (park/wake handoff).
+// async_rw_lock WRITE path: N writers in turn, each finding the lock free (no park since 3.3, QB-287).
 void
 BM_Sync_RwLock_Write(benchmark::State &state) {
     const auto n = static_cast<int>(state.range(0));

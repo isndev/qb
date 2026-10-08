@@ -144,24 +144,16 @@ public:
             return false;
         }
 
+        // Only parks: await_ready() has just found no permit, and nothing can run between the two calls (one thread,
+        // cooperative). A "free" branch here would grant without parking -- a grant the destructor cannot give back
+        // if the frame is reclaimed before it resumes (Huly QB-287); there is none.
         void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
-            node.h = h;
-            // In the unlikely case where await_ready saw no permit but the
-            // scheduler re-interleaved (it won't under the single-thread
-            // model, but we keep the check for defensive robustness), grab
-            // it here. Otherwise queue.
-            if (sem._available > 0) {
-                --sem._available;
-                ++sem._held;
-                _completed = true;
-                schedule_via_current(h);
-            } else {
-                _sem_alive = sem.park_alive();
-                _parked    = true;
-                sem._waiters.push_back(&node);
-            }
+            node.h     = h;
+            _sem_alive = sem.park_alive();
+            _parked    = true;
+            sem._waiters.push_back(&node);
         }
 
         void
@@ -218,21 +210,12 @@ public:
             return false;
         }
 
+        // Only parks: await_ready() has just found the token live and no permit, and nothing can run between the two
+        // calls (one thread; a token is cancelled on its own thread only) -- see acquire_awaiter::await_suspend.
         void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
-            node.h = h;
-            if (token.is_cancelled()) {
-                schedule_via_current(h);
-                return;
-            }
-            if (sem._available > 0) {
-                --sem._available;
-                ++sem._held;
-                _completed = true;
-                schedule_via_current(h);
-                return;
-            }
+            node.h     = h;
             _sem_alive = sem.park_alive();
             _parked    = true;
             sem._waiters.push_back(&node);
@@ -417,7 +400,8 @@ private:
  * @brief Asynchronous mutex
  *
  * Mutual exclusion without blocking the thread.
- * Only one coroutine can hold the lock at a time.
+ * Only one coroutine can hold the lock at a time. A free mutex is taken without suspending (since 3.3), so
+ * `co_await lock()` is not a yield point when nobody holds it; waiters are served in FIFO order and never overtaken.
  *
  * Usage:
  * @code
@@ -463,10 +447,9 @@ public:
         static constexpr char const *qb_suspension_kind = "mutex"; ///< suspension tracking (coroutine/tracking.h)
 
         async_mutex            &mtx;
-        bool                    _completed = false;
-        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};          ///< set when queued in _waiters
-        std::shared_ptr<bool>   _mtx_alive;         ///< mutex liveness; skip retract when false
+        bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};        ///< set when queued in _waiters
+        std::shared_ptr<bool>   _mtx_alive;       ///< mutex liveness; skip retract when false
 
         // User-declared dtor below makes this a non-aggregate → provide the ctor `lock()` uses.
         explicit lock_awaiter(async_mutex &m)
@@ -484,23 +467,24 @@ public:
                 mtx.unlock();                // give the abandoned ownership back to the next waiter
         }
 
+        // A free mutex is taken here, synchronously -- the coroutine does not suspend, exactly like a semaphore with a
+        // free permit (Huly QB-287). Free means nobody waits either: unlock() hands the lock to its first waiter
+        // without ever clearing `_locked`, so a newcomer can never take it ahead of a queued waiter.
         [[nodiscard]] bool
-        await_ready() const noexcept {
-            return false;
+        await_ready() noexcept {
+            if (mtx._locked)
+                return false;
+            mtx._locked = true;
+            return true;
         }
 
+        // Only parks: await_ready() has just found the mutex held, and nothing can run between the two calls.
         void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
-            if (!mtx._locked) {
-                mtx._locked = true;
-                _completed  = true;
-                schedule_via_current(h);
-            } else {
-                _mtx_alive = mtx.park_alive();
-                _parked    = h;
-                mtx._waiters.push_back(h);
-            }
+            _mtx_alive = mtx.park_alive();
+            _parked    = h;
+            mtx._waiters.push_back(h);
         }
 
         void
@@ -510,7 +494,10 @@ public:
     };
 
     /**
-     * @brief Acquire lock (suspends if already held)
+     * @brief Acquire the lock
+     * @details A free mutex is taken at once and the coroutine does not suspend (since 3.3; before, `co_await lock()`
+     *          always went through the scheduler). A held one parks the coroutine in FIFO order; `unlock()` hands the
+     *          lock to the first waiter without releasing it, so no later arrival is ever served first.
      */
     lock_awaiter
     lock() {
@@ -652,7 +639,10 @@ private:
 /**
  * @brief Asynchronous read-write lock
  *
- * Multiple readers or single writer allowed.
+ * Multiple readers or single writer allowed. Writer-preferring: a reader arriving while a writer holds OR waits
+ * queues behind it, so a stream of readers cannot starve a writer; `unlock_write()` then admits every queued reader
+ * at once before the next writer. A lock that is free for the caller is taken without suspending (since 3.3); every
+ * hand-off keeps the lock held until the waiter it was handed to resumes, so no later arrival is served first.
  *
  * Usage:
  * @code
@@ -692,10 +682,9 @@ public:
         static constexpr char const *qb_suspension_kind = "read lock"; ///< suspension tracking (coroutine/tracking.h)
 
         async_rw_lock          &rw;
-        bool                    _completed = false;
-        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};          ///< set when queued in _read_waiters
-        std::shared_ptr<bool>   _rw_alive;          ///< lock liveness; skip retract when false
+        bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};        ///< set when queued in _read_waiters
+        std::shared_ptr<bool>   _rw_alive;        ///< lock liveness; skip retract when false
 
         explicit read_lock_awaiter(async_rw_lock &r)
             : rw(r) {}
@@ -712,24 +701,24 @@ public:
                 rw.unlock_read();                         // return the abandoned reader slot
         }
 
+        // Writer-preferring: a read lock is free when no writer holds it AND none waits; it is then taken here,
+        // synchronously -- no suspension (Huly QB-287). Queued readers exist only behind a writer (the lock's
+        // invariant, kept by admit_read_waiters_if_no_writer()), so taking it here never overtakes one.
         [[nodiscard]] bool
-        await_ready() const noexcept {
-            return false;
+        await_ready() noexcept {
+            if (rw._write_locked || !rw._write_waiters.empty())
+                return false;
+            ++rw._readers;
+            return true;
         }
 
-        // No OS lock: single-thread cooperative scheduler.
+        // Only parks: await_ready() has just found the read lock unavailable, and nothing can run in between.
         void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
-            if (!rw._write_locked && rw._write_waiters.empty()) {
-                ++rw._readers;
-                _completed = true;
-                schedule_via_current(h);
-            } else {
-                _rw_alive = rw.park_alive();
-                _parked   = h;
-                rw._read_waiters.push_back(h);
-            }
+            _rw_alive = rw.park_alive();
+            _parked   = h;
+            rw._read_waiters.push_back(h);
         }
 
         void
@@ -742,42 +731,46 @@ public:
         static constexpr char const *qb_suspension_kind = "write lock"; ///< suspension tracking (coroutine/tracking.h)
 
         async_rw_lock          &rw;
-        bool                    _completed = false;
-        bool                    _resumed   = false; ///< set in await_resume: distinguishes woken-then-reclaimed
-        std::coroutine_handle<> _parked{};          ///< set when queued in _write_waiters
-        std::shared_ptr<bool>   _rw_alive;          ///< lock liveness; skip retract when false
+        bool                    _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
+        std::coroutine_handle<> _parked{};        ///< set when queued in _write_waiters
+        std::shared_ptr<bool>   _rw_alive;        ///< lock liveness; skip retract when false
 
         explicit write_lock_awaiter(async_rw_lock &r)
             : rw(r) {}
 
-        // Destroyed while still parked: retract. If we were already WOKEN (unlock_read()/unlock_write()
-        // handed us the write lock: _write_locked=true, popped us) but never resumed — the
-        // woken-then-reclaimed window of a when_any/with_deadline loser — the lock would otherwise be
-        // stuck `_write_locked` with no holder forever. Release it so the next waiter is served.
+        // Destroyed while still parked: retract -- and if we were the LAST waiting writer, the readers queued behind
+        // us (writer preference) are admitted now: only unlock_write() admitted them, and no writer is left to ever
+        // call it (Huly QB-288). If we were already WOKEN (unlock_read()/unlock_write() handed us the write lock:
+        // _write_locked=true, popped us) but never resumed — the woken-then-reclaimed window of a
+        // when_any/with_deadline loser — the lock would otherwise be stuck `_write_locked` with no holder forever.
+        // Release it so the next waiter is served.
         ~write_lock_awaiter() {
             if (!_parked || _resumed || !_rw_alive || !*_rw_alive)
                 return;
-            if (!erase_handle(rw._write_waiters, _parked)) // not parked ⇒ we were handed the write lock
-                rw.unlock_write();                         // give the abandoned write lock back
+            if (erase_handle(rw._write_waiters, _parked)) // still parked: retracted
+                rw.admit_read_waiters_if_no_writer();
+            else
+                rw.unlock_write(); // not parked ⇒ we were handed the write lock: give it back
         }
 
+        // A write lock is free when nobody holds the lock at all; it is then taken here, synchronously -- no
+        // suspension (Huly QB-287). Nobody waits on a free lock (every hand-off keeps it held), so this never
+        // overtakes a queued writer or reader.
         [[nodiscard]] bool
-        await_ready() const noexcept {
-            return false;
+        await_ready() noexcept {
+            if (rw._write_locked || rw._readers != 0)
+                return false;
+            rw._write_locked = true;
+            return true;
         }
 
+        // Only parks: await_ready() has just found the lock held, and nothing can run in between.
         void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
-            if (!rw._write_locked && rw._readers == 0) {
-                rw._write_locked = true;
-                _completed       = true;
-                schedule_via_current(h);
-            } else {
-                _rw_alive = rw.park_alive();
-                _parked   = h;
-                rw._write_waiters.push_back(h);
-            }
+            _rw_alive = rw.park_alive();
+            _parked   = h;
+            rw._write_waiters.push_back(h);
         }
 
         void
@@ -816,11 +809,7 @@ public:
         _write_locked = false;
         // Prefer pending readers; fall back to the next writer.
         if (!_read_waiters.empty()) {
-            for (auto h : _read_waiters) {
-                ++_readers;
-                schedule_via_current(h);
-            }
-            _read_waiters.clear();
+            admit_read_waiters();
         } else if (!_write_waiters.empty()) {
             auto h = _write_waiters.front();
             _write_waiters.pop_front();
@@ -919,6 +908,25 @@ public:
     }
 
 private:
+    /// Admit every queued reader at once: each takes a read slot and is resumed in FIFO order.
+    void
+    admit_read_waiters() {
+        for (auto h : _read_waiters) {
+            ++_readers;
+            schedule_via_current(h);
+        }
+        _read_waiters.clear();
+    }
+
+    /// The lock's invariant: a reader is queued only behind a writer that holds or waits. When the last waiting
+    /// writer is retracted (a reclaimed when_any loser) and none holds the lock, nothing would ever admit the readers
+    /// that queued behind it -- admit them now (Huly QB-288). While another writer still waits, they stay behind it.
+    void
+    admit_read_waiters_if_no_writer() {
+        if (!_write_locked && _write_waiters.empty() && !_read_waiters.empty())
+            admit_read_waiters();
+    }
+
     /// Retract a still-queued waiter handle from one of the wait lists. O(n), tiny queue.
     /// @return true if found+erased (still parked); false if absent (already woken/admitted, or resumed).
     static bool

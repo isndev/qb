@@ -864,7 +864,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `[T<T>] task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` — `timeout_error` past deadline / `cancelled_error` on cancel.
 
 ### Channels (`channel.h`)
-*   `[T] class channel<T>` — single-thread MPSC channel (capacity 0 = rendezvous). Non-copyable/non-movable.
+*   `[T] class channel<T>` — single-thread MPSC channel (capacity 0 = rendezvous). Non-copyable/non-movable. A parked `send`/`send_for` is served by its wake (3.3): its value is handed to the receiver, select waiter or freed slot before it resumes — the buffer never exceeds `capacity()`, parked senders are served FIFO, and a sender reclaimed after its wake has sent, once.
     *   `send_awaiter send(T value)` (throws `channel_closed` if closed), `recv_awaiter recv()` (→ `std::optional<T>`, empty on close).
     *   `try_send`, `try_recv`, `close()`, `is_closed()`, `size()`, `capacity()`, `empty()`.
     *   `task<std::optional<T>> recv_for(qb::duration timeout)` (nullopt on timeout/close), `task<bool> send_for(T value, qb::duration timeout)` (false on timeout/close).
@@ -874,8 +874,8 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 
 ### Sync primitives (`sync.h`)
 *   `class semaphore` — async counting semaphore: `acquire()`, `acquire(cancellation_token)` (cancellation-aware: a kill while parked unwinds via `cancelled_error` and retracts the queued claim — no permit leak), `try_acquire()`, `release()`, `scoped_acquire()` → `task<guard>`.
-*   `class async_mutex` — cooperative mutex: `lock()`, `try_lock()`, `unlock()`, `scoped_lock()` → `task<guard>`, `is_locked()`, `waiters_count()`.
-*   `class async_rw_lock` — `lock_read()`/`lock_write()`, `unlock_read()`/`unlock_write()`, `scoped_read_lock()`/`scoped_write_lock()` (writers prioritized).
+*   `class async_mutex` — cooperative mutex: `lock()`, `try_lock()`, `unlock()`, `scoped_lock()` → `task<guard>`, `is_locked()`, `waiters_count()`. A free mutex is taken without suspending (3.3: `co_await lock()` is then no yield point); a held one parks the coroutine FIFO, and `unlock()` hands the lock to the first waiter without releasing it — never barged.
+*   `class async_rw_lock` — `lock_read()`/`lock_write()`, `unlock_read()`/`unlock_write()`, `scoped_read_lock()`/`scoped_write_lock()` (writers prioritized: a reader queues while a writer holds or waits). A lock free for the caller is taken without suspending (3.3); hand-offs keep it held, never barged; readers queued behind a writer reclaimed while waiting are admitted when it was the last.
 *   `class barrier` — reusable rendezvous: `arrive_and_wait()`, `reset()`.
 *   `class async_event` — manual/auto-reset: `wait()`, `set()`, `reset()`, `is_set()`, `waiters_count()`.
 *   `class async_latch` — one-shot countdown: `count_down(n)`, `wait()`, `arrive_and_wait()`, `is_ready()`, `current_count()`.

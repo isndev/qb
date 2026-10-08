@@ -253,6 +253,20 @@ policy.
   register as soon as the router's not-found branch called out of line, and the service id that indexes the handler
   table came back out through `movd` + `pextrw` on every event routed (+1.3 % on the one-core push probe). The
   signature and the value are unchanged; the router now loads the destination once.
+- **A free `async_mutex` or `async_rw_lock` is taken without suspending (Huly QB-287).** `co_await lock()`,
+  `lock_read()` and `lock_write()` on a lock that is free for the caller now complete in `await_ready`, as
+  `semaphore::acquire()` with a free permit already did: `co_await mtx.lock()` is no longer a yield point when nobody
+  holds the mutex -- code that relied on it to let other coroutines run must `co_await sleep(0ms)`. A held lock still
+  parks the coroutine in FIFO order, and every hand-off keeps the lock held until the waiter resumes, so no later
+  arrival is ever served first (`MutexHandOffIsNeverBargedByANewcomer`,
+  `RwLockNewReaderQueuesBehindWaitingWriterAndNoHandOffIsBarged`). The uncontended lock no longer goes through the
+  scheduler at all.
+- **A parked channel sender is served by its wake (Huly QB-272).** When room appears for a parked `send()` or
+  `send_for()` -- a slot freed, a receiver or a `select()`/`recv_for()` that parks -- its value is handed over then,
+  before anything else runs, and the sender resumes already done; it used to be woken and to deliver on resume.
+  A sender reclaimed after its wake (a `when_any` loser) has therefore sent, exactly once, as a `send_for` woken
+  before its timer always had. Every send path -- `send()`'s fast path, both `try_send`s and the wake -- now goes
+  through one hand-off, `channel::deliver()`.
 
 ### Fixed
 
@@ -353,6 +367,25 @@ policy.
 - **The io bases' documentation named the lifecycle handlers `on(event::disconnected&)`, `on(event::eos&)`, ...**
   -- the non-const lvalue form, which never binds the rvalue those events are dispatched as, so a handler written
   from it is never called. They now read `on(event::X&&)`.
+- **A lock taken by a `when_any` branch that loses in the same drain is no longer leaked (Huly QB-287).** A free
+  `lock()`, `lock_read()` or `lock_write()` granted the lock, queued the coroutine and suspended; if its branch was
+  then reclaimed before it resumed, the awaiter -- not "parked" on that path -- gave the grant back to nobody: the
+  mutex stayed locked with no holder, a reader count leaked and kept every writer out, the write lock stuck. The
+  free path is now synchronous (see Changed), so there is no window. The defensive "free" branches of the
+  semaphore's `await_suspend`, unreachable since `await_ready` takes a free permit, carried the same hole and are
+  gone. `MutexFreeLockIsTakenWithoutSuspendingSoNoReclaimCanLeakIt` and its read and write twins failed before.
+- **Readers queued behind a waiting writer are admitted when that writer is reclaimed (Huly QB-288).** A reader
+  arriving while a writer waits queues behind it; only `unlock_write()` admitted queued readers, so when the last
+  waiting writer was reclaimed (a `when_any` loser) while readers held the lock, the readers behind it stayed parked
+  for good. Retracting the last waiting writer now admits them; while another writer waits they stay behind it
+  (`RwLockReadersQueuedBehindAReclaimedLastWriterAreAdmitted`, `RwLockWriterPriorityHoldsWhenOneOfTwoWaitingWritersIsReclaimed`).
+- **A channel's buffer no longer outgrows its capacity, and a rendezvous channel never buffers (Huly QB-272).** A
+  parked sender was only woken when room appeared, and delivered on resume: a `try_send` or another sender's fast
+  path running in between took the freed slot -- the woken sender then buffered past the capacity, behind the
+  newcomer -- or, on a capacity-0 channel, took the receiver that had woken it, and the sender buffered on a channel
+  of capacity 0. Same for `send_for`. The wake now hands the value over (see Changed).
+  `WokenSenderOwnsTheSlotItsWakeFreedSoANewcomerCannotTakeIt`, `TimedSenderWokenByAFreedSlotOwnsItToo` and
+  `RendezvousSenderWokenByAReceiverHandsItsValueToThatReceiver` failed before.
 
 ### Documentation
 

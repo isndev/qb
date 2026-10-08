@@ -91,7 +91,7 @@
  *   two bodies under one vague-linkage symbol and **object order alone** decides which survives.
  *   Measured with the same two objects on macOS/ld-prime and Linux/GNU ld 2.44:
  *   `main.o tu_dbg.o` -> `exit=0` (no assert), `tu_dbg.o main.o` -> `exit=134`
- *   (`async_mutex::unlock`, `sync.h:544`).
+ *   (`async_mutex::unlock`, `sync.h:527`).
  *
  *   It stays open because every candidate fix costs more than it saves: compiling the asserts
  *   unconditionally puts a branch on `schedule_via_current` and `generator<T>::iterator::operator*`
