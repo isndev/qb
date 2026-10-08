@@ -104,7 +104,7 @@ The per-core queue into which *other* cores enqueue cross-core events: a lock-fr
 <a id="main-engine-qbmain-alias-qbengine"></a>
 #### `Main` / engine (`qb::Main`, alias `qb::engine`)
 
-The top-level controller. It owns the [`CoreInitializer`](#coreinitializer-qbcoreinitializer)s, spawns one `std::jthread` per [`VirtualCore`](#virtualcore-qbvirtualcore), wires the inter-core mailboxes, and drives `start` / `stop` / `join` and signal handling. With `start(false)` the calling thread becomes the last worker and `start()` blocks until shutdown; with `start(true)` (the default) it returns once all cores report ready and `join()` is called later. Listed in the qb-core public API; see [Engine](../4_qb_core/engine.md).
+The top-level controller. It owns the [`CoreInitializer`](#coreinitializer-qbcoreinitializer)s, spawns one `std::jthread` per [`VirtualCore`](#virtualcore-qbvirtualcore), wires the inter-core mailboxes, and drives `start` / `stop` / `join` and signal handling. With `start(false)` the calling thread becomes the last worker and `start()` blocks until shutdown; with `start(true)` (the default) it returns after the startup barrier succeeds and `join()` is called later. A pre-loop failure joins failed workers first. Listed in the qb-core public API; see [Engine](../4_qb_core/engine.md).
 
 #### Latency (`setLatency`)
 

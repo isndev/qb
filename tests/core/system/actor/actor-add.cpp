@@ -140,7 +140,7 @@ public:
     }
 };
 
-// onInit THROWS → Error::ExceptionThrown (distinct from the co_return-false BadActorInit path).
+// onInit throws → BadActorInit: __drive_init__ catches it and reports a failed init.
 class ThrowInitActor : public qb::Actor {
 public:
     qb::io::async::task<bool>
@@ -165,10 +165,10 @@ TEST(AddActor, EngineShouldAbortIfActorFailedToInitAtStart) {
     main.join();
     EXPECT_TRUE(main.hasError());
     EXPECT_TRUE(g_returned_false.load()) << "the false-returning onInit must have run";
-    EXPECT_FALSE(g_threw.load()) << "this is the BadActorInit (false-return) path, not a throw";
+    EXPECT_FALSE(g_threw.load()) << "this case returned false rather than throwing";
 }
 
-// onInit THROWS during creation → ExceptionThrown (sibling of the false-return case above).
+// onInit throws during creation → BadActorInit, like the false-return case above.
 TEST(AddActor, EngineShouldAbortIfActorThrewDuringInitAtStart) {
     reset_atoms();
     qb::Main main;
@@ -177,7 +177,7 @@ TEST(AddActor, EngineShouldAbortIfActorThrewDuringInitAtStart) {
     main.join();
     EXPECT_TRUE(main.hasError());
     EXPECT_TRUE(g_threw.load()) << "the throwing onInit must have reached its throw site";
-    EXPECT_FALSE(g_returned_false.load()) << "ExceptionThrown is the throw path, not a clean false return";
+    EXPECT_FALSE(g_returned_false.load()) << "this case threw rather than returning false";
 }
 
 TEST(AddActor, ShouldReturnValidActorIdAtStart) {

@@ -494,7 +494,7 @@ auto server_ids = engine.core(1).builder()                        // core 1
 engine.core(0).builder()                                          // core 0
     .addActor<AcceptActor>(qb::io::uri{"tcp://0.0.0.0:12345"}, server_ids);
 
-engine.start(true);   // asynchronous: returns immediately
+engine.start(true);   // asynchronous: returns after the startup barrier
 std::cin.get();
 engine.stop();
 engine.join();

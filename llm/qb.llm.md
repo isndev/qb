@@ -157,7 +157,7 @@ int main() {
 }
 ```
 
-`start(false)` makes the calling thread the last worker and blocks until shutdown.
+`start(false)` makes the calling thread the last worker and normally blocks until that worker stops.
 `Main::core(idx)` throws once the engine is running, and `std::range_error` for `idx >= qb::MaxCores`
 (256). A core started with **0 actors fails startup** (`Error::NoActor`). `setLatency` takes a
 `qb::duration`: `qb::duration::zero()` = busy-spin (an idle pass still reads the monotonic clock once: that read paces the poll of the peer rings); `>0` parks up to that span when idle — after
@@ -527,7 +527,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:644-646, :461-463)_
+  with 0 actors fails startup. _(Main.cpp:659-661, :470-472)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is

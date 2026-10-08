@@ -18,9 +18,9 @@ The *programming model* that follows from this design — actors that need no lo
 
 ### VirtualCore: one worker thread, pinned by intent
 
-A `VirtualCore` is a worker thread that owns a set of actors and runs the event loop dispatching their events, callbacks, and inter-core message flushing. The engine starts one `qb::jthread` per configured core (`src/qb/core/Main.cpp:588-589`); with `start(false)` the calling thread runs the last core in the engine's internal registration order (unspecified; do not rely on which core) instead of a new one being spawned (`src/qb/core/Main.cpp:576-581`).
+A `VirtualCore` is a worker thread that owns a set of actors and runs the event loop dispatching their events, callbacks, and inter-core message flushing. The engine starts one `qb::jthread` per configured core (`src/qb/core/Main.cpp:598-599`); with `start(false)` the calling thread runs the last core in the engine's internal registration order (unspecified; do not rely on which core) instead of a new one being spawned (`src/qb/core/Main.cpp:586-591`).
 
-A `VirtualCore` is identified by a logical [`CoreId`](../7_reference/glossary.md) — `using CoreId = uint16_t` (`src/qb/core/ActorId.h:53`). Logical core ids are an engine-internal numbering chosen by you when you call `engine.core(id)`; they are *not* required to equal physical CPU numbers. The upper bound is `qb::MaxCores == 256` (`src/qb/core/ActorId.h:82`); `engine.core(index)` throws `std::range_error` for `index >= MaxCores` (`src/qb/core/Main.cpp:654-655`).
+A `VirtualCore` is identified by a logical [`CoreId`](../7_reference/glossary.md) — `using CoreId = uint16_t` (`src/qb/core/ActorId.h:53`). Logical core ids are an engine-internal numbering chosen by you when you call `engine.core(id)`; they are *not* required to equal physical CPU numbers. The upper bound is `qb::MaxCores == 256` (`src/qb/core/ActorId.h:82`); `engine.core(index)` throws `std::range_error` for `index >= MaxCores` (`src/qb/core/Main.cpp:669-670`).
 
 An actor is strictly thread-affine to the `VirtualCore` that created it: it never migrates to another thread for its entire lifetime. This is the invariant that lets actor state be lock-free (`src/qb/core/Actor.h:338-345`). The full set of consequences — single-writer state, sequential event handling, no mutexes — is covered in [Concurrency in qb](./concurrency.md).
 
@@ -100,7 +100,7 @@ The practical rule: never touch another core's actor state directly, and never s
 
 ## Configuring cores
 
-All cores and their per-core settings must be configured *before* `Main::start()`. Calling `engine.core(id)` after the engine is running throws `std::runtime_error("Cannot access to CoreInitializers while engine is running")` (`src/qb/core/Main.cpp:644-646`). A core registered with zero actors fails engine startup, so only call `core(id)` for cores that will receive at least one actor (`src/qb/core/Main.cpp:461-463`).
+All cores and their per-core settings must be configured *before* `Main::start()`. Calling `engine.core(id)` after the engine is running throws `std::runtime_error("Cannot access to CoreInitializers while engine is running")` (`src/qb/core/Main.cpp:659-661`). A core registered with zero actors fails engine startup, so only call `core(id)` for cores that will receive at least one actor (`src/qb/core/Main.cpp:470-472`).
 
 The following pattern dedicates one zero-latency core to a hot accept loop and runs a pool of worker actors on other cores. It is an adapted, simplified version of the topology used by the auction-house example (whose real actors are `TcpListener` / `AuctionManager` and which also wires up a database); the snippet below distills just the core-placement and latency wiring.
 
@@ -159,15 +159,15 @@ engine.core(1).setLatency(200us);                // park up to 200 us when idle
 
 `std::chrono::microseconds` (`200us`) and `std::chrono::milliseconds` (`1ms`) convert implicitly to `qb::duration`, which is `std::chrono::nanoseconds` (`src/qb/system/time.h:90`).
 
-A per-core `setLatency` is idempotent — calling it more than once on the same core overwrites the previous value (`src/qb/core/Main.cpp:74-77`). `Main::setLatency` applies unconditionally to all registered cores (`src/qb/core/Main.cpp:535-538`), so a per-core override must follow it, not precede it. `setIdleSpin` follows both rules (`src/qb/core/Main.cpp:80-83`, `src/qb/core/Main.cpp:541-544`).
+A per-core `setLatency` is idempotent — calling it more than once on the same core overwrites the previous value (`src/qb/core/Main.cpp:74-77`). `Main::setLatency` applies unconditionally to all registered cores (`src/qb/core/Main.cpp:545-548`), so a per-core override must follow it, not precede it. `setIdleSpin` follows both rules (`src/qb/core/Main.cpp:80-83`, `src/qb/core/Main.cpp:551-554`).
 
 ## Pitfalls
 
 - **Affinity never fails loudly.** A `CoreId` with no matching physical CPU, or a Windows GNU build, drops the pin and only logs a warning (`src/qb/core/VirtualCore.cpp:531-537`). Do not assume a thread is pinned because `setAffinity` returned; verify with `LOG_WARN` output or OS tooling if placement is load-bearing.
 - **Logical core ids are not CPU numbers.** `engine.core(7)` registers logical core 7, which is pinned to physical CPU 7 only if you also call `setAffinity(qb::CoreIdSet{7})`. Without an affinity set, the OS schedules the thread freely.
-- **Configuration after `start()` throws.** Affinity, latency, and actor registration are start-time only. `engine.core(id)` after start throws `std::runtime_error` (`src/qb/core/Main.cpp:644-646`); read-only `usedCoreSet()` remains safe.
-- **Empty cores abort startup.** Registering a core with no actors logs `VirtualCore(<id>).id(<thread>) Started with 0 Actor` and fails the start (`src/qb/core/Main.cpp:461-463`). Only configure cores you will populate.
-- **`async = false` consumes the calling thread.** `start(false)` runs the last core's event loop on the caller (`src/qb/core/Main.cpp:576-581`) and blocks until shutdown, so `join()` is neither needed nor reached afterward. Use the default `start()` plus `join()` when the calling thread must keep doing other work.
+- **Configuration after `start()` throws.** Affinity, latency, and actor registration are start-time only. `engine.core(id)` after start throws `std::runtime_error` (`src/qb/core/Main.cpp:659-661`); read-only `usedCoreSet()` remains safe.
+- **Empty cores abort startup.** Registering a core with no actors logs `VirtualCore(<id>).id(<thread>) Started with 0 Actor` and fails the start (`src/qb/core/Main.cpp:470-472`). Only configure cores you will populate.
+- **`async = false` consumes the calling thread.** `start(false)` runs the last core's event loop on the caller (`src/qb/core/Main.cpp:586-591`) and normally blocks until that worker stops, so `join()` is usually unnecessary afterward. Use the default `start()` plus `join()` when the calling thread must keep doing other work.
 - **Non-zero latency caps responsiveness, not throughput.** A parked core wakes on `notify()` from a sender, but the worst case before a self-initiated wake is the configured `qb::duration`. Keep latency at zero on any core that drives time-critical I/O.
 - **Never reach across a core boundary.** A `VirtualCore`'s actor maps, service-id pool, `listener::current`, and coroutine scheduler are single-thread state with no locks (`src/qb/core/VirtualCore.h:216-217`, `src/qb/core/VirtualCore.h:455-457`, `src/qb/io/async/listener.h:89,98`, `src/qb/io/async/coroutine/scheduler.h:154-158`). Cross-thread access is undefined behavior; route everything through events into the destination mailbox.
 
