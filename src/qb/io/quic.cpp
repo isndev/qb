@@ -1454,19 +1454,33 @@ private:
     }
 
     static int
-    stream_open_cb(ngtcp2_conn *, int64_t stream_id, void *user_data) {
+    stream_open_cb(ngtcp2_conn *conn, int64_t stream_id, void *user_data) {
         auto *self = static_cast<native_backend *>(user_data);
+        // Mark only streams for which ngtcp2 called stream_open. It replenishes
+        // implicitly opened streams itself when they close, so extending those
+        // again would grant the peer two slots for one closure.
+        if (ngtcp2_conn_set_stream_user_data(conn, stream_id, self) != 0)
+            return NGTCP2_ERR_CALLBACK_FAILURE;
         ++self->_stats.active_streams;
         self->_events.push_back({backend_event::kind::stream_started, self->_connection_id, static_cast<std::uint64_t>(stream_id), 0, {}, {}});
         return 0;
     }
 
     static int
-    stream_close_cb(ngtcp2_conn *, uint32_t, int64_t stream_id, uint64_t app_error_code, void *user_data, void *) {
+    stream_close_cb(ngtcp2_conn *conn, uint32_t, int64_t stream_id, uint64_t app_error_code, void *user_data, void *stream_user_data) {
         auto *self = static_cast<native_backend *>(user_data);
         if (self->_stats.active_streams > 0)
             --self->_stats.active_streams;
         const auto id = static_cast<std::uint64_t>(stream_id);
+        // ngtcp2 does not replenish a peer's quota after stream_open. The tag
+        // excludes implicitly opened streams, whose quota ngtcp2 renews itself,
+        // and locally initiated streams, which consume the opposite quota.
+        if (stream_user_data == self && (((id & 0x1u) != 0) != self->_server)) {
+            if ((id & 0x2u) == 0)
+                ngtcp2_conn_extend_max_streams_bidi(conn, 1);
+            else
+                ngtcp2_conn_extend_max_streams_uni(conn, 1);
+        }
         // Non-inserting lookup: operator[] would default-insert a `false` entry
         // for `id` only to erase it again on the line below. find() avoids the
         // transient insert while preserving the "absent == not-yet-seen-FIN"

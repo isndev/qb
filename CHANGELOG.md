@@ -245,6 +245,16 @@ policy.
   table without ASCII case: `hTtP://host/` yields 80 and `HtTpS://host/` yields 443 instead of 0.
   Explicit ports still win; a scheme with no registered default still reports no port. The
   lowercase lookup is unchanged, and the rare mixed-case fallback uses no allocation.
+- **Peer-initiated QUIC streams return their concurrency slot when they close (Huly QB-934).** For a
+  bidirectional or unidirectional stream delivered through ngtcp2's `stream_open` callback, the native backend
+  marks it and extends `MAX_STREAMS` for that direction on close. Ngtcp2 renews implicitly opened streams
+  itself, so those receive no second grant; locally initiated closes do not grant the peer a slot.
+- **A QUIC endpoint reconnect rearms its UDP watcher on the new socket (Huly QB-930).** After `close()`
+  stops the existing watcher and closes the socket, a later `connect()` rebinds that watcher to the newly
+  opened descriptor and starts it, so the event loop can receive packets for the new attempt. If the endpoint
+  created its native backend, `connect()` or `listen()` also refreshes that backend after close; a backend
+  supplied by the caller remains under the caller's control.
+
 - **A zlib decompressor called with no input hands back what it was still holding (Huly QB-464).** A decompress call
   with an empty input returned at once, so output that an earlier call had no room for -- a match copy cut by a full
   window -- stayed inside inflate until more input came, and a caller whose input was all consumed could never get it.

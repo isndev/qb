@@ -87,20 +87,32 @@ protected:
             return;
         if (!qb::io::quic::available())
             throw std::runtime_error(qb::io::quic::unavailable_reason());
-        _backend = qb::io::quic::make_native_backend();
+        _backend              = qb::io::quic::make_native_backend();
+        _native_backend_owned = true;
         if (!_backend)
             throw std::runtime_error("No QUIC backend is attached to this endpoint.");
     }
 
     void
+    refresh_native_backend_after_close() {
+        if (_state == state::closed && _native_backend_owned)
+            _backend = qb::io::quic::make_native_backend();
+    }
+
+    void
     register_io_watcher() {
-        if (_io_event)
+        if (!_socket.is_open())
             return;
+        if (_io_event) {
+            // close() stops the watcher but retains its registration. A later
+            // connect() may have a new socket fd, so rebind and re-arm it.
+            _io_event->set(_socket.native_handle(), EV_READ);
+            _io_event->start();
+            return;
+        }
         // Defense-in-depth, symmetric with the io<> watcher-arm guards: never `ev_io_start()` an invalid
         // fd — libev would write OOB into `anfds[-1]`. Every caller binds the socket before this, so this
         // is a no-op today; it just makes the arm robust against a future caller-order refactor.
-        if (!_socket.is_open())
-            return;
         auto &ev  = listener::current.registerEvent<qb::io::async::event::io>(*this, _socket.native_handle(), EV_READ);
         _io_event = &ev;
         _io_event->start();
@@ -346,7 +358,8 @@ public:
 
     void
     set_backend(std::unique_ptr<qb::io::quic::backend> backend) noexcept {
-        _backend = std::move(backend);
+        _backend              = std::move(backend);
+        _native_backend_owned = false;
     }
 
     void
@@ -363,6 +376,7 @@ public:
     bool
     listen(qb::io::uri const &bind_uri, std::filesystem::path const &cert_file, std::filesystem::path const &key_file,
            std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
+        refresh_native_backend_after_close();
         ensure_backend();
         if (_socket.bind(bind_uri) != 0)
             return false;
@@ -411,6 +425,7 @@ public:
     bool
     connect(qb::io::uri const &remote_uri, qb::io::quic::tls_config tls,
             std::vector<std::string> const &alpn_protocols = {std::string(qb::io::quic::alpn::h3)}) {
+        refresh_native_backend_after_close();
         ensure_backend();
         qb::io::endpoint remote;
         if (!remote_uri.host().empty())
@@ -623,6 +638,9 @@ public:
         drain_backend_packets();
         drain_backend_events();
     }
+
+private:
+    bool _native_backend_owned = false;
 };
 
 } // namespace qb::io::async::quic
