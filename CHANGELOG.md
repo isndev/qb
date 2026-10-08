@@ -232,6 +232,11 @@ policy.
 
 ### Fixed
 
+- **Mixed-case URI schemes resolve their implicit service port (Huly QB-919).** `qb::io::uri`
+  keeps the original scheme bytes in `source()` and `scheme()`, while matching the default-port
+  table without ASCII case: `hTtP://host/` yields 80 and `HtTpS://host/` yields 443 instead of 0.
+  Explicit ports still win; a scheme with no registered default still reports no port. The
+  lowercase lookup is unchanged, and the rare mixed-case fallback uses no allocation.
 - **A zlib decompressor called with no input hands back what it was still holding (Huly QB-464).** A decompress call
   with an empty input returned at once, so output that an earlier call had no room for -- a match copy cut by a full
   window -- stayed inside inflate until more input came, and a caller whose input was all consumed could never get it.

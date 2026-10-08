@@ -67,6 +67,7 @@ llm/qb.llm.api.md	scheduler.h:755-758	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
 llm/qb.llm.api.md	task.h:736-751	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
+llm/qb.llm.api.md	uri.cpp:1045-1084	d7076fe403d7	if (port_begin) {
 llm/qb.llm.md	Actor.cpp:388-393	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:577-595	94aff7135980	void
 llm/qb.llm.md	Actor.h:1068-1073	411d83537697	* This is the primary and recommended method for sending events. Even...
@@ -171,3 +172,5 @@ llm/qb.llm.md	time.h:93-93	93d026d68ec7	using mono_time = std::chrono::steady_cl
 llm/qb.llm.md	time.h:96-96	49cf8beff960	using wall_time = std::chrono::system_clock::time_point;
 llm/qb.llm.md	type_traits.h:744-753	c06907c9bdbd	_qb_detect_own() noexcept {                                          ...
 llm/qb.llm.md	type_traits.h:920-920	d9321c5c623d	inline constexpr bool has_own_on = ::has_method_on<D, void, Evt>::tem...
+llm/qb.llm.md	uri.cpp:1045-1084	d7076fe403d7	if (port_begin) {
+llm/qb.llm.md	uri.h:473-483	53630c7d95ca	[[nodiscard]] uint16_t
