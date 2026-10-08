@@ -133,7 +133,7 @@ The phase-aware handle returned by [`addRefActor<T>()`](#addrefactort-addrefhand
 
 #### Referenced actor
 
-A child actor created on the *same* [`VirtualCore`](#virtualcore-qbvirtualcore) as its parent via `addRefActor<T>()`. The parent receives a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle): it sends to the child by `id()` (always safe; stashed while the child is Activating) and may call the child's methods directly via `handle->` once `ready()`, bypassing the event queue. The child owns its own lifecycle and must call `kill()` to terminate; the handle then resolves to `nullptr` rather than dangling. See [Patterns](../4_qb_core/patterns.md).
+A child actor created on the *same* [`VirtualCore`](#virtualcore-qbvirtualcore) as its parent via `addRefActor<T>()`. The parent receives a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle): it sends to the child by `id()` after checking `valid()` (stashed while the child is Activating) and may call the child's methods directly via `handle->` once `ready()`, bypassing the event queue. The child owns its own lifecycle and must call `kill()` to terminate; the handle then resolves to `nullptr` rather than dangling. See [Patterns](../4_qb_core/patterns.md).
 
 #### reply (`actor.reply(event)`)
 
