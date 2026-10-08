@@ -37,6 +37,7 @@ namespace pass_timing_test {
 using namespace std::chrono_literals;
 
 constexpr auto kStall = 40ms;
+constexpr auto kPark  = 200ms;
 
 // --- a stall inside a handler -------------------------------------------------------------------
 
@@ -87,6 +88,8 @@ TEST(PassTiming, ATimedCoreCountsEveryPassAndShowsAStall) {
 
 qb::CoreStats g_after_sleep{};
 qb::duration  g_slept{};
+double        g_park_start_s{};
+double        g_park_end_s{};
 
 struct Woke : qb::Event {};
 
@@ -96,9 +99,11 @@ public:
     onInit() override {
         registerEvent<Woke>(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            g_park_start_s   = ev_clock_now();
             const auto start = qb::mono_now();
-            co_await ctx.sleep(200ms);
-            g_slept = qb::mono_now() - start;
+            co_await ctx.sleep(kPark);
+            g_slept      = qb::mono_now() - start;
+            g_park_end_s = ev_clock_now();
             ctx.push<Woke>();
         });
         co_return true;
@@ -118,7 +123,9 @@ TEST(PassTiming, TheParkIsNotTimed) {
     engine.join();
     ASSERT_FALSE(engine.hasError());
 
-    ASSERT_GE(g_slept, 200ms);
+    // qev judges the timer on ev_clock_now(). On macOS steady_clock may use a different
+    // monotonic clock, so a strict floor on g_slept can fail while the timer is on time.
+    ASSERT_GE(g_park_end_s, g_park_start_s + qb::detail::to_ev_seconds(kPark));
     const auto &t = g_after_sleep.pass_time;
     EXPECT_GT(t.count, 0u);
     // Two hundred milliseconds of wall time, nearly all of it parked: the passes account for a
