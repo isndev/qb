@@ -103,8 +103,8 @@
  *   `qb/readme/7_reference/building.md`, "Do not mix `NDEBUG` across translation units".
  * - **`__cpp_rtti`** — `-fno-rtti` cannot compile qb at all (`Event.h` uses `typeid`). Already
  *   loud, at the first translation unit.
- * - **`-std=c++20` vs `-std=c++23`** — measured: identical layout for every public type,
- *   including `qb::expected`. qb exports `cxx_std_20` as a *minimum* and builds both.
+ * - **`-std=c++20` vs `-std=c++23`** — qb's compiled interfaces have no layout split.
+ *   `qb::expected` differs by mode; modules must bridge returns and isolate inline symbols.
  * - **`QB_HAS_SSL` / `QB_HAS_QUIC` / `QB_HAS_COMPRESSION` / `QB_WITH_LOGGING`** — measured: they
  *   gate whole types (`qb::crypto::base64`, `qb::io::use<>::ssl`), never a member of a type that
  *   exists in both configurations, so a mismatch is a *compile* error, not silent corruption.
