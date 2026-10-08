@@ -28,9 +28,13 @@
 #include <coroutine>
 #include <cstdint>
 #include <cstdlib>
+#include <iosfwd>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 #include <qb/ev/ev++.h>
+#include <qb/system/time.h> // qb::duration (parked_coroutine::age)
 // Same guard as qb/io/async/event/base.h: ev.h's fallback lookup for the generated ev_config.h is
 // __has_include-guarded, so a missing include path silently flips EV_MULTIPLICITY from 1 to 4 and
 // desynchronises every ev_* prototype from the compiled libqev.a. Fail loudly instead.
@@ -320,6 +324,26 @@ private:
 
 } // namespace detail
 
+/**
+ * @brief One parked coroutine, as `CoroutineScheduler::dump()` reports it (since 3.3, Huly QB-71).
+ * @details With tracking on (`set_suspension_tracking(true)`), every coroutine suspended on an awaiter of qb has an
+ *          entry -- what it waits on, for how long, and the coroutine it awaits when it awaits one -- and so does every
+ *          root the scheduler owns. With tracking off, the roots and the coroutines parked on a loop watcher (a timer,
+ *          a socket, an async operation, an offload) are listed, without what they wait on or since when.
+ *          A record is the coroutine's LAST suspension on an awaiter of qb: one in the ready queue still shows the
+ *          wait it is leaving, and one parked on an awaitable of your own shows its previous wait, unless that
+ *          awaitable labels itself with `track_suspension()` (coroutine/tracking.h).
+ */
+struct parked_coroutine {
+    void const *frame = nullptr; ///< the coroutine's frame
+    std::string name;            ///< the name it was spawned with (`spawn(name, ...)`), empty otherwise
+    /// what it waits on ("sleep", "io", "ask", "mutex", "task", ...), "watcher" when parked on a loop watcher unrecorded
+    char const  *kind = nullptr;     ///< null: nothing recorded
+    qb::duration age{};              ///< how long it has waited, when recorded
+    void const  *waits_on = nullptr; ///< the coroutine it awaits, when it awaits one (kind "task", "generator next")
+    bool         root     = false;   ///< spawned on this scheduler, not awaited by another coroutine
+};
+
 class CoroutineScheduler {
 public:
     /**
@@ -578,6 +602,53 @@ public:
         // invoke_owned_ moves fn into its own coroutine frame (value param)
         spawn(invoke_owned_(std::move(fn)));
     }
+
+    /**
+     * @brief Spawn a coroutine under a name `dump()` reports for it while it lives (since 3.3, Huly QB-71).
+     * @details The name goes in this thread's tracking table, keyed by the frame, and goes with the frame (the
+     *          promise destructor's one test, coroutine/tracking.h): a coroutine spawned without a name stores nothing.
+     */
+    void spawn(std::string_view name, task<void> &&t);
+
+    /// The callable form of the named spawn: the closure is owned, as `spawn(Callable)` owns it.
+    template <typename Callable>
+    requires std::invocable<Callable> && std::same_as<std::invoke_result_t<Callable>, task<void>>
+             && (!std::same_as<std::decay_t<Callable>, task<void>>)
+    void
+    spawn(std::string_view name, Callable fn) {
+        spawn(name, invoke_owned_(std::move(fn)));
+    }
+
+    /**
+     * @brief Record, on this thread, what every coroutine parked on an awaiter of qb waits on, and since when (since
+     *        3.3, Huly QB-71; coroutine/tracking.h).
+     * @details Off by default, and then one predictable branch at a suspension: nothing in the frame, no clock read.
+     *          On, each suspension records its kind, the CPU counter's reading and, for a coroutine awaiting a task
+     *          or a generator, its frame; turning it off drops every record. Per THREAD, like the scheduler itself: call it on
+     *          the thread that runs the coroutines (a `VirtualCore` thread under qb-core). A coroutine of a type of
+     *          your own that awaits qb's awaiters is recorded, but its destruction is not seen: its last record stays
+     *          until its address is reused or tracking goes off.
+     * @return false when the record table could not be allocated (tracking stays off).
+     */
+    bool set_suspension_tracking(bool on);
+
+    /// Whether this thread records its suspensions.
+    [[nodiscard]] static bool
+    suspension_tracking() noexcept {
+        return detail::suspension_tracking::on;
+    }
+
+    /**
+     * @brief The coroutines parked on this thread, with what they wait on (since 3.3, Huly QB-71).
+     * @details See `parked_coroutine`; the longest waits come first. A coroutine that is running when it calls `dump()`
+     *          is reported with its last suspension. Call it on the scheduler's thread; it allocates and sorts
+     *          the parked coroutines.
+     */
+    [[nodiscard]] std::vector<parked_coroutine> dump() const;
+
+    /// `dump()`, written one chain per line: each root followed by the coroutines it waits through, then the parked
+    /// coroutines no root leads to.
+    void dump(std::ostream &os) const;
 
     /**
      * @brief Schedule a coroutine for resumption
@@ -1217,6 +1288,20 @@ CoroutineScheduler::spawn_tracked(task<void> &&t) {
 inline void
 CoroutineScheduler::spawn(task<void> &&t) {
     spawn_tracked(std::move(t));
+}
+
+inline void
+CoroutineScheduler::spawn(std::string_view name, task<void> &&t) {
+    const auto handle = spawn_tracked(std::move(t));
+    // the thread's table, erased by the frame's promise destructor; a name that cannot be stored (out of memory)
+    // leaves the coroutine spawned and unnamed -- a name is a diagnostic, never a failed spawn
+    if (handle && !name.empty())
+        (void) detail::name_frame(handle.address(), name);
+}
+
+inline bool
+CoroutineScheduler::set_suspension_tracking(bool on) {
+    return detail::set_thread_tracking(on);
 }
 
 } // namespace qb::io::async

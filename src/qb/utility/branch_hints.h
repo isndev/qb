@@ -115,12 +115,26 @@ unlikely(bool expr) noexcept {
  * @brief Tell the optimiser a function is rarely executed: it is laid out away from the hot
  *        text and its call sites are treated as unlikely. No effect on MSVC.
  */
+/**
+ * @def QB_MSVC_FORCEINLINE
+ * @brief Inline everywhere, and FORCE it on MSVC — for a small hot function that carries a cold branch.
+ *
+ * MSVC does not shrink-wrap: a call anywhere in a function, however cold its branch, puts the stack frame
+ * (save, `sub rsp`, restore) on every path through it; and its inliner gives up on a function the cold branch
+ * made bigger. Measured on the suspension-tracking hook (QB-71): the task promise destructors, inlined at their
+ * destroy sites before, were called out of line again (6 -> 14 call sites in one TU) -- forced, they are inlined
+ * where they were, and the cold branch costs its load and its branch in a function that has a frame already.
+ * Not for an `await_suspend` a coroutine calls: MSVC refuses it there (C4714) and keeps the call. The other
+ * compilers shrink-wrap and inline these on their own: plain `inline`.
+ */
 #if defined(_MSC_VER) && !defined(__clang__)
 #define QB_NOINLINE __declspec(noinline)
 #define QB_COLD
+#define QB_MSVC_FORCEINLINE __forceinline
 #else
 #define QB_NOINLINE __attribute__((noinline))
 #define QB_COLD __attribute__((cold))
+#define QB_MSVC_FORCEINLINE inline
 #endif
 
 #endif /* QB_UTILS_BRANCH_HINTS_H */

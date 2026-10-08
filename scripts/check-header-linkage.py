@@ -140,6 +140,8 @@ EXCLUDED_PARTS = ("/vendor/", "/qb/ev/", "/modules/", "/build/", "/tests/", "/th
 ALLOW_RE = re.compile(r"header-linkage:\s*allow(?:\s+(?P<reason>\S.*))?$")
 
 CLASS_KEY = re.compile(r"\b(class|struct|union|enum)\b")
+# An attribute group that may sit in a class head: `alignas(`, `__declspec(`, `__attribute__((`, `[[`.
+ATTR_GROUP = re.compile(r"\balignas\s*\(|\b__declspec\s*\(|\b__attribute__\s*\(|\[\[")
 CLASS_PREFIX = re.compile(r"^(class|struct|union|enum)\b")
 # `namespace` last, optionally named. Matched by suffix rather than by prefix because qb
 # spells its inline namespaces through a macro -- `QB__NS_INLINE namespace inet {`
@@ -248,6 +250,33 @@ def _strip_trailing_parens(head: str) -> str:
     return h
 
 
+def _strip_attribute_groups(head: str) -> str:
+    """Drop the attribute groups a class head may carry between its key and its name --
+    `alignas(64)`, `__declspec(...)`, `__attribute__((...))`, `[[...]]` -- whose parentheses
+    would otherwise read the head as a function's: `struct alignas(64) gate {` is a class
+    (found when coroutine/tracking.h's cache-line gate landed, Huly QB-71)."""
+    out, i, n = [], 0, len(head)
+    while i < n:
+        m = ATTR_GROUP.match(head, i)
+        if m is None:
+            out.append(head[i])
+            i += 1
+            continue
+        if m.group(0).startswith("[["):
+            close = head.find("]]", m.end())
+            i = n if close < 0 else close + 2
+            continue
+        depth, j = 0, m.end() - 1  # at the group's opening parenthesis
+        while j < n:
+            depth += head[j] == "("
+            depth -= head[j] == ")"
+            j += 1
+            if depth == 0:
+                break
+        i = j
+    return "".join(out)
+
+
 def classify_open(head: str) -> str:
     """What kind of scope does the `{` after this head open?"""
     h = norm(head)
@@ -258,7 +287,7 @@ def classify_open(head: str) -> str:
         return "REQUIRES"
     if ("(" not in h and NS_OPEN.search(h)) or h == "extern":  # `extern "C" {`: literal masked away
         return "NS"
-    if "(" not in h and CLASS_KEY.search(h):
+    if CLASS_KEY.search(h) and "(" not in _strip_attribute_groups(h):
         return "CLASS"
     if "(" in h:
         return "FUNC"
