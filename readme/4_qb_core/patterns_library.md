@@ -416,35 +416,41 @@ breaker, throttle with a token bucket, and isolate with a concurrency bulkhead.
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::retry_policy` | `struct { int max_attempts=3; qb::duration backoff=50ms; double multiplier=2.0; qb::duration max_backoff=1s; double jitter=0.0; }` | `resilience.h:46-60` |
-| `qb::ask_retry` | `task<E> ask_retry(ScopedCoroContext, ActorId target, E req, qb::duration timeout, qb::retry_policy policy = {})` | `resilience.h:425-445` |
-| `qb::CircuitBreaker` | `class { enum class State{closed,open,half_open}; CircuitBreaker(unsigned failure_threshold, qb::duration cooldown); bool allow(uint64_t now_ns); void on_success(); void on_failure(uint64_t); void on_abandoned(uint64_t); State state() const; unsigned failure_count() const; }` | `resilience.h:120-216` |
+| `qb::ask_retry` | `task<E> ask_retry(ScopedCoroContext, ActorId target, E req, qb::duration timeout, qb::retry_policy policy = {})` | `resilience.h:465-485` |
+| `qb::CircuitBreaker` | `class { enum class State{closed,open,half_open}; CircuitBreaker(unsigned failure_threshold, qb::duration cooldown); bool allow(uint64_t now_ns); void on_success(); void on_failure(uint64_t); void on_abandoned(uint64_t); void on_abandoned(uint64_t now_ns, std::uint32_t trial); std::uint32_t trial() const; State state() const; unsigned failure_count() const; }` | `resilience.h:124-256` |
 | `qb::circuit_open_error` | `struct circuit_open_error : std::runtime_error` | `resilience.h:102-105` |
-| `qb::ask_guarded` | `task<E> ask_guarded(ScopedCoroContext, std::shared_ptr<CircuitBreaker> breaker, ActorId target, E req, qb::duration timeout)` | `resilience.h:464-487` |
-| `qb::rate_limiter` | `class { rate_limiter(double capacity, qb::duration per_token); bool try_acquire(uint64_t now_ns); task<void> acquire(ScopedCoroContext); double tokens(uint64_t now_ns); }` | `resilience.h:239-306` |
-| `qb::bulkhead` | `class { explicit bulkhead(std::size_t max_concurrent); class slot; task<slot> enter(ScopedCoroContext); bool try_enter(slot&); std::size_t available() const; }` | `resilience.h:331-404` |
+| `qb::ask_guarded` | `task<E> ask_guarded(ScopedCoroContext, std::shared_ptr<CircuitBreaker> breaker, ActorId target, E req, qb::duration timeout)` | `resilience.h:557-584` |
+| `qb::rate_limiter` | `class { rate_limiter(double capacity, qb::duration per_token); bool try_acquire(uint64_t now_ns); task<void> acquire(ScopedCoroContext); double tokens(uint64_t now_ns); }` | `resilience.h:279-346` |
+| `qb::bulkhead` | `class { explicit bulkhead(std::size_t max_concurrent); class slot; task<slot> enter(ScopedCoroContext); bool try_enter(slot&); std::size_t available() const; }` | `resilience.h:371-444` |
 
 - **`ask_retry`** retries only `timeout_error` (a kill propagates at once). The wait before retry `n`
   is `min(backoff * multiplier^(n-1), max_backoff)`, computed overflow-safely; backoff waits are
   cancellation-aware (`ctx.sleep`). Throws `timeout_error` after `max_attempts` tries
-  (`resilience.h:38-60`, `:406-445`). `jitter` in `[0,1]` draws the actual wait uniformly from
+  (`resilience.h:38-60`, `:446-485`). `jitter` in `[0,1]` draws the actual wait uniformly from
   `[backoff*(1-jitter), backoff]` to desynchronize retry storms (`resilience.h:51-59`).
 - **`CircuitBreaker`** is a timer-less single-thread state machine the caller drives with
   `ctx.time()`. It trips **open** after `failure_threshold` consecutive failures, fails fast during
   `cooldown`, then admits exactly **one** half-open trial; a success closes it, a failure re-opens it
-  (`resilience.h:107-160`). `on_abandoned` releases a half-open trial whose caller was killed so the
-  breaker is not wedged (`resilience.h:182-196`). Hold it by `std::shared_ptr` so a coroutine can
+  (`resilience.h:107-168`). `on_abandoned` releases a half-open trial that ended without a verdict so
+  the breaker is not wedged (`resilience.h:190-204`). Every half-open admission is numbered
+  (`trial()`), and `on_abandoned(now_ns, trial)` releases only the trial it names, if it is still the
+  one in flight — the form for a caller that may not hold it: a call admitted while closed, or a
+  trial already superseded (`resilience.h:206-235`). Hold it by `std::shared_ptr` so a coroutine can
   capture it by value and outlive its actor (`resilience.h:115-118`).
 - **`ask_guarded`** fails fast with `circuit_open_error` (sending nothing) when the breaker is open;
   otherwise it records the outcome — success closes the breaker, a timeout/other error is a failure
-  that may trip it, and a kill is **not** counted as a failure (it calls `on_abandoned`)
-  (`resilience.h:447-487`).
+  that may trip it, and a kill is **not** counted as a failure. The call `allow()` admitted as the
+  half-open trial owns it until its verdict: killed, or its frame destroyed while parked (a `when_any`
+  / race loser, a `with_deadline` expiry, a torn-down scope), it releases its own trial and the
+  cooldown is re-armed; a call admitted while closed releases nothing (`resilience.h:534-584`, the
+  lease `:498-531`; Huly QB-297).
 - **`rate_limiter`** is a token bucket: starts full with `capacity` tokens, regenerates one every
   `per_token`. `acquire(ctx)` waits (cancellation-aware) when empty; `try_acquire(now_ns)` is the
-  non-blocking probe (`resilience.h:221-306`).
+  non-blocking probe (`resilience.h:261-346`).
 - **`bulkhead`** caps concurrent operations. `enter(ctx)` returns an RAII `slot` that frees the
   permit on scope exit, waiting (cancellation-aware) when full; `try_enter` is non-blocking. Built on
   the cancel-aware `semaphore`, so a killed actor parked on a full bulkhead unwinds without leaking a
-  slot (`resilience.h:311-404`).
+  slot (`resilience.h:351-444`).
 
 ### Example — retry, and a breaker-guarded ask
 
@@ -826,10 +832,10 @@ qb::io::async::task<bool> onInit() override {
 | Is an actor alive? | discovery | `qb::ping` (`discovery.h:178`) |
 | Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:209`) |
 | Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:117,44`) |
-| Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:427`) |
-| Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:466,120`) |
-| Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:239`) |
-| Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
+| Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:467`) |
+| Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:559,124`) |
+| Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:279`) |
+| Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:371`) |
 | One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:313,343,359`) |
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:147,88`); `qb::supervision::watch` also restarts a child that died without `stop()` (`:56`) |
@@ -848,7 +854,7 @@ qb::io::async::task<bool> onInit() override {
   actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1461-1463`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
   `std::shared_ptr` and captured by value so they outlive the actor
-  (`resilience.h:115-118`, `:228-231`, `:320-322`).
+  (`resilience.h:115-118`, `:268-271`, `:360-362`).
 - **`batcher` is the exception:** hold it as an actor member and let `on_flush` reference the actor;
   the scope-bound timer guarantees no post-death flush (`aggregate.h:53-63`).
 - **Pub/sub is per core.** A publication reaches only subscribers on the bus's own `VirtualCore`; add

@@ -599,8 +599,8 @@ co_await repeat_while(
     []         { return should_continue(); });      // predicate → bool
 ```
 
-`join_any()` returns `task<size_t>` (the completed index); `join_all_for(qb::duration)` returns `task<bool>`. The cleanup policy on scope destruction is one of `cancel_all` (default — signals the scope token), `join_all` (best-effort; children keep running via the shared scope state if you forgot to `co_await join_all()`), or `detach`. `parallel_map(items, f, max_concurrency = 10)` takes the mapping function *before* the concurrency limit; `repeat_while(factory, should_continue, cancel_token = {})` calls `should_continue()` synchronously and `factory()` to build each iteration's task. The ready-made `joining_scope`, `cancelling_scope`, and `detaching_scope` subclasses fix the policy.
-<!-- src: qb/src/qb/io/async/coroutine/scope.h:81 (cleanup_policy), :153 (default cancel_all), :228/:255 (spawn task/Callable), :366 (join_all), :424 (join_any), :489 (join_all_for), :620/:629/:638 (scope subclasses), :718 (with_scope), :735 (repeat_while), :781 (parallel_map) -->
+`join_any()` returns `task<size_t>` (the completed index, or `total_count()` at once when the scope holds no task — never spawned into, or emptied by `prune_completed()`); `join_all_for(qb::duration)` returns `task<bool>`. The cleanup policy on scope destruction is one of `cancel_all` (default — signals the scope token), `join_all` (best-effort; children keep running via the shared scope state if you forgot to `co_await join_all()`), or `detach`. `parallel_map(items, f, max_concurrency = 10)` takes the mapping function *before* the concurrency limit; `repeat_while(factory, should_continue, cancel_token = {})` calls `should_continue()` synchronously and `factory()` to build each iteration's task. The ready-made `joining_scope`, `cancelling_scope`, and `detaching_scope` subclasses fix the policy.
+<!-- src: qb/src/qb/io/async/coroutine/scope.h:81 (cleanup_policy), :153 (default cancel_all), :228/:255 (spawn task/Callable), :366 (join_all), :428 (join_any), :500 (join_all_for), :631/:640/:649 (scope subclasses), :729 (with_scope), :746 (repeat_while), :792 (parallel_map) -->
 
 ## Generators
 
@@ -730,8 +730,11 @@ auto merged = merge_streams(std::vector{stream_a, stream_b});      // async_stre
 auto zipped = zip(stream_of_ints, stream_of_strings);             // pairs
 ```
 
-The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::range`). `merge_streams` takes a `std::vector<async_stream<T>>`; `zip(a, b)` yields `async_stream<std::pair<T, U>>`; `reduce(f, initial)` takes the reducer then the seed; `for_each` also accepts a callable returning `task<void>` for an async sink.
-<!-- src: qb/src/qb/io/async/coroutine/stream.h:98/:110/:118 (from_channel/_shared/_vector), :884 (range_stream), :833 (interval), :692 (merge_streams), :745 (zip), :156/:173/:190/:206 (map/filter/take/skip), :392/:400/:408/:439/:447/:456/:465/:474/:484 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
+The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::range`). `merge_streams` takes a `std::vector<async_stream<T>>`; `zip(a, b)` yields `async_stream<std::pair<T, U>>`; `reduce(initial, f)` takes the seed then the reducer, and its accumulator need not be the element type; `for_each` also accepts a callable returning `task<void>` for an async sink.
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:169/:181/:189 (from_channel/_shared/_vector), :973 (range_stream), :922 (interval), :781 (merge_streams), :834 (zip), :227/:244/:261/:277 (map/filter/take/skip), :447/:455/:463/:494/:502/:511/:520/:529/:539 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
+
+`backpressure(max_buffer[, semaphore])` and `debounce(delay)` run their source in a producer coroutine of their own — eagerly for `backpressure`, from the first pull for `debounce`. That producer lives as long as its source or the stream, whichever ends first: the stream and every copy of it hold it, and when the last one is gone — an early terminal (`first`, `take`, `any`, `find`), a stream dropped unread — the producer is destroyed wherever it waits, pulls nothing more from the source, and a caller-supplied semaphore gets back every permit it held. Values already pulled and buffered go with the stream (Huly QB-289).
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:118-140 (producer_lease), :348 (debounce), :561 (backpressure), :720/:746 (the two producers) -->
 
 ## Safe integration with `qb::Actor`
 
@@ -880,7 +883,7 @@ A parameter taken by value is copied into the coroutine frame, which is what mak
 `qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. The asm emits no instruction; the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward when a pattern hands the request to an inner coroutine — and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern coroutine opens with it on its request (`qb::ask` itself is an awaitable, not a coroutine, since 3.2); a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
 
 ```cpp
-// src: derived from qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:466-467 (ask_guarded)
+// src: derived from qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:559-560 (ask_guarded)
 struct Order  : qb::Event { int amount{0}; };   // every qb::Event is 64-byte aligned
 struct Placed : qb::Event { int amount{0}; };
 
@@ -890,7 +893,7 @@ qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Ord
     ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
 }
 ```
-<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:231 (pin_frame_copy), resilience.h:428 (pin_frame_copy), :467 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:314 (pin_frame_copy) -->
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:231 (pin_frame_copy), resilience.h:468 (pin_frame_copy), :560 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:314 (pin_frame_copy) -->
 
 ## Seeing what a coroutine waits on
 

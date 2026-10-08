@@ -204,6 +204,12 @@ policy.
   of the modules from the superproject. Pinned by `tests/io/system/coroutine/suspension-tracking.cpp` and
   `tests/core/system/coroutine/coroutine-dump.cpp`; each guarantee was proven by a mutation that makes its case fail
   (30 mutations across qb and the three modules, 30 proven).
+- **`qb::CircuitBreaker::trial()` and `on_abandoned(now_ns, trial)`: a release names the trial it gives back (Huly
+  QB-297).** `allow()` numbers every open -> half-open admission; `trial()` reads the number (0 before the first),
+  and `on_abandoned(now_ns, trial)` releases that trial only if it is still the one in flight -- a no-op for `0`, the
+  number a call admitted while closed holds, and for a trial already verdicted and superseded. It is the form for a
+  caller that may not hold the trial in flight; `qb::ask_guarded` uses it. The number sits in the padding after the
+  threshold: `sizeof(CircuitBreaker)` is unchanged on x86-64 and arm64.
 
 ### Changed
 
@@ -510,9 +516,32 @@ policy.
   QB-280).** That one bulk overload dropped its `_All` argument and always enqueued all-or-nothing, returning 0 where
   a partial enqueue was asked for; it now forwards `_All` like its three siblings. The engine's mailbox is the
   runtime-count variant and never reached it.
+- **`coroutine_scope::join_any()` on a scope with no task returns the `total_count()` sentinel (Huly QB-283).** It
+  promised "the index of the first completed task, or `total_count()` if empty", but an empty scope -- never spawned
+  into, or emptied by `prune_completed()` after every task finished -- was not a ready case: the caller parked where
+  only a finishing task wakes it, and none ever would. An empty scope now answers at once with `total_count()`.
+- **A `backpressure()` or `debounce()` stream abandoned before its source ends no longer leaves its producer running
+  (Huly QB-289).** Both operators run their source in a coroutine of their own, and nothing told it the last consumer
+  was gone: after an early terminal (`first`, `take`, `any`, `find`) or a stream dropped unread, it kept pulling the
+  source into a buffer nobody read until the buffer or a permit ran out, then parked for the life of the thread --
+  holding the source, taking every value later sent to a shared source channel, and keeping, on a caller-supplied
+  semaphore, the permits of everything it had buffered, so the next stream on that semaphore waited forever. The
+  stream and every copy of it now hold a lease on the producer: when the last one goes, the producer is destroyed
+  wherever it waits and every permit it held is handed back. A copy still in use keeps it running. `debounce()` had
+  no test at all; it has two.
+- **A half-open `qb::CircuitBreaker` trial abandoned by frame destruction is released (Huly QB-297).** `ask_guarded`
+  released its trial from the `cancelled_error` catch of an actor kill, but a frame destroyed while parked -- a
+  `when_any` / race loser, a `with_deadline` expiry, a torn-down scope -- runs destructors, not catch blocks: the
+  breaker stayed half-open and refused every later call through it, for good. And the release a kill did make was
+  anybody's: a call admitted while the breaker was CLOSED, killed while another call's trial was in flight, re-opened
+  the breaker under that trial, so a second trial could run beside it once the cooldown passed. The call admitted as
+  the trial now holds it in a lease released by its verdict, its cancellation or its destructor -- naming its own
+  trial (`on_abandoned(now_ns, trial)`, under Added) -- and a closed-state call releases nothing.
 
 ### Documentation
 
+- **`3_qb_io/coroutines.md`: `async_stream::reduce` takes the seed first.** The book's prose still said
+  `reduce(f, initial)`, the 3.0 order reversed, under an example that already called `reduce(0, f)`.
 - **`6_guides/error_handling.md`'s supervision section rewritten with death watch (Huly QB-51).** It said qb-core
   ships no supervisor (`qb::Supervisor` has shipped since 3.0), and its liveness example armed
   `qb::io::async::callback([this] ...)` with an `is_alive()` guard -- the shape the API rules forbid, the guard being the

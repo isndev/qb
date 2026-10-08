@@ -309,3 +309,120 @@ TEST_F(StreamAsyncSources, BackpressureSurfacesThrowingSourceInsteadOfHanging) {
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "backpressure consumer hung after the source threw — the buffer was never closed";
     EXPECT_TRUE(caught.load()) << "a throwing source must surface its exception to the consumer, not vanish as EOF";
 }
+
+// ---------------------------------------------------------------------------
+// An early terminal ends the consumers before the source (Huly QB-289)
+//
+// `first` / `take` / `any` / `find` stop pulling while the source still has values. backpressure()'s
+// filler is a detached coroutine, and nothing told it the last consumer was gone: it filled the
+// buffer, took the next permit and parked for the life of the thread, keeping the source -- and, on a
+// caller-supplied semaphore, the permits of everything it had buffered.
+// ---------------------------------------------------------------------------
+
+TEST_F(StreamAsyncSources, BackpressureEarlyTerminalHandsBackEveryPermitOfASharedSemaphore) {
+    std::atomic<bool> finished{false};
+    std::atomic<int>  head{-1};
+    std::atomic<int>  permits_after_first{-1};
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto sem = std::make_shared<semaphore>(1);
+
+        auto first = co_await async_stream<int>::from_vector({1, 2, 3, 4, 5, 6, 7, 8}).backpressure(1, sem).first();
+        head.store(first.value_or(-1));
+        // The abandoned stream is gone: whatever it held on the shared semaphore is back.
+        permits_after_first.store(static_cast<int>(sem->available_permits()));
+
+        // A second stream on the same semaphore needs that permit to move at all.
+        auto all = co_await async_stream<int>::from_vector({10, 20, 30}).backpressure(1, sem).collect();
+        EXPECT_EQ(all, (std::vector<int>{10, 20, 30}));
+        finished.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return finished.load(); })) << "the abandoned backpressure stream kept the shared semaphore's permit (QB-289)";
+    EXPECT_EQ(head.load(), 1);
+    EXPECT_EQ(permits_after_first.load(), 1) << "an early terminal must give every permit back to a caller-supplied semaphore";
+}
+
+TEST_F(StreamAsyncSources, BackpressureEarlyTerminalStopsPullingASharedSource) {
+    auto             source = std::make_shared<channel<int>>(8);
+    std::atomic<int> head{-1};
+    ASSERT_TRUE(source->try_send(1));
+
+    coro_scheduler().spawn([source, &head]() -> task<void> {
+        auto first = co_await async_stream<int>::from_channel_shared(source).backpressure(1).first();
+        head.store(first.value_or(-1));
+    });
+    ASSERT_TRUE(pump_until([&] { return head.load() != -1; })) << "the first value never arrived";
+    EXPECT_EQ(head.load(), 1);
+
+    // Give anything still scheduled its turn: an orphaned filler would now park on the source's recv().
+    qb::io::async::run_for(5ms);
+    EXPECT_EQ(source.use_count(), 1) << "nothing may still hold the source once its only stream is gone (QB-289)";
+
+    // A value sent now belongs to the channel's next reader, not to a stream that no longer exists.
+    ASSERT_TRUE(source->try_send(2));
+    qb::io::async::run_for(5ms);
+    EXPECT_EQ(source->try_recv(), std::optional<int>{2}) << "an orphaned filler stole a value sent after its stream was gone (QB-289)";
+}
+
+// The owner of the producer is the stream AND every copy of it: one terminal ending must not stop a
+// producer another copy is still reading from. This is what makes the fix a lease on the LAST handle,
+// not a cancellation on each terminal.
+TEST_F(StreamAsyncSources, BackpressureProducerServesASurvivingCopyAfterAnotherEnded) {
+    std::atomic<bool>  done{false};
+    std::optional<int> head;
+    std::vector<int>   rest;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto stream = async_stream<int>::from_vector({1, 2, 3, 4, 5}).backpressure(1);
+        auto copy   = stream;
+        head        = co_await stream.first(); // ends one handle
+        rest        = co_await copy.collect(); // the producer still serves the other
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the surviving copy of a backpressure stream never finished";
+    EXPECT_EQ(head, std::optional<int>{1});
+    EXPECT_EQ(rest, (std::vector<int>{2, 3, 4, 5})) << "a copy still in use keeps its producer running";
+}
+
+// ---------------------------------------------------------------------------
+// debounce
+// ---------------------------------------------------------------------------
+
+TEST_F(StreamAsyncSources, DebounceEmitsTheLastValueOfABurst) {
+    // The whole burst is buffered before the first quiet period ends: from_vector never suspends, so
+    // the lazily started producer pushes 1..5 and closes in the turn that delivers the first value.
+    // The quiet period then sees nothing new and emits the latest value, once.
+    std::vector<int>  result;
+    std::atomic<bool> done{false};
+    coro_scheduler().spawn([&]() -> task<void> {
+        result = co_await async_stream<int>::from_vector({1, 2, 3, 4, 5}).debounce(10ms).collect();
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "debounce never emitted";
+    EXPECT_EQ(result, (std::vector<int>{5})) << "a burst debounces to its last value";
+}
+
+TEST_F(StreamAsyncSources, DebounceEarlyTerminalStopsPullingASharedSource) {
+    // debounce()'s producer had the same missing owner as backpressure()'s filler: once the consumer
+    // took its value and went away, the producer stayed parked on the source for good, holding it and
+    // taking every value sent to it afterwards (Huly QB-289).
+    auto             source = std::make_shared<channel<int>>(8);
+    std::atomic<int> head{-1};
+    ASSERT_TRUE(source->try_send(1));
+
+    coro_scheduler().spawn([source, &head]() -> task<void> {
+        auto first = co_await async_stream<int>::from_channel_shared(source).debounce(5ms).first();
+        head.store(first.value_or(-1));
+    });
+    ASSERT_TRUE(pump_until([&] { return head.load() != -1; })) << "the debounced value never arrived";
+    EXPECT_EQ(head.load(), 1);
+
+    qb::io::async::run_for(5ms);
+    EXPECT_EQ(source.use_count(), 1) << "nothing may still hold the source once its only debounced stream is gone (QB-289)";
+
+    ASSERT_TRUE(source->try_send(2));
+    qb::io::async::run_for(5ms);
+    EXPECT_EQ(source->try_recv(), std::optional<int>{2})
+        << "an orphaned debounce producer stole a value sent after its stream was gone (QB-289)";
+}

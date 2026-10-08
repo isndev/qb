@@ -905,6 +905,50 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyFastPathWhenTaskAlreadyDone) {
     EXPECT_EQ(idx.load(), 0u) << "join_any must return the already-completed task's index";
 }
 
+// join_any() answers "the index of the first completed task, or total_count() if empty" (scope.h). On a
+// scope holding no task, its await_ready() found no completed task and its await_suspend() parked the
+// caller where only a finishing task could wake it -- and there is none: the coordinator hung for good
+// instead of receiving the sentinel (Huly QB-283). The sentinel of a never-used scope is 0 ==
+// total_count(); the caller tells it apart from an index by comparing with total_count().
+TEST_F(ScopeStructuredConcurrency, JoinAnyOnAnEmptyScopeReturnsTheTotalCountSentinel) {
+    std::atomic<bool>   done{false};
+    std::atomic<size_t> idx{99};
+    std::atomic<size_t> total{99};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope; // nothing spawned
+        idx.store(co_await scope.join_any());
+        total.store(scope.total_count());
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_any on an empty scope never returned (QB-283)";
+    EXPECT_EQ(idx.load(), total.load()) << "an empty scope's join_any must answer the total_count() sentinel";
+    EXPECT_EQ(idx.load(), 0u);
+}
+
+// The same contract when the scope became empty: every task finished, prune_completed() removed the
+// entries, and join_any() must answer the sentinel rather than wait for a completion that already
+// happened and can never happen again.
+TEST_F(ScopeStructuredConcurrency, JoinAnyAfterPruneEmptiedTheScopeReturnsTheSentinel) {
+    std::atomic<bool>   done{false};
+    std::atomic<size_t> idx{99};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn([]() -> task<void> { co_return; });
+        scope.spawn([]() -> task<void> { co_return; });
+        co_await scope.join_all();
+        scope.prune_completed();
+        EXPECT_EQ(scope.total_count(), 0u) << "precondition: every completed entry was pruned";
+        idx.store(co_await scope.join_any());
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_any on a pruned-empty scope never returned (QB-283)";
+    EXPECT_EQ(idx.load(), 0u) << "a pruned-empty scope's join_any must answer total_count() == 0";
+}
+
 // join_all_for on a scope with NO active tasks must return true immediately (active_count==0
 // short-circuit at entry) without arming a timer. Drives the join_all_for(active_count==0)
 // co_return true path.

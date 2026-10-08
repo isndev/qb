@@ -24,6 +24,8 @@
  *   - half-open admits *exactly one* trial (no thundering herd against a still-down dependency);
  *   - `on_abandoned` releases a trial whose caller was killed, re-arming cooldown (no wedge);
  *   - `on_abandoned` is a no-op outside half-open;
+ *   - every half-open admission is numbered (`trial()`), and `on_abandoned(now, trial)` releases only
+ *     the trial still in flight -- never a newer one, never on behalf of a closed-state call (QB-297);
  *   - a negative cooldown is clamped to zero (must NOT wrap to ~1.8e19 ns and never recover);
  *   - a zero `failure_threshold` is clamped to 1.
  *
@@ -218,6 +220,61 @@ TEST(CircuitBreaker, OnAbandonedIsNoOpWhenOpen) {
     EXPECT_EQ(cb.state(), State::open);
     EXPECT_FALSE(cb.allow(50 * MS)) << "still cooling down from the ORIGINAL t=0 open, not re-armed";
     EXPECT_TRUE(cb.allow(100 * MS)) << "the original 100ms cooldown still governs recovery";
+}
+
+// ---------------------------------------------------------------------------
+// Numbered trials: a release names the trial it gives back (Huly QB-297)
+// ---------------------------------------------------------------------------
+
+TEST(CircuitBreaker, EveryHalfOpenAdmissionIsNumbered) {
+    qb::CircuitBreaker cb(1, 100ms);
+    EXPECT_EQ(cb.trial(), 0u) << "no trial before the first half-open admission";
+    cb.on_failure(0);
+    EXPECT_EQ(cb.trial(), 0u) << "opening is not an admission";
+    ASSERT_TRUE(cb.allow(100 * MS));
+    EXPECT_EQ(cb.trial(), 1u);
+    EXPECT_FALSE(cb.allow(101 * MS));
+    EXPECT_EQ(cb.trial(), 1u) << "a refused allow() admits nothing";
+    cb.on_failure(150 * MS); // the trial failed: open again
+    ASSERT_TRUE(cb.allow(250 * MS));
+    EXPECT_EQ(cb.trial(), 2u) << "the next admission gets the next number";
+    cb.on_success();
+    EXPECT_TRUE(cb.allow(260 * MS));
+    EXPECT_EQ(cb.trial(), 2u) << "a closed breaker admits without numbering";
+}
+
+TEST(CircuitBreaker, ReleaseTouchesOnlyTheTrialStillInFlight) {
+    qb::CircuitBreaker cb(1, 100ms);
+    cb.on_failure(0);
+    ASSERT_TRUE(cb.allow(100 * MS)); // trial 1
+    const auto first = cb.trial();
+    cb.on_abandoned(120 * MS, first); // the holder gives it back: open, cooldown re-armed from 120ms
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(219 * MS));
+    ASSERT_TRUE(cb.allow(220 * MS)); // trial 2 in flight
+    const auto second = cb.trial();
+    ASSERT_NE(second, first);
+
+    cb.on_abandoned(230 * MS, first); // a late release of the superseded trial
+    EXPECT_EQ(cb.state(), State::half_open) << "a release of an older trial must not touch the one in flight";
+    cb.on_abandoned(230 * MS, 0u); // a call admitted while closed holds no trial
+    EXPECT_EQ(cb.state(), State::half_open) << "a closed-state call releases nothing";
+    EXPECT_FALSE(cb.allow(10'000 * MS)) << "still exactly one trial in flight";
+
+    cb.on_abandoned(240 * MS, second); // its holder
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_TRUE(cb.allow(340 * MS)) << "released by its holder, the breaker admits a fresh trial after the cooldown";
+}
+
+TEST(CircuitBreaker, NumberedReleaseIsNoOpOutsideHalfOpen) {
+    qb::CircuitBreaker cb(1, 100ms);
+    cb.on_abandoned(0, 1u); // closed
+    EXPECT_EQ(cb.state(), State::closed);
+    cb.on_failure(0); // open at t=0
+    cb.on_abandoned(50 * MS, cb.trial());
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(99 * MS)) << "an open breaker's cooldown is not re-armed by a release";
+    EXPECT_TRUE(cb.allow(100 * MS));
 }
 
 // ---------------------------------------------------------------------------

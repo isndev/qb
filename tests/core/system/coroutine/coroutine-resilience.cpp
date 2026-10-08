@@ -659,3 +659,142 @@ TEST(ActorAskGuarded, CancelledIsNotCountedAsFailure) {
     EXPECT_EQ(breaker->failure_count(), 0u) << "a kill must NOT count as a breaker failure";
     EXPECT_EQ(breaker->state(), State::closed) << "the breaker stays closed after a cancelled trial";
 }
+
+// --- The half-open trial is owned by the call that holds it (Huly QB-297) -------------------------
+//
+// A half-open breaker admits ONE trial and refuses everything until that trial gives a verdict --
+// on_success, on_failure -- or is released. A kill reaches ask_guarded's catch (cancelled_error) and
+// released it. A frame DESTROYED while parked -- a when_any / race loser, a with_deadline expiry, a
+// torn-down scope -- runs destructors, not catch blocks: the trial was never released, the breaker
+// stayed half-open and refused every later call, for good. And the release a kill did make was
+// nobody's in particular: a call admitted while the breaker was CLOSED, killed while someone else's
+// trial was in flight, re-opened the breaker under that trial.
+
+namespace {
+std::atomic<bool> g_trial_race_ran{false};
+std::atomic<int>  g_trial_race_winner{-1};
+std::atomic<int>  g_trial_state_after_race{-1};
+std::atomic<bool> g_trial_fresh_after_cooldown{false};
+} // namespace
+
+// Trips the breaker (threshold 1), then races the half-open trial -- a guarded ask to a silent target
+// -- against a branch that wins after 5 ms: the trial's frame is destroyed parked inside the ask.
+class TrialRaceClient : public qb::Actor {
+    std::shared_ptr<qb::CircuitBreaker> _breaker;
+    qb::ActorId                         _target;
+
+public:
+    TrialRaceClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
+        : _breaker(std::move(b))
+        , _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto b = _breaker;
+        auto t = _target;
+        spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto t0 = ctx.time();
+            b->on_failure(t0); // threshold 1: open now; the cooldown is driven past below
+            auto trial = [](qb::ScopedCoroContext c, std::shared_ptr<qb::CircuitBreaker> br, qb::ActorId tg) -> qb::io::async::task<int> {
+                auto r = co_await qb::ask_guarded(c, br, tg, Ping{1}, 10s); // the silent target never answers
+                co_return r.response;
+            };
+            auto fast = [](qb::ScopedCoroContext c) -> qb::io::async::task<int> {
+                co_await c.sleep(5ms);
+                co_return 7;
+            };
+            // The trial runs first (it is the half-open admission), parks in its ask, and loses.
+            auto r = co_await qb::io::async::when_any(trial(ctx, b, t), fast(ctx));
+            g_trial_race_winner.store(static_cast<int>(r.index));
+            g_trial_state_after_race.store(static_cast<int>(b->state()));
+            // A cooldown later, the breaker must admit a fresh trial: it is not wedged half-open.
+            g_trial_fresh_after_cooldown.store(b->allow(t0 + static_cast<std::uint64_t>(std::chrono::nanoseconds(1h).count())));
+            g_trial_race_ran.store(true);
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskGuarded, HalfOpenTrialDestroyedAsARaceLoserReleasesTheBreaker) {
+    g_trial_race_ran.store(false);
+    g_trial_race_winner.store(-1);
+    g_trial_state_after_race.store(-1);
+    g_trial_fresh_after_cooldown.store(false);
+    auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, qb::duration::zero());
+    qb::Main main;
+    auto     silent = main.addActor<SilentMarket>(0);
+    main.addActor<TrialRaceClient>(0, breaker, silent);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_trial_race_ran.load()) << "the race coroutine must have run to completion";
+    EXPECT_EQ(g_trial_race_winner.load(), 1) << "the fast branch wins; the parked trial is the reclaimed loser";
+    EXPECT_EQ(g_trial_state_after_race.load(), static_cast<int>(State::open))
+        << "a trial destroyed without a verdict must be released (open, cooldown re-armed), not left half-open (QB-297)";
+    EXPECT_TRUE(g_trial_fresh_after_cooldown.load()) << "after the cooldown the breaker admits a fresh trial: it is not wedged";
+}
+
+namespace {
+std::atomic<bool> g_foreign_cancel_ran{false};
+std::atomic<bool> g_foreign_cancel_cancelled{false};
+} // namespace
+
+// Coroutine A is admitted while the breaker is CLOSED and parks on a silent target. Coroutine B then
+// drives the breaker open and through its cooldown, so the breaker is half-open on a trial that is
+// not A's. The actor is killed: A unwinds through cancelled_error, and must leave that trial alone.
+class ForeignTrialClient : public qb::Actor {
+    std::shared_ptr<qb::CircuitBreaker> _breaker;
+    qb::ActorId                         _target;
+
+public:
+    ForeignTrialClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
+        : _breaker(std::move(b))
+        , _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto b = _breaker;
+        auto t = _target;
+        spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { // A: runs first
+            try {
+                co_await qb::ask_guarded(ctx, b, t, Ping{0}, 10s);
+            } catch (const qb::io::async::cancelled_error &) {
+                g_foreign_cancel_cancelled.store(true);
+            }
+            g_foreign_cancel_ran.store(true);
+        });
+        spawn([b](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { // B: someone else's trial
+            const auto now = ctx.time();
+            b->on_failure(now);                                                                             // open
+            EXPECT_TRUE(b->allow(now + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count()))); // half-open
+            co_return;
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskGuarded, ACallAdmittedWhileClosedNeverReleasesAnotherCallsTrial) {
+    g_foreign_cancel_ran.store(false);
+    g_foreign_cancel_cancelled.store(false);
+    auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, 10s);
+    qb::Main main;
+    auto     silent = main.addActor<SilentMarket>(0);
+    auto     client = main.addActor<ForeignTrialClient>(0, breaker, silent);
+    main.addActor<KillThenStopHelper<>>(0, client, kKillAfter, kStopAfter);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_foreign_cancel_ran.load()) << "the closed-state call must have unwound";
+    EXPECT_TRUE(g_foreign_cancel_cancelled.load()) << "the kill surfaces as cancelled_error";
+    EXPECT_EQ(breaker->state(), State::half_open)
+        << "a call admitted while CLOSED holds no trial: its cancellation must not release the trial in flight (QB-297)";
+}

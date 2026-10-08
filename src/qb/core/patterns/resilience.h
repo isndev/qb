@@ -116,6 +116,10 @@ struct circuit_open_error : std::runtime_error {
  * it **by value** and outlive its actor — see `qb::ask_guarded`.
  * @note Half-open admits trial calls until the next result resolves the state; in a typical
  *       single-coroutine flow that is exactly one trial.
+ * @note Each half-open admission is numbered (`trial()`). A caller that may not be holding the
+ *       trial in flight -- it was admitted while closed, or its trial was already superseded --
+ *       releases with `on_abandoned(now_ns, trial)`, which touches only that trial; this is what
+ *       `qb::ask_guarded` does, from a destructor as well as from its cancellation path.
  */
 class CircuitBreaker {
 public:
@@ -142,14 +146,18 @@ public:
      * @details Half-open admits **exactly one** trial: the call that triggers the open->half-open
      *          transition. Concurrent callers sharing the breaker fail fast while that trial is in
      *          flight (no thundering-herd against a still-down dependency). The trial must resolve
-     *          the state via `on_success` / `on_failure`, or release it via `on_abandoned` if its
-     *          caller is killed — otherwise the breaker would stay half-open and reject everything.
+     *          the state via `on_success` / `on_failure`, or be released via `on_abandoned` when it
+     *          ends without a verdict (its caller killed, its frame destroyed as a race loser) —
+     *          otherwise the breaker would stay half-open and reject everything. The admission is
+     *          numbered (`trial()`), so the release can name the trial it gives back.
      */
     [[nodiscard]] bool
     allow(uint64_t now_ns) noexcept {
         if (_state == State::open) {
             if (now_ns - _opened_at >= static_cast<uint64_t>(_cooldown.count())) {
                 _state = State::half_open; // admit exactly one trial
+                if (++_trial == 0)         // numbered for on_abandoned(now, trial); 0 means "no trial"
+                    _trial = 1;
                 return true;
             }
             return false; // still cooling down
@@ -195,6 +203,37 @@ public:
         }
     }
 
+    /**
+     * @brief Release the half-open trial number `trial` abandoned without a verdict -- only if it is
+     *        still the trial in flight.
+     * @param now_ns Timestamp the cooldown is re-armed from.
+     * @param trial The `trial()` read right after the `allow()` that admitted the call; `0` for a call
+     *        admitted while the breaker was closed, which holds no trial.
+     * @details The plain `on_abandoned(now_ns)` releases WHATEVER trial is in flight, which is right
+     *          only for the caller that holds it. A call admitted while closed, or a trial that was
+     *          already verdicted and superseded by a newer one, must leave the current trial alone:
+     *          releasing it would re-open the breaker under a trial still running and, once the cooldown
+     *          passes, admit a second one beside it. No-op unless half-open on that very trial.
+     */
+    void
+    on_abandoned(uint64_t now_ns, std::uint32_t trial) noexcept {
+        if (_state == State::half_open && trial != 0 && trial == _trial) {
+            _state     = State::open;
+            _opened_at = now_ns;
+        }
+    }
+
+    /**
+     * @brief Number of the most recent half-open admission (`0` before the first).
+     * @details `allow()` numbers every open -> half-open transition; a caller that may give its trial
+     *          back without a verdict reads it right after its `allow()` returned true -- while the state
+     *          is `half_open`, that admission was its own -- and passes it to `on_abandoned(now, trial)`.
+     */
+    [[nodiscard]] std::uint32_t
+    trial() const noexcept {
+        return _trial;
+    }
+
     /** @brief Current state. */
     [[nodiscard]] State
     state() const noexcept {
@@ -208,11 +247,12 @@ public:
     }
 
 private:
-    unsigned     _threshold;
-    qb::duration _cooldown;
-    State        _state     = State::closed;
-    unsigned     _failures  = 0;
-    uint64_t     _opened_at = 0;
+    unsigned      _threshold;
+    std::uint32_t _trial = 0; ///< numbered half-open admissions; sits in the padding after _threshold
+    qb::duration  _cooldown;
+    State         _state     = State::closed;
+    unsigned      _failures  = 0;
+    uint64_t      _opened_at = 0;
 };
 
 /** @brief Alias for `CircuitBreaker`. */
@@ -444,6 +484,53 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
     }
 }
 
+namespace detail {
+/**
+ * @brief The half-open trial an `ask_guarded` call holds, given back exactly once (Huly QB-297).
+ * @details Armed only when the call's `allow()` was the open -> half-open admission (the state is then
+ *          `half_open` and the admission numbered `trial()`); a call admitted while closed holds
+ *          nothing. A verdict (`on_success` / `on_failure`) disarms it. Otherwise it releases its own
+ *          trial -- `release(now)` from the cancellation path, or its destructor when the frame is
+ *          destroyed parked, which runs destructors and no catch block. The destructor re-arms the
+ *          cooldown from the admission time: it may run during teardown, where the context's clock is
+ *          not reachable, and an admission time can never be later than a caller's next `allow()`.
+ */
+class breaker_trial_lease {
+    CircuitBreaker *_breaker = nullptr; ///< null: no trial held (closed-state call, or verdicted)
+    std::uint32_t   _trial   = 0;
+    std::uint64_t   _admitted_at;
+
+public:
+    breaker_trial_lease(CircuitBreaker &breaker, std::uint64_t admitted_at) noexcept
+        : _admitted_at(admitted_at) {
+        if (breaker.state() == CircuitBreaker::State::half_open) {
+            _breaker = &breaker;
+            _trial   = breaker.trial();
+        }
+    }
+    breaker_trial_lease(const breaker_trial_lease &)            = delete;
+    breaker_trial_lease &operator=(const breaker_trial_lease &) = delete;
+    ~breaker_trial_lease() {
+        release(_admitted_at);
+    }
+
+    /// A verdict was recorded: nothing to give back.
+    void
+    verdict() noexcept {
+        _breaker = nullptr;
+    }
+
+    /// Give the held trial back (no-op if none is held, or once given back).
+    void
+    release(std::uint64_t now_ns) noexcept {
+        if (_breaker) {
+            _breaker->on_abandoned(now_ns, _trial);
+            _breaker = nullptr;
+        }
+    }
+};
+} // namespace detail
+
 /**
  * @brief `ask` guarded by a `CircuitBreaker`: fail fast when open, record the outcome.
  * @ingroup Patterns
@@ -459,6 +546,12 @@ ask_retry(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration tim
  * @throws qb::io::async::cancelled_error on kill — **not** counted as a breaker failure.
  * @details A success closes the breaker; a timeout (or other non-cancellation error) is a failure
  *          that may trip it. Compose with `ask_retry` by retrying around this call.
+ *          A call that `allow()` admitted as the half-open trial owns that trial until it gives a
+ *          verdict: if it ends without one — killed (`cancelled_error`), or its frame destroyed while
+ *          parked (a `when_any` / race loser, a `with_deadline` expiry, a torn-down scope) — the trial
+ *          is released and the cooldown re-armed, so the breaker never stays half-open with nobody
+ *          trying. A call admitted while the breaker was closed holds no trial and releases nothing
+ *          (Huly QB-297).
  * @see CircuitBreaker, qb::ask, qb::ask_retry
  */
 template <ask_event_type E>
@@ -466,22 +559,26 @@ template <ask_event_type E>
 ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> breaker, qb::ActorId target, E req, qb::duration timeout) {
     qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     assert(breaker && "qb::ask_guarded requires a non-null CircuitBreaker");
-    if (!breaker->allow(ctx.time()))
+    const uint64_t admitted_at = ctx.time();
+    if (!breaker->allow(admitted_at))
         throw qb::circuit_open_error{}; // fail fast — the request is never sent
+    detail::breaker_trial_lease trial{*breaker, admitted_at};
 
     std::exception_ptr failure;
     try {
         E resp = co_await qb::ask<E>(ctx, target, req, timeout);
+        trial.verdict();
         breaker->on_success();
         co_return resp;
     } catch (const qb::io::async::cancelled_error &) {
-        // Actor killed — not a breaker failure. Release a half-open trial so the breaker is not
-        // wedged half-open (the trial produced no verdict); a future call re-arms after cooldown.
-        breaker->on_abandoned(ctx.time());
+        // Actor killed — not a breaker failure: give back the trial this call holds, if any, so the
+        // breaker is not wedged half-open; a future call re-arms after the cooldown.
+        trial.release(ctx.time());
         throw;
     } catch (...) {
         failure = std::current_exception();
     }
+    trial.verdict();
     breaker->on_failure(ctx.time());
     std::rethrow_exception(failure);
 }

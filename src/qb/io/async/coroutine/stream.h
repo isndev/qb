@@ -68,6 +68,77 @@ private:
     // Source function - produces next value
     std::function<task<std::optional<T>>()> _next;
 
+    // ---------------------------------------------------------------------------------------------
+    // The detached producer of backpressure() and debounce(), and who ends it (Huly QB-289).
+    //
+    // Both operators run their source in a coroutine of their own, spawned apart from the consumer.
+    // The consumers -- the stream and EVERY copy of it, since a copy is a legitimate second reader --
+    // hold a lease; the producer holds only its slot. When the last consumer handle goes (an early
+    // terminal: first / take / any / find, a stream dropped unread, a reclaimed reader), the lease
+    // destroys the producer wherever it is parked -- on the semaphore, inside the source, on the
+    // buffer -- instead of leaving it parked for the thread's life, holding the source and pulling
+    // from it into a buffer nobody reads. On a caller-supplied semaphore it also hands back the
+    // permit of every element still buffered (the producer's own in-flight permit goes back through
+    // the producer's destructors).
+    // ---------------------------------------------------------------------------------------------
+
+    // Lives in the producer frame: clears the slot when the producer ends -- normally (before its
+    // final_suspend frees the frame) or destroyed while parked -- so a lease never hands a finished
+    // frame's address to cancel_spawned(), where it could already name another coroutine.
+    struct producer_slot_guard {
+        std::shared_ptr<std::coroutine_handle<>> slot;
+        explicit producer_slot_guard(std::shared_ptr<std::coroutine_handle<>> s) noexcept
+            : slot(std::move(s)) {}
+        producer_slot_guard(const producer_slot_guard &)            = delete;
+        producer_slot_guard &operator=(const producer_slot_guard &) = delete;
+        ~producer_slot_guard() {
+            if (slot)
+                *slot = {};
+        }
+    };
+
+    // backpressure(): the permit the producer took for the element in flight, released on every exit
+    // until the element is in the buffer -- from then on its consumer releases it on recv().
+    struct permit_in_flight {
+        semaphore *sem;
+        explicit permit_in_flight(semaphore &s) noexcept
+            : sem(&s) {}
+        permit_in_flight(const permit_in_flight &)            = delete;
+        permit_in_flight &operator=(const permit_in_flight &) = delete;
+        ~permit_in_flight() {
+            if (sem)
+                sem->release();
+        }
+        void
+        handed_to_buffer() noexcept {
+            sem = nullptr;
+        }
+    };
+
+    struct producer_lease {
+        std::shared_ptr<channel<T>>              buffer;
+        std::shared_ptr<semaphore>               sem; ///< backpressure() only: one permit per buffered element
+        std::shared_ptr<std::exception_ptr>      error    = std::make_shared<std::exception_ptr>();
+        std::shared_ptr<std::coroutine_handle<>> producer = std::make_shared<std::coroutine_handle<>>();
+        bool                                     started  = false;
+
+        producer_lease()                                  = default;
+        producer_lease(const producer_lease &)            = delete;
+        producer_lease &operator=(const producer_lease &) = delete;
+        ~producer_lease() {
+            // The producer first, so nothing below can wake it into one more pull of the source. A
+            // producer already finished cleared its slot; with no scheduler left (thread teardown) its
+            // frame went with it.
+            if (auto h = std::exchange(*producer, {}); h && listener::current.has_coro_scheduler())
+                coro_scheduler().cancel_spawned(h);
+            // Every element still buffered carries a permit its consumer will never release now.
+            if (sem)
+                while (buffer->try_recv())
+                    sem->release();
+            buffer->close();
+        }
+    };
+
 public:
     explicit async_stream(std::function<task<std::optional<T>>()> next)
         : _next(std::move(next)) {}
@@ -283,42 +354,26 @@ public:
         // default — the consumer's debounce loop drains what accumulates
         // during each quiet period anyway.
         constexpr size_t kDebounceChannelCapacity = 64;
-        auto             ch                       = std::make_shared<channel<T>>(kDebounceChannelCapacity);
-        auto             started                  = std::make_shared<bool>(false);
-        // Finding 2.C.4: surface source-stream exceptions to the consumer
-        // instead of silently turning them into end-of-stream.
-        auto source_error = std::make_shared<std::exception_ptr>();
+        // Finding 2.C.4: the lease's `error` surfaces source-stream exceptions to the consumer
+        // instead of silently turning them into end-of-stream. The lease also ends the producer
+        // once the last handle of this stream is gone (Huly QB-289).
+        auto lease    = std::make_shared<producer_lease>();
+        lease->buffer = std::make_shared<channel<T>>(kDebounceChannelCapacity);
 
-        return async_stream([source, ch, started, delay, source_error]() -> task<std::optional<T>> {
+        return async_stream([source, lease, delay]() -> task<std::optional<T>> {
             // Lazy start: spawn producer on first pull
-            if (!*started) {
-                *started = true;
-                coro_scheduler().spawn([](std::function<task<std::optional<T>>()> src, std::shared_ptr<channel<T>> c,
-                                          std::shared_ptr<std::exception_ptr> err) -> task<void> {
-                    try {
-                        while (true) {
-                            auto opt = co_await src();
-                            if (!opt)
-                                break;
-                            co_await c->send(std::move(*opt));
-                        }
-                    } catch (const channel_closed &) {
-                        // Consumer closed the channel; this is the
-                        // terminal state, not an error — stay silent.
-                    } catch (...) {
-                        *err = std::current_exception();
-                    }
-                    c->close();
-                }(source, ch, source_error));
+            if (!lease->started) {
+                lease->started   = true;
+                *lease->producer = coro_scheduler().spawn_tracked(debounce_produce_task(source, lease->buffer, lease->error, lease->producer));
             }
 
             // Block until at least one value arrives
-            auto first = co_await ch->recv();
+            auto first = co_await lease->buffer->recv();
             if (!first) {
                 // Producer ended: propagate a pending error (if any) before
                 // reporting end-of-stream to the consumer.
-                if (*source_error)
-                    std::rethrow_exception(*source_error);
+                if (*lease->error)
+                    std::rethrow_exception(*lease->error);
                 co_return std::nullopt;
             }
 
@@ -329,7 +384,7 @@ public:
                 co_await sleep(delay);
 
                 bool got_new = false;
-                while (auto val = ch->try_recv()) {
+                while (auto val = lease->buffer->try_recv()) {
                     latest  = std::move(*val);
                     got_new = true;
                 }
@@ -495,6 +550,12 @@ public:
      * (backpressure_fill_task) instead of a local lambda so the coroutine frame
      * stores fn/buffer/sem as VALUE parameters rather than a pointer to a local
      * lambda that would dangle after backpressure() returns.
+     *
+     * The filler runs until its source ends OR the last copy of the returned stream is
+     * gone: an early terminal (`first`, `take`, `any`, `find`) or a stream dropped unread
+     * stops it at once, wherever it is parked, and every permit it still held on a
+     * caller-supplied semaphore is handed back (Huly QB-289). Elements it had already
+     * pulled from the source and buffered are dropped with the stream.
      */
     async_stream
     backpressure(size_t max_buffer, std::shared_ptr<semaphore> acquire_semaphore = nullptr) {
@@ -507,25 +568,26 @@ public:
             throw std::invalid_argument("async_stream::backpressure max_buffer must be >= 1 unless a semaphore is supplied");
         }
         auto source = _next;
-        auto buffer = std::make_shared<channel<T>>(max_buffer);
-        auto sem    = acquire_semaphore ? acquire_semaphore : std::make_shared<semaphore>(max_buffer);
-        // Surface a throwing source to the consumer instead of silently turning
-        // it into end-of-stream (mirrors debounce).
-        auto source_error = std::make_shared<std::exception_ptr>();
-
-        coro_scheduler().spawn(backpressure_fill_task(std::move(source), buffer, sem, source_error));
+        // The lease's `error` surfaces a throwing source to the consumer instead of silently
+        // turning it into end-of-stream (mirrors debounce).
+        auto lease     = std::make_shared<producer_lease>();
+        lease->buffer  = std::make_shared<channel<T>>(max_buffer);
+        lease->sem     = acquire_semaphore ? std::move(acquire_semaphore) : std::make_shared<semaphore>(max_buffer);
+        lease->started = true;
+        *lease->producer =
+            coro_scheduler().spawn_tracked(backpressure_fill_task(std::move(source), lease->buffer, lease->sem, lease->error, lease->producer));
 
         // Consumer: read from buffer and release one semaphore slot so the
         // producer may push the next item.
-        return async_stream([buffer, sem, source_error]() -> task<std::optional<T>> {
-            auto opt = co_await buffer->recv();
+        return async_stream([lease]() -> task<std::optional<T>> {
+            auto opt = co_await lease->buffer->recv();
             if (opt) {
-                sem->release();
+                lease->sem->release();
                 co_return opt;
             }
             // Producer ended: propagate a pending source error before reporting EOF.
-            if (*source_error)
-                std::rethrow_exception(*source_error);
+            if (*lease->error)
+                std::rethrow_exception(*lease->error);
             co_return std::nullopt;
         });
     }
@@ -650,27 +712,54 @@ public:
     // exception is stored so the consumer rethrows it rather than seeing a bare
     // end-of-stream. Mirrors debounce()'s producer.
     //
-    // Finding 2.C.5: the last-acquired (unconsumed) permit is released before
-    // close so a caller-supplied, reused semaphore stays balanced; release() is a
-    // no-op if no permit is held (e.g. acquire() itself was cancelled).
+    // Finding 2.C.5: the permit acquired for an element that never reached the buffer (EOF, a
+    // throwing source, a closed buffer) is released so a caller-supplied, reused semaphore stays
+    // balanced. It is held by a destructor (permit_in_flight), so it also goes back when the
+    // producer frame is destroyed parked by its lease (Huly QB-289).
     static task<void>
     backpressure_fill_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> buffer, std::shared_ptr<semaphore> sem,
-                           std::shared_ptr<std::exception_ptr> err) {
+                           std::shared_ptr<std::exception_ptr> err, std::shared_ptr<std::coroutine_handle<>> self) {
+        producer_slot_guard ends_the_slot{std::move(self)};
         try {
             while (true) {
                 co_await sem->acquire();
-                auto opt = co_await fn();
+                permit_in_flight permit{*sem};
+                auto             opt = co_await fn();
                 if (!opt)
                     break; // EOF
                 co_await buffer->send(std::move(*opt));
+                permit.handed_to_buffer(); // the buffered element carries it; its consumer releases it
             }
         } catch (const channel_closed &) {
             // Consumer closed the buffer — terminal state, not an error.
         } catch (...) {
             *err = std::current_exception();
         }
-        sem->release();
         buffer->close();
+    }
+
+    // debounce()'s producer: fn, ch, err are VALUE parameters in the coroutine frame. Closes the
+    // channel on every exit (the consumer parked on recv() wakes) and stores a source exception for
+    // the consumer to rethrow (Finding 2.C.4). Ended by its lease once the last handle of the stream
+    // is gone (Huly QB-289).
+    static task<void>
+    debounce_produce_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> ch, std::shared_ptr<std::exception_ptr> err,
+                          std::shared_ptr<std::coroutine_handle<>> self) {
+        producer_slot_guard ends_the_slot{std::move(self)};
+        try {
+            while (true) {
+                auto opt = co_await fn();
+                if (!opt)
+                    break;
+                co_await ch->send(std::move(*opt));
+            }
+        } catch (const channel_closed &) {
+            // Consumer closed the channel; this is the
+            // terminal state, not an error — stay silent.
+        } catch (...) {
+            *err = std::current_exception();
+        }
+        ch->close();
     }
 
     // Expose next function for composition helpers (zip, merge_streams)

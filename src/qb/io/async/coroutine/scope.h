@@ -419,6 +419,10 @@ public:
     /**
      * @brief Wait for any task to complete (event-driven)
      * @return Index of the first completed task, or total_count() if empty
+     * @details A scope with no task -- never spawned into, or emptied by `prune_completed()` -- has
+     *          nothing that could ever wake the caller, so it answers at once with the sentinel
+     *          `total_count()` (Huly QB-283). Compare the result with `total_count()` to tell the
+     *          two apart; a task spawned AFTER the call is not waited for.
      */
     task<size_t>
     join_any() {
@@ -441,22 +445,29 @@ public:
                     *slot = {};
             }
 
+            // Ready when a task has completed -- or when there is no task at all: only a finishing
+            // task wakes a parked join_any, so an empty list would park the caller for good.
             [[nodiscard]] bool
-            await_ready() const noexcept {
+            resolved() const noexcept {
+                if (impl->tasks.empty())
+                    return true;
                 for (const auto &t : impl->tasks)
                     if (t->completed)
                         return true;
                 return false;
             }
 
+            [[nodiscard]] bool
+            await_ready() const noexcept {
+                return resolved();
+            }
+
             void
             await_suspend(std::coroutine_handle<> h) {
                 ::qb::io::async::detail::track_suspension(h.address(), "scope join");
-                for (const auto &t : impl->tasks) {
-                    if (t->completed) {
-                        schedule_via_current(h);
-                        return;
-                    }
+                if (resolved()) {
+                    schedule_via_current(h);
+                    return;
                 }
                 *slot = h;
                 impl->join_any_waiter_slots.push_back(slot);
