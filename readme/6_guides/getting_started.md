@@ -140,7 +140,7 @@ What each call does:
 
 Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
 
-<!-- src: qb/src/qb/core/Main.h:931-964 -->
+<!-- src: qb/src/qb/core/Main.h:941-950,952-958,969-975 -->
 
 ## 4. A two-actor program: ping/pong
 
