@@ -543,7 +543,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 > (`qb/src/qb/core/Actor.h:863-866`), so on a destroyed actor the guard *is* the use-after-free.
 >
 > `spawn` registers the coroutine in the actor's cancellation scope
-> (`qb/src/qb/core/Actor.h:1480-1481`), and `Actor::kill()` cancels that scope
+> (`qb/src/qb/core/Actor.h:1482-1483`), and `Actor::kill()` cancels that scope
 > (`qb/src/qb/core/Actor.cpp:555-566`), so the wait simply stops existing. Note that this is not a
 > search-and-replace: a coroutine may not touch actor state after a `co_await`, so the body captures
 > only the delay, by value, and everything that reads `_should_reconnect` or calls `connect()` moved

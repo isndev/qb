@@ -48,7 +48,7 @@ This is a deliberate fail-stop design: a thrown exception signals that an invari
 
 ```mermaid
 flowchart TD
-    H["event handler / on(LoopEvent) throws"] --> UW["event batch disposed<br/>stack unwinds out of VirtualCore::__workflow__"]
+    H["event handler / on(LoopEvent) throws"] --> UW["withdrawn event batch disposed when present<br/>stack unwinds out of VirtualCore::__workflow__"]
     UW --> SC["caught one level up in Main::start_thread"]
     SC --> FLAG["runtime error recorded<br/>worker thread exits → every actor on that core stops"]
     FLAG --> OBS["Main::hasError() reports it after the run"]

@@ -27,6 +27,7 @@
 #include <climits>
 #include <cstddef>
 #include <exception>
+#include <memory>
 #include <new>
 #include <ostream>
 #include <thread>
@@ -135,21 +136,32 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
 }
 
 VirtualCore::~VirtualCore() noexcept {
+    _tearing_down = true;
     // This runs while Main still keeps the owning-thread TLS context, router,
     // callback/kill/deadline tables and pipes alive. Member destruction alone
     // runs in the wrong order for an actor destructor that uses the core.
-    for (auto &actor : _actors)
-        if (actor)
+    // Cancellation hooks run synchronously and may add referenced actors,
+    // growing _actors. Keep no vector iterator or slot reference over cancel().
+    for (std::size_t sid = 0; sid < _actors.size(); ++sid)
+        if (Actor *const actor = _actors[sid].get())
             actor->__cancel_coro_scope__();
 
     // A suspended onInit frame must die before its actor. Its stash owns raw
     // event bytes, whose payloads need the router's type-erased disposer.
-    for (auto &[id, activation] : _activating) {
-        for (auto &buckets : activation.stash)
-            _router.dispose(*reinterpret_cast<Event *>(buckets.data()));
-    }
-    _activating.clear();
-    _dying_with_frame.clear();
+    // A payload destructor may itself add a child with suspended onInit,
+    // inserting into _activating. Extract one activation before running user
+    // destruction, then return to the map for the next one.
+    auto drain_activations = [this] {
+        while (!_activating.empty()) {
+            auto       it         = _activating.begin();
+            Activation activation = std::move(it->second);
+            _activating.erase(it);
+            for (auto &buckets : activation.stash)
+                _router.dispose(*reinterpret_cast<Event *>(buckets.data()));
+        }
+        _dying_with_frame.clear();
+    };
+    drain_activations();
 
     // Cancellation may have queued coroutine resumes. Destroy the frames and
     // withdraw loop watchers while their actors are still alive. In particular,
@@ -160,12 +172,17 @@ VirtualCore::~VirtualCore() noexcept {
 
     // Destructors can kill peers or create a referenced child. Re-scan until
     // every actor has passed through removeActor's cancellation and watch path.
-    while (_actor_count != 0) {
-        for (auto &actor : _actors) {
-            if (actor) {
+    while (_actor_count != 0 || !_activating.empty()) {
+        // A listener or actor destructor can create a suspended child after
+        // the first activation drain. Remove its frame before its actor.
+        drain_activations();
+        if (_actor_count == 0)
+            break;
+        for (std::size_t sid = 0; sid < _actors.size(); ++sid) {
+            if (Actor *const actor = _actors[sid].get()) {
                 const ActorId id = actor->id();
                 removeActor(id, DownReason::core_stopped);
-                break; // removeActor may resize _actors from user teardown
+                break; // restart after user teardown, which may resize _actors
             }
         }
     }
@@ -290,12 +307,9 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                     __dead_letter__(event, __undelivered_reason__(event.getDestination()));
             });
         } catch (...) {
-            // A handler exception may leave this batch only after its remaining
-            // events are disposed. The faulting and later events still own their
-            // payloads. A reply/forward marks the original alive and
-            // transfers that ownership, so do not dispose that one twice.
-            if (!event->is_alive())
-                _router.dispose(*event);
+            // The type resolver disposed the faulting event, including on a
+            // handler throw. Dispose only later events in this copied-out batch;
+            // their bytes would otherwise be dropped when the callback unwinds.
             for (i += width; i < nb_events;) {
                 auto &pending = *reinterpret_cast<Event *>(events.data() + i);
                 if (unlikely(pending.bucket_size == 0))
@@ -752,10 +766,21 @@ VirtualCore::__pump_activations__() {
         return;
     const auto now = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
 
-    // Collect ids to finalize/expire first; finalizing mutates `_activating`.
+    // Collect ids before invoking cancellation hooks: a hook may add an actor
+    // whose onInit suspends, rehashing _activating. No map iterator or reference
+    // may span that callback. New entries are considered on the next pump.
+    thread_local std::vector<ActorId> scan_ids;
     thread_local std::vector<ActorId> done_ids;
+    scan_ids.clear();
     done_ids.clear();
-    for (auto &[id, act] : _activating) {
+    scan_ids.reserve(_activating.size());
+    for (auto const &entry : _activating)
+        scan_ids.push_back(entry.first);
+    for (auto const id : scan_ids) {
+        auto it = _activating.find(id);
+        if (it == _activating.end())
+            continue; // a prior hook removed it
+        auto &act = it->second;
         if (act.init.done()) {
             done_ids.push_back(id);
         } else if (!act.cancelling && act.deadline_ns && now >= act.deadline_ns) {
@@ -831,8 +856,7 @@ VirtualCore::__pump_activations__() {
                         __dead_letter__(e, __undelivered_reason__(e.getDestination()));
                 });
             } catch (...) {
-                if (!ev->is_alive())
-                    _router.dispose(*ev);
+                // The resolver disposed the faulting event before rethrowing.
                 for (++i; i < act.stash.size(); ++i)
                     _router.dispose(*reinterpret_cast<Event *>(act.stash[i].data()));
                 __fire_activation_waiters__(act, false);
@@ -1166,6 +1190,8 @@ VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
 
 ActorId
 VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) noexcept {
+    if (unlikely(_tearing_down))
+        return ActorId::NotFound;
     Actor        &actor = *actor_ptr;
     const ActorId id    = actor.id();
     // Reject duplicates *before* driving `onInit()`: a suspended (async) init must never
@@ -1195,33 +1221,41 @@ VirtualCore::removeActor(ActorId const id, DownReason const reason) noexcept {
     // the actor dying, and let `__pump_activations__` complete the teardown once the
     // frame reports `done()`. Re-entry from the pump (after the frame unwound and the
     // activation was dropped) falls straight through to the normal teardown below.
-    if (const auto ait = _activating.find(id); unlikely(ait != _activating.end())) {
+    if (unlikely(_activating.contains(id))) {
         if (Actor *const act = __actor_slot__(id))
             act->__cancel_coro_scope__();
-        if (!ait->second.init.done()) {
-            _dying_with_frame.insert(id);
-            return;
+        // cancel() runs user hooks synchronously. They may add an activating
+        // child and rehash this table, so find the parent's entry again.
+        const auto ait = _activating.find(id);
+        if (ait != _activating.end()) {
+            if (!ait->second.init.done()) {
+                _dying_with_frame.insert(id);
+                return;
+            }
+            // Dropped here rather than by the pump: its waiters learn the outcome here (QB-62), and its
+            // stash dies here -- disposed as on the pump's failure path (until 3.3 this erase freed the
+            // stashed bytes without running a single event destructor), and reported (QB-163).
+            Activation activation = std::move(ait->second);
+            _activating.erase(ait);
+            activation.init = qb::io::async::task<bool>{}; // free completed frame before user teardown
+            __fire_activation_waiters__(activation, false);
+            for (auto &buckets : activation.stash) {
+                auto *ev = reinterpret_cast<Event *>(buckets.data());
+                __dead_letter__(*ev, DeadLetterReason::init_failed);
+                _router.dispose(*ev);
+            }
+            _dying_with_frame.erase(id);
         }
-        // Dropped here rather than by the pump: its waiters learn the outcome here (QB-62), and its
-        // stash dies here -- disposed as on the pump's failure path (until 3.3 this erase freed the
-        // stashed bytes without running a single event destructor), and reported (QB-163).
-        __fire_activation_waiters__(ait->second, false);
-        for (auto &buckets : ait->second.stash) {
-            auto *ev = reinterpret_cast<Event *>(buckets.data());
-            __dead_letter__(*ev, DeadLetterReason::init_failed);
-            _router.dispose(*ev);
-        }
-        _activating.erase(ait);
-        _dying_with_frame.erase(id);
     }
     __unregisterCallback(id);
     unregisterEvents(id);
-    if (__actor_slot__(id) != nullptr) {
-        auto &actor = _actors[id._service_id]; // the owning slot; reset() below runs ~Actor()
+    if (Actor *const actor = __actor_slot__(id)) {
         // Catch-all cancel-on-destroy: every destruction path funnels through here
         // (kill, onInit failure, engine shutdown). Cancelling the scope wakes scoped
         // coroutines so they unwind cleanly; idempotent with kill()'s cancel.
         actor->__cancel_coro_scope__();
+        if (__actor_slot__(id) != actor)
+            return; // a cancellation hook already completed this removal
         if (actor->has_active_coroutines()) {
             if (actor->has_coro_scope())
                 // Scoped coroutines were just cancelled — they unwind on the next loop
@@ -1232,8 +1266,12 @@ VirtualCore::removeActor(ActorId const id, DownReason const reason) noexcept {
                                    << " active coroutines - coroutines must not access actor state!");
         }
         QB_LOG_VERB("Delete " << *actor);
-        actor.reset(); // ~Actor() runs here; the slot stays, empty, for the id's next owner
+        // Detach the owning unique_ptr before calling user ~Actor(). A destructor
+        // may add a referenced child and resize _actors; a reference to its slot
+        // would dangle across that call.
+        std::unique_ptr<Actor> dying = std::move(_actors[id._service_id]);
         --_actor_count;
+        dying.reset(); // ~Actor() runs here; the slot stays empty for the id's next owner
         // Only non-service ids are recycled into the pool: a ServiceActor's
         // id is assigned at static init (see 2.3) and must remain reserved
         // for the lifetime of the process to keep `ServiceIndex` stable.

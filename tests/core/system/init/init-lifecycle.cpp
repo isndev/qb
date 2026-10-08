@@ -285,6 +285,226 @@ TEST(InitLifecycle, ThrowingTickTearsDownActorAndQueuedPayload) {
     EXPECT_EQ(g_queued_payload_destroyed.load(), 1);
 }
 
+constexpr int    kCancelHookChildren = 512;
+std::atomic<int> g_cancel_hook_spawned{0};
+std::atomic<int> g_cancel_hook_valid{0};
+std::atomic<int> g_cancel_hook_children_constructed{0};
+std::atomic<int> g_cancel_hook_children_destroyed{0};
+std::atomic<int> g_cancel_hook_parent_destroyed{0};
+std::atomic<int> g_cancel_hook_sibling_destroyed{0};
+
+class CancelHookChild final : public qb::Actor {
+public:
+    CancelHookChild() {
+        ++g_cancel_hook_children_constructed;
+    }
+    ~CancelHookChild() final {
+        ++g_cancel_hook_children_destroyed;
+    }
+};
+
+class CancelHookSibling final : public qb::Actor {
+public:
+    ~CancelHookSibling() final {
+        ++g_cancel_hook_sibling_destroyed;
+    }
+};
+
+class SpawnsChildrenWhenCancelled final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        auto ctx = context();
+        ctx.token().on_cancel([this] {
+            for (int i = 0; i < kCancelHookChildren; ++i) {
+                auto child = addRefActor<CancelHookChild>(); // grows _actors while terminal cancellation runs
+                ++g_cancel_hook_spawned;
+                if (child.valid())
+                    ++g_cancel_hook_valid;
+            }
+        });
+        co_return false;
+    }
+    ~SpawnsChildrenWhenCancelled() final {
+        ++g_cancel_hook_parent_destroyed;
+    }
+};
+
+TEST(InitLifecycle, TerminalCancellationMayAddActors) {
+    g_cancel_hook_spawned              = 0;
+    g_cancel_hook_valid                = 0;
+    g_cancel_hook_children_constructed = 0;
+    g_cancel_hook_children_destroyed   = 0;
+    g_cancel_hook_parent_destroyed     = 0;
+    g_cancel_hook_sibling_destroyed    = 0;
+    qb::Main main;
+    main.addActor<SpawnsChildrenWhenCancelled>(0);
+    main.addActor<CancelHookSibling>(0); // next slot forces the invalidated iterator to advance
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_cancel_hook_spawned.load(), kCancelHookChildren);
+    EXPECT_EQ(g_cancel_hook_valid.load(), 0);
+    EXPECT_EQ(g_cancel_hook_children_constructed.load(), 0);
+    EXPECT_EQ(g_cancel_hook_children_destroyed.load(), 0);
+    EXPECT_EQ(g_cancel_hook_parent_destroyed.load(), 1);
+    EXPECT_EQ(g_cancel_hook_sibling_destroyed.load(), 1);
+}
+
+constexpr int    kStashDestroyChildrenPerEvent = 256;
+std::atomic<int> g_stash_events_destroyed{0};
+std::atomic<int> g_stash_children_valid{0};
+std::atomic<int> g_stash_children_constructed{0};
+std::atomic<int> g_stash_children_destroyed{0};
+std::atomic<int> g_stash_targets_destroyed{0};
+std::atomic<int> g_stash_owner_destroyed{0};
+
+class StashDestroyOwner;
+
+struct SpawnFromStashEvent final : qb::Event {
+    StashDestroyOwner *owner;
+    explicit SpawnFromStashEvent(StashDestroyOwner *actor)
+        : owner(actor) {}
+    ~SpawnFromStashEvent();
+};
+
+class StashDestroyChild final : public qb::Actor {
+public:
+    StashDestroyChild() {
+        ++g_stash_children_constructed;
+    }
+    qb::io::async::task<bool>
+    onInit() override {
+        co_await context().sleep(10s); // would insert into _activating during teardown
+        co_return true;
+    }
+    ~StashDestroyChild() final {
+        ++g_stash_children_destroyed;
+    }
+};
+
+class StashDestroyTarget final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<SpawnFromStashEvent>(*this);
+        co_await context().sleep(10s); // keeps inbound business events in the stash
+        co_return true;
+    }
+    void
+    on(SpawnFromStashEvent const &) {}
+    ~StashDestroyTarget() final {
+        ++g_stash_targets_destroyed;
+    }
+};
+
+class StashDestroyOwner final
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _first;
+    qb::ActorId _second;
+
+public:
+    StashDestroyOwner(qb::ActorId first, qb::ActorId second)
+        : _first(first)
+        , _second(second) {}
+    ~StashDestroyOwner() final {
+        ++g_stash_owner_destroyed;
+    }
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        push<SpawnFromStashEvent>(_first, this);
+        push<SpawnFromStashEvent>(_second, this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        throw std::runtime_error("stop with two activation stashes");
+    }
+
+    void
+    spawn_children() {
+        for (int i = 0; i < kStashDestroyChildrenPerEvent; ++i)
+            if (addRefActor<StashDestroyChild>().valid())
+                ++g_stash_children_valid;
+    }
+};
+
+SpawnFromStashEvent::~SpawnFromStashEvent() {
+    ++g_stash_events_destroyed;
+    owner->spawn_children();
+}
+
+TEST(InitLifecycle, StashPayloadDestructionMayAddActivations) {
+    g_stash_events_destroyed     = 0;
+    g_stash_children_valid       = 0;
+    g_stash_children_constructed = 0;
+    g_stash_children_destroyed   = 0;
+    g_stash_targets_destroyed    = 0;
+    g_stash_owner_destroyed      = 0;
+    qb::Main main;
+    auto     first  = main.addActor<StashDestroyTarget>(0);
+    auto     second = main.addActor<StashDestroyTarget>(0);
+    main.addActor<StashDestroyOwner>(0, first, second);
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_stash_events_destroyed.load(), 2);
+    EXPECT_EQ(g_stash_children_valid.load(), 0);
+    EXPECT_EQ(g_stash_children_constructed.load(), 0);
+    EXPECT_EQ(g_stash_children_destroyed.load(), 0);
+    EXPECT_EQ(g_stash_targets_destroyed.load(), 2);
+    EXPECT_EQ(g_stash_owner_destroyed.load(), 1);
+}
+
+std::atomic<int> g_remove_hook_children_valid{0};
+std::atomic<int> g_remove_hook_children_destroyed{0};
+std::atomic<int> g_remove_hook_parent_destroyed{0};
+
+class RemoveHookChild final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        kill();
+        co_return true;
+    }
+    ~RemoveHookChild() final {
+        ++g_remove_hook_children_destroyed;
+    }
+};
+
+class AsyncFalseSpawnsOnCancel final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        auto ctx = context();
+        ctx.token().on_cancel([this] {
+            for (int i = 0; i < kCancelHookChildren; ++i)
+                if (addRefActor<RemoveHookChild>().valid())
+                    ++g_remove_hook_children_valid;
+        });
+        co_await ctx.sleep(5ms);
+        co_return false; // __pump_activations__ removes this actor outside terminal teardown
+    }
+    ~AsyncFalseSpawnsOnCancel() final {
+        ++g_remove_hook_parent_destroyed;
+    }
+};
+
+TEST(InitLifecycle, RemovingFailedAsyncActorMayGrowRegistryDuringCancel) {
+    g_remove_hook_children_valid     = 0;
+    g_remove_hook_children_destroyed = 0;
+    g_remove_hook_parent_destroyed   = 0;
+    qb::Main main;
+    main.addActor<AsyncFalseSpawnsOnCancel>(0);
+    main.start(false);
+    main.join();
+    EXPECT_EQ(g_remove_hook_children_valid.load(), kCancelHookChildren);
+    EXPECT_EQ(g_remove_hook_children_destroyed.load(), kCancelHookChildren);
+    EXPECT_EQ(g_remove_hook_parent_destroyed.load(), 1);
+}
+
 std::atomic<bool> g_syncthrow_destroyed{false};
 
 class SyncThrowInit : public qb::Actor {
@@ -400,3 +620,147 @@ TEST(InitLifecycle, DisabledDeadlineNeverTimesOutActivating) {
 }
 
 } // namespace
+
+namespace frame_teardown_test {
+
+constexpr int    kChildren = 256;
+std::atomic<int> g_frame_local_destroyed{0};
+std::atomic<int> g_children_valid{0};
+std::atomic<int> g_children_constructed{0};
+std::atomic<int> g_children_destroyed{0};
+std::atomic<int> g_spawner_missing{0};
+
+class Child final : public qb::Actor {
+public:
+    Child() {
+        ++g_children_constructed;
+    }
+    qb::io::async::task<bool>
+    onInit() override {
+        co_await qb::io::async::sleep(10s); // registers a scheduler-suspended frame
+        co_return true;
+    }
+    ~Child() final {
+        ++g_children_destroyed;
+    }
+};
+
+class Spawner final : public qb::Actor {
+public:
+    void
+    spawn_children() {
+        for (int i = 0; i < kChildren; ++i)
+            if (addRefActor<Child>().valid())
+                ++g_children_valid;
+    }
+};
+
+struct FrameLocal {
+    qb::ActorHandle<Spawner> spawner;
+    ~FrameLocal() {
+        ++g_frame_local_destroyed;
+        if (auto *actor = spawner.get())
+            actor->spawn_children();
+        else
+            ++g_spawner_missing;
+    }
+};
+
+class ThrowsWithParkedFrame final
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        auto spawner = addRefActor<Spawner>();
+        spawn([spawner](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            FrameLocal local{spawner};
+            co_await ctx.sleep(10s);
+        });
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        throw std::runtime_error("stop with parked frame");
+    }
+};
+
+TEST(InitLifecycle, SchedulerFrameDestructionCannotAdmitNewAsyncActors) {
+    g_frame_local_destroyed = 0;
+    g_children_valid        = 0;
+    g_children_constructed  = 0;
+    g_children_destroyed    = 0;
+    g_spawner_missing       = 0;
+    qb::Main main;
+    main.addActor<ThrowsWithParkedFrame>(0);
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_frame_local_destroyed.load(), 1);
+    EXPECT_EQ(g_spawner_missing.load(), 0);
+    EXPECT_EQ(g_children_valid.load(), 0);
+    EXPECT_EQ(g_children_constructed.load(), 0);
+    EXPECT_EQ(g_children_destroyed.load(), 0);
+}
+
+} // namespace frame_teardown_test
+
+namespace activation_rehash_test {
+
+constexpr int    kChildrenPerHook = 256;
+std::atomic<int> g_hooks{0};
+std::atomic<int> g_children_valid{0};
+std::atomic<int> g_children_destroyed{0};
+std::atomic<int> g_parents_destroyed{0};
+
+class Child final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        co_await context().sleep(1ms); // inserts into _activating during the deadline walk
+        kill();
+        co_return true;
+    }
+    ~Child() final {
+        ++g_children_destroyed;
+    }
+};
+
+class DeadlineParent final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        auto ctx = context();
+        ctx.token().on_cancel([this] {
+            ++g_hooks;
+            for (int i = 0; i < kChildrenPerHook; ++i)
+                if (addRefActor<Child>().valid())
+                    ++g_children_valid;
+        });
+        co_await ctx.sleep(10s);
+        co_return true;
+    }
+    ~DeadlineParent() final {
+        ++g_parents_destroyed;
+    }
+};
+
+TEST(InitLifecycle, DeadlineCancellationMayInsertActivations) {
+    g_hooks              = 0;
+    g_children_valid     = 0;
+    g_children_destroyed = 0;
+    g_parents_destroyed  = 0;
+    ScopedDeadline dl(50'000'000); // long inits expire; children complete in 1 ms
+    qb::Main       main;
+    main.addActor<DeadlineParent>(0);
+    main.addActor<DeadlineParent>(0);
+    main.start(false);
+    main.join();
+    EXPECT_EQ(g_hooks.load(), 2);
+    EXPECT_EQ(g_children_valid.load(), 2 * kChildrenPerHook);
+    EXPECT_EQ(g_children_destroyed.load(), 2 * kChildrenPerHook);
+    EXPECT_EQ(g_parents_destroyed.load(), 2);
+}
+
+} // namespace activation_rehash_test

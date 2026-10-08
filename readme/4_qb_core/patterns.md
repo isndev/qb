@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1480-1481,2216-2218, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1482-1483,2218-2220, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -157,7 +157,7 @@ Two rules keep an actor FSM correct:
   actor's coroutine scope; if you want a timer handle instead, hold a `scoped_callback` as a member so
   the actor's own destructor cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures)
   and [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/core/VirtualCore.cpp:962,1217 -->
+  <!-- src: qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/core/VirtualCore.cpp:986,1250 -->
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -706,7 +706,7 @@ specific: `spawn` increments the very counter this handler is polling
 member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
 `qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
 the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
-<!-- src: qb/src/qb/core/VirtualCore.h:1594-1605, qb/src/qb/io/async/io.h:476-481 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1611-1622, qb/src/qb/io/async/io.h:476-481 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
@@ -729,7 +729,7 @@ context.
   cancels the watcher. See
   [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures) and
   [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/core/VirtualCore.cpp:962,1217 -->
+  <!-- src: qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/core/VirtualCore.cpp:986,1250 -->
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.

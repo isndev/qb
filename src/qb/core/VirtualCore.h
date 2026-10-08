@@ -353,32 +353,43 @@ private:
 
         void
         resolve(Event &raw) const final {
-            auto      &event = reinterpret_cast<_Event &>(raw);
-            const auto dest  = event.getDestination();
-            if (dest.is_broadcast()) {
-                static thread_local std::vector<Actor *> snapshot;
-                const std::size_t                        base = snapshot.size();
-                struct RestoreSnapshot {
-                    std::vector<Actor *> &entries;
-                    std::size_t           base;
-                    ~RestoreSnapshot() {
-                        entries.resize(base);
-                    }
-                } restore{snapshot, base};
-                for (auto const &slot : _core._actors)
-                    if (Actor *const actor = slot.get())
-                        snapshot.push_back(actor);
-                const std::size_t end = snapshot.size();
-                for (std::size_t i = base; i < end; ++i)
-                    dispatch(*snapshot[i], event);
-            } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
-                dispatch(*actor, event);
-            } else [[unlikely]] {
-                Event::__undelivered__(event); // no actor under this id
-            }
+            auto      &event       = reinterpret_cast<_Event &>(raw);
+            const auto dest        = event.getDestination();
+            auto       route_event = [&] {
+                if (dest.is_broadcast()) {
+                    static thread_local std::vector<Actor *> snapshot;
+                    const std::size_t                        base = snapshot.size();
+                    struct RestoreSnapshot {
+                        std::vector<Actor *> &entries;
+                        std::size_t           base;
+                        ~RestoreSnapshot() {
+                            entries.resize(base);
+                        }
+                    } restore{snapshot, base};
+                    for (auto const &slot : _core._actors)
+                        if (Actor *const actor = slot.get())
+                            snapshot.push_back(actor);
+                    const std::size_t end = snapshot.size();
+                    for (std::size_t i = base; i < end; ++i)
+                        dispatch(*snapshot[i], event);
+                } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
+                    dispatch(*actor, event);
+                } else [[unlikely]] {
+                    Event::__undelivered__(event); // no actor under this id
+                }
+            };
             if constexpr (!std::is_trivially_destructible_v<_Event>) {
+                try {
+                    route_event();
+                } catch (...) {
+                    if (!event.is_alive())
+                        event.~_Event();
+                    throw;
+                }
                 if (!event.is_alive())
                     event.~_Event();
+            } else {
+                route_event();
             }
         }
 
@@ -699,7 +710,8 @@ private:
     // actor that is in either -- never by the pass.
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watchers_of;
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
-    std::uint64_t                                       _watch_tickets = 0; ///< the last ticket a watch of this core got
+    std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
+    bool                                                _tearing_down  = false; ///< terminal teardown refuses new actors
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -1083,6 +1095,11 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 template <typename _Actor, typename... _Init>
 _Actor *
 VirtualCore::addReferencedActor(_Init &&...init) noexcept {
+    // Cancellation/frame/payload destructors can call back into an actor while
+    // this core is being destroyed. Refuse admission before allocating or
+    // invoking a user constructor; no new frame may enter a dying scheduler.
+    if (unlikely(_tearing_down))
+        return nullptr;
     // Route through the same allocation customization point used by TActorFactory so
     // users who override qb::allocate_actor<_Actor> get consistent behaviour for
     // both engine-created and dynamically-added actors (PMR/pool support, 2.13).

@@ -40,6 +40,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <benchmark/benchmark.h>
 #include <cstddef>
 #include <cstdint>
@@ -105,6 +106,41 @@ struct MsgPing final : BenchEvt {
 };
 struct MsgNotify final : BenchEvt {
     std::uint16_t code = 0;
+};
+
+// The cold-to-the-router but common-to-a-fanout-core path: no actor subscribed
+// to this broadcast type. A non-trivial payload must be disposed by memh's
+// type-erased disposer even though no handler ran.
+struct BroadcastMissOwned {
+    using id_type                       = qb::EventId;
+    using id_handler_type               = qb::ActorId;
+    id_type                      evt_id = qb::detail::type_id_for<BroadcastMissOwned>();
+    qb::ActorId                  dest{qb::BroadcastId(0)};
+    std::array<std::uint64_t, 8> payload{};
+    std::uint64_t               *disposed;
+
+    explicit BroadcastMissOwned(std::uint64_t &count) noexcept
+        : disposed(&count) {}
+    ~BroadcastMissOwned() {
+        ++*disposed;
+    }
+    template <typename T>
+    [[nodiscard]] static id_type
+    type_to_id() noexcept {
+        return qb::detail::type_id_for<T>();
+    }
+    [[nodiscard]] id_type
+    getID() const noexcept {
+        return evt_id;
+    }
+    [[nodiscard]] qb::ActorId
+    getDestination() const noexcept {
+        return dest;
+    }
+    [[nodiscard]] bool
+    is_alive() const noexcept {
+        return false;
+    }
 };
 
 static_assert(std::is_trivially_copyable_v<MsgOrder>);
@@ -336,6 +372,34 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
 }
 
 } // namespace
+
+static void
+BM_RouterBroadcastMissOwned(benchmark::State &state) {
+    qb::router::ensure_disposer<BroadcastMissOwned, BroadcastMissOwned>();
+    qb::router::memh<BroadcastMissOwned>  router; // deliberately no subscription
+    std::uint64_t                         disposed = 0;
+    alignas(BroadcastMissOwned) std::byte storage[sizeof(BroadcastMissOwned)];
+    auto                                  no_handler = [](BroadcastMissOwned &) noexcept {
+    };
+
+    auto *probe = new (storage) BroadcastMissOwned(disposed);
+    router.route(*probe, no_handler);
+    if (disposed != 1) {
+        state.SkipWithError("broadcast miss failed to dispose the non-trivial event");
+        return;
+    }
+    disposed = 0;
+    for (auto _ : state) {
+        auto *event = new (storage) BroadcastMissOwned(disposed);
+        router.route(*event, no_handler);
+    }
+    benchmark::DoNotOptimize(disposed);
+    if (disposed != static_cast<std::uint64_t>(state.iterations()))
+        state.SkipWithError("broadcast miss did not dispose each event exactly once");
+    state.SetItemsProcessed(state.iterations());
+}
+
+BENCHMARK(BM_RouterBroadcastMissOwned)->Unit(benchmark::kNanosecond);
 
 #define QB_REGISTER_ROUTER_MAILBOX_BENCH(Cap)                        \
     BENCHMARK_TEMPLATE(BM_MpscRouterMailbox_FanIn, Cap)              \
