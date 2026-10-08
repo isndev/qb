@@ -10,7 +10,7 @@ frame of `invoke_owned_<F>` (qb/src/qb/io/async/coroutine/scheduler.h), so a cla
 IN A QB HEADER ends up with a field whose type is the closure. When `Self`/`Server` are
 declared in the test's anonymous namespace, the closure type has NO LINKAGE, and gcc says so:
 
-    qb/src/qb/io/async/coroutine/scheduler.h:793: error:
+    qb/src/qb/io/async/coroutine/scheduler.h:864: error:
       'qb::io::async::CoroutineScheduler::invoke_owned_<qb::http::ws::coro_session<
        {anonymous}::BoundedSession, {anonymous}::BoundedServer>::spawn_run_loop()::<lambda()> >
        ...Frame' has a field ... whose type has no linkage [-Werror=subobject-linkage]

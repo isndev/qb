@@ -181,6 +181,30 @@ policy.
   staples nothing for a self-signed certificate, so no stand-in bytes. The single-thread TLS harness it shares
   with `tls-context-reload.cpp` moved to `tests/io/shared/tls_pump.h`.
 
+- **`CoroutineScheduler::dump()`: the coroutines parked on a thread, by name, with what each waits on and for how
+  long (Huly QB-71).** `CoroutineScheduler::spawn(name, task)` / `spawn(name, callable)` and `Actor::spawn(name, fn)` /
+  `spawn_detached(name, fn)` give a coroutine a name for as long as its frame lives -- held in the thread's tracking
+  table and erased by the frame's promise destructor, through the one test it makes anyway; a program that names
+  nothing pays nothing for names, and while a named coroutine lives every frame destruction on its thread pays one
+  hash lookup. The unnamed Actor forms are the named ones with an empty name. `set_suspension_tracking(true)` turns
+  on, for the calling thread, the recording of every suspension on an awaiter of qb or of its modules: what it waits on (`"sleep"`, `"io"`, `"ask"`, `"mutex"`,
+  `"channel recv"`, `"task"`, `"pgsql"`, ...), when (the CPU counter, calibrated against the monotonic clock), and,
+  for a coroutine awaiting a task or a generator, its frame. `dump()` returns a `std::vector<parked_coroutine>` -- the
+  recorded suspensions, the coroutines parked on a loop watcher, the roots, longest waits first -- and
+  `dump(std::ostream&)` writes one chain per root, from the root down to the awaiter actually parked. Off -- the
+  default -- a suspension costs one load of a process-wide count of the threads that track and one branch, a frame
+  destruction the same on a second count, the threads that track or hold a name: no thread-local access, no clock
+  read, no allocation, nothing in the frame -- and a name, tracking off, never taxes a suspension; measured against 3.2.1's develop on both hosts (3 copies a side, random order, 8 rounds): WSL2 g++-14 level on every coroutine and ask cell; MSVC 19.51 level or faster except the async mutex +3.1 % and semaphore +3.7 % micro cells -- the three instructions of the off test on a 16-cycle operation, measured in /FAs -- with the task promise destructors forced inline there (`QB_MSVC_FORCEINLINE`, `qb/utility/branch_hints.h`) because the hook had made MSVC stop inlining them. The
+  record is written by the awaiter, first thing in `await_suspend` -- the two that transfer to another coroutine, a
+  task's and a generator's, last and without a call: they hand the suspension to a per-thread recorder coroutine, so
+  their fast path stays a leaf on MSVC, which does not shrink-wrap -- rather than by a `promise_type::await_transform`, which would have labelled user awaitables too but kept 8 bytes of frame per await
+  site and cost the async mutex up to 3.6 %, measured. An awaitable of your own labels itself with the public
+  `qb::io::async::track_suspension(h, "kind")`; one that does not leaves its coroutine with the record of its previous
+  wait. `scripts/check-awaiter-tracking.py` holds every awaiter of qb to the rule in the format-check lane, and those
+  of the modules from the superproject. Pinned by `tests/io/system/coroutine/suspension-tracking.cpp` and
+  `tests/core/system/coroutine/coroutine-dump.cpp`; each guarantee was proven by a mutation that makes its case fail
+  (30 mutations across qb and the three modules, 30 proven).
+
 ### Changed
 
 - **`socket::reuse_address(true)` no longer shares the port (Huly QB-78).** It set `SO_REUSEPORT` beside

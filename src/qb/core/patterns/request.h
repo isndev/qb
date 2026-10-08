@@ -108,6 +108,8 @@ using request = Request<Resp>;
  */
 template <ask_event_type E>
 class ask_operation {
+    static constexpr char const *qb_suspension_kind = "ask"; ///< suspension tracking (coroutine/tracking.h)
+
     qb::ScopedCoroContext                     _ctx;
     qb::ActorId                               _target;
     qb::duration                              _timeout;
@@ -141,6 +143,7 @@ public:
     }
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         auto &aw            = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
         _req.correlation_id = aw.id;
         _ctx.template push_to<E>(_target, std::move(_req)); // send to target, source = asker
@@ -168,6 +171,8 @@ public:
  */
 template <ask_event_type E, typename... Args>
 class ask_emplace_operation {
+    static constexpr char const *qb_suspension_kind = "ask"; ///< suspension tracking (coroutine/tracking.h)
+
     qb::ScopedCoroContext                     _ctx;
     qb::ActorId                               _target;
     qb::duration                              _timeout;
@@ -201,6 +206,7 @@ public:
     }
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         auto &aw           = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
         E    &req          = std::apply([this](Args &...a) -> E             &{ return _ctx.template push_to<E>(_target, std::move(a)...); },
                                         _args); // built in the pipe slot

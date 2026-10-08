@@ -28,7 +28,7 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
-#include <memory> // std::shared_ptr — async_generator's shared state (:369, :416, :420)
+#include <memory> // std::shared_ptr — async_generator's shared state (:379, :428, :432)
 #include <optional>
 #include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 
@@ -293,6 +293,11 @@ public:
         std::exception_ptr      exception;
         std::coroutine_handle<> continuation;
 
+        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
+        QB_MSVC_FORCEINLINE ~promise_type() {
+            detail::track_frame_destroyed(detail::handle_from_promise(*this).address());
+        }
+
         auto
         get_return_object() {
             return async_generator{detail::handle_from_promise(*this)};
@@ -347,8 +352,12 @@ public:
                     return false;
                 }
                 std::coroutine_handle<>
-                await_suspend(std::coroutine_handle<>) noexcept {
-                    return cont ? cont : std::noop_coroutine();
+                await_suspend(std::coroutine_handle<> producer) noexcept {
+                    const std::coroutine_handle<> next = cont ? cont : std::noop_coroutine();
+                    // suspension tracking: recorded last, on the cold branch (coroutine/tracking.h, track_then)
+                    if (::qb::io::async::detail::tracking_on()) [[unlikely]]
+                        return ::qb::io::async::detail::track_then(producer.address(), "generator yield", nullptr, next);
+                    return next;
                 }
                 void
                 await_resume() noexcept {}
@@ -413,6 +422,8 @@ public:
     async_generator &operator=(const async_generator &) = delete;
 
     struct next_awaiter {
+        static constexpr char const *qb_suspension_kind = "generator next"; ///< suspension tracking (coroutine/tracking.h)
+
         handle_type             handle;
         std::shared_ptr<bool>   _gen_alive; ///< generator liveness; skip promise access when false
         std::coroutine_handle<> _parked{};  ///< consumer handle parked in the generator's continuation
@@ -466,6 +477,9 @@ public:
             QB_AGEN_TRACE("next await_suspend consumer=%p gen=%p", (void *) h.address(), (void *) handle.address());
             _parked                                 = h;
             detail::promise_of(handle).continuation = h;
+            // suspension tracking: recorded last, on the cold branch (coroutine/tracking.h, track_then)
+            if (::qb::io::async::detail::tracking_on()) [[unlikely]]
+                return ::qb::io::async::detail::track_then(h.address(), qb_suspension_kind, handle.address(), handle);
             return handle; // symmetric transfer — do NOT access handle after this
         }
 

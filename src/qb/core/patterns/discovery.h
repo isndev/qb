@@ -91,6 +91,8 @@ struct discovery_state {
 
 /** @brief Parks the ping/require coroutine until a resolving reply, the time window, or a kill. */
 struct discovery_awaiter {
+    static constexpr char const *qb_suspension_kind = "require"; ///< suspension tracking (coroutine/tracking.h)
+
     std::shared_ptr<discovery_state>           st;
     qb::duration                               timeout;
     std::uint64_t                              id;
@@ -115,6 +117,7 @@ struct discovery_awaiter {
     }
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         st->waiter = h;
         if (timeout.count() > 0)
             qb::detail::deadline_arm(deadline, timeout, &discovery_awaiter::on_timeout, this);
