@@ -1507,8 +1507,8 @@ private:
     stream_reset_cb(ngtcp2_conn *, int64_t stream_id, uint64_t, uint64_t app_error_code, void *user_data, void *) {
         auto      *self = static_cast<native_backend *>(user_data);
         const auto id   = static_cast<std::uint64_t>(stream_id);
-        self->erase_queued_stream_data(id);
-        self->_next_stream_offsets.erase(id);
+        // A peer reset ends our read half only. ngtcp2 can still borrow TX data
+        // from the other half for retransmission until ACK or stream_close.
         self->queue_stream_close_event(id, stream_close_reason::reset, app_error_code, "stream reset by peer");
         return 0;
     }
@@ -1517,7 +1517,7 @@ private:
     stream_stop_sending_cb(ngtcp2_conn *, int64_t stream_id, uint64_t app_error_code, void *user_data, void *) {
         auto      *self = static_cast<native_backend *>(user_data);
         const auto id   = static_cast<std::uint64_t>(stream_id);
-        self->erase_queued_stream_data(id);
+        // A local read stop does not stop the write half or release its TX data.
         self->queue_stream_close_event(id, stream_close_reason::stop_sending, app_error_code, "stream stop sending");
         return 0;
     }

@@ -238,6 +238,11 @@ policy.
   now precedes the ready publication, which is the producer's last access to that Buffer. A
   deterministic ASan test catches the former use-after-free; rollover, a delayed earlier
   producer and concurrent producers verify the guaranteed delivery contract.
+- **A QUIC read-side stop or peer reset keeps the other half's unacknowledged output alive (Huly QB-328).**
+  The native backend no longer discards queued and in-flight write buffers when only reception ends;
+  ngtcp2 may still need them for retransmission until ACK or full stream close. A direct two-peer
+  witness drops the first packet: the open-read control retransmitted all 512 bytes, while the
+  stopped-read path returned corrupted bytes before this fix. Full write shutdown still discards TX.
 - **A pre-loop `Main::start()` failure joins its workers before releasing their resources (Huly QB-259).**
   The startup error flag used to let `start(true)` return while a worker was still tearing down; `_is_running`
   became false, so `~Main()` skipped its explicit join and member destruction freed shared mailboxes before the

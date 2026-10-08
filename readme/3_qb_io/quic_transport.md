@@ -205,7 +205,7 @@ its first connection. The snippets below are the same shapes, trimmed.
 ### Server
 
 ```cpp
-// src: qb/tests/io/system/quic/quic-handshake.cpp:531-535 (stream session), :542 (listen), :806 (server) (shape)
+// src: qb/tests/io/system/quic/quic-handshake.cpp:532-536 (stream session), :543 (listen), :807 (server) (shape)
 #include <qb/io/async.h>
 
 // The per-stream session: a buffered session with its own protocol pipe.
@@ -241,7 +241,7 @@ void run_server(Server& server) {
 ### Client
 
 ```cpp
-// src: qb/tests/io/system/quic/quic-handshake.cpp:619-625 (shape), :815 (connector)
+// src: qb/tests/io/system/quic/quic-handshake.cpp:620-626 (shape), :816 (connector)
 #include <qb/io/async.h>
 
 class Client : public qb::io::use<Client>::quic::connector<StreamSession> {
@@ -265,7 +265,7 @@ void run_client(Client &client) {
 ```
 
 > **Do not open a stream before `event::connected`.** `connect()` returns as soon as the endpoint reaches `state::connecting`; the peer's `initial_max_streams_bidi` has not arrived yet, so `ngtcp2_conn_open_bidi_stream` answers `NGTCP2_ERR_STREAM_ID_BLOCKED` — and the backend turns **any** non-zero ngtcp2 return into `throw std::runtime_error("ngtcp2 stream open failed with …")`. Every stream-opening call site in the test suite opens only after reaching `connected`. Drive it from the `event::connected` hook, or pump the loop until the endpoint reports `connected` before opening.
-> <!-- src: qb/src/qb/io/async/quic/endpoint.h:447 (connect returns at state::connecting), :462-468 (open_bidirectional_stream); qb/src/qb/io/quic.cpp:503-504 (the throw); qb/tests/io/system/quic/quic-handshake.cpp:582 (establish_loopback pumps to connected), :588 (then opens) -->
+> <!-- src: qb/src/qb/io/async/quic/endpoint.h:447 (connect returns at state::connecting), :462-468 (open_bidirectional_stream); qb/src/qb/io/quic.cpp:503-504 (the throw); qb/tests/io/system/quic/quic-handshake.cpp:583 (establish_loopback pumps to connected), :589 (then opens) -->
 
 `connect(remote_uri, alpn_protocols = {"h3"})`, its `tls_config` overload, and a third
 `connect(uri, std::initializer_list<std::string>)` disambiguator all init and bind a local UDP
@@ -335,6 +335,8 @@ The endpoint dispatches seven typed events to derived `on(event::...)` overloads
 <!-- src: qb/src/qb/io/async/quic/events.h:16-58 -->
 
 `reason` on `connection_closed` is a `qb::io::quic::disconnect_reason` (`idle_timeout`, `handshake_failed`, `stateless_retry_failed`, `transport_error`, `application_close`, and others). `reason` on `stream_closed` is a `qb::io::quic::stream_close_reason` that distinguishes normal finish from `reset`, `stop_sending`, `flow_control_error`, and `connection_closed`. `reset_stream(...)` maps to an abrupt stream shutdown; `stop_stream(...)` maps to the QUIC read-side stop-sending path.
+
+Stopping only the read side leaves the bidirectional stream's write side active. The native backend retains unacknowledged output for retransmission until ACK or full stream close, even when the peer resets its own write side. Use `reset_stream(...)` when both halves must stop and pending output may be discarded.
 
 <!-- src: qb/src/qb/io/quic/types.h:18-39 -->
 
