@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:684`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1309-1310`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -261,9 +261,9 @@ template <typename T>
 concept event_qos0_type = std::is_base_of_v<EventQOS0, T>;
 
 // `service_event_type` was declared HERE through 2.6.0; in 3.0 it moved to Event.h (see the
-// banner at the tail of that header). Pipe.h, which this header includes at :50 -- long
+// banner at the tail of that header). Pipe.h, which this header includes at :54 -- long
 // before this point -- needs the concept for its own template bodies and cannot reach a
-// declaration made down here. It still arrives through the `#include "Event.h"` at :48,
+// declaration made down here. It still arrives through the `#include "Event.h"` at :52,
 // unchanged, so no consumer has to write anything differently. `event_qos0_type` above stays
 // put: only VirtualCore's bodies use it, and they see a complete Actor.h. This block holds the
 // LINE COUNT -- 87 `Actor.h:NNN` citations anchor below it and a plain deletion moves them all.
@@ -1483,6 +1483,20 @@ public:
     void spawn(Func &&func) const;
 
     /**
+     * @brief `spawn` under a name the core's `qb::io::async::CoroutineScheduler::dump()` reports for the coroutine
+     *        while it lives (since 3.3, Huly QB-71).
+     * @details The name goes in the core thread's tracking table and goes with the frame; an unnamed `spawn` (this
+     *          one with an empty name) stores nothing. With `set_suspension_tracking(true)` on the core's thread, the
+     *          dump also says what the coroutine waits on and for how long.
+     */
+    template <typename Func>
+    void spawn(std::string_view name, Func &&func) const;
+
+    /// `spawn_detached` under a name the core's `CoroutineScheduler::dump()` reports (since 3.3, Huly QB-71).
+    template <typename Func>
+    void spawn_detached(std::string_view name, Func &&func) const;
+
+    /**
      * @brief Obtain a cancellation-aware coroutine context bound to **this** actor.
      * @return A `ScopedCoroContext` carrying this actor's id and its per-actor
      *         cancellation scope (the scope is lazily allocated on first use).
@@ -1930,7 +1944,7 @@ struct ask_awaiter {
     }
 
     void
-    await_suspend(std::coroutine_handle<> h) {
+    await_suspend(std::coroutine_handle<> h) { // awaiter-tracking: inner -- qb::ask's awaiters (request.h) record "ask" first
         cont = h;
         if (token.is_cancelled()) { // outcome stays `pending` → await_resume throws cancelled.
             qb::io::async::schedule_via_current(h);
@@ -2050,6 +2064,8 @@ private:
  *          pass or from a token callback, never from a handler that owns this frame.
  */
 struct activation_awaiter {
+    static constexpr char const *qb_suspension_kind = "actor ready"; ///< suspension tracking (coroutine/tracking.h)
+
     qb::ActorId                                    target;
     qb::duration                                   timeout;
     const qb::io::async::cancellation_token       &token; ///< the waiter's scope, by reference (lives in the same frame)
@@ -2087,6 +2103,7 @@ struct activation_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) noexcept {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         cont = h;
         if (timeout.count() > 0)
             deadline_arm(deadline, timeout, &activation_awaiter::on_timeout, this);

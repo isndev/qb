@@ -1097,9 +1097,9 @@ using engine = Main;
 // header extension in qb.
 //
 // The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
-//   * Presence: the bodies need `TActorFactory` (Actor.h:2145), the `service_type` concept
-//     (Actor.h:112) and `Service` (Actor.h:1772). Main.h's own DECLARATIONS need none of
-//     them -- `IActorFactory` is forward-declared at Main.h:51 -- which is why this header
+//   * Presence: the bodies need `TActorFactory` (Actor.h:2741), the `service_type` concept
+//     (Actor.h:237) and `Service` (Actor.h:2323). Main.h's own DECLARATIONS need none of
+//     them -- `IActorFactory` is forward-declared at Main.h:55 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
 //     densely cited headers in the readme book (31 `Main.h:NNN` citations across seven

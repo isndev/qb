@@ -201,3 +201,6 @@ qb_add_test(MODULE qb-core TIER system NAME death-watch SOURCES engine/death-wat
 # actor's coroutine unwinds with cancelled_error while its call still runs, nothing after its co_await runs, and the
 # call's result is discarded on the core when it returns. The qb-io half is qb-io-test-system-offload.
 qb_add_test(MODULE qb-core TIER system NAME coroutine-offload SOURCES coroutine/coroutine-offload.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# coroutine-dump pins an actor's named coroutine in its core's dump (Huly QB-71): spawn(name, fn), tracking turned on
+# for the core, the named root and, at the end of its chain, an ask. The qb-io half is qb-io-test-system-suspension-tracking.
+qb_add_test(MODULE qb-core TIER system NAME coroutine-dump SOURCES coroutine/coroutine-dump.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

@@ -48,9 +48,9 @@ Read it as a rule set:
 <!-- src: qb/src/qb/io/async/listener.h:1007-1009 (deferred drain), :1011-1030 (why the coroutine drain is bounded), :1048 (kMaxCoroutineResumesPerTurn = 65536) -->
 
 > A turn **nested inside a coroutine drain** resumes nothing in that last step. Library code that pumps the loop from a coroutine body — `Redis::await()`, `Transaction::await()` — runs `run()` while `CoroutineScheduler::run_ready()` is on the stack, and a `run_ready()` nested in a drain returns `0` at once: the pass runs its watchers and deferred callbacks and leaves the coroutines it made ready to the enclosing drain, which resumes them once the running coroutine yields. Until 3.3 that guard asserted, so a debug build aborted (Huly QB-253). It lives in the scheduler and not in `run()` on purpose: `run()` is inlined into the core's loop (`VirtualCore::__workflow_loop__`), and a condition added there reshaped the whole hot loop — +3 % on the pure actor pass, measured.
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:643-669 (the nested drain: why it returns 0, the guard); qb/src/qb/io/async/listener.h:1032-1039 (the call site) -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:714-740 (the nested drain: why it returns 0, the guard); qb/src/qb/io/async/listener.h:1032-1039 (the call site) -->
 
-The measurement behind that cap is worth keeping in mind, because it is what makes the failure mode concrete rather than theoretical: before the bound, a single `run(EVRUN_NOWAIT)` turn executed **2,000,000 ping-pongs in 162 ms** and only returned because the probe's loops were finite (`src/qb/io/async/listener.h:1022-1023`). An unbuffered `channel<T>` producer/consumer pair with no I/O await in the cycle is enough to produce that shape. `CoroutineScheduler::run_ready()`'s own default stays unbounded, for the teardown drains that genuinely must empty the queue (`src/qb/io/async/coroutine/scheduler.h:642`).
+The measurement behind that cap is worth keeping in mind, because it is what makes the failure mode concrete rather than theoretical: before the bound, a single `run(EVRUN_NOWAIT)` turn executed **2,000,000 ping-pongs in 162 ms** and only returned because the probe's loops were finite (`src/qb/io/async/listener.h:1022-1023`). An unbuffered `channel<T>` producer/consumer pair with no I/O await in the cycle is enough to produce that shape. `CoroutineScheduler::run_ready()`'s own default stays unbounded, for the teardown drains that genuinely must empty the queue (`src/qb/io/async/coroutine/scheduler.h:713`).
 
 ### A defer that defers
 
@@ -91,7 +91,7 @@ So while `run_sync` is running, **the loop keeps turning**: sockets are serviced
 
 ### The guard, and what it actually checks
 
-Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1424-1436`; `src/qb/io/async/coroutine/scheduler.h:670-679`, `:755-758`). When it fires it asserts in debug and throws `std::logic_error`.
+Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1424-1436`; `src/qb/io/async/coroutine/scheduler.h:741-750`, `:826-829`). When it fires it asserts in debug and throws `std::logic_error`.
 
 That covers exactly one case, and covers it well:
 

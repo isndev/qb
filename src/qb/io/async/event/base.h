@@ -29,7 +29,7 @@
 
 /* The loop's C++ wrapper declares a TOP-LEVEL `ev` namespace, because it is libev's and libev's
  * consumers write `ev::io`. qb re-exports it as `qb::ev` so that qb's own public API -- notably
- * `qb::Actor::ask_loop()`, whose return type is `ev::loop_ref` (Actor.h:1529) -- can name a type
+ * `qb::Actor::ask_loop()`, whose return type is `ev::loop_ref` (Actor.h:1749) -- can name a type
  * inside qb's namespace instead of pointing consumers at a global one qb does not own. It is an
  * ALIAS, not a second namespace: `qb::ev::io` and `::ev::io` are the same type, so nothing that
  * already compiles stops compiling, and a consumer migrating from libev keeps `ev::io` too. */
@@ -39,7 +39,7 @@ namespace ev = ::ev;
 
 /* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/ev/config.h.cmakein). ev.h only
  * learns that from the generated ev_config.h, and its last-resort lookup for that file is guarded
- * by __has_include (ev.h:28-31) -- so if the file is not reachable, ev.h SILENTLY falls back to its
+ * by __has_include (ev.h:82-85) -- so if the file is not reachable, ev.h SILENTLY falls back to its
  * own default of EV_FEATURE_CONFIG == 4. Every ev_* prototype then grows a loop parameter that the
  * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */

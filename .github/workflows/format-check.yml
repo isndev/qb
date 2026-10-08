@@ -61,6 +61,13 @@ jobs:
       - name: Handlers - every gated on() is one its gate can see
         run: ./scripts/check-handler-access.py
 
+      # An awaiter that does not begin with track_suspension(...) leaves the coroutine parked on
+      # it with the record of its PREVIOUS wait in CoroutineScheduler::dump() (Huly QB-71) --
+      # nothing fails, the dump just lies. Same phase as the four above: pure Python, no
+      # toolchain, whole tree. qb only; qbm's run from the superproject's dev/agent/verify.sh.
+      - name: Awaiters - every await_suspend says what its coroutine waits on
+        run: ./scripts/check-awaiter-tracking.py
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check

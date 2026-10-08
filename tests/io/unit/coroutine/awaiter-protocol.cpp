@@ -883,7 +883,7 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
 /**
  * @test A coroutine parked on sleep() is torn down cleanly, stopping the armed ev_timer
  * @brief Exercises timer_awaiter's destructor (unschedule + ev_timer_stop on a still-active watcher,
- *        awaiter.h:361-370): the coroutine parks on a long sleep, then destroy_all_suspended() unwinds it
+ *        awaiter.h:364-373): the coroutine parks on a long sleep, then destroy_all_suspended() unwinds it
  *        before the timer fires. The body after the sleep never runs and the frame is reclaimed.
  */
 TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
