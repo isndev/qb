@@ -157,6 +157,8 @@ struct stream_state {
  */
 template <class E>
 struct stream_next_awaiter {
+    static constexpr char const *qb_suspension_kind = "ask stream"; ///< suspension tracking (coroutine/tracking.h)
+
     std::shared_ptr<stream_state<E>>           st;
     qb::duration                               timeout;
     qb::detail::request_deadline               deadline{};
@@ -177,6 +179,7 @@ struct stream_next_awaiter {
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         st->waiter = h;
         parked     = h;
         if (timeout.count() > 0)

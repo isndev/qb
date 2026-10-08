@@ -207,3 +207,7 @@ qb_add_test(MODULE qb-io TIER system NAME listen-reuse-port SOURCES tcp/listen-r
 # once, so the case needs a process nothing has offloaded from -- and ctest shuffles a binary's cases (QB_TESTS_SHUFFLE),
 # which made "first in offload.cpp" fail whenever another case drew the earlier slot.
 qb_add_test(MODULE qb-io TIER system NAME offload-pool SOURCES coroutine/offload-pool.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+
+# CoroutineScheduler::dump() and the opt-in suspension tracking (Huly QB-71): off by default the roots by name, on
+# every awaiter's kind, chains root -> leaf, records that age and go with their coroutine, names that go with their frame.
+qb_add_test(MODULE qb-io TIER system NAME suspension-tracking SOURCES coroutine/suspension-tracking.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

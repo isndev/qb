@@ -233,7 +233,7 @@ class Session : public qb::io::async::with_timeout<Session> {
 A coroutine suspends only at `co_await`. A call that BLOCKS — a cold file read, `getaddrinfo`, a KDF
 sized for a login endpoint, the compression of megabytes — holds the loop thread, and under `qb-core`
 every actor of the core with it. Run it on the offload pool instead; the coroutine resumes on its own
-loop, which keeps turning meanwhile. _(offload.h:24-40, :299)_
+loop, which keeps turning meanwhile. _(offload.h:24-40, :302)_
 
 ```cpp
 #include <qb/io/async.h>
@@ -251,7 +251,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
 - **A running call is never interrupted.** A frame destroyed while its call runs (a `when_any` loser, a
   cancelled scope, a killed actor's `ctx.offload`) is not resumed: the result is destroyed on the loop and
   counted in `offload_stats::discarded`. A bare `offload` inside an actor is NOT woken by a kill — it
-  waits on, as a bare `sleep` does — so inside an actor write `ctx.offload`. _(Actor.h:2284-2287)_
+  waits on, as a bare `sleep` does — so inside an actor write `ctx.offload`. _(Actor.h:2301-2304)_
 - The pool is process-wide and starts with the first `offload` (no thread before it), two threads unless
   `qb::io::async::set_offload_threads(n)` ran first (`false` once started);
   `qb::io::async::current_offload_stats()` reads `threads` / `submitted` / `completed` / `discarded` /
@@ -262,7 +262,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1018; tcp/socket.cpp:88-95)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1021; tcp/socket.cpp:88-95)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1045-1084; uri.h:473-483)_
@@ -276,6 +276,35 @@ auto eps = co_await qb::io::async::offload([](std::string h) {
 auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move(eps), "api.example.com",
                                                                        std::chrono::seconds{5});
 ```
+
+### What a parked coroutine waits on — `dump()` (3.3)
+
+A coroutine that never resumes says nothing by itself. `CoroutineScheduler::dump()` lists the coroutines
+parked on THIS thread — the roots it owns, by the name given at spawn, and, with suspension tracking on,
+what each one waits on, for how long, and the coroutine it awaits — longest waits first. _(scheduler.h:647)_
+
+```cpp
+// on the thread that runs the coroutines (a VirtualCore thread: inside a handler, onInit, a coroutine)
+auto &sched = qb::io::async::listener::current.coro_scheduler();
+sched.set_suspension_tracking(true);                           // per thread; off by default
+spawn("fetch-price", [](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { /* ... */ });
+sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
+```
+
+- **Off costs one branch.** Every awaiter of qb and of the modules records in `await_suspend` — first, or, a
+  task's and a generator's, last, just before the transfer: while no thread tracks, names or not, it is one load of
+  a process-wide count and one branch — no thread-local access, no clock, nothing in the frame. On, a suspension
+  records its kind and the CPU counter. _(scheduler.h:633)_
+- **A name is given at spawn** — `spawn("name", fn)`, `spawn_detached("name", fn)`, the scheduler's
+  `spawn(name, task)` — and lives as long as the frame; an unnamed spawn stores nothing. While a named coroutine
+  lives, every frame destruction on its thread pays one name lookup and on another thread one thread-local read;
+  suspensions pay nothing for names. _(Actor.h:1493, scheduler.h:611)_
+- **An awaitable of your own labels itself**: `qb::io::async::track_suspension(h, "my queue")` first in its
+  `await_suspend`. One that does not leaves the coroutine with the record of its PREVIOUS wait, ageing.
+  `scripts/check-awaiter-tracking.py` holds every awaiter of qb and of the modules to it. _(tracking.h:164)_
+- A `parked_coroutine` gives `frame`, `name`, `kind` (`"sleep"`, `"io"`, `"ask"`, `"mutex"`, `"task"`, … —
+  `"watcher"` for a coroutine parked on a loop watcher with no record), `age`, `waits_on` (the awaited
+  coroutine, for `"task"` and `"generator next"`) and `root`. Call `dump()` on the scheduler's thread; it allocates. _(scheduler.h:337)_
 
 ### Network actors via `qb::io::use<>`
 
@@ -335,7 +364,7 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 - **After any `co_await`, the only legal channel back is the context.** `ctx.push<E>()` /
   `ctx.push_to<E>(dest, …)` / `ctx.broadcast<E>()` / `ctx.id()` / `ctx.time()` are safe by
   construction — the context stores the `ActorId` by value, and events addressed to a dead actor are
-  dropped, not delivered into freed memory. _(Actor.h:1638-1644)_
+  dropped, not delivered into freed memory. _(Actor.h:1652-1658)_
 - **`spawn()` must be called from the actor's own VirtualCore thread** (i.e. from a handler,
   `onInit()`, or `on(qb::LoopEvent const&)`).
 - **Pass the lambda WITHOUT a trailing `()`.** `spawn(f())` invokes the closure to get a `task`, the
@@ -347,12 +376,12 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `offload(fn, args...)` (3.3: a blocking call on the
 offload pool, whose wait a kill ends — see "A call that blocks"), `child_token()`, `token()`,
-`cancelled()`. _(Actor.h:2175-2288)_
+`cancelled()`. _(Actor.h:2192-2305)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1485-1501, :2296-2299)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1499-1515, :2313-2316)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
@@ -397,10 +426,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   (`qb::AskEvent`/`qb::Request<Resp>`, responder `qb::answer`, asker `resolve_ask`) over hand-rolled
   pending-state. `qb::ask` is a **free function** and its first parameter is a `qb::ScopedCoroContext` —
   the `ctx` of a `spawn()` body, or `context()` anywhere else. A `CoroContext` from `spawn_detached`
-  does not convert and will not compile. _(patterns/request.h:270)_ When the request is built from
+  does not convert and will not compile. _(patterns/request.h:276)_ When the request is built from
   a handful of values, use the **emplace** form `co_await qb::ask<E>(ctx, target, timeout, args...)`
   (`E` explicit; `ask_by<E>(ctx, target, dl, args...)` likewise): it constructs the event in the
-  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:303,378)_
+  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:309,384)_
   Manual fallback: store pending
   state keyed by request id; schedule a self-sent timeout via `qb::io::async::callback`; clear on
   response or timeout.
@@ -408,7 +437,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   operation (`qb::ask_operation<E>`; `qb::ask_emplace_operation<E, Args...>` for the emplace form) is built in your
   frame, sends nothing until awaited, and converts to `task<E>` where a task is needed (`task<E> t = qb::ask(...)`,
   `emplace_back` into a `std::vector<task<E>>`; the variadic `when_all` / `when_any` / `race` and `coro_with_timeout`
-  take it as is). Never constrain on the return type being exactly `task<E>`. _(request.h:110, :170; combinators.h:66)_
+  take it as is). Never constrain on the return type being exactly `task<E>`. _(request.h:110, :173; combinators.h:66)_
 - **Patterns library** (`<qb/core/patterns.h>`, header-only over the kernel — narrative home
   `qb/readme/4_qb_core/patterns_library.md`; signatures in qb.llm.api.md "Patterns"; recipes in the
   cookbook) — request/response (`ask`, `answer`, `ask_by`/`deadline`), discovery (`ping`,
@@ -461,7 +490,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
   bare `offload` in an actor's coroutine is not woken by the actor's kill: `ctx.offload` is.
-  _(offload.h:24-40; Actor.h:2284-2287)_
+  _(offload.h:24-40; Actor.h:2301-2304)_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
   small and allocation-light. _(Actor.h:1113-1119; Pipe.h:138-153)_
@@ -511,7 +540,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   a child. `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
   after a failed init, or once it died — never a dangling pointer. Send to a valid `handle.id()`; gate
   direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1340-1345, :1366, :2364-2366)_
+  _(Actor.h:1340-1345, :1366, :2381-2383)_
 - **`getService<T>()` is the ONE lookup that is not phase-gated: it hands back a service whose async
   `onInit()` is still in flight AND one that has been `kill()`ed but not yet reaped.** Deliberate — it
   is what lets a service look itself or a peer up from inside its own `onInit()`, and what keeps a
@@ -527,12 +556,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1446 / VirtualCore.h:1597; `spawn` Actor.h:1483 /
-  VirtualCore.h:1611)_
+  VirtualCore.h:1623)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
   sanitizers never show. The call emits no instruction and is a no-op on GCC, MSVC and clang-cl; every `qb::ask*` pattern
-  coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:376; request.h:225, resilience.h:428)_
+  coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:376; request.h:231, resilience.h:428)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
@@ -579,9 +608,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:353-379)_ _(listener.h:1475)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
-  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:550-579)_
+  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:574-603)_
 - **Stop the event loop before destroying a coroutine scheduler;** suspended frames are intentionally
-  leaked while their watchers reference them. _(scheduler.h:343-363)_
+  leaked while their watchers reference them. _(scheduler.h:367-387)_
 - **Time model is `std::chrono`-only on public signatures.** All timeouts/TTL/intervals/delays take
   `qb::duration` (= `std::chrono::nanoseconds`); it accepts finer-or-equal chrono literals and **rejects
   bare integers at compile time**. `qb::mono_time` (steady) is for deadlines/timers/latency, `qb::wall_time`

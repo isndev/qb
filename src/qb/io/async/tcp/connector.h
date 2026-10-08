@@ -901,6 +901,8 @@ starttls_connect(Socket_ &&existing, uri const &remote, Func_ &&func, qb::durati
  */
 template <typename Socket_>
 class connect_awaiter {
+    static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
+
     struct state_t {
         std::optional<Socket_>               result;
         std::coroutine_handle<>              handle{};
@@ -939,6 +941,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->handle    = h;
         _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
         if (!_state->scheduler)
@@ -1027,6 +1030,8 @@ connect(std::vector<qb::io::endpoint> endpoints, std::string host, qb::duration 
  */
 template <typename Socket_>
 class connect_with_socket_awaiter {
+    static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
+
     struct state_t {
         std::optional<Socket_>               result;
         std::coroutine_handle<>              handle{};
@@ -1053,6 +1058,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->handle    = h;
         _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
         if (!_state->scheduler)
@@ -1120,6 +1126,8 @@ connect_with_socket(typename Transport::transport_io_type &&existing_socket, uri
  */
 template <typename Socket_, typename Negotiator_>
 class starttls_connect_awaiter {
+    static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
+
     struct state_t {
         std::optional<Socket_>               result;
         std::coroutine_handle<>              handle{};
@@ -1146,6 +1154,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->handle    = h;
         _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
         if (!_state->scheduler)

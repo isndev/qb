@@ -395,6 +395,7 @@ public:
 
             void
             await_suspend(std::coroutine_handle<> h) {
+                ::qb::io::async::detail::track_suspension(h.address(), "scope join");
                 if (impl->active_count == 0) {
                     schedule_via_current(h);
                     return;
@@ -450,6 +451,7 @@ public:
 
             void
             await_suspend(std::coroutine_handle<> h) {
+                ::qb::io::async::detail::track_suspension(h.address(), "scope join");
                 for (const auto &t : impl->tasks) {
                     if (t->completed) {
                         schedule_via_current(h);
@@ -523,6 +525,7 @@ public:
 
             void
             await_suspend(std::coroutine_handle<> h) {
+                ::qb::io::async::detail::track_suspension(h.address(), "scope join");
                 if (impl->active_count == 0) {
                     schedule_via_current(h);
                     return;

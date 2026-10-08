@@ -315,7 +315,7 @@ protected:
 
 // ---------------------------------------------------------------------------
 // try_send(const T&) — lvalue copy overload hands a value to a parked receiver
-// (channel.h:413-418, the _recv_waiters direct-handoff branch of the *copy*
+// (channel.h:419-424, the _recv_waiters direct-handoff branch of the *copy*
 // overload; the existing sync tests only drive the buffer-full / closed paths).
 // ---------------------------------------------------------------------------
 
@@ -348,7 +348,7 @@ TEST_F(ChannelLoopOps, TrySendCopyOverloadHandsValueToParkedReceiver) {
 
 // ---------------------------------------------------------------------------
 // send_for — a parked sender woken by close() reports failure
-// (channel.h:679-680, `if (ch._closed) return false` in timed_send_awaiter::
+// (channel.h:686-687, `if (ch._closed) return false` in timed_send_awaiter::
 // await_resume).
 // ---------------------------------------------------------------------------
 
@@ -378,7 +378,7 @@ TEST_F(ChannelLoopOps, SendForParkedThenClosedReportsFailure) {
 
 // ---------------------------------------------------------------------------
 // send_for — a parked sender woken by a newly-arrived receiver hands the value
-// directly (channel.h:682-686, the `!ch._recv_waiters.empty()` deliver-direct
+// directly (channel.h:689-693, the `!ch._recv_waiters.empty()` deliver-direct
 // branch of timed_send_awaiter::await_resume). Requires an unbuffered channel
 // so the sender parks first and a later receiver parks behind it; recv()'s
 // wake_one_sender() then resumes the sender while the receiver is still queued.
@@ -420,7 +420,7 @@ TEST_F(ChannelLoopOps, SendForParkedDeliversDirectlyToLaterReceiver) {
 
 // ---------------------------------------------------------------------------
 // select() (variadic) — suspends when no channel has data nor is closed, then
-// resolves when a sender delivers (channel.h:1022/1036 fall-through of
+// resolves when a sender delivers (channel.h:1030/1036 fall-through of
 // try_data/try_closed, await_suspend register_all, await_resume on a real win).
 // ---------------------------------------------------------------------------
 
@@ -461,7 +461,7 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
 }
 
 // ---------------------------------------------------------------------------
-// recv_awaiter de-registration on frame destruction (channel.h:337-341): a recv
+// recv_awaiter de-registration on frame destruction (channel.h:342-346): a recv
 // parked in _recv_waiters whose coroutine frame is torn down must erase its
 // queue entry so a later send cannot write through the dangling &_result. Driven
 // deterministically as a `when_any` loser: the recv branch parks, the other
@@ -507,7 +507,7 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
 }
 
 // ---------------------------------------------------------------------------
-// send_awaiter de-registration on frame destruction (channel.h:180-182): a
+// send_awaiter de-registration on frame destruction (channel.h:182-184): a
 // parked sender (buffer full) whose frame is torn down must erase its
 // _send_waiters entry. Driven as a `when_any` loser: the send branch parks on a
 // full buffer, the cancellation branch wins, and the teardown destroys the

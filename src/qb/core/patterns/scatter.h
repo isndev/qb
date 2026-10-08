@@ -179,6 +179,8 @@ quorum_wake(quorum_state<E> &st) noexcept {
 // Parks the ask_quorum coroutine until the shared state is `done` (set by a collector).
 template <typename E>
 struct quorum_awaiter {
+    static constexpr char const *qb_suspension_kind = "ask quorum"; ///< suspension tracking (coroutine/tracking.h)
+
     std::shared_ptr<quorum_state<E>>  st;
     qb::io::async::cancellation_token token;    // the actor scope — a kill takes priority on resume
     std::coroutine_handle<>           parked{}; ///< handle stored in st->cont (cleared on teardown)
@@ -202,6 +204,7 @@ struct quorum_awaiter {
     }
     void
     await_suspend(std::coroutine_handle<> h) noexcept {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         st->cont = h; // collectors are already spawned; they will wake us (or already have)
         parked   = h;
     }

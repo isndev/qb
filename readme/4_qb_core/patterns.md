@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1482-1483,2218-2220, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
+<!-- src: qb/src/qb/core/Actor.h:1482-1483,2235-2237, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, qb/src/qb/io/async/io.h:312-318,343 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -450,13 +450,14 @@ init, or once it died. The child has its own `ActorId` and receives events norma
 ```cpp
 // src: derived from qb/tests/core/system/actor/actor-add.cpp
 auto helper = addRefActor<ChildHelper>(id());   // qb::ActorHandle<ChildHelper>
-push<Task>(helper.id(), Task{ .a = 2, .b = 3 }); // always safe — stashed if still Activating
+if (!helper.valid()) return;                    // terminal teardown refused creation
+push<Task>(helper.id(), Task{ .a = 2, .b = 3 }); // stashed if still Activating
 if (helper.ready())                              // sync-init child: ready at once
     helper->doSomethingDirect();                 // direct call only when active
 // async-init child: if (co_await helper.ready_async(context())) helper->serve();
 ```
 
-`helper.id()` is valid the instant `addRefActor` returns, so you can `push()` to it even before the
+Once `helper.valid()` succeeds, `helper.id()` is valid, so you can `push()` to it even before the
 child finishes an async `onInit()` (the event is stashed and replayed FIFO once it activates). Gate
 any **direct** method call on `helper.ready()`; never `operator->` a non-ready handle.
 
@@ -488,7 +489,7 @@ class Parent : public qb::Actor {
 public:
     qb::io::async::task<bool> onInit() override {
         _helper = addRefHandle<ChildHelper>(id());
-        if (!_helper)                               // onInit() failed inside the child
+        if (!_helper.valid())                       // creation refused during teardown
             co_return false;
         registerEvent<Result>(*this);
         registerEvent<qb::KillEvent>(*this);
@@ -496,7 +497,7 @@ public:
     }
 
     void dispatch(int a, int b) {
-        push<Task>(_helper.id(), Task{ .a = a, .b = b });  // id() is always safe (stashed if Activating)
+        push<Task>(_helper.id(), Task{ .a = a, .b = b });  // valid handle; stashed if Activating
     }
 
     void on(Result const &ev) {
@@ -516,7 +517,7 @@ public:
 | Member | Returns | Behavior |
 |---|---|---|
 | `valid()` | `bool` | True if the handle holds a valid `ActorId` (creation succeeded). |
-| `id()` | `qb::ActorId` | The referenced actor's id — valid immediately, even while the child is still Activating (always safe to `push()` to). |
+| `id()` | `qb::ActorId` | The referenced actor's id — valid after `valid()`, even while the child is still Activating (safe to `push()` to). |
 | `get()` | `T *` | Phase-aware: the live pointer **only if the actor is active** on the current core, else `nullptr` (while Activating, after a failed init, or once it died). |
 | `ready()` | `bool` | `get() != nullptr` — the child is active and safe to call directly. |
 | `ready_async(ctx, timeout = 5s)` | `task<bool>` | `co_await` until the (async-init) child becomes active or the timeout elapses. **The default `timeout` is `std::chrono::seconds{5}`** — a bare `co_await h.ready_async(context())` is bounded at 5 s, not unbounded. |
@@ -706,7 +707,7 @@ specific: `spawn` increments the very counter this handler is polling
 member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
 `qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
 the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
-<!-- src: qb/src/qb/core/VirtualCore.h:1611-1622, qb/src/qb/io/async/io.h:476-481 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1623-1628, qb/src/qb/io/async/io.h:476-481 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
@@ -736,7 +737,7 @@ context.
 - **Calling `handle->method()` on a non-active child.** `addRefActor<T>()` returns a phase-aware
   `qb::ActorHandle<T>` whose `get()`/`operator->` yield `nullptr` (debug `assert`) while the child is
   Activating, after a failed init, or once it died. Gate direct calls on `handle.ready()` (or
-  `co_await handle.ready_async(context())`); prefer sending to `handle.id()`, which is always safe.
+  `co_await handle.ready_async(context())`); prefer sending to `handle.id()` after checking `handle.valid()`.
 - **Cross-core `ActorHandle` use.** Handles are same-core only. Reach actors on other cores by
   `id()`.
 - **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors

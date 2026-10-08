@@ -155,6 +155,8 @@ public:
      * suspending (buffer has space or a receiver is waiting).
      */
     struct send_awaiter {
+        static constexpr char const *qb_suspension_kind = "channel send"; ///< suspension tracking (coroutine/tracking.h)
+
         channel                &ch;
         T                       value;
         bool                    _completed = false;
@@ -222,6 +224,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             // Channel was closed while we were queued or between await_ready()
             // and await_suspend() (cannot actually happen under the cooperative
             // model since no other code runs, but guard defensively).
@@ -309,6 +312,8 @@ public:
      * or the channel is closed (receive can complete without suspending).
      */
     struct recv_awaiter {
+        static constexpr char const *qb_suspension_kind = "channel recv"; ///< suspension tracking (coroutine/tracking.h)
+
         channel              &ch;
         std::optional<T>      _result;
         bool                  _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
@@ -365,6 +370,7 @@ public:
 
         void
         await_suspend(std::coroutine_handle<> h) {
+            ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
                 ch._buffer.pop_front();
@@ -662,6 +668,7 @@ public:
 
             void
             await_suspend(std::coroutine_handle<> h) {
+                ::qb::io::async::detail::track_suspension(h.address(), "channel recv");
                 if (state->resolved) {
                     schedule_via_current(h);
                     return;
@@ -757,6 +764,7 @@ public:
 
             void
             await_suspend(std::coroutine_handle<> h) {
+                ::qb::io::async::detail::track_suspension(h.address(), "channel send");
                 ch._send_waiters.push_back(send_waiter_entry{h, guard});
                 coro_scheduler().spawn(send_timer(guard, fired, h, timeout_ms));
             }
@@ -1157,6 +1165,8 @@ struct select_result {
  */
 template <typename... Ts>
 class channel_select_awaiter {
+    static constexpr char const *qb_suspension_kind = "channel select"; ///< suspension tracking (coroutine/tracking.h)
+
     using state_t = channel_select_state;
     std::shared_ptr<state_t>     _state;
     std::tuple<channel<Ts> *...> _channels;
@@ -1236,6 +1246,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         if (_state->resolved) {
             schedule_via_current(h);
             return;
@@ -1277,6 +1288,8 @@ select(channel<Ts> &...chs) {
  */
 template <typename T>
 class channel_select_vector_awaiter {
+    static constexpr char const *qb_suspension_kind = "channel select"; ///< suspension tracking (coroutine/tracking.h)
+
     using state_t = channel_select_state;
     std::shared_ptr<state_t>  _state;
     std::vector<channel<T> *> _channels;
@@ -1322,6 +1335,7 @@ public:
 
     void
     await_suspend(std::coroutine_handle<> h) {
+        ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         if (_state->resolved) {
             schedule_via_current(h);
             return;

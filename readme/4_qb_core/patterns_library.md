@@ -54,15 +54,15 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1459-1461`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1501`, `:2296-2300`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1515`, `:2313-2317`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1643,1663,1675,1684,1691,1699`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2175-2176,2189-2191,2218-2220`). **Never capture `this` past a `co_await`** — capture by
+  `qb/src/qb/core/Actor.h:1657,1677,1689,1698,1705,1713`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:2192-2193,2205-2207,2235-2237`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1463-1465`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:771-772`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1713`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  (`qb/src/qb/core/Actor.h:1727`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:794,813`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
@@ -77,7 +77,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
   `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1452-1456`).
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
-  (`qb/src/qb/core/patterns/request.h:256-260`).
+  (`qb/src/qb/core/patterns/request.h:262-266`).
 - **Run all pattern tests under `ASAN_OPTIONS=detect_leaks=0`** — cross-core asks leave a fixed,
   benign teardown residual (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
 
@@ -99,41 +99,41 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::Request<Resp>` | `struct Request : qb::AskEvent { using response_type = Resp; Resp response{}; }` | `request.h:74-78` |
-| `qb::ask` | `ask_operation<E> ask(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout)` | `request.h:268-272` |
-| `qb::ask_operation<E>` | the exchange as an awaitable in the awaiting frame — `co_await` yields `E`; converts to `task<E>` (rvalue) | `request.h:110-157` |
-| `qb::ask<E>` (emplace) | `ask_emplace_operation<E, Args...> ask(ScopedCoroContext ctx, ActorId target, qb::duration timeout, Args... args)` — `E` explicit, the request is constructed in the pipe slot | `request.h:301-305` |
-| `qb::ask_emplace_operation<E, Args...>` | the emplace form's operation — holds the arguments, builds `E` in the slot at `await_suspend()` | `request.h:170-218` |
-| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:408-415` |
-| `qb::deadline` | `struct deadline { std::uint64_t at_ns{0}; }` | `request.h:315-317` |
-| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:326-330` |
-| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:333-337` |
-| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:361-369` |
-| `qb::ask_by<E>` (emplace) | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, deadline dl, Args... args)` | `request.h:376-383` |
+| `qb::ask` | `ask_operation<E> ask(ScopedCoroContext ctx, ActorId target, E req, qb::duration timeout)` | `request.h:274-278` |
+| `qb::ask_operation<E>` | the exchange as an awaitable in the awaiting frame — `co_await` yields `E`; converts to `task<E>` (rvalue) | `request.h:110-160` |
+| `qb::ask<E>` (emplace) | `ask_emplace_operation<E, Args...> ask(ScopedCoroContext ctx, ActorId target, qb::duration timeout, Args... args)` — `E` explicit, the request is constructed in the pipe slot | `request.h:307-311` |
+| `qb::ask_emplace_operation<E, Args...>` | the emplace form's operation — holds the arguments, builds `E` in the slot at `await_suspend()` | `request.h:173-224` |
+| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:414-421` |
+| `qb::deadline` | `struct deadline { std::uint64_t at_ns{0}; }` | `request.h:321-323` |
+| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:332-336` |
+| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:339-343` |
+| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:367-375` |
+| `qb::ask_by<E>` (emplace) | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, deadline dl, Args... args)` | `request.h:382-389` |
 
 - `ask` stamps a fresh correlation id, `push_to`s the request, and `co_await`s a single custom
   awaiter that handles correlation, timeout and cancel-on-kill with no detached helper
-  (`request.h:268-272`). Returns `task<E>` resolving to the filled response event; throws
-  `timeout_error` / `cancelled_error` (`request.h:255-263`).
-- `ask<E>(ctx, target, timeout, args...)` is the **emplace** form (`request.h:301-305`): `E` is named
+  (`request.h:274-278`). Returns `task<E>` resolving to the filled response event; throws
+  `timeout_error` / `cancelled_error` (`request.h:261-269`).
+- `ask<E>(ctx, target, timeout, args...)` is the **emplace** form (`request.h:307-311`): `E` is named
   explicitly and the request is constructed from `args` directly in the outgoing pipe slot —
   `ctx.push_to<E>(target, args...)` returns the slot, and only the correlation id is stamped after.
   Every `qb::Event` is cache-line aligned, so the by-value form moves a ≥ 64-byte object twice
   before it reaches the pipe (the caller's temporary into the operation, the operation into the slot),
   and the first of those copies reads back with 16-byte loads the header fields the constructor
-  just wrote with narrow stores — a store-forwarding stall on every ask (`request.h:289-296`).
+  just wrote with narrow stores — a store-forwarding stall on every ask (`request.h:295-302`).
   `Args` are taken **by value** and moved: a `task` is lazy, so a reference parameter would name the
-  caller's temporaries at a moment they may already be gone (`request.h:281-283`). Prefer it when
+  caller's temporaries at a moment they may already be gone (`request.h:287-289`). Prefer it when
   the request is built from a handful of values; keep the by-value form for a request you already
   hold (retry loops, fan-out). `ask_by<E>(ctx, target, dl, args...)` is its deadline twin
-  (`request.h:376-383`).
+  (`request.h:382-389`).
   Every one of these pattern coroutines opens with `qb::io::async::pin_frame_copy(req)`: clang older than 22 lays
   a never-written by-value parameter out at the wrong alignment on x86-64 Linux and Intel macOS (LLVM
   issue 159571) — the shield, and the rule for a coroutine of your own, are in
-  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:225`, `coroutine/utils.h:376`). `qb::ask` itself
+  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:231`, `coroutine/utils.h:376`). `qb::ask` itself
   is no coroutine since 3.2: it returns the exchange as an awaitable that lives in the awaiting frame —
   `ask_operation<E>` holds the context, the target, the request and the timeout, engages the `ask_awaiter` in
-  place at `await_suspend()` and hands the reply over with one move (`request.h:110-157`, the emplace form's
-  `ask_emplace_operation` at `request.h:170-218`). Nothing is sent until it is awaited, a cancelled scope sends
+  place at `await_suspend()` and hands the reply over with one move (`request.h:110-160`, the emplace form's
+  `ask_emplace_operation` at `request.h:173-224`). Nothing is sent until it is awaited, a cancelled scope sends
   nothing, and it converts to `task<E>` (rvalue) where a task is needed — `task<E> t = qb::ask(...)`, an
   `emplace_back` into a `std::vector<task<E>>` (the `ask_all` shape), while the variadic `when_all` / `when_any` /
   `race` and `coro_with_timeout` take it as is (`combinators.h:66`). What that removed, per ask: a pooled frame
@@ -143,16 +143,16 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   type being exactly `task<E>`: a concept written that way silently selects a fallback.
 - `answer` is the responder helper. It first calls `self.resolve_ask(e)` (routing any reply to one of
   the responder's own pending asks, returning early if so), then sets `e.response = fn(e)` and
-  `reply()`s the same event back, preserving the correlation id (`request.h:408-415`). **`fn` must
+  `reply()`s the same event back, preserving the correlation id (`request.h:414-421`). **`fn` must
   not throw** — a throwing handler terminates the worker core; carry failure in the response payload
-  instead (`request.h:400-407`).
+  instead (`request.h:406-413`).
 - `deadline` is an **absolute** completion time (epoch nanoseconds). Thread one `deadline` through a
   chain of `ask_by` calls to bound the *whole* chain end-to-end; each hop gets only the time the
-  previous hop left (`request.h:308-317`, `:339-369`). `ask_by` throws `timeout_error` immediately,
-  sending nothing, if the budget is already spent (`request.h:363-368`).
+  previous hop left (`request.h:314-323`, `:345-375`). `ask_by` throws `timeout_error` immediately,
+  sending nothing, if the budget is already spent (`request.h:369-374`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1521-1537`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1535-1551`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -225,7 +225,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:268-272,408-415 and qb/src/qb/core/Actor.h:1521-1537 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1535-1551 -->
 
 ---
 
@@ -241,7 +241,7 @@ first `k`, or all under a concurrency cap.
 | `qb::ask_all` (all) | `task<std::vector<E>> ask_all(ScopedCoroContext, std::vector<ActorId> targets, E req, qb::duration timeout)` | `scatter.h:57-66` |
 | `qb::ask_all` (bounded) | `task<std::vector<E>> ask_all(…, qb::duration timeout, std::size_t max_in_flight)` | `scatter.h:111-123` |
 | `qb::ask_any` | `task<E> ask_any(ScopedCoroContext, std::vector<ActorId> targets, E req, qb::duration timeout)` | `scatter.h:141-151` |
-| `qb::ask_quorum` | `task<std::vector<E>> ask_quorum(ScopedCoroContext, std::vector<ActorId> targets, std::size_t k, E req, qb::duration timeout)` | `scatter.h:246-287` |
+| `qb::ask_quorum` | `task<std::vector<E>> ask_quorum(ScopedCoroContext, std::vector<ActorId> targets, std::size_t k, E req, qb::duration timeout)` | `scatter.h:249-290` |
 
 - **`ask_all`** asks every target with a copy of `req` and awaits **all** replies, returned in input
   order; built on `when_all`. Throws `timeout_error` if **any** target fails to reply in time
@@ -256,10 +256,10 @@ first `k`, or all under a concurrency cap.
 - **`ask_quorum`** asks every target and resolves with the **first `k`** successful replies, in
   completion order (`k` clamped to `[1, targets.size()]`; empty vector if `k == 0` or no targets).
   Throws `timeout_error` (carrying the first underlying error) once the quorum is provably
-  unreachable — i.e. `fail > total - need` (`scatter.h:223-287`). Surplus replies beyond `k` are
-  dropped (`scatter.h:237-240`). Internally it spawns one detached collector per target into a
+  unreachable — i.e. `fail > total - need` (`scatter.h:226-290`). Surplus replies beyond `k` are
+  dropped (`scatter.h:240-243`). Internally it spawns one detached collector per target into a
   shared `quorum_state`; the awaiter's destructor clears `st->cont` so a late collector cannot
-  resume a reclaimed frame (`scatter.h:153-219`).
+  resume a reclaimed frame (`scatter.h:153-222`).
 
 ### Example — bounded scatter (`ask_all` with a cap)
 
@@ -331,20 +331,20 @@ of a type within a time window.
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:174-184` |
-| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:204-221` |
+| `qb::ping` | `task<bool> ping(ScopedCoroContext ctx, ActorId target, qb::duration timeout = std::chrono::seconds{1})` | `discovery.h:177-187` |
+| `qb::require<_Actor>` | `task<std::vector<ActorId>> require(ScopedCoroContext ctx, qb::duration timeout = std::chrono::milliseconds{200})` | `discovery.h:207-224` |
 
 - **`ping`** sends a wildcard `PingEvent` (`type == 0`); any live actor replies. Returns `true` if
-  `target` replied within `timeout`, else `false` (`discovery.h:162-184`).
+  `target` replied within `timeout`, else `false` (`discovery.h:165-187`).
 - **`require<_Actor>`** broadcasts a typed `PingEvent` to every core and collects the `RequireEvent`
   replies for the whole window, returning the responders' ids (empty if none)
-  (`discovery.h:186-221`).
+  (`discovery.h:189-224`).
 - Replies are routed automatically by `Actor`'s default `on(RequireEvent&)` (which calls
   `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:674-689`). Both work
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
-  (`discovery.h:170-172`, `:194-198`). Throws `cancelled_error` on kill; never throws on timeout
+  (`discovery.h:173-175`, `:197-201`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
-  (`discovery.h:123-133`).
+  (`discovery.h:126-136`).
 
 ### Example
 
@@ -504,22 +504,22 @@ the asker drains them one at a time until end-of-stream.
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::StreamRequest<Chunk>` | `struct StreamRequest : qb::AskEvent { using chunk_type = Chunk; Chunk chunk{}; bool stream_done = false; }` | `streaming.h:59-64` |
-| `qb::stream<E>` | `class { stream(uint64_t, shared_ptr<…>, qb::duration); stream_next_awaiter<E> next(); }` (move-only) | `streaming.h:249-287` |
+| `qb::stream<E>` | `class { stream(uint64_t, shared_ptr<…>, qb::duration); stream_next_awaiter<E> next(); }` (move-only) | `streaming.h:252-290` |
 | `qb::stream_overflow_error` | `struct stream_overflow_error : std::runtime_error` | `streaming.h:90-93` |
-| `qb::ask_stream` | `stream<E> ask_stream(ScopedCoroContext, ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256)` | `streaming.h:308-328` |
-| `qb::yield_answer` | `void yield_answer(Actor &self, E const &request, typename E::chunk_type chunk)` | `streaming.h:338-345` |
-| `qb::end_stream` | `void end_stream(Actor &self, E const &request)` | `streaming.h:354-360` |
+| `qb::ask_stream` | `stream<E> ask_stream(ScopedCoroContext, ActorId target, E req, qb::duration timeout = std::chrono::seconds{5}, std::size_t capacity = 256)` | `streaming.h:311-331` |
+| `qb::yield_answer` | `void yield_answer(Actor &self, E const &request, typename E::chunk_type chunk)` | `streaming.h:341-348` |
+| `qb::end_stream` | `void end_stream(Actor &self, E const &request)` | `streaming.h:357-363` |
 
 - `ask_stream` sends the request (its `correlation_id` is the stream id) and returns a `stream<E>`.
   Drain it with `while (auto c = co_await s.next()) use(c->chunk);` — `next()` yields each chunk in
-  FIFO order, then `std::nullopt` at end-of-stream (`streaming.h:289-328`).
+  FIFO order, then `std::nullopt` at end-of-stream (`streaming.h:292-331`).
 - The responder pushes chunks with `yield_answer(self, request, chunk)` and signals completion with
-  `end_stream(self, request)` (`streaming.h:330-360`). Chunks are `AskEvent`s, so the asker routes
-  them via `resolve_ask(e)` in its `on(E&)` (`streaming.h:303-306`).
+  `end_stream(self, request)` (`streaming.h:333-363`). Chunks are `AskEvent`s, so the asker routes
+  them via `resolve_ask(e)` in its `on(E&)` (`streaming.h:306-309`).
 - `next()` throws `timeout_error` if no chunk arrives within the **per-chunk** timeout,
   `cancelled_error` on kill, and `stream_overflow_error` if the responder outran the buffer (a loud
-  failure, not a silent drop) (`streaming.h:271-281`, `:124-135`). Works inside `onInit()`
-  (`streaming.h:303-304`).
+  failure, not a silent drop) (`streaming.h:274-284`, `:124-135`). Works inside `onInit()`
+  (`streaming.h:306-307`).
 
 ### Example
 
@@ -798,7 +798,7 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1485-1501`,
+continuation registry (`qb/src/qb/core/Actor.h:1499-1515`,
 `qb/src/qb/core/Event.h:764-768`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
@@ -817,20 +817,20 @@ qb::io::async::task<bool> onInit() override {
 
 | Goal | Pattern | Entry point |
 |---|---|---|
-| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:270,410`) |
-| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:363,315`) |
+| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:276,416`) |
+| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:369,321`) |
 | Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:59`) |
 | Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:113`) |
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:143`) |
-| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:248`) |
-| Is an actor alive? | discovery | `qb::ping` (`discovery.h:175`) |
-| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:206`) |
+| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:251`) |
+| Is an actor alive? | discovery | `qb::ping` (`discovery.h:178`) |
+| Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:209`) |
 | Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:117,44`) |
 | Survive transient timeouts | resilience | `qb::ask_retry` (`resilience.h:427`) |
 | Fail fast when a dependency is down | resilience | `qb::ask_guarded` + `qb::CircuitBreaker` (`resilience.h:466,120`) |
 | Throttle call rate | resilience | `qb::rate_limiter` (`resilience.h:239`) |
 | Cap concurrent calls to a resource | resilience | `qb::bulkhead` (`resilience.h:331`) |
-| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:310,340,356`) |
+| One request, many replies | streaming | `qb::ask_stream` + `qb::yield_answer` / `qb::end_stream` (`streaming.h:313,343,359`) |
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:147,88`); `qb::supervision::watch` also restarts a child that died without `stop()` (`:56`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
@@ -843,7 +843,7 @@ qb::io::async::task<bool> onInit() override {
 
 - **`answer`'s `fn` must not throw.** A throwing actor handler terminates the worker core; there is no
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
-  carry failure in the response payload (`request.h:400-407`).
+  carry failure in the response payload (`request.h:406-413`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
   actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1463-1465`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
