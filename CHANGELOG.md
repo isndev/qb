@@ -273,6 +273,13 @@ policy.
 - **Activation deadline cancellation tolerates children added by a cancellation hook (Huly QB-968).**
   The activation map is now scanned by snapshotted actor ids and each entry is re-found before it is read:
   a hook that adds a child with suspended `onInit()` cannot invalidate a live map iterator.
+- **A rejected duplicate service cannot replace the live service's event subscription (Huly QB-261).**
+  Runtime `addRefActor<Service>()` checks the occupied or in-construction service ID before constructing another instance.
+  A constructor that registers a custom event therefore cannot leave the router pointing at the
+  destroyed duplicate; the existing service keeps receiving its events. If a constructor throws
+  after registering events, a loop callback or a death watch, the partial registrations and
+  pending self-kill are removed. An ordinary actor constructor that throws receives the same
+  cleanup; its ID remains reserved so already queued events cannot hit a replacement.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion

@@ -878,7 +878,7 @@ private:
      * @return Pointer to the newly created actor or nullptr if creation failed
      */
     template <typename _Actor, typename... _Init>
-    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init) noexcept;
+    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init);
     /*!
      * @brief Get a service actor of specified type
      * @tparam _ServiceActor Type of service actor to get
@@ -1034,6 +1034,13 @@ public:
      *         plain integers the core writes as it runs.
      */
     [[nodiscard]] CoreStats getCoreStats() const noexcept;
+
+private:
+    // A service constructor may add another service before either reaches `_actors`.
+    std::vector<ServiceId> _constructing_services;
+    // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
+    ActorId *_constructing_actor_id_out = nullptr;
+    void     __rollback_failed_admission__(ActorId id) noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1094,23 +1101,73 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 
 template <typename _Actor, typename... _Init>
 _Actor *
-VirtualCore::addReferencedActor(_Init &&...init) noexcept {
+VirtualCore::addReferencedActor(_Init &&...init) {
     // Cancellation/frame/payload destructors can call back into an actor while
     // this core is being destroyed. Refuse admission before allocating or
     // invoking a user constructor; no new frame may enter a dying scheduler.
     if (unlikely(_tearing_down))
         return nullptr;
-    // Route through the same allocation customization point used by TActorFactory so
-    // users who override qb::allocate_actor<_Actor> get consistent behaviour for
-    // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
-    auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
-    std::unique_ptr<_Actor> actor_ptr(raw_actor);
-    // Use the ActorProxy customization point so dynamically created actors get the
-    // same demangled name and typed id_type as factory-created ones.
-    ActorProxy::setTypeInfo<_Actor>(*raw_actor);
-    if (appendActor(std::move(actor_ptr), true).is_valid())
-        return raw_actor;
-    return nullptr;
+    auto construct = [&]() -> _Actor * {
+        // Route through the same allocation customization point used by TActorFactory so
+        // users who override qb::allocate_actor<_Actor> get consistent behaviour for
+        // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
+        auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+        std::unique_ptr<_Actor> actor_ptr(raw_actor);
+        // Use the ActorProxy customization point so dynamically created actors get the
+        // same demangled name and typed id_type as factory-created ones.
+        ActorProxy::setTypeInfo<_Actor>(*raw_actor);
+        if (appendActor(std::move(actor_ptr), true).is_valid())
+            return raw_actor;
+        return nullptr;
+    };
+
+    struct AdmissionGuard {
+        VirtualCore &core;
+        ActorId     &id;
+        ActorId     *previous_id_out;
+        bool         service;
+        bool         admitted = false;
+        ~AdmissionGuard() noexcept {
+            if (!admitted && id.is_valid())
+                core.__rollback_failed_admission__(id);
+            if (service)
+                core._constructing_services.pop_back();
+            else
+                core._constructing_actor_id_out = previous_id_out;
+        }
+    };
+
+    if constexpr (service_type<_Actor>) {
+        // A service's constructor may register custom events. Constructing a duplicate
+        // would replace the live service's router entry before appendActor rejects it,
+        // leaving a pointer to the destroyed duplicate behind.
+        const ServiceId sid      = _Actor::ServiceIndex;
+        bool            occupied = __actor_slot__(ActorId(sid, _index)) != nullptr;
+        for (ServiceId const constructing : _constructing_services)
+            occupied |= constructing == sid;
+        if (unlikely(occupied)) {
+            QB_LOG_CRIT("Error Cannot add Service Actor multiple times: " << typeid(_Actor).name());
+            return nullptr;
+        }
+        _constructing_services.push_back(sid);
+        ActorId        admission_id(sid, _index);
+        AdmissionGuard guard{*this, admission_id, nullptr, true};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        return actor;
+    } else {
+        // A failed ordinary constructor has no pointer to return, but Actor::Actor()
+        // already reserved an ID. Nested adds temporarily replace this output slot.
+        ActorId        admission_id    = ActorId::NotFound;
+        ActorId *const previous_id_out = _constructing_actor_id_out;
+        _constructing_actor_id_out     = &admission_id;
+        AdmissionGuard guard{*this, admission_id, previous_id_out, false};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        // Do not recycle a failed constructor's ID here: an event published from
+        // its body may still be queued and must not reach the next actor.
+        return actor;
+    }
 }
 
 template <typename _Actor>

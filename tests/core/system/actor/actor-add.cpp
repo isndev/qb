@@ -16,6 +16,7 @@
  *   - `addActor<>()` returns a valid `ActorId` (and a `ServiceActor`'s id is the deterministic 1);
  *   - `getService<T>()` identity: null before init, exactly `this` inside `onInit()`, non-null to a peer;
  *   - the `CoreInitializer::builder()` ordered `idList()` + its `valid()` flip on a duplicate service;
+ *   - a rejected dynamic duplicate service leaves the first service's custom subscription intact;
  *   - bad-core-index throws `std::range_error`; adding after `start()` throws `std::runtime_error`;
  *   - referenced actors (`addRefActor<>()`) propagate their child's init success/failure;
  *   - init-failure POLARITY, pinned to the SPECIFIC `qb::VirtualCore::Error` each path raises (the
@@ -235,6 +236,621 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
+}
+
+struct DuplicateServiceTag {};
+struct DistinctServiceTag {};
+struct ServicePoke : qb::Event {};
+
+std::atomic<int>  g_duplicate_service_ctors{0};
+std::atomic<int>  g_original_service_pokes{0};
+std::atomic<int>  g_rejected_service_pokes{0};
+std::atomic<int>  g_distinct_service_pokes{0};
+std::atomic<bool> g_duplicate_rejected{false};
+std::atomic<bool> g_original_still_registered{false};
+std::atomic<bool> g_distinct_service_accepted{false};
+
+class DuplicateProbeService : public qb::ServiceActor<DuplicateServiceTag> {
+    int _ordinal;
+
+public:
+    DuplicateProbeService()
+        : _ordinal(g_duplicate_service_ctors.fetch_add(1) + 1) {
+        registerEvent<ServicePoke>(*this);
+    }
+
+    void
+    on(ServicePoke &) {
+        if (_ordinal == 1)
+            g_original_service_pokes.fetch_add(1);
+        else
+            g_rejected_service_pokes.fetch_add(1);
+    }
+};
+
+class DistinctProbeService : public qb::ServiceActor<DistinctServiceTag> {
+public:
+    DistinctProbeService() {
+        registerEvent<ServicePoke>(*this);
+    }
+
+    void
+    on(ServicePoke &) {
+        g_distinct_service_pokes.fetch_add(1);
+    }
+};
+
+class DuplicateServiceAttempt : public qb::Actor {
+    qb::ActorId _service;
+
+public:
+    explicit DuplicateServiceAttempt(qb::ActorId service)
+        : _service(service) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        auto *const original  = getService<DuplicateProbeService>();
+        const auto  duplicate = addRefActor<DuplicateProbeService>();
+        g_duplicate_rejected.store(!duplicate.valid());
+        g_original_still_registered.store(original != nullptr && getService<DuplicateProbeService>() == original);
+        const auto distinct = addRefActor<DistinctProbeService>();
+        g_distinct_service_accepted.store(distinct.valid() && getService<DistinctProbeService>() == distinct.get());
+        push<ServicePoke>(_service);
+        if (distinct.valid()) {
+            push<ServicePoke>(distinct.id());
+            push<qb::KillEvent>(distinct.id());
+        }
+        push<qb::KillEvent>(_service);
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, RejectedDuplicateServicePreservesOriginalCustomSubscription) {
+    g_duplicate_service_ctors.store(0);
+    g_original_service_pokes.store(0);
+    g_rejected_service_pokes.store(0);
+    g_distinct_service_pokes.store(0);
+    g_duplicate_rejected.store(false);
+    g_original_still_registered.store(false);
+    g_distinct_service_accepted.store(false);
+
+    qb::Main   main;
+    const auto service = main.addActor<DuplicateProbeService>(0);
+    main.addActor<DuplicateServiceAttempt>(0, service);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_duplicate_rejected.load());
+    EXPECT_TRUE(g_original_still_registered.load());
+    EXPECT_TRUE(g_distinct_service_accepted.load());
+    EXPECT_EQ(g_duplicate_service_ctors.load(), 1);
+    EXPECT_EQ(g_original_service_pokes.load(), 1);
+    EXPECT_EQ(g_rejected_service_pokes.load(), 0);
+    EXPECT_EQ(g_distinct_service_pokes.load(), 1);
+}
+
+struct DefaultOnlyServiceTag {};
+std::atomic<int>  g_default_only_service_ctors{0};
+std::atomic<bool> g_default_only_duplicate_rejected{false};
+std::atomic<bool> g_default_only_original_alive{false};
+
+class DefaultOnlyService : public qb::ServiceActor<DefaultOnlyServiceTag> {
+public:
+    DefaultOnlyService() {
+        g_default_only_service_ctors.fetch_add(1);
+    }
+};
+
+class DefaultOnlyServiceAttempt : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        const auto original  = addRefActor<DefaultOnlyService>();
+        const auto duplicate = addRefActor<DefaultOnlyService>();
+        g_default_only_duplicate_rejected.store(original.valid() && !duplicate.valid());
+        g_default_only_original_alive.store(getService<DefaultOnlyService>() == original.get() && is_actor_alive(original.id()));
+        push<qb::KillEvent>(original.id());
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, RejectedDefaultOnlyServicePreservesOriginal) {
+    g_default_only_service_ctors.store(0);
+    g_default_only_duplicate_rejected.store(false);
+    g_default_only_original_alive.store(false);
+
+    qb::Main main;
+    main.addActor<DefaultOnlyServiceAttempt>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_default_only_duplicate_rejected.load());
+    EXPECT_TRUE(g_default_only_original_alive.load());
+    EXPECT_EQ(g_default_only_service_ctors.load(), 1);
+}
+
+struct ReentrantServiceTag {};
+struct ReentrantPoke : qb::Event {};
+std::atomic<int>  g_reentrant_service_ctors{0};
+std::atomic<int>  g_reentrant_first_pokes{0};
+std::atomic<bool> g_reentrant_nested_rejected{false};
+std::atomic<bool> g_reentrant_first_admitted{false};
+
+class ReentrantService : public qb::ServiceActor<ReentrantServiceTag> {
+    int _ordinal;
+
+public:
+    ReentrantService()
+        : _ordinal(g_reentrant_service_ctors.fetch_add(1) + 1) {
+        if (_ordinal == 1)
+            g_reentrant_nested_rejected.store(!addRefActor<ReentrantService>().valid());
+        registerEvent<ReentrantPoke>(*this);
+    }
+
+    void
+    on(ReentrantPoke &) {
+        if (_ordinal == 1)
+            g_reentrant_first_pokes.fetch_add(1);
+    }
+};
+
+class ReentrantServiceAttempt : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        const auto service = addRefActor<ReentrantService>();
+        g_reentrant_first_admitted.store(service.valid() && getService<ReentrantService>() == service.get());
+        const auto id = service.valid() ? service.id() : getService<ReentrantService>()->id();
+        push<ReentrantPoke>(id);
+        push<qb::KillEvent>(id);
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, ServiceConstructorCannotAdmitItsOwnTagRecursively) {
+    g_reentrant_service_ctors.store(0);
+    g_reentrant_first_pokes.store(0);
+    g_reentrant_nested_rejected.store(false);
+    g_reentrant_first_admitted.store(false);
+
+    qb::Main main;
+    main.addActor<ReentrantServiceAttempt>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_reentrant_service_ctors.load(), 1);
+    EXPECT_TRUE(g_reentrant_nested_rejected.load());
+    EXPECT_TRUE(g_reentrant_first_admitted.load());
+    EXPECT_EQ(g_reentrant_first_pokes.load(), 1);
+}
+
+struct ThrowOnceServiceTag {};
+struct ThrowOncePoke : qb::Event {};
+std::atomic<int>  g_throw_once_service_ctors{0};
+std::atomic<int>  g_throw_once_pokes{0};
+std::atomic<bool> g_throw_once_caught{false};
+std::atomic<bool> g_throw_once_retry_admitted{false};
+
+class ThrowOnceService : public qb::ServiceActor<ThrowOnceServiceTag> {
+public:
+    ThrowOnceService() {
+        registerEvent<ThrowOncePoke>(*this);
+        if (g_throw_once_service_ctors.fetch_add(1) == 0)
+            throw std::runtime_error("first service construction failed");
+    }
+
+    void
+    on(ThrowOncePoke &) {
+        g_throw_once_pokes.fetch_add(1);
+    }
+};
+
+class ThrowOnceNoRetryAttempt : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<ThrowOnceService>();
+        } catch (std::runtime_error const &) {
+            g_throw_once_caught.store(true);
+        }
+        push<ThrowOncePoke>(getServiceId<ThrowOnceServiceTag>(getIndex()));
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, ThrowingServiceConstructorRemovesItsCustomSubscription) {
+    g_throw_once_service_ctors.store(0);
+    g_throw_once_pokes.store(0);
+    g_throw_once_caught.store(false);
+
+    qb::Main main;
+    main.addActor<ThrowOnceNoRetryAttempt>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_throw_once_caught.load());
+    EXPECT_EQ(g_throw_once_service_ctors.load(), 1);
+    EXPECT_EQ(g_throw_once_pokes.load(), 0);
+}
+
+class ThrowOnceServiceAttempt : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<ThrowOnceService>();
+        } catch (std::runtime_error const &) {
+            g_throw_once_caught.store(true);
+        }
+        const auto retry = addRefActor<ThrowOnceService>();
+        g_throw_once_retry_admitted.store(retry.valid() && getService<ThrowOnceService>() == retry.get());
+        if (retry.valid()) {
+            push<ThrowOncePoke>(retry.id());
+            push<qb::KillEvent>(retry.id());
+        }
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, ThrowingServiceConstructorReleasesAdmissionReservation) {
+    g_throw_once_service_ctors.store(0);
+    g_throw_once_pokes.store(0);
+    g_throw_once_caught.store(false);
+    g_throw_once_retry_admitted.store(false);
+
+    qb::Main main;
+    main.addActor<ThrowOnceServiceAttempt>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_throw_once_caught.load());
+    EXPECT_TRUE(g_throw_once_retry_admitted.load());
+    EXPECT_EQ(g_throw_once_service_ctors.load(), 2);
+    EXPECT_EQ(g_throw_once_pokes.load(), 1);
+}
+
+struct ThrowingCallbackServiceTag {};
+std::atomic<int>  g_failed_service_callback_ticks{0};
+std::atomic<int>  g_callback_probe_ticks{0};
+std::atomic<bool> g_callback_service_throw_caught{false};
+
+class ThrowingCallbackService
+    : public qb::ServiceActor<ThrowingCallbackServiceTag>
+    , public qb::ICallback {
+public:
+    ThrowingCallbackService() {
+        registerCallback(*this);
+        throw std::runtime_error("service callback constructor failed");
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        g_failed_service_callback_ticks.fetch_add(1);
+    }
+};
+
+class CallbackAfterFailedService
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    CallbackAfterFailedService() {
+        registerCallback(*this);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<ThrowingCallbackService>();
+        } catch (std::runtime_error const &) {
+            g_callback_service_throw_caught.store(true);
+        }
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (g_callback_probe_ticks.fetch_add(1) + 1 == 2)
+            kill();
+    }
+};
+
+TEST(AddReferencedActor, ThrowingServiceConstructorRemovesItsCallback) {
+    g_failed_service_callback_ticks.store(0);
+    g_callback_probe_ticks.store(0);
+    g_callback_service_throw_caught.store(false);
+
+    qb::Main main;
+    main.addActor<CallbackAfterFailedService>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_callback_service_throw_caught.load());
+    EXPECT_EQ(g_callback_probe_ticks.load(), 2);
+    EXPECT_EQ(g_failed_service_callback_ticks.load(), 0);
+}
+
+struct ThrowingWatchServiceTag {};
+std::atomic<int>  g_watch_service_ctors{0};
+std::atomic<int>  g_replacement_down_events{0};
+std::atomic<int>  g_watch_probe_turns_after_target_death{0};
+std::atomic<bool> g_watch_target_destroyed{false};
+std::atomic<bool> g_watch_retry_admitted{false};
+std::atomic<bool> g_watch_throw_caught{false};
+std::atomic<int>  g_external_service_down_events{0};
+std::atomic<bool> g_external_down_reason_unknown{true};
+
+class WatchTarget : public qb::Actor {
+public:
+    ~WatchTarget() override {
+        g_watch_target_destroyed.store(true);
+    }
+};
+
+class ThrowingWatchService : public qb::ServiceActor<ThrowingWatchServiceTag> {
+public:
+    explicit ThrowingWatchService(qb::ActorId target) {
+        registerEvent<qb::DownEvent>(*this);
+        if (g_watch_service_ctors.fetch_add(1) == 0) {
+            watch(target);
+            throw std::runtime_error("service watch constructor failed");
+        }
+    }
+
+    void
+    on(qb::DownEvent const &) {
+        g_replacement_down_events.fetch_add(1);
+    }
+};
+
+class WatchAfterFailedService
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _target;
+    qb::ActorId _replacement;
+
+public:
+    explicit WatchAfterFailedService(qb::ActorId target)
+        : _target(target) {
+        registerCallback(*this);
+        registerEvent<qb::DownEvent>(*this);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        watch(getServiceId<ThrowingWatchServiceTag>(getIndex()));
+        try {
+            (void) addRefActor<ThrowingWatchService>(_target);
+        } catch (std::runtime_error const &) {
+            g_watch_throw_caught.store(true);
+        }
+        const auto replacement = addRefActor<ThrowingWatchService>(_target);
+        g_watch_retry_admitted.store(replacement.valid());
+        _replacement = replacement.id();
+        push<qb::KillEvent>(_target);
+        co_return true;
+    }
+
+    void
+    on(qb::DownEvent const &event) {
+        if (event.watched == getServiceId<ThrowingWatchServiceTag>(getIndex())) {
+            g_external_service_down_events.fetch_add(1);
+            if (event.reason != qb::DownReason::unknown)
+                g_external_down_reason_unknown.store(false);
+        }
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (g_watch_target_destroyed.load() && g_watch_probe_turns_after_target_death.fetch_add(1) + 1 == 2) {
+            if (_replacement.is_valid())
+                push<qb::KillEvent>(_replacement);
+            kill();
+        }
+    }
+};
+
+TEST(AddReferencedActor, ThrowingServiceConstructorWithdrawsDeathWatchBeforeRetry) {
+    g_watch_service_ctors.store(0);
+    g_replacement_down_events.store(0);
+    g_watch_probe_turns_after_target_death.store(0);
+    g_watch_target_destroyed.store(false);
+    g_watch_retry_admitted.store(false);
+    g_watch_throw_caught.store(false);
+    g_external_service_down_events.store(0);
+    g_external_down_reason_unknown.store(true);
+
+    qb::Main   main;
+    const auto target = main.addActor<WatchTarget>(0);
+    main.addActor<WatchAfterFailedService>(0, target);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_watch_service_ctors.load(), 2);
+    EXPECT_TRUE(g_watch_throw_caught.load());
+    EXPECT_TRUE(g_watch_retry_admitted.load());
+    EXPECT_TRUE(g_watch_target_destroyed.load());
+    EXPECT_GE(g_watch_probe_turns_after_target_death.load(), 2);
+    EXPECT_EQ(g_replacement_down_events.load(), 0);
+    EXPECT_EQ(g_external_service_down_events.load(), 1);
+    EXPECT_TRUE(g_external_down_reason_unknown.load());
+}
+
+struct OrdinaryPoisonPoke : qb::Event {};
+std::atomic<std::uint32_t> g_ordinary_poison_id{0};
+std::atomic<std::uint32_t> g_ordinary_nested_id{0};
+std::atomic<std::uint32_t> g_ordinary_healthy_id{0};
+std::atomic<int>           g_ordinary_poison_events{0};
+std::atomic<int>           g_ordinary_poison_callbacks{0};
+std::atomic<int>           g_ordinary_healthy_events{0};
+std::atomic<bool>          g_ordinary_poison_caught{false};
+
+class OrdinaryNested : public qb::Actor {};
+
+class OrdinaryPoison
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    OrdinaryPoison() {
+        g_ordinary_poison_id.store(static_cast<std::uint32_t>(id()));
+        const auto nested = addRefActor<OrdinaryNested>();
+        g_ordinary_nested_id.store(static_cast<std::uint32_t>(nested.id()));
+        registerEvent<OrdinaryPoisonPoke>(*this);
+        registerCallback(*this);
+        throw std::runtime_error("ordinary constructor failed");
+    }
+
+    void
+    on(OrdinaryPoisonPoke &) {
+        g_ordinary_poison_events.fetch_add(1);
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        g_ordinary_poison_callbacks.fetch_add(1);
+    }
+};
+
+class OrdinaryHealthy : public qb::Actor {
+public:
+    OrdinaryHealthy() {
+        g_ordinary_healthy_id.store(static_cast<std::uint32_t>(id()));
+        registerEvent<OrdinaryPoisonPoke>(*this);
+    }
+    void
+    on(OrdinaryPoisonPoke &) {
+        g_ordinary_healthy_events.fetch_add(1);
+    }
+};
+
+class OrdinaryPoisonDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<OrdinaryPoison>();
+        } catch (std::runtime_error const &) {
+            g_ordinary_poison_caught.store(true);
+            push<OrdinaryPoisonPoke>(qb::ActorId(g_ordinary_poison_id.load()));
+            push<qb::KillEvent>(qb::ActorId(g_ordinary_nested_id.load()));
+        }
+        const auto healthy = addRefActor<OrdinaryHealthy>();
+        if (healthy.valid())
+            push<qb::KillEvent>(healthy.id());
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, OrdinaryConstructorFailureClearsRegistrationsAndKeepsIdReserved) {
+    g_ordinary_poison_id.store(0);
+    g_ordinary_nested_id.store(0);
+    g_ordinary_healthy_id.store(0);
+    g_ordinary_poison_events.store(0);
+    g_ordinary_poison_callbacks.store(0);
+    g_ordinary_healthy_events.store(0);
+    g_ordinary_poison_caught.store(false);
+
+    qb::Main main;
+    main.addActor<OrdinaryPoisonDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_ordinary_poison_caught.load());
+    EXPECT_NE(g_ordinary_poison_id.load(), 0u);
+    EXPECT_NE(g_ordinary_nested_id.load(), 0u);
+    EXPECT_NE(g_ordinary_healthy_id.load(), 0u);
+    EXPECT_NE(g_ordinary_nested_id.load(), g_ordinary_poison_id.load());
+    EXPECT_NE(g_ordinary_healthy_id.load(), g_ordinary_poison_id.load());
+    EXPECT_EQ(g_ordinary_poison_events.load(), 0);
+    EXPECT_EQ(g_ordinary_poison_callbacks.load(), 0);
+    EXPECT_EQ(g_ordinary_healthy_events.load(), 0);
+}
+
+struct KillThenThrowServiceTag {};
+struct KillThenThrowPoke : qb::Event {};
+std::atomic<int>  g_kill_then_throw_ctors{0};
+std::atomic<int>  g_kill_then_throw_pokes{0};
+std::atomic<bool> g_kill_then_throw_retry_admitted{false};
+std::atomic<bool> g_kill_then_throw_retry_survived{false};
+
+class KillThenThrowService : public qb::ServiceActor<KillThenThrowServiceTag> {
+public:
+    KillThenThrowService() {
+        if (g_kill_then_throw_ctors.fetch_add(1) == 0) {
+            kill();
+            throw std::runtime_error("service killed before construction failed");
+        }
+        registerEvent<KillThenThrowPoke>(*this);
+    }
+
+    void
+    on(KillThenThrowPoke &) {
+        g_kill_then_throw_pokes.fetch_add(1);
+    }
+};
+
+class KillThenThrowDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _retry_id;
+
+public:
+    KillThenThrowDriver() {
+        registerCallback(*this);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        try {
+            (void) addRefActor<KillThenThrowService>();
+        } catch (std::runtime_error const &) {
+        }
+        const auto retry = addRefActor<KillThenThrowService>();
+        g_kill_then_throw_retry_admitted.store(retry.valid());
+        _retry_id = retry.id();
+        if (retry.valid())
+            push<KillThenThrowPoke>(retry.id());
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        g_kill_then_throw_retry_survived.store(_retry_id.is_valid() && is_actor_alive(_retry_id));
+        if (_retry_id.is_valid())
+            push<qb::KillEvent>(_retry_id);
+        kill();
+    }
+};
+
+TEST(AddReferencedActor, FailedServiceConstructorCannotKillItsReplacement) {
+    g_kill_then_throw_ctors.store(0);
+    g_kill_then_throw_pokes.store(0);
+    g_kill_then_throw_retry_admitted.store(false);
+    g_kill_then_throw_retry_survived.store(false);
+
+    qb::Main main;
+    main.addActor<KillThenThrowDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_kill_then_throw_ctors.load(), 2);
+    EXPECT_TRUE(g_kill_then_throw_retry_admitted.load());
+    EXPECT_TRUE(g_kill_then_throw_retry_survived.load());
+    EXPECT_EQ(g_kill_then_throw_pokes.load(), 1);
 }
 
 TEST(AddReferencedActor, ShouldReturnNullptrIfActorFailedToInit) {
