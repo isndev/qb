@@ -139,6 +139,7 @@ qb_add_test(MODULE qb-core TIER system NAME pubsub-dead-subscribers SOURCES patt
 
 # --- init (async onInit: state machine / stash / deadline / activation) ------
 qb_add_test(MODULE qb-core TIER system NAME init-lifecycle     SOURCES init/init-lifecycle.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine)
+qb_add_test(MODULE qb-core TIER system NAME handler-throw      SOURCES messaging/handler-throw.cpp DEPENDS ${PROJECT_NAME} LABELS messaging)
 qb_add_test(MODULE qb-core TIER system NAME init-ask-gate      SOURCES init/init-ask-gate.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME init-service-actor SOURCES init/init-service-actor.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-stash-lifetime SOURCES init/init-stash-lifetime.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)

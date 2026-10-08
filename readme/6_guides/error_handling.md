@@ -23,7 +23,7 @@ The single most consequential rule: **an uncaught exception does not crash one a
 
 ### The exception policy
 
-qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `src/qb/core/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`src/qb/core/Main.cpp`), which wraps the *entire* lifetime of the loop:
+qb has no per-actor recovery. The worker loop (`VirtualCore::__workflow__`, `src/qb/core/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks; an event-batch catch disposes the faulting event and the rest of an already-dequeued batch before rethrowing. `Main::start_thread` (`src/qb/core/Main.cpp`) catches that exception around the *entire* lifetime of the loop:
 
 ```cpp
 // src: qb/src/qb/core/Main.cpp (Main::start_thread, abridged)
@@ -48,12 +48,11 @@ This is a deliberate fail-stop design: a thrown exception signals that an invari
 
 ```mermaid
 flowchart TD
-    H["handler / on(LoopEvent) throws"] --> NOEX{"in a noexcept context?<br/>(push OOM · on(KillEvent) · …)"}
-    NOEX -- yes --> TERM["std::terminate — process aborts"]
-    NOEX -- no --> UW["stack unwinds out of VirtualCore::__workflow__"]
+    H["event handler / on(LoopEvent) throws"] --> UW["event batch disposed<br/>stack unwinds out of VirtualCore::__workflow__"]
     UW --> SC["caught one level up in Main::start_thread"]
     SC --> FLAG["runtime error recorded<br/>worker thread exits → every actor on that core stops"]
     FLAG --> OBS["Main::hasError() reports it after the run"]
+    OP["event constructor / pipe allocation throws inside push or send"] --> TERM["std::terminate — process aborts"]
 ```
 
 ### `noexcept` boundaries
@@ -69,14 +68,14 @@ Several framework operations are marked `noexcept` and therefore cannot signal f
 | `Actor::on(KillEvent const&)` | `void on(KillEvent const&) noexcept` | The default kill path is `noexcept`. |
 | `IProtocol::not_ok()` / `ok()` / `reset()` | all `noexcept` | `not_ok()`/`reset()` mutate state, `ok()` queries it; none can fail. |
 
-Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is dropped, not an error — the receiving core reports it as a **dead letter** (counted, logged, handed to its `DeadLetterHandler`), but the sender learns nothing (see [Failure modes at a glance](#failure-modes-at-a-glance) and [Dead letters](#dead-letters-what-reached-no-actor)). Second, if you override a handler the framework calls in a `noexcept` context, do not let it throw: an exception crossing a `noexcept` boundary is an immediate `std::terminate`, bypassing even the `start_thread` catch.
+Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is dropped, not an error — the receiving core reports it as a **dead letter** (counted, logged, handed to its `DeadLetterHandler`), but the sender learns nothing (see [Failure modes at a glance](#failure-modes-at-a-glance) and [Dead letters](#dead-letters-what-reached-no-actor)). Second, the base `Actor::on(KillEvent const&)` is itself `noexcept`, but a derived handler registered for that event dispatches through a throwing trampoline and follows the core's fail-stop policy. A user function explicitly declared `noexcept` still calls `std::terminate` if it throws.
 
 ### Failure modes at a glance
 
 | Failure | How it surfaces | Default behavior | Who observes it |
 |---|---|---|---|
 | Exception escapes a handler / `on(qb::LoopEvent const&)` | Stack unwind to `start_thread` | Worker thread exits; all actors on that core stop; internal runtime-error marker set | `Main::hasError()` after the run |
-| Exception in `noexcept` context (e.g. `push` OOM, throwing `on(KillEvent)`) | `std::terminate` | Process aborts | OS / crash handler |
+| Exception in `noexcept` context (e.g. `push` OOM, a user handler declared `noexcept`) | `std::terminate` | Process aborts | OS / crash handler |
 | `onInit()` returns `false` at runtime (`addRefActor`) | Actor not added | Actor destroyed immediately; never processes events | The code calling `addRefActor` (returns an invalid handle/id) |
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
@@ -460,7 +459,7 @@ Decision table:
 ## Pitfalls
 
 - **Letting an exception escape a handler.** It stops every actor on the core, not just the one that threw. Catch recoverable failures locally; reserve uncaught throws for genuinely unrecoverable invariant violations where stopping the core is acceptable.
-- **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path, a `noexcept` handler, or a `noexcept` override calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
+- **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path or a user handler declared `noexcept` calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
 - **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both publish a phase-appropriate error — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
 - **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination to the SENDER. A message to a dead or unknown `ActorId` is dropped — and since 3.3 reported as a dead letter by the core that received it — but nothing comes back. If delivery matters, design an explicit acknowledgement plus a timeout.
 - **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.

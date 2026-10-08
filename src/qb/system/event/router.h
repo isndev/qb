@@ -376,7 +376,7 @@ public:
      */
     template <bool _CleanEvent = true>
     void
-    route(_RawEvent &event) noexcept {
+    route(_RawEvent &event) {
         // C++20: use concept directly
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
@@ -388,12 +388,17 @@ public:
                 // invoke() re-checks is_alive(), so the snapshot stays valid.
                 static thread_local std::vector<_Handler *> bcast_snapshot;
                 const std::size_t                           base = bcast_snapshot.size();
+                struct RestoreSnapshot {
+                    std::vector<_Handler *> &entries;
+                    std::size_t              base;
+                    ~RestoreSnapshot() {
+                        entries.resize(base);
+                    }
+                } restore{bcast_snapshot, base};
                 _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
                 const std::size_t end = bcast_snapshot.size();
                 for (std::size_t i = base; i < end; ++i)
                     invoke(*bcast_snapshot[i], event);
-                bcast_snapshot.resize(base);
-
                 if constexpr (_CleanEvent)
                     dispose(event);
 
@@ -458,7 +463,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
     using _EventId   = typename _RawEvent::id_type;
     using _HandlerId = typename _RawEvent::id_handler_type;
 
-    using Trampoline = void (*)(void *, _RawEvent &) noexcept;
+    using Trampoline = void (*)(void *, _RawEvent &);
 
     struct Entry {
         void      *handler  = nullptr;
@@ -472,7 +477,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
      */
     template <typename _Handler>
     static void
-    dispatch_trampoline(void *opaque_handler, _RawEvent &event) noexcept {
+    dispatch_trampoline(void *opaque_handler, _RawEvent &event) {
         auto &handler = *static_cast<_Handler *>(opaque_handler);
         if constexpr (qb::has_is_alive<_RawEvent>) {
             if (handler.is_alive())
@@ -499,7 +504,7 @@ public:
      */
     template <bool _CleanEvent = false>
     void
-    route(_RawEvent &event) const noexcept {
+    route(_RawEvent &event) const {
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             // The broadcast walk is out of line: inlined here, its thread-local snapshot vector
             // and loop made the unicast path -- every event of a ping-pong -- a function with a
@@ -543,9 +548,16 @@ public:
      */
     template <bool _CleanEvent>
     QB_NOINLINE QB_COLD void
-    route_broadcast(_RawEvent &event) const noexcept {
+    route_broadcast(_RawEvent &event) const {
         static thread_local std::vector<Entry> bcast_snapshot;
         const std::size_t                      base = bcast_snapshot.size();
+        struct RestoreSnapshot {
+            std::vector<Entry> &entries;
+            std::size_t         base;
+            ~RestoreSnapshot() {
+                entries.resize(base);
+            }
+        } restore{bcast_snapshot, base};
         _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
         const std::size_t end = bcast_snapshot.size();
         for (std::size_t i = base; i < end; ++i) {
@@ -557,8 +569,6 @@ public:
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }
-        bcast_snapshot.resize(base);
-
         if constexpr (_CleanEvent)
             dispose(event);
     }

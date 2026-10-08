@@ -26,6 +26,7 @@
 #include <atomic>
 #include <climits>
 #include <cstddef>
+#include <exception>
 #include <new>
 #include <ostream>
 #include <thread>
@@ -133,7 +134,60 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     }(static_cast<std::tuple<detail::WatchRequest, detail::UnwatchRequest, detail::WatchDown, detail::CoreStopping> *>(nullptr));
 }
 
-VirtualCore::~VirtualCore() noexcept = default;
+VirtualCore::~VirtualCore() noexcept {
+    // This runs while Main still keeps the owning-thread TLS context, router,
+    // callback/kill/deadline tables and pipes alive. Member destruction alone
+    // runs in the wrong order for an actor destructor that uses the core.
+    for (auto &actor : _actors)
+        if (actor)
+            actor->__cancel_coro_scope__();
+
+    // A suspended onInit frame must die before its actor. Its stash owns raw
+    // event bytes, whose payloads need the router's type-erased disposer.
+    for (auto &[id, activation] : _activating) {
+        for (auto &buckets : activation.stash)
+            _router.dispose(*reinterpret_cast<Event *>(buckets.data()));
+    }
+    _activating.clear();
+    _dying_with_frame.clear();
+
+    // Cancellation may have queued coroutine resumes. Destroy the frames and
+    // withdraw loop watchers while their actors are still alive. In particular,
+    // start(false) leaves the thread-local listener in the caller's thread.
+    auto &listener = io::async::listener::current;
+    listener.reset_coro_scheduler();
+    listener.clear();
+
+    // Destructors can kill peers or create a referenced child. Re-scan until
+    // every actor has passed through removeActor's cancellation and watch path.
+    while (_actor_count != 0) {
+        for (auto &actor : _actors) {
+            if (actor) {
+                const ActorId id = actor->id();
+                removeActor(id, DownReason::core_stopped);
+                break; // removeActor may resize _actors from user teardown
+            }
+        }
+    }
+
+    // Pipes contain placement-constructed events. Freeing their segments alone
+    // loses non-trivial payloads (including a self-push from failed onInit).
+    for (auto &pipe : _pipes) {
+        for (auto segment = pipe.front(); !segment.empty(); segment = pipe.front()) {
+            auto       *cur = segment.data();
+            auto *const end = cur + segment.size();
+            while (cur < end) {
+                auto      &event = *reinterpret_cast<Event *>(cur);
+                const auto width = event.bucket_size;
+                if (unlikely(width == 0))
+                    break; // malformed width: no safe way to find following events
+                _router.dispose(event);
+                cur += width;
+            }
+            pipe.pop_front();
+        }
+    }
+}
 
 void
 VirtualCore::__set_stop_token__(qb::stop_token token) noexcept {
@@ -227,13 +281,31 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                 continue;
             }
         }
-        _router.route(*event, [this](auto &event) {
-            // No actor on this core registered the type. A broadcast reaching such a core is
-            // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
-            // handles no such event, or it is not there at all.
-            if (!event.getDestination().is_broadcast())
-                __dead_letter__(event, __undelivered_reason__(event.getDestination()));
-        });
+        try {
+            _router.route(*event, [this](auto &event) {
+                // No actor on this core registered the type. A broadcast reaching such a core is
+                // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
+                // handles no such event, or it is not there at all.
+                if (!event.getDestination().is_broadcast())
+                    __dead_letter__(event, __undelivered_reason__(event.getDestination()));
+            });
+        } catch (...) {
+            // A handler exception may leave this batch only after its remaining
+            // events are disposed. The faulting and later events still own their
+            // payloads. A reply/forward marks the original alive and
+            // transfers that ownership, so do not dispose that one twice.
+            if (!event->is_alive())
+                _router.dispose(*event);
+            for (i += width; i < nb_events;) {
+                auto &pending = *reinterpret_cast<Event *>(events.data() + i);
+                if (unlikely(pending.bucket_size == 0))
+                    break;
+                if (!pending.is_alive())
+                    _router.dispose(pending);
+                i += pending.bucket_size;
+            }
+            throw;
+        }
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += width;
         i += width;
@@ -266,7 +338,12 @@ VirtualCore::__receive__() {
     if (!_self_pipe.empty()) {
         auto fence = _self_pipe.mark();
         for (auto run = _self_pipe.front(fence); !run.empty(); run = _self_pipe.front(fence)) {
-            __receive_events__(run);
+            try {
+                __receive_events__(run);
+            } catch (...) {
+                _self_pipe.pop_front(fence); // the faulting run was disposed by __receive_events__
+                throw;
+            }
             _self_pipe.pop_front(fence);
         }
     }
@@ -670,7 +747,7 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
 }
 
 void
-VirtualCore::__pump_activations__() noexcept {
+VirtualCore::__pump_activations__() {
     if (likely(_activating.empty()))
         return;
     const auto now = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
@@ -745,12 +822,22 @@ VirtualCore::__pump_activations__() noexcept {
         // Success: flip Active, then replay the stashed inbound unicast FIFO.
         actor->_activated = true;
         QB_LOG_VERB(*actor << " activated");
-        for (auto &buckets : act.stash) {
-            auto *ev = reinterpret_cast<Event *>(buckets.data());
-            _router.route(*ev, [this](auto &e) {
-                if (!e.getDestination().is_broadcast())
-                    __dead_letter__(e, __undelivered_reason__(e.getDestination()));
-            });
+        for (std::size_t i = 0; i < act.stash.size(); ++i) {
+            auto &buckets = act.stash[i];
+            auto *ev      = reinterpret_cast<Event *>(buckets.data());
+            try {
+                _router.route(*ev, [this](auto &e) {
+                    if (!e.getDestination().is_broadcast())
+                        __dead_letter__(e, __undelivered_reason__(e.getDestination()));
+                });
+            } catch (...) {
+                if (!ev->is_alive())
+                    _router.dispose(*ev);
+                for (++i; i < act.stash.size(); ++i)
+                    _router.dispose(*reinterpret_cast<Event *>(act.stash[i].data()));
+                __fire_activation_waiters__(act, false);
+                throw;
+            }
         }
         // After the replay: a `ready_async` waiter resumes (next pass, through the scheduler)
         // to an actor that has already seen everything queued for it while it was Activating.
@@ -1491,7 +1578,7 @@ VirtualCore::__unregister_watch__(ActorId const target, ActorId const watcher) n
 }
 
 void
-VirtualCore::__on_watch_down__(ActorId const watcher, ActorId const target, DownReason const reason, std::uint64_t const ticket) noexcept {
+VirtualCore::__on_watch_down__(ActorId const watcher, ActorId const target, DownReason const reason, std::uint64_t const ticket) {
     const auto it = _watching.find(watcher);
     if (it == _watching.end() || std::erase_if(it->second, [&](WatchEntry const &w) { return w.peer == target && w.ticket == ticket; }) == 0)
         return; // withdrawn by unwatch(), answered already, or its watcher is gone

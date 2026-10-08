@@ -413,17 +413,30 @@ Main::~Main() noexcept {
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto &initializer = params.initializer;
-    // Death watch (Huly QB-51): once this core is marked stopped (`exit_guard`) and destroyed with
-    // its actors, whatever ended it, tell the cores still running -- if a watch ever crossed cores.
+    // Death watch (Huly QB-51): after this core is destroyed with its actors,
+    // mark it stopped and tell the cores still running -- if a watch ever crossed cores.
     // Declared first, so it runs last.
     struct StopNotice {
         SharedCoreCommunication &com;
         CoreId                   index;
+        CoreId                   resolved_index;
         ~StopNotice() {
+            // Publish only after the stack core has destroyed its actors. A late
+            // death watch must not report core_stopped while a watched actor's
+            // destructor is still running on this thread.
+            com.mark_core_stopped(resolved_index);
             VirtualCore::__announce_stop__(com, index);
         }
-    } stop_notice{params.shared_com, initializer.getIndex()};
+    } stop_notice{params.shared_com, initializer.getIndex(), 0};
+    // The actor destructors in VirtualCore's terminal teardown still need the
+    // owning-thread context. This guard precedes `core`, hence runs after it.
+    struct ThreadContextGuard {
+        ~ThreadContextGuard() {
+            VirtualCore::_handler = nullptr;
+        }
+    } thread_context_guard;
     VirtualCore core(initializer.getIndex(), params.shared_com);
+    stop_notice.resolved_index = core._resolved_index;
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.
     core.__set_stop_token__(params.stop_token);
@@ -433,17 +446,10 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     core._dead_letter_handler = std::move(initializer._dead_letter_handler); // before any actor runs (Huly QB-163)
     core._pass_timing         = initializer.getPassTiming();                 // read once, by __workflow__ (Huly QB-165)
 
-    // Publish this core as stopped on EVERY exit from here on — including an
-    // exception escaping a callback / IO handler inside __workflow__. Normally
-    // __workflow__ marks itself stopped at its tail, but on a throw that tail is
-    // skipped, so peers keep treating the crashed core as live and the shutdown
-    // residual drain (which waits for every core's stopped flag) hangs
-    // Main::join() forever. mark_core_stopped is an idempotent release store on
-    // this core's own thread, so the normal in-workflow call is unaffected.
+    // Withdraw the listener on every exit before the core's terminal teardown.
+    // StopNotice publishes stopped only after that teardown is complete.
     struct ExitGuard {
-        SharedCoreCommunication &com;
-        CoreId                   idx;
-        VirtualCore             &core;
+        VirtualCore &core;
         ~ExitGuard() {
             // Withdraw the io loop the core published to its mailbox (`VirtualCore::__init__`)
             // before this thread's `listener::current` is destroyed: a producer that saw the
@@ -451,14 +457,8 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             // mailbox mutex, so a `wake()` already in flight completes first. Idempotent, and
             // harmless when init never got as far as publishing.
             core._mail_box.detach_loop();
-            com.mark_core_stopped(idx);
-            // `core` is a stack local; leaving `_handler` pointing at it dangles
-            // once this returns. Matters for start(false), where the caller's own
-            // thread ran start_thread and may touch the framework afterwards (an
-            // Actor ctor only asserts non-null). Fires on every exit path.
-            VirtualCore::_handler = nullptr;
         }
-    } exit_guard{params.shared_com, core._resolved_index, core};
+    } exit_guard{core};
 
     bool entered_workflow = false;
     try {

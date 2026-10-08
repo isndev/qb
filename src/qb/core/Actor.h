@@ -384,7 +384,7 @@ class Actor : nocopy {
      *          / `unregisterEvent`, read only by the core's `DefaultEventResolver<E>` on the owning
      *          thread; all five are nullptr for an actor built with `qb::no_default_events`.
      */
-    using DefaultDispatch = void (*)(Actor &, Event &) noexcept;
+    using DefaultDispatch = void (*)(Actor &, Event &);
     std::array<DefaultDispatch, std::tuple_size_v<default_events_t>> _default_on{};
 
     /**

@@ -304,7 +304,7 @@ private:
      */
     template <typename _Actor, typename _Event>
     static void
-    default_trampoline(Actor &base, Event &raw) noexcept {
+    default_trampoline(Actor &base, Event &raw) {
         auto &actor = static_cast<_Actor &>(base);
         if (actor.is_alive())
             actor.on(reinterpret_cast<_Event &>(raw));
@@ -339,7 +339,7 @@ private:
         VirtualCore const &_core;
 
         static void
-        dispatch(Actor &actor, _Event &event) noexcept {
+        dispatch(Actor &actor, _Event &event) {
             if (auto *const fn = actor._default_on[static_cast<std::size_t>(k)]; likely(fn != nullptr)) [[likely]]
                 fn(actor, event);
             else [[unlikely]]
@@ -358,13 +358,19 @@ private:
             if (dest.is_broadcast()) {
                 static thread_local std::vector<Actor *> snapshot;
                 const std::size_t                        base = snapshot.size();
+                struct RestoreSnapshot {
+                    std::vector<Actor *> &entries;
+                    std::size_t           base;
+                    ~RestoreSnapshot() {
+                        entries.resize(base);
+                    }
+                } restore{snapshot, base};
                 for (auto const &slot : _core._actors)
                     if (Actor *const actor = slot.get())
                         snapshot.push_back(actor);
                 const std::size_t end = snapshot.size();
                 for (std::size_t i = base; i < end; ++i)
                     dispatch(*snapshot[i], event);
-                snapshot.resize(base);
             } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
                 dispatch(*actor, event);
             } else [[unlikely]] {
@@ -828,7 +834,7 @@ private:
     QB_NOINLINE QB_COLD void __unregister_watch__(ActorId target, ActorId watcher) noexcept;
     /// On the watcher's core: the answer to a watch (`detail::WatchDown`) -- close the watch and
     /// deliver its `DownEvent`, or drop the answer when that watch is not open any more.
-    QB_NOINLINE QB_COLD void __on_watch_down__(ActorId watcher, ActorId target, DownReason reason, std::uint64_t ticket) noexcept;
+    QB_NOINLINE QB_COLD void __on_watch_down__(ActorId watcher, ActorId target, DownReason reason, std::uint64_t ticket);
     /// On every core still running: `core` has stopped -- answer the watches still open on it.
     QB_NOINLINE QB_COLD void __on_core_stopping__(CoreId core) noexcept;
     /// After a core's thread is done with it -- the core marked stopped, then destroyed with its
@@ -844,7 +850,7 @@ private:
     /// Fire -- unlinked first -- every `ready_async` waiter of `act` with the outcome `ok`.
     static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
-    void __pump_activations__() noexcept;
+    void __pump_activations__();
     /// Cold (the signal generation moved): one `SignalEvent` per signal raised since this core's last
     /// scan, in ascending signum order, and the cooperative stop's synthetic SIGINT once. Returns the
     /// generation scanned, for the pass's register copy.

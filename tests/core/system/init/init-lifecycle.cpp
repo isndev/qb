@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -181,6 +182,107 @@ TEST(InitLifecycle, SyncOnInitReturnsFalseWithoutCoAwait) {
     main.join();
     EXPECT_TRUE(main.hasError());              // initial-actor sync init failure aborts start
     EXPECT_TRUE(g_syncfalse_destroyed.load()); // actor removed
+}
+
+// Startup failure leaves this actor owned by the core. Its destructor runs on
+// the core thread and may use the same context as a normally reaped actor.
+std::atomic<qb::CoreId> g_failure_destructor_core{qb::MaxCores};
+
+class CoreAwareFailedInit final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        co_return false;
+    }
+
+    ~CoreAwareFailedInit() final {
+        g_failure_destructor_core.store(getIndex(), std::memory_order_relaxed);
+    }
+};
+
+TEST(InitLifecycle, FailedStartupKeepsCoreAvailableToActorDestructor) {
+    g_failure_destructor_core.store(qb::MaxCores, std::memory_order_relaxed);
+    qb::Main main;
+    main.addActor<CoreAwareFailedInit>(0);
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_failure_destructor_core.load(std::memory_order_relaxed), 0);
+}
+
+std::atomic<int> g_queued_payload_destroyed{0};
+
+struct CountPayloadDeletion {
+    void
+    operator()(int *ptr) const noexcept {
+        ++g_queued_payload_destroyed;
+        delete ptr;
+    }
+};
+
+struct QueuedOwnedEvent final : qb::Event {
+    std::unique_ptr<int, CountPayloadDeletion> payload;
+
+    explicit QueuedOwnedEvent(std::unique_ptr<int, CountPayloadDeletion> value)
+        : payload(std::move(value)) {}
+};
+
+class QueuesBeforeFailedInit final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        push<QueuedOwnedEvent>(id(), std::unique_ptr<int, CountPayloadDeletion>(new int(1)));
+        co_return false;
+    }
+};
+
+TEST(InitLifecycle, FailedStartupDisposesQueuedSelfEventPayload) {
+    g_queued_payload_destroyed.store(0);
+    qb::Main main;
+    main.addActor<QueuesBeforeFailedInit>(0);
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_queued_payload_destroyed.load(), 1);
+}
+
+std::atomic<qb::CoreId> g_tick_failure_destructor_core{qb::MaxCores};
+std::atomic<int>        g_tick_calls{0};
+
+class ThrowsFromTick final
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) override {
+        ++g_tick_calls;
+        push<QueuedOwnedEvent>(id(), std::unique_ptr<int, CountPayloadDeletion>(new int(2)));
+        throw std::runtime_error("tick failed after owning an event");
+    }
+
+    ~ThrowsFromTick() final {
+        g_tick_failure_destructor_core.store(getIndex(), std::memory_order_relaxed);
+    }
+};
+
+TEST(InitLifecycle, ThrowingTickTearsDownActorAndQueuedPayload) {
+    g_tick_calls.store(0);
+    g_tick_failure_destructor_core.store(qb::MaxCores, std::memory_order_relaxed);
+    g_queued_payload_destroyed.store(0);
+    qb::Main main;
+    main.addActor<ThrowsFromTick>(0);
+    main.start(false);
+    main.join();
+    EXPECT_TRUE(main.hasError());
+    EXPECT_EQ(g_tick_calls.load(), 1);
+    EXPECT_EQ(g_tick_failure_destructor_core.load(std::memory_order_relaxed), 0);
+    EXPECT_EQ(g_queued_payload_destroyed.load(), 1);
 }
 
 std::atomic<bool> g_syncthrow_destroyed{false};
