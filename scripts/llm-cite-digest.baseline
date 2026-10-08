@@ -39,11 +39,11 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:844-845	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:853-854	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.h:1113-1136	b36934211a5d	template <typename _ServiceActor>
-llm/qb.llm.api.md	VirtualCore.h:1574-1574	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1574-1575	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1588-1588	0a7c96426fa0	Actor::spawn(Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1588-1590	b009dc2efdb7	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1153-1176	b36934211a5d	template <typename _ServiceActor>
+llm/qb.llm.api.md	VirtualCore.h:1614-1614	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1614-1615	2f1a9c27924d	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1628-1628	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1628-1630	b009dc2efdb7	Actor::spawn(Func &&func) const {
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
@@ -112,9 +112,9 @@ llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** 
 llm/qb.llm.md	VirtualCore.cpp:1266-1273	9419691a00a7	VirtualCore::time() const noexcept {
 llm/qb.llm.md	VirtualCore.cpp:1493-1512	8fb16371faf9	void
 llm/qb.llm.md	VirtualCore.cpp:1558-1586	7a659f6f6e11	void
-llm/qb.llm.md	VirtualCore.h:1113-1136	b36934211a5d	template <typename _ServiceActor>
-llm/qb.llm.md	VirtualCore.h:1574-1574	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1588-1588	0a7c96426fa0	Actor::spawn(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1153-1176	b36934211a5d	template <typename _ServiceActor>
+llm/qb.llm.md	VirtualCore.h:1614-1614	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1628-1628	0a7c96426fa0	Actor::spawn(Func &&func) const {
 llm/qb.llm.md	VirtualCore.h:998-1010	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	async/io.h:64-69	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:84-85	bc5b8adc7b00	base()

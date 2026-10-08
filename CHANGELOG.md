@@ -232,6 +232,11 @@ policy.
 
 ### Fixed
 
+- **A rejected duplicate service cannot replace the live service's event subscription (Huly QB-261).**
+  Runtime `addRefActor<Service>()` checks the occupied or in-construction service ID before constructing another instance.
+  A constructor that registers a custom event therefore cannot leave the router pointing at the
+  destroyed duplicate; the existing service keeps receiving its events. If a constructor throws
+  after registering events, a loop callback or a death watch, admission is released and the partial registrations are removed.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion

@@ -860,7 +860,7 @@ private:
      * @return Pointer to the newly created actor or nullptr if creation failed
      */
     template <typename _Actor, typename... _Init>
-    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init) noexcept;
+    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init);
     /*!
      * @brief Get a service actor of specified type
      * @tparam _ServiceActor Type of service actor to get
@@ -1016,6 +1016,10 @@ public:
      *         plain integers the core writes as it runs.
      */
     [[nodiscard]] CoreStats getCoreStats() const noexcept;
+
+private:
+    // A service constructor may add another service before either reaches `_actors`.
+    std::vector<ServiceId> _constructing_services;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1076,18 +1080,54 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 
 template <typename _Actor, typename... _Init>
 _Actor *
-VirtualCore::addReferencedActor(_Init &&...init) noexcept {
-    // Route through the same allocation customization point used by TActorFactory so
-    // users who override qb::allocate_actor<_Actor> get consistent behaviour for
-    // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
-    auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
-    std::unique_ptr<_Actor> actor_ptr(raw_actor);
-    // Use the ActorProxy customization point so dynamically created actors get the
-    // same demangled name and typed id_type as factory-created ones.
-    ActorProxy::setTypeInfo<_Actor>(*raw_actor);
-    if (appendActor(std::move(actor_ptr), true).is_valid())
-        return raw_actor;
-    return nullptr;
+VirtualCore::addReferencedActor(_Init &&...init) {
+    auto construct = [&]() -> _Actor * {
+        // Route through the same allocation customization point used by TActorFactory so
+        // users who override qb::allocate_actor<_Actor> get consistent behaviour for
+        // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
+        auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+        std::unique_ptr<_Actor> actor_ptr(raw_actor);
+        // Use the ActorProxy customization point so dynamically created actors get the
+        // same demangled name and typed id_type as factory-created ones.
+        ActorProxy::setTypeInfo<_Actor>(*raw_actor);
+        if (appendActor(std::move(actor_ptr), true).is_valid())
+            return raw_actor;
+        return nullptr;
+    };
+
+    if constexpr (service_type<_Actor>) {
+        // A service's constructor may register custom events. Constructing a duplicate
+        // would replace the live service's router entry before appendActor rejects it,
+        // leaving a pointer to the destroyed duplicate behind.
+        const ServiceId sid      = _Actor::ServiceIndex;
+        bool            occupied = __actor_slot__(ActorId(sid, _index)) != nullptr;
+        for (ServiceId const constructing : _constructing_services)
+            occupied |= constructing == sid;
+        if (unlikely(occupied)) {
+            QB_LOG_CRIT("Error Cannot add Service Actor multiple times: " << typeid(_Actor).name());
+            return nullptr;
+        }
+        _constructing_services.push_back(sid);
+        struct AdmissionGuard {
+            VirtualCore &core;
+            ServiceId    sid;
+            bool         admitted = false;
+            ~AdmissionGuard() noexcept {
+                // A constructor or failed init can leave events, callbacks or watches.
+                // The admission check ruled out an earlier owner of this id.
+                if (!admitted) {
+                    core.__unregisterCallback(ActorId(sid, core._index));
+                    core.unregisterEvents(ActorId(sid, core._index));
+                    core.__on_actor_down__(ActorId(sid, core._index), DownReason::init_failed);
+                }
+                core._constructing_services.pop_back();
+            }
+        } guard{*this, sid};
+        auto *const actor = construct();
+        guard.admitted    = actor != nullptr;
+        return actor;
+    }
+    return construct();
 }
 
 template <typename _Actor>
