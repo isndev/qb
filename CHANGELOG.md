@@ -232,6 +232,12 @@ policy.
 
 ### Fixed
 
+- **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
+  A producer counted completion after publishing the final ready slot, so the consumer could
+  retire and free the 32,768-record Buffer before that producer touched its counter. Completion
+  now precedes the ready publication, which is the producer's last access to that Buffer. A
+  deterministic ASan test catches the former use-after-free; rollover, a delayed earlier
+  producer and concurrent producers verify the guaranteed delivery contract.
 - **A pre-loop `Main::start()` failure joins its workers before releasing their resources (Huly QB-259).**
   The startup error flag used to let `start(true)` return while a worker was still tearing down; `_is_running`
   became false, so `~Main()` skipped its explicit join and member destruction freed shared mailboxes before the

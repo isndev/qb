@@ -131,16 +131,16 @@ qb::io::async::abandoned_coroutine_frames_total() noexcept {
 // deliberate:
 //
 //   * a log file is created in the process's CURRENT WORKING DIRECTORY. The path is the fixed
-//     relative `"./qb"`, to which nanolog appends `.<n>.log` (nanolog.cpp:606-609), so the file
+//     relative `"./qb"`, to which nanolog appends `.<n>.log` (nanolog.cpp:617-620), so the file
 //     is `./qb.1.log`. It is opened with `trunc`.
-//   * nanolog's writer THREAD is started, from the NanoLogger constructor (nanolog.cpp:627/635).
+//   * nanolog's writer THREAD is started, from the NanoLogger constructor (nanolog.cpp:633-645).
 //
 // Both happen whether or not the program ever logs a line. Calling `qb::io::log::init()` later
 // with your own path does not undo them — this file already exists by the time `main()` begins.
 //
 // THE SILENT FAILURE, MADE LOUD
 // -----------------------------
-// `FileWriter::roll_file` does `m_os->open(...)` and never checks the result (nanolog.cpp:610),
+// `FileWriter::roll_file` does `m_os->open(...)` and never checks the result (nanolog.cpp:620),
 // so in a read-only or non-existent working directory logging is simply discarded, with no
 // diagnostic anywhere and no failure at any later call. That file is VENDORED — the header
 // promises it is upstream's — so the check belongs here, on qb's side of the boundary, and this
