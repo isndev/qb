@@ -70,7 +70,7 @@ The journey of a single `push` across a core boundary, in the order it happens.
 1. `Actor::push<E>(dest, args...)` forwards to `VirtualCore::push<E>(dest, id(), args...)`.
 2. `router::ensure_disposer<Event, E>()` registers a type-erased destructor for `E` if it is not trivially destructible. This runs at the *enqueue* funnel because that is the one place which statically knows the type; without it every drop path later would free bytes without running `~E()` (`src/qb/core/VirtualCore.h:1216`; `src/qb/system/event/router.h:1263-1270`).
 3. `__getPipe__(dest._core_id)` selects the outbound buffer for the destination core.
-4. `pipe.allocate_back(BUCKET_SIZE)` reserves `ceil(sizeof(E) / 64)` buckets at the tail. `BUCKET_SIZE` is `allocator::getItemSize<E, EventBucket>()` (`src/qb/system/allocator/pipe.h:40-42`).
+4. `pipe.allocate_back(BUCKET_SIZE)` reserves `ceil(sizeof(E) / 64)` buckets at the tail. `BUCKET_SIZE` is `allocator::getItemSize<E, EventBucket>()` (`src/qb/system/allocator/pipe.h:42-44`).
 5. `detail::prepare_event_storage` zeroes that whole bucket range **in debug builds only** — the relocation guard in step 9 scans it, and an event's range is never fully written by its payload (`src/qb/core/Event.h:294-299`).
 6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1222-1226`, `:1154-1172`).
 7. `push` returns a reference into the pipe. It stays valid until the handler that obtained it returns — see [below](#the-reference-push-returns-lives-until-your-handler-returns).

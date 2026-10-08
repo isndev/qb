@@ -253,6 +253,154 @@ TEST(PipeAllocatorRobustness, MoveAssignLeavesSourceEmpty) {
     EXPECT_TRUE(src.empty());
 }
 
+/**
+ * @test A self-move-assignment leaves the pipe as it was.
+ * @brief It used to free the buffer and then take "rhs"'s fields -- its own, now pointing at the freed
+ *        block: the next read was a use-after-free (ASan), the destructor a double free.
+ */
+TEST(PipeAllocatorRobustness, SelfMoveAssignKeepsTheContents) {
+    qb::allocator::pipe<char> p;
+    p.put("SELF_MOVE", 9);
+    auto &alias = p; // through a reference: a direct `p = std::move(p)` draws -Wself-move
+    p           = std::move(alias);
+    EXPECT_EQ(p.view(), "SELF_MOVE");
+    p.put("+more", 5);
+    EXPECT_EQ(p.view(), "SELF_MOVE+more");
+}
+
+// =============================================================================
+// SELF-ALIAS: appending a view of the pipe to itself (Huly QB-277)
+// =============================================================================
+//
+// The source of a put() may lie inside the pipe it appends to. allocate_back() then moves the live
+// bytes on its slow path, and a copy that read the source where it USED to be read moved or freed
+// memory: after a growth, the freed allocation (ASan: heap-use-after-free); after a compaction, the
+// bytes' old place, which the appended span overlaps (ASan: memcpy-param-overlap). A release build
+// usually copies the right bytes anyway -- a compaction never overwrites the old place, a freed block
+// keeps its content -- which is why the sanitizer is the witness. Each case is driven into one regime
+// and asserts the regime was reached, so a test cannot pass by missing it.
+
+namespace pipe_allocator_test {
+
+// `n` distinct, position-dependent bytes: a copy from the wrong offset cannot reproduce them.
+std::string
+pattern(std::size_t n) {
+    std::string s(n, '\0');
+    for (std::size_t i = 0; i < n; ++i)
+        s[i] = static_cast<char>('A' + (i * 7u) % 26u);
+    return s;
+}
+
+// A pipe whose live bytes are `live` and start past the middle of a FULL buffer: the next append of
+// fewer than capacity/2 bytes must take the reorder path (no room after _end, _begin > capacity/2).
+// With `live` just under capacity/2 the appended span overlaps the bytes' old place.
+qb::allocator::pipe<char>
+pipe_set_for_reorder(std::string const &live) {
+    qb::allocator::pipe<char> p;
+    const auto                cap = p.capacity();
+    p.put(pattern(cap - live.size()).data(), cap - live.size());
+    p.put(live.data(), live.size());
+    p.free_front(cap - live.size());
+    return p;
+}
+
+} // namespace pipe_allocator_test
+
+TEST(PipeAllocatorSelfAlias, AppendingAViewOfItselfThatFitsCopiesTheView) {
+    qb::allocator::pipe<char> p;
+    p.put("0123456789", 10);
+    const char *const before = p.begin();
+    p.put(std::string_view(p.begin() + 2, 4)); // "2345", with room: the fast path
+    ASSERT_EQ(p.begin(), before) << "the fast path must not have moved anything";
+    EXPECT_EQ(p.view(), "01234567892345");
+}
+
+TEST(PipeAllocatorSelfAlias, AppendingAViewOfItselfDuringAReorderCopiesTheView) {
+    using namespace pipe_allocator_test;
+    qb::allocator::pipe<char> probe;
+    const auto                live = pattern(probe.capacity() / 2 - 52);
+    auto                      p    = pipe_set_for_reorder(live);
+    const auto                cap  = p.capacity();
+    ASSERT_EQ(p.view(), live);
+
+    p.put(std::string_view(p.begin() + 4, live.size() - 6)); // < cap / 2 and no room after _end: reorder
+    ASSERT_EQ(p.capacity(), cap) << "the append must have compacted in place, not grown";
+    EXPECT_EQ(p.view(), live + live.substr(4, live.size() - 6)) << "the view was read where it used to be";
+}
+
+TEST(PipeAllocatorSelfAlias, AppendingAViewOfItselfDuringAGrowthCopiesTheView) {
+    using namespace pipe_allocator_test;
+    qb::allocator::pipe<char> p;
+    const auto                cap  = p.capacity();
+    const auto                full = pattern(cap);
+    p.put(full.data(), full.size()); // full, _begin == 0: the next append must grow
+
+    p.put(std::string_view(p.begin(), cap)); // the whole pipe, appended to itself
+    ASSERT_GT(p.capacity(), cap) << "the append must have grown the buffer";
+    EXPECT_EQ(p.view(), full + full) << "the view was read from the freed allocation";
+}
+
+TEST(PipeAllocatorSelfAlias, AppendingThePipeToItselfCopiesItsContents) {
+    using namespace pipe_allocator_test;
+    {
+        qb::allocator::pipe<char> probe;
+        const auto                live = pattern(probe.capacity() / 2 - 52);
+        auto                      p    = pipe_set_for_reorder(live);
+        p.put(p); // put<pipe<char>>: size and source must be read before the allocation
+        ASSERT_EQ(p.capacity(), probe.capacity()) << "the append must have compacted in place";
+        EXPECT_EQ(p.view(), live + live) << "reorder regime";
+    }
+    {
+        qb::allocator::pipe<char> p;
+        const auto                full = pattern(p.capacity());
+        p.put(full.data(), full.size());
+        p.put(p);
+        EXPECT_EQ(p.view(), full + full) << "growth regime";
+    }
+}
+
+TEST(PipeAllocatorSelfAlias, RawPointerAndRangeAppendsOfItselfCopyTheBytes) {
+    using namespace pipe_allocator_test;
+    qb::allocator::pipe<char> probe;
+    const auto                live = pattern(probe.capacity() / 2 - 52);
+    const auto                n    = live.size() - 16;
+    {
+        auto p = pipe_set_for_reorder(live);
+        p.put(p.begin() + 4, n); // put(char const *, size)
+        EXPECT_EQ(p.view(), live + live.substr(4, n)) << "put(data, size)";
+    }
+    {
+        auto p = pipe_set_for_reorder(live);
+        p.write(p.begin() + 4, n);
+        EXPECT_EQ(p.view(), live + live.substr(4, n)) << "write(data, size)";
+    }
+    {
+        auto p = pipe_set_for_reorder(live);
+        p.put(static_cast<char const *>(p.begin() + 4), static_cast<char const *>(p.begin() + 4 + n)); // put(first, last)
+        EXPECT_EQ(p.view(), live + live.substr(4, n)) << "put(first, last)";
+    }
+}
+
+TEST(PipeAllocatorSelfAlias, TypedPipeAppendsOfItselfCopyTheElements) {
+    // The generic pipe<T>: put(data, size) and recycle_back(element) with a source inside the pipe.
+    qb::allocator::pipe<int> p;
+    const auto               cap = p.capacity();
+    for (std::size_t i = 0; i < cap; ++i)
+        p.allocate_back(1)[0] = static_cast<int>(i);
+    p.put(p.begin(), 2); // full: grows
+    ASSERT_GT(p.capacity(), cap);
+    ASSERT_EQ(p.size(), cap + 2);
+    EXPECT_EQ(p.begin()[cap], 0);
+    EXPECT_EQ(p.begin()[cap + 1], 1);
+
+    const auto before = p.capacity();
+    while (p.size() < before) // fill to the brim again so recycle_back must grow too
+        p.allocate_back(1)[0] = 7;
+    p.recycle_back(p.begin()[1]);
+    ASSERT_GT(p.capacity(), before);
+    EXPECT_EQ(p.begin()[p.size() - 1], 1) << "recycle_back read its element after the growth freed it";
+}
+
 // =============================================================================
 // CONTRACT: allocate_back INVALIDATES every previously returned pointer
 // =============================================================================

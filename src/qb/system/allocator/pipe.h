@@ -16,6 +16,7 @@
 #define QB_PIPE_H
 #include <array>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <new>
 #include <qb/string.h>
@@ -23,6 +24,7 @@
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace qb::allocator {
@@ -146,6 +148,10 @@ public:
      */
     base_pipe &
     operator=(base_pipe &&rhs) noexcept {
+        // Self-move (`p = std::move(p)`): freeing our buffer and then taking rhs's fields would keep
+        // the pointer just freed. A self-move leaves the pipe as it was.
+        if (this == &rhs)
+            return *this;
         // Guard against deallocating a moved-from buffer (_data == nullptr,
         // _capacity == 0): std::allocator::deallocate requires a pointer that
         // came from allocate(). The destructor already guards the same way.
@@ -392,6 +398,55 @@ public:
     }
 
     /**
+     * @brief `allocate_back(size)` for a copy whose SOURCE may lie inside this pipe (Huly QB-277).
+     *
+     * A slow-path `allocate_back` compacts the live elements to the front (`reorder()`) or moves them
+     * to a new allocation and frees the old one: a source pointing into the live range
+     * `[begin(), end())` -- a view of the pipe appended to itself -- then reads shifted or freed
+     * memory. This overload re-points `source` at the same live element after the move.
+     *
+     * @param size   Number of elements to allocate.
+     * @param source In: where the elements to copy are. Out: where they are now, re-based onto the
+     *               compacted or reallocated storage when it pointed into the live range and the
+     *               call had to reorder or grow; untouched otherwise.
+     * @return Pointer to the allocated space, as `allocate_back(size)`.
+     * @details The fast path is `allocate_back`'s own: with room after the last element nothing
+     *          moves, and the destination lies past every live element, so a source inside the pipe
+     *          stays valid and never overlaps it. Only the slow path pays the range test.
+     */
+    inline T *
+    allocate_back_from(std::size_t const size, T const *&source) {
+        if (likely(size <= _capacity - _end && _end <= _capacity)) {
+            const auto save_index = _end;
+            _end += size;
+            return _data + save_index;
+        }
+        // std::less: the one comparison of unrelated pointers the language defines as a total order.
+        const std::less<T const *> before;
+        const bool                 inside = !before(source, _data + _begin) && before(source, _data + _end);
+        const auto                 offset = inside ? static_cast<std::size_t>(source - (_data + _begin)) : 0u;
+        T *const                   space  = allocate_back(size);
+        if (inside)
+            source = _data + _begin + offset;
+        return space;
+    }
+
+    /**
+     * @brief `allocate(size)` for a copy whose SOURCE may lie inside this pipe: `allocate_back_from`'s
+     *        guarantee for the front-or-back allocation (Huly QB-277).
+     */
+    inline T *
+    allocate_from(std::size_t const size, T const *&source) {
+        if (_begin >= size + 1 && (_begin - size - 1) < _end) {
+            _begin -= size; // room before the live elements: nothing moves
+            _flag_front = true;
+            return _data + _begin;
+        }
+        _flag_front = false;
+        return allocate_back_from(size, source);
+    }
+
+    /**
      * @brief Allocates and constructs an object of type U at the end of the buffer
      *
      * @tparam U Type of object to construct
@@ -467,7 +522,10 @@ public:
     inline U &
     recycle_back(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(std::memcpy(allocate_back(BUCKET_SIZE), &data, sizeof(U)));
+        // `data` may be an element of this very pipe: read it where it is AFTER the allocation.
+        auto    *source = reinterpret_cast<T const *>(&data);
+        T *const space  = allocate_back_from(BUCKET_SIZE, source);
+        return *reinterpret_cast<U *>(std::memcpy(space, source, sizeof(U)));
     }
 
     /**
@@ -481,7 +539,9 @@ public:
     template <typename U>
     inline U &
     recycle_back(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(std::memcpy(allocate_back(size), &data, size * sizeof(T)));
+        auto    *source = reinterpret_cast<T const *>(&data);
+        T *const space  = allocate_back_from(size, source);
+        return *reinterpret_cast<U *>(std::memcpy(space, source, size * sizeof(T)));
     }
 
     /**
@@ -495,7 +555,9 @@ public:
     inline U &
     recycle(U const &data) {
         constexpr std::size_t BUCKET_SIZE = getItemSize<U, T>();
-        return *reinterpret_cast<U *>(std::memcpy(allocate(BUCKET_SIZE), &data, sizeof(U)));
+        auto                 *source      = reinterpret_cast<T const *>(&data);
+        T *const              space       = allocate_from(BUCKET_SIZE, source);
+        return *reinterpret_cast<U *>(std::memcpy(space, source, sizeof(U)));
     }
 
     /**
@@ -509,7 +571,9 @@ public:
     template <typename U>
     inline U &
     recycle(U const &data, std::size_t const size) {
-        return *reinterpret_cast<U *>(std::memcpy(allocate(size), &data, size * sizeof(T)));
+        auto    *source = reinterpret_cast<T const *>(&data);
+        T *const space  = allocate_from(size, source);
+        return *reinterpret_cast<U *>(std::memcpy(space, source, size * sizeof(T)));
     }
 
     /**
@@ -587,11 +651,20 @@ public:
     template <typename _It>
     pipe &
     put(_It begin, _It const &end) {
-        auto out = this->allocate_back(end - begin);
-        while (begin != end) {
-            *out = *begin;
-            ++out;
-            ++begin;
+        const auto count = static_cast<std::size_t>(end - begin);
+        if constexpr (std::is_convertible_v<_It, T const *>) {
+            // A pointer range may be a range of this pipe: read it where it is after the allocation.
+            T const *source = begin;
+            T *const out    = this->allocate_back_from(count, source);
+            for (std::size_t i = 0; i < count; ++i)
+                out[i] = source[i];
+        } else {
+            auto out = this->allocate_back(count);
+            while (begin != end) {
+                *out = *begin;
+                ++out;
+                ++begin;
+            }
         }
         return *this;
     }
@@ -599,13 +672,15 @@ public:
     /**
      * @brief Adds elements from an array
      *
-     * @param data Pointer to the data
+     * @param data Pointer to the data (may point into this pipe: the copy reads it after the
+     *             allocation, Huly QB-277)
      * @param size Number of elements
      * @return Reference to this buffer
      */
     pipe &
     put(T const *data, std::size_t const size) {
-        memcpy(this->allocate_back(size), data, size * sizeof(T));
+        T *const space = this->allocate_back_from(size, data);
+        memcpy(space, data, size * sizeof(T));
         return *this;
     }
 
@@ -741,11 +816,20 @@ public:
     template <typename _It>
     pipe &
     put(_It begin, _It const &end) {
-        auto out = allocate_back(end - begin);
-        while (begin != end) {
-            *out = *begin;
-            ++out;
-            ++begin;
+        const auto count = static_cast<std::size_t>(end - begin);
+        if constexpr (std::is_convertible_v<_It, char const *>) {
+            // A pointer range may be a range of this pipe: read it where it is after the allocation.
+            char const *source = begin;
+            char *const out    = allocate_back_from(count, source);
+            if (count)
+                std::memcpy(out, source, count);
+        } else {
+            auto out = allocate_back(count);
+            while (begin != end) {
+                *out = *begin;
+                ++out;
+                ++begin;
+            }
         }
         return *this;
     }

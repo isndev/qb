@@ -24,11 +24,11 @@ A pipe owns **one** contiguous block of `T` and three indices into it. Nothing e
           end()      == _data + _end           one past the last live element
           capacity() == _capacity              the whole block
 ```
-<!-- src: qb/src/qb/system/allocator/pipe.h:62-67 -->
+<!-- src: qb/src/qb/system/allocator/pipe.h:64-69 -->
 
 `_begin` and `_end` are plain `std::size_t`. Advancing one is a single integer add; nothing is moved, nothing is destroyed, no allocator is consulted. That is the entire performance story, and also the entire hazard story.
 
-A fourth member, `_flag_front`, records *which end* the last allocation came from, so a later `free()` retracts from the right side (`qb/src/qb/system/allocator/pipe.h:64`, `:339-345`). A fifth, `_factor`, is the growth counter. A default-constructed pipe allocates `_SIZE = 4096` **elements** up front — 4 KiB for a `pipe<char>`, 256 KiB for a `pipe<EventBucket>` (`qb/src/qb/system/allocator/pipe.h:59`, `:75-81`).
+A fourth member, `_flag_front`, records *which end* the last allocation came from, so a later `free()` retracts from the right side (`qb/src/qb/system/allocator/pipe.h:66`, `:345-351`). A fifth, `_factor`, is the growth counter. A default-constructed pipe allocates `_SIZE = 4096` **elements** up front — 4 KiB for a `pipe<char>`, 256 KiB for a `pipe<EventBucket>` (`qb/src/qb/system/allocator/pipe.h:61`, `:77-83`).
 
 ### The four operations
 
@@ -39,9 +39,9 @@ A fourth member, `_flag_front`, records *which end* the last allocation came fro
 | `free_front(n)` | `_begin += n` — retire consumed elements | O(1), always, unconditionally |
 | `free_back(n)` | `_end -= n` — give back an unused reservation | O(1), always |
 
-<!-- src: qb/src/qb/system/allocator/pipe.h:269-282, :355-392, :433-442 -->
+<!-- src: qb/src/qb/system/allocator/pipe.h:275-288, :361-398, :488-497 -->
 
-`free_front` and `free_back` are `noexcept` and do not check anything. They do not destroy elements, they do not zero memory, and they do not return storage to the allocator. Two composites round the set out: `reset(pos)` sets `_begin` to `pos`, or resets both cursors to zero when `pos == _end` (`qb/src/qb/system/allocator/pipe.h:292-300`); `reset()` zeroes both cursors and clears `_flag_front` (`:307-312`). `reorder()` `memmove`s the live range down to offset 0 (`:520-528`).
+`free_front` and `free_back` are `noexcept` and do not check anything. They do not destroy elements, they do not zero memory, and they do not return storage to the allocator. Two composites round the set out: `reset(pos)` sets `_begin` to `pos`, or resets both cursors to zero when `pos == _end` (`qb/src/qb/system/allocator/pipe.h:298-306`); `reset()` zeroes both cursors and clears `_flag_front` (`:313-318`). `reorder()` `memmove`s the live range down to offset 0 (`:584-592`).
 
 ## What `allocate_back` actually does
 
@@ -57,15 +57,15 @@ flowchart TD
     E --> G["_end += n, return the new tail"]
     F --> G
 ```
-<!-- src: qb/src/qb/system/allocator/pipe.h:355-392 -->
+<!-- src: qb/src/qb/system/allocator/pipe.h:361-398 -->
 
 The fast path is the common case and it invalidates nothing. The other two both invalidate every pointer, reference and index into the buffer — and they are not equally dangerous.
 
 **Reallocation is the safe failure.** The old block is handed back to `std::allocator`. A stale pointer into it points at freed memory, which ASan, Valgrind and a hardened allocator all catch on the first dereference.
 
-**Compaction is the dangerous one.** `reorder()` `memmove`s within the *same live allocation* (`qb/src/qb/system/allocator/pipe.h:525`). A stale pointer still addresses valid, mapped, in-use memory — it now simply refers to *a different element*. No allocator debugger can see that, because nothing invalid has happened at the allocator level. Reallocation would be loud; compaction is silent, and compaction is what a busy pipe does far more often. Until 3.2 this was the mechanism behind the framework's sharpest rule — the reference `Actor::push()` returned died at the very next event queued to the same destination core — and it is the first of the two reasons the event pipes moved off this allocator ([Events](#events)).
+**Compaction is the dangerous one.** `reorder()` `memmove`s within the *same live allocation* (`qb/src/qb/system/allocator/pipe.h:589`). A stale pointer still addresses valid, mapped, in-use memory — it now simply refers to *a different element*. No allocator debugger can see that, because nothing invalid has happened at the allocator level. Reallocation would be loud; compaction is silent, and compaction is what a busy pipe does far more often. Until 3.2 this was the mechanism behind the framework's sharpest rule — the reference `Actor::push()` returned died at the very next event queued to the same destination core — and it is the first of the two reasons the event pipes moved off this allocator ([Events](#events)).
 
-Growth is geometric: `_factor` doubles until the request fits, and the new capacity is `_factor * 4096` elements (`qb/src/qb/system/allocator/pipe.h:369-375`). Two guards throw `std::bad_alloc` rather than wrapping — one when `_factor` would exceed `1 << (sizeof(size_t) * 4)` (`:371-372`), one when the arithmetic would still not fit (`:377-378`). Both are reachable only through a size that no legitimate caller produces, and they are the pipe's only `throw`.
+Growth is geometric: `_factor` doubles until the request fits, and the new capacity is `_factor * 4096` elements (`qb/src/qb/system/allocator/pipe.h:375-381`). Two guards throw `std::bad_alloc` rather than wrapping — one when `_factor` would exceed `1 << (sizeof(size_t) * 4)` (`:377-378`), one when the arithmetic would still not fit (`:383-384`). Both are reachable only through a size that no legitimate caller produces, and they are the pipe's only `throw`.
 
 ### `allocate()`, the front branch, and why `send` is unordered — the mechanism, and the one that replaced it
 
@@ -83,9 +83,9 @@ allocate(std::size_t const size) {
     return allocate_back(size);
 }
 ```
-<!-- src: qb/src/qb/system/allocator/pipe.h:433-442 -->
+<!-- src: qb/src/qb/system/allocator/pipe.h:488-497 -->
 
-The retired region in front of `_begin` is memory the pipe already owns and nobody is reading. Carving an object out of it costs one subtraction, and — crucially — the resulting element is **outside** the `[_begin_old, _end)` range a reader will walk. Pair that with `free(n)`, which consults `_flag_front` and retracts from whichever end the allocation came from (`qb/src/qb/system/allocator/pipe.h:339-345`), and you have an allocation that can be made and then *unmade* without disturbing anything queued.
+The retired region in front of `_begin` is memory the pipe already owns and nobody is reading. Carving an object out of it costs one subtraction, and — crucially — the resulting element is **outside** the `[_begin_old, _end)` range a reader will walk. Pair that with `free(n)`, which consults `_flag_front` and retracts from whichever end the allocation came from (`qb/src/qb/system/allocator/pipe.h:345-351`), and you have an allocation that can be made and then *unmade* without disturbing anything queued.
 
 That pair is what `VirtualCore::send` used until 3.1: allocate at the front, attempt an immediate cross-core delivery, retract on success. Since 3.2 the event path runs on `segmented_pipe` ([Events](#events)), which has no front end — a segment is a FIFO of whole events — and `send` gets the same effect from the tail:
 
@@ -106,7 +106,7 @@ Read that as a narrative and the whole `push` / `send` contract falls out:
 - If the immediate attempt fails, or the destination is this same core, the retraction does not happen and the event stays in the pipe, at the tail, to be flushed normally.
 - The retraction is a cursor move, not a destructor call. Nothing runs `~T()` on that storage. That is why the same call site `static_assert`s that a `QoS < 2` event is trivially destructible (`src/qb/core/VirtualCore.h:1162-1164`): a non-trivial destructor would simply never run.
 
-Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:402-407`, `:452-457`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:418-423`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1219-1223`).
+Two typed conveniences wrap the raw allocators for callers that do not need this control: `allocate_back<U>(args...)` and `allocate<U>(args...)` compute the bucket count for `U`, reserve it and placement-new in one step (`qb/src/qb/system/allocator/pipe.h:457-462`, `:507-512`); `allocate_size<U>(extra, args...)` reserves the object plus a trailing run of elements (`:473-478`). The event path deliberately does *not* use them — it allocates raw, prepares the whole bucket range to a deterministic value, and only then placement-news, because the cross-core relocation guard scans every byte of that range (`src/qb/core/VirtualCore.h:1219-1223`).
 
 ## `pipe<T>::swap` — one cache line, and why it is asserted
 
@@ -118,7 +118,7 @@ static_assert(sizeof(pipe) <= sizeof(CacheLine),
               "object must fit within one cache line");
 std::swap(*reinterpret_cast<CacheLine *>(this), *reinterpret_cast<CacheLine *>(&rhs));
 ```
-<!-- src: qb/src/qb/system/allocator/pipe.h:574-576 -->
+<!-- src: qb/src/qb/system/allocator/pipe.h:638-640 -->
 
 That assertion is not decorative and the margin is not generous. Measured on this checkout: `sizeof(CacheLine)` is 64 and `sizeof(qb::allocator::pipe<EventBucket>)` is **exactly 64** — six members (`_begin`, `_end`, `_flag_front`, `_capacity`, `_factor`, `_data`) occupy 48 bytes and `alignas(64)` rounds the object up. Two more `std::size_t` members would still fit; three would not, and without the assertion the swap would exchange only the first cache line, leaving `_data` half-exchanged — a double free on one side and a leak on the other.
 
@@ -137,11 +137,11 @@ if (!_self_pipe.empty()) {
 
 Handlers dispatched from that drain will themselves `push` to actors on this core. Those pushes land *behind the fence* — in the tail segment past the write cursor the fence recorded, or in a segment linked after it — so the range being iterated never grows or moves underneath the loop, and they are the next pass's events, exactly as they were when they landed in the other pipe of a swap. Each drained segment ahead of the fence goes back to the core's pool before the next is read, and a pipe drained to its fence rewinds its one resident segment, so a one-event pass reads and writes the same 64 bytes every time. The swap had cost six loads and six stores per pass, and the handler's first push then waited on the `_wcur` the swap had just written — the longest dependency chain of a one-event pass, measured with the qb-vs-others pass-cost probe: with the fence, one self-event pass went 14.5 → 12.7 ns and the marginal cost of each further event in the same pass 8.9 → 4.2 ns. The contiguous `pipe<T>::swap` keeps its assertion for the `pipe<T>` instances the rest of the tree holds.
 
-Note the asymmetry: `swap` is on the primary `pipe<T>` template only. `pipe<char>` is an explicit specialisation that derives straight from `base_pipe<char>`, so it has no `swap` and is not cache-line aligned — measured, `sizeof(qb::allocator::pipe<char>)` is 48 with alignment 8 (`qb/src/qb/system/allocator/pipe.h:559-560`, `:633-634`).
+Note the asymmetry: `swap` is on the primary `pipe<T>` template only. `pipe<char>` is an explicit specialisation that derives straight from `base_pipe<char>`, so it has no `swap` and is not cache-line aligned — measured, `sizeof(qb::allocator::pipe<char>)` is 48 with alignment 8 (`qb/src/qb/system/allocator/pipe.h:623-624`, `:708-709`).
 
 ## `pipe<char>` and the framework's serialisation extension point
 
-`pipe<char>` is where bytes live, and it is the one place qb asks the rest of the tree to extend it. The generic `put(const U&)` falls back to `std::to_string` (`qb/src/qb/system/allocator/pipe.h:662-666`), and everything that wants a real wire form declares an explicit specialisation:
+`pipe<char>` is where bytes live, and it is the one place qb asks the rest of the tree to extend it. The generic `put(const U&)` falls back to `std::to_string` (`qb/src/qb/system/allocator/pipe.h:737-741`), and everything that wants a real wire form declares an explicit specialisation:
 
 ```cpp
 namespace qb::allocator {
@@ -151,9 +151,9 @@ pipe<char> &pipe<char>::put<json>(const json &c);
 ```
 <!-- src: qb/src/qb/json.h:286-287 -->
 
-That single hook is how qb's own JSON — and, in the modules, every HTTP request, response, chunk, multipart body and WebSocket frame — gets written into an output buffer: each is an explicit `pipe<char>::put<T>` specialisation declared next to its own type. Declaring one is what makes `out() << my_type` work anywhere in the framework, because `operator<<` on `pipe<char>` is defined as `put` (`qb/src/qb/system/allocator/pipe.h:760-764`).
+That single hook is how qb's own JSON — and, in the modules, every HTTP request, response, chunk, multipart body and WebSocket frame — gets written into an output buffer: each is an explicit `pipe<char>::put<T>` specialisation declared next to its own type. Declaring one is what makes `out() << my_type` work anywhere in the framework, because `operator<<` on `pipe<char>` is defined as `put` (`qb/src/qb/system/allocator/pipe.h:844-848`).
 
-Six specialisations ship in qb itself, declared at the bottom of the header for `char`, `unsigned char`, `const char *`, `std::string`, `std::string_view` and `pipe<char>` (`qb/src/qb/system/allocator/pipe.h:813-829`). Two more overloads carry a `static_assert` that is worth reading before you use them: `put(std::vector<T>)` and `put(std::array<T, N>)` copy `size()` **bytes**, not `size() * sizeof(T)`, so they refuse to compile for a multi-byte element type rather than silently truncating (`qb/src/qb/system/allocator/pipe.h:706-709`, `:725-728`).
+Six specialisations ship in qb itself, declared at the bottom of the header for `char`, `unsigned char`, `const char *`, `std::string`, `std::string_view` and `pipe<char>` (`qb/src/qb/system/allocator/pipe.h:897-913`). Two more overloads carry a `static_assert` that is worth reading before you use them: `put(std::vector<T>)` and `put(std::array<T, N>)` copy `size()` **bytes**, not `size() * sizeof(T)`, so they refuse to compile for a multi-byte element type rather than silently truncating (`qb/src/qb/system/allocator/pipe.h:781-784`, `:800-803`).
 
 ```cpp
 #include <qb/system/allocator/pipe.h>
@@ -166,7 +166,7 @@ p.reorder();                      // compact; view() is still "PAYLOAD", size() 
 ```
 <!-- src: qb/tests/io/unit/core/pipe-allocator.cpp:162-171 -->
 
-`view()` and `str()` are `pipe<char>`-only, returning a `std::string_view` over the live range and a copy of it respectively (`qb/src/qb/system/allocator/pipe.h:802-809`). The view borrows: any subsequent `put` that compacts or grows the buffer leaves it dangling.
+`view()` and `str()` are `pipe<char>`-only, returning a `std::string_view` over the live range and a copy of it respectively (`qb/src/qb/system/allocator/pipe.h:886-893`). The view borrows: any subsequent `put` that compacts or grows the buffer leaves it dangling. The one exception is the view as the *source* of that `put`: `p.put(p.view())`, `p.put(p)`, a `put`/`write` of a pointer into the pipe read their bytes where they are after the move (`allocate_back_from`, since 3.3 -- Huly QB-277).
 
 ## The two consumers
 
@@ -210,7 +210,7 @@ One more place shows the third cursor operation. On end-of-file the stream compa
 
 ## Memory: it grows, and it does not come back
 
-Nothing in `base_pipe` ever shrinks the block. `free_front`, `free_back`, `reset`, `clear` and `reorder` all move cursors; the only `deallocate` calls are in the destructor, the move assignment, and the growth path replacing the block with a larger one (`qb/src/qb/system/allocator/pipe.h:173-176`, `:152-153`, `:383-384`). A pipe that once held a 100 MB payload holds a 100 MB allocation until it dies.
+Nothing in `base_pipe` ever shrinks the block. `free_front`, `free_back`, `reset`, `clear` and `reorder` all move cursors; the only `deallocate` calls are in the destructor, the move assignment, and the growth path replacing the block with a larger one (`qb/src/qb/system/allocator/pipe.h:179-182`, `:158-159`, `:389-390`). A pipe that once held a 100 MB payload holds a 100 MB allocation until it dies.
 
 That is a deliberate trade — a steady-state server pays no allocator traffic at all — but combined with the eager construction it means the engine commits a predictable, and quadratic, amount of memory before a single event exists. Measured on this checkout with an instrumented `operator new`:
 
@@ -240,12 +240,12 @@ Three readings. The resting cost is the **rings**, `N² × 64 KiB`, and it is re
 
 ## Pitfalls
 
-- **A pointer into a `pipe<T>` is valid until the next allocation on that pipe, and not one instruction longer.** Compaction (`reorder`) is the case no tool catches, because the memory stays live and merely means something else (`qb/src/qb/system/allocator/pipe.h:520-528`). A pointer into a `segmented_pipe<T>` is the opposite: valid until the segment holding it is consumed, whatever is allocated meanwhile — which is why [`Actor::push`'s returned reference](../7_reference/core_invariants.md#sending-push-vs-send) now lives for the whole handler.
-- **`free_front` / `free_back` run no destructors.** They are cursor arithmetic (`qb/src/qb/system/allocator/pipe.h:269-282`). A pipe holding non-trivially-destructible objects leaks every one of them unless the owner destroys them itself. For events that owner is the router, which disposes each one after routing — so the rule bites only where nothing routes them: the `qos == 0` drop on backpressure, which is why an `EventQOS0` payload must be trivially destructible.
-- **`reserve(n)` is not `std::vector::reserve`.** It calls `allocate_back(n)` and then `free_back(n)`, so it can trigger a growth *or a compaction* — and therefore invalidate outstanding pointers — before handing the space back (`qb/src/qb/system/allocator/pipe.h:543-547`).
-- **`resize(n)` shrinking does not destroy anything either.** It moves `_end` down (`qb/src/qb/system/allocator/pipe.h:256-262`).
-- **`str()` copies, `view()` borrows.** A `std::string_view` from `view()` is invalidated by the next `put` exactly like any other pointer into the buffer (`qb/src/qb/system/allocator/pipe.h:802-809`).
-- **`put(std::vector<T>)` and `put(std::array<T, N>)` are byte-counted.** They will not compile for a multi-byte `T`; the `static_assert` tells you to cast and pass `size() * sizeof(T)` yourself (`qb/src/qb/system/allocator/pipe.h:706-709`).
+- **A pointer into a `pipe<T>` is valid until the next allocation on that pipe, and not one instruction longer.** Compaction (`reorder`) is the case no tool catches, because the memory stays live and merely means something else (`qb/src/qb/system/allocator/pipe.h:584-592`). A pointer into a `segmented_pipe<T>` is the opposite: valid until the segment holding it is consumed, whatever is allocated meanwhile — which is why [`Actor::push`'s returned reference](../7_reference/core_invariants.md#sending-push-vs-send) now lives for the whole handler.
+- **`free_front` / `free_back` run no destructors.** They are cursor arithmetic (`qb/src/qb/system/allocator/pipe.h:275-288`). A pipe holding non-trivially-destructible objects leaks every one of them unless the owner destroys them itself. For events that owner is the router, which disposes each one after routing — so the rule bites only where nothing routes them: the `qos == 0` drop on backpressure, which is why an `EventQOS0` payload must be trivially destructible.
+- **`reserve(n)` is not `std::vector::reserve`.** It calls `allocate_back(n)` and then `free_back(n)`, so it can trigger a growth *or a compaction* — and therefore invalidate outstanding pointers — before handing the space back (`qb/src/qb/system/allocator/pipe.h:607-611`).
+- **`resize(n)` shrinking does not destroy anything either.** It moves `_end` down (`qb/src/qb/system/allocator/pipe.h:262-268`).
+- **`str()` copies, `view()` borrows.** A `std::string_view` from `view()` is invalidated by the next `put` exactly like any other pointer into the buffer (`qb/src/qb/system/allocator/pipe.h:886-893`).
+- **`put(std::vector<T>)` and `put(std::array<T, N>)` are byte-counted.** They will not compile for a multi-byte `T`; the `static_assert` tells you to cast and pass `size() * sizeof(T)` yourself (`qb/src/qb/system/allocator/pipe.h:781-784`).
 - **Don't add members to `pipe<T>` without checking the swap assertion.** It has 16 bytes of slack on a 64-byte cache line, and a build with `-DKNOWN_L1_CACHE_LINE_SIZE=128` moves the ceiling — see [ABI and the build fingerprint](./abi_and_build_fingerprint.md).
 - **The buffer is a data structure, not a thread-safety boundary.** A pipe carries no atomic and no lock. Its safety comes entirely from being touched by exactly one thread; the one cross-thread hop in the framework is the [mailbox ring](./concurrency_primitives.md), which is a different type.
 

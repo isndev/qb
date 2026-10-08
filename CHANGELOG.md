@@ -406,6 +406,15 @@ policy.
   now takes the new frame before releasing the old one (`std::unique_ptr::reset`'s order), which also empties a
   source living inside the released frame before that frame is freed. It adds no instruction: at `-O2`, 21 against
   22 with g++-14, 24 against 24 with clang-19.
+- **Appending a view of a pipe to itself copies the bytes, not moved or freed memory (Huly QB-277).** `pipe<char>::put`
+  of a `std::string_view`, a `char` range, a pointer and size, another `pipe` -- `p.put(p)` included -- `write()`, and
+  `pipe<T>::put` / `recycle_back` / `recycle` read their source after `allocate_back()` had made room. When that room
+  needed the slow path, the live bytes had moved: compacted to the front (the copy then read their old place, which the
+  appended span overlaps -- ASan: `memcpy-param-overlap`) or into a new allocation with the old one freed (ASan:
+  `heap-use-after-free`). A source inside the pipe is now re-pointed at the same bytes after the move
+  (`base_pipe::allocate_back_from` / `allocate_from`); the path with room does the same work (MSVC listing: 41
+  instructions executed against 42). A self-move-assignment (`p = std::move(p)`) freed the buffer and kept the pointer;
+  it now leaves the pipe as it was.
 
 ### Documentation
 
