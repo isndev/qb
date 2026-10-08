@@ -296,6 +296,7 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`).
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
+- QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1015-1016,1456-1483)_
 
 ### Coroutines inside an actor
 
@@ -1285,6 +1286,7 @@ Built on ngtcp2 + nghttp3. `[[nodiscard]] constexpr bool qb::io::quic::available
 
 #### Value types (`<qb/io/quic/types.h>`, namespace `qb::io::quic`)
 *   `struct settings` — all defaults: `handshake_timeout=10s`, `idle_timeout=30s`, `stream_recv_window=1MiB`, `connection_recv_window=16MiB`, `max_stream_data_bidi_local/bidi_remote/uni=1MiB`, `max_streams_bidi=100`, `max_streams_uni=100`, `max_datagram_frame_size=0`, `max_connections=4096`, `max_pending_stream_bytes=16MiB`, `max_pending_stream_frames=4096`, `max_pending_datagram_bytes=4MiB`, `max_pending_datagram_frames=1024`, `udp_rx_batch_size=256`, `udp_tx_batch_size=256`, `enable_stateless_retry=true`, `enable_datagrams=false`, `enable_keylog=false`.
+*   `max_streams_bidi` and `max_streams_uni` limit peer-initiated streams open concurrently, not the connection's lifetime total. The native backend tags streams delivered through `stream_open_cb` and returns one same-direction slot on their close with `ngtcp2_conn_extend_max_streams_bidi/uni`; ngtcp2 renews implicitly opened streams itself. Locally initiated closes do not grant peer credit (`src/qb/io/quic.cpp:1015-1016,1456-1483`).
 *   `struct tls_config { std::filesystem::path certificate_file, private_key_file; std::string server_name; bool verify_peer = true; }`
 *   `struct stats` — counters: `bytes_sent/received`, `packets_sent/received/lost`, `retransmits`, `datagrams_sent/received/lost/acked`, `active_connections`, `active_streams`, `smoothed_rtt_us`, `congestion_window`, `bytes_in_flight`.
 *   `struct alpn { static constexpr std::string_view h3 = "h3"; }` — the default ALPN for `connect()`.
@@ -1303,6 +1305,7 @@ Non-copyable **and non-movable**. `enum class state { idle, listening, connectin
 *   `void reset_stream(stream_id, std::uint64_t app_error = 0)` / `stop_stream(stream_id, std::uint64_t app_error = 0)`, plus `(connection_id, stream_id, app_error)` forms.
 *   `void send_datagram(std::span<const std::byte>|std::string_view)`, plus `(connection_id, ...)`. Requires `settings.enable_datagrams` and a non-zero `max_datagram_frame_size`.
 *   `void close_connection(connection_id, std::uint64_t app_error = 0, std::string_view reason = {})`, `void close(std::uint64_t app_error = 0, std::string_view reason = {})`.
+*   After `close()`, `connect()`/`listen()` refresh a native backend the endpoint created itself; a caller-injected backend is retained. A later connection rebinds the existing UDP I/O watcher to the new socket descriptor and starts it (`src/qb/io/async/quic/endpoint.h:84-119,359-363,376-398,425-455,578-593`).
 *   `void poll()`, `void set_backend(std::unique_ptr<backend>)`, `void set_settings(settings)`.
 *   `[[nodiscard]]` observers: `bool is_open()`, `state current_state()`, `settings const& settings()`, `stats const& stats()`, `qb::io::endpoint const& local_endpoint()`, `backend*`/`backend const* backend()`.
 *   `void on(qb::io::async::event::io const&)` / `on(qb::io::async::event::timer&)` — the listener drives these; do not call them.

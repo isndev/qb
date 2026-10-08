@@ -64,6 +64,13 @@ llm/qb.llm.api.md	offload.h:299-299	fec5045b6b24	offload(F &&fn, Args &&...args)
 llm/qb.llm.api.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.api.md	request.h:170-170	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.api.md	scheduler.h:755-758	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:359-363	220a20fe9435	void
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:376-398	b17271a5fe0b	bool
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:425-455	a328c72b2a01	bool
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:578-593	cb98e519f56b	void
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:84-119	d3df2aec453e	void
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1015-1016	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1456-1483	abe6342ced08	static int
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
 llm/qb.llm.api.md	task.h:736-751	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
@@ -148,6 +155,8 @@ llm/qb.llm.md	request.h:225-225	caff73e28888	qb::io::async::pin_frame_copy(req);
 llm/qb.llm.md	resilience.h:428-428	322b61e18000	qb::io::async::pin_frame_copy(req);                                  ...
 llm/qb.llm.md	scheduler.h:343-363	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
 llm/qb.llm.md	scheduler.h:550-579	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	src/qb/io/quic.cpp:1015-1016	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.md	src/qb/io/quic.cpp:1456-1483	abe6342ced08	static int
 llm/qb.llm.md	ssl/context.h:157-157	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/context.h:218-226	77b1eca342a4	// --- typed callbacks (no raw C function pointer, no void* arg) ---
 llm/qb.llm.md	ssl/context.h:235-246	8f8ec340851e	/**
