@@ -37,6 +37,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <thread>
 #include <tuple>
 
+#ifndef NANOLOG_TEST_HOOK
+#define NANOLOG_TEST_HOOK(phase, index) ((void) 0)
+#endif
+
 namespace {
 
 /* Returns microseconds since epoch */
@@ -465,14 +469,20 @@ public:
             m_buffer[i].~Item();
         }
         std::free(m_buffer);
+        NANOLOG_TEST_HOOK(destroyed, 0);
     }
 
     // Returns true if we need to switch to next buffer
     bool
     push(NanoLogLine &&logline, unsigned int const write_index) {
         new (&m_buffer[write_index]) Item(std::move(logline));
+        NANOLOG_TEST_HOOK(before_publish, write_index);
+        // The ready store is the last access to this Buffer. A consumer may retire the whole
+        // Buffer as soon as it acquires the final ready slot, even before this call returns.
+        bool const rotate = m_write_state[size].fetch_add(1, std::memory_order_acquire) + 1 == size;
         m_write_state[write_index].store(1, std::memory_order_release);
-        return m_write_state[size].fetch_add(1, std::memory_order_acquire) + 1 == size;
+        NANOLOG_TEST_HOOK(after_publish, write_index);
+        return rotate;
     }
 
     bool
@@ -710,3 +720,5 @@ is_logged(LogLevel level) {
     return static_cast<unsigned int>(level) >= loglevel.load(std::memory_order_relaxed);
 }
 } // namespace nanolog
+
+#undef NANOLOG_TEST_HOOK

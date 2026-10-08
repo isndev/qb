@@ -33,6 +33,11 @@ qb_add_test(MODULE qb-io TIER unit NAME udp-identity      SOURCES core/udp-ident
 qb_add_test(MODULE qb-io TIER unit NAME cpu-topology      SOURCES core/cpu-topology.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME raii-helpers      SOURCES core/raii-helpers.cpp      DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME uuid-threadsafety SOURCES core/uuid-threadsafety.cpp DEPENDS ${PROJECT_NAME})
+# The test compiles nanolog.cpp privately to pause at the rollover; abi.cpp supplies the
+# fingerprint symbols without pulling qb-io's amalgamated copy of nanolog into the test.
+qb_add_test(MODULE qb-io TIER unit NAME guaranteed-logger-buffer
+            SOURCES core/guaranteed-logger-buffer.cpp ${QB_SOURCE_DIR}/io/abi.cpp
+            INCLUDES ${QB_INCLUDE_DIR})
 
 # --- protocol (buffered-io / base framing / json depth / json-session-parse / quic state) ---
 qb_add_test(MODULE qb-io TIER unit NAME buffered-io-session      SOURCES protocol/buffered-io-session.cpp      DEPENDS ${PROJECT_NAME})
