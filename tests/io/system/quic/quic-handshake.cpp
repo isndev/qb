@@ -977,7 +977,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSl
     }
 }
 
-TEST(QuicHandshakeNativeBackend, ImplicitRemoteStreamCloseDoesNotDoubleRenewQuota) {
+TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwoSlots) {
     ASSERT_TRUE(require_ssl_files());
     auto                   server = qb::io::quic::make_native_backend();
     auto                   client = qb::io::quic::make_native_backend();
@@ -999,10 +999,26 @@ TEST(QuicHandshakeNativeBackend, ImplicitRemoteStreamCloseDoesNotDoubleRenewQuot
     const auto first  = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
     const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
     ASSERT_EQ(second, first + 4);
-    // Announcing the higher ID first makes ngtcp2 create the lower stream
-    // implicitly, without calling stream_open for it.
+    // The higher ID reaches the peer first. The lower ID is materialized only
+    // when its own data arrives; it must then trigger stream_open before close.
     client->send_stream_data(0, second, std::span<const std::byte>{}, true);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
+    constexpr std::array<std::byte, 1> lower_payload{std::byte{0x61}};
+    client->send_stream_data(0, first, lower_payload, false);
+    bool       lower_started = false;
+    bool       lower_closed  = false;
+    const auto deadline      = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!lower_started && std::chrono::steady_clock::now() < deadline) {
+        deliver_quota_packets(*client, *server);
+        for (auto const &event : server->drain_events()) {
+            if (event.stream_id != first)
+                continue;
+            lower_started |= event.type == qb::io::quic::backend_event::kind::stream_started;
+            lower_closed |= event.type == qb::io::quic::backend_event::kind::stream_closed;
+        }
+    }
+    ASSERT_TRUE(lower_started) << "referencing the lower ID must invoke stream_open";
+    EXPECT_FALSE(lower_closed) << "the lower stream remains open until its FIN";
     client->send_stream_data(0, first, std::span<const std::byte>{}, true);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
     for (int i = 0; i < 4; ++i)
@@ -1010,7 +1026,7 @@ TEST(QuicHandshakeNativeBackend, ImplicitRemoteStreamCloseDoesNotDoubleRenewQuot
     EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
     EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
     EXPECT_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional), std::runtime_error)
-        << "one explicit and one implicit close must renew exactly two slots";
+        << "both streams invoked stream_open, so their closes must renew exactly two slots";
 }
 
 TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
