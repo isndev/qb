@@ -60,6 +60,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -232,6 +233,33 @@ TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
     qb::io::tcp::socket v4_client;
     EXPECT_EQ(v4_client.connect_v4("127.0.0.1", port), 0);
     v4_client.disconnect();
+
+    server_thread.join();
+}
+
+// An initialised but unbound socket takes bind() and connect() for its own family (Huly QB-310). On Windows
+// getsockname() of an unbound socket fails and its family reads AF_UNSPEC: the synchronous bind/connect took that
+// for a mismatch and refused (n_connect already knew better); POSIX reports the open family -- its control. The
+// known mismatch is still refused: AlreadyOpenSocketRejectsMismatchedEndpointFamilies.
+TEST(TCPSocket, InitialisedUnboundSocketBindsAndConnectsInItsOwnFamily) {
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    const auto  server = qb::io::endpoint().as_in("127.0.0.1", listener.local_endpoint().port());
+    std::thread server_thread([&] { accept_tcp_connections(listener, 2); });
+
+    qb::io::tcp::socket bound;
+    ASSERT_EQ(bound.init(AF_INET), 0);
+    EXPECT_EQ(bound.bind(qb::io::endpoint().as_in("127.0.0.1", 0)), 0);
+
+    qb::io::tcp::socket blocking;
+    ASSERT_EQ(blocking.init(AF_INET), 0);
+    EXPECT_EQ(blocking.connect(server), 0);
+    blocking.disconnect();
+
+    qb::io::tcp::socket timed;
+    ASSERT_EQ(timed.init(AF_INET), 0);
+    EXPECT_EQ(timed.connect(server, 1s), 0);
+    timed.disconnect();
 
     server_thread.join();
 }
@@ -516,8 +544,14 @@ TEST(TCPSocket, LowLevelPortableConnectAndTransferHelpers) {
     server_thread.join();
 }
 
+// The xpconnect legs are also the witness of Huly QB-319: getipsv() counts only
+// globally-routable addresses, so on a host whose only IPv4 is 127.0.0.1 (run it
+// under `unshare -rn sh -c 'ip link set lo up; <binary>'`) it reports no IPv4, and
+// xpconnect used to refuse the 127.0.0.1 target outright. The trace names the case.
 TEST(TCPSocket, LowLevelPortableConnectVariantsReachLoopbackServer) {
     constexpr int expected_connections = 4;
+    SCOPED_TRACE(::testing::Message() << "getipsv() = " << qb::io::socket::getipsv()
+                                      << " (no ipsv_ipv4 bit: the loopback-only host of QB-319)");
 
     qb::io::socket listener;
     ASSERT_EQ(listener.pserve("127.0.0.1", 0), 0);
@@ -670,6 +704,43 @@ TEST(TCPSocket, LowLevelResolutionAndInterfaceDiscovery) {
     EXPECT_GE(local_count, 0);
 }
 
+// Huly QB-324: resolve_i() and traverse_local_address() hand each entry of a native list
+// (getaddrinfo / getifaddrs) to a caller callback, and freed the list only after the loop: a
+// callback that throws -- resolve_endpoints() allocates in it -- leaked the list. The exception
+// still propagates; the leak is what LeakSanitizer reports on the base under the `sanitize`
+// preset. The control: the socket error the callback leaves survives the free (on Windows
+// freeaddrinfo() resets WSAGetLastError()).
+TEST(TCPSocket, AThrowingResolverCallbackStillFreesTheAddressList) {
+    EXPECT_THROW(qb::io::socket::resolve_i([](const qb::io::endpoint &) -> bool { throw std::runtime_error("resolver callback"); }, "localhost",
+                                           4242, AF_UNSPEC, AI_ALL),
+                 std::runtime_error);
+
+    EXPECT_EQ(qb::io::socket::resolve_i(
+                  [](const qb::io::endpoint &) {
+                      qb::io::socket::set_last_errno(ETIMEDOUT);
+                      return true;
+                  },
+                  "localhost", 4242, AF_UNSPEC, AI_ALL),
+              0);
+    EXPECT_EQ(qb::io::socket::get_last_errno(), ETIMEDOUT) << "freeing the list must not clobber the callback's socket error";
+}
+
+TEST(TCPSocket, AThrowingInterfaceCallbackStillFreesTheInterfaceList) {
+    bool handler_ran = false;
+    bool threw       = false;
+    try {
+        qb::io::socket::traverse_local_address([&](const qb::io::endpoint &) -> bool {
+            handler_ran = true;
+            throw std::runtime_error("interface callback");
+        });
+    } catch (const std::runtime_error &) {
+        threw = true;
+    }
+    EXPECT_EQ(threw, handler_ran) << "the handler's exception must reach the caller";
+    if (!handler_ran)
+        GTEST_SKIP() << "no globally-routable local address: traverse_local_address() calls no handler here";
+}
+
 TEST(TCPSocket, LowLevelSocketOptionsReadinessAndBindingHelpers) {
     qb::io::socket listener;
     ASSERT_TRUE(listener.open(AF_INET, SOCK_STREAM, 0));
@@ -711,10 +782,22 @@ TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1);
     EXPECT_EQ(closed.shutdown(QB_SD_BOTH), -1); // QB_SD_BOTH is qb's portable alias (==SHUT_RDWR on POSIX)
 
+    // A timed connect leaves the socket BLOCKING, and test_nonblocking() says so even when the socket was
+    // non-blocking before: on Windows it answers from a cache the static helpers used to bypass, so it kept
+    // saying "non-blocking" (Huly QB-318). POSIX reads the real mode -- the same assertions are its control.
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+    ASSERT_GT(client.test_nonblocking(), 0); // POSIX answers the O_NONBLOCK bit, Windows 1
     EXPECT_EQ(client.connect_n(qb::io::endpoint().as_in("127.0.0.1", 9), 1ms), -1);
     EXPECT_EQ(client.test_nonblocking(), 0);
+
+    // An untimed connect leaves the socket NON-BLOCKING (its connect is in progress, or refused).
+    qb::io::socket untimed;
+    ASSERT_TRUE(untimed.open(AF_INET, SOCK_STREAM, 0));
+    ASSERT_EQ(untimed.test_nonblocking(), 0);
+    (void) untimed.connect_n(qb::io::endpoint().as_in("127.0.0.1", 9));
+    EXPECT_GT(untimed.test_nonblocking(), 0);
 
     qb::io::socket udp(AF_INET, SOCK_DGRAM, 0);
     ASSERT_TRUE(udp.is_open());

@@ -28,6 +28,7 @@
  * connection, so it belongs here rather than in the loopback system suite.
  */
 
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <set>
@@ -123,15 +124,47 @@ TEST(EndpointAddress, PortSetterLeavesAddressUntouched) {
 }
 
 TEST(EndpointAddress, IpSetterRoundTripsV4AndV6) {
+    // len() is what bind/connect/sendto pass the kernel: ip() on a default endpoint left it 0
+    // (Huly QB-323).
     endpoint e4;
     e4.ip("192.168.1.42");
     EXPECT_EQ(e4.af(), AF_INET);
     EXPECT_EQ(e4.ip(), "192.168.1.42");
+    EXPECT_EQ(static_cast<std::size_t>(e4.len()), sizeof(sockaddr_in));
 
     endpoint e6;
     e6.ip("2001:db8::1");
     EXPECT_EQ(e6.af(), AF_INET6);
     EXPECT_EQ(e6.ip(), "2001:db8::1");
+    EXPECT_EQ(static_cast<std::size_t>(e6.len()), sizeof(sockaddr_in6));
+}
+
+/**
+ * @test `ip(text)` across a family change keeps the port and leaves a valid sockaddr of the new
+ *       family: its length, and a cleared IPv6 tail -- a v4 turned v6 kept the old IPv4 address
+ *       bytes in `sin6_flowinfo` and the old length (Huly QB-323). A text that does not parse
+ *       leaves the endpoint as it was.
+ */
+TEST(EndpointAddress, IpSetterAcrossAFamilyChangeLeavesAValidSockaddr) {
+    endpoint e("192.0.2.7", 8080);
+    e.ip("2001:db8::7");
+    EXPECT_EQ(e.af(), AF_INET6);
+    EXPECT_EQ(e.ip(), "2001:db8::7");
+    EXPECT_EQ(e.port(), 8080);
+    EXPECT_EQ(static_cast<std::size_t>(e.len()), sizeof(sockaddr_in6));
+    EXPECT_EQ(e.in6_.sin6_flowinfo, 0u) << "the old IPv4 address must not survive as the flow label";
+    EXPECT_EQ(e.in6_.sin6_scope_id, 0u);
+
+    e.ip("198.51.100.9");
+    EXPECT_EQ(e.af(), AF_INET);
+    EXPECT_EQ(e.to_string(), "198.51.100.9:8080");
+    EXPECT_EQ(static_cast<std::size_t>(e.len()), sizeof(sockaddr_in));
+
+    e.ip("not-an-address");
+    e.ip("zz::zz::zz");
+    EXPECT_EQ(e.af(), AF_INET) << "an unparsable text must not flip the family";
+    EXPECT_EQ(e.to_string(), "198.51.100.9:8080");
+    EXPECT_EQ(static_cast<std::size_t>(e.len()), sizeof(sockaddr_in));
 }
 
 TEST(EndpointAddress, AfSetterMarksEndpointValid) {
@@ -194,6 +227,45 @@ TEST(EndpointAddress, MoveConstructPreservesAddress) {
     EXPECT_EQ(moved.port(), 4242);
     EXPECT_EQ(moved.ip(), "203.0.113.7");
     EXPECT_EQ(moved.to_string(), "203.0.113.7:4242");
+}
+
+/**
+ * @test Assigning an endpoint from itself -- `e = e`, `e.as_is(e)`, `e.as_is(&e.sa_)`,
+ *       `e.as_is_raw(&e, e.len())`, and for AF_UNIX `e.as_un(e.un_.sun_path)` -- keeps it. Each
+ *       mutator cleared the object before reading its source, which was the object itself: the
+ *       endpoint came out AF_UNSPEC (Huly QB-322). Self-move-assignment reaches the copy form,
+ *       since endpoint has no move assignment.
+ */
+TEST(EndpointAddress, SelfAssignmentAndSelfAliasingKeepTheAddress) {
+    for (const char *text : {"192.0.2.1", "2001:db8::1"}) {
+        SCOPED_TRACE(text);
+        endpoint        e(text, 4242);
+        const auto      expected     = e.to_string();
+        const auto      expected_len = e.len();
+        const endpoint &alias        = e; // through a reference: no -Wself-assign noise
+
+        e = alias;
+        EXPECT_EQ(e.to_string(), expected);
+        EXPECT_EQ(e.len(), expected_len);
+        e.as_is(alias);
+        EXPECT_EQ(e.to_string(), expected);
+        e.as_is(&alias.sa_);
+        EXPECT_EQ(e.to_string(), expected);
+        EXPECT_EQ(e.len(), expected_len);
+        e.as_is_raw(&alias, static_cast<std::size_t>(alias.len()));
+        EXPECT_EQ(e.to_string(), expected);
+        EXPECT_EQ(e.len(), expected_len);
+    }
+#if defined(QB_ENABLE_UDS) && QB__HAS_UDS
+    endpoint        un;
+    const endpoint &alias = un;
+    un.as_un("/tmp/qb-endpoint-self.sock");
+    un = alias;
+    un.as_is(&alias.sa_);
+    un.as_un(alias.un_.sun_path);
+    EXPECT_EQ(un.af(), AF_UNIX);
+    EXPECT_EQ(un.to_string(), "/tmp/qb-endpoint-self.sock");
+#endif
 }
 
 // =============================================================================

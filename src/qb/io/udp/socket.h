@@ -243,7 +243,7 @@ public:
 
     /**
      * @brief Set the multicast Time-To-Live (TTL) for outgoing IPv4 packets or hop limit for IPv6.
-     * @param ttl The TTL (for IPv4, typically 1-255) or hop limit (for IPv6) value.
+     * @param ttl The TTL (for IPv4) or hop limit (for IPv6) value, clamped to [0, 255].
      *            A TTL of 0 restricts packets to the local host.
      *            A TTL of 1 restricts packets to the local subnet.
      * @return 0 on success, or a non-zero error code on failure.

@@ -51,7 +51,7 @@
 // constructor is not compiled at all, so the process-wide SIGPIPE disposition is never touched,
 // split or amalgamated. Sockets are still safe there, by a different and unrelated mechanism:
 // every write wrapper passes MSG_NOSIGNAL and suppress_sigpipe() sets SO_NOSIGPIPE per
-// descriptor at acquisition -- see src/qb/io/system/sys__socket.cpp:79-120. That pair is what
+// descriptor at acquisition -- see src/qb/io/system/sys__socket.cpp:80-121. That pair is what
 // actually protects qb's own sockets in EVERY configuration; the SIG_IGN here is a process-wide
 // backstop for an SSL build, and it is what the split measurement detects because it is the one
 // observable the test could read.

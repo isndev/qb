@@ -52,6 +52,18 @@
 
 namespace qb::io::async {
 
+namespace detail {
+/**
+ * @brief A transport whose every read is ONE DATAGRAM (`transport::udp` declares `has_reset_on_pending_read`):
+ *        what the protocol leaves unconsumed after that datagram is an incomplete frame of THAT sender, never the
+ *        beginning of the next datagram's frame (Huly QB-303).
+ * @details The stream transports declare it false (`qb::io::stream`); a component whose derived class declares
+ *          nothing is not a datagram transport.
+ */
+template <typename T>
+concept resets_input_per_read = requires { requires T::has_reset_on_pending_read; };
+} // namespace detail
+
 /**
  * @class base
  * @ingroup Async
@@ -1385,7 +1397,8 @@ private:
     }
 
     /**
-     * @brief Handles post-read processing (eof, pending_read events).
+     * @brief Handles post-read processing (eof, pending_read events), then, on a datagram transport, drops the
+     *        incomplete frame the datagram ended with.
      */
     void
     handle_post_read() {
@@ -1401,6 +1414,15 @@ private:
                     auto evt__eof = event::eof{};
                     Derived.on(std::move(evt__eof));
                 }
+            }
+        }
+        // A datagram carries whole frames (Huly QB-303). What the protocol left is an incomplete frame of THIS
+        // datagram's sender, just reported as `pending_read`; kept, it became the head of the next datagram's
+        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state.
+        if constexpr (detail::resets_input_per_read<_Derived>) {
+            if (Derived.pendingRead()) {
+                Derived.in().reset();
+                this->_protocol->reset();
             }
         }
     }
@@ -2797,7 +2819,8 @@ private:
     }
 
     /**
-     * @brief Handles post-read processing (eof, pending_read events).
+     * @brief Handles post-read processing (eof, pending_read events), then, on a datagram transport, drops the
+     *        incomplete frame the datagram ended with.
      */
     void
     handle_post_read() {
@@ -2813,6 +2836,15 @@ private:
                     auto evt__eof = event::eof{};
                     Derived.on(std::move(evt__eof));
                 }
+            }
+        }
+        // A datagram carries whole frames (Huly QB-303). What the protocol left is an incomplete frame of THIS
+        // datagram's sender, just reported as `pending_read`; kept, it became the head of the next datagram's
+        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state.
+        if constexpr (detail::resets_input_per_read<_Derived>) {
+            if (Derived.pendingRead()) {
+                Derived.in().reset();
+                this->_protocol->reset();
             }
         }
     }

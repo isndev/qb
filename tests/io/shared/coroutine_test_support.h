@@ -91,7 +91,7 @@
  *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:813) — it never
  *          rounds a requested delay down;
  *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:352-353) and `async::callback`
- *          (async/io.h:402-408) both force `ev_now_update` immediately before `ev_timer_start`, so
+ *          (async/io.h:414-420) both force `ev_now_update` immediately before `ev_timer_start`, so
  *          the deadline is a FRESH clock read plus the delay, never a stale cached one;
  *        - `timers_reify` fires only once `mn_now` is strictly PAST that deadline (qev.c:4418),
  *          against `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).

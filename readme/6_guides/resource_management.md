@@ -38,7 +38,7 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 | TLS listener | `qb::io::tcp::ssl::listener` | `src/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` — it is transferred into the listener's value-semantic, reference-counted `qb::io::ssl::Context` member, which frees it when the last copy (and the last `SSL` minted from it) is gone. Not a `std::unique_ptr`. |
 
 <!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
-<!-- src: src/qb/io/system/sys__socket.h:852,860,874,880 (copy deleted / move kept), :895 (~socket) -->
+<!-- src: src/qb/io/system/sys__socket.h:880,888,902,908 (copy deleted / move kept), :923 (~socket) -->
 <!-- src: src/qb/io/tcp/socket.h:97 (copy deleted), :102 (move ctor), :108 (move assign) -->
 <!-- src: src/qb/io/tcp/ssl/socket.h:346 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 
@@ -171,7 +171,7 @@ If the parent needs its referenced children gone when it stops, it must send eac
 The transport-based server pattern below is the common case, and the suite itself uses the value-semantic form: the context is passed straight into the transport's listener, which shares it with every accepted connection.
 
 ```cpp
-// src: qb/tests/io/system/session/text-session-loopback.cpp:284
+// src: qb/tests/io/system/session/text-session-loopback.cpp:285
 #include <qb/io/tcp/ssl/socket.h>
 #include <qb/io/tcp/ssl/listener.h>
 
@@ -200,7 +200,7 @@ Two further facts shape correct TLS lifetime management:
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 
-When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1290-1291`)
+When an actor inherits from a `qb::io::use<>` base (for example `qb::io::use<MyClient>::tcp::client<>`), the networking transport — which owns the socket — is a subobject of that base. Its lifetime is therefore the actor's lifetime: when the actor is destroyed, the base subobject is destroyed, the transport's socket destructor runs, and the descriptor is closed. You do not manage the socket directly. If you need the connection torn down *before* the rest of teardown (for instance, to flush an application-level goodbye), call `this->disconnect()` — the method the `tcp::client` base exposes — from your `on(KillEvent&)` handler; RAII still handles the final close either way. (`src/qb/io/async.h:77`, `src/qb/io/async/io.h:1302-1303`)
 
 See [Networking with qb-io](../3_qb_io/README.md) for the transport hierarchy.
 

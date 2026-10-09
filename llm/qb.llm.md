@@ -262,7 +262,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1021; tcp/socket.cpp:88-95)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1021; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1045-1084; uri.h:473-483)_
@@ -315,7 +315,8 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - TCP: `qb::io::use<T>::tcp::client<Server=void>`, `::tcp::server<Session>`, `::tcp::acceptor`,
   `::tcp::io_handler<Session>`.
 - TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`).
-- UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux).
+- UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
+  carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
 - QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1015-1016,1456-1483)_
 
@@ -608,14 +609,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1295-1309, :1585-1600, :1644-1674, :1710-1737)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:65-70, :85-86, :94-98)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
   drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1436-1449; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:1421-1433)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:361-401)_ _(listener.h:1488)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:373-413)_ _(listener.h:1488)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:574-603)_
@@ -645,7 +646,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **A port is shared only by name (3.3): `listen(ep, qb::io::tcp::listen_options{.reuse_port = true})`.**
   _(tcp/listener.h:32-46)_ Every listener that asks shares the port and, on Linux, the kernel balances the accept
   across them -- one listener per core, each serving its own connections. Windows refuses the listen with
-  `ENOPROTOOPT`, from `reuse_port` _(sys__socket.cpp:281-288)_; `socket::reuse_address` sets `SO_REUSEADDR` only.
+  `ENOPROTOOPT`, from `reuse_port` _(sys__socket.cpp:308-315)_; `socket::reuse_address` sets `SO_REUSEADDR` only.
 - **OCSP goes through the Context too (3.3): `on_ocsp_staple` (server) / `on_ocsp_response` (client).** The
   client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
   for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed
@@ -668,13 +669,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:612-615; ev++.h:762)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:762)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2219-2248, :2700-2707, :3104-3108)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2241-2270, :2722-2729, :3136-3140)_
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,
@@ -686,7 +687,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:54)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
-  `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:254-271)_
+  `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:281-298)_
 - **`compression.h` hard-`#error`s without `QB_HAS_COMPRESSION`; `crypto.h` does not — its OpenSSL gate is
   per-member.** Including `crypto.h` in a no-SSL build compiles: `qb::crypto` still declares everything that
   needs no OpenSSL (the hex codec the pgsql `bytea` wire format depends on), and the OpenSSL-only members are

@@ -34,14 +34,14 @@ sequenceDiagram
     IO->>S: on(pending_read) or on(input_drained)
     IO->>T: write() if anything was published
 ```
-<!-- src: qb/src/qb/io/async/io.h:2880-2952 (the io handler), :2719-2797 (the framing loop); qb/src/qb/io/stream.h:152-173 (read), :183-198 (flush/eof) -->
+<!-- src: qb/src/qb/io/async/io.h:2912-2984 (the io handler), :2741-2819 (the framing loop); qb/src/qb/io/stream.h:152-173 (read), :183-198 (flush/eof) -->
 
 Five things are worth noticing in that picture, because each one is a rule somewhere else:
 
 1. **The read is one call of a fixed size.** `istream::read()` reserves `QB_DEFAULT_READ_BUFFER_SIZE` (65 536) bytes at the tail of the input pipe, reads into it, and hands the unused tail straight back with `free_back` (`src/qb/io/stream.h:167-171`). No memmove, no realloc on the common path — that is [the pipe's cursor model](../0_foundations/buffers.md#what-allocate_back-actually-does) doing its job.
 2. **The framing loop drains everything buffered before returning.** Several messages in one read are dispatched in one turn.
 3. **The framework, not the protocol, removes the bytes** — `flush(size)` after `onMessage`, and only when the protocol's `should_flush()` says so.
-4. **Output is drained in the same handler**, not on a separate `EV_WRITE` wake-up, whenever the read produced something to send (`src/qb/io/async/io.h:2948`). Waiting for libev to report writability instead lets the output buffer grow without bound under sustained read pressure — measured on SSL-over-UDS on macOS, where the kernel socket buffer is much smaller than TCP loopback.
+4. **Output is drained in the same handler**, not on a separate `EV_WRITE` wake-up, whenever the read produced something to send (`src/qb/io/async/io.h:2980`). Waiting for libev to report writability instead lets the output buffer grow without bound under sustained read pressure — measured on SSL-over-UDS on macOS, where the kernel socket buffer is much smaller than TCP loopback.
 5. **Nothing in that path allocates per message.** The pipes grow and are reused; the watcher registration is drawn from a freelist.
 
 ## Summary
@@ -94,7 +94,7 @@ flowchart TB
     I -. "drives" .-> P
     P -. "reads _io.in(), writes _io.on(message)" .-> D
 ```
-<!-- src: qb/src/qb/io/async/tcp/client.h:46-52 (the base list), qb/src/qb/io/async/io.h:2070 (io), :2074-2082 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
+<!-- src: qb/src/qb/io/async/tcp/client.h:46-52 (the base list), qb/src/qb/io/async/io.h:2092 (io), :2096-2104 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
 
 **Base destruction order is the reverse of the base list — so the transport, which owns the fd, is destroyed *before* the `io<Derived>` base, which owns the watcher.** Leave the watcher armed until the `io<Derived>` destructor and libev's `ev_io_stop` runs against an already-closed descriptor, corrupting its per-fd bookkeeping (`anfds[fd]`). That is an intermittent use-after-close whose symptom is a later crash somewhere else entirely, in `clear_pending` or `fd_change`.
 
@@ -109,15 +109,15 @@ The fix is the same in every composition, and it is a **destructor body**, becau
 
 Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:106-108`, `:229-231`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:107-109`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
 
-**If you write your own composition of an `async::io`/`input`/`output` base with a transport, you owe it that destructor.** Nothing in the type system asks for it. Server-associated sessions are the most exposed case, because `dispose()` deliberately does *not* stop their watcher — the server owns that lifecycle — so without the destructor the watcher routinely outlives its fd (`src/qb/io/async/io.h:3038-3040`).
+**If you write your own composition of an `async::io`/`input`/`output` base with a transport, you owe it that destructor.** Nothing in the type system asks for it. Server-associated sessions are the most exposed case, because `dispose()` deliberately does *not* stop their watcher — the server owns that lifecycle — so without the destructor the watcher routinely outlives its fd (`src/qb/io/async/io.h:3070-3072`).
 
-A second rule with no compiler behind it, from the same sandwich: **the protocol belongs to the `io<Derived>` base, not to the transport.** `switch_protocol<P>(args...)` constructs `P`, checks `ok()`, takes ownership into a `std::vector<std::unique_ptr<IProtocol>>` and makes it active (`src/qb/io/async/io.h:2136`); `clear_protocols()` drops them all and leaves the never-null `NoProtocol` sentinel behind (`src/qb/io/async/io.h:2072`). A protocol that outlives its session, or a session whose protocol was cleared mid-message, is a lifetime question about that list — see [Protocols](./protocols.md#using-a-protocol-in-an-io-component).
+A second rule with no compiler behind it, from the same sandwich: **the protocol belongs to the `io<Derived>` base, not to the transport.** `switch_protocol<P>(args...)` constructs `P`, checks `ok()`, takes ownership into a `std::vector<std::unique_ptr<IProtocol>>` and makes it active (`src/qb/io/async/io.h:2158`); `clear_protocols()` drops them all and leaves the never-null `NoProtocol` sentinel behind (`src/qb/io/async/io.h:2094`). A protocol that outlives its session, or a session whose protocol was cleared mid-message, is a lifetime question about that list — see [Protocols](./protocols.md#using-a-protocol-in-an-io-component).
 
 A third, for a client that is ITSELF the io of every connection it opens — it reconnects rather than building a new io per connection, as qbm-http's HTTP/2 client, qbm-pgsql's `Database` and qbm-redis's clients do: **reuse the object only once the previous connection's teardown has run, and clear what it left.**
-`disconnect()` defers `dispose()` to the watcher's next dispatch, so a `start()` or a `reset_io_state()` issued before it cancels the teardown and the disconnection is lost. Both refuse it in a debug build — `reset_io_state()` (`src/qb/io/async/io.h:3069-3077`)
-and `start()`, which also refuses a restart from inside `on(event::disconnected&&)` (on a standalone client `dispose()` undoes it as soon as that handler returns), and which arms writing at once when data is already waiting in `out()` (`pendingWrite()`), so what was published before it leaves as if published right after it (`src/qb/io/async/io.h:2219-2248`).
-A standalone client that must have failed its requests when its own disconnect returns calls the protected `disconnect_now()`: the teardown runs on the spot, without a loop pass, or — from inside a protocol handler, where the dispatch is on the stack — as soon as that handler returns (`src/qb/io/async/io.h:2700-2707`).
-`dispose()` and `start()` never touch the buffers: `reset_for_reconnect()` clears both, and the protocols, before the next transport is installed (`src/qb/io/async/io.h:3104-3108`) — what the previous connection left in `out()` would otherwise be the first bytes of the next one (Huly QB-202).
+`disconnect()` defers `dispose()` to the watcher's next dispatch, so a `start()` or a `reset_io_state()` issued before it cancels the teardown and the disconnection is lost. Both refuse it in a debug build — `reset_io_state()` (`src/qb/io/async/io.h:3101-3109`)
+and `start()`, which also refuses a restart from inside `on(event::disconnected&&)` (on a standalone client `dispose()` undoes it as soon as that handler returns), and which arms writing at once when data is already waiting in `out()` (`pendingWrite()`), so what was published before it leaves as if published right after it (`src/qb/io/async/io.h:2241-2270`).
+A standalone client that must have failed its requests when its own disconnect returns calls the protected `disconnect_now()`: the teardown runs on the spot, without a loop pass, or — from inside a protocol handler, where the dispatch is on the stack — as soon as that handler returns (`src/qb/io/async/io.h:2722-2729`).
+`dispose()` and `start()` never touch the buffers: `reset_for_reconnect()` clears both, and the protocols, before the next transport is installed (`src/qb/io/async/io.h:3136-3140`) — what the previous connection left in `out()` would otherwise be the first bytes of the next one (Huly QB-202).
 
 ### Stream abstractions
 
@@ -136,12 +136,12 @@ The cap is enforced at two different layers, and they behave differently, so it 
 | Layer | Call | On overflow |
 |---|---|---|
 | stream | `istream::read()` | returns `qb::io::ErrBufferLimitExceeded` (`-2`) without reading (`src/qb/io/stream.h:160-162`) |
-| stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:504-509`) |
-| CRTP | `io<Derived>::publish(args...)`, i.e. `*this << x` | **disconnects the session** with `disconnect_reason::buffer_overflow` (`src/qb/io/async/io.h:2599-2602`) |
+| stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:505-510`) |
+| CRTP | `io<Derived>::publish(args...)`, i.e. `*this << x` | **disconnects the session** with `disconnect_reason::buffer_overflow` (`src/qb/io/async/io.h:2621-2624`) |
 
-The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2606-2618`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:2917-2920`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
+The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2628-2640`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:2949-2952`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
 
-<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :486 (set_max_write_buffer_size) -->
+<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :487 (set_max_write_buffer_size) -->
 
 ### TCP socket: `qb::io::tcp::socket`
 
@@ -176,7 +176,7 @@ The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::lis
 
 The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is read through the static base accessor `qb::io::socket::get_last_errno()` (it is not re-exported as a typed-socket member).
 
-Only a descriptor the `connect` over a list opens itself is replaced between two attempts: a socket already open before the call -- its descriptor may carry options -- gets the first address only (`src/qb/io/tcp/socket.cpp:104-117`). The by-name connects build their list with `qb::io::tcp::resolve_endpoints(af, host, port)`, every address of the family in the resolver's order (`src/qb/io/tcp/socket.cpp:75-85`); resolve on the [offload pool](./coroutines.md#offloading-blocking-work) and pass the list yourself when the lookup must stay off the loop.
+Only a descriptor the `connect` over a list opens itself is replaced between two attempts: a socket already open before the call -- its descriptor may carry options -- gets the first address only (`src/qb/io/tcp/socket.cpp:116-129`). The by-name connects build their list with `qb::io::tcp::resolve_endpoints(af, host, port)`, every address of the family in the resolver's order (`src/qb/io/tcp/socket.cpp:87-97`); resolve on the [offload pool](./coroutines.md#offloading-blocking-work) and pass the list yourself when the lookup must stay off the loop.
 
 <!-- src: qb/src/qb/io/tcp/socket.h -->
 
@@ -198,7 +198,7 @@ A blocking listener blocks in `accept()`; a non-blocking listener (`set_nonblock
 
 The server-side bind sets a platform-correct address-reuse option. On POSIX it sets `SO_REUSEADDR`, so a restarted listener can rebind its port immediately while old connections linger in `TIME_WAIT`. On Windows it instead sets `SO_EXCLUSIVEADDRUSE`: binding a port already in active use fails fast with `WSAEADDRINUSE`, and no other process can hijack (silently shadow) the port — Windows already allows rebinding `TIME_WAIT` ports with no option set, and its `SO_REUSEADDR` has hijack semantics that would let a second bind succeed yet never accept.
 
-**Sharing a port, by name (3.3).** `listen_options{.reuse_port = true}` sets `SO_REUSEPORT` between the socket's creation and its bind (`src/qb/io/tcp/listener.h:32-46`). Every listener that asks shares the port; one that did not ask is refused it, so two unrelated servers still never share one by accident. On Linux the kernel balances incoming connections across the listeners that share the port -- one listener per `VirtualCore`, each accepting and serving its own connections, with no acceptor handing sockets to another core. macOS and the BSDs share the bind without balancing. Windows has no such option, and a listen that asks for it fails with `ENOPROTOOPT` rather than binding a port nobody else may take (`src/qb/io/system/sys__socket.cpp:281-288`). The low-level twin is `socket::reuse_port(bool)`; `socket::reuse_address(bool)` sets `SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too, sharing the port of whoever called it without saying so (`src/qb/io/system/sys__socket.h:1201-1216`). A complete run is `examples/05-services/05-sharded-accept`: four cores, one port, the distribution measured.
+**Sharing a port, by name (3.3).** `listen_options{.reuse_port = true}` sets `SO_REUSEPORT` between the socket's creation and its bind (`src/qb/io/tcp/listener.h:32-46`). Every listener that asks shares the port; one that did not ask is refused it, so two unrelated servers still never share one by accident. On Linux the kernel balances incoming connections across the listeners that share the port -- one listener per `VirtualCore`, each accepting and serving its own connections, with no acceptor handing sockets to another core. macOS and the BSDs share the bind without balancing. Windows has no such option, and a listen that asks for it fails with `ENOPROTOOPT` rather than binding a port nobody else may take (`src/qb/io/system/sys__socket.cpp:308-315`). The low-level twin is `socket::reuse_port(bool)`; `socket::reuse_address(bool)` sets `SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too, sharing the port of whoever called it without saying so (`src/qb/io/system/sys__socket.h:1229-1244`). A complete run is `examples/05-services/05-sharded-accept`: four cores, one port, the distribution measured.
 
 <!-- src: qb/src/qb/io/tcp/listener.h -->
 
@@ -238,7 +238,7 @@ Socket options for broadcast and multicast:
 | `set_buffer_size(size)` | Set `SO_SNDBUF` and `SO_RCVBUF`. |
 | `set_broadcast(bool)` | Toggle `SO_BROADCAST`. |
 | `join_multicast_group(group, iface = "")` / `leave_multicast_group(...)` | Manage IPv4/IPv6 group membership. |
-| `set_multicast_ttl(int)` | Set the outgoing multicast TTL (IPv4) or hop limit (IPv6). |
+| `set_multicast_ttl(int)` | Set the outgoing multicast TTL (IPv4) or hop limit (IPv6), clamped to [0, 255]; 0 keeps the datagrams on this host. |
 | `set_multicast_loopback(bool)` | Toggle whether sent multicast packets loop back locally. |
 
 UDP is all-or-nothing: `read_timeout` and `write` succeed for a whole datagram or report an error; there is no partial transfer.
@@ -255,7 +255,7 @@ This is the transport behind asynchronous TCP clients and server-side sessions e
 
 ### UDP transport: `qb::io::transport::udp`
 
-`qb::io::transport::udp` (`qb/io/transport/udp.h`) is `stream<udp::socket>` extended with datagram bookkeeping. Because UDP is message-oriented, it sets `static constexpr bool has_reset_on_pending_read = true` (the input-buffer state resets per pending read), and it tracks per-datagram source and destination endpoints.
+`qb::io::transport::udp` (`qb/io/transport/udp.h`) is `stream<udp::socket>` extended with datagram bookkeeping. Because UDP is message-oriented, it sets `static constexpr bool has_reset_on_pending_read = true`, and it tracks per-datagram source and destination endpoints. The flag makes the async components (`use<...>::udp::server` / `client`) frame each datagram ALONE: once the protocol has taken a datagram's complete frames, what is left -- an incomplete trailing frame -- is reported as `on(event::pending_read&&)` and then dropped with the protocol's partial state, so it never becomes the head of the next datagram's frame, another sender's, answered to that sender. A datagram therefore carries whole frames (since 3.3, Huly QB-303); the transport-level `read()` below still appends to the input buffer, for raw use.
 
 Endpoint management — each datagram has an explicit peer:
 
@@ -265,7 +265,7 @@ Endpoint management — each datagram has an explicit peer:
 | `setDestination(udp::identity const& to)` | `void` | Set the default destination for subsequent sends via `out()` / `operator<<`. |
 | `publish(char const* data, std::size_t size)` | `char*` | Enqueue one datagram to the current default destination (the one last set via `setDestination`). Returns `nullptr` on buffer-cap or size violation. |
 | `publish_to(udp::identity const& to, char const* data, std::size_t size)` | `char*` | Enqueue one datagram to a specific destination. Returns `nullptr` on buffer-cap or size violation. |
-| `out()` | `ProxyOut&` | A `operator<<`-style sender that accumulates bytes into the current datagram for the current destination. |
+| `out()` | `ProxyOut&` | A `operator<<`-style sender that accumulates bytes into the current datagram for the current destination. An append the datagram cannot take (past `MaxDatagramSize` or the write-buffer cap) is refused with `EMSGSIZE` and leaves the queue unchanged -- a refused first append leaves no empty datagram to send (since 3.3, Huly QB-304). |
 
 `udp::identity` is `qb::io::endpoint` plus a hasher and equality operator, so it can key an unordered map. `getSource()` is updated by `read()`; on each successful read the transport also calls `setDestination(getSource())`, so a reply written immediately after a read goes back to the sender by default.
 

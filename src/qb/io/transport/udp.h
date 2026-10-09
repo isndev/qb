@@ -61,8 +61,10 @@ public:
         return false;
     }
     /**
-     * @brief Indicates that this transport implementation resets its input buffer state
-     *        when a read operation is pending (characteristic of datagram processing).
+     * @brief Every read is ONE datagram, and a datagram carries whole frames: after the protocol has taken the
+     *        complete frames of a datagram, the async component reports what is left (`event::pending_read`) and
+     *        DROPS it with the protocol's partial state, so an incomplete frame never becomes the head of the next
+     *        datagram's -- another sender's (Huly QB-303; `qb::io::async::detail::resets_input_per_read`).
      */
     static constexpr bool has_reset_on_pending_read = true;
 
@@ -160,7 +162,10 @@ public:
          * @param data Data to send.
          * @return Reference to this `ProxyOut` for chaining.
          * @details Appends data to the current message in the UDP transport's output buffer.
-         *          Manages the size tracking for the current datagram being constructed.
+         *          Manages the size tracking for the current datagram being constructed. An append the datagram
+         *          cannot take (past `MaxDatagramSize` or the write-buffer cap) is refused with `EMSGSIZE` and
+         *          leaves the queue as it was: a refused FIRST append leaves no record at all, never an empty
+         *          datagram to send (Huly QB-304).
          */
         template <typename T>
         auto &
@@ -197,6 +202,16 @@ public:
             if (new_payload > io::udp::socket::MaxDatagramSize
                 || (max_write != static_cast<std::size_t>(-1) && out_buffer.size() + new_padding > max_write)) {
                 out_buffer.free_back(added);
+                if (previous_payload == 0) {
+                    // A refused FIRST append: the record is a bare header (made above or by out()), always the
+                    // last one queued. Kept, it stayed above the write-buffer cap and went out as an EMPTY datagram
+                    // nobody asked for (Huly QB-304). Removed whole -- its padding was released above -- so the
+                    // queue is left exactly as it was before the record existed; the next append starts a new one.
+                    out_buffer.free_back(sizeof(pushed_message));
+                    proxy._last_pushed_offset = kNoPendingMessage;
+                    qb::io::socket::set_last_errno(EMSGSIZE);
+                    return *this;
+                }
                 if (previous_padding)
                     out_buffer.allocate_back(previous_padding);
                 p               = reinterpret_cast<udp::pushed_message *>(out_buffer.begin() + proxy._last_pushed_offset);

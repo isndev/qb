@@ -368,9 +368,9 @@ public:
         as_is(info);
     }
     /**
-     * @brief Construct endpoint from IPv4 address and port
+     * @brief Construct endpoint from an IPv4 or IPv6 address text and a port
      *
-     * @param addr IPv4 address in network byte order
+     * @param addr Dotted-quad IPv4 or IPv6 text; one that does not parse leaves the endpoint invalid
      * @param port Port number in host byte order
      */
     explicit endpoint(const char *addr, unsigned short port = 0) {
@@ -379,7 +379,7 @@ public:
     /**
      * @brief Construct endpoint from IPv4 address and port
      *
-     * @param addr IPv4 address in network byte order
+     * @param addr IPv4 address in host byte order (e.g. INADDR_LOOPBACK; it is stored with htonl)
      * @param port Port number in host byte order
      */
     explicit endpoint(uint32_t addr, unsigned short port = 0) {
@@ -405,8 +405,10 @@ public:
     }
     endpoint &
     as_is(const endpoint &rhs) {
-        this->zeroset();
-        memcpy(reinterpret_cast<char *>(this), &rhs, sizeof(rhs));
+        // The whole object is copied, so there is nothing to clear first -- and `e = e` must
+        // not clear its own source (Huly QB-322: it left the endpoint AF_UNSPEC).
+        if (this != &rhs)
+            ::memcpy(reinterpret_cast<void *>(this), &rhs, sizeof(rhs));
         return *this;
     }
     endpoint &
@@ -415,22 +417,19 @@ public:
     }
     endpoint &
     as_is(const sockaddr *addr) {
-        this->zeroset();
+        // The family is read BEFORE anything is cleared, and every branch tolerates `addr`
+        // being this endpoint's own storage, `ep.as_is(&ep.sa_)` (Huly QB-322).
         switch (addr->sa_family) {
             case AF_INET:
-                ::memcpy(&in4_, addr, sizeof(sockaddr_in));
-                this->len(sizeof(sockaddr_in));
-                break;
+                return this->as_is_raw(addr, sizeof(sockaddr_in));
             case AF_INET6:
-                ::memcpy(&in6_, addr, sizeof(sockaddr_in6));
-                this->len(sizeof(sockaddr_in6));
-                break;
+                return this->as_is_raw(addr, sizeof(sockaddr_in6));
 #if defined(QB_ENABLE_UDS) && QB__HAS_UDS
             case AF_UNIX:
-                as_un(((sockaddr_un *) addr)->sun_path);
-                break;
+                return this->as_un(reinterpret_cast<const sockaddr_un *>(addr)->sun_path);
 #endif
         }
+        this->zeroset();
         return *this;
     }
     endpoint &
@@ -489,14 +488,18 @@ public:
     as_un(const char *name) {
         // zeroset() like every other as_*() mutator: udp::identity's hasher
         // hashes the first len() bytes and relies on no stale bytes from a
-        // previously stored (longer) address remaining in the union.
+        // previously stored (longer) address remaining in the union. The path
+        // is formatted into a local first: `name` may be this endpoint's own
+        // sun_path, which zeroset() would erase before it is read (Huly QB-322).
+        char path[sizeof(un_.sun_path)];
+        int  n = snprintf(path, sizeof(path), "%s", name);
         this->zeroset();
-        int n = snprintf(un_.sun_path, sizeof(un_.sun_path), "%s", name);
         if (n > 0) {
             // snprintf returns the WOULD-BE length: clamp to what actually fit
             // so len() never points past the truncated, null-terminated path.
             if (static_cast<size_t>(n) > sizeof(un_.sun_path) - 1)
                 n = static_cast<int>(sizeof(un_.sun_path) - 1);
+            ::memcpy(un_.sun_path, path, static_cast<size_t>(n));
             un_.sun_family = AF_UNIX;
             this->len(offsetof(struct sockaddr_un, sun_path) + n + 1);
         } else {
@@ -515,8 +518,10 @@ public:
         // recvfrom — so it cannot currently be exceeded. But this is a public `(const void *, size_t)` entry
         // that memcpy's straight into `*this`, and an over-long length would run off the end of the object.
         const size_t n = std::min(ai_addrlen, sizeof(*this));
-        this->zeroset();
-        ::memcpy(reinterpret_cast<void *>(this), ai_addr, n);
+        // memmove, then clear the tail: `ai_addr` may be this endpoint's own storage, which a
+        // zeroset() first would erase (Huly QB-322).
+        ::memmove(reinterpret_cast<void *>(this), ai_addr, n);
+        ::memset(reinterpret_cast<char *>(this) + n, 0x0, sizeof(*this) - n);
         this->len(n);
         return *this;
     }
@@ -552,21 +557,44 @@ public:
      * @brief Sets the IP address from string representation
      *
      * Parses and sets the IP address from a string like "192.168.1.1" or "2001:db8::1".
-     * Automatically detects and handles both IPv4 and IPv6 formats.
+     * Automatically detects and handles both IPv4 and IPv6 formats. The port is kept; a
+     * family change also sets `len()` and clears the other family's fields (IPv6
+     * `sin6_flowinfo` / `sin6_scope_id`). A text that does not parse leaves the endpoint
+     * unchanged.
      *
      * @param addr String containing the IP address in standard notation
      */
     void
     ip(const char *addr) {
-        /*
-         * Windows XP no inet_pton or inet_ntop
-         */
+        // Parse first, then re-establish the whole sockaddr invariant -- family, length,
+        // a cleared tail -- so a default endpoint, or a v4 turned v6, is a valid sockaddr
+        // and not one whose len() is 0 or stale (Huly QB-323).
+        // The port is kept from an inet endpoint, or a default one given a port first; a
+        // UDS endpoint has none (those bytes are its path).
+        const auto family    = this->af();
+        const auto kept_port = (family == AF_INET || family == AF_INET6 || family == AF_UNSPEC) ? this->port() : u_short{0};
         if (strchr(addr, ':') == nullptr) { // ipv4
-            this->in4_.sin_family = AF_INET;
-            compat::inet_pton(AF_INET, addr, &this->in4_.sin_addr);
+            in_addr parsed{};
+            if (compat::inet_pton(AF_INET, addr, &parsed) != 1)
+                return;
+            if (family != AF_INET) {
+                this->zeroset();
+                this->af(AF_INET);
+                this->port(kept_port);
+            }
+            this->in4_.sin_addr = parsed;
+            this->len(sizeof(sockaddr_in));
         } else { // ipv6
-            this->in6_.sin6_family = AF_INET6;
-            compat::inet_pton(AF_INET6, addr, &this->in6_.sin6_addr);
+            in6_addr parsed{};
+            if (compat::inet_pton(AF_INET6, addr, &parsed) != 1)
+                return;
+            if (family != AF_INET6) {
+                this->zeroset();
+                this->af(AF_INET6);
+                this->port(kept_port);
+            }
+            this->in6_.sin6_addr = parsed;
+            this->len(sizeof(sockaddr_in6));
         }
     }
     /**
@@ -658,7 +686,7 @@ public:
     /**
      * @brief Sets the IPv4 address
      *
-     * @param addr IPv4 address in network byte order
+     * @param addr IPv4 address in host byte order (stored with htonl)
      */
     void
     addr_v4(uint32_t addr) {
@@ -667,7 +695,7 @@ public:
     /**
      * @brief Gets the IPv4 address
      *
-     * @return IPv4 address in network byte order
+     * @return IPv4 address in host byte order (read back with ntohl)
      */
     uint32_t
     addr_v4() const {
@@ -807,8 +835,8 @@ using namespace qb::io::inet::ip;
 */
 class QB_API socket {
 public: /// portable connect APIs
-    // easy to connect a server ipv4 or ipv6 with local ip protocol version detect
-    // for support ipv6 ONLY network.
+    // connect by name, v4 or v6 per getipsv() (v4-mapped on an IPv6-only network); a
+    // local-scope target (127/8, 169.254/16, ::1, ULA, fe80::/10) is always attempted.
     QB__DECL int xpconnect(const char *hostname, u_short port, u_short local_port = 0);
     QB__DECL int xpconnect_n(const char *hostname, u_short port, const qb::duration &wtimeout, u_short local_port = 0);
 
@@ -1469,21 +1497,29 @@ public:
         if (nullptr == answerlist)
             return error;
 
+        // The list is owned across the callback (Huly QB-324): a callback that throws
+        // -- resolve_endpoints() allocates in it -- unwinds through this and must not
+        // leak it.
+        struct answer_list_owner {
+            addrinfo *list;
+            ~answer_list_owner() {
+                // The callback (e.g. a non-blocking connect) leaves the meaningful error in
+                // the per-thread socket error slot. On Windows freeaddrinfo() resets
+                // WSAGetLastError() to 0, which would hide a legitimate WSAEWOULDBLOCK /
+                // WSAEINPROGRESS from the caller; preserve it across the call so
+                // get_last_errno() stays reliable right after a resolve+connect.
+                const int last_error = socket::get_last_errno();
+                freeaddrinfo(list);
+                socket::set_last_errno(last_error);
+            }
+        } const owner{answerlist};
+
         for (auto ai = answerlist; ai != nullptr; ai = ai->ai_next) {
             if (ai->ai_family == AF_INET6 || ai->ai_family == AF_INET) {
                 if (callback(endpoint(ai)))
                     break;
             }
         }
-
-        // The callback (e.g. a non-blocking connect) leaves the meaningful error in
-        // the per-thread socket error slot. On Windows freeaddrinfo() resets
-        // WSAGetLastError() to 0, which would hide a legitimate WSAEWOULDBLOCK /
-        // WSAEINPROGRESS from the caller; preserve it across the call so
-        // get_last_errno() stays reliable right after a resolve+connect.
-        const int last_error = socket::get_last_errno();
-        freeaddrinfo(answerlist);
-        socket::set_last_errno(last_error);
 
         return error;
     }

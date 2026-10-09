@@ -34,6 +34,7 @@
 #include <cstring> // For memset
 #include <cstdlib> // For strerror
 #include <limits>  // For numeric_limits (timeval saturation)
+#include <memory>  // For unique_ptr (native address lists)
 
 #if !defined(QB_HEADER_ONLY)
 #include <qb/io/system/sys__socket.h>
@@ -119,6 +120,24 @@ suppress_sigpipe(socket_type s) {
 #endif
 }
 
+// The native address lists traverse_local_address() walks are owned across the
+// caller's handler (Huly QB-324): a handler that throws must not leak them.
+#if defined(_WIN32)
+struct traverse_addrinfo_free {
+    void
+    operator()(addrinfo *list) const noexcept {
+        ::freeaddrinfo(list);
+    }
+};
+#else
+struct traverse_ifaddrs_free {
+    void
+    operator()(struct ifaddrs *list) const noexcept {
+        qb::io::freeifaddrs(list);
+    }
+};
+#endif
+
 } // namespace
 
 int
@@ -131,7 +150,13 @@ socket::xpconnect(const char *hostname, u_short port, u_short local_port) {
         [&](const endpoint &ep) {
             switch (ep.af()) {
                 case AF_INET:
-                    if (flags & ipsv_ipv4) {
+                    // The IPv4 twin of the local-scope rule below (Huly QB-319): getipsv()
+                    // counts only globally-routable addresses, so a host whose only IPv4 is
+                    // 127.0.0.1 (a network namespace, a sandbox, a disconnected machine)
+                    // reports no IPv4 -- and a 127/8 or 169.254/16 target must still be
+                    // attempted directly, not refused or detoured through a v4-mapped
+                    // IPv6 socket the host may not have.
+                    if ((flags & ipsv_ipv4) || !is_global_in4_addr(&ep.in4_.sin_addr)) {
                         error = pconnect(ep, local_port);
                     } else if (flags & ipsv_ipv6) {
                         socket::resolve_i([&](const endpoint &ep6) { return 0 == (error = pconnect(ep6, local_port)); }, hostname, port,
@@ -167,7 +192,9 @@ socket::xpconnect_n(const char *hostname, u_short port, const qb::duration &wtim
         [&](const endpoint &ep) {
             switch (ep.af()) {
                 case AF_INET:
-                    if (flags & ipsv_ipv4)
+                    // See xpconnect(): a local-scope v4 target (127/8, 169.254/16) is
+                    // attempted even when getipsv() reports no globally-routable IPv4.
+                    if ((flags & ipsv_ipv4) || !is_global_in4_addr(&ep.in4_.sin_addr))
                         error = pconnect_n(ep, wtimeout, local_port);
                     else if (flags & ipsv_ipv6) {
                         socket::resolve_i([&](const endpoint &ep6) { return 0 == (error = pconnect_n(ep6, wtimeout, local_port)); }, hostname,
@@ -237,7 +264,7 @@ socket::pconnect_n(const endpoint &ep, u_short local_port) {
     if (this->reopen(ep.af())) {
         if (local_port != 0 && this->bind(QB_ADDR_ANY(ep.af()), local_port) != 0)
             return -1;
-        return socket::connect_n(this->fd, ep);
+        return this->connect_n(ep); // the member: it keeps the non-blocking cache (Huly QB-318)
     }
     return -1;
 }
@@ -379,6 +406,8 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
     // QB_LOG("socket::traverse_local_address: localhost=%s", hostname);
 #endif
     int iret = getaddrinfo(hostname, nullptr, &hint, &ailist);
+    // Owned from here, across the handler (Huly QB-324).
+    const std::unique_ptr<addrinfo, traverse_addrinfo_free> ailist_owner(ailist);
 
     const char *errmsg = nullptr;
     if (ailist != nullptr) {
@@ -402,7 +431,6 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
                     break;
             }
         }
-        freeaddrinfo(ailist);
     } else {
         errmsg = socket::gai_strerror(iret);
     }
@@ -422,6 +450,7 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
         // QB_LOG("socket::traverse_local_address: getifaddrs fail!");
         return;
     }
+    const std::unique_ptr<struct ifaddrs, traverse_ifaddrs_free> ifaddr_owner(ifaddr);
 
     endpoint ep;
     /* Walk through linked list*/
@@ -446,8 +475,6 @@ socket::traverse_local_address(std::function<bool(const ip::endpoint &)> handler
                 break;
         }
     }
-
-    qb::io::freeifaddrs(ifaddr);
 #endif
 }
 
@@ -728,9 +755,18 @@ int
 socket::connect_n(const char *addr, u_short port, const qb::duration &wtimeout) {
     return connect_n(ip::endpoint(addr, port), wtimeout);
 }
+// Windows cannot be asked a socket's FIONBIO mode, so test_nonblocking() answers from _nonblocking. The static
+// helpers below switch the mode on the raw descriptor, out of reach of that cache: every MEMBER that forwards to
+// one records the mode the helper leaves behind (Huly QB-318) -- before, test_nonblocking() kept answering the
+// mode set_nonblocking() last set, and udp::socket's restore paths trusted it. The one path that leaves the mode
+// untouched is a failed first ioctl, which happens only to a descriptor that is not an open socket.
 int
 socket::connect_n(const endpoint &ep, const qb::duration &wtimeout) {
-    return this->connect_n(this->fd, ep, wtimeout);
+    const int r = this->connect_n(this->fd, ep, wtimeout);
+#if defined(_WIN32)
+    _nonblocking = 0; // the timed connect leaves the socket blocking, connected or not
+#endif
+    return r;
 }
 int
 socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeout) {
@@ -792,7 +828,11 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
 
 int
 socket::connect_n(const endpoint &ep) {
-    return socket::connect_n(this->fd, ep);
+    const int r = socket::connect_n(this->fd, ep);
+#if defined(_WIN32)
+    _nonblocking = 1; // the untimed connect leaves the socket non-blocking (its connect is in progress)
+#endif
+    return r;
 }
 int
 socket::connect_n(socket_type s, const endpoint &ep) {
@@ -815,7 +855,11 @@ socket::disconnect(socket_type s) {
 
 int
 socket::send_n(const void *buf, int len, const qb::duration &wtimeout, int flags) {
-    return this->send_n(this->fd, buf, len, wtimeout, flags);
+    const int r = this->send_n(this->fd, buf, len, wtimeout, flags);
+#if defined(_WIN32)
+    _nonblocking = 0; // the timed send leaves the socket blocking
+#endif
+    return r;
 }
 int
 socket::send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, int flags) {
@@ -853,7 +897,11 @@ socket::send_n(socket_type s, const void *buf, int len, qb::duration wtimeout, i
 
 int
 socket::recv_n(void *buf, int len, const qb::duration &wtimeout, int flags) const {
-    return this->recv_n(this->fd, buf, len, wtimeout, flags);
+    const int r = this->recv_n(this->fd, buf, len, wtimeout, flags);
+#if defined(_WIN32)
+    _nonblocking = 0; // the timed receive leaves the socket blocking
+#endif
+    return r;
 }
 int
 socket::recv_n(socket_type s, void *buf, int len, qb::duration wtimeout, int flags) {

@@ -325,6 +325,10 @@ policy.
   upstream's CI configurations and `how_to_build.md`, and the fork's `UUID_BUILD_TESTS` option. qb never built any
   of it -- it pinned the option off and excluded the files from the install -- and tests the uuid surface it uses in
   its own suite. THIRD-PARTY-NOTICES no longer lists Catch2: no copy of it ships, in the source tree or a prefix.
+- **The Android API < 24 `getifaddrs()` fallback (Huly QB-321).** `sys__ifaddrs.h` carried a ~1,100-line netlink
+  replacement, derived from Xamarin.Android, for Android releases without `ifaddrs.h`. It could not compile -- two
+  commented-out log calls left their argument lines live -- and Android is not a qb platform. An Android target below
+  API level 24 now stops at an `#error`; every supported platform uses its own `ifaddrs.h`.
 
 
 ### Fixed
@@ -821,6 +825,48 @@ policy.
   "absent": one network blip on the `v<version>` probe handed out the development line or the default branch, as
   if it matched. Could-not-tell now stops the run, naming `QB_TEMPLATE_REF`. Pinned by scaffold.yml's failing-clone
   control, which now runs the probe path and the fetch path.
+- **A UDP datagram is framed on its own (Huly QB-303).** `transport::udp` appended each datagram to the input buffer
+  and the protocol framed across datagrams, so an incomplete tail from one peer was completed by the next datagram --
+  another peer's -- and the reply went to that second peer. The design the transport already declared
+  (`has_reset_on_pending_read`) is honoured now: after each datagram `io<>` / `input<>` emit `event::pending_read`
+  (unchanged, free when unhandled) and then drop what is left, the input buffer and the protocol's partial state. A
+  datagram carries whole frames; a stream transport compiles the branch out. **Behaviour change:** a frame split across
+  datagrams is no longer reassembled -- that reassembly is what spliced one peer's bytes onto another's. Caught by a
+  two-peer text-protocol test that read `abcdef` on the base.
+- **A refused first append to a UDP `out()` leaves nothing behind (Huly QB-304).** The proxy rolled the payload back
+  but kept the datagram header it had opened for it, so the next `write()` sent an empty datagram. A refused append
+  now leaves the queue exactly as it was, with `EMSGSIZE`.
+- **Windows: `tcp::socket::bind` and `connect` accept a socket opened but not yet bound (Huly QB-310).** The
+  family check compared the socket's local endpoint with the target, and an unbound Windows socket has none
+  (`getsockname` fails), so `init(AF_INET)` then `bind` or `connect` was refused there and nowhere else. An unknown
+  local family no longer refuses, in the four paths; a known mismatched one still does.
+- **Windows: `test_nonblocking()` follows the timed socket helpers (Huly QB-318).** `connect_n`, `send_n` and
+  `recv_n` switch `FIONBIO` on the descriptor, and Windows cannot read that mode back, so `test_nonblocking()` reads
+  a cache those members never updated: after a timed connect it still said non-blocking. The members record the mode
+  each leaves -- blocking for the timed forms, non-blocking for the untimed connect -- and the untimed `pconnect_n`
+  goes through the member.
+- **`udp::socket::set_multicast_ttl(0)` sets 0 (Huly QB-311).** The clamp's floor was 1, so a TTL of 0 -- keep the
+  datagrams on this host -- was silently widened to the local network. Clamped to [0, 255], the IPv6 hop limit
+  likewise.
+- **`socket::xpconnect` reaches an IPv4 loopback target on a host with no routable IPv4 (Huly QB-319).**
+  `getipsv()` counts only globally-routable addresses, so a host whose only IPv4 is 127.0.0.1 -- a network
+  namespace, a sandbox -- reported none and `xpconnect("127.0.0.1", ...)` was refused. A 127/8 or 169.254/16 target
+  is attempted whatever the host advertises, the IPv4 twin of the rule IPv6 local-scope targets already had.
+- **`sys::file` sets the errno it promises (Huly QB-320).** `read()` and `write()` on a closed file returned -1 with
+  errno untouched, and on Windows a refused `open()` never translated `GetLastError()`. They set `EBADF`, and the
+  Windows open maps the Win32 error (`ENOENT`, `EACCES`, `EEXIST`, ...) as the CRT does.
+- **An endpoint assigned from itself keeps its address (Huly QB-322).** `e = e`, `e.as_is(&e.sa_)`,
+  `e.as_is_raw(&e, ...)` and a UDS `e.as_un(e.un_.sun_path)` cleared the object before reading the source, which was
+  the object: the endpoint came out `AF_UNSPEC` (and the copy overlapped itself). Self-move-assignment reaches the
+  same code, endpoint having no move assignment.
+- **`endpoint::ip(text)` leaves a valid sockaddr (Huly QB-323).** It set the family and the address only: on a
+  default endpoint `len()` stayed 0 -- the length `bind`, `connect` and `sendto` hand the kernel -- and a v4 turned
+  v6 kept the old length and the old IPv4 address in `sin6_flowinfo`. A family change now sets the length and clears
+  the other family's fields, keeping the port; a text that does not parse leaves the endpoint unchanged.
+- **A throwing resolver or interface callback no longer leaks the native list (Huly QB-324).** `socket::resolve_i`
+  and `traverse_local_address` freed the `getaddrinfo` / `getifaddrs` list after the loop, so a callback that threw
+  -- `resolve_endpoints()` allocates in it -- leaked it. The list is owned across the callback; the exception still
+  propagates and the socket error the callback leaves still survives the free.
 
 ### Documentation
 
@@ -854,6 +900,8 @@ policy.
   `has_data()` comments said the same. All now say consumer thread only, which is how the engine calls them.
 - **`0_foundations/containers.md`: `qb::ring_buffer` has a `size()`** -- the page said it had none and that the live
   count came from the iterators; the accessor has existed since 3.0 and the example uses it.
+- **`endpoint(uint32_t)` and `addr_v4()` take and return host byte order.** Their comments said network byte order;
+  the code applies `htonl` / `ntohl`, and the tests pin host order (`INADDR_LOOPBACK`).
 
 ## [3.2.1] - 2026-09-24
 

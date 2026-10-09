@@ -295,12 +295,13 @@ socket::set_multicast_ttl(int ttl) noexcept {
     int af = address_family();
 
     if (af == AF_INET) {
-        // Ensure TTL is in valid range
-        unsigned char ttl_value = static_cast<unsigned char>(std::max(1, std::min(255, ttl)));
+        // Clamped to [0, 255]: 0 is a legal TTL -- it keeps the datagrams on this host, as the header documents --
+        // and the clamp started at 1, so a host-local multicast went out on the subnet (Huly QB-311).
+        unsigned char ttl_value = static_cast<unsigned char>(std::max(0, std::min(255, ttl)));
         return set_optval(IPPROTO_IP, IP_MULTICAST_TTL, ttl_value);
     } else if (af == AF_INET6) {
         // For IPv6, the option is different
-        unsigned int hop_limit = static_cast<unsigned int>(std::max(1, std::min(255, ttl)));
+        unsigned int hop_limit = static_cast<unsigned int>(std::max(0, std::min(255, ttl))); // [0, 255], as IPv4
         return set_optval(IPPROTO_IPV6, IPV6_MULTICAST_HOPS, hop_limit);
     }
 

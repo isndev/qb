@@ -122,7 +122,7 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 // the suite (50 links, so 50 chances to come in early) and it has zero slack by design:
 //   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:813) — a
 //     requested delay is never rounded DOWN;
-//   - `async::callback` forces `ev_now_update` immediately before arming (qb/io/async/io.h:402-408),
+//   - `async::callback` forces `ev_now_update` immediately before arming (qb/io/async/io.h:414-420),
 //     so each link's deadline is a FRESH clock read plus 1ms, never a stale cached one — that
 //     refresh is exactly what this floor would catch the loss of;
 //   - libev fires a timer only once its clock is strictly PAST the deadline

@@ -36,6 +36,63 @@
 
 namespace qb::io::sys {
 
+namespace {
+
+// The errno of a file descriptor is the C runtime's, and its EBADF is 9 -- the value _read() / _write() set
+// themselves. On Windows, qb/io/config.h re-maps EBADF to WSAEBADF (10009) for the socket layer, and that header is in
+// scope here (qb-io builds as one translation unit), so the C runtime's value is spelled out rather than taken from
+// the macro.
+#if defined(_WIN32)
+constexpr int file_errno_bad_descriptor = 9;
+#else
+constexpr int file_errno_bad_descriptor = EBADF;
+#endif
+
+} // namespace
+
+#if defined(_WIN32)
+namespace {
+
+// The errno a failed CreateFileW() stands for (Huly QB-320): file::open() promises
+// errno like POSIX open(), and the Win32 call reports through GetLastError() only.
+// The table follows the CRT's own mapping for the codes an open can produce.
+int
+file_open_errno_from_win32(DWORD const err) noexcept {
+    switch (err) {
+        case ERROR_FILE_NOT_FOUND:
+        case ERROR_PATH_NOT_FOUND:
+        case ERROR_INVALID_DRIVE:
+        case ERROR_BAD_NETPATH:
+        case ERROR_BAD_NET_NAME:
+        case ERROR_FILENAME_EXCED_RANGE:
+            return ENOENT;
+        case ERROR_ACCESS_DENIED:
+        case ERROR_SHARING_VIOLATION:
+        case ERROR_LOCK_VIOLATION:
+        case ERROR_WRITE_PROTECT:
+            return EACCES;
+        case ERROR_FILE_EXISTS:
+        case ERROR_ALREADY_EXISTS:
+            return EEXIST;
+        case ERROR_TOO_MANY_OPEN_FILES:
+            return EMFILE;
+        case ERROR_NOT_ENOUGH_MEMORY:
+        case ERROR_OUTOFMEMORY:
+            return ENOMEM;
+        case ERROR_DISK_FULL:
+        case ERROR_HANDLE_DISK_FULL:
+            return ENOSPC;
+        case ERROR_INVALID_NAME:
+        case ERROR_INVALID_PARAMETER:
+            return EINVAL;
+        default:
+            return EIO;
+    }
+}
+
+} // namespace
+#endif
+
 // file
 file::file() noexcept
     : _handle(FD_INVALID) {}
@@ -115,6 +172,7 @@ file::open(std::filesystem::path const &fname, int const flags, int const mode) 
                                    FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) {
         _handle = FD_INVALID;
+        errno   = file_open_errno_from_win32(::GetLastError());
     } else {
         // Preserve the descriptor's text/binary/append/read-only semantics; with
         // neither _O_TEXT nor _O_BINARY, _open_osfhandle() falls back to _fmode,
@@ -129,8 +187,12 @@ file::open(std::filesystem::path const &fname, int const flags, int const mode) 
         if (flags & _O_BINARY)
             osf |= _O_BINARY;
         _handle = ::_open_osfhandle(reinterpret_cast<intptr_t>(h), osf);
-        if (_handle == FD_INVALID)
+        if (_handle == FD_INVALID) {
+            // _open_osfhandle() set errno (EMFILE); keep it across the cleanup.
+            const int open_errno = errno;
             ::CloseHandle(h);
+            errno = open_errno;
+        }
     }
     (void) mode;
 #else
@@ -148,8 +210,10 @@ file::open(int const fd) noexcept {
 
 int
 file::write(const char *data, std::size_t size) const noexcept {
-    if (!is_open())
+    if (!is_open()) {
+        errno = file_errno_bad_descriptor; // the errno the header promises, as write(-1, ...) would (Huly QB-320)
         return -1;
+    }
     // Clamp to INT_MAX so the size never wraps when narrowed for the platform
     // syscall and the (int) return stays meaningful. Callers that need to move
     // more than 2 GiB loop on the return value (see pipe_to_file::write_all).
@@ -168,8 +232,10 @@ file::write(const char *data, std::size_t size) const noexcept {
 
 int
 file::read(char *data, std::size_t size) const noexcept {
-    if (!is_open())
+    if (!is_open()) {
+        errno = file_errno_bad_descriptor; // as read(-1, ...) would (Huly QB-320)
         return -1;
+    }
     if (size > static_cast<std::size_t>(std::numeric_limits<int>::max()))
         size = static_cast<std::size_t>(std::numeric_limits<int>::max());
 #ifdef _WIN32

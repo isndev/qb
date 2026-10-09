@@ -145,8 +145,20 @@ TEST(UDPSocket, BindAndOptionsExposeExpectedState) {
     EXPECT_EQ(socket.set_buffer_size(4096), 0);
     EXPECT_EQ(socket.set_broadcast(false), 0);
     EXPECT_EQ(socket.set_broadcast(true), 0);
-    EXPECT_EQ(socket.set_multicast_ttl(0), 0);
-    EXPECT_EQ(socket.set_multicast_ttl(512), 0);
+    // The TTL the kernel keeps is the one asked for, clamped to [0, 255]: 0 is legal -- it keeps the datagrams on
+    // this host, as the header documents -- and the clamp started at 1 (Huly QB-311). Read back as an int: Linux,
+    // the BSDs and Winsock all answer an int-sized getsockopt with the TTL as an int (DWORD on Windows).
+    const auto ttl_after = [&socket](int asked) {
+        EXPECT_EQ(socket.set_multicast_ttl(asked), 0);
+        int kept = 0;
+        EXPECT_EQ(socket.get_optval(IPPROTO_IP, IP_MULTICAST_TTL, kept), 0);
+        return kept;
+    };
+    EXPECT_EQ(ttl_after(0), 0) << "a TTL of 0 (host-local) was forced to 1";
+    EXPECT_EQ(ttl_after(1), 1);
+    EXPECT_EQ(ttl_after(255), 255);
+    EXPECT_EQ(ttl_after(512), 255);
+    EXPECT_EQ(ttl_after(-5), 0);
     EXPECT_EQ(socket.set_multicast_loopback(false), 0);
     EXPECT_EQ(socket.set_multicast_loopback(true), 0);
 

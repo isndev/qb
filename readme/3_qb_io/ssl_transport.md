@@ -235,7 +235,7 @@ Key behaviors verified in the header:
   `SocketStatus::CertificateError` (`1`), is part of the public surface but is returned by
   nothing in qb; to tell a verification failure apart, read `SSL_get_verify_result()` or
   the OpenSSL error queue.
-  <!-- src: qb/src/qb/io/system/sys__socket.h:1584-1588 (SocketStatus enumerators) -->
+  <!-- src: qb/src/qb/io/system/sys__socket.h:1620-1624 (SocketStatus enumerators) -->
   <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:822-833 (connect return gate), :946-965 (n_connect), :724-750 (handCheck) -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and

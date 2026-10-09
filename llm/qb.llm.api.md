@@ -538,9 +538,9 @@ RFC 3986 URI. Parsed on construction.
 
 ### Low-level socket (`<qb/io/system/sys__socket.h>`)
 *   `using qb::io::socket_type = int` (POSIX) / `SOCKET` (Windows) (from config.h).
-*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve`, `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)` (`SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too)/`bool reuse_port(bool)` (since 3.3: `SO_REUSEPORT`, `false` + `ENOPROTOOPT` on Windows)/`exclusive_address(bool)`; `pserve(const endpoint&, bool share_port = false)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
+*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve` (`xpconnect` picks v4/v6 by `getipsv()`, which counts routable addresses only; a local-scope target -- 127/8, 169.254/16, `::1`, ULA, link-local -- is always attempted, the v4 half since 3.3), `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)` (`SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too)/`bool reuse_port(bool)` (since 3.3: `SO_REUSEPORT`, `false` + `ENOPROTOOPT` on Windows)/`exclusive_address(bool)`; `pserve(const endpoint&, bool share_port = false)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
     *   `pserve` sets `SO_REUSEADDR` on POSIX but `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`): on Windows an in-use bind fails fast with `WSAEADDRINUSE` (no silent hijack/shadowing of an already-bound port), while POSIX keeps the TIME_WAIT-rebind behavior.
-*   `struct qb::io::inet::ip::endpoint` (alias surface `qb::io::endpoint`) — address-family-agnostic socket address (union of sockaddr/in/in6/un). Builders `as_in`/`as_un`/`as_is`; accessors `af()`, `port()`, `addr_v4()`, `ip()`, `to_string()`; `explicit operator bool` (`af()!=AF_UNSPEC`); `operator<`/`operator==`.
+*   `struct qb::io::inet::ip::endpoint` (alias surface `qb::io::endpoint`) — address-family-agnostic socket address (union of sockaddr/in/in6/un). Builders `as_in`/`as_un`/`as_is` (each safe on its own storage: `e = e`, `e.as_is(&e.sa_)` keep the address -- since 3.3); accessors `af()`, `port()`, `addr_v4()` (host byte order), `ip()`, `to_string()`; `ip(const char*)` keeps the port and, on a family change, sets `len()` and clears the other family's fields, an unparsable text leaving the endpoint unchanged (since 3.3); `explicit operator bool` (`af()!=AF_UNSPEC`); `operator<`/`operator==`.
 *   `enum qb::io::SocketStatus { Error = -1, Done, CertificateError };`
 *   `inline bool qb::io::socket_no_error(int error)` — true for EWOULDBLOCK/EAGAIN/EINTR/EINPROGRESS.
 
@@ -605,7 +605,7 @@ TCP listener. `constexpr is_secure() == false`.
     *   `int read_timeout(void* dest, std::size_t len, qb::io::endpoint& peer, const qb::duration& timeout) const noexcept` — `-ETIMEDOUT` on expiry.
     *   `int try_read(void* dest, std::size_t len, qb::io::endpoint& peer) const noexcept` — non-blocking.
     *   `int write(const void* data, std::size_t len, const qb::io::endpoint& to) const noexcept`
-    *   `int set_buffer_size(std::size_t)`, `set_broadcast(bool)`, `join_multicast_group(const std::string& group, const std::string& iface="")`, `leave_multicast_group(...)`, `set_multicast_ttl(int)`, `set_multicast_loopback(bool)`.
+    *   `int set_buffer_size(std::size_t)`, `set_broadcast(bool)`, `join_multicast_group(const std::string& group, const std::string& iface="")`, `leave_multicast_group(...)`, `set_multicast_ttl(int)` (clamped to [0, 255]; 0 keeps datagrams on this host -- since 3.3, it was forced to 1), `set_multicast_loopback(bool)`.
     *   `int address_family() const noexcept`, `bool is_bound() const noexcept`, `int disconnect() const noexcept`.
 
 ### QUIC (`<qb/io/quic.h>`, `<qb/io/async/quic/...>`) — gated on `QB_HAS_QUIC`
@@ -664,7 +664,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `[[nodiscard]] StreamSession* registerSession(...)` / `register_stream_session(...)` (aliases), `void unregisterSession(...)`, `void disconnected(...)`, `void clearSessions()` / `clearSessions(connection_id)`.
 
 ### Synchronous file I/O (`<qb/io/system/file.h>`)
-*   `class qb::io::sys::file` — move-only RAII over a native fd; copy deleted, dtor closes. `explicit file(const std::filesystem::path& fname, int flags = O_RDWR)`, `int open(const std::filesystem::path& fname, int flags = O_RDWR, int mode = 0644)` / `open(int fd)` / `close`/`read`/`write`/`is_open`/`native_handle`. All path params are `std::filesystem::path` (Windows opens via `CreateFileW` for Unicode). (`set_nonblocking` is a no-op.)
+*   `class qb::io::sys::file` — move-only RAII over a native fd; copy deleted, dtor closes. `explicit file(const std::filesystem::path& fname, int flags = O_RDWR)`, `int open(const std::filesystem::path& fname, int flags = O_RDWR, int mode = 0644)` / `open(int fd)` / `close`/`read`/`write`/`is_open`/`native_handle`. Errors: -1 with errno -- `read`/`write` on a closed file give `EBADF`, a refused `open` the system's errno (Windows maps the `CreateFileW` error: `ENOENT`/`EACCES`/`EEXIST`/...; both since 3.3). All path params are `std::filesystem::path` (Windows opens via `CreateFileW` for Unicode). (`set_nonblocking` is a no-op.)
 *   `class qb::io::sys::file_to_pipe` — read a file into a `qb::allocator::pipe<char>`: `bool open(const std::filesystem::path& path)`, `read()`/`read_all()`, `read_bytes()`, `expected_size()`, `eof()`.
 *   `class qb::io::sys::pipe_to_file` — write a `pipe<char>` to a file (O_WRONLY|O_CREAT|O_TRUNC): `bool open(const std::filesystem::path& path, int mode = 0644)`, `write()`/`write_all()`, `written_bytes()`, `eos()`.
 *   Free functions in `qb::io::sys` for self-locating binaries:
@@ -681,7 +681,8 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 ### Transports (`<qb/io/transport/...>`)
 *   `class qb::io::transport::tcp : public stream<io::tcp::socket>` — reliable TCP transport. `is_secure() == false`.
 *   `class qb::io::transport::stcp : public stream<io::tcp::ssl::socket>` — secure TCP transport (drains `SSL_pending()` after each read). `is_secure() == true`.
-*   `class qb::io::transport::udp : public stream<io::udp::socket>` — datagram transport. `is_secure() == false`, `has_reset_on_pending_read == true`.
+*   `class qb::io::transport::udp : public stream<io::udp::socket>` — datagram transport. `is_secure() == false`, `has_reset_on_pending_read == true`: the async UDP components frame each datagram ALONE — an incomplete trailing frame is reported (`event::pending_read`) then dropped with the protocol's partial state, never glued to the next datagram (another sender's); a datagram carries whole frames (since 3.3, Huly QB-303).
+    *   `ProxyOut& out()` — `operator<<` appends to the current datagram for the current destination; an append past `MaxDatagramSize` or the write-buffer cap is refused with EMSGSIZE and leaves the queue unchanged — a refused first append leaves no empty datagram to send (since 3.3, Huly QB-304).
     *   `struct identity : public qb::io::endpoint` — UDP peer identity with `struct hasher` (usable as map key) and `operator==`/`!=`.
     *   `const identity& getSource() const noexcept` — last datagram's sender.
     *   `void setDestination(const identity& to) noexcept` — default reply target.

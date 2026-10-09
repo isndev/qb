@@ -29,6 +29,18 @@
 
 namespace qb::io::tcp {
 
+namespace {
+// An open socket takes `ep` unless its family is KNOWN and different. getsockname() of a socket that is open but
+// not yet bound fails on Windows (WSAEINVAL), so its family reads AF_UNSPEC: that is no mismatch, and taking it
+// for one made the synchronous bind() / connect() refuse an initialised socket (Huly QB-310) -- n_connect()'s rule,
+// now the one rule of the four. A genuine incompatibility is still reported, by the call itself.
+bool
+tcp_open_family_refuses(socket const &self, qb::io::endpoint const &ep) noexcept {
+    const int local_af = self.local_endpoint().af();
+    return local_af != AF_UNSPEC && local_af != ep.af();
+}
+} // namespace
+
 socket::socket(io::socket &&sock) noexcept
     : io::socket(sock.release_handle()) {}
 
@@ -50,7 +62,7 @@ socket::init(int af) noexcept {
 int
 socket::bind(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        if (local_endpoint().af() != ep.af())
+        if (tcp_open_family_refuses(*this, ep))
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -156,7 +168,7 @@ socket::connect_in(int af, std::string const &host, uint16_t port, qb::duration 
 int
 socket::connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        if (local_endpoint().af() != ep.af())
+        if (tcp_open_family_refuses(*this, ep))
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -167,7 +179,7 @@ socket::connect(qb::io::endpoint const &ep) noexcept {
 int
 socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout) noexcept {
     if (is_open()) {
-        if (local_endpoint().af() != ep.af())
+        if (tcp_open_family_refuses(*this, ep))
             return -1;
     } else if (init(ep.af()))
         return -1;
@@ -246,14 +258,9 @@ socket::n_connect_in(int af, std::string const &host, uint16_t port) noexcept {
 int
 socket::n_connect(qb::io::endpoint const &ep) noexcept {
     if (is_open()) {
-        // local_endpoint() (getsockname) returns AF_UNSPEC for a socket that was
-        // opened but not yet bound — notably on Windows, where getsockname fails
-        // with WSAEINVAL on an unbound socket (POSIX reports the open family). Only
-        // reject a *known* family mismatch; otherwise proceed and let connect()
-        // surface any genuine incompatibility. Without this, connecting through an
+        // Only a KNOWN family mismatch is refused (tcp_open_family_refuses): without that, connecting through an
         // existing unbound socket (connect_with_socket) always failed on Windows.
-        const int local_af = local_endpoint().af();
-        if (local_af != AF_UNSPEC && local_af != ep.af())
+        if (tcp_open_family_refuses(*this, ep))
             return -1;
     } else if (init(ep.af()))
         return -1;

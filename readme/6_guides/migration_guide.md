@@ -297,7 +297,7 @@ std::int64_t  exp_s  = qb::unix_seconds(expiry);      // for a JWT exp claim, sa
 The migration matters because the framework's own surfaces take these types. A few you will meet immediately:
 
 - `CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` — the maximum the event loop waits when idle; the default `zero()` is the busy-spin, lowest-latency mode (100% CPU on the core), and a positive value lets the idle core park to trade latency for CPU. _(`qb/src/qb/core/Main.h:282-305`.)_
-- Socket and async timeouts take `qb::duration` (for example `tcp::socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout)`); a non-positive value is clamped to a single poll, not "wait forever." _(`qb/src/qb/io/tcp/socket.h:158-161`; the clamp is `qb/src/qb/io/system/sys__socket.cpp:761`.)_
+- Socket and async timeouts take `qb::duration` (for example `tcp::socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout)`); a non-positive value is clamped to a single poll, not "wait forever." _(`qb/src/qb/io/tcp/socket.h:158-161`; the clamp is `qb/src/qb/io/system/sys__socket.cpp:797`.)_
 - `qb::SpinLock::trylock_for(qb::duration)` and `trylock_until(qb::mono_time)`. _(`qb/src/qb/system/lockfree/spinlock.h:135-136,171-172`.)_
 
 ### Pitfalls
@@ -660,7 +660,7 @@ such option — `setsockopt(SOL_SOCKET, MSG_NOSIGNAL, …)` returns `-1`/`ENOPRO
 
 Behavior changes on no platform: both of qb's own call sites already guarded with `!defined(__linux__)`,
 and qb applies the option at descriptor acquisition where it is real
-(`qb/src/qb/io/system/sys__socket.cpp:111-115`). Only code that *named* the macro on Linux breaks:
+(`qb/src/qb/io/system/sys__socket.cpp:112-116`). Only code that *named* the macro on Linux breaks:
 
 ```
 error: 'SO_NOSIGPIPE' undeclared

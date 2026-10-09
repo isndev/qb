@@ -58,6 +58,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -713,6 +714,83 @@ TEST(TextSessionUdp, CommandOverUdp) {
 
     EXPECT_GE(udp_server.load(), 1u);
     EXPECT_GE(udp_client.load(), 1u);
+    async::listener::current.clear();
+}
+
+namespace {
+
+// What the frame server below saw, in order: the frames, the port each one's reply would go to, and the bytes each
+// `pending_read` reported (an incomplete trailing frame). Touched by the test thread only (it pumps the loop).
+struct udp_framing_seen {
+    std::vector<std::string>   texts;
+    std::vector<std::uint16_t> reply_ports;
+    std::vector<std::size_t>   pending;
+};
+udp_framing_seen udp_framing;
+
+class UdpFrameServer : public use<UdpFrameServer>::udp::server {
+public:
+    using Protocol = qb::protocol::text::command<UdpFrameServer>;
+    void
+    on(Protocol::message &&msg) {
+        udp_framing.texts.emplace_back(msg.text);
+        udp_framing.reply_ports.push_back(getSource().port());
+    }
+    void
+    on(async::event::pending_read &&evt) {
+        udp_framing.pending.push_back(evt.bytes);
+    }
+};
+
+} // namespace
+
+/**
+ * @test A datagram carries whole frames: an incomplete tail is reported, then dropped (Huly QB-303)
+ * @brief The async UDP component framed successive datagrams as ONE byte stream: peer A's incomplete `abc` stayed
+ *        in the input and became the head of peer B's `def\n` -- one frame `abcdef`, answered to B. Now each datagram
+ *        is framed alone: what the protocol leaves is reported as `pending_read` and dropped with the protocol's
+ *        partial state. Controls: several whole frames in one datagram, and a dropped tail that does not prefix the
+ *        next datagram's frame.
+ */
+TEST(TextSessionUdp, ADatagramCarriesWholeFramesAndAnIncompleteTailIsDropped) {
+    async::init();
+    udp_framing = {};
+
+    UdpFrameServer server;
+    ASSERT_EQ(server.transport().bind_v4(0, "127.0.0.1"), 0);
+    const auto to = endpoint().as_in("127.0.0.1", server.transport().local_endpoint().port());
+    server.start();
+
+    qb::io::udp::socket peer_a;
+    qb::io::udp::socket peer_b;
+    ASSERT_TRUE(peer_a.init());
+    ASSERT_TRUE(peer_b.init());
+    ASSERT_EQ(peer_a.bind_v4(0, "127.0.0.1"), 0);
+    ASSERT_EQ(peer_b.bind_v4(0, "127.0.0.1"), 0);
+
+    // Peer A: an incomplete frame, alone in its datagram. Reported, then dropped.
+    ASSERT_EQ(peer_a.write("abc", 3, to), 3);
+    ASSERT_TRUE(pump_until([] { return udp_framing.pending.size() == 1; }, std::chrono::seconds(2))) << "A's datagram never read";
+    EXPECT_EQ(udp_framing.pending[0], 3u);
+    EXPECT_TRUE(udp_framing.texts.empty());
+
+    // Peer B: a whole frame. It arrives alone -- not glued to A's tail -- and its reply goes to B.
+    ASSERT_EQ(peer_b.write("def\n", 4, to), 4);
+    ASSERT_TRUE(pump_until([] { return udp_framing.texts.size() == 1; }, std::chrono::seconds(2))) << "B's frame never delivered";
+    EXPECT_EQ(udp_framing.texts[0], "def") << "A's incomplete frame became the head of B's";
+    EXPECT_EQ(udp_framing.reply_ports[0], peer_b.local_endpoint().port());
+
+    // Several whole frames then a tail in ONE datagram: the frames are delivered, the tail reported and dropped,
+    // and it does not prefix the next datagram's frame.
+    ASSERT_EQ(peer_b.write("x\ny\nzz", 6, to), 6);
+    ASSERT_TRUE(pump_until([] { return udp_framing.texts.size() == 3 && udp_framing.pending.size() == 2; }, std::chrono::seconds(2)));
+    EXPECT_EQ(udp_framing.texts[1], "x");
+    EXPECT_EQ(udp_framing.texts[2], "y");
+    EXPECT_EQ(udp_framing.pending[1], 2u);
+    ASSERT_EQ(peer_a.write("w\n", 2, to), 2);
+    ASSERT_TRUE(pump_until([] { return udp_framing.texts.size() == 4; }, std::chrono::seconds(2)));
+    EXPECT_EQ(udp_framing.texts[3], "w") << "the dropped tail 'zz' prefixed the next datagram's frame";
+    EXPECT_EQ(udp_framing.reply_ports[3], peer_a.local_endpoint().port());
     async::listener::current.clear();
 }
 

@@ -398,10 +398,11 @@ public:
     using output_buffer_type = qb::allocator::pipe<char>;
 
     /**
-     * @brief Flag indicating whether the implementation resets pending reads
+     * @brief Whether the bytes a read leaves unconsumed are dropped after the read (a datagram transport).
      *
-     * This flag is used by derived classes to indicate if they need special
-     * handling for pending read operations. Default is false.
+     * False for a stream: an incomplete frame waits for the bytes that complete it. `transport::udp`
+     * declares it true, and the async components then drop a datagram's incomplete tail once it has been
+     * reported (`event::pending_read`) -- see `qb::io::async::detail::resets_input_per_read`.
      */
     static constexpr bool has_reset_on_pending_read = false;
 

@@ -42,7 +42,7 @@ or function, that symbol is named so you can verify it directly.
   `Timeout<F>`, `ScopedTimeout<F>`, and the file and directory watchers — binds
   to `listener::current` **at construction**. `async::base` registers its libev
   watcher in its constructor and stops + unregisters it in its destructor
-  (`src/qb/io/async/io.h:85-86`, `:97-98`). The object **must be constructed and
+  (`src/qb/io/async/io.h:97-98`, `:109-110`). The object **must be constructed and
   destroyed on the same thread**; the libev watcher is not cross-thread safe.
 - The listener is **never locked**. All event handlers (`on()` methods) run
   sequentially on the listener's own thread, so I/O state needs no mutex or
@@ -59,7 +59,7 @@ or function, that symbol is named so you can verify it directly.
 
 Moving an async object is also forbidden. `async::base` declares no move
 operations of its own, and the embedded `_async_event` reference binds to the
-original object's address (`src/qb/io/async/io.h:78`). Copy is blocked at the
+original object's address (`src/qb/io/async/io.h:90`). Copy is blocked at the
 derived `input`/`output`/`io` level; a move would corrupt the listener
 registration. Hold these objects in place — by `shared_ptr`, in a session
 registry, or as a member — never relocate them.
@@ -114,7 +114,7 @@ registry, or as a member — never relocate them.
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
-  (`src/qb/io/async/io.h:1441-1442`). This is intra-thread re-entrance
+  (`src/qb/io/async/io.h:1463-1464`). This is intra-thread re-entrance
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
@@ -130,21 +130,21 @@ registry, or as a member — never relocate them.
 
 - `async::callback(func)` with no duration, or with a non-positive duration,
   runs `func()` **inline immediately** — not on the next loop iteration
-  (`src/qb/io/async/io.h:398-400`, `:376-377`). `Timeout<F>` and `ScopedTimeout<F>`
+  (`src/qb/io/async/io.h:410-412`, `:388-389`). `Timeout<F>` and `ScopedTimeout<F>`
   mirror this fire-immediately semantics in their constructors.
 - `async::callback(func, timeout)` with a positive duration creates a
   self-deleting `Timeout<F>` on the heap, which registers a libev timer.
   `Timeout<F>` owns its own lifetime and calls `delete this` when it fires
-  (`src/qb/io/async/io.h:351`). Do not store, delete, or otherwise hold a
+  (`src/qb/io/async/io.h:363`). Do not store, delete, or otherwise hold a
   `Timeout<F>` — it is fire-and-forget by design.
 - For a timer you can **cancel or own**, use `async::scoped_callback(...)` /
-  `ScopedTimeout<F>` (`src/qb/io/async/io.h:429,509`). These are caller-owned
+  `ScopedTimeout<F>` (`src/qb/io/async/io.h:441,521`). These are caller-owned
   via `unique_ptr`; cancellation is destroying or reusing the object. They do
   not participate in the `delete this` dance.
 - `Timeout`, `ScopedTimeout`, and the `RegisteredKernelEvent` slab use
   per-instantiation, thread-local LIFO freelists (custom `operator new` /
   `operator delete`). A steady-state `callback()` performs **zero**
-  `malloc`/`free` once the pool is warm (`src/qb/io/async/io.h:206-207,221-224`). The
+  `malloc`/`free` once the pool is warm (`src/qb/io/async/io.h:218-219,233-236`). The
   pools are intentionally **never drained** at thread exit — the OS reclaims the
   thread's memory, and draining from a TLS destructor would race a late
   `delete this` from an already-fired timer whose loop iteration outlives the
@@ -152,7 +152,7 @@ registry, or as a member — never relocate them.
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
-  `from_ev_seconds` seam (`src/qb/io/async/io.h:167`). The retired
+  `from_ev_seconds` seam (`src/qb/io/async/io.h:179`). The retired
   pre-2.0 capitalized time identifiers appear nowhere in this layer and must
   never be reintroduced; the canonical vocabulary is `qb::duration`,
   `qb::mono_time`, and `qb::wall_time`
@@ -216,9 +216,9 @@ registry, or as a member — never relocate them.
 - `disconnect(0)` is remapped to `user_initiated` (`1`) because internally
   `_reason == 0` is the sentinel for "no disconnect pending"; the `peer_closed`
   (`0`) code is generated automatically on kernel EOF
-  (`src/qb/io/async/io.h:1292`).
+  (`src/qb/io/async/io.h:1304`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1513-1516`). It fires `on(event::disconnected)` if the
+  (`src/qb/io/async/io.h:1535-1538`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then notifies
   `server().disconnected(id())`, otherwise it stops the watcher and fires
   `on(event::dispose)`.
@@ -235,7 +235,7 @@ registry, or as a member — never relocate them.
   logs a CRIT line, as `tcp::server` does; it used to throw.
 - For the entire duration of `on(event::io)`, the handler holds a
   `std::shared_ptr<void> _self_guard` to itself — acquired before any branch
-  that can reach `dispose()` (`src/qb/io/async/io.h:1439-1451`). This means a user
+  that can reach `dispose()` (`src/qb/io/async/io.h:1461-1473`). This means a user
   who releases the last external `shared_ptr` from inside `on(disconnected)`
   cannot trigger a use-after-free in the rest of `dispose()`. The guard is typed
   `shared_ptr<void>` so it works even when `_Derived` inherits
@@ -291,7 +291,7 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
   upgrade) and leave the old protocol dangling — the flush must use the old
-  protocol's policy (`src/qb/io/async/io.h:1348-1349`).
+  protocol's policy (`src/qb/io/async/io.h:1360-1361`).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer
@@ -386,7 +386,7 @@ with I/O lifetime are:
   qev's `ev_stat` stores the narrow `const char *` it is given **without
   copying** (`src/qb/ev/ev++.h:762`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
-  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:615-616`, `:783-784`).
+  `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:627-628`, `:795-796`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and
   do not reassign or shrink `_watched_path` while the watcher is armed — the
   pointer libev holds would dangle and the next stat poll would read freed memory.
@@ -405,7 +405,7 @@ peer's memory footprint (`src/qb/io/config.h:174-175`, `:250-251`, `:264-265`):
 | `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
 
 Setting a cap to `SIZE_MAX` disables that limit
-(`src/qb/io/stream.h:124-125`, `:480-481`); it is discouraged for any network-facing
+(`src/qb/io/stream.h:124-125`, `:481-482`); it is discouraged for any network-facing
 component.
 
 ---

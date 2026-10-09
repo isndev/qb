@@ -247,6 +247,36 @@ TEST(UDPTransport, ProxyOutOverflowRollsBackLastAppend) {
     EXPECT_EQ(qb::io::socket::get_last_errno(), EMSGSIZE);
 }
 
+// A refused FIRST append leaves no record behind (Huly QB-304): before, the header out() had made stayed queued
+// -- above the write-buffer cap when the cap was smaller than a header -- and went out as an EMPTY datagram the
+// caller never asked for. Both refusals: past MaxDatagramSize under the default cap, and a cap below one header.
+TEST(UDPTransport, ProxyOutRefusedFirstAppendLeavesNoRecordAndSendsNothing) {
+    qb::io::transport::udp sender;
+    qb::io::transport::udp receiver;
+    ASSERT_TRUE(sender.transport().init());
+    ASSERT_TRUE(receiver.transport().init());
+    ASSERT_EQ(receiver.transport().bind_v4(0, "127.0.0.1"), 0);
+    sender.setDestination(qb::io::transport::udp::identity{qb::io::endpoint("127.0.0.1", receiver.transport().local_endpoint().port())});
+
+    sender.out() << std::string(qb::io::udp::socket::MaxDatagramSize + 1, 'x');
+    EXPECT_EQ(qb::io::socket::get_last_errno(), EMSGSIZE);
+    EXPECT_EQ(sender.pendingWrite(), 0u) << "the refused first append left its datagram header queued";
+    EXPECT_EQ(sender.write(), 0) << "nothing to send";
+    EXPECT_EQ(read_zero_length_datagram(receiver, 200ms), -1) << "an empty datagram reached the peer";
+
+    sender.set_max_write_buffer_size(4); // smaller than one datagram header
+    sender.out() << std::string("ab");
+    EXPECT_EQ(qb::io::socket::get_last_errno(), EMSGSIZE);
+    EXPECT_EQ(sender.pendingWrite(), 0u) << "a refused append must not leave the queue above its cap";
+
+    // Under a cap that admits it, the next append starts a fresh datagram that arrives whole.
+    sender.set_max_write_buffer_size(static_cast<std::size_t>(-1));
+    sender.out() << std::string("ok");
+    ASSERT_EQ(sender.write(), 2);
+    ASSERT_EQ(read_datagram(receiver), 2) << "the datagram after the refusals never arrived";
+    EXPECT_EQ(std::string_view(receiver.in().begin(), receiver.pendingRead()), "ok");
+}
+
 TEST(UDPTransport, ProxyOutAllocatesNewDatagramAfterDestinationReset) {
     qb::io::transport::udp sender;
     qb::io::transport::udp receiver_a;

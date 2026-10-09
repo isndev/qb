@@ -29,6 +29,9 @@
  *     branch) — already partially covered, re-pinned here with exact errno-class expectations.
  *   - opening a path whose parent directory does not exist fails (the disposition resolves to a
  *     non-creatable path).
+ *   - every failure sets the errno file.h promises (Huly QB-320): EEXIST / ENOENT from a refused
+ *     open on both platforms (Windows maps the CreateFileW error), EBADF from read/write on a
+ *     closed object.
  *
  * Pure `unit`: every operation is a local-filesystem syscall against a unique per-test scratch dir.
  *
@@ -54,6 +57,7 @@
  * @ingroup Tests
  */
 
+#include <cerrno>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -159,15 +163,19 @@ TEST_F(FileErrorPaths, ExclusiveCreateRejectsAnExistingFile) {
 
     // A second exclusive create on the now-existing path must fail.
     qb::io::sys::file dup;
+    errno = 0;
     dup.open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
     EXPECT_FALSE(dup.is_open()) << "O_EXCL must refuse to re-create an existing file";
+    EXPECT_EQ(errno, EEXIST) << "open() promises errno; Windows left it unset (Huly QB-320)";
 }
 
 TEST_F(FileErrorPaths, OpenExistingForReadFailsWhenAbsent) {
     qb::io::sys::file f;
     // No O_CREAT: a read-open of a non-existent path resolves to OPEN_EXISTING and fails.
+    errno = 0;
     f.open(dir / "absent.txt", O_RDONLY);
     EXPECT_FALSE(f.is_open());
+    EXPECT_EQ(errno, ENOENT) << "open() promises errno; Windows left it unset (Huly QB-320)";
 }
 
 TEST_F(FileErrorPaths, TruncateDispositionEmptiesAnExistingFileOnOpen) {
@@ -271,9 +279,17 @@ TEST_F(FileErrorPaths, ReadOnReadOnlyAndWriteOnWriteOnlyAreDirectional) {
 TEST_F(FileErrorPaths, OpenIntoMissingParentDirectoryFails) {
     qb::io::sys::file f;
     // The parent dir does not exist, so even O_CREAT cannot place the file.
+    errno = 0;
     f.open(dir / "no_such_subdir" / "file.txt", O_WRONLY | O_CREAT, 0644);
     EXPECT_FALSE(f.is_open()) << "creating a file under a missing directory must fail";
+    EXPECT_EQ(errno, ENOENT);
+    // read()/write() on the closed object promise errno too (Huly QB-320: they returned
+    // -1 and left errno as it was, both platforms).
     char buf[4] = {0};
+    errno       = 0;
     EXPECT_LT(f.read(buf, sizeof(buf)), 0);
+    EXPECT_EQ(errno, EBADF);
+    errno = 0;
     EXPECT_LT(f.write("x", 1), 0);
+    EXPECT_EQ(errno, EBADF);
 }
