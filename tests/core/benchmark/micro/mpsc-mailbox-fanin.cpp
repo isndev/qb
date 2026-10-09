@@ -26,8 +26,9 @@
  * Benchmark methodology (perf harness, never a ctest gate — no `EXPECT_LT(duration,…)`):
  *   - the whole timed region is `run_mpsc_fan_in()`; thread spin-up is absorbed by the start gate so
  *     each iteration measures sustained pressure, not launch cost;
- *   - `SetItemsProcessed` / `SetBytesProcessed` and the descriptor counters are assigned ONCE after
- *     the loop (`bytes_per_second` derives from `SetBytesProcessed`; payload-free buckets still move
+ *   - each timed run verifies its drained total after pausing timing; an incomplete run produces
+ *     no nominal-work rate. Descriptor counters are assigned once after a valid loop
+ *     (`bytes_per_second` derives from `SetBytesProcessed`; payload-free buckets still move
  *     `sizeof(EventBucket)` cache-line-sized slots through the ring, so the byte column stays
  *     comparable across benches);
  *   - a one-shot, out-of-loop correctness probe runs the smallest fan-in and `DoNotOptimize`s the
@@ -94,7 +95,14 @@ BM_MpscMailbox_FanInDrain(benchmark::State &state) {
     std::uint64_t fails = 0;
     for (auto _ : state) {
         const auto run = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_empty_bucket, consume_noop);
-        fails          = run.enqueue_failures;
+        state.PauseTiming();
+        if (run.stalled || run.drained != total) {
+            state.SkipWithError("fan-in drain stalled: consumer took " + std::to_string(run.drained) + " of " + std::to_string(total)
+                                + " buckets");
+            return;
+        }
+        state.ResumeTiming();
+        fails = run.enqueue_failures;
         benchmark::DoNotOptimize(fails);
     }
 
