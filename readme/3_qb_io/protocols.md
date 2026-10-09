@@ -184,14 +184,14 @@ It requires an unsigned `Size` and returns the length in network byte order, rea
 
 ### JSON and MessagePack
 
-Defined in `qb/io/protocol/json.h`; both frame on a trailing `'\0'` byte (they derive from `base::byte_terminated<IO_, '\0'>`).
+Defined in `qb/io/protocol/json.h`; each message is followed by a `'\0'` byte. `json` derives from `base::byte_terminated<IO_, '\0'>`: JSON text cannot hold a raw NUL, so the first one ends the message. `json_packed` cannot frame that way -- MessagePack writes zero bytes inside its values (the integer `0` is the byte `0x00`; so is a byte of most lengths, floats and binaries) -- so it derives from `AProtocol` and frames the value by its own lengths: every MessagePack header states the length of what follows, the protocol steps over each payload without reading it, and the byte right after the value must be the `'\0'`, any other byte being a protocol error. A sender writes `qb::json::to_msgpack(value)` then `'\0'` either way.
 
 | Type | Encoding | `message` payload |
 |---|---|---|
 | `qb::protocol::json<IO_>` | UTF-8 JSON text | `{ size, data, nlohmann::json json }` |
 | `qb::protocol::json_packed<IO_>` | MessagePack | `{ size, data, nlohmann::json json }` |
 
-Before handing a payload to `nlohmann`'s recursive parser, both protocols run a linear pre-scan that bounds container nesting to `qb::protocol::detail::kJsonMaxNestingDepth` (`512`). A document nested deeper than that, or a payload that fails to parse, is rejected with `not_ok()` rather than risking a stack overflow that a `try`/`catch` cannot recover from. The `json` field is owned by the message and survives the `on(...)` call; the `data` pointer is a buffer view and does not.
+Before handing a payload to `nlohmann`'s recursive parser, both protocols bound container nesting to `qb::protocol::detail::kJsonMaxNestingDepth` (`512`) -- `json` with a linear pre-scan of the text, `json_packed` while it frames the value, in the same pass. A document nested deeper than that, or a payload that fails to parse, is rejected with `not_ok()` rather than risking a stack overflow that a `try`/`catch` cannot recover from. The `json` field is owned by the message and survives the `on(...)` call; the `data` pointer is a buffer view and does not.
 
 ### Acceptor and handshake protocols
 

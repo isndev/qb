@@ -126,7 +126,7 @@ uuid generate_random_uuid();     // version 4 (random)
 `qb::uuid` aliases the vendored `stduuid` type, so its full comparison, formatting and parsing surface is available under the `uuids` namespace. Two things about the wrapper are qb's own and worth stating:
 
 - **`generate_random_uuid()` is defined in the compiled library**, not inline. A translation unit that includes only `<qb/uuid.h>` still has to link `qb::io`. That is also why this header pulls in `<qb/utility/abi.h>`: it is a documented top-level entry point, so it carries the [link-time configuration fingerprint](./abi_and_build_fingerprint.md) like every other one, with no exception to explain (`qb/src/qb/uuid.h:31-35`).
-- **JSON serialisation is provided.** `uuids::to_json` / `from_json` adapters are declared in `qb/json.h`, so a `qb::uuid` round-trips through `qb::json` without a manual conversion (`qb/src/qb/json.h:301-311`).
+- **JSON serialisation is provided.** `uuids::to_json` / `from_json` adapters are declared in `qb/json.h`, so a `qb::uuid` round-trips through `qb::json` without a manual conversion (`qb/src/qb/json.h:319-329`).
 
 ```cpp
 qb::uuid id = qb::generate_random_uuid();

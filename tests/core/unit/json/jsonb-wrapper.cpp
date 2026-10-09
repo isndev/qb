@@ -22,7 +22,9 @@
  * cases that guard the known number-truncation bug class (the qb `pipe::put<json>` serializer once
  * truncated every number through get<int>/get<float>, turning int64 timestamps negative and losing
  * double precision — these assert full 64-bit and full double precision survive `dump()`); and a
- * `json::parse` malformed-input error case plus a parse-then-wrap success path.
+ * `json::parse` malformed-input error case plus a parse-then-wrap success path. And `std::hash<jsonb>` against
+ * `operator==`: equal values hash alike across the number kinds nlohmann compares (Huly QB-384), and a string that is
+ * not valid UTF-8 hashes without throwing out of the noexcept hash (Huly QB-385).
  */
 
 #include <cstdint>
@@ -30,6 +32,8 @@
 #include <sstream>
 #include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/json.h>
@@ -137,6 +141,70 @@ TEST(Jsonb, UnwrapStreamAndHash) {
     set.insert(jsonb(json{{"k", 5}})); // duplicate
     set.insert(jsonb(json{{"k", 6}}));
     EXPECT_EQ(set.size(), 2u);
+}
+
+// std::hash<jsonb> hashed dump(), and operator== is not the equality of dump()'s text: 1, 1u and 1.0 are equal values
+// written "1", "1" and "1.0", so equal keys hashed apart -- a set kept both, a map missed its key (Huly QB-384). The
+// hash is structural and follows ==, numbers across their kinds, -0.0 with 0.0, objects in any insertion order.
+TEST(Jsonb, EqualValuesHashAlike) {
+    const std::hash<jsonb>      hash{};
+    const std::pair<json, json> equal[] = {
+        {json(1), json(1u)},
+        {json(1), json(1.0)},
+        {json(1u), json(1.0)},
+        {json(-7), json(-7.0)},
+        {json(0.0), json(-0.0)},
+        {json{{"a", 1}}, json{{"a", 1.0}}},
+        {json::array({1, 2.0}), json::array({1.0, 2u})},
+        {json{{"b", json::array({0})}, {"a", nullptr}}, json{{"a", nullptr}, {"b", json::array({0.0})}}},
+    };
+    for (const auto &[a, b] : equal) {
+        ASSERT_EQ(a, b) << "nlohmann's == holds " << a.dump() << " and " << b.dump() << " equal";
+        EXPECT_EQ(hash(jsonb(a)), hash(jsonb(b))) << a.dump() << " and " << b.dump() << " are equal and must hash alike";
+    }
+
+    std::unordered_set<jsonb> set;
+    set.insert(jsonb(json(1)));
+    set.insert(jsonb(json(1.0)));
+    set.insert(jsonb(json(1u)));
+    EXPECT_EQ(set.size(), 1u) << "1, 1.0 and 1u are one key";
+    EXPECT_EQ(set.count(jsonb(json{{"k", 2}})), 0u);
+    set.insert(jsonb(json{{"k", 2}}));
+    EXPECT_EQ(set.count(jsonb(json{{"k", 2.0}})), 1u) << "found under an equal key";
+
+    // ... and it still tells values apart.
+    const json distinct[] = {
+        json(nullptr),
+        json(false),
+        json(true),
+        json(0),
+        json(1),
+        json(2.5),
+        json("1"),
+        json::array(),
+        json::object(),
+        json::array({1}),
+        json{{"1", 1}},
+        json::binary(std::vector<std::uint8_t>{1}),
+        json::binary(std::vector<std::uint8_t>{1}, 1)
+    };
+    std::unordered_set<std::size_t> hashes;
+    for (const json &value : distinct)
+        hashes.insert(hash(jsonb(value)));
+    EXPECT_EQ(hashes.size(), std::size(distinct)) << "distinct values collided";
+}
+
+// A string that is not valid UTF-8 makes dump() throw type_error.316 -- and the old hash called dump() inside the
+// noexcept std::hash<jsonb>, so hashing such a key was std::terminate (Huly QB-385). The hash reads the value.
+TEST(Jsonb, HashingAStringThatIsNotUtf8DoesNotThrow) {
+    const jsonb invalid(json(std::string("\xff\xfe", 2)));
+    EXPECT_THROW((void) invalid.dump(), json::type_error) << "dump() refuses it: the path the old hash took";
+
+    std::unordered_set<jsonb> set;
+    set.insert(invalid);
+    set.insert(jsonb(json{{"k", std::string("\xc3\x28", 2)}}));
+    EXPECT_EQ(set.size(), 2u);
+    EXPECT_EQ(set.count(invalid), 1u);
 }
 
 TEST(Jsonb, DumpPreservesInt64AndDoublePrecision) {

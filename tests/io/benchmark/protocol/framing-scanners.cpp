@@ -37,7 +37,15 @@ struct ProtocolProbe {
     using base_io_t = ProtocolProbe;
 
     qb::allocator::pipe<char> input;
-    bool                      ok = true;
+    bool                      ok       = true;
+    std::size_t               messages = 0;
+
+    // The handler of the protocols that deliver a message (json_packed below).
+    template <typename Message>
+    void
+    on(Message &&) noexcept {
+        ++messages;
+    }
 
     qb::allocator::pipe<char> &
     in() noexcept {
@@ -258,6 +266,54 @@ BM_Protocol_MsgpackDepthGuard(benchmark::State &state) {
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(packed.size()));
 }
 
+// json_packed's framing alone (Huly QB-305): one pass over the value's headers that finds its end and bounds its
+// depth, on the payload of BM_Protocol_MsgpackDepthGuard -- the SAX pre-scan the decode no longer needs.
+void
+BM_Protocol_MsgpackFrame(benchmark::State &state) {
+    const auto     depth = static_cast<std::size_t>(state.range(0));
+    nlohmann::json value = 0;
+    for (std::size_t i = 0; i < depth; ++i)
+        value = nlohmann::json::array({std::move(value)});
+    const auto packed = nlohmann::json::to_msgpack(value);
+
+    qb::protocol::detail::msgpack_value_scanner scanner;
+    for (auto _ : state) {
+        scanner.reset();
+        benchmark::DoNotOptimize(scanner.scan(packed.data(), packed.size(), qb::protocol::detail::kJsonMaxNestingDepth));
+    }
+
+    if (scanner.end() != packed.size())
+        state.SkipWithError("the scanner did not frame the whole value");
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(packed.size()));
+}
+
+// The json_packed protocol per message, framing and decode, on the shape of session-json's messages
+// ({"message": <n bytes>}, then the NUL). It compiles unchanged against the protocol before Huly QB-305 (a scan for
+// the NUL, then the SAX depth pre-scan, then the decode), for an A/B of the whole per-message cost.
+void
+BM_Protocol_JsonPackedMessage(benchmark::State &state) {
+    const auto  bytes = nlohmann::json::to_msgpack(nlohmann::json{{"message", std::string(static_cast<std::size_t>(state.range(0)), 'x')}});
+    std::string frame(bytes.begin(), bytes.end());
+    frame.push_back('\0');
+    ProtocolProbe                            probe;
+    qb::protocol::json_packed<ProtocolProbe> protocol(probe);
+
+    std::size_t size = 0;
+    for (auto _ : state) {
+        probe.input.reset();
+        std::memcpy(probe.input.allocate_back(frame.size()), frame.data(), frame.size());
+        size = protocol.getMessageSize();
+        protocol.onMessage(size);
+        benchmark::DoNotOptimize(probe.messages);
+    }
+
+    if (size != frame.size() || !protocol.ok() || probe.messages != static_cast<std::size_t>(state.iterations()))
+        state.SkipWithError("json_packed did not frame and deliver every message");
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(frame.size()));
+}
+
 } // namespace
 
 BENCHMARK(BM_Protocol_ByteTerminatedScan)->Args({32})->Args({1024})->Args({64 * 1024})->ArgName("payload_bytes")->Unit(benchmark::kNanosecond);
@@ -283,5 +339,7 @@ BENCHMARK_TEMPLATE(BM_Protocol_SizeHeader, std::uint32_t)
 BENCHMARK(BM_Protocol_JsonDepthGuard)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_JsonDepthGuardOverDepth)->Args({600})->Args({4096})->ArgName("depth")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_MsgpackDepthGuard)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Protocol_MsgpackFrame)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Protocol_JsonPackedMessage)->Args({32})->Args({1024})->Args({64 * 1024})->ArgName("payload_bytes")->Unit(benchmark::kNanosecond);
 
 BENCHMARK_MAIN();

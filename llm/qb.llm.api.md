@@ -511,7 +511,7 @@ Unbounded lock-free Michael-Scott MPSC queue.
 *   `[T] struct qb::crtp<T>` — CRTP base, `auto&& impl(this auto&& self) noexcept`.
 
 ### JSON (`<qb/json.h>`)
-`using namespace nlohmann;` is applied, so `qb::json = nlohmann::json` (plus `array`/`string`/`number`/`floating`/`boolean` aliases). `struct qb::jsonb` is a distinct binary-JSON wrapper over `nlohmann::json`. ADL hooks `to_json`/`from_json` for `qb::uuid` exist.
+`using namespace nlohmann;` is applied, so `qb::json = nlohmann::json` (plus `array`/`string`/`number`/`floating`/`boolean` aliases). `struct qb::jsonb` is a distinct binary-JSON wrapper over `nlohmann::json`; `std::hash<qb::jsonb>` is structural (`qb::detail::json_hash`) and follows `==` -- `1`, `1u`, `1.0` hash alike -- and never throws, a non-UTF-8 string included (since 3.3, Huly QB-384, QB-385). ADL hooks `to_json`/`from_json` for `qb::uuid` exist.
 
 ## Namespace `qb::io`
 
@@ -708,7 +708,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 
 #### JSON (`namespace qb::protocol`)
 *   `[T] class json<IO_> : public base::byte_terminated<IO_, '\0'>` — NUL-terminated JSON (depth cap 512); delivers `message{size, data, nlohmann::json json}`.
-*   `[T] class json_packed<IO_> : public base::byte_terminated<IO_, '\0'>` — NUL-terminated MessagePack-encoded JSON.
+*   `[T] class json_packed<IO_> : public io::async::AProtocol<IO_>` — one MessagePack value then a NUL (`to_msgpack(v)` then `'\0'`); framed by the value's own lengths (`detail::msgpack_value_scanner`), so zero bytes inside the value are data; a byte other than the NUL right after the value, `0xc1`, or nesting past 512 → `not_ok()`. Keeps `delimiter_size`, `end`, `shiftSize()`; delivers `message{size, data, nlohmann::json json}` (`size` without the NUL).
 
 #### Connection protocols (`namespace qb::io::protocol`)
 *   `[T] class accept<_IO_, _Socket> : public async::AProtocol<_IO_>` — stateless; `message = _Socket`; moves the accepted socket into `_io.on()`.

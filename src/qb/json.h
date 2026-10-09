@@ -287,6 +287,24 @@ template <>
 pipe<char> &pipe<char>::put<json>(const json &c);
 
 } // namespace allocator
+
+namespace detail {
+
+/**
+ * @brief Structural hash of a JSON value that agrees with its `operator==` -- what `std::hash<qb::jsonb>` returns.
+ * @ingroup JSON
+ * @details Values that compare equal hash alike, including across the number kinds nlohmann compares with each
+ *          other (`1`, `1u` and `1.0`; `0.0` and `-0.0`) and objects built in any insertion order. It reads the
+ *          value and never serializes it, so it never throws: a string that is not valid UTF-8, which `dump()`
+ *          refuses, hashes like any other. One equality it does not follow: nlohmann compares an unsigned above
+ *          `INT64_MAX` with a signed integer through a wrapping cast (`json(UINT64_MAX) == json(-1)` is true);
+ *          honouring that would make every small negative integer collide.
+ * @param value The value to hash.
+ * @return The hash value.
+ */
+[[nodiscard]] std::size_t json_hash(const nlohmann::json &value) noexcept;
+
+} // namespace detail
 } // namespace qb
 
 namespace uuids {
@@ -332,7 +350,8 @@ namespace std {
  * @ingroup JSON
  * @brief Specialization of `std::hash` for `qb::jsonb`.
  * @details Allows `qb::jsonb` objects to be used as keys in `std::unordered_map` and `std::unordered_set`.
- *          The hash is computed based on the string dump of the JSON object.
+ *          The hash is structural (`qb::detail::json_hash`): it agrees with `operator==` -- `1`, `1u` and `1.0`
+ *          are equal and hash alike -- and it never throws, a string that is not valid UTF-8 included.
  */
 template <>
 struct hash<qb::jsonb> {
@@ -343,7 +362,7 @@ struct hash<qb::jsonb> {
      */
     std::size_t
     operator()(const qb::jsonb &j) const noexcept {
-        return std::hash<std::string>{}(j.dump());
+        return qb::detail::json_hash(j.unwrap());
     }
 };
 } // namespace std

@@ -98,7 +98,7 @@ Message framing over byte streams. A protocol cuts raw transport bytes into disc
 
 - **Delimiter-based (`qb::protocol::text`)** — `string` (NUL-terminated) and `command` (newline-terminated), with zero-copy `string_view` and `command_view` variants; generic `qb::protocol::base::byte_terminated` and `bytes_terminated`.
 - **Size-prefixed (`qb::protocol::text`)** — `binary8`, `binary16`, `binary32` for messages preceded by a 1-, 2-, or 4-byte length header.
-- **JSON (`qb::protocol::json`, `json_packed`)** — NUL-terminated JSON and MessagePack-packed JSON over `nlohmann::json`, with a nesting-depth limit that rejects pathologically nested input.
+- **JSON (`qb::protocol::json`, `json_packed`)** — NUL-terminated JSON, and MessagePack-packed JSON framed by the value's own lengths (then a NUL), over `nlohmann::json`, with a nesting-depth limit that rejects pathologically nested input.
 - **Framework protocols (`qb::io::protocol::accept`, `handshake`)** — internal protocols that hand an accepted socket to its I/O component and drive a TLS handshake to completion.
 
 → [Framing messages with protocols](./protocols.md)

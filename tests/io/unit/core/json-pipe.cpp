@@ -34,6 +34,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -189,4 +190,33 @@ TEST(JsonPipe, TypedPutOverloadsAppendAndStream) {
     std::ostringstream out;
     out << copied;
     EXPECT_EQ(out.str(), "qb-io");
+}
+
+// =============================================================================
+// BINARY VALUES (Huly QB-326)
+// =============================================================================
+
+/**
+ * @test A binary value serializes as dump() writes it, wherever it sits
+ * @brief The serializer's switch had no case for `value_t::binary` and wrote NOTHING for one: `{"a":}` for a member,
+ *        `[]` for an array holding one. A binary value is written the way nlohmann's own dump() writes it,
+ *        `{"bytes":[...],"subtype":...}`, at the top level, as an object member and as an array element.
+ */
+TEST(JsonPipe, SerializesBinaryValuesAsDumpDoes) {
+    const qb::json values[] = {
+        qb::json::binary(std::vector<std::uint8_t>{}), qb::json::binary(std::vector<std::uint8_t>{0x00, 0x7f, 0xff}),
+        qb::json::binary(std::vector<std::uint8_t>{0x01, 0x02}, 42)
+    };
+    for (const qb::json &bin : values) {
+        EXPECT_EQ(pipe_json(bin), bin.dump());
+
+        const qb::json member = {{"a", bin}};
+        EXPECT_EQ(pipe_json(member), member.dump());
+        EXPECT_FALSE(qb::json::parse(pipe_json(member), nullptr, false).is_discarded()) << "the member is valid JSON";
+
+        const qb::json element = qb::json::array({bin});
+        EXPECT_EQ(pipe_json(element), element.dump());
+    }
+    EXPECT_EQ(pipe_json(values[1]), R"({"bytes":[0,127,255],"subtype":null})");
+    EXPECT_EQ(pipe_json(values[2]), R"({"bytes":[1,2],"subtype":42})");
 }

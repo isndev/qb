@@ -226,6 +226,11 @@ policy.
   dropped the handle in release (asserting in debug): a continuation queued before anything bound a scheduler
   was lost. Both now bind `listener::current`'s scheduler, so on a thread that never created a listener they
   create it.
+- **`qb::protocol::json_packed` derives `io::async::AProtocol` directly, no longer `base::byte_terminated<IO_, '\0'>`
+  (Huly QB-305).** Its message is framed by the MessagePack value, not by a byte (under Fixed). What a caller used --
+  `message`, `delimiter_size`, `end`, `shiftSize()` -- is unchanged, and so is the wire; code that names the base
+  class, or converts the protocol to it, no longer compiles.
+
 - **`socket::reuse_address(true)` no longer shares the port (Huly QB-78).** It set `SO_REUSEPORT` beside
   `SO_REUSEADDR` where the system has it, so a caller asking to rebind a port in `TIME_WAIT` also let any other
   socket that set `SO_REUSEPORT` bind the same port, unasked. It sets `SO_REUSEADDR` only; sharing is
@@ -738,6 +743,25 @@ policy.
   nothing -- the flushed data reached the peer only when more input came or the stream finished. The compressors now
   remember a flush that filled its window and run the codec on the empty call until it leaves room unused, as brotli
   already did. The provider contract (`codec_contract.h`) holds the case for the four codecs.
+- **`qb::protocol::json_packed` frames a MessagePack value by its own lengths: a zero byte inside it is data (Huly
+  QB-305).** The protocol ended each message at the first NUL, and MessagePack writes zero bytes inside values --
+  `{"qty":0}`, the integer 0 being the byte 0x00, any 16-bit integer or length, a float, a string or a binary byte:
+  such a message was cut, failed to decode, and closed the session. The protocol now reads the value's headers, each
+  stating the length of what follows, steps over each payload, and requires the NUL right after the value; any other
+  byte there is a protocol error. The wire is unchanged -- a sender still writes `to_msgpack(value)` then `'\0'` --
+  and the framing bounds the nesting in the same pass (512, counted as before), so the SAX pre-scan the decode ran
+  first is gone. Pinned by the `JsonPackedSessionParse` cases of `tests/io/unit/protocol/json-session-parse.cpp`.
+- **`pipe<char>::put<qb::json>` writes a binary value (Huly QB-326).** Its switch had no case for `value_t::binary`
+  and wrote nothing: `{"a":}` for a member, `[]` for an array holding one. A binary value is written the way `dump()`
+  writes it, `{"bytes":[...],"subtype":...}`. Pinned by `JsonPipe.SerializesBinaryValuesAsDumpDoes`.
+- **`std::hash<qb::jsonb>` agrees with `==` and never throws (Huly QB-384, QB-385).** It hashed `dump()`: values
+  nlohmann compares equal but writes differently -- `1`, `1u` and `1.0` -- hashed apart, so a set kept both and a map
+  missed its key; and `dump()` throws on a string that is not valid UTF-8, inside the `noexcept` hash:
+  `std::terminate`. The hash is now structural (`qb::detail::json_hash`): the three number kinds hash as the double
+  they compare as, `-0.0` like `0.0`, objects member by member in key order, binaries with their subtype, strings by
+  their bytes. One equality of nlohmann's it does not follow: an unsigned above `INT64_MAX` compared with a signed
+  integer through a wrapping cast (`json(UINT64_MAX) == json(-1)`), which would make every small negative integer
+  collide. Pinned by `Jsonb.EqualValuesHashAlike` and `Jsonb.HashingAStringThatIsNotUtf8DoesNotThrow`.
 
 ### Documentation
 
