@@ -12,7 +12,9 @@
 #   TCMALLOC_AND_PROFILER  - combined tcmalloc + profiler
 #
 # Result variables (set after find_package):
-#   Gperftools_FOUND          - TRUE if at least PROFILER or TCMALLOC was found
+#   Gperftools_FOUND          - TRUE when the headers AND at least PROFILER or TCMALLOC were found, and every
+#                               component requested (COMPONENTS, not OPTIONAL_COMPONENTS) was found
+#   Gperftools_<C>_FOUND      - TRUE / FALSE per component C above (what HANDLE_COMPONENTS reads)
 #   GPERFTOOLS_INCLUDE_DIRS   - Include directories
 #   GPERFTOOLS_LIBRARIES      - Link libraries (only found components, no -NOTFOUND entries)
 #   GPERFTOOLS_LIBRARY_DIRS   - Library directory
@@ -93,11 +95,32 @@ endif()
 # ── Standard result handling ──────────────────────────────────────────────────
 # NOTE: package name MUST match what find_package() was called with so that
 # find_package_handle_standard_args sets the right <PackageName>_FOUND variable.
+#
+# Huly QB-390: HANDLE_COMPONENTS reads Gperftools_<C>_FOUND, which nothing set -- so
+# `COMPONENTS PROFILER` failed even with libprofiler present -- and REQUIRED_VARS held only the
+# header, so headers without any library were "found" and qb reported profiling ON while
+# linking nothing. Each component now says whether its library was found, and the package
+# needs the headers plus PROFILER or TCMALLOC, as documented above.
+foreach(_comp TCMALLOC PROFILER TCMALLOC_MINIMAL TCMALLOC_AND_PROFILER)
+    if(GPERFTOOLS_${_comp} AND NOT GPERFTOOLS_${_comp} MATCHES "NOTFOUND")
+        set(Gperftools_${_comp}_FOUND TRUE)
+    else()
+        set(Gperftools_${_comp}_FOUND FALSE)
+    endif()
+endforeach()
+if(Gperftools_PROFILER_FOUND)
+    set(_GPERFTOOLS_CORE_LIBRARY "${GPERFTOOLS_PROFILER}")
+elseif(Gperftools_TCMALLOC_FOUND)
+    set(_GPERFTOOLS_CORE_LIBRARY "${GPERFTOOLS_TCMALLOC}")
+else()
+    set(_GPERFTOOLS_CORE_LIBRARY "_GPERFTOOLS_CORE_LIBRARY-NOTFOUND")
+endif()
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Gperftools
-    REQUIRED_VARS GPERFTOOLS_INCLUDE_DIR
+    REQUIRED_VARS GPERFTOOLS_INCLUDE_DIR _GPERFTOOLS_CORE_LIBRARY
     HANDLE_COMPONENTS
 )
+unset(_GPERFTOOLS_CORE_LIBRARY)
 
 # ── Create IMPORTED targets ───────────────────────────────────────────────────
 if(Gperftools_FOUND)

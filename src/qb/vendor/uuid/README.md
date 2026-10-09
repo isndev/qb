@@ -273,19 +273,13 @@ The library is supported on all major operating systems: Windows, Linux and Mac 
 
 ## Dependencies
 
-Because no major compiler supports `std::span` yet
-the [Microsoft Guidelines Support Library](https://github.com/Microsoft/GSL) (aka GSL) is used for its span
-implementation (from which the standard version was defined).
+None. Upstream used the [Microsoft Guidelines Support Library](https://github.com/Microsoft/GSL) for `span`; this
+fork, vendored in qb, always uses `std::span`.
 
 ## Testing
 
-A testing project is available in the sources. To build and execute the tests do the following:
-
-* Clone or download this repository
-* Create a `build` directory in the root directory of the sources
-* Run the command `cmake ..` from the `build` directory; if you do not have CMake you must install it first.
-* Build the project created in the previous step
-* Run the executable.
+Upstream ships a Catch2 test project. This fork, vendored in qb, does not: qb tests the uuid surface it uses in its own
+suite, and the upstream tests, their vendored Catch2 and the upstream CI configurations were removed.
 
 ## Credits
 

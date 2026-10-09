@@ -121,6 +121,12 @@ function(_qb_apply_target_usage_properties target)
     if(QB_COMPILE_DEFINITIONS)
         target_compile_definitions(${target} ${_qb_usage_scope} ${QB_COMPILE_DEFINITIONS})
     endif()
+    # A macOS universal build compiles every source once per slice: the per-slice architecture macros
+    # (QB_ARCH_ARM / QB_ARCH_ARM64 on the arm64 slice only) travel as -Xarch_<slice> options, set by
+    # qbConfig.cmake (Huly QB-392). Empty everywhere else.
+    if(QB_ARCH_SLICE_OPTIONS)
+        target_compile_options(${target} ${_qb_usage_scope} ${QB_ARCH_SLICE_OPTIONS})
+    endif()
 endfunction()
 
 # Internal function to apply common target properties
@@ -523,6 +529,24 @@ function(_qb_test_conventions out_prefix)
     set(${out_prefix}_SKIP_REGISTER "${_skip_register}" PARENT_SCOPE)
 endfunction()
 
+# _qb_set_runtime_output_dir - Put a test or benchmark executable in <dir> (single-config) or <dir>/<CONFIG>
+# (multi-config), where qb_ensure_runtime_dll_deployer() puts its DLLs.
+#
+# qbConfig.cmake gives every configuration of a multi-config generator a CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG>
+# (bin/), which initialises the per-configuration property of every target -- and a per-configuration property WINS
+# over RUNTIME_OUTPUT_DIRECTORY, with no configuration subdirectory appended. So under Visual Studio a test landed in
+# bin/ while the deployer filled bin/tests/<CONFIG>: an executable one directory away from its DLLs (Huly QB-391).
+function(_qb_set_runtime_output_dir target dir)
+    set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${dir}")
+    get_property(_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    if(_multi)
+        foreach(_cfg IN LISTS CMAKE_CONFIGURATION_TYPES)
+            string(TOUPPER "${_cfg}" _cfg_upper)
+            set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY_${_cfg_upper} "${dir}/${_cfg}")
+        endforeach()
+    endif()
+endfunction()
+
 # qb_add_test - Create a test with qb framework integration
 function(qb_add_test)
     _qb_parse_common_args(TEST ${ARGN})
@@ -612,9 +636,7 @@ function(qb_add_test)
     
     # Set test output directory
     set(TEST_BINARY_DIR "${CMAKE_BINARY_DIR}/bin/tests")
-    set_target_properties(${TEST_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${TEST_BINARY_DIR}"
-    )
+    _qb_set_runtime_output_dir(${TEST_NAME} "${TEST_BINARY_DIR}")
 
     # On Windows, copy all runtime DLLs (gtest, gmock, OpenSSL, etc.) next to the
     # test executable so it can be launched directly without touching PATH.
@@ -652,7 +674,9 @@ function(qb_add_test)
     # $<TARGET_RUNTIME_DLLS> is the only mechanism left. That configuration can still race
     # itself if a dependency does arrive as a genuine imported SHARED_LIBRARY; it is not the
     # configuration CMakePresets' windows-base builds, and closing it needs a real
-    # single-writer union of every target's runtime DLLs, which is not this change.
+    # single-writer union of every target's runtime DLLs, which is not this change. It deploys to
+    # $<TARGET_FILE_DIR>, the executable's own directory under every generator: ${TEST_BINARY_DIR}
+    # is one level above it under a multi-config one (Huly QB-391).
     #
     # KNOWN GAP, measured not assumed: the deployer copies *.dll out of the vcpkg bin dir
     # only, so it does NOT carry qb-core.dll / qb-io.dll, which land in their own target
@@ -672,7 +696,7 @@ function(qb_add_test)
             add_custom_command(TARGET ${TEST_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND}
                     "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${TEST_NAME}>,;>"
-                    "-DDEST_DIR=${TEST_BINARY_DIR}"
+                    "-DDEST_DIR=$<TARGET_FILE_DIR:${TEST_NAME}>"
                     -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
                 COMMAND_EXPAND_LISTS
             )
@@ -824,9 +848,7 @@ function(qb_add_benchmark)
     
     # Set benchmark output directory
     set(BENCH_BINARY_DIR "${CMAKE_BINARY_DIR}/bin/benchmarks")
-    set_target_properties(${BENCH_NAME} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${BENCH_BINARY_DIR}"
-    )
+    _qb_set_runtime_output_dir(${BENCH_NAME} "${BENCH_BINARY_DIR}")
 
     # On Windows, copy all runtime DLLs (benchmark, OpenSSL, etc.) next to the
     # benchmark executable so it can be launched directly without touching PATH.
@@ -847,7 +869,7 @@ function(qb_add_benchmark)
             add_custom_command(TARGET ${BENCH_NAME} POST_BUILD
                 COMMAND ${CMAKE_COMMAND}
                     "-DDLL_LIST=$<JOIN:$<TARGET_RUNTIME_DLLS:${BENCH_NAME}>,;>"
-                    "-DDEST_DIR=${BENCH_BINARY_DIR}"
+                    "-DDEST_DIR=$<TARGET_FILE_DIR:${BENCH_NAME}>"
                     -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/deploy_runtime_dlls.cmake"
                 COMMAND_EXPAND_LISTS
             )

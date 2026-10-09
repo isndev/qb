@@ -64,14 +64,11 @@ WHAT IT DELIBERATELY ALLOWS
 WHAT IT DOES NOT SCAN
 ---------------------
 Vendored trees (`/vendor/`, `/not-qb/`, `/third_party/`). This is a recorded decision, not an
-oversight: the vendored Catch2 amalgamation has a real instance of the class at
-`qb/src/qb/vendor/uuid/catch/catch.hpp:16049` (`#include <cstddef>` between the braces of
-`namespace Catch`, under `#if defined(CATCH_CONFIG_CPP17_BYTE)`), latent for the usual reason.
-It is upstream's bug in a single-file drop-in used only by tests, and editing a vendored file
-is how every future vendor drop becomes a merge conflict -- the same trade
-check-header-extensions.py records for the five vendored `.hpp`. If that fragment is ever
-un-vendored or the drop is ever patched for another reason, fix it then and delete this
-paragraph.
+oversight: editing a vendored file is how every future vendor drop becomes a merge conflict --
+the same trade check-header-extensions.py records for the vendored `.hpp`. The instance that
+motivated it was stduuid's vendored Catch2 amalgamation (`#include <cstddef>` between the braces
+of `namespace Catch`, under `#if defined(CATCH_CONFIG_CPP17_BYTE)`), upstream's bug in a drop-in
+used only by tests; Huly QB-378 deleted that drop-in with the fork's tests.
 
 SCANNER CONFIDENCE (this is a check, not a note)
 ------------------------------------------------
@@ -141,8 +138,7 @@ SCANNED_SUFFIXES = (
 # Never walked: build output, VCS metadata, tool caches.
 SKIP_DIRS = {".git", "build", "__pycache__", ".cache", "node_modules", ".venv"}
 
-# Not our surface. See "WHAT IT DOES NOT SCAN" above -- catch.hpp:16049 is a live instance
-# of this class that we are deliberately not editing.
+# Not our surface. See "WHAT IT DOES NOT SCAN" above: a vendored file is not edited here.
 EXCLUDED_PARTS = ("/vendor/", "/not-qb/", "/third_party/")
 
 INCLUDE_RE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*[<"]([^">\n]+)[">]', re.M)

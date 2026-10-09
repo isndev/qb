@@ -16,7 +16,7 @@ Defaults are tuned for *development on the build host*. The most common producti
 
 `QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
-<!-- src: qb/cmake/qbConfig.cmake:144-152 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:366-367 (MSVC /arch:AVX2), :385-399 (-march=native, -mcpu=native fallback) -->
+<!-- src: qb/cmake/qbConfig.cmake:144-152 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:366-367 (MSVC /arch:AVX2), :395-409 (-march=native, -mcpu=native fallback) -->
 
 For any binary that ships to a machine other than the one that built it — a container image, a release artifact, a fleet with mixed CPU generations — turn native targeting **off**:
 
@@ -28,7 +28,7 @@ cmake --build build --parallel
 
 With `QB_ENABLE_NATIVE_ARCH=OFF` and `QB_ENABLE_OPTIMIZATIONS=ON` (the default), GCC/Clang fall back to a portable baseline: `-march=x86-64` on x86-64, `-march=armv8-a` on non-Apple ARM64. On Apple Silicon the toolchain already targets the native CPU, so qb deliberately does *not* force a generic baseline there (forcing `armv8-a` would lose LSE atomics).
 
-<!-- src: qb/cmake/qbCompiler.cmake:400-410 (portable baseline: -march=armv8-a on non-Apple ARM64, -march=x86-64 on x86-64; Apple Silicon deliberately left alone) -->
+<!-- src: qb/cmake/qbCompiler.cmake:410-420 (portable baseline: -march=armv8-a on non-Apple ARM64, -march=x86-64 on x86-64; Apple Silicon deliberately left alone) -->
 
 A ready-made preset wraps the same configuration:
 
@@ -54,7 +54,7 @@ All shipped presets (including `release` and `release-lto`) inherit the hidden `
 
 `QB_ENABLE_LTO` is **`OFF`** by default. Enabling it adds `-flto` (plus `-fuse-linker-plugin` on GCC) on GCC/Clang Release builds, and `/LTCG` on MSVC. LTO can improve runtime performance at the cost of longer link times; it is orthogonal to native targeting, so it composes with a portable build.
 
-<!-- src: qb/cmake/qbConfig.cmake:143 (QB_ENABLE_LTO OFF), qb/cmake/qbCompiler.cmake:414-442 (LTO block) -->
+<!-- src: qb/cmake/qbConfig.cmake:143 (QB_ENABLE_LTO OFF), qb/cmake/qbCompiler.cmake:424-452 (LTO block) -->
 
 ```bash
 cmake --preset release-lto                       # Release + QB_ENABLE_LTO=ON
@@ -64,7 +64,7 @@ cmake -DCMAKE_BUILD_TYPE=Release -DQB_ENABLE_LTO=ON -DQB_ENABLE_NATIVE_ARCH=OFF 
 
 LTO flags are only applied to the `Release` configuration. If the compiler reports `-flto` as unsupported, qb emits a warning and continues without it rather than failing the build.
 
-<!-- src: qb/cmake/qbCompiler.cmake:428-440 (Release-only -flto + unsupported-flag warning) -->
+<!-- src: qb/cmake/qbCompiler.cmake:438-450 (Release-only -flto + unsupported-flag warning) -->
 
 **Checklist**
 
@@ -79,7 +79,7 @@ TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by 
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions — since 3.2 that definition is emitted after the OpenSSL probe, so it agrees with the banner (until then a host without OpenSSL compiled with `QB_WITH_SSL=1` while the banner said `SSL: OFF`).
 
-<!-- src: qb/cmake/qbDependencies.cmake:665-667 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:540-568 (configuration banner; the SSL line is :563) -->
+<!-- src: qb/cmake/qbDependencies.cmake:666-668 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:573-605 (configuration banner; the SSL line is :600) -->
 
 ### Client connections are secure by default
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:465-467 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
+<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:498-500 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -221,7 +221,7 @@ int main() {
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
-<!-- src: qb/cmake/qbConfig.cmake:198-199 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :477-482 (compile defs) -->
+<!-- src: qb/cmake/qbConfig.cmake:198-199 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :510-515 (compile defs) -->
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 
@@ -296,7 +296,7 @@ ctest --test-dir build/dev --output-on-failure
 
 Before shipping, also run the suite under sanitizers — this is where memory-safety and data-race regressions surface. The `sanitize` preset configures AddressSanitizer + UndefinedBehaviorSanitizer; `sanitize-thread` configures ThreadSanitizer. Both instrument every qb / qbm / test target and their link step (the `QB_SANITIZE` flags apply regardless of `CMAKE_BUILD_TYPE`, though these presets configure a Debug build).
 
-<!-- src: qb/CMakePresets.json:105-121 (sanitize, sanitize-thread), qb/cmake/qbCompiler.cmake:460-469 (QB_SANITIZE applied to every qb/qbm/test target, regardless of build type) -->
+<!-- src: qb/CMakePresets.json:105-121 (sanitize, sanitize-thread), qb/cmake/qbCompiler.cmake:470-479 (QB_SANITIZE applied to every qb/qbm/test target, regardless of build type) -->
 
 ```bash
 cmake --preset sanitize          # ASan + UBSan
@@ -310,7 +310,7 @@ ctest --test-dir build/sanitize-thread --output-on-failure
 
 `QB_SANITIZE` adds `-fno-sanitize-recover=all`, so the first error aborts — CI-friendly. Note that sanitizers are incompatible with `QB_WITH_PROFILING`: enabling both warns at configure time because tcmalloc/gperftools intercept the same hooks.
 
-<!-- src: qb/cmake/qbCompiler.cmake:478 (-fno-sanitize-recover=all), :470-472 (profiling-incompatibility warning) -->
+<!-- src: qb/cmake/qbCompiler.cmake:488 (-fno-sanitize-recover=all), :480-482 (profiling-incompatibility warning) -->
 
 See [Testing](../7_reference/testing.md) for the full reference, including running a single test by name.
 

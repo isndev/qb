@@ -310,7 +310,8 @@ endif()
 
 # Gperftools (optional, for profiling)
 if(QB_WITH_PROFILING)
-    find_package(Gperftools QUIET)
+    # Profiling needs the CPU profiler itself: headers alone, or tcmalloc alone, are not "profiling" (Huly QB-390).
+    find_package(Gperftools QUIET COMPONENTS PROFILER)
     if(Gperftools_FOUND)
         qb_status_message("Found gperftools")
         # Prefer the imported targets created by FindGperftools so include dirs
@@ -323,7 +324,7 @@ if(QB_WITH_PROFILING)
         endif()
         set(QB_HAS_PROFILING TRUE)
     else()
-        qb_warning_message("gperftools not found - profiling support disabled")
+        qb_warning_message("gperftools (headers + libprofiler) not found - profiling support disabled")
         set(QB_HAS_PROFILING FALSE)
         set(QB_WITH_PROFILING OFF)
     endif()

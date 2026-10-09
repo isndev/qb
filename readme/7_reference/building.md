@@ -15,7 +15,7 @@ This page is the contributor-facing build reference. If you only want to *add qb
 |---|---|---|
 | C++ compiler | C++20-capable: GCC, Clang, Apple Clang, or MSVC. qb sets `QB_CXX_STANDARD=20` by default, accepts `QB_CXX_STANDARD=23`, and keeps `CMAKE_CXX_STANDARD_REQUIRED=ON` with extensions off. | `qb/cmake/qbConfig.cmake` |
 | CMake | 3.24 or newer. 3.24 is the floor because dependency resolution uses the `FetchContent` + `find_package` integration (`FIND_PACKAGE_ARGS`). The whole range is exercised, not just the newest: the qb-dev superproject's `cmake-floor` job configures qb on 3.24.4 and on 3.28.3, so the stock CMake of Ubuntu 24.04 LTS (3.28.3), Debian 12 (3.25.1) and RHEL 9 (3.26.5) stays inside the claim rather than merely being promised by it. Consuming qb's own `CMakePresets.json` needs 3.24 (schema v3); the qb-dev superproject's presets are schema v6 and need 3.25. | `qb/CMakeLists.txt:31`, `qb/CMakePresets.json:3-7` |
-| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:580-583` |
+| Threads | A POSIX threads (pthreads) implementation is required on non-Windows platforms; configuration fails with a fatal error if it is missing. | `qb/cmake/qbCompiler.cmake:590-593` |
 | Git | Needed on the configure machine only when a fetchable dependency (GoogleTest, Google Benchmark, zlib) is absent from the system and is built from source. | see [cmake_dependencies.md](./cmake_dependencies.md) |
 
 Architectures: x86_64 and ARM64 (including Apple Silicon). The continuous integration matrix builds and tests every change on Linux (GCC, Clang / libstdc++) and macOS (Apple Clang / libc++). **Windows (MSVC / MSVC STL) is supported source but its CI job is currently disabled** — it is validated out of band before each release, so treat a Windows build as verified by you, not by this project's CI. See [INSTALL.md](../../INSTALL.md#supported-toolchains) for the matrix.
@@ -119,26 +119,26 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_WITH_COMPRESSION` | bool; `ON` | Compression in `qb-io` via zlib — system first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` (`qbConfig.cmake:161`). |
 | `QB_WITH_QUIC` | `AUTO` \| `ON` \| `OFF`; `AUTO` | QUIC transport via libngtcp2. `AUTO` enables it iff libngtcp2 is found (quiet when absent); `ON` requires it (warns if missing); `OFF` disables it. Requires `QB_WITH_SSL` (`qbConfig.cmake:168-169`). |
 | `QB_WITH_LOGGING` | bool; `ON` | Logging subsystem (nanolog); defines `QB_WITH_LOGGING=1` (`qbConfig.cmake:159`). |
-| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:199,480-482`). |
-| `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools (tcmalloc/profiler) when found. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:194`). |
+| `QB_STDOUT_LOGGING` | bool; `OFF` | Stdout logging fallback; defines `QB_STDOUT_LOGGING=1` (`qbConfig.cmake:199,513-515`). |
+| `QB_WITH_PROFILING` | bool; `OFF` | Link gperftools when its CPU profiler is found (headers and `libprofiler`; `tcmalloc` is linked too when present); otherwise forced off with a warning. Incompatible with `QB_SANITIZE` (`qbConfig.cmake:194`). |
 
 ### Performance
 
 | Option | Type / default | Effect |
 |---|---|---|
 | `QB_ENABLE_OPTIMIZATIONS` | bool; `ON` | Extra Release optimization flags — `-funroll-loops`, `-ftree-vectorize`, `-ffunction-sections`/`-fdata-sections` on GCC/Clang, `/Ot`/`/Gy` on MSVC (`qbConfig.cmake:142`, `qbCompiler.cmake`). |
-| `QB_ENABLE_NATIVE_ARCH` | bool; `OFF` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:152`, `qbCompiler.cmake:385-409`). |
-| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:143`, `qbCompiler.cmake:417-442`). |
+| `QB_ENABLE_NATIVE_ARCH` | bool; `OFF` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:152`, `qbCompiler.cmake:387-419`). |
+| `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:143`, `qbCompiler.cmake:427-452`). |
 | `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:153`, `qbCompiler.cmake:361,376`). |
 
 ### Diagnostics
 
 | Option | Type / default | Effect |
 |---|---|---|
-| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there (`qbConfig.cmake:204`, `qbCompiler.cmake:483-527`). `sanitize-thread` and `coverage` are worse on Windows, because nothing here stops them: `qb/CMakePresets.json` carries no `condition` key at all, so both configure normally on MSVC and then quietly produce an *uninstrumented* build. `QB_SANITIZE=thread` is dropped with a warning (`qbCompiler.cmake:525-527`) and `QB_BUILD_COVERAGE` adds no flags and no report targets, also with a warning (`qbCompiler.cmake:538-540`, `qb/CMakeLists.txt:166,169`) — read the configure output before reporting a green Windows run as sanitized or covered. The qb-dev superproject *does* gate them: its `sanitize-thread` and `coverage` presets carry a `condition` on `hostSystemName != Windows`, so there they are unavailable rather than silent. |
+| `QB_SANITIZE` | string; empty (off) | Comma-separated sanitizer list applied to every qb/qbm/test target and its link step, e.g. `address,undefined`, `thread`, `memory`, `leak`. Use the `sanitize` / `sanitize-thread` presets. Incompatible with `QB_WITH_PROFILING`. **MSVC ships only AddressSanitizer**: `address` is honoured (build-wide, because MSVC cannot link mixed ASan/non-ASan objects), every other component is dropped with a warning naming it — so the `sanitize` preset's `undefined` half does not run there (`qbConfig.cmake:204`, `qbCompiler.cmake:493-537`). `sanitize-thread` and `coverage` are worse on Windows, because nothing here stops them: `qb/CMakePresets.json` carries no `condition` key at all, so both configure normally on MSVC and then quietly produce an *uninstrumented* build. `QB_SANITIZE=thread` is dropped with a warning (`qbCompiler.cmake:535-537`) and `QB_BUILD_COVERAGE` adds no flags and no report targets, also with a warning (`qbCompiler.cmake:548-550`, `qb/CMakeLists.txt:160,163`) — read the configure output before reporting a green Windows run as sanitized or covered. The qb-dev superproject *does* gate them: its `sanitize-thread` and `coverage` presets carry a `condition` on `hostSystemName != Windows`, so there they are unavailable rather than silent. |
 | `QB_DEBUG_MEMORY` | bool; `OFF` | Legacy alias: when `QB_SANITIZE` is empty, turns on `QB_SANITIZE=address,undefined` (`qbConfig.cmake:197,206-208`). |
 | `QB_BUILD_COVERAGE` | bool; `OFF` | gcov/lcov coverage instrumentation. Debug and non-Windows only; sets up `qb-coverage-run` plus the `qb-coverage`, `qb-coverage-xml` and `qb-coverage-html` report targets when `lcov`/`gcov` are found, qb is the top-level project **and the toolchain emits gcov-style counters** (`qbConfig.cmake:156`, `CMakeLists.txt:166-314`). On clang the instrumentation is LLVM source-based (`QB_COVERAGE_KIND` is `llvm`: `-fprofile-instr-generate -fcoverage-mapping`, so `.profraw` and no `.gcno`/`.gcda`), and those four names are created as **fail-fast stubs** instead — they exit non-zero in under a second naming the two real paths, rather than building the tree, running the whole suite and writing an empty report. |
-| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:198,477-479`). |
+| `QB_DEBUG_ACTOR` | bool; `OFF` | Extra actor-system debug instrumentation; defines `QB_DEBUG_ACTOR=1` (`qbConfig.cmake:198,510-512`). |
 
 ### Dependency resolution
 
@@ -161,7 +161,7 @@ qb does not pin a generator; it uses whatever CMake selects or you request. `cma
 - **Visual Studio** (multi-config, e.g. `-G "Visual Studio 17 2022"`): pick the configuration at build time with `cmake --build build --config Release`. With a multi-config generator, `CMAKE_BUILD_TYPE` has no effect — pass `--config`.
 - **Ninja Multi-Config**: also multi-config; select with `--config` at build time.
 
-For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:328-349`).
+For multi-config generators, qb routes per-configuration outputs into the same `bin`/`lib` layout described below (`qbConfig.cmake:328-349`); test and benchmark executables are the exception, in `bin/tests/<CONFIG>` and `bin/benchmarks/<CONFIG>`, beside the runtime DLLs deployed for them on Windows.
 
 ## Build the code and run tests
 
@@ -200,11 +200,11 @@ cmake --install build --prefix /your/prefix    # omit --prefix for the system de
 ```
 
 The install (`CMakeLists.txt:326-485`) lays out. Every rule below is emitted by the one shared
-helper `qb_install_package()` (`cmake/qbPackage.cmake:92-234`), which each qbm module calls with
+helper `qb_install_package()` (`cmake/qbPackage.cmake:92-233`), which each qbm module calls with
 the same arguments shape:
 
 - **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `qev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
-- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:403-407`, generated at `cmake/qbPackage.cmake:212-228`).
+- **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:403-407`, generated at `cmake/qbPackage.cmake:211-227`).
 - **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:359-368`).
 
 Downstream then consumes the installed copy with `find_package`:
@@ -366,7 +366,7 @@ every actor TU pay that is the worse trade. **Include an umbrella.**
 ## Platform notes
 
 - **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
-- **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:385-399`); qb links the `Foundation` framework.
+- **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:395-409`); qb links the `Foundation` framework.
 - **Windows:** Winsock2. Use a Visual Studio 2022 (or newer) MSVC toolset that supports `/std:c++23`. For optional features, put OpenSSL/zlib development libraries on `CMAKE_PREFIX_PATH` (or set `OPENSSL_ROOT_DIR`); CI uses vcpkg. qb links `ws2_32` and `mswsock`.
 
 ## Pitfalls

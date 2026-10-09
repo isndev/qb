@@ -40,9 +40,9 @@ script is what makes those patterns redundant; deleting them would make the sile
 reachable again the moment this check is bypassed. Keep both.
 
 `.hpp` is not forbidden, and the count of them is now CHECKED rather than described. There are
-**twelve**: eight vendored (nlohmann ×1, ska_hash ×3, uuid/catch ×4) and four test-local
+**six**: two vendored (ska_hash ×2) and four test-local
 (`qbm/pgsql/tests/shared/`). This paragraph used to say "the five `.hpp` in the tree" while
-naming four correct categories -- the enumeration was right and the numeral was wrong by seven,
+naming four correct categories (twelve files then) -- the enumeration was right and the numeral was wrong by seven,
 and nothing could ever go red on the drift because the number lived in prose and no code path
 counted anything. `HPP_CENSUS` below is that enumeration as data: every `.hpp` visited must be
 in it (an unrecorded one is a finding) and every entry must still exist (a stale one fails the
@@ -119,10 +119,9 @@ HPP_CENSUS: dict[str, str] = {
     #  resolved by find_package / FetchContent and no copy of it exists in the tree)
     "qb/vendor/ska_hash/flat_hash_map.hpp": "vendored ska_hash (Malte Skarupke)",
     "qb/vendor/ska_hash/unordered_map.hpp": "vendored ska_hash (Malte Skarupke)",
-    "qb/vendor/uuid/catch/catch.hpp": "vendored Catch2 v2, stduuid's own test material",
-    "qb/vendor/uuid/catch/catch_reporter_automake.hpp": "vendored Catch2 v2 reporter",
-    "qb/vendor/uuid/catch/catch_reporter_tap.hpp": "vendored Catch2 v2 reporter",
-    "qb/vendor/uuid/catch/catch_reporter_teamcity.hpp": "vendored Catch2 v2 reporter",
+    # (ska's bytell_hash_map.hpp, upstream's third table, was here until Huly QB-374 removed it)
+    # (stduuid's vendored Catch2 v2 -- four .hpp, the fork's own test material -- was here until
+    #  Huly QB-378 deleted it with the fork's tests)
     # test-local, qbm/pgsql -- NOT vendored; see the docstring for why they stay .hpp
     "pgsql/tests/shared/pg_integration_fixture.hpp": "test-local GoogleTest fixture, installed by nothing",
     "pgsql/tests/shared/pg_pump.hpp": "test-local GoogleTest fixture, installed by nothing",
@@ -239,7 +238,7 @@ def main() -> int:
     # Same rule for the census, and it is what turns the number into a gate rather than a
     # sentence. Only entries this invocation could REACH are judged: qb's own CI passes the qb
     # root alone and legitimately cannot see the qbm-pgsql four, and the header-rules control
-    # passes a copy of qb/src alone, which reaches the vendored seven but not those four.
+    # passes a copy of qb/src alone, which reaches the vendored two but not those four.
     #
     # Reachability is decided by whether the entry's DIRECTORY was walked, not by whether the
     # file exists -- if it were the latter, deleting a census file would read as "not reachable"

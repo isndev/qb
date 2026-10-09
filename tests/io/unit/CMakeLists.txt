@@ -122,3 +122,53 @@ qb_debug_message("Configured qb-io unit tests")
 # The opt-in codecs (Huly QB-79): one binary each, built only when the codec is (REQUIRES <codec>).
 qb_add_test(MODULE qb-io TIER unit NAME compression-zstd SOURCES compression/compression-zstd.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression zstd)
 qb_add_test(MODULE qb-io TIER unit NAME compression-brotli SOURCES compression/compression-brotli.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression brotli)
+
+# find-gperftools checks the contract of qb/cmake/FindGperftools.cmake (Huly QB-390) by CONFIGURING a languageless
+# fixture project against fabricated install prefixes -- no compiler, no build: headers alone are not gperftools,
+# `COMPONENTS PROFILER` is satisfied by libprofiler and not by tcmalloc alone, tcmalloc alone is gperftools when no
+# component is asked. A mismatch fails the configure, which fails the test. --fresh: a stale cache would answer instead.
+set(_qb_find_gperftools_args
+    -S "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/find-gperftools"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/find-gperftools"
+    --fresh -G "${CMAKE_GENERATOR}" "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake")
+if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND _qb_find_gperftools_args -A "${CMAKE_GENERATOR_PLATFORM}")
+endif()
+if(CMAKE_GENERATOR_TOOLSET)
+    list(APPEND _qb_find_gperftools_args -T "${CMAKE_GENERATOR_TOOLSET}")
+endif()
+if(CMAKE_MAKE_PROGRAM)
+    list(APPEND _qb_find_gperftools_args "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+endif()
+add_test(NAME qb-io-test-unit-find-gperftools COMMAND "${CMAKE_COMMAND}" ${_qb_find_gperftools_args})
+set_tests_properties(qb-io-test-unit-find-gperftools PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+unset(_qb_find_gperftools_args)
+
+# stduuid-standalone checks the vendored stduuid fork the way a user of the fork alone gets it (Huly QB-375, QB-376):
+# configured on its own in its default configuration, installed, and found by a consumer asking for a version.
+# Configure + install only (the fork is header-only); the configure detects the same C++ compiler as this build.
+set(_qb_stduuid_args
+    "-DUUID_SOURCE_DIR=${QB_ROOT_DIR}/src/qb/vendor/uuid"
+    "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/stduuid-standalone"
+    "-DGENERATOR=${CMAKE_GENERATOR}"
+    "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+    "-DTOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+    "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
+    "-DCXX_COMPILER=${CMAKE_CXX_COMPILER}")
+add_test(NAME qb-io-test-unit-stduuid-standalone
+         COMMAND "${CMAKE_COMMAND}" ${_qb_stduuid_args}
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/stduuid-standalone.cmake")
+set_tests_properties(qb-io-test-unit-stduuid-standalone PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
+unset(_qb_stduuid_args)
+
+# multiconfig-layout (multi-config generators only): a test executable sits in bin/tests/<CONFIG>, where the runtime
+# DLL deployer writes -- before Huly QB-391 the per-configuration output directory of qbConfig.cmake put it in bin/.
+get_property(_qb_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(_qb_multi_config)
+    add_test(NAME qb-io-test-unit-multiconfig-layout
+             COMMAND "${CMAKE_COMMAND}" "-DEXE=$<TARGET_FILE:qb-io-test-unit-cpu-topology>"
+                     "-DEXPECT_DIR=${CMAKE_BINARY_DIR}/bin/tests/$<CONFIG>"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/multiconfig-layout.cmake")
+    set_tests_properties(qb-io-test-unit-multiconfig-layout PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+endif()
+unset(_qb_multi_config)

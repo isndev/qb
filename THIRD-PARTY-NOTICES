@@ -104,23 +104,9 @@ marked "in-header" and have no separate file — the notice travels with the cod
    copyright holder ("Copyright (c) 2017" with the name left blank) and is
    reproduced verbatim rather than corrected — see LEGAL QUESTIONS below.
 
-5. Catch2
-   ------
-   Upstream    https://github.com/catchorg/Catch2
-   Author      Two Blue Cubes Ltd.
-   Version     2.13.3
-   License     Boost Software License 1.0
-   Vendored    src/qb/vendor/uuid/catch/
-   Installed   NOT INSTALLED — qb's install rule excludes
-               src/qb/vendor/uuid/(catch|test|cmake), so no part of Catch2
-               reaches a consumer's include path or any installed artifact.
-   License at  src/qb/vendor/uuid/catch/LICENSE_1_0.txt (source tree only)
-
-   Catch2 arrived as part of the stduuid checkout and is build-time material for
-   that fork's own test suite. It is recorded here because it is present in the
-   source distribution even though it is absent from every installed artifact.
-   catch.hpp's header directs the reader to an "accompanying file LICENSE_1_0.txt"
-   which upstream's amalgamation does not carry; that file is now present.
+   The fork carries no test suite: upstream's tests, the Catch2 copy they were
+   built with and upstream's CI configurations were removed (Huly QB-378), so no
+   other third-party component is nested inside it.
 
 
 LEGAL QUESTIONS FOR THE MAINTAINER

@@ -382,12 +382,42 @@ macro(qb_initialize_project_configuration)
     set(QB_ARCH_ARM FALSE)
     set(QB_ARCH_ARM64 FALSE)
     set(QB_ARCH_ARM32 FALSE)
+    # A macOS universal ("fat") build compiles every TU once per slice. A property of ONE slice -- the
+    # -march baseline, QB_ARCH_ARM64 -- must not be applied to all of them: before Huly QB-392 the
+    # first slice decided for every slice, so "x86_64;arm64" gave the arm64 slice -march=x86-64 and
+    # "arm64;x86_64" compiled the x86_64 slice with QB_ARCH_ARM64=1. In a universal build every
+    # supported slice is 64-bit (QB_ARCH_64 holds for all), the ARM macros are given to the arm64
+    # slices only, through Apple clang's per-slice -Xarch_<arch> (QB_ARCH_SLICE_OPTIONS, applied with
+    # the definitions), and the -march baseline is per slice too (qbCompiler.cmake: x86-64 on the
+    # x86_64 slice, as a single-slice x86_64 build has; none on arm64, as on Apple Silicon). Any other
+    # slice (i386, armv7) is refused: qb supports no 32-bit macOS.
+    set(QB_OSX_UNIVERSAL FALSE)
+    set(QB_ARCH_SLICE_OPTIONS "")
     set(_qb_system_processor "${CMAKE_SYSTEM_PROCESSOR}")
     if(APPLE AND CMAKE_OSX_ARCHITECTURES)
-        list(GET CMAKE_OSX_ARCHITECTURES 0 _qb_system_processor)
+        list(LENGTH CMAKE_OSX_ARCHITECTURES _qb_osx_slices)
+        if(_qb_osx_slices GREATER 1)
+            set(QB_OSX_UNIVERSAL TRUE)
+            foreach(_qb_slice IN LISTS CMAKE_OSX_ARCHITECTURES)
+                if(_qb_slice MATCHES "^arm64e?$")
+                    list(APPEND QB_ARCH_SLICE_OPTIONS "SHELL:-Xarch_${_qb_slice} -DQB_ARCH_ARM=1"
+                                                      "SHELL:-Xarch_${_qb_slice} -DQB_ARCH_ARM64=1")
+                elseif(NOT _qb_slice STREQUAL "x86_64")
+                    message(FATAL_ERROR "qb: CMAKE_OSX_ARCHITECTURES='${CMAKE_OSX_ARCHITECTURES}' names the slice "
+                                        "'${_qb_slice}'; a universal qb build supports x86_64 and arm64 (arm64e) only")
+                endif()
+            endforeach()
+            set(_qb_system_processor "universal")
+        else()
+            list(GET CMAKE_OSX_ARCHITECTURES 0 _qb_system_processor)
+        endif()
+        unset(_qb_osx_slices)
     endif()
 
-    if(_qb_system_processor MATCHES "^(arm64|aarch64|ARM64)$")
+    if(QB_OSX_UNIVERSAL)
+        set(QB_ARCH "universal")
+        set(QB_ARCH_64 TRUE)
+    elseif(_qb_system_processor MATCHES "^(arm64|aarch64|ARM64)$")
         set(QB_ARCH_ARM TRUE)
         set(QB_ARCH_ARM64 TRUE)
     elseif(_qb_system_processor MATCHES "^(arm|armv[0-9].*|aarch32|ARM)$")
@@ -395,7 +425,9 @@ macro(qb_initialize_project_configuration)
         set(QB_ARCH_ARM32 TRUE)
     endif()
 
-    if(QB_ARCH_ARM64)
+    if(QB_OSX_UNIVERSAL)
+        # QB_ARCH / QB_ARCH_64 set above; the per-slice ARM macros travel in QB_ARCH_SLICE_OPTIONS
+    elseif(QB_ARCH_ARM64)
         set(QB_ARCH "arm64")
         set(QB_ARCH_64 TRUE)
     elseif(QB_ARCH_ARM32)
@@ -413,7 +445,8 @@ macro(qb_initialize_project_configuration)
     # scope, including sibling qbm/* directories loaded by the top-level project.
     foreach(_v
         QB_PLATFORM QB_PLATFORM_WINDOWS QB_PLATFORM_MACOS QB_PLATFORM_LINUX
-        QB_ARCH QB_ARCH_64 QB_ARCH_32 QB_ARCH_ARM QB_ARCH_ARM64 QB_ARCH_ARM32)
+        QB_ARCH QB_ARCH_64 QB_ARCH_32 QB_ARCH_ARM QB_ARCH_ARM64 QB_ARCH_ARM32
+        QB_OSX_UNIVERSAL QB_ARCH_SLICE_OPTIONS)
         set(${_v} "${${_v}}" CACHE INTERNAL "")
     endforeach()
 
@@ -542,7 +575,11 @@ function(qb_print_configuration)
     qb_status_message("qb Framework Configuration")
     qb_status_message("========================================")
     qb_status_message("Version: ${QB_FRAMEWORK_VERSION}")
-    qb_status_message("Platform: ${QB_PLATFORM} (${QB_ARCH})")
+    if(QB_OSX_UNIVERSAL)
+        qb_status_message("Platform: ${QB_PLATFORM} (universal: ${CMAKE_OSX_ARCHITECTURES})")
+    else()
+        qb_status_message("Platform: ${QB_PLATFORM} (${QB_ARCH})")
+    endif()
     qb_status_message("Build Type: ${CMAKE_BUILD_TYPE}")
     qb_status_message("Compiler: ${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}")
     qb_status_message("Root Directory: ${QB_ROOT_DIR}")

@@ -72,8 +72,9 @@ MANIFEST = [
          record_as="src/qb/vendor/ska_hash/"),
     dict(path="qb/src/qb/vendor/uuid",         notices_in="qb",
          record_as="src/qb/vendor/uuid/"),
-    dict(path="qb/src/qb/vendor/uuid/catch",   notices_in="qb",
-         record_as="src/qb/vendor/uuid/catch/"),
+    # Catch2 v2.13.3 (qb/src/qb/vendor/uuid/catch) was a unit of its own here until Huly QB-378
+    # deleted it with the stduuid fork's tests. The discovery sweep below is what keeps it out: a
+    # copy dropped back in, at any depth this guard looks at, is an undeclared unit again.
     # nlohmann/json was here until 3.0 (qb/modules/nlohmann). It is NOT vendored any more -- it is
     # resolved by find_package(nlohmann_json), with a pinned FetchContent fallback -- so it is not a
     # vendored unit and must not be recorded as one. Re-adding a copy of it under any path would be

@@ -134,14 +134,19 @@ public:
     [[nodiscard]] static int LogicalCores();
 
     /**
-     * @brief Returns the number of physical CPU cores
+     * @brief Returns the number of physical CPU cores, or -1 when the platform does not tell
+     * @details Windows: `GetLogicalProcessorInformation` cores; macOS: `hw.physicalcpu`; Linux: the distinct
+     *          core sibling sets of the online CPUs in sysfs (`qb::detail::linux_physical_cores`). Any other
+     *          POSIX system, or a Linux whose sysfs topology cannot be read (some containers), reports -1 --
+     *          never the logical count passed off as physical (before 3.3 Linux returned the logical count, so
+     *          `HyperThreading()` was false on every SMT host; Huly QB-325).
      */
     [[nodiscard]] static int PhysicalCores();
 
     /**
      * @brief Returns both logical and physical core counts
      *
-     * @return pair(logical, physical)
+     * @return pair(logical, physical); either is -1 when unknown (see `PhysicalCores()`)
      */
     [[nodiscard]] static std::pair<int, int> TotalCores();
 
@@ -151,7 +156,7 @@ public:
     [[nodiscard]] static std::int64_t ClockSpeed();
 
     /**
-     * @brief Returns true when logical cores differ from physical cores
+     * @brief Returns true when logical cores differ from physical cores; false when either count is unknown
      */
     [[nodiscard]] static bool HyperThreading();
 
@@ -188,6 +193,22 @@ public:
      */
     [[nodiscard]] static bool ThreadPinningSupported() noexcept;
 };
+
+namespace detail {
+
+/**
+ * @brief The number of physical cores a Linux sysfs CPU tree describes, or -1 when the tree cannot be read.
+ * @param cpu_root The CPU directory: `/sys/devices/system/cpu` on a live Linux host -- what `CPU::TotalCores()` reads
+ *                 there -- or a fixture tree (the function is portable C++: the tests run it on every platform).
+ * @details One physical core per distinct core sibling set over the ONLINE CPUs: `cpu<N>/topology/core_cpus_list`,
+ *          else the older `thread_siblings_list`, else the `physical_package_id` / `die_id` / `core_id` triple. A
+ *          sibling set names one core on every package and die, where `core_id` alone repeats across sockets. The
+ *          online CPUs come from `online` (a cpulist: `0-3,8`); without that file, every `cpu<N>` directory counts.
+ *          A malformed cpulist, an online CPU with no readable topology, or no CPU at all is -1: unknown, never a guess.
+ */
+[[nodiscard]] int linux_physical_cores(std::string const &cpu_root);
+
+} // namespace detail
 
 } // namespace qb
 

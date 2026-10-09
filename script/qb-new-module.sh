@@ -317,13 +317,26 @@ else
     if [ "${QB_RELEASE_STATE}" = unreleased ]; then
         _candidates="${_candidates} develop"
     fi
+    # All three outcomes, as remote_ref_state promises: 0 takes the candidate, 2 (the remote answered
+    # and has no such ref) moves to the next one, and anything else stops. A failed probe used to
+    # read as "absent", so one network blip on the v<version> probe handed out the development line
+    # or the default branch -- and called it the matching template (Huly QB-397). The template is
+    # fetched in a moment anyway, so stopping here costs nothing a healthy network would not.
     for _candidate in ${_candidates}; do
         _rc=0
         remote_ref_state "${TEMPLATE_URL}" "${_candidate}" || _rc=$?
-        if [ "${_rc}" -eq 0 ]; then
-            TEMPLATE_REF="${_candidate}"
-            break
-        fi
+        case "${_rc}" in
+            0)
+                TEMPLATE_REF="${_candidate}"
+                break
+                ;;
+            2) ;;
+            *)
+                echo "Could not reach ${TEMPLATE_URL} to check for '${_candidate}', so the template matching qb ${QB_SHIPPED_VERSION} cannot be chosen." >&2
+                echo "Retry, or set QB_TEMPLATE_REF=<branch-or-tag> to choose it yourself." >&2
+                exit 1
+                ;;
+        esac
     done
     if [ -n "${TEMPLATE_REF}" ]; then
         if [ "${TEMPLATE_REF}" = "${QB_VERSION_TAG}" ]; then
@@ -376,10 +389,21 @@ fi
 
 # ---------------------------------------------------------------------------- copy
 
+# `mkdir` WITHOUT -p is the existence check that decides: the one at the top is the early, friendly
+# refusal, and the fetch in between leaves a window for anything -- a second scaffold of the same
+# name, the user -- to create the directory. `mkdir -p` succeeded on it, the copy merged into it,
+# and a later failure's cleanup removed it: a directory this script did not create (Huly QB-396).
+# Only a directory this mkdir created is ever marked for cleanup.
+if ! mkdir "${TARGET_DIR}"; then
+    if [ -e "${TARGET_DIR}" ]; then
+        echo "'${NAME}' appeared here while the template was being fetched -- refusing to overwrite it." >&2
+    fi
+    exit 1
+fi
+created_target=1
+
 # `cp -R src/. dst/` copies the contents INCLUDING dotfiles on both BSD and GNU cp -- the
 # payload carries .gitignore and .github/, and a plain `cp -R src dst` would nest or drop them.
-mkdir -p "${TARGET_DIR}"
-created_target=1
 cp -R "${PAYLOAD}/." "${TARGET_DIR}/"
 
 # ---------------------------------------------------------------------------- render

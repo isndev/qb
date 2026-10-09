@@ -73,13 +73,13 @@ endfunction()
 #   SOURCE_DIR       the repository root. Defaults to CMAKE_CURRENT_SOURCE_DIR. Its src/ is
 #                    the include root and its LICENSE ships; nothing else about it is read.
 #   HEADER_EXCLUDE   optional regex passed to install(DIRECTORY) as REGEX ... EXCLUDE. qb
-#                    needs two (stduuid's vendored Catch2; the qev libevent compat headers
-#                    unless QB_EV_LIBEVENT_COMPAT). That a module needs one at all is a
-#                    finding, not a feature: the src/ layout means everything under
-#                    src/qbm/<name>/ IS the public surface, so an exclusion here says a file
-#                    living in the public tree is not public. qbm-pgsql has exactly one
-#                    (field_handler.h, dead and non-compiling) and it is forwarded by
-#                    qb_register_module(HEADER_EXCLUDE) -- see that function's header.
+#                    needs one (stduuid's header-less cmake/, the qev internal headers, and
+#                    the qev libevent compat headers unless QB_EV_LIBEVENT_COMPAT). That a
+#                    module needs one at all is a finding, not a feature: the src/ layout
+#                    means everything under src/qbm/<name>/ IS the public surface, so an
+#                    exclusion here says a file living in the public tree is not public.
+#                    qbm-pgsql has exactly one (field_handler.h, dead and non-compiling),
+#                    forwarded by qb_register_module(HEADER_EXCLUDE) -- see its header.
 #   TARGETS          every target that travels in the export set. A bundled non-imported
 #                    library that a public target links PUBLIC MUST be listed: its name lands
 #                    in INTERFACE_LINK_LIBRARIES, and install(EXPORT) is a hard error on a
@@ -186,10 +186,9 @@ function(qb_install_package)
     # Each vendored unit keeps its licence text beside its own code, so glob rather than
     # hard-code: a unit added later ships its notice without anyone remembering to edit a
     # list, and scripts/check-vendor-attribution.py fails the guard battery if a unit has
-    # none to ship. The globs are deliberately one level deep, which is also what keeps
-    # stduuid's vendored Catch2 out: it is the fork's test-only material, HEADER_EXCLUDE
-    # already drops its headers, and shipping its licence would advertise a dependency the
-    # consumer never received.
+    # none to ship. The globs are deliberately one level deep: a unit nested inside another
+    # (stduuid carried Catch2, its test-only material, until Huly QB-378 deleted it) ships no
+    # licence for a dependency the consumer never received.
     foreach(_qb_pkg_glob IN LISTS P_VENDOR_DIRS)
         file(GLOB _qb_pkg_vendor_dirs LIST_DIRECTORIES true "${_qb_pkg_glob}")
         foreach(_qb_pkg_vendor_dir IN LISTS _qb_pkg_vendor_dirs)

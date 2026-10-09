@@ -252,7 +252,7 @@ public:
 
 `qb/system/cpu.h` supplies the two things the primitives above need from the hardware, plus a host-query class.
 
-**`qb::spin_loop_pause()`** is the pause hint every wait loop on this page issues between reads: `_mm_pause` on x86, `yield` on AArch64 and 32-bit ARM, `__dmb` under MSVC on ARM64, and `std::this_thread::yield()` as a portable last resort (`src/qb/system/cpu.h:194-201` for x86, `:212-225` for ARM). It is `inline` and `noexcept` everywhere.
+**`qb::spin_loop_pause()`** is the pause hint every wait loop on this page issues between reads: `_mm_pause` on x86, `yield` on AArch64 and 32-bit ARM, `__dmb` under MSVC on ARM64, and `std::this_thread::yield()` as a portable last resort (`src/qb/system/cpu.h:215-222` for x86, `:233-246` for ARM). It is `inline` and `noexcept` everywhere.
 
 **`qb::CPU`** is a static-only, non-instantiable class of host queries — every special member is deleted (`src/qb/system/cpu.h:113-119`):
 
@@ -260,12 +260,12 @@ public:
 |---|---|
 | `Architecture()` | the CPU brand string |
 | `Affinity()` | the number of logical processors available |
-| `LogicalCores()` / `PhysicalCores()` / `TotalCores()` | core counts; `TotalCores()` is the `{logical, physical}` pair |
+| `LogicalCores()` / `PhysicalCores()` / `TotalCores()` | core counts; `TotalCores()` is the `{logical, physical}` pair, and either is `-1` when unknown. Physical cores come from the OS topology — `GetLogicalProcessorInformation` on Windows, `hw.physicalcpu` on macOS, the distinct core sibling sets of the online CPUs in sysfs on Linux — and are `-1` on any other POSIX rather than a guess (before 3.3 Linux reported the logical count twice) |
 | `ClockSpeed()` | clock in Hz, or `-1` when unavailable |
-| `HyperThreading()` | whether logical differs from physical |
+| `HyperThreading()` | whether logical differs from physical; `false` when either count is unknown |
 | `ThreadPinningSupported()` | whether OS-level thread pinning actually takes effect on this host |
 
-The last one deserves its own paragraph, because it exists to make a silent no-op observable. `qb::CoreInitializer::setAffinity()` is best-effort by design: a failed pin only warns and never fails `VirtualCore` init. On **Apple Silicon** it does not merely fail — macOS has no `pthread_setaffinity_np`, qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, and arm64 macOS does not implement that flavor: every call answers `KERN_NOT_SUPPORTED` (measured: Apple M4 Pro, Darwin 25.6.0, `ret == 46` for every core), and qb's shim deliberately reports *success* for that code so it does not warn on every core of every run. Pinning therefore does nothing there, silently. `ThreadPinningSupported()` is what lets a test or a user branch on that instead of assuming (`src/qb/system/cpu.h:159-189`).
+The last one deserves its own paragraph, because it exists to make a silent no-op observable. `qb::CoreInitializer::setAffinity()` is best-effort by design: a failed pin only warns and never fails `VirtualCore` init. On **Apple Silicon** it does not merely fail — macOS has no `pthread_setaffinity_np`, qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, and arm64 macOS does not implement that flavor: every call answers `KERN_NOT_SUPPORTED` (measured: Apple M4 Pro, Darwin 25.6.0, `ret == 46` for every core), and qb's shim deliberately reports *success* for that code so it does not warn on every core of every run. Pinning therefore does nothing there, silently. `ThreadPinningSupported()` is what lets a test or a user branch on that instead of assuming (`src/qb/system/cpu.h:164-194`).
 
 It is determined once per process and cached, by a **runtime probe** on macOS rather than an `#ifdef __aarch64__` — because an x86_64 binary under Rosetta 2 runs on an arm64 kernel, so only a runtime probe gives the right answer. On other POSIX and on Windows it is `true`, meaning the *mechanism* exists; an out-of-range `CoreId` or a restrictive cgroup can still make an individual request fail. And `true` on macOS is a weaker guarantee than `true` on Linux or Windows even where the flavor is implemented: `<mach/thread_policy.h>` describes it as experimental and as a scheduler *hint* that groups threads sharing an affinity tag onto a shared L2, not a pin to CPU N.
 
@@ -280,7 +280,7 @@ Two RAII helpers also live in this header, for no reason other than that this is
 - **A spinlock under real contention wastes a core.** `SpinLock::lock()` never sleeps. Use it only for sections of a few instructions with rare contention; otherwise prefer `std::mutex`.
 - **`mpsc_unbounded_queue::size()` over-estimates and can change between the call and the next line.** It is a hint for the consumer, never a loop bound (`src/qb/system/lockfree/mpsc_unbounded_queue.h:130-143`).
 - **`mpsc_unbounded_queue` allocates on every push.** It is unbounded by design; if you need a fixed memory ceiling or zero steady-state allocation, the bounded `mpsc::ringbuffer` is the right tool.
-- **`setAffinity` can be a silent no-op.** Ask `qb::CPU::ThreadPinningSupported()` before attributing a performance result to pinning (`src/qb/system/cpu.h:159-189`).
+- **`setAffinity` can be a silent no-op.** Ask `qb::CPU::ThreadPinningSupported()` before attributing a performance result to pinning (`src/qb/system/cpu.h:164-194`).
 - **Do not reach for these in application code.** For inter-actor and inter-core messaging, use `push`, `send`, `reply`, and `broadcast` ([The event system](../2_core_concepts/event_system.md)). They enforce the threading contract for you and are the supported, type-checked path.
 
 ## See also

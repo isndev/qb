@@ -25,11 +25,99 @@
 #include <winreg.h>
 #endif
 
+#include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
+
+// ---- Linux sysfs topology (qb::detail::linux_physical_cores) -- portable C++, so the tests feed it fixture trees
+// on every platform; only CPU::TotalCores() on Linux points it at /sys/devices/system/cpu (Huly QB-325).
+
+// The first line of a small sysfs attribute, trimmed; nullopt when it cannot be opened or is empty.
+std::optional<std::string>
+read_attribute(std::filesystem::path const &path) {
+    std::ifstream in(path);
+    if (!in)
+        return std::nullopt;
+    std::string line;
+    std::getline(in, line);
+    std::size_t b = 0, e = line.size();
+    while (b < e && std::isspace(static_cast<unsigned char>(line[b])))
+        ++b;
+    while (e > b && std::isspace(static_cast<unsigned char>(line[e - 1])))
+        --e;
+    if (b == e)
+        return std::nullopt;
+    return line.substr(b, e - b);
+}
+
+// One decimal number of a cpulist at `at`, advancing past it; nullopt when there is none or it is absurd.
+std::optional<int>
+cpulist_number(std::string const &list, std::size_t &at) {
+    const std::size_t start = at;
+    long              value = 0;
+    while (at < list.size() && std::isdigit(static_cast<unsigned char>(list[at]))) {
+        value = value * 10 + (list[at] - '0');
+        if (value > (1L << 20))
+            return std::nullopt; // no host has a million CPUs: a corrupt list
+        ++at;
+    }
+    if (at == start)
+        return std::nullopt;
+    return static_cast<int>(value);
+}
+
+// A kernel cpulist ("0-3,8,10-11") -> the CPU numbers; nullopt on any malformed token or an empty list.
+std::optional<std::vector<int>>
+parse_cpulist(std::string const &list) {
+    std::vector<int> cpus;
+    std::size_t      pos = 0;
+    while (pos < list.size()) {
+        const auto first = cpulist_number(list, pos);
+        if (!first)
+            return std::nullopt;
+        int last = *first;
+        if (pos < list.size() && list[pos] == '-') {
+            ++pos;
+            const auto upper = cpulist_number(list, pos);
+            if (!upper || *upper < *first)
+                return std::nullopt;
+            last = *upper;
+        }
+        for (int cpu = *first; cpu <= last; ++cpu)
+            cpus.push_back(cpu);
+        if (pos < list.size()) {
+            if (list[pos] != ',')
+                return std::nullopt;
+            ++pos;
+        }
+    }
+    if (cpus.empty())
+        return std::nullopt;
+    return cpus;
+}
+
+// The sibling set of one CPU, the key of its physical core; nullopt when its topology cannot be read.
+std::optional<std::string>
+core_key(std::filesystem::path const &topology) {
+    if (auto siblings = read_attribute(topology / "core_cpus_list"))
+        return siblings;
+    if (auto siblings = read_attribute(topology / "thread_siblings_list"))
+        return siblings;
+    const auto package = read_attribute(topology / "physical_package_id");
+    const auto core    = read_attribute(topology / "core_id");
+    if (!package || !core)
+        return std::nullopt;
+    const auto die = read_attribute(topology / "die_id");
+    return "p" + *package + "/d" + die.value_or("0") + "/c" + *core;
+}
 
 #if defined(_WIN32) || defined(_WIN64)
 DWORD
@@ -157,8 +245,14 @@ CPU::TotalCores() {
 
 #elif defined(unix) || defined(__unix) || defined(__unix__)
     const long processors = sysconf(_SC_NPROCESSORS_ONLN);
-    const int  count      = processors > 0 ? static_cast<int>(processors) : -1;
-    return {count, count};
+    const int  logical    = processors > 0 ? static_cast<int>(processors) : -1;
+#if defined(__linux__)
+    // One physical core per distinct sibling set of the online CPUs (Huly QB-325): the logical count returned as
+    // the physical one made HyperThreading() false on every SMT host.
+    return {logical, detail::linux_physical_cores("/sys/devices/system/cpu")};
+#else
+    return {logical, -1}; // no portable topology source here: unknown, never the logical count passed off as physical
+#endif
 
 #elif defined(_WIN32) || defined(_WIN64)
     PSYSTEM_LOGICAL_PROCESSOR_INFORMATION buffer = nullptr;
@@ -313,5 +407,43 @@ CPU::ThreadPinningSupported() noexcept {
 #error Unsupported platform
 #endif
 }
+
+namespace detail {
+
+int
+linux_physical_cores(std::string const &cpu_root) {
+    namespace fs = std::filesystem;
+    const fs::path   root(cpu_root);
+    std::vector<int> cpus;
+    if (const auto online = read_attribute(root / "online")) {
+        auto parsed = parse_cpulist(*online);
+        if (!parsed)
+            return -1;
+        cpus = std::move(*parsed);
+    } else {
+        // No `online` file: every cpu<N> directory counts (`cpufreq`, `cpuidle`, ... are not CPUs).
+        std::error_code ec;
+        for (fs::directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
+            const std::string name   = it->path().filename().string();
+            bool              digits = name.size() > 3 && name.size() <= 9 && name.compare(0, 3, "cpu") == 0;
+            for (std::size_t i = 3; digits && i < name.size(); ++i)
+                digits = std::isdigit(static_cast<unsigned char>(name[i])) != 0;
+            if (digits)
+                cpus.push_back(std::stoi(name.substr(3)));
+        }
+        if (ec || cpus.empty())
+            return -1;
+    }
+    std::set<std::string> cores;
+    for (const int cpu : cpus) {
+        const auto key = core_key(root / ("cpu" + std::to_string(cpu)) / "topology");
+        if (!key)
+            return -1; // an online CPU with no readable topology: unknown, never a partial count
+        cores.insert(*key);
+    }
+    return static_cast<int>(cores.size());
+}
+
+} // namespace detail
 
 } // namespace qb

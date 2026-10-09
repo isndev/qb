@@ -497,9 +497,9 @@ Unbounded lock-free Michael-Scott MPSC queue.
 ### Endian / CPU / utility
 *   `enum class qb::endian::order { little, big, native, unknown = -1 };`
 *   `consteval order qb::endian::native_order() noexcept`, `consteval bool is_little_endian()/is_big_endian() noexcept`
-*   `[T] constexpr T qb::endian::byteswap(T) noexcept` (arithmetic/enum/trivially-copyable).
+*   `[T] constexpr T qb::endian::byteswap(T) noexcept` (arithmetic/enum/trivially-copyable; a one-byte type, `bool` included, is returned unchanged).
 *   `[T] constexpr T qb::endian::to_big_endian(T)/from_big_endian(T)/to_little_endian(T)/from_little_endian(T) noexcept`
-*   `class qb::CPU` (static-only): `Architecture()`, `Affinity()`, `LogicalCores()`, `PhysicalCores()`, `std::pair<int,int> TotalCores()`, `std::int64_t ClockSpeed()` (Hz or -1), `bool HyperThreading()`.
+*   `class qb::CPU` (static-only): `Architecture()`, `Affinity()`, `LogicalCores()`, `PhysicalCores()`, `std::pair<int,int> TotalCores()` (`{logical, physical}`, each -1 when unknown; physical = OS topology, on Linux the distinct sysfs core sibling sets of the online CPUs, -1 on other POSIX), `std::int64_t ClockSpeed()` (Hz or -1), `bool HyperThreading()` (logical != physical; false when unknown).
 *   `[[nodiscard]] static bool qb::CPU::ThreadPinningSupported() noexcept` — does OS thread pinning actually take effect here? `false` on Apple Silicon (`THREAD_AFFINITY_POLICY` → `KERN_NOT_SUPPORTED`), so `CoreInitializer::setAffinity` is a silent no-op there; `true` on Linux and Windows/MSVC. Probed once at runtime (not an `#ifdef`: Rosetta 2 runs x86_64 on an arm64 kernel) and cached. `true` means the mechanism exists, not that a given request succeeds.
 *   `inline void qb::spin_loop_pause() noexcept` — CPU pause hint for spin loops.
 *   `[T<T,TCleaner>] [[nodiscard]] auto qb::resource(T handle, TCleaner cleaner)` — wrap a raw handle in `unique_ptr` with a custom deleter.

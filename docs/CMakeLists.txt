@@ -19,7 +19,7 @@
 #
 # There is deliberately NO option() here. The documented switch is QB_BUILD_DOCS
 # (cmake/qbConfig.cmake:110, readme/7_reference/cmake_options.md, building.md), and
-# qb/CMakeLists.txt:225 already gates `add_subdirectory(docs)` on it -- so reaching this
+# qb/CMakeLists.txt:219 already gates `add_subdirectory(docs)` on it -- so reaching this
 # file at all means the user asked for documentation.
 #
 # This file used to declare a SECOND option, QB_BUILD_DOC (singular), defaulting OFF, and

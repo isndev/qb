@@ -226,14 +226,21 @@ byteswap(T value) noexcept {
 #if defined(__cpp_lib_byteswap) && __cpp_lib_byteswap >= 202110L
         return std::byteswap(value);
 #else
-        using U  = std::make_unsigned_t<T>;
-        U input  = static_cast<U>(value);
-        U output = 0;
-        for (std::size_t i = 0; i < sizeof(T); ++i) {
-            output = static_cast<U>((output << CHAR_BIT) | (input & static_cast<U>(0xffu)));
-            input  = static_cast<U>(input >> CHAR_BIT);
+        if constexpr (sizeof(T) == 1) {
+            // One byte has one order: the identity, as std::byteswap. Taken before make_unsigned_t, which is
+            // ill-formed for bool -- the contract admits bool (it is integral), and this C++20 fallback did not
+            // compile for it while the C++23 path did (Huly QB-358).
+            return value;
+        } else {
+            using U  = std::make_unsigned_t<T>;
+            U input  = static_cast<U>(value);
+            U output = 0;
+            for (std::size_t i = 0; i < sizeof(T); ++i) {
+                output = static_cast<U>((output << CHAR_BIT) | (input & static_cast<U>(0xffu)));
+                input  = static_cast<U>(input >> CHAR_BIT);
+            }
+            return static_cast<T>(output);
         }
-        return static_cast<T>(output);
 #endif
     }
 }

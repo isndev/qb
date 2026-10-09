@@ -203,7 +203,7 @@ RECURSIVE              = YES
 # src/qb/vendor/ holds qb's forks of libev, stduuid, nanolog and ska_hash. They are inside the
 # include root so that one root serves both the build and the installed tree -- but they are
 # not qb's documented API, and INPUT above is recursive, so without this Doxygen would ingest
-# libev's C headers, stduuid's vendored Catch2, and ska_hash wholesale.
+# libev's C headers, stduuid, and ska_hash wholesale.
 EXCLUDE                = "@QB_DIRECTORY@/src/qb/io/system" \
                          "@QB_DIRECTORY@/src/qb/vendor"
 EXCLUDE_SYMLINKS       = NO

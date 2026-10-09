@@ -64,3 +64,8 @@ qb_add_test(MODULE qb-core TIER unit NAME growable-ring SOURCES system/growable-
 # replacement before it evicts the oldest element (a throwing constructor leaves it untouched, push_back(front()) is
 # valid — Huly QB-278), the evict-first fallback for a move that may throw, Overwrite=false, the wrap, clear().
 qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buffer.cpp DEPENDS ${PROJECT_NAME})
+# endian pins qb::byteswap (qb/utility/compat.h) and the qb::endian conversions, untested until 3.3: one-byte types
+# -- bool included, which the C++20 fallback did not compile (Huly QB-358) -- swap to themselves on both the
+# std::byteswap (C++23) and the portable (C++20) path, wider integers and enums reverse their bytes, floating point
+# reverses its representation, and the to/from conversions swap on the opposite-order host only.
+qb_add_test(MODULE qb-core TIER unit NAME endian SOURCES system/endian.cpp DEPENDS ${PROJECT_NAME})

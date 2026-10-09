@@ -109,7 +109,7 @@ Three properties worth knowing:
 - **`byteswap` accepts arithmetic *and* enum types.** An enum is swapped through its underlying type and handed back as the enum (`qb/src/qb/system/endian.h:94-96`), which matters because wire protocol tags are usually scoped enums.
 - **A non-integral arithmetic type falls to a portable reverse-copy** (`qb/src/qb/system/endian.h:97-104`). `float` and `double` therefore work, but the result is only meaningful if both ends agree on the floating-point representation — a much stronger assumption than agreeing on byte order. Prefer sending a fixed-width integer.
 
-Underneath, `qb::endian::byteswap` delegates the integral case to `qb::byteswap`, which uses `std::byteswap` when the standard library advertises it and a portable per-byte loop otherwise (`qb/src/qb/utility/compat.h:217-238`). Two `static_assert`s at the entry point reject anything that is neither arithmetic nor enum, and anything not trivially copyable (`qb/src/qb/system/endian.h:89-90`).
+Underneath, `qb::endian::byteswap` delegates the integral case to `qb::byteswap`, which uses `std::byteswap` when the standard library advertises it and a portable per-byte loop otherwise; on both paths a one-byte type — `bool`, a character type, a one-byte enum — is returned unchanged (`qb/src/qb/utility/compat.h:217-246`). Two `static_assert`s at the entry point reject anything that is neither arithmetic nor enum, and anything not trivially copyable (`qb/src/qb/system/endian.h:89-90`).
 
 ## Identifiers
 

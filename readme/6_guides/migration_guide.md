@@ -499,7 +499,7 @@ Every qbm header is reached as `<qbm/<module>/…>` in 3.0. In 2.6.0 the include
 was `<http/http.h>`. Module sources now live at `<module>/src/qbm/<module>/`, and `src/` **is** the
 include root, so the same string works in the source tree and in an installed prefix
 — `qb_package_include_root` (`qb/cmake/qbPackage.cmake:51-55`) decides both, and the module
-registration (`qb/cmake/qbFunctions.cmake:1009-1016`) refuses to configure a module laid out any other
+registration (`qb/cmake/qbFunctions.cmake:1031-1038`) refuses to configure a module laid out any other
 way.
 
 ```
@@ -532,10 +532,10 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
   `QB_NLOHMANN_GIT_TAG` (`qb/cmake/qbConfig.cmake:119`, default `v3.12.0`).
 - **An installable build needs a *real* system nlohmann.** A fetched target belongs to no export set,
   so `QB_INSTALL=ON` without one is a deliberate configure-time error
-  (`qb/cmake/qbDependencies.cmake:501-509`) that names every way out:
+  (`qb/cmake/qbDependencies.cmake:502-510`) that names every way out:
 
   ```
-  CMake Error at cmake/qbConfig.cmake:509 (message):
+  CMake Error at cmake/qbConfig.cmake:542 (message):
     [qb] nlohmann_json was not found on the system, so it would be fetched
     (v3.12.0, via QB_USE_SYSTEM_NLOHMANN=AUTO), but QB_INSTALL is ON.
   ```

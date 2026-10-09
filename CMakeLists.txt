@@ -79,16 +79,10 @@ qb_print_configuration()
 # -----------------------------------------------------------------------------
 qb_status_message("Loading internal modules...")
 
-# Configure UUID module
-set(UUID_BUILD_TESTS OFF)
+# Configure UUID module. The fork has no test suite and no gsl/std::span switch any more (Huly
+# QB-378, QB-375): std::span is unconditional, so only its two generator options remain to pin.
 set(UUID_SYSTEM_GENERATOR OFF)
 set(UUID_TIME_GENERATOR OFF)
-# ON, not OFF: qb requires C++20 at minimum, so std::span always exists. With OFF, stduuid takes its
-# gsl fallback branch -- which points BUILD_INTERFACE and INSTALL_INTERFACE at a `gsl/` directory
-# that was deleted when qb moved to C++20, and runs `install(DIRECTORY gsl ...)` on it. That made
-# `cmake --install` FAIL outright ("modules/uuid/cmake_install.cmake:41"), breaking the documented
-# find_package(qb) integration mode. Nothing noticed because no CI job ever ran cmake --install.
-set(UUID_USING_CXX20_SPAN ON)
 
 # Tell the vendored forks they are EMBEDDED in qb and must publish their headers under the
 # qb/vendor/<fork>/ prefix instead of dropping bare names (qev.h, uuid.h, event.h ...) into the
@@ -378,9 +372,10 @@ if (QB_INSTALL)
     # a third-party choice or about which targets exist, not about how a qb-shaped repository
     # is packaged.
     #
-    # HEADER_EXCLUDE carries two exclusions, both about material that is not qb's public surface:
-    #   * stduuid's vendored Catch2 (~830 KB) and its test sources -- build-time material for
-    #     that fork's own test suite.
+    # HEADER_EXCLUDE carries these exclusions, all about material that is not qb's public surface:
+    #   * stduuid's cmake/ directory, which holds no header: FILES_MATCHING would still create it
+    #     empty under the prefix. (Its vendored Catch2 and test sources were excluded here too until
+    #     Huly QB-378 deleted them.)
     #   * the qev fork's libevent compatibility headers, unless QB_EV_LIBEVENT_COMPAT is ON. The
     #     bodies behind them are only compiled into libqev.a in that mode (see the option's
     #     comment: they are 24 unprefixed upstream libevent C symbols on every consumer's link
@@ -394,7 +389,7 @@ if (QB_INSTALL)
     #     installs exactly ev.h, ev++.h and ev_config.h and states that split as its design, so
     #     this brings the embedded install to the same three.
     # A module needs no exclusion at all.
-    set(_qb_header_exclude "/qb/vendor/uuid/(catch|test|cmake)(/|$)")
+    set(_qb_header_exclude "/qb/vendor/uuid/cmake(/|$)")
     set(_qb_header_exclude "${_qb_header_exclude}|/qb/ev/(ev_vars|ev_wrap|wepoll)\\.h$")
     if (NOT QB_EV_LIBEVENT_COMPAT)
         set(_qb_header_exclude "${_qb_header_exclude}|/qb/ev/event(_compat)?\\.h$")

@@ -381,8 +381,18 @@ if(QB_ENABLE_OPTIMIZATIONS)
             )
         endif()
         
-        # Architecture-specific optimizations
-        if(QB_ENABLE_NATIVE_ARCH)
+        # Architecture-specific optimizations. A macOS universal build compiles each TU once per slice,
+        # so the baseline is chosen per slice (Huly QB-392): -march given to every slice made
+        # "x86_64;arm64" hand -march=x86-64 to the arm64 compile.
+        if(QB_OSX_UNIVERSAL)
+            if(QB_ENABLE_NATIVE_ARCH)
+                qb_warning_message("QB_ENABLE_NATIVE_ARCH ignored: CMAKE_OSX_ARCHITECTURES='${CMAKE_OSX_ARCHITECTURES}' is a universal build, and the host CPU is one slice's")
+            endif()
+            if("x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
+                # The x86_64 slice keeps the baseline a single-slice x86_64 build has; arm64 none, as below.
+                list(APPEND QB_CXX_FLAGS_RELEASE "SHELL:-Xarch_x86_64 -march=x86-64")
+            endif()
+        elseif(QB_ENABLE_NATIVE_ARCH)
             # Tune for the build-host CPU. Verify support before using it: older
             # Apple Clang rejects -march=native on arm64, where -mcpu=native is the
             # accepted spelling. Fall back gracefully so the build never breaks.

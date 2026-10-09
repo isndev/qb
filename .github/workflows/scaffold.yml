@@ -239,6 +239,11 @@ jobs:
       # The redirect is per-step env rather than `git config --global`, on purpose: a global
       # redirect that outlived its step would silently turn a later REAL clone into a fake one,
       # and the step that would then pass while proving nothing is the one above.
+      #
+      # Two ways in since Huly QB-397, both run. Unreachable, the template's ref PROBE fails first,
+      # and that must stop the run and say so -- it used to read as "the ref is absent" and fall
+      # through to another template. With QB_TEMPLATE_REF set the probe is skipped and the FETCH
+      # is what fails, which is the path defect 1 took.
       - name: Control - a failing clone leaves the invocation directory untouched
         env:
           GIT_CONFIG_COUNT: "1"
@@ -252,22 +257,34 @@ jobs:
             echo "::error::the 'nonexistent' template path exists"; exit 1; }
 
           for script in qb-new-module.sh qb-new-project.sh; do
-            inv="${RUNNER_TEMP}/clonefail/${script}"
+          for path in probe fetch; do
+            inv="${RUNNER_TEMP}/clonefail/${script}-${path}"
             rm -rf "${inv}"; mkdir -p "${inv}/subdir"
             echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
             echo 'nested'                                  > "${inv}/subdir/inner.txt"
 
             before=$(cd "${inv}" && find . | sort | md5sum)
             rc=0
-            ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
-              > "${inv}.log" 2>&1 || rc=$?
+            if [ "${path}" = probe ]; then
+              ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
+                > "${inv}.log" 2>&1 || rc=$?
+            else
+              ( cd "${inv}" && QB_TEMPLATE_REF=develop bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
+                > "${inv}.log" 2>&1 || rc=$?
+            fi
             after=$(cd "${inv}" && find . | sort | md5sum)
 
-            echo "--- ${script} against an unreachable template -> exit ${rc}"
+            echo "--- ${script} against an unreachable template (${path}) -> exit ${rc}"
             sed 's/^/    /' "${inv}.log"
 
             [ "${rc}" -ne 0 ] || {
               echo "::error::${script} exited 0 with the clone failing -- defect 1 is back"; exit 1; }
+            if [ "${path}" = probe ]; then
+              grep -q 'Could not reach' "${inv}.log" || {
+                echo "::error::${script}: a failed template probe did not stop the run -- QB-397 is back"; exit 1; }
+              ! grep -q 'FALLBACK' "${inv}.log" || {
+                echo "::error::${script}: a failed template probe was reported as a missing ref"; exit 1; }
+            fi
             [ "${before}" = "${after}" ] || {
               echo "::error::${script}: the invocation directory changed"
               ( cd "${inv}" && find . | sort ); exit 1; }
@@ -277,7 +294,8 @@ jobs:
               echo "::error::${script}: the half-built target survived the failure"; exit 1; }
             echo "    non-zero exit, no .git, no half-built target, directory unchanged (${before%% *})"
           done
-          echo "control: a failing clone destroys nothing"
+          done
+          echo "control: a failing probe stops the run, a failing clone destroys nothing"
 
       # POSITIVE CONTROL for the scripts' own anti-vacuity check.
       #
@@ -371,6 +389,72 @@ jobs:
             echo "::error::exited 1 without reporting the missing placeholders -- wrong finding"; exit 1; }
           [ ! -e "${inv}/m" ] || { echo "::error::the unrendered target survived"; exit 1; }
           echo "positive control: an unrendered template is refused"
+
+      # NEGATIVE CONTROL 3 -- the target appears while the template is fetched (Huly QB-396).
+      #
+      # The early "already exists" refusal and the mkdir that creates the target are a fetch apart,
+      # and anything can create the directory in between -- a second scaffold of the same name, the
+      # user. `mkdir -p` accepted it, the copy merged into it, and the cleanup of a later failure
+      # removed it. Replayed deterministically: a git shim on PATH plants the directory on the
+      # clone/fetch, and the stand-in template has no placeholders, so the old script went on to
+      # fail in render() and `rm -rf` the planted directory. The planted file must survive, and the
+      # run must name the cause. The shim is also the anti-vacuity check: if it never ran, the
+      # planted file is missing and the step fails.
+      - name: Control - a target that appears meanwhile is neither merged into nor removed
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: "url.${{ runner.temp }}/race-templates/.insteadOf"
+          GIT_CONFIG_VALUE_0: "https://github.com/isndev/"
+        run: |
+          set -euo pipefail
+          for template in qb-sample-module qb-sample-project; do
+            tpl="${RUNNER_TEMP}/race-templates/${template}.git"
+            rm -rf "${tpl}"; mkdir -p "${tpl}/template"
+            echo 'cmake_minimum_required(VERSION 3.24)' > "${tpl}/template/CMakeLists.txt"
+            git init --quiet "${tpl}"
+            git -C "${tpl}" add -A
+            git -C "${tpl}" commit --quiet -m 'stand-in template'
+          done
+
+          shim="${RUNNER_TEMP}/git-shim"; rm -rf "${shim}"; mkdir -p "${shim}"
+          QB_REAL_GIT="$(command -v git)"; export QB_REAL_GIT
+          {
+            echo '#!/usr/bin/env bash'
+            echo 'for a in "$@"; do'
+            echo '  case "${a}" in'
+            echo '    clone|fetch)'
+            echo '      mkdir -p "${QB_SHIM_PLANT}"'
+            echo '      echo "planted by someone else" > "${QB_SHIM_PLANT}/keepme.txt"'
+            echo '      break ;;'
+            echo '  esac'
+            echo 'done'
+            echo 'exec "${QB_REAL_GIT}" "$@"'
+          } > "${shim}/git"
+          chmod +x "${shim}/git"
+
+          for script in qb-new-module.sh qb-new-project.sh; do
+            inv="${RUNNER_TEMP}/race/${script}"
+            rm -rf "${inv}"; mkdir -p "${inv}"
+            rc=0
+            ( cd "${inv}" && QB_SHIM_PLANT="${inv}/m" PATH="${shim}:${PATH}" \
+                bash "${GITHUB_WORKSPACE}/script/${script}" m ) > "${inv}.log" 2>&1 || rc=$?
+            echo "--- ${script} with the target planted during the fetch -> exit ${rc}"
+            sed 's/^/    /' "${inv}.log"
+
+            [ -f "${inv}/m/keepme.txt" ] || {
+              echo "::error::${script}: the planted directory was removed (or the shim never ran)"; exit 1; }
+            [ "$(cat "${inv}/m/keepme.txt")" = 'planted by someone else' ] || {
+              echo "::error::${script}: the planted file was overwritten"; exit 1; }
+            [ "$(ls -A "${inv}/m")" = keepme.txt ] || {
+              echo "::error::${script}: the template was merged into the planted directory"
+              ls -A "${inv}/m"; exit 1; }
+            [ "${rc}" -eq 1 ] || {
+              echo "::error::${script}: expected exit 1, got ${rc}"; exit 1; }
+            grep -q 'appeared here' "${inv}.log" || {
+              echo "::error::${script}: exited 1 without naming the planted directory -- wrong finding"; exit 1; }
+            echo "    exit 1, reported 'appeared here', planted directory intact"
+          done
+          echo "control: a target created meanwhile is left exactly as it was found"
 
       # THE BUILD LEG. Everything above proves the scaffolder produced the tree it claims to have
       # produced; this proves that tree is usable. A qbm module cannot be configured standalone,

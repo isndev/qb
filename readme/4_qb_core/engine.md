@@ -140,7 +140,7 @@ It is best-effort in the ordinary sense — a failed `pthread_setaffinity_np` / 
 - The shim honours only the **first** real id in the set, so a multi-core `CoreIdSet` narrows to its lowest member there.
 - A Windows **GNU** build applies no affinity at all — the code path is `#warning`-ed out (`src/qb/core/VirtualCore.cpp:665-667`).
 
-Do not infer placement from a call that returned. Ask `qb::CPU::ThreadPinningSupported()` (`src/qb/system/cpu.h:189`), which is a runtime probe and is therefore also right for an x86_64 binary under Rosetta 2. The full account is on `qb::NoAffinity` (`src/qb/core/Main.h:79-102`).
+Do not infer placement from a call that returned. Ask `qb::CPU::ThreadPinningSupported()` (`src/qb/system/cpu.h:194`), which is a runtime probe and is therefore also right for an x86_64 binary under Rosetta 2. The full account is on `qb::NoAffinity` (`src/qb/core/Main.h:79-102`).
 
 ## Startup: the barrier, and what "started" means
 

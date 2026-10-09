@@ -303,6 +303,15 @@ policy.
   `OutputChainedInsertionAdmitsEveryOperand`, `DuplexChainedInsertionAdmitsEveryOperand` and
   `BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap`.
 
+- **`qb::CPU::PhysicalCores()` counts physical cores on Linux, and is `-1` where it cannot know (Huly QB-325).** Linux
+  returned `sysconf(_SC_NPROCESSORS_ONLN)` as both counts, so `PhysicalCores()` was the logical count and
+  `HyperThreading()` was `false` on every SMT host. It now counts the distinct core sibling sets of the online CPUs in
+  sysfs (`core_cpus_list`, else `thread_siblings_list`, else the package/die/core ids). With no readable topology,
+  and on a POSIX system other than Linux and macOS, it is `-1`, documented as unknown, rather than a guess; either
+  count of `TotalCores()` may be `-1`, and `HyperThreading()` is then `false`. Pinned by `cpu-topology`'s fixture
+  trees (SMT, no SMT, an older kernel, a hybrid part, ids repeated across packages and dies, offline CPUs, unreadable
+  trees), which run on every platform, and by a live Linux check against the kernel's own sibling lists.
+
 ### Removed
 
 - **`qb/vendor/ska_hash/bytell_hash_map.hpp` (Huly QB-374).** Upstream's third hash table was installed with qb and
@@ -311,6 +320,12 @@ policy.
   `__STDCPP_DEFAULT_NEW_ALIGNMENT__` sat in misaligned storage, and its empty-table sentinel was a byte array read
   as a block. A consumer that included it directly can take the header from upstream,
   https://github.com/skarupke/flat_hash_map (Boost Software License 1.0), or use `qb::unordered_flat_map`.
+- **The vendored stduuid fork's upstream test suite (Huly QB-378).** `src/qb/vendor/uuid/test/`, the Catch2 v2.13.3
+  amalgamation it was built with (`uuid/catch/`, which no longer compiles against glibc 2.34's dynamic `MINSIGSTKSZ`),
+  upstream's CI configurations and `how_to_build.md`, and the fork's `UUID_BUILD_TESTS` option. qb never built any
+  of it -- it pinned the option off and excluded the files from the install -- and tests the uuid surface it uses in
+  its own suite. THIRD-PARTY-NOTICES no longer lists Catch2: no copy of it ships, in the source tree or a prefix.
+
 
 ### Fixed
 
@@ -762,6 +777,50 @@ policy.
   their bytes. One equality of nlohmann's it does not follow: an unsigned above `INT64_MAX` compared with a signed
   integer through a wrapping cast (`json(UINT64_MAX) == json(-1)`), which would make every small negative integer
   collide. Pinned by `Jsonb.EqualValuesHashAlike` and `Jsonb.HashingAStringThatIsNotUtf8DoesNotThrow`.
+- **`qb::byteswap(bool)` compiles in C++20 (Huly QB-358).** The contract admits every integral type, `bool`
+  included, and the C++23 path (`std::byteswap`) took it, but the portable fallback ran `std::make_unsigned_t<bool>`,
+  which is ill-formed: a C++20 build could not swap a `bool`, nor a `bool`-based `qb::endian::byteswap` call. A
+  one-byte type is now returned unchanged on both paths, as `std::byteswap` does. Pinned at compile time by
+  `qb-core-test-unit-endian`.
+- **`FindGperftools` reports what it found (Huly QB-390).** It set no `Gperftools_<C>_FOUND`, so
+  `find_package(Gperftools COMPONENTS PROFILER)` failed with `libprofiler` present, and it required only the header,
+  so the headers alone made the package "found" and qb reported profiling ON while linking nothing. Each component
+  now says whether its library was found, the package needs the headers plus `libprofiler` or `tcmalloc`, and
+  `QB_WITH_PROFILING` asks for the `PROFILER` component: a host with the headers alone, or `tcmalloc` alone, now gets
+  the warning and profiling off. Pinned by `qb-io-test-unit-find-gperftools`, a configure-time project over fake
+  prefixes, hermetic against a gperftools installed on the host.
+- **Under a multi-config generator a test sits beside its DLLs (Huly QB-391).** qbConfig.cmake's
+  `CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG>` initialised the per-configuration output property of every target, which
+  wins over `RUNTIME_OUTPUT_DIRECTORY`: under Visual Studio and Ninja Multi-Config every test and benchmark landed in
+  `bin/`, while the runtime-DLL deployer filled `bin/tests/<CONFIG>` -- the executables loaded only because ctest's
+  working directory happened to hold the DLLs. `qb_add_test` and `qb_add_benchmark` now pin each configuration to
+  `bin/tests/<CONFIG>` and `bin/benchmarks/<CONFIG>`, and the per-target fallback deployer (no vcpkg tree) copies to
+  the executable's own directory. Pinned by `qb-io-test-unit-multiconfig-layout`, registered for multi-config
+  generators only.
+- **A macOS universal build gives each slice its own architecture (Huly QB-392).** The first slice of
+  `CMAKE_OSX_ARCHITECTURES` decided for every slice: `x86_64;arm64` compiled the arm64 slice with `-march=x86-64`,
+  and `arm64;x86_64` compiled the x86_64 slice with `QB_ARCH_ARM64=1`. A universal build now publishes `QB_ARCH_64`
+  for every slice, gives `QB_ARCH_ARM` / `QB_ARCH_ARM64` to the arm64 slices only and the `-march=x86-64` baseline
+  to the x86_64 slice only (through `-Xarch_<slice>`), ignores `QB_ENABLE_NATIVE_ARCH` with a warning, and refuses a
+  slice other than `x86_64` and `arm64`/`arm64e`. Pinned by `cpu-topology`, whose preprocessor check fails the
+  build of a slice whose published ARM macros disagree with its target.
+- **The stduuid fork installs and is found on its own (Huly QB-375, QB-376).** Built standalone, its default
+  configuration installed a `gsl/` directory deleted in the C++20 migration, so `cmake --install` failed; and the
+  version file was named `stduuid-version.cmake` beside `stduuid-config.cmake`, so a versioned
+  `find_package(stduuid 1.0)` rejected the package. `std::span` is now unconditional (the `UUID_USING_CXX20_SPAN`
+  option is gone with the branch it selected) and the version file is `stduuid-config-version.cmake`. qb's embedded
+  build never took either path.
+- **The scaffolders leave alone a directory they did not create (Huly QB-396).** `qb-new-project.sh` and
+  `qb-new-module.sh` refused an existing target, then fetched the template, then ran `mkdir -p`: a directory created
+  in between -- a second scaffold of the same name, the user -- was merged into, and removed by the cleanup of a later
+  failure. The target is now created with `mkdir` alone, the check that decides, and one that appeared meanwhile is
+  refused and left as it was. Pinned by scaffold.yml's new control, a git shim that plants the directory during the
+  fetch.
+- **A failed template probe stops the scaffolders instead of choosing another template (Huly QB-397).** The ref
+  probe distinguishes present, absent and could-not-tell, but the template loop read anything but "present" as
+  "absent": one network blip on the `v<version>` probe handed out the development line or the default branch, as
+  if it matched. Could-not-tell now stops the run, naming `QB_TEMPLATE_REF`. Pinned by scaffold.yml's failing-clone
+  control, which now runs the probe path and the fetch path.
 
 ### Documentation
 

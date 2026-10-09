@@ -2,10 +2,12 @@ cmake_minimum_required(VERSION 3.22)
 project(stduuid CXX)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
 
-option(UUID_BUILD_TESTS "Build the unit tests" OFF)
 option(UUID_SYSTEM_GENERATOR "Enable operating system uuid generator" OFF)
 option(UUID_TIME_GENERATOR "Enable experimental time-based uuid generator" OFF)
-option(UUID_USING_CXX20_SPAN "Using span from std instead of gsl" OFF)
+# No UUID_BUILD_TESTS and no UUID_USING_CXX20_SPAN in this fork (Huly QB-375, QB-378): upstream's
+# test suite and its vendored Catch2 were deleted -- qb tests the uuid surface it uses in its own
+# suite -- and uuid.h always takes std::span, so the gsl fallback, whose directory the C++20
+# migration deleted, is gone with the option that selected it.
 
 # An embedding project sets QB_VENDOR_INCLUDE_PREFIX (qb sets it to "qb/vendor") to declare that it
 # reaches this fork's header through ITS OWN include root, as <qb/vendor/uuid/include/uuid.h>. In
@@ -48,14 +50,6 @@ if (UUID_TIME_GENERATOR)
     target_compile_definitions(${PROJECT_NAME} INTERFACE UUID_TIME_GENERATOR)
 endif ()
 
-# Using span from std
-if (NOT UUID_USING_CXX20_SPAN)
-    target_include_directories(${PROJECT_NAME} INTERFACE
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/gsl>
-            $<INSTALL_INTERFACE:include/gsl>)
-    install(DIRECTORY gsl DESTINATION include)
-endif ()
-
 # Install step and imported target.
 # Skipped when embedded: the parent installs this target in its own export set and ships uuid.h
 # through its own install(DIRECTORY include/), at the namespaced path. Running it here as well
@@ -67,26 +61,22 @@ install(TARGETS ${PROJECT_NAME} EXPORT ${PROJECT_NAME}-targets)
 install(EXPORT ${PROJECT_NAME}-targets
         DESTINATION lib/cmake/${PROJECT_NAME})
 
-# Config files for find_package()
+# Config files for find_package(). The version file must be named after the config file --
+# <config>-version.cmake beside <name>-config.cmake -- or find_package(stduuid <version>) finds the
+# package and then rejects it for want of a version file (Huly QB-376: it was stduuid-version.cmake).
 include(CMakePackageConfigHelpers)
 configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in
         "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
         INSTALL_DESTINATION lib/cmake/${PROJECT_NAME})
 write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-version.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
         VERSION "1.0"
         COMPATIBILITY AnyNewerVersion)
 install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-version.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake"
         "${CMAKE_CURRENT_SOURCE_DIR}/cmake/FindLibuuid.cmake"
         DESTINATION lib/cmake/${PROJECT_NAME})
 export(EXPORT ${PROJECT_NAME}-targets
         FILE "${CMAKE_CURRENT_BINARY_DIR}/cmake/${PROJECT_NAME}-targets.cmake")
 endif () # NOT QB_UUID_EMBEDDED
-
-# Tests
-if (UUID_BUILD_TESTS)
-    enable_testing()
-    add_subdirectory(test)
-endif ()

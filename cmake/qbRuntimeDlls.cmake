@@ -58,8 +58,10 @@ function(qb_ensure_runtime_dll_deployer DEST_DIR OUT_TARGET)
         return()
     endif()
 
-    # A multi-config generator appends the configuration to RUNTIME_OUTPUT_DIRECTORY, so under
-    # Visual Studio the executables are in <dest>/Release while <dest> itself holds none of them.
+    # Under a multi-config generator the executables are in <dest>/<CONFIG> -- qb_add_test() and
+    # qb_add_benchmark() pin each configuration there (_qb_set_runtime_output_dir, qbFunctions.cmake),
+    # because qbConfig.cmake's CMAKE_RUNTIME_OUTPUT_DIRECTORY_<CONFIG> would otherwise put them in bin/
+    # (Huly QB-391) -- while <dest> itself holds none of them.
     # Deploying to <dest> there put the DLLs one directory ABOVE every consumer of them. That was
     # survivable only by accident: qb_add_test() gives each test WORKING_DIRECTORY "<dest>", and
     # Windows searches the current directory, so 350 of 351 still loaded. The one test registered
