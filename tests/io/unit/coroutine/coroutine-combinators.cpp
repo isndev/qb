@@ -38,6 +38,8 @@
 #include <set>
 #include <stdexcept>
 #include <tuple>
+#include <type_traits>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -373,6 +375,25 @@ TEST_F(CoroutineCombinators, RaceIsWhenAnyAlias) {
     });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "race alias coordinator never finished";
+}
+
+// The when_all / when_any awaiters are neither copyable nor movable (Huly QB-302): the destructor reclaims the
+// branches through the state a copy shared, so a copy -- or a "move", which was one -- destroyed first tore down
+// the branches the live awaiter waited on, and its coroutine never resumed. A compile-time oracle: the
+// factories return a prvalue, so nothing legitimate copies one.
+TEST_F(CoroutineCombinators, AwaitersAreNeitherCopyableNorMovable) {
+    using all_t        = decltype(when_all(std::declval<task<int>>(), std::declval<task<void>>()));
+    using all_vector_t = decltype(when_all(std::declval<std::vector<task<int>>>()));
+    using any_t        = decltype(when_any(std::declval<task<int>>(), std::declval<task<int>>()));
+    using any_vector_t = decltype(when_any(std::declval<std::vector<task<int>>>()));
+    static_assert(!std::is_copy_constructible_v<all_t> && !std::is_move_constructible_v<all_t>);
+    static_assert(!std::is_copy_assignable_v<all_t> && !std::is_move_assignable_v<all_t>);
+    static_assert(!std::is_copy_constructible_v<all_vector_t> && !std::is_move_constructible_v<all_vector_t>);
+    static_assert(!std::is_copy_assignable_v<all_vector_t> && !std::is_move_assignable_v<all_vector_t>);
+    static_assert(!std::is_copy_constructible_v<any_t> && !std::is_move_constructible_v<any_t>);
+    static_assert(!std::is_copy_assignable_v<any_t> && !std::is_move_assignable_v<any_t>);
+    static_assert(!std::is_copy_constructible_v<any_vector_t> && !std::is_move_constructible_v<any_vector_t>);
+    static_assert(!std::is_copy_assignable_v<any_vector_t> && !std::is_move_assignable_v<any_vector_t>);
 }
 
 // =============================================================================

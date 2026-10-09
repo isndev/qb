@@ -234,6 +234,15 @@ ctx_alpn_select_cb(SSL *ssl, const unsigned char **out, unsigned char *outlen, c
     return (r == OPENSSL_NPN_NEGOTIATED) ? SSL_TLSEXT_ERR_OK : SSL_TLSEXT_ERR_NOACK;
 }
 
+// Install `wire` as the server accept-list of `c`, on its ex-data state: the list lives exactly as long as the
+// SSL_CTX the select callback runs for -- every connection minted from it, and every listener and Context that
+// share it (Huly QB-308). The one installer of Context::alpn and of the raw set_alpn_protos_server.
+void
+ctx_install_server_alpn(SSL_CTX *c, ctx_state &st, std::vector<unsigned char> wire) {
+    st.alpn_wire = std::move(wire);
+    SSL_CTX_set_alpn_select_cb(c, &ctx_alpn_select_cb, nullptr);
+}
+
 // Wrap a freshly-created SSL_CTX (single owning ref) into a shared_ptr with the SSL_CTX_free deleter
 // and attach the ex-data state carrying the client/server role.
 std::shared_ptr<SSL_CTX>
@@ -449,8 +458,10 @@ Context::identity(std::filesystem::path cert, std::filesystem::path key) {
         return *this;
     const auto cert_s = qb::io::sys::resolve_resource(cert).string();
     const auto key_s  = qb::io::sys::resolve_resource(key).string();
-    if (SSL_CTX_use_certificate_file(_ctx.get(), cert_s.c_str(), SSL_FILETYPE_PEM) <= 0)
-        fail(ctx_with_reason("SSL_CTX_use_certificate_file failed for " + cert_s));
+    // The whole PEM chain -- the leaf, then the intermediates the peer needs to reach its trust anchor
+    // (Huly QB-611): a leaf-only load presents a chain no client can verify.
+    if (SSL_CTX_use_certificate_chain_file(_ctx.get(), cert_s.c_str()) != 1)
+        fail(ctx_with_reason("SSL_CTX_use_certificate_chain_file failed for " + cert_s));
     else if (SSL_CTX_use_PrivateKey_file(_ctx.get(), key_s.c_str(), SSL_FILETYPE_PEM) <= 0)
         fail(ctx_with_reason("SSL_CTX_use_PrivateKey_file failed for " + key_s));
     else if (SSL_CTX_check_private_key(_ctx.get()) <= 0)
@@ -472,9 +483,8 @@ Context::alpn(std::vector<std::string> protocols) {
         return *this;
     }
     if (st->is_server) {
-        // Server: keep the accept-list at a stable address and select via the ex-data-driven callback.
-        st->alpn_wire = std::move(wire);
-        SSL_CTX_set_alpn_select_cb(_ctx.get(), &ctx_alpn_select_cb, nullptr);
+        // Server: keep the accept-list on the context and select via the ex-data-driven callback.
+        ctx_install_server_alpn(_ctx.get(), *st, std::move(wire));
     } else {
         // Client: offer the protocol list (SSL_CTX_set_alpn_protos returns 0 on success).
         if (SSL_CTX_set_alpn_protos(_ctx.get(), wire.data(), static_cast<unsigned int>(wire.size())) != 0)
@@ -635,6 +645,28 @@ Context::on_ocsp_response(std::function<bool(OcspContext &)> cb) {
     SSL_CTX_set_tlsext_status_type(_ctx.get(), st->ocsp_check ? TLSEXT_STATUSTYPE_ocsp : -1);
     ctx_install_ocsp(_ctx.get(), *st);
     return *this;
+}
+
+// ---------------------------------------------------------------------------
+// Raw helper (declared in socket.h with its siblings): the server accept-list of a raw SSL_CTX, kept where
+// Context::alpn keeps it -- on the context's ex-data state.
+// ---------------------------------------------------------------------------
+
+bool
+set_alpn_protos_server(SSL_CTX *ctx, const std::vector<std::string> &protocols) {
+    auto wire = ctx_serialize_alpn(protocols);
+    if (!ctx || wire.empty())
+        return false;
+    // The role is set only by whoever creates the state (see ctx_own): a context that had none is being
+    // configured as a server here, one that had some keeps the role it was given.
+    const bool created = ctx_get_state(ctx) == nullptr;
+    auto      *st      = ctx_require_state(ctx);
+    if (!st)
+        return false; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
+    if (created)
+        st->is_server = true;
+    ctx_install_server_alpn(ctx, *st, std::move(wire));
+    return true;
 }
 
 } // namespace qb::io::ssl

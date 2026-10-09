@@ -362,7 +362,7 @@ with I/O lifetime are:
 - A default-constructed socket is **uninitialized**; call `init()` before any
   connect/accept/read/write. The success conventions differ and cannot be
   treated uniformly (`src/qb/io/tcp/socket.h:130`,
-  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:512`):
+  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:528`):
   - `tcp::socket::init(int af)` returns `int` (`0` = success).
   - `udp::socket::init(int af)` returns `bool` (`true` = success).
   - `ssl::socket::init(SSL*)` returns `void` and adopts the supplied handle.
@@ -379,7 +379,7 @@ with I/O lifetime are:
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`src/qb/io/tcp/ssl/socket.h:534-536,560-562`,
+  returns `0` (`src/qb/io/tcp/ssl/socket.h:550-552,576-578`,
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but

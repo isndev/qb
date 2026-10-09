@@ -33,6 +33,8 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -230,6 +232,18 @@ TEST_F(ChannelSyncOps, RegisterSelectWaiterResolvesClosedChannelAsClosed) {
     EXPECT_TRUE(state->closed);
     EXPECT_EQ(state->winner, 1u);
     EXPECT_FALSE(state->value.has_value());
+}
+
+// The select awaiters are neither copyable nor movable (Huly QB-302): the destructor resolves the state a copy
+// shared, so a copy -- or a "move", which was one -- destroyed first made every channel skip the live select,
+// and its coroutine never resumed. A compile-time oracle: select() returns a prvalue.
+TEST_F(ChannelSyncOps, SelectAwaitersAreNeitherCopyableNorMovable) {
+    using select_t        = decltype(qb::io::async::select(std::declval<channel<int> &>(), std::declval<channel<std::string> &>()));
+    using select_vector_t = decltype(qb::io::async::select(std::declval<std::vector<channel<int> *>>()));
+    static_assert(!std::is_copy_constructible_v<select_t> && !std::is_move_constructible_v<select_t>);
+    static_assert(!std::is_copy_assignable_v<select_t> && !std::is_move_assignable_v<select_t>);
+    static_assert(!std::is_copy_constructible_v<select_vector_t> && !std::is_move_constructible_v<select_vector_t>);
+    static_assert(!std::is_copy_assignable_v<select_vector_t> && !std::is_move_assignable_v<select_vector_t>);
 }
 
 // try_send must hand its value to a PARKED select waiter, mirroring the coroutine send() path.

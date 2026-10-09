@@ -216,6 +216,9 @@ What it does **not** give you is cancellation-awareness. A coroutine parked in a
 > Awaiters must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before the coroutine resumes. The framework awaiters stop their libev watcher in `await_resume()` and in their destructor, so an early return or thrown exception cannot leave a live watcher pointing at a freed frame.
 <!-- src: qb/src/qb/io/async/coroutine/awaiter.h:30-35, :383-397 (await_resume stops the watcher), :407-430 (destructor) -->
 
+> Nor is one copied. Since 3.3 the connect awaiters, `select`'s and `when_all` / `when_any`'s are neither copyable nor movable, as `timeout_awaiter` and `awaiter_base` already were: each destructor deactivates, resolves or reclaims through a state a copy shared, so the copy destroyed first -- a temporary, a vector's old storage -- left the live awaiter never resuming (Huly QB-302). `co_await` what the factory returns, or name it once (`auto op = tcp::connect(u, 5s); co_await op;`) and `co_await` the name.
+<!-- src: qb/src/qb/io/async/tcp/connector.h:954-957, qb/src/qb/io/async/coroutine/combinators.h:191-194, qb/src/qb/io/async/coroutine/channel.h:1148-1151 (copy and move deleted) -->
+
 ### Awaiting a TCP connect
 
 The coroutine connect factory (`tcp/connector.h`) returns an awaiter that yields `std::optional<Socket_>` — empty on timeout or error.
@@ -237,9 +240,9 @@ task<void> connect_to(qb::io::uri remote) {
 ```
 
 `connect<Transport>(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` defaults to `transport::tcp`. A zero timeout means no deadline.
-<!-- src: qb/src/qb/io/async/tcp/connector.h:996-1000 (connect factory), :975-976 (await_resume std::optional<Socket_>) -->
+<!-- src: qb/src/qb/io/async/tcp/connector.h:1018-1022 (connect factory), :997-998 (await_resume std::optional<Socket_>) -->
 
-**Every address, in order (3.3).** A hostname URI resolves to every address of its family -- IPv4 unless the URI says otherwise -- and the connector tries them in the resolver's order. One that refuses, fails or does not answer within its share of the deadline is closed and the next is tried; the deadline stays the whole connect's, and a TLS failure on an address that answered is final: the next would present the same server (`src/qb/io/async/tcp/connector.h:136-142`). The share is `tcp::connect_attempt_budget`: the time left over the addresses left, never under two seconds unless less is left, so a dead first address in a DNS round-robin no longer eats the deadline (`src/qb/io/tcp/socket.cpp:100-107`). `connect<Transport>(std::vector<qb::io::endpoint> endpoints, std::string host, timeout, verify_peer)` runs the same over addresses you resolved yourself -- on the [offload pool](#offloading-blocking-work), from a cache -- with `host` the name TLS verifies (`src/qb/io/async/tcp/connector.h:1021`).
+**Every address, in order (3.3).** A hostname URI resolves to every address of its family -- IPv4 unless the URI says otherwise -- and the connector tries them in the resolver's order. One that refuses, fails or does not answer within its share of the deadline is closed and the next is tried; the deadline stays the whole connect's, and a TLS failure on an address that answered is final: the next would present the same server (`src/qb/io/async/tcp/connector.h:136-142`). The share is `tcp::connect_attempt_budget`: the time left over the addresses left, never under two seconds unless less is left, so a dead first address in a DNS round-robin no longer eats the deadline (`src/qb/io/tcp/socket.cpp:100-107`). `connect<Transport>(std::vector<qb::io::endpoint> endpoints, std::string host, timeout, verify_peer)` runs the same over addresses you resolved yourself -- on the [offload pool](#offloading-blocking-work), from a cache -- with `host` the name TLS verifies (`src/qb/io/async/tcp/connector.h:1043`).
 
 ## Offloading blocking work
 
@@ -294,7 +297,7 @@ std::vector<task<int>> work;
 for (int i = 0; i < 8; ++i) work.push_back(compute(i));
 std::vector<int> results = co_await when_all(std::move(work));
 ```
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:225 (variadic), :338 (vector) -->
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:234 (variadic), :353 (vector) -->
 
 ### `when_any` / `race` — first to finish wins
 
@@ -310,7 +313,7 @@ co_await race(network_task(), local_cache_task());
 ```
 
 `when_any_result::get<T>()` casts the winning value (and re-throws if the winner threw). On win, the losing branches are **reclaimed (cancelled)** — the scheduler tears down each loser, stopping its timers and dropping its result — so nothing lingers in the background.
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:350 (when_any_result), :590 (when_any), :1094 (race) -->
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:365 (when_any_result), :611 (when_any), :1121 (race) -->
 
 ### `coro_with_timeout` — deadline wrapper
 
@@ -325,10 +328,10 @@ try {
 
 `coro_with_timeout(task<T>&&, qb::duration)` returns `T` and **throws `timeout_error`** on timeout — it does not return an `std::optional`. On timeout the inner task keeps running in the background until it finishes naturally; its result is then dropped.
 
-The awaiter arms a **raw self-stopping `ev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `ev_timer` lives in the awaiter's shared state instead (`combinators.h:735-767`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
+The awaiter arms a **raw self-stopping `ev_timer`** rather than spawning a `co_await sleep()` helper, deliberately: a spawned helper would leave one parked frame plus one armed watcher per in-flight call for the full timeout duration — the `ev_timer` lives in the awaiter's shared state instead (`combinators.h:762-794`). It is non-copyable and non-movable for the same reason — the watcher's `data` pointer refers to the state it owns.
 
-Note the asymmetry between the timeout path and the teardown path, because it is easy to read as a contradiction. A **timeout** resolves the race in `resolve_timeout()` and leaves the inner task alone (`combinators.h:781-786`). A **destroyed awaiter** — this call was itself a `when_any` loser, or its scope was cancelled — tears the inner task down: it destroys the spawned runner, `forget`s the inner frame and drops it (`combinators.h:848-865`). For a genuinely interruptible deadline, use `with_deadline(op, tp, token)` instead.
-<!-- src: qb/src/qb/io/async/coroutine/combinators.h:921 (coro_with_timeout returns T), :894 (throws timeout_error), :853-855 (inner task is not interrupted) -->
+Note the asymmetry between the timeout path and the teardown path, because it is easy to read as a contradiction. A **timeout** resolves the race in `resolve_timeout()` and leaves the inner task alone (`combinators.h:808-813`). A **destroyed awaiter** — this call was itself a `when_any` loser, or its scope was cancelled — tears the inner task down: it destroys the spawned runner, `forget`s the inner frame and drops it (`combinators.h:875-892`). For a genuinely interruptible deadline, use `with_deadline(op, tp, token)` instead.
+<!-- src: qb/src/qb/io/async/coroutine/combinators.h:948 (coro_with_timeout returns T), :921 (throws timeout_error), :880-882 (inner task is not interrupted) -->
 
 ## Cancellation
 
@@ -391,12 +394,12 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await sleep(d)` | `timer_awaiter`, i.e. a `ev_timer` (`awaiter.h:294`); `d <= 0` is a bare re-enqueue with no timer at all | the timer |
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `ev_io` watcher (`awaiter.h:470`) | fd readiness |
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:627`) | your callback |
-| `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:903`) | connect success, failure, or the connector's own deadline |
+| `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:916`) | connect success, failure, or the connector's own deadline |
 | `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
 | `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:725`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
-| `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:438`) | the branches |
-| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:767`) | whichever comes first |
+| `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:453`) | the branches |
+| `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:794`) | whichever comes first |
 | `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:158`), `recv_awaiter` (`:247`) | a counterparty, or `close()` |
 | `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:524`), `timed_send_awaiter` (`:633`) | a counterparty, `close()`, or the timer |
 | `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1091`) | the first channel with data or a close |
@@ -417,7 +420,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 - **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `ev_is_active`.** A one-shot `ev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:412-431`).
 - **They scrub the scheduler's queues, not just the suspended set.** Once a watcher has fired, the frame has already moved out of `suspended_coroutines_` and *into* the ready queue and in-flight set. `unregister_suspended()` alone would leave a dangling handle for the next drain to resume; `unschedule()` → `CoroutineScheduler::forget()` clears all three (`awaiter.h:264-268`; `scheduler.h:561`).
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:125-127`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:470-471`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1169-1170`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:286-288`). The send side has nothing to repair: a parked `ch.send()` or `send_for()` is served by its wake, which hands the value over before resuming it, so a sender reclaimed after its wake has sent, exactly once (Huly QB-272).
-- **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:473-480`). Getting that order wrong is a use-after-free, which is why the source spells it out.
+- **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:488-495`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
 `~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:665-668`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
 
@@ -425,7 +428,7 @@ One consequence for your own code: **a coroutine's locals are destroyed at `co_r
 
 ### One notable inconsistency
 
-`when_any`'s two overloads deliver a winning branch's exception differently. The variadic form **carries** it in `when_any_result::exception` and rethrows only when you call `get<T>()` or `rethrow_if_exception()` (`combinators.h:353`, `:357`, `:376`). The `std::vector<task<T>>` overload **rethrows directly** from `await_resume` (`combinators.h:635-636`). Same situation, opposite delivery.
+`when_any`'s two overloads deliver a winning branch's exception differently. The variadic form **carries** it in `when_any_result::exception` and rethrows only when you call `get<T>()` or `rethrow_if_exception()` (`combinators.h:368`, `:372`, `:391`). The `std::vector<task<T>>` overload **rethrows directly** from `await_resume` (`combinators.h:662-663`). Same situation, opposite delivery.
 
 `with_retry_until` has a similar edge: unlike both `with_retry` overloads it has **no** `try`/`catch`, so a throwing factory propagates immediately with no retry at all, and its `retry_exhausted` carries a null `last_error` (`retry.h:348-382`).
 
@@ -550,8 +553,8 @@ else if (!res.closed)    use(res.get<std::string>());
 
 `select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1100-1124`).
 
-One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1151-1163`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:286-288`, `:559-561`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:1070 (select_result), :1201 (select variadic), :1280 (select vector) -->
+One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1160-1172`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:286-288`, `:559-561`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:1070 (select_result), :1210 (select variadic), :1295 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
 <!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :854-857 (channel_range does not suspend, Factbook); stream.h:98/:110 -->

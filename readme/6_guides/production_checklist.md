@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:355 (_verify_peer = true), :875-892 (set_insecure / secure-by-default doc), :898 (verify_peer) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-921 (set_insecure / secure-by-default doc), :927 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -96,13 +96,13 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Note one asymmetry: when you adopt an externally-created `SSL` handle via `init(SSL*)`, qb-io does **not** touch verification policy — your context's settings are used as-is. If you build the context yourself, you own the verification posture.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:505-512 (init(SSL*)), :889-890 (verification-untouched note) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:521-528 (init(SSL*)), :918-919 (verification-untouched note) -->
 
 ### Server contexts
 
 Server-side TLS is built explicitly. `qb::io::ssl::create_server_context(method, cert_path, key_path)` constructs a context from a certificate and key; for mutual TLS, `configure_mtls_server_context(ctx, client_ca_file_path, verification_mode = SSL_VERIFY_PEER)` adds client-certificate verification (the default mode is `SSL_VERIFY_PEER`).
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:84 (create_client_context), :95 (create_server_context), :154 (configure_mtls_server_context) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:84 (create_client_context), :96 (create_server_context), :155 (configure_mtls_server_context) -->
 
 These functions take `std::filesystem::path` arguments (certificate, key, CA file, CA directory, DH parameters, client certificate). Each filesystem path is resolved through `qb::io::sys::resolve_resource()`: an absolute path is used unchanged, while a relative path is looked up first against the current working directory and then against the running executable's own directory. A binary shipped with its certificates next to it therefore finds them from any working directory, while an absolute deploy path is honoured verbatim. (URL/URI and wire paths are unaffected — those remain `std::string`.)
 
@@ -110,7 +110,7 @@ These functions take `std::filesystem::path` arguments (certificate, key, CA fil
 
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:737 (cipher suite), :743 (tls version), :749 (alpn), :795 (peer cert chain) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:763 (cipher suite), :769 (tls version), :775 (alpn), :824 (peer cert chain) -->
 
 ### Windows server bind: exclusive, not reusable
 
@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:627-631 (LOG_CRIT/stderr on init failure), :624-627 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:737,743,756 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:627-631 (LOG_CRIT/stderr on init failure), :624-627 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

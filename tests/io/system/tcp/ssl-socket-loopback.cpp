@@ -158,7 +158,7 @@ public:
 // The socket is flipped NON-BLOCKING first, and that is what makes `deadline` a
 // deadline. Both helpers were written for a non-blocking socket — the `ret == 0`
 // arm below is `ssl::socket::read()` mapping SSL_ERROR_WANT_READ/WANT_WRITE to 0
-// ("no data ready; not an error", ssl/socket.cpp:996-1002), and NonBlockingReadWithNoDataReportsWouldBlock
+// ("no data ready; not an error", ssl/socket.cpp:1004-1010), and NonBlockingReadWithNoDataReportsWouldBlock
 // pins exactly that return. On a blocking socket that arm is unreachable, so the
 // loop parked inside SSL_read and re-checked `deadline` only between reads it
 // could never return from: a peer that stopped writing without sending
@@ -203,7 +203,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
 }
 
 // Same contract, same reason for the flip: `ssl::socket::write()` maps WANT_WRITE /
-// WANT_READ to 0 (ssl/socket.cpp:1023-1031), so the `ret == 0` arm below is the
+// WANT_READ to 0 (ssl/socket.cpp:1031-1039), so the `ret == 0` arm below is the
 // would-block retry — dead on a blocking socket, which is where this loop's deadline
 // went. Read and write agree on the mode, so neither has to restore it.
 ::testing::AssertionResult
@@ -1085,7 +1085,8 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     // and failed on a loaded CI runner with the server's read returning a bare -1.
     EXPECT_TRUE(client.set_verify_callback([](int ok, X509_STORE_CTX *) -> int { return ok; }, SSL_VERIFY_NONE));
 
-    // request_ocsp_stapling(false) is a no-op that still reports success.
+    // request_ocsp_stapling(false) on a live handle withdraws this connection's request and reports success
+    // (the whole contract, the context's request kept included, is SSLSocketConfig's in ssl-context-config.cpp).
     EXPECT_TRUE(client.request_ocsp_stapling(false));
 
     EXPECT_TRUE(write_exactly(client, "x", 1));

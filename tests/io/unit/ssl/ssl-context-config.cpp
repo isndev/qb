@@ -386,6 +386,40 @@ TEST(SSLSocketConfig, ReinitializesHandleAndFailsPreConnectionOperationsCleanly)
     EXPECT_FALSE(socket.verify_peer());
 }
 
+// request_ocsp_stapling on a live handle (Huly QB-309). The status type an SSL carries is the request its
+// ClientHello will hold: `false` withdraws the one THIS connection set, and never the one the context set -- a
+// client whose ssl::Context judges the staple (on_ocsp_response) asks on every connection, and OpenSSL runs the
+// status callback only for a connection that asked, so withdrawing it there would SKIP the verdict, not fail it.
+TEST(SSLSocketConfig, OcspRequestIsWithdrawnOnALiveHandleButNeverTheContexts) {
+    {
+        qb::io::tcp::ssl::socket socket;
+        auto                    *ctx = qb::io::ssl::create_client_context(TLS_client_method());
+        ASSERT_NE(ctx, nullptr);
+        socket.init(SSL_new(ctx));
+        SSL_CTX_free(ctx); // caller owns the context; the SSL holds its own reference
+        ASSERT_NE(socket.ssl_handle(), nullptr);
+        EXPECT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), -1) << "a bare client context asks for no staple";
+        EXPECT_TRUE(socket.request_ocsp_stapling(true));
+        EXPECT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), TLSEXT_STATUSTYPE_ocsp);
+        EXPECT_TRUE(socket.request_ocsp_stapling(false));
+        EXPECT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), -1) << "false left in place the request true had set";
+        EXPECT_TRUE(socket.request_ocsp_stapling(false));
+        EXPECT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), -1);
+    }
+    {
+        const auto judged = qb::io::ssl::Context::client().on_ocsp_response([](qb::io::ssl::OcspContext &) { return false; });
+        ASSERT_TRUE(judged.ok()) << judged.error();
+        qb::io::tcp::ssl::socket socket;
+        socket.init(SSL_new(judged.native())); // the SSL takes its own reference; `judged` keeps the other
+        ASSERT_NE(socket.ssl_handle(), nullptr);
+        ASSERT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), TLSEXT_STATUSTYPE_ocsp)
+            << "on_ocsp_response asks for a staple on every connection of its context";
+        EXPECT_TRUE(socket.request_ocsp_stapling(false));
+        EXPECT_EQ(SSL_get_tlsext_status_type(socket.ssl_handle()), TLSEXT_STATUSTYPE_ocsp)
+            << "false withdrew the context's request: the context's verdict would never run";
+    }
+}
+
 // Regression (finding #4 — SSL_CTX reference counting): two ssl::sockets sharing ONE client SSL_CTX
 // must each drop only their OWN reference on teardown, never SSL_CTX_free the shared context. The
 // pre-fix `!SSL_is_server` heuristic freed the context for every client-mode SSL, so the first

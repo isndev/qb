@@ -40,7 +40,7 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 <!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
 <!-- src: src/qb/io/system/sys__socket.h:880,888,902,908 (copy deleted / move kept), :923 (~socket) -->
 <!-- src: src/qb/io/tcp/socket.h:97 (copy deleted), :102 (move ctor), :108 (move assign) -->
-<!-- src: src/qb/io/tcp/ssl/socket.h:346 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
+<!-- src: src/qb/io/tcp/ssl/socket.h:362 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 
 ### The actor destruction guarantee
 
@@ -165,8 +165,8 @@ If the parent needs its referenced children gone when it stops, it must send eac
 
 `SSL_CTX` is the one place where ownership splits, so it deserves explicit attention.
 
-- **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81-84`, `:92-95`)
-- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` transfers your single reference into the listener's value-semantic `qb::io::ssl::Context` member (`Context::adopt`, no up-ref), which frees the `SSL_CTX` when the last copy of it is gone. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload: no raw context lifetime to manage at all. (`src/qb/io/tcp/ssl/listener.h:102-108`, `:119`; `src/qb/io/tcp/ssl/listener.cpp:38-42`)
+- **Helper-created contexts are caller-owned.** `qb::io::ssl::create_client_context(method)` and `qb::io::ssl::create_server_context(method, cert_path, key_path)` each return a raw `SSL_CTX*` (or `nullptr` on failure) that **you must free with `SSL_CTX_free()`** unless you hand the context off (see below). (`src/qb/io/tcp/ssl/socket.h:81-84`, `:93-96`)
+- **A listener you hand it to takes ownership.** `qb::io::tcp::ssl::listener::init(SSL_CTX*)` transfers your single reference into the listener's value-semantic `qb::io::ssl::Context` member (`Context::adopt`, no up-ref), which frees the `SSL_CTX` when the last copy of it is gone. Once you call `init()`, do **not** call `SSL_CTX_free()` yourself — that is a double-free. Call `init()` before `listen()`. Prefer the `init(qb::io::ssl::Context)` overload: no raw context lifetime to manage at all. (`src/qb/io/tcp/ssl/listener.h:99-105`, `:116`; `src/qb/io/tcp/ssl/listener.cpp:38-42`)
 
 The transport-based server pattern below is the common case, and the suite itself uses the value-semantic form: the context is passed straight into the transport's listener, which shares it with every accepted connection.
 
@@ -183,7 +183,7 @@ server.transport().init(ssl::Context::server("cert.pem", "key.pem"));
 // Server, raw escape hatch (use ONE of the two, not both): create_server_context
 // returns an owned SSL_CTX*; init() transfers that single reference into the
 // listener's Context, so there is still no SSL_CTX_free here.
-// src: qb/src/qb/io/tcp/ssl/listener.h:108
+// src: qb/src/qb/io/tcp/ssl/listener.h:105
 // server.transport().init(ssl::create_server_context(
 //     TLS_server_method(), "cert.pem", "key.pem"));
 
@@ -195,8 +195,8 @@ client.transport().set_insecure();
 
 Two further facts shape correct TLS lifetime management:
 
-- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:878-892`)
-- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:801-802`)
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. When you supply your own `SSL*` via `init(SSL*)`, qb-io does not change your verification policy. (`src/qb/io/tcp/ssl/socket.h:907-921`)
+- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:830-831`)
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 

@@ -215,36 +215,10 @@ bool
 listener::set_supported_alpn_protocols(const std::vector<std::string> &protocols) {
     if (!_ctx || protocols.empty())
         return false;
-
-    // Serialize protocols into length-prefixed wire format. The buffer lives on
-    // the heap (unique_ptr) so its address survives a listener move; that address
-    // is what the alpn_select_cb below receives as `arg`.
-    if (!_alpn_wire)
-        _alpn_wire = std::make_unique<std::vector<unsigned char>>();
-    auto &wire = *_alpn_wire;
-    wire.clear();
-    for (const auto &proto : protocols) {
-        if (proto.length() > 255)
-            continue;
-        wire.push_back(static_cast<unsigned char>(proto.length()));
-        wire.insert(wire.end(), proto.begin(), proto.end());
-    }
-
-    if (wire.empty())
-        return false;
-
-    // Static callback wrapper
-    SSL_CTX_set_alpn_select_cb(
-        _ctx.native(),
-        [](SSL *, const unsigned char **out, unsigned char *outlen, const unsigned char *in, unsigned int inlen, void *arg) -> int {
-            auto *protos = static_cast<std::vector<unsigned char> *>(arg);
-            int r = SSL_select_next_proto(const_cast<unsigned char **>(out), outlen, protos->data(), static_cast<unsigned int>(protos->size()),
-                                          in, inlen);
-            return (r == OPENSSL_NPN_NEGOTIATED) ? SSL_TLSEXT_ERR_OK : SSL_TLSEXT_ERR_NOACK;
-        },
-        _alpn_wire.get());
-
-    return true;
+    // The accept-list goes on the context, which outlives this listener whenever it is shared or a connection
+    // still holds it: a list the listener owned was freed under the select callback the context kept, and a
+    // reload_context() rewrote the list of the context it left (Huly QB-308).
+    return qb::io::ssl::set_alpn_protos_server(_ctx.native(), protocols);
 }
 
 int

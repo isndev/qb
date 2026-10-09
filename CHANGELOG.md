@@ -219,6 +219,13 @@ policy.
   failure escalates instead of restarting. It reads 0 with no window, and 0 with no cap, where no restart history is
   kept any more (under Fixed). `restarts()` stays the cumulative count.
 
+- **`tcp::ssl::socket::handshake_wants_write()` and `qb::io::ssl::set_alpn_protos_server()` (Huly QB-301, QB-308).**
+  The first says which readiness a pending handshake waits on -- after a `handshake_status()` of 0, `true` when
+  OpenSSL's output did not fit the socket, `false` when it waits for the peer's bytes -- from the state OpenSSL keeps
+  (`SSL_want_write`), with no I/O and no new member. The second is the raw sibling of `set_alpn_protos_client`: a
+  server `SSL_CTX`'s ALPN accept-list, most preferred first, kept on the context where `Context::alpn()` keeps it.
+  Both serve the fixes below.
+
 ### Changed
 
 - **`CoroutineScheduler::current()` and `schedule_via_current()` bind the thread's loop scheduler when none
@@ -311,6 +318,16 @@ policy.
   count of `TotalCores()` may be `-1`, and `HyperThreading()` is then `false`. Pinned by `cpu-topology`'s fixture
   trees (SMT, no SMT, an older kernel, a hybrid part, ids repeated across packages and dies, offline CPUs, unreadable
   trees), which run on every platform, and by a live Linux check against the kernel's own sibling lists.
+- **The connect, `select` and `when_all` / `when_any` awaiters are neither copyable nor movable (Huly QB-302).**
+  `connect_awaiter`, `connect_with_socket_awaiter`, `starttls_connect_awaiter`, the two `select` awaiters and the four
+  `when_all` / `when_any` ones each had a user-declared destructor, which suppresses the implicit move: a "move" was a
+  copy, and the copy shared the state the destructor deactivates (the connects), resolves (`select`) or reclaims the
+  branches through (`when_all` / `when_any`). The copy destroyed first -- a temporary, a vector's old storage --
+  left the live awaiter's coroutine never resuming, with no error. They now delete both, the rule `timeout_awaiter`
+  and `awaiter_base` already followed: `co_await` what the factory returns, or name it once and `co_await` the name.
+  Nothing in qb, its modules or the examples copied one; code that did no longer compiles. Pinned at compile time by
+  `AwaitersAreNeitherCopyableNorMovable` (`tcp-connector-state-machine.cpp`, `coroutine-combinators.cpp`) and
+  `SelectAwaitersAreNeitherCopyableNorMovable` (`channel-sync-ops.cpp`).
 
 ### Removed
 
@@ -867,6 +884,43 @@ policy.
   and `traverse_local_address` freed the `getaddrinfo` / `getifaddrs` list after the loop, so a callback that threw
   -- `resolve_endpoints()` allocates in it -- leaked it. The list is owned across the callback; the exception still
   propagates and the socket error the callback leaves still survives the free.
+- **A pending TLS client handshake no longer spins the event loop (Huly QB-301).** The async connectors re-armed a
+  pending handshake for read AND write, losing the direction OpenSSL had asked for. After its ClientHello a client
+  waits for the server's flight, and a connected socket is always writable, so a level-triggered backend (epoll,
+  kqueue) woke the loop on every pass and re-ran `SSL_do_handshake` -- re-attaching the descriptor each time -- until
+  the server answered: a busy core for a round trip, on every TLS connect, STARTTLS upgrade included. The three paths
+  (a direct connect, the turn that completes an in-progress one, a STARTTLS upgrade) now arm the direction
+  `handshake_wants_write()` reports; a socket type without it keeps both. Pinned by
+  `PendingHandshakeThatWaitsToReadIsNotWokenByWriteReadiness` and
+  `PendingHandshakeThatWaitsToWriteIsWokenByWriteReadiness` (`tcp-connector-state-machine.cpp`, both paths) and, on
+  a real `ssl::socket`, by
+  `PendingHandshakeWaitsForTheServerWithoutSpinning` (`tls-starttls-upgrade.cpp`), red on every backend (wepoll
+  included: 1649 handshake steps before the server answered, against 1). The connector's fake socket now hands the
+  loop a `socket_type`, as a real socket does: its `int` was read on Windows as a qev fd-table entry and killed after
+  one error pass, which is why `IoEventCompletesPendingHandshake` was skipped there as if wepoll reported write
+  readiness once -- it runs on Windows again.
+- **An ALPN list set through `ssl::listener::set_supported_alpn_protocols` is the context's (Huly QB-308).** The
+  listener owned the list and registered its address as the context's selection-callback argument, but the context
+  outlives the listener whenever it is shared or a connection still holds it: a context that outlived the listener
+  selected from freed memory (a heap use-after-free on the next handshake), and after `reload_context()` the next call
+  rewrote the list the previous context's connections negotiated from. The list now lives on the context, where
+  `Context::alpn()` keeps it. Pinned by `TheAlpnListStaysWithTheContextAReloadLeaves` and
+  `TheAlpnListOutlivesTheListenerThatSetIt` (`tls-context-reload.cpp`; the second is red under ASan).
+- **`ssl::socket::request_ocsp_stapling(false)` withdraws the request it documented (Huly QB-309).** On a socket whose
+  `SSL` already existed, `false` changed nothing, so a request set before stayed. It now clears this connection's
+  request -- and never the context's: a client whose context judges staples (`Context::on_ocsp_response`, which asks
+  on every connection) keeps asking, because OpenSSL runs the status callback only for a connection that asked, and
+  withdrawing it there would skip the verdict instead of failing it. Pinned by
+  `OcspRequestIsWithdrawnOnALiveHandleButNeverTheContexts` (`ssl-context-config.cpp`).
+- **A server presents the whole certificate chain its file holds (Huly QB-611).** `Context::server` /
+  `Context::identity`, `create_server_context` and `configure_client_certificate` read only the first certificate of
+  the PEM file, so a certificate an intermediate issued was presented alone, and every verifying peer that did not
+  already hold the intermediate failed the handshake ("unable to get local issuer certificate"). All three load the
+  chain (`SSL_CTX_use_certificate_chain_file`), as the QUIC transport already did; a file with only the leaf is
+  served as before and the verification is unchanged. `Context::error()` names `SSL_CTX_use_certificate_chain_file`.
+  Pinned by `AServerPresentsTheWholeChainItsCertificateFileHolds` (both server loaders, and a leaf served without
+  its intermediate still refused) and `AClientPresentsTheWholeChainItsCertificateFileHolds` (mutual TLS)
+  (`tls-peer-verification.cpp`).
 
 ### Documentation
 

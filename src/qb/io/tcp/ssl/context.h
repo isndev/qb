@@ -169,7 +169,9 @@ public:
 
     /**
      * @brief Server context loading a PEM certificate + private key (checked). TLS 1.2+, `VerifyMode::none`.
-     * @param cert Path to the PEM certificate (resolved against cwd then the executable dir).
+     * @param cert Path to the PEM certificate chain -- the leaf first, then the intermediates a client needs to
+     *             reach its trust anchor; every certificate of the file is presented (resolved against cwd then the
+     *             executable dir).
      * @param key  Path to the PEM private key.
      * @return A configured server `Context`, or a falsy one (with `error()`) if loading/validation fails.
      */
@@ -205,7 +207,7 @@ public:
     Context &verify(VerifyMode mode);                                         ///< Peer verification policy.
     Context &trust(std::filesystem::path ca_file_or_dir);                     ///< Add a CA file or directory to the trust store.
     Context &trust_system();                                                  ///< (Re)load the OS default trust store (client default).
-    Context &identity(std::filesystem::path cert, std::filesystem::path key); ///< This endpoint's cert+key (client mTLS / extra server cert).
+    Context &identity(std::filesystem::path cert, std::filesystem::path key); ///< This endpoint's cert chain+key (mTLS / extra server cert).
     Context &
     alpn(std::vector<std::string> protocols); ///< ALPN: client offer / server accept-preference. Empty list = no-op (leaves ALPN unconfigured).
     Context &ciphers(std::string tls12_list); ///< TLS <= 1.2 cipher list (OpenSSL format).

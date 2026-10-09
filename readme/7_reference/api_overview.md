@@ -356,7 +356,7 @@ address (`af()`, `ip()`, `port()`, `to_string()`, `as_in()`, `as_un()`).
 | `qb::io::tcp::socket` | `qb/io/tcp/socket.h` | `init(af)`, `connect(endpoint\|uri[, qb::duration])`, `n_connect(...)`, `read`, `write`, `disconnect` |
 | `qb::io::tcp::listener` | `qb/io/tcp/listener.h` | `listen(endpoint\|uri)`, `accept() -> tcp::socket`, `disconnect` |
 | `qb::io::udp::socket` | `qb/io/udp/socket.h` | `init(af)`, `bind(endpoint\|uri)`, `read`, `write`, multicast and broadcast options |
-| `qb::io::tcp::ssl::socket` | `qb/io/tcp/ssl/socket.h` | `init(SSL* = nullptr)`, `connect`, `n_connect`, `handshake_status`, `read`, `write`, `disconnect` |
+| `qb::io::tcp::ssl::socket` | `qb/io/tcp/ssl/socket.h` | `init(SSL* = nullptr)`, `connect`, `n_connect`, `handshake_status`, `handshake_wants_write` (3.3), `read`, `write`, `disconnect` |
 | `qb::io::tcp::ssl::listener` | `qb/io/tcp/ssl/listener.h` | `init(SSL_CTX*)`, `accept() -> ssl::socket`, `ssl_handle` |
 
 TLS types require `QB_WITH_SSL` (the default when OpenSSL is present). Context helpers

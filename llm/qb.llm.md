@@ -262,7 +262,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1021; tcp/socket.cpp:100-107)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1043; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1045-1084; uri.h:473-483)_
@@ -276,6 +276,17 @@ auto eps = co_await qb::io::async::offload([](std::string h) {
 auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move(eps), "api.example.com",
                                                                        std::chrono::seconds{5});
 ```
+
+- **`co_await` what the factory returns; an awaiter is never copied (3.3).** The connect awaiters
+  (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
+  neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
+  copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:954; combinators.h:191; channel.h:1148)_
+- **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
+  `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
+  a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
+  on a handshake that waits to read spins a level-triggered loop until the peer answers (Huly QB-301).
+  _(ssl/socket.h:662; tcp/connector.h:321)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -642,7 +653,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:471, :892, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:487, :921, :84, :96)_
+  A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
+  (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
+  holds (Huly QB-611). _(ssl/context.cpp:463)_
 - **A port is shared only by name (3.3): `listen(ep, qb::io::tcp::listen_options{.reuse_port = true})`.**
   _(tcp/listener.h:32-46)_ Every listener that asks shares the port and, on Linux, the kernel balances the accept
   across them -- one listener per core, each serving its own connections. Windows refuses the listen with
@@ -651,12 +665,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
   for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed
   callback and its raw setter share one OpenSSL slot (last set wins); a typed callback that throws fails closed
-  instead of terminating. _(ssl/context.h:218-226, :235-246)_
+  instead of terminating. _(ssl/context.h:220-228, :237-248)_
 - **A certificate is renewed with `listener.reload_context(ctx)` (3.3), on the thread that accepts.** The next
   accept presents it, every open connection keeps its own. Build the replacement WHOLE through `Context` (cert, key,
   ALPN, verification: what the listener's raw setters wrote into the old one does not carry over); `false` means it
   failed to load and the old certificate goes on serving. Never rewrite the served context in place through
-  `native()`: copies of a `Context` share one `SSL_CTX`, possibly across cores. _(ssl/listener.h:121-149)_
+  `native()`: copies of a `Context` share one `SSL_CTX`, possibly across cores. _(ssl/listener.h:118-146)_
+  The ALPN list `set_supported_alpn_protocols` sets is the CONTEXT's, like `Context::alpn`'s (3.3, Huly QB-308):
+  it stays with the context a reload leaves and serves every listener sharing it. _(ssl/listener.cpp:215)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),
@@ -666,7 +682,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   paths and http static roots resolve through `qb::io::sys::resolve_resource` — a relative path is found from the cwd **or
   the running executable's own dir** (`self_path()`/`self_dir()`), so a binary shipped next to its assets/certs runs from any
   cwd; absolute paths pass through unchanged. URL/route paths, actor event path fields, and remote/wire paths (redis
-  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
+  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
   hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:762)_

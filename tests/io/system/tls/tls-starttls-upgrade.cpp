@@ -47,8 +47,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include <openssl/ssl.h>
 
@@ -109,6 +111,33 @@ struct test_starttls_negotiator {
             }
         }
         return verdict_ == 'S' ? A::upgrade : A::fail;
+    }
+};
+
+// A negotiator with nothing to say: the upgrade is agreed before a byte is exchanged, so the TLS
+// handshake starts on the turn the TCP connect completes.
+struct immediate_upgrade_negotiator {
+    static constexpr bool enabled = true;
+
+    qb::io::async::tcp::starttls_action
+    advance(qb::io::tcp::socket &, int) noexcept {
+        return qb::io::async::tcp::starttls_action::upgrade;
+    }
+};
+
+// An ssl::socket that counts the handshake steps the connector runs (the connector calls
+// `Socket_::handshake_status()`, so this one hides the base's). The count is shared: the connector
+// moves the socket it is given.
+class counting_ssl_socket : public qb::io::tcp::ssl::socket {
+public:
+    std::shared_ptr<int> handshake_steps = std::make_shared<int>(0);
+
+    counting_ssl_socket() = default; // not an aggregate: the connector's `Socket_{}` is a default construction
+
+    int
+    handshake_status() noexcept {
+        ++*handshake_steps;
+        return qb::io::tcp::ssl::socket::handshake_status();
     }
 };
 
@@ -250,5 +279,60 @@ TEST(TlsStarttlsUpgrade, RefusedUpgradeDeliversNonSecureSocket) {
     EXPECT_FALSE(cb_secure) << "a declined STARTTLS upgrade must not yield a completed TLS handshake";
 
     server.shutdown();
+    qb::io::async::listener::current.clear();
+}
+
+// A pending TLS handshake is watched in the ONE direction OpenSSL waits on (Huly QB-301). After its
+// ClientHello the client waits for the server's flight, and a connected socket is always writable: the
+// write watch the connector used to keep beside the read one re-ran the handshake on every
+// level-triggered loop pass until the server answered. Single-threaded, so the server's silence is an
+// order the test writes: the connection waits in the listener's backlog through a hundred loop passes,
+// then the test accepts it and drives the server's side. The real ssl::socket reports the direction
+// (`handshake_wants_write`), which the connector's mock tests cannot prove. Red before the fix on every
+// backend: 3052 steps on epoll (g++), 1649 on wepoll (MSVC), where the fix takes 1.
+TEST(TlsStarttlsUpgrade, PendingHandshakeWaitsForTheServerWithoutSpinning) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::async::init();
+    qb::io::tcp::ssl::listener listener;
+    listener.init(qb::io::ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    counting_ssl_socket client;
+    client.set_insecure(); // the shipped certificate is self-signed: what is under test is the wait
+    const auto steps  = client.handshake_steps;
+    bool       done   = false;
+    bool       secure = false;
+    qb::io::async::tcp::starttls_connect<counting_ssl_socket, immediate_upgrade_negotiator>(
+        std::move(client), qb::io::uri{"tcp://127.0.0.1:" + std::to_string(port)},
+        [&](counting_ssl_socket &&sock) {
+            done   = true;
+            secure = sock.is_open() && sock.handshake_complete();
+        },
+        5s);
+
+    ASSERT_TRUE(pump_until([&] { return *steps > 0; }, 5s)) << "the TLS handshake never started";
+    for (int pass = 0; pass < 100; ++pass)
+        qb::io::async::run(EVRUN_NOWAIT);
+    EXPECT_EQ(*steps, 1) << "the handshake waiting for the server's flight was re-run on write readiness";
+    EXPECT_FALSE(done);
+
+    qb::io::tcp::ssl::socket server;
+    ASSERT_EQ(listener.accept(server), 0);
+    server.set_nonblocking(true);
+    EXPECT_TRUE(pump_until(
+        [&] {
+            if (!server.handshake_complete())
+                server.handshake_status();
+            return done;
+        },
+        5s))
+        << "the STARTTLS handshake never completed once the server answered";
+    EXPECT_TRUE(secure) << "the upgraded connection did not complete its TLS handshake";
+
+    server.disconnect();
+    listener.disconnect();
     qb::io::async::listener::current.clear();
 }

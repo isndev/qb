@@ -87,7 +87,8 @@ SSL_CTX *create_client_context(const SSL_METHOD *method);
  * @brief Create an SSL context (`SSL_CTX`) configured for server-side SSL/TLS operations.
  * @ingroup SSL
  * @param method The SSL/TLS method to use (e.g., `TLS_server_method()`, `SSLv23_server_method()`).
- * @param cert_path Path to the server's PEM-encoded certificate file.
+ * @param cert_path Path to the server's PEM-encoded certificate chain: the leaf first, then the intermediates
+ *                  a client needs to reach its trust anchor (every certificate of the file is presented).
  * @param key_path Path to the server's PEM-encoded private key file.
  * @return Pointer to the newly created `SSL_CTX` on success, `nullptr` on failure (e.g., if files cannot be loaded).
  * @note The caller is responsible for freeing the returned `SSL_CTX` using `SSL_CTX_free()`.
@@ -157,7 +158,7 @@ bool configure_mtls_server_context(SSL_CTX *ctx, const std::filesystem::path &cl
  * @brief Configure a client SSL_CTX to use a specific client certificate and private key.
  * @ingroup SSL
  * @param ctx The client SSL_CTX to configure.
- * @param client_cert_path Path to the PEM-encoded client certificate file.
+ * @param client_cert_path Path to the PEM-encoded client certificate chain: the leaf first, then its intermediates.
  * @param client_key_path Path to the PEM-encoded client private key file.
  * @return true on success, false on failure.
  */
@@ -182,6 +183,21 @@ bool set_alpn_protos_client(SSL_CTX *ctx, const std::vector<std::string> &protoc
  * @note See OpenSSL documentation for SSL_CTX_set_alpn_select_cb for callback signature and behavior.
  */
 bool set_alpn_selection_callback_server(SSL_CTX *ctx, SSL_CTX_alpn_select_cb_func callback, void *arg);
+
+/**
+ * @brief Set the ALPN protocols a server SSL_CTX accepts, most preferred first.
+ * @ingroup SSL
+ * @param ctx The server SSL_CTX to configure.
+ * @param protocols The accepted protocols in the server's order of preference (e.g. {"h2", "http/1.1"}); an empty
+ *                  name, or one longer than 255 bytes, is skipped.
+ * @return true when at least one protocol was installed; false on a null context or nothing to install.
+ * @details The list is kept on the context itself, in the state `qb::io::ssl::Context` attaches to it, so it lives
+ *          exactly as long as the SSL_CTX: the connections minted from it, and every listener and `Context` sharing
+ *          it, read the same list for as long as they hold it. It replaces the list set before on that context --
+ *          `Context::alpn` on a server context writes the same one -- and any selection callback installed with
+ *          `set_alpn_selection_callback_server`.
+ */
+bool set_alpn_protos_server(SSL_CTX *ctx, const std::vector<std::string> &protocols);
 
 /**
  * @brief Enable and configure server-side SSL session caching.
@@ -359,9 +375,9 @@ class QB_API socket : public tcp::socket {
 
     /**
      * @brief Performs the SSL handshake check after a non-blocking connect.
-     * @return 0 if handshake is complete or still in progress without error,
-     *         a non-zero SSL error code (e.g., `SSL_ERROR_WANT_READ`, `SSL_ERROR_WANT_WRITE`) if it needs more I/O,
-     *         or a negative value for other errors.
+     * @return 1 when the handshake is complete, 0 when OpenSSL needs more socket readiness (`SSL_ERROR_WANT_READ` or
+     *         `SSL_ERROR_WANT_WRITE`; which one is `handshake_wants_write()`), -1 on any other error (the socket is
+     *         disconnected).
      * @private
      */
     int handCheck() noexcept;
@@ -636,6 +652,16 @@ public:
     int handshake_status() noexcept;
 
     /**
+     * @brief The direction a pending handshake waits on: true when OpenSSL's last step blocked on WRITING (its
+     *        output did not fit the socket), false when it waits for the peer's bytes -- or there is no handle.
+     * @details Meaningful after `handshake_status()` returned 0, which is when an event loop re-arms the descriptor:
+     *          watch `EV_WRITE` for true and `EV_READ` for false, never both -- a connected socket is always
+     *          writable, so a write watch on a handshake that waits to read wakes the loop on every pass until the
+     *          peer answers (Huly QB-301). It reads the state OpenSSL keeps (`SSL_want_write`); no I/O.
+     */
+    [[nodiscard]] bool handshake_wants_write() const noexcept;
+
+    /**
      * @brief Whether the TLS handshake has completed successfully.
      */
     [[nodiscard]] bool handshake_complete() const noexcept;
@@ -778,8 +804,11 @@ public:
      * @brief Request OCSP stapling from the server for this connection (client-side).
      * @details Call before the SSL handshake. If the `SSL` handle is not minted yet (a socket built from an
      *          `ssl::Context`), the request is DEFERRED and applied when the handle is created at connect.
-     * @param enable Set to true to request OCSP stapling, false to not request (or clear previous request).
-     * @return true when the request is applied or deferred; false only if enabling it on an existing handle failed.
+     * @param enable true to request OCSP stapling; false to withdraw this connection's own request (a deferred one, or
+     *               one already set on the handle). It never withdraws the context's: on a context whose
+     *               `Context::on_ocsp_response` is set, every connection asks for a staple and `false` leaves it asked,
+     *               because a connection that does not ask never reaches the context's verdict (fail-closed).
+     * @return true when the request is applied or deferred; false only if OpenSSL refused it on an existing handle.
      * @note The response is judged by the context's `Context::on_ocsp_response` (which also asks for it on every connection
      *       of that context, so this call is then redundant) or by the raw `qb::io::ssl::set_ocsp_stapling_client_callback`.
      */

@@ -314,6 +314,19 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         }
     }
 
+    /// What a pending handshake waits on: the ONE direction OpenSSL's last step blocked on. Both would spin -- a
+    /// connected socket is always writable, so a level-triggered write watch on a handshake that waits for the
+    /// server's flight fires on every loop pass until it arrives (Huly QB-301). A socket that cannot say keeps both.
+    [[nodiscard]] int
+    pending_handshake_events() const noexcept {
+        if constexpr (requires(Socket_ const &s) {
+                          { s.handshake_wants_write() } -> std::same_as<bool>;
+                      })
+            return socket_.handshake_wants_write() ? EV_WRITE : EV_READ;
+        else
+            return EV_READ | EV_WRITE;
+    }
+
     /// Start one TCP connect: the next endpoint, or the remote URI itself when there is no list (an AF_UNIX
     /// remote, or a socket that resolves its URI itself). Returns `n_connect`'s result; the errno is the
     /// caller's to read.
@@ -408,7 +421,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
                             deliver(std::move(socket_));
                             return;
                         case finalize_result::pending:
-                            if (arm_io(EV_READ | EV_WRITE)) {
+                            if (arm_io(pending_handshake_events())) {
                                 tcp_up_ = true;
                                 arm_deadline();
                                 return; // the TCP part is done: no attempt timer, what follows is final
@@ -559,7 +572,7 @@ public:
                     deliver(std::move(socket_));
                     return;
                 case finalize_result::pending:
-                    static_cast<event::io &>(const_cast<event::io &>(event)).set(EV_READ | EV_WRITE);
+                    static_cast<event::io &>(const_cast<event::io &>(event)).set(pending_handshake_events());
                     return;
                 case finalize_result::failed:
                     break;
@@ -701,7 +714,7 @@ public:
                     finish_starttls(event, true);
                     return;
                 case finalize_result::pending:
-                    mutable_event.set(EV_READ | EV_WRITE);
+                    mutable_event.set(pending_handshake_events());
                     return;
                 case finalize_result::failed:
                     finish_starttls(event, false);
@@ -934,6 +947,15 @@ public:
         , _timeout(timeout)
         , _verify_peer(verify_peer) {}
 
+    // Neither copyable nor movable (Huly QB-302): the destructor deactivates the shared state, so a copy -- and
+    // a "move", which was one (the user-declared destructor suppresses the implicit move) -- destroyed first left
+    // the live awaiter's connect unable to resume it. The factories return a prvalue (guaranteed copy elision), so
+    // neither is needed: the rule of timeout_awaiter and awaiter_base.
+    connect_awaiter(const connect_awaiter &)            = delete;
+    connect_awaiter(connect_awaiter &&)                 = delete;
+    connect_awaiter &operator=(const connect_awaiter &) = delete;
+    connect_awaiter &operator=(connect_awaiter &&)      = delete;
+
     [[nodiscard]] bool
     await_ready() const noexcept {
         return _state->ready;
@@ -1051,6 +1073,12 @@ public:
         , _remote(std::move(remote))
         , _timeout(timeout) {}
 
+    // Neither copyable nor movable: see connect_awaiter (Huly QB-302).
+    connect_with_socket_awaiter(const connect_with_socket_awaiter &)            = delete;
+    connect_with_socket_awaiter(connect_with_socket_awaiter &&)                 = delete;
+    connect_with_socket_awaiter &operator=(const connect_with_socket_awaiter &) = delete;
+    connect_with_socket_awaiter &operator=(connect_with_socket_awaiter &&)      = delete;
+
     [[nodiscard]] bool
     await_ready() const noexcept {
         return _state->ready;
@@ -1146,6 +1174,12 @@ public:
         : _remote(std::move(remote))
         , _timeout(timeout)
         , _verify_peer(verify_peer) {}
+
+    // Neither copyable nor movable: see connect_awaiter (Huly QB-302).
+    starttls_connect_awaiter(const starttls_connect_awaiter &)            = delete;
+    starttls_connect_awaiter(starttls_connect_awaiter &&)                 = delete;
+    starttls_connect_awaiter &operator=(const starttls_connect_awaiter &) = delete;
+    starttls_connect_awaiter &operator=(starttls_connect_awaiter &&)      = delete;
 
     [[nodiscard]] bool
     await_ready() const noexcept {

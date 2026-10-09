@@ -43,13 +43,10 @@ namespace qb::io::tcp::ssl {
  */
 class QB_API listener : public tcp::listener {
     qb::io::ssl::Context _ctx; /**< Value-semantic TLS context shared (by reference count) across every accepted connection. */
-    // Held behind a unique_ptr so the ALPN wire buffer keeps a STABLE heap
-    // address across a listener move (the defaulted move ops transfer the
-    // SSL_CTX, which has this buffer's address registered as the alpn_select_cb
-    // arg — a pointer into a moved-from member would dangle). Used only by the
-    // raw `set_supported_alpn_protocols()` path; the `Context::alpn()` path keeps
-    // its wire buffer on the context's ex-data instead.
-    mutable std::unique_ptr<std::vector<unsigned char>> _alpn_wire;
+    // Unused since Huly QB-308, kept for the class layout (no ABI change in a minor): the ALPN accept-list of
+    // `set_supported_alpn_protocols()` lives on the context's ex-data, as `Context::alpn()`'s does -- a list the
+    // listener owned was freed under the select callback a shared or reloaded context kept.
+    [[maybe_unused]] mutable std::unique_ptr<std::vector<unsigned char>> _alpn_wire;
 
 public:
     /** @brief Indicates that this socket implementation is secure */
@@ -301,9 +298,12 @@ public:
     bool enable_post_handshake_auth();
 
     /**
-     * @brief Set the list of ALPN protocols supported by the server listener.
-     * @details This list is used if no ALPN selection callback is registered via `set_alpn_selection_callback`.
-     *          The server will automatically select a protocol from this list if it's also offered by the client.
+     * @brief Set the ALPN protocols the server accepts, most preferred first.
+     * @details The server selects the first protocol of this list the client also offers. The list is the
+     *          CONTEXT's (`qb::io::ssl::set_alpn_protos_server`): it lives as long as the context, applies to every
+     *          listener sharing it, and stays with the context a `reload_context()` leaves, whose connections keep
+     *          negotiating it. A context has one selection slot: this list replaces `Context::alpn()`'s and the
+     *          callback of `set_alpn_selection_callback`, and the last of them set wins.
      * @param protocols A vector of protocol strings (e.g., {"h2", "http/1.1"}).
      * @return true on success, false if context is not initialized or protocols are invalid.
      */

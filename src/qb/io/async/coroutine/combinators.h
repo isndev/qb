@@ -184,6 +184,15 @@ public:
     explicit when_all_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
+    // Neither copyable nor movable (Huly QB-302): the destructor reclaims the branches through the shared state,
+    // so a copy -- and a "move", which was one (the user-declared destructor suppresses the implicit move) --
+    // destroyed first tore down the branches the live awaiter was waiting on, and its coroutine never resumed.
+    // `when_all` returns a prvalue (guaranteed copy elision), so neither is needed: the rule of timeout_awaiter.
+    when_all_awaiter(const when_all_awaiter &)            = delete;
+    when_all_awaiter(when_all_awaiter &&)                 = delete;
+    when_all_awaiter &operator=(const when_all_awaiter &) = delete;
+    when_all_awaiter &operator=(when_all_awaiter &&)      = delete;
+
     // Pending-teardown reclamation: destroyed while still waiting (the awaiting coroutine's frame
     // was unwound — e.g. it is a losing branch of an OUTER when_any, or scope cancellation). Every
     // not-yet-finished branch would otherwise resume the freed continuation when it completes, so
@@ -240,6 +249,12 @@ public:
 
     explicit when_all_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
+
+    // Neither copyable nor movable: see when_all_awaiter (Huly QB-302).
+    when_all_vector_awaiter(const when_all_vector_awaiter &)            = delete;
+    when_all_vector_awaiter(when_all_vector_awaiter &&)                 = delete;
+    when_all_vector_awaiter &operator=(const when_all_vector_awaiter &) = delete;
+    when_all_vector_awaiter &operator=(when_all_vector_awaiter &&)      = delete;
 
     // Pending-teardown reclamation: destroyed while still waiting (awaiter unwound — e.g. a
     // when_any/race loser reclaim) → reclaim every not-yet-finished branch so none resumes the
@@ -548,6 +563,12 @@ public:
     explicit when_any_awaiter(Tasks... tasks)
         : _state(std::make_shared<state_t>(std::move(tasks)...)) {}
 
+    // Neither copyable nor movable: see when_all_awaiter (Huly QB-302).
+    when_any_awaiter(const when_any_awaiter &)            = delete;
+    when_any_awaiter(when_any_awaiter &&)                 = delete;
+    when_any_awaiter &operator=(const when_any_awaiter &) = delete;
+    when_any_awaiter &operator=(when_any_awaiter &&)      = delete;
+
     // Pending-teardown reclamation: if this awaiter is destroyed while still racing
     // (the awaiting coroutine's frame was unwound — e.g. it is itself a losing branch
     // of an OUTER when_any, or actor-scope cancellation) every branch is still parked,
@@ -602,6 +623,12 @@ public:
 
     explicit when_any_vector_awaiter(std::vector<task<T>> tasks)
         : _state(std::make_shared<state_t>(std::move(tasks))) {}
+
+    // Neither copyable nor movable: see when_all_awaiter (Huly QB-302).
+    when_any_vector_awaiter(const when_any_vector_awaiter &)            = delete;
+    when_any_vector_awaiter(when_any_vector_awaiter &&)                 = delete;
+    when_any_vector_awaiter &operator=(const when_any_vector_awaiter &) = delete;
+    when_any_vector_awaiter &operator=(when_any_vector_awaiter &&)      = delete;
 
     // See the variadic when_any_awaiter dtor: reclaim every still-parked branch if this
     // awaiter is destroyed while still racing. No-op once a winner cleared the slots.

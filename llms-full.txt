@@ -277,7 +277,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1021; tcp/socket.cpp:100-107)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1043; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1045-1084; uri.h:473-483)_
@@ -291,6 +291,17 @@ auto eps = co_await qb::io::async::offload([](std::string h) {
 auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move(eps), "api.example.com",
                                                                        std::chrono::seconds{5});
 ```
+
+- **`co_await` what the factory returns; an awaiter is never copied (3.3).** The connect awaiters
+  (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
+  neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
+  copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:954; combinators.h:191; channel.h:1148)_
+- **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
+  `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
+  a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
+  on a handshake that waits to read spins a level-triggered loop until the peer answers (Huly QB-301).
+  _(ssl/socket.h:662; tcp/connector.h:321)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -657,7 +668,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:471, :892, :84, :95)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:487, :921, :84, :96)_
+  A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
+  (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
+  holds (Huly QB-611). _(ssl/context.cpp:463)_
 - **A port is shared only by name (3.3): `listen(ep, qb::io::tcp::listen_options{.reuse_port = true})`.**
   _(tcp/listener.h:32-46)_ Every listener that asks shares the port and, on Linux, the kernel balances the accept
   across them -- one listener per core, each serving its own connections. Windows refuses the listen with
@@ -666,12 +680,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
   for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed
   callback and its raw setter share one OpenSSL slot (last set wins); a typed callback that throws fails closed
-  instead of terminating. _(ssl/context.h:218-226, :235-246)_
+  instead of terminating. _(ssl/context.h:220-228, :237-248)_
 - **A certificate is renewed with `listener.reload_context(ctx)` (3.3), on the thread that accepts.** The next
   accept presents it, every open connection keeps its own. Build the replacement WHOLE through `Context` (cert, key,
   ALPN, verification: what the listener's raw setters wrote into the old one does not carry over); `false` means it
   failed to load and the old certificate goes on serving. Never rewrite the served context in place through
-  `native()`: copies of a `Context` share one `SSL_CTX`, possibly across cores. _(ssl/listener.h:121-149)_
+  `native()`: copies of a `Context` share one `SSL_CTX`, possibly across cores. _(ssl/listener.h:118-146)_
+  The ALPN list `set_supported_alpn_protocols` sets is the CONTEXT's, like `Context::alpn`'s (3.3, Huly QB-308):
+  it stays with the context a reload leaves and serves every listener sharing it. _(ssl/listener.cpp:215)_
 - **Filesystem paths are `std::filesystem::path` and resource paths self-locate.** `sys::file::open`/ctor,
   `file_to_pipe`/`pipe_to_file::open`, the SSL cert/key/CA/DH helpers (`create_server_context`,
   `load_ca_certificates`/`load_ca_directory`/`configure_mtls_server_context`/`configure_client_certificate`/`configure_dh_parameters_server`),
@@ -681,7 +697,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   paths and http static roots resolve through `qb::io::sys::resolve_resource` — a relative path is found from the cwd **or
   the running executable's own dir** (`self_path()`/`self_dir()`), so a binary shipped next to its assets/certs runs from any
   cwd; absolute paths pass through unchanged. URL/route paths, actor event path fields, and remote/wire paths (redis
-  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:95)_
+  module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
   hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:762)_
@@ -1305,8 +1321,8 @@ TCP listener. `constexpr is_secure() == false`.
 
 #### Secure TCP (`<qb/io/tcp/ssl/...>`, requires `QB_HAS_SSL`/OpenSSL)
 *   **`class qb::io::ssl::Context` (`<qb/io/tcp/ssl/context.h>`) — the PREFERRED TLS config type.** Value-semantic, reference-counted, secure-by-default, RAII. Copyable (copies share one `SSL_CTX`, freed exactly once — **there is no user-visible `SSL_CTX_free`**). Fail-closed: a construction/config error yields a falsy Context whose `error()` explains why (it never degrades to an insecure context).
-    *   Factories: `static Context client()` (TLS 1.2+, system trust store, `VerifyMode::peer`), `static Context server(std::filesystem::path cert, std::filesystem::path key)` (loads+checks the identity; `VerifyMode::none`), `static Context adopt(SSL_CTX*) noexcept` (**TRANSFER** the caller's single ref — no up-ref), `static Context share(SSL_CTX*) noexcept` (**up-ref**; caller keeps + frees their own).
-    *   Fluent config (chainable; a no-op once errored): `min_version(TlsVersion)`/`max_version(TlsVersion)`, `verify(VerifyMode)`, `trust(std::filesystem::path)`/`trust_system()`, `identity(cert,key)` (client mTLS / extra server cert), `alpn(std::vector<std::string>)` (**empty list = no-op**), `ciphers(std::string)`/`ciphersuites(std::string)`/`curves(std::string)`, `dh_params(path)`, `session_cache(std::size_t)`/`session_timeout(std::chrono::seconds)`.
+    *   Factories: `static Context client()` (TLS 1.2+, system trust store, `VerifyMode::peer`), `static Context server(std::filesystem::path cert, std::filesystem::path key)` (loads+checks the identity; `VerifyMode::none`; `cert` is a CHAIN file -- since 3.3 every certificate it holds is presented, the leaf first, then its intermediates, Huly QB-611), `static Context adopt(SSL_CTX*) noexcept` (**TRANSFER** the caller's single ref — no up-ref), `static Context share(SSL_CTX*) noexcept` (**up-ref**; caller keeps + frees their own).
+    *   Fluent config (chainable; a no-op once errored): `min_version(TlsVersion)`/`max_version(TlsVersion)`, `verify(VerifyMode)`, `trust(std::filesystem::path)`/`trust_system()`, `identity(cert,key)` (client mTLS / extra server cert; `cert` is a chain file, every certificate presented since 3.3), `alpn(std::vector<std::string>)` (**empty list = no-op**), `ciphers(std::string)`/`ciphersuites(std::string)`/`curves(std::string)`, `dh_params(path)`, `session_cache(std::size_t)`/`session_timeout(std::chrono::seconds)`.
     *   Typed callbacks (no raw C fn ptr / `void*` arg — the `std::function`s live on the `SSL_CTX` ex-data, reachable from every minted `SSL`): `on_keylog(std::function<void(std::string_view)>)`, `on_verify(std::function<bool(bool preverified, VerifyContext&)>)`, `on_sni(std::function<Context(std::string_view servername)>)` (server host → Context to switch to; empty return keeps the current); since 3.3 (Huly QB-83) `on_ocsp_staple(std::function<std::vector<unsigned char>(std::string_view servername)>)` (server: the DER `OCSPResponse` to staple, empty = none; OpenSSL 3.6 staples only a response that parses and names the certificate, never for a self-signed one) and `on_ocsp_response(std::function<bool(OcspContext&)>)` (client: asks every server for a staple and judges it, `false` fails the handshake; empty response when none was stapled). Each typed callback shares its OpenSSL slot with the raw setter of the same role (the two OCSP ones share ONE status slot): on one context the last set wins. A typed callback that throws fails closed (verify / OCSP check reject, SNI router aborts, stapler staples nothing, keylog line lost) — before 3.3 it crossed OpenSSL's C frames and terminated the process.
     *   `bool ok() const noexcept`, `std::string error() const` (the call that failed and, since 3.3, OpenSSL's reason: `SSL_CTX_use_PrivateKey_file failed for key.pem: key values mismatch`), `explicit operator bool`, `SSL_CTX* native() const noexcept` (escape hatch — borrow the raw ctx).
 *   `enum class qb::io::ssl::TlsVersion { v1_2, v1_3 }`; `enum class qb::io::ssl::VerifyMode { none, peer, peer_require }` (peer / +fail-if-no-cert=mTLS).
@@ -1317,17 +1333,17 @@ TCP listener. `constexpr is_secure() == false`.
     *   `void init(SSL* handle = nullptr) noexcept` — adopt an external SSL handle (escape hatch).
     *   `int connect(const endpoint& ep, const std::string& hostname = "") noexcept` (SNI), `connect(endpoint, hostname, qb::duration)`, `connect(const uri&)`, `connect(const uri&, qb::duration)` — timed overloads bound the TCP phase only.
     *   `connect_v4`/`connect_v6` (host = SNI) / `connect_un(const std::filesystem::path& path)` (+ `n_connect_un` non-blocking).
-    *   `int n_connect(const endpoint&, const std::string& hostname = "") noexcept`, `int connected() noexcept` (drives SSL_connect/accept), `int handshake_status() noexcept` (1 done / 0 needs-IO / -1 fatal), `bool handshake_complete() const noexcept`, `int do_handshake() noexcept`.
+    *   `int n_connect(const endpoint&, const std::string& hostname = "") noexcept`, `int connected() noexcept` (drives SSL_connect/accept), `int handshake_status() noexcept` (1 done / 0 needs-IO / -1 fatal), `[[nodiscard]] bool handshake_wants_write() const noexcept` (since 3.3, Huly QB-301: after a 0, which I/O it waits on -- `true` write, `false` the peer's bytes; watch that ONE direction, a connected socket is always writable), `bool handshake_complete() const noexcept`, `int do_handshake() noexcept`.
     *   `int read(void*, std::size_t) noexcept` / `int write(const void*, std::size_t) noexcept` (non-const), `int disconnect() noexcept`.
-    *   Pre-handshake config: `bool set_sni_hostname(const std::string&)`, `set_alpn_protocols(const std::vector<std::string>&)`, `set_verify_callback(...)`, `set_verify_depth(int)`, `disable_session_resumption()`, `request_ocsp_stapling(bool=true)`, `void set_insecure()` (opts out of verification — MITM risk), `bool verify_peer() const`.
+    *   Pre-handshake config: `bool set_sni_hostname(const std::string&)`, `set_alpn_protocols(const std::vector<std::string>&)`, `set_verify_callback(...)`, `set_verify_depth(int)`, `disable_session_resumption()`, `request_ocsp_stapling(bool=true)` (`false` withdraws this connection's request, never the context's: `on_ocsp_response` keeps asking -- since 3.3, Huly QB-309), `void set_insecure()` (opts out of verification — MITM risk), `bool verify_peer() const`.
     *   Introspection: `SSL* ssl_handle() const noexcept`, `qb::io::ssl::Certificate get_peer_certificate_details() const`, `std::vector<...> get_peer_certificate_chain() const`, `get_negotiated_cipher_suite()`, `get_negotiated_tls_version()`, `get_alpn_selected_protocol()`, `get_last_ssl_error_string()`.
     *   Session/PHA: `qb::io::ssl::Session get_session() const noexcept`, `bool set_session(qb::io::ssl::Session&) noexcept`, `bool request_client_post_handshake_auth() noexcept`.
 *   `class qb::io::tcp::ssl::listener : public tcp::listener` — holds a `qb::io::ssl::Context`, shared by reference count with every accepted connection. `constexpr is_secure() == true`.
     *   **Preferred:** `explicit listener(qb::io::ssl::Context)` / `void init(qb::io::ssl::Context) noexcept`; `const qb::io::ssl::Context& context() const noexcept`.
     *   `[[nodiscard]] bool reload_context(qb::io::ssl::Context) noexcept` — since 3.3 (Huly QB-205): the context of the connections accepted FROM NOW ON, a certificate renewed without a restart; `false`, and nothing changed, when the context is not `ok()`. A connection accepted before keeps the context it was minted from; a session resumed after it gets a full handshake; what the raw setters wrote into the previous context does not carry over. Owner thread only (the one that accepts).
     *   `void init(SSL_CTX* ctx) noexcept` (adopts the ctx — transfer ownership), `ssl::socket accept() const noexcept` / `int accept(ssl::socket&) const noexcept`, `SSL_CTX* ssl_handle() const noexcept`.
-    *   Context tuning: `load_ca_certificates_for_client_auth`, `set_cipher_list`, `set_ciphersuites_tls13`, `set_tls_protocol_versions(int,int)`, `configure_mtls(...)`, `set_supported_alpn_protocols(...)`, `enable_session_caching(...)`, `configure_dh_parameters(...)`, `configure_ecdh_curves(...)`, `enable_post_handshake_auth()`.
-*   **Raw/advanced layer (kept permanently; prefer `ssl::Context`)** — free helpers in `qb::io::ssl`: `bool attach_socket(SSL*, ::socket_type)`, `Certificate get_certificate(SSL*)`, `SSL_CTX* create_client_context(const SSL_METHOD*)`, `SSL_CTX* create_server_context(const SSL_METHOD*, std::filesystem::path cert, std::filesystem::path key)` (caller `SSL_CTX_free`s), plus `bool load_ca_certificates(SSL_CTX*, const std::filesystem::path&)` / `load_ca_directory(SSL_CTX*, const std::filesystem::path&)` / `configure_mtls_server_context(SSL_CTX*, const std::filesystem::path& client_ca, int mode=SSL_VERIFY_PEER)` / `configure_client_certificate(SSL_CTX*, const std::filesystem::path& cert, const std::filesystem::path& key)` / `configure_dh_parameters_server(SSL_CTX*, const std::filesystem::path&)`, plus string-config `set_cipher_list`/`set_ciphersuites_tls13`/`set_tls_protocol_versions`/etc.
+    *   Context tuning: `load_ca_certificates_for_client_auth`, `set_cipher_list`, `set_ciphersuites_tls13`, `set_tls_protocol_versions(int,int)`, `configure_mtls(...)`, `set_supported_alpn_protocols(...)` (the CONTEXT's accept-list since 3.3, Huly QB-308: kept on the `SSL_CTX` like `Context::alpn`'s, so it serves every listener sharing the context and stays with the context a `reload_context` leaves), `enable_session_caching(...)`, `configure_dh_parameters(...)`, `configure_ecdh_curves(...)`, `enable_post_handshake_auth()`.
+*   **Raw/advanced layer (kept permanently; prefer `ssl::Context`)** — free helpers in `qb::io::ssl`: `bool attach_socket(SSL*, ::socket_type)`, `Certificate get_certificate(SSL*)`, `SSL_CTX* create_client_context(const SSL_METHOD*)`, `SSL_CTX* create_server_context(const SSL_METHOD*, std::filesystem::path cert, std::filesystem::path key)` (caller `SSL_CTX_free`s), plus `bool load_ca_certificates(SSL_CTX*, const std::filesystem::path&)` / `load_ca_directory(SSL_CTX*, const std::filesystem::path&)` / `configure_mtls_server_context(SSL_CTX*, const std::filesystem::path& client_ca, int mode=SSL_VERIFY_PEER)` / `configure_client_certificate(SSL_CTX*, const std::filesystem::path& cert, const std::filesystem::path& key)` / `configure_dh_parameters_server(SSL_CTX*, const std::filesystem::path&)` (the `cert` of `create_server_context` and `configure_client_certificate` is a chain file, every certificate presented since 3.3), `bool set_alpn_protos_client(SSL_CTX*, const std::vector<std::string>&)` / `bool set_alpn_protos_server(SSL_CTX*, const std::vector<std::string>&)` (since 3.3: the server accept-list, most preferred first, kept on the context -- it replaces `Context::alpn`'s and the `set_alpn_selection_callback_server` callback), plus string-config `set_cipher_list`/`set_ciphersuites_tls13`/`set_tls_protocol_versions`/etc.
     *   **All cert/key/CA/DH file paths are `std::filesystem::path` and resolved through `qb::io::sys::resolve_resource`** (relative paths found from the cwd or the executable's own dir; absolute unchanged) — see Synchronous file I/O below.
 *   `struct qb::io::ssl::Certificate { std::string subject, issuer; int64_t version; std::string serial_number; int64_t not_before, not_after; std::string signature_algorithm; std::vector<std::string> subject_alternative_names; }` (not_before/after are Unix timestamps int64).
 *   `struct qb::io::ssl::Session { SSL_SESSION* _session_handle = nullptr; bool is_valid() const; }`; `void free_session(Session&)`.
@@ -1514,7 +1530,8 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `[T<Transport = qb::io::transport::tcp>] auto connect(std::vector<qb::io::endpoint> endpoints, std::string host, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — since 3.3, the coroutine form over a list: resolve off the loop (`co_await offload(...)` around `qb::io::socket::resolve_v4`), then connect with fallback.
     *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(const uri& remote, Func_&& func, qb::duration timeout = {}, bool verify_peer = true)` — opportunistic TLS (PostgreSQL `SSLRequest`, SMTP/IMAP `STARTTLS`): connect cleartext, run `Negotiator_`'s upgrade, then the TLS handshake; `func` gets the ready (secure) socket.
     *   `[T<Socket_,Negotiator_,Func_>] void starttls_connect(Socket_&& existing, const uri& remote, Func_&& func, qb::duration timeout = {})` — STARTTLS with a caller-built socket carrying its own `ssl::Context` (custom CA / client-cert mTLS / verify); the Context governs verification, so there is **no** `verify_peer` bool (fails CLOSED on a broken Context).
-    *   `[T] class connect_awaiter<Socket_>` — C++20 coroutine awaiter resuming with `std::optional<Socket_>`.
+    *   `[T] class connect_awaiter<Socket_>` — C++20 coroutine awaiter resuming with `std::optional<Socket_>`. Since 3.3 (Huly QB-302) it is neither copyable nor movable, like `connect_with_socket_awaiter` and `starttls_connect_awaiter`: `co_await` the factory's prvalue (a copy shared the state its destructor deactivates, so the copy destroyed first left the live connect unable to resume).
+    *   A pending TLS handshake is watched in the one direction the socket reports (`handshake_wants_write()`), on all three paths -- direct connect, the turn that completes an in-progress one, STARTTLS; a `Socket_` without it keeps read+write (since 3.3, Huly QB-301).
     *   use: `qb::io::async::tcp::connect<qb::io::transport::tcp::transport_io_type>(uri("tcp://h:80"), [](auto&& sock){...}, 5s);`
 
 ### Async UDP (`<qb/io/async/udp/...>`)
@@ -1593,6 +1610,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   the variadic `when_all` / `when_any` / `race` and `coro_with_timeout` take, besides tasks, any awaitable that converts to one — `qb::ask`'s operations — through `detail::to_task` _(combinators.h:72)_; the `std::vector<task<T>>` forms take tasks (an operation converts on `emplace_back`).
 *   `[T<...Tasks>] auto when_all(Tasks...)` / `[T<T>] auto when_all(std::vector<task<T>>)` — await all; → tuple/vector; rethrows first exception. A `task<void>` branch occupies a `std::monostate` slot (`void` is not storable), so `when_all(v1(), i1())` binds to `[std::monostate, int]` and a `vector<task<void>>` yields `vector<std::monostate>`. Same rule for `parallel` / `parallel_map`.
 *   `[T<...Tasks>] auto when_any(Tasks...)` / `[T<T>] auto when_any(std::vector<task<T>>)` — await first; losers reclaimed (cancelled) on win.
+*   The `when_all` / `when_any` awaiters are neither copyable nor movable since 3.3 (Huly QB-302): `co_await` what the call returns (a copy shared the state its destructor reclaims the branches through).
 *   `struct when_any_result { size_t index; std::any value; std::exception_ptr exception; [T<T>] T get() const; }`
 *   `[T<...Tasks>] auto race(Tasks...)` — alias for `when_any`.
 *   `[T<T>] auto coro_with_timeout(task<T>&& t, qb::duration timeout)` — throws `timeout_error` if elapsed (inner task abandoned, not interrupted).
@@ -1613,7 +1631,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
     *   `try_send`, `try_recv`, `close()`, `is_closed()`, `size()`, `capacity()`, `empty()`.
     *   `task<std::optional<T>> recv_for(qb::duration timeout)` (nullopt on timeout/close), `task<bool> send_for(T value, qb::duration timeout)` (false on timeout/close).
 *   `class channel_closed : public std::runtime_error`
-*   `[T<...Ts>] auto select(channel<Ts>&...)` / `[T<T>] auto select(std::vector<channel<T>*>)` — first channel to deliver/close; → `select_result {index, closed, value}`.
+*   `[T<...Ts>] auto select(channel<Ts>&...)` / `[T<T>] auto select(std::vector<channel<T>*>)` — first channel to deliver/close; → `select_result {index, closed, value}`. The awaiter is neither copyable nor movable since 3.3 (Huly QB-302): `co_await` what the call returns.
 *   Helpers: `make_channel<T>(size_t)`, `make_pipeline<T,U,F>(F,size_t)`, `transform(channel&,channel&,F)`, `filter(channel&,channel&,F)`, `collect(channel&)`.
 
 ### Sync primitives (`sync.h`)

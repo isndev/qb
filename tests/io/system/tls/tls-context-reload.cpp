@@ -19,7 +19,10 @@
  *     with the previous certificate;
  *   - a replacement that failed to load (the renewal left half-done: a new certificate beside the old
  *     key, whose error names the mismatch; missing files; an empty context) is refused, and the listener
- *     goes on serving the certificate it had.
+ *     goes on serving the certificate it had;
+ *   - the ALPN list `set_supported_alpn_protocols` sets is the CONTEXT's (Huly QB-308): the context a reload
+ *     leaves keeps its list for the connections minted from it, and a context outlives the listener that
+ *     configured it with the list intact.
  *
  * Hermetic and single-threaded, on the shared `tls_pump.h` harness: two self-signed certificates are
  * generated in memory (no shipped resource names the certificate a connection must show), and every
@@ -63,6 +66,14 @@ tls_pair
 insecure_pair() {
     tls_pair pair;
     pair.client.set_insecure();
+    return pair;
+}
+
+// A client offering both protocols: which one it gets is the server's list.
+tls_pair
+alpn_pair() {
+    tls_pair pair = insecure_pair();
+    pair.client.set_alpn_protocols({"h2", "http/1.1"});
     return pair;
 }
 
@@ -150,4 +161,61 @@ TEST(TlsContextReload, AContextThatFailedToLoadIsRefusedAndTheCurrentOneServes) 
     ASSERT_TRUE(complete_tls_handshake(next));
     EXPECT_NE(presented_name(next.client).find("CN=qb-reload-current"), std::string::npos) << presented_name(next.client);
     EXPECT_TRUE(tls_round_trip(next, "ping", "pong"));
+}
+
+// The ALPN list a listener sets is the context's (Huly QB-308). It used to be a buffer the listener owned and
+// registered with the context's select callback, so the context a reload left read whatever list the listener
+// set NEXT: the connection accepted before the reload, handshaken after it, negotiated the new context's list.
+TEST(TlsContextReload, TheAlpnListStaysWithTheContextAReloadLeaves) {
+    const generated_identity before{"qb-alpn-before"};
+    const generated_identity after{"qb-alpn-after"};
+    ASSERT_TRUE(before.ok() && after.ok()) << "could not generate the two test certificates";
+
+    qb::io::tcp::ssl::listener listener{before.context()};
+    ASSERT_TRUE(listener.set_supported_alpn_protocols({"h2"}));
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    // Accepted on the first context, its handshake left for after the reload.
+    auto accepted_before = alpn_pair();
+    ASSERT_TRUE(open_tls_connection(listener, port, accepted_before));
+
+    const auto renewed = after.context();
+    ASSERT_TRUE(listener.reload_context(renewed));
+    ASSERT_TRUE(listener.set_supported_alpn_protocols({"http/1.1"}));
+
+    ASSERT_TRUE(complete_tls_handshake(accepted_before));
+    EXPECT_EQ(accepted_before.client.get_alpn_selected_protocol(), "h2") << "the context the reload left negotiated the new context's list";
+
+    auto accepted_after = alpn_pair();
+    ASSERT_TRUE(open_tls_connection(listener, port, accepted_after));
+    ASSERT_TRUE(complete_tls_handshake(accepted_after));
+    EXPECT_EQ(accepted_after.client.get_alpn_selected_protocol(), "http/1.1");
+    EXPECT_TRUE(tls_round_trip(accepted_before, "old?", "old!"));
+}
+
+// A context outlives the listener that set its ALPN list (Huly QB-308): the list the listener owned was freed
+// with it while the context's select callback still pointed at it -- a heap use-after-free on the next
+// listener's handshakes (red under ASan; without it, the freed bytes may still read as the list).
+TEST(TlsContextReload, TheAlpnListOutlivesTheListenerThatSetIt) {
+    const generated_identity identity{"qb-alpn-shared"};
+    ASSERT_TRUE(identity.ok()) << "could not generate the test certificate";
+    const auto shared = identity.context();
+    ASSERT_TRUE(shared.ok()) << shared.error();
+    {
+        qb::io::tcp::ssl::listener first{shared};
+        ASSERT_TRUE(first.set_supported_alpn_protocols({"h2"}));
+    } // the listener goes; the context it configured serves on
+
+    qb::io::tcp::ssl::listener second{shared};
+    ASSERT_EQ(second.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = second.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    auto pair = alpn_pair();
+    ASSERT_TRUE(open_tls_connection(second, port, pair));
+    ASSERT_TRUE(complete_tls_handshake(pair));
+    EXPECT_EQ(pair.client.get_alpn_selected_protocol(), "h2");
+    EXPECT_TRUE(tls_round_trip(pair, "ping", "pong"));
 }

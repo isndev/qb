@@ -1141,6 +1141,15 @@ public:
         : _state(std::make_shared<state_t>())
         , _channels(&chs...) {}
 
+    // Neither copyable nor movable (Huly QB-302): the destructor resolves the shared state, so a copy -- and a
+    // "move", which was one (the user-declared destructor suppresses the implicit move) -- destroyed first made
+    // every channel skip the live select, and its coroutine never resumed. `select` returns a prvalue
+    // (guaranteed copy elision), so neither is needed: the rule of timeout_awaiter.
+    channel_select_awaiter(const channel_select_awaiter &)            = delete;
+    channel_select_awaiter(channel_select_awaiter &&)                 = delete;
+    channel_select_awaiter &operator=(const channel_select_awaiter &) = delete;
+    channel_select_awaiter &operator=(channel_select_awaiter &&)      = delete;
+
     // If this select is destroyed while still parked (cancelled before any channel
     // resolved it), mark the shared state resolved and drop the outer handle so a later
     // sender that finds the stale _select_waiters entry skips it (resolve() is a no-op
@@ -1222,6 +1231,12 @@ public:
     explicit channel_select_vector_awaiter(std::vector<channel<T> *> chs)
         : _state(std::make_shared<state_t>())
         , _channels(std::move(chs)) {}
+
+    // Neither copyable nor movable: see channel_select_awaiter (Huly QB-302).
+    channel_select_vector_awaiter(const channel_select_vector_awaiter &)            = delete;
+    channel_select_vector_awaiter(channel_select_vector_awaiter &&)                 = delete;
+    channel_select_vector_awaiter &operator=(const channel_select_vector_awaiter &) = delete;
+    channel_select_vector_awaiter &operator=(channel_select_vector_awaiter &&)      = delete;
 
     // See channel_select_awaiter::~channel_select_awaiter: prevent a stale select
     // waiter from scheduling a destroyed coroutine handle (use-after-free) when this

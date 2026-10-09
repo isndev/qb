@@ -192,7 +192,8 @@ create_server_context(const SSL_METHOD *method, std::filesystem::path cert_path,
     if (!method)
         goto error;
     ctx = SSL_CTX_new(method);
-    if (!ctx || SSL_CTX_use_certificate_file(ctx, cert_path.string().c_str(), SSL_FILETYPE_PEM) <= 0
+    // The whole PEM chain, leaf first, as Context::identity loads it (Huly QB-611).
+    if (!ctx || SSL_CTX_use_certificate_chain_file(ctx, cert_path.string().c_str()) != 1
         || SSL_CTX_use_PrivateKey_file(ctx, key_path.string().c_str(), SSL_FILETYPE_PEM) <= 0 || SSL_CTX_check_private_key(ctx) <= 0)
         goto error;
 
@@ -292,7 +293,8 @@ configure_client_certificate(SSL_CTX *ctx, const std::filesystem::path &client_c
     if (!ctx || client_cert_path.empty() || client_key_path.empty())
         return false;
 
-    if (SSL_CTX_use_certificate_file(ctx, qb::io::sys::resolve_resource(client_cert_path).string().c_str(), SSL_FILETYPE_PEM) <= 0) {
+    // The whole PEM chain, leaf first, as Context::identity loads it (Huly QB-611).
+    if (SSL_CTX_use_certificate_chain_file(ctx, qb::io::sys::resolve_resource(client_cert_path).string().c_str()) != 1) {
         // Consider logging ERR_get_error() here
         return false;
     }
@@ -986,6 +988,12 @@ socket::handshake_status() noexcept {
 }
 
 bool
+socket::handshake_wants_write() const noexcept {
+    // The rwstate SSL_do_handshake left in handCheck(): SSL_get_error() derives WANT_WRITE from it on a socket BIO.
+    return _ssl_handle && SSL_want_write(_ssl_handle.get());
+}
+
+bool
 socket::handshake_complete() const noexcept {
     return _connected;
 }
@@ -1188,9 +1196,14 @@ socket::disable_session_resumption() noexcept {
 bool
 socket::request_ocsp_stapling(bool enable) noexcept {
     if (_ssl_handle) {
-        if (enable && SSL_set_tlsext_status_type(_ssl_handle.get(), TLSEXT_STATUSTYPE_ocsp) != 1)
-            return false;
-        return true;
+        // false withdraws THIS connection's request -- never the context's: a client whose context judges the
+        // staple (Context::on_ocsp_response asks for one on every connection) would otherwise send no
+        // status_request, and OpenSSL calls the status callback only for a connection that asked, so the
+        // context's verdict would be skipped, not failed. -1 is OpenSSL's "nothing" (see on_ocsp_response).
+        // Huly QB-309.
+        SSL *const ssl       = _ssl_handle.get();
+        const bool requested = enable || SSL_CTX_get_tlsext_status_type(SSL_get_SSL_CTX(ssl)) == TLSEXT_STATUSTYPE_ocsp;
+        return SSL_set_tlsext_status_type(ssl, requested ? TLSEXT_STATUSTYPE_ocsp : -1) == 1;
     }
     // No SSL yet (a socket built from an ssl::Context mints it at connect): defer the request to
     // apply_pending_client_settings().

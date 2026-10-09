@@ -63,6 +63,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -133,8 +134,8 @@ refused_uri(unsigned short port) {
 // post-EV_WRITE SO_ERROR / handshake state machine is exercised on Windows exactly
 // as the POSIX socketpair drives it. The connector never reads/writes these fds (it
 // consults the scripted handshake_status()/get_optval()), so the peer end is inert.
-// qb stores socket handles as int on Windows too (it casts SOCKET->int for
-// libev/wepoll), so matching the fake's int fd here is consistent with the framework.
+// The fake keeps the SOCKET in an int but hands it back as `socket_type`, as a real
+// socket does: see native_handle().
 inline bool
 make_loopback_pair(int &a, int &b) {
     a = b      = -1;
@@ -199,6 +200,8 @@ public:
         int              set_insecure_calls = 0;
         int              so_error           = 0;
         int              get_optval_result  = 0;
+        int              handshake_calls    = 0;
+        bool             wants_write        = false; ///< what DirectionalFakeSocket reports for a pending handshake
     };
 
 private:
@@ -236,9 +239,12 @@ public:
         return _state && _state->fd >= 0;
     }
 
-    [[nodiscard]] int
+    // The handle TYPE a real socket hands the loop (`socket_type`: SOCKET on Windows). An `int` there is read by qev
+    // as one of its own fd-table entries; the fake's socket is in no such entry, so on Windows the watcher's
+    // registration failed and the loop killed it with one EV_ERROR pass -- the single "turn" the fake used to get.
+    [[nodiscard]] socket_type
     native_handle() const noexcept {
-        return _state ? _state->fd : -1;
+        return static_cast<socket_type>(_state ? _state->fd : -1);
     }
 
     int
@@ -264,6 +270,7 @@ public:
     // <0 failed.
     int
     handshake_status() {
+        ++_state->handshake_calls;
         const auto index  = std::min(_state->handshake_index, _state->handshake_results.size() - 1u);
         const auto result = _state->handshake_results[index];
         if (_state->handshake_index + 1u < _state->handshake_results.size())
@@ -320,6 +327,30 @@ public:
 struct FakeConnectorTransport {
     using transport_io_type = FakeConnectorSocket;
 };
+
+// FakeConnectorSocket plus the direction a real ssl::socket reports for a pending handshake
+// (`handshake_wants_write()`, Huly QB-301): the connector then watches that ONE direction.
+// FakeConnectorSocket itself does not report it, so the tests that use it keep the connector's
+// both-directions fallback for a socket that cannot say.
+class DirectionalFakeSocket : public FakeConnectorSocket {
+public:
+    using FakeConnectorSocket::FakeConnectorSocket;
+
+    [[nodiscard]] bool
+    handshake_wants_write() const noexcept {
+        return shared_state()->wants_write;
+    }
+};
+
+// One byte from the far end: to the connector's read watch, the server's next flight.
+void
+peer_sends_a_byte(FakeConnectorSocket::state const &state) {
+#ifdef _WIN32
+    ASSERT_EQ(::send(static_cast<SOCKET>(state.peer_fd), "x", 1, 0), 1);
+#else
+    ASSERT_EQ(::send(state.peer_fd, "x", 1, 0), 1);
+#endif
+}
 
 } // namespace
 
@@ -497,19 +528,10 @@ TEST_F(TcpConnectorStateMachineTest, DeadlineCompletesPendingHandshakeOnce) {
 // handshake for a failed connect, Huly QB-164) -- and NO disconnect.
 // ---------------------------------------------------------------------------
 TEST_F(TcpConnectorStateMachineTest, IoEventCompletesPendingHandshake) {
-#ifdef _WIN32
-    // This scripted handshake {0,1} needs TWO EV_WRITE turns. On POSIX the mock's
-    // connected socketpair is level-triggered (EPOLLOUT re-fires every loop turn
-    // while writable), so the second turn arrives for free. On Windows, wepoll
-    // signals write-readiness only ONCE for a statically-writable socket (IOCP is
-    // edge-ish for EPOLLOUT) — a mock with no data flow never produces the second
-    // turn, so the handshake can't be driven this way. Real multi-turn handshakes
-    // work on Windows because actual TLS data flow re-triggers readiness; that path
-    // is covered end-to-end by system/coroutine/tcp-connector-loopback.cpp.
-    GTEST_SKIP() << "wepoll signals EV_WRITE once for a static socket; the scripted "
-                    "two-turn handshake needs POSIX level-triggered write-readiness. "
-                    "Real multi-turn handshakes are covered by tcp-connector-loopback.cpp.";
-#endif
+    // Two EV_WRITE turns: the connected socket stays writable and both backends are level-triggered, wepoll
+    // included. This test was skipped on Windows as if wepoll reported write readiness once; what it got was the
+    // fake's `int` handle, which qev read as an fd-table entry and killed after one EV_ERROR pass (see
+    // native_handle()). With the SOCKET handed over, the second turn comes on Windows too.
     auto shared               = std::make_shared<FakeConnectorSocket::state>();
     shared->result            = FakeConnectorSocket::connect_result::pending;
     shared->handshake_results = {0, 1};
@@ -531,6 +553,96 @@ TEST_F(TcpConnectorStateMachineTest, IoEventCompletesPendingHandshake) {
     EXPECT_TRUE(connected);
     EXPECT_EQ(shared->get_optval_calls, 1) << "SO_ERROR was read again past the TCP connect";
     EXPECT_EQ(shared->disconnect_calls, 0);
+}
+
+// ---------------------------------------------------------------------------
+// A pending handshake that waits for the server's flight is watched for READ only (Huly QB-301), on
+// both arming sites: the handshake a direct connect leaves pending, and the one left pending on the
+// turn that completed an in-progress connect. A connected socket is always writable, so the write
+// watch the connector used to add beside the read one fired on every level-triggered pass and re-ran
+// the handshake each time -- here it would have completed the scripted {0,1} on the next pass, with no
+// byte from the peer. A hundred quiet passes must leave the handshake where it was; the peer's byte
+// must then complete it. Red on every backend before the fix (epoll, kqueue, wepoll: all level-triggered),
+// green on every backend after it.
+// ---------------------------------------------------------------------------
+TEST_F(TcpConnectorStateMachineTest, PendingHandshakeThatWaitsToReadIsNotWokenByWriteReadiness) {
+    for (const auto result : {FakeConnectorSocket::connect_result::direct, FakeConnectorSocket::connect_result::pending}) {
+        SCOPED_TRACE(result == FakeConnectorSocket::connect_result::direct ? "direct connect" : "in-progress connect");
+        auto shared               = std::make_shared<FakeConnectorSocket::state>();
+        shared->result            = result;
+        shared->handshake_results = {0, 1};
+        shared->wants_write       = false;
+
+        int  completions = 0;
+        bool connected   = false;
+        qb::io::async::tcp::connect<DirectionalFakeSocket>(
+            DirectionalFakeSocket{shared}, qb::io::uri{"tcp://fake.local:9"},
+            [&](DirectionalFakeSocket &&socket) {
+                connected = socket.is_open();
+                ++completions;
+            },
+            5s);
+
+        ASSERT_TRUE(pump_until([&] { return shared->handshake_calls > 0; })) << "the handshake never started";
+        for (int pass = 0; pass < 100; ++pass)
+            qb::io::async::run(EVRUN_NOWAIT);
+        EXPECT_EQ(shared->handshake_calls, 1) << "a handshake waiting to read was re-run on write readiness";
+        EXPECT_EQ(completions, 0);
+
+        peer_sends_a_byte(*shared);
+        EXPECT_TRUE(pump_until([&] { return completions > 0; })) << "the peer's byte never woke the pending handshake";
+        EXPECT_EQ(completions, 1);
+        EXPECT_TRUE(connected);
+        EXPECT_EQ(shared->handshake_calls, 2);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The other direction (Huly QB-301): a pending handshake whose output did not fit the socket waits for
+// write readiness, and gets it with no byte from the peer -- the watch is the one the handshake asked
+// for, not READ by default.
+// ---------------------------------------------------------------------------
+TEST_F(TcpConnectorStateMachineTest, PendingHandshakeThatWaitsToWriteIsWokenByWriteReadiness) {
+    for (const auto result : {FakeConnectorSocket::connect_result::direct, FakeConnectorSocket::connect_result::pending}) {
+        SCOPED_TRACE(result == FakeConnectorSocket::connect_result::direct ? "direct connect" : "in-progress connect");
+        auto shared               = std::make_shared<FakeConnectorSocket::state>();
+        shared->result            = result;
+        shared->handshake_results = {0, 1};
+        shared->wants_write       = true;
+
+        int  completions = 0;
+        bool connected   = false;
+        qb::io::async::tcp::connect<DirectionalFakeSocket>(
+            DirectionalFakeSocket{shared}, qb::io::uri{"tcp://fake.local:10"},
+            [&](DirectionalFakeSocket &&socket) {
+                connected = socket.is_open();
+                ++completions;
+            },
+            5s);
+
+        EXPECT_TRUE(pump_until([&] { return completions > 0; })) << "a handshake waiting to write was never woken";
+        EXPECT_EQ(completions, 1);
+        EXPECT_TRUE(connected);
+        EXPECT_EQ(shared->handshake_calls, 2);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The three connect awaiters are neither copyable nor movable (Huly QB-302). Their destructor
+// deactivates the state the connect's callback resumes through, and a copy shared it: the copy -- or a
+// "move", which was one -- destroyed first left the live awaiter's connect unable to resume its
+// coroutine. A compile-time oracle: the factories return a prvalue, so nothing legitimate copies one.
+// ---------------------------------------------------------------------------
+TEST_F(TcpConnectorStateMachineTest, AwaitersAreNeitherCopyableNorMovable) {
+    using direct_t   = qb::io::async::tcp::connect_awaiter<FakeConnectorSocket>;
+    using existing_t = qb::io::async::tcp::connect_with_socket_awaiter<FakeConnectorSocket>;
+    using starttls_t = qb::io::async::tcp::starttls_connect_awaiter<FakeConnectorSocket, qb::io::async::tcp::no_negotiation>;
+    static_assert(!std::is_copy_constructible_v<direct_t> && !std::is_move_constructible_v<direct_t>);
+    static_assert(!std::is_copy_assignable_v<direct_t> && !std::is_move_assignable_v<direct_t>);
+    static_assert(!std::is_copy_constructible_v<existing_t> && !std::is_move_constructible_v<existing_t>);
+    static_assert(!std::is_copy_assignable_v<existing_t> && !std::is_move_assignable_v<existing_t>);
+    static_assert(!std::is_copy_constructible_v<starttls_t> && !std::is_move_constructible_v<starttls_t>);
+    static_assert(!std::is_copy_assignable_v<starttls_t> && !std::is_move_assignable_v<starttls_t>);
 }
 
 // ---------------------------------------------------------------------------
