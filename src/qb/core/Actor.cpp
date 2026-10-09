@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
+#include <limits>
 #include <map>
 #include <unordered_set>
 #include <qb/core/Actor.h>
@@ -621,7 +622,19 @@ CoroContext::time() const noexcept {
 }
 
 Service::Service(ServiceId const sid) noexcept
-    : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
+    : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {
+    // A service can be recreated with the same logical ActorId, even on a later core.
+    // Saturate rather than ever hand out a token an old handle might still hold.
+    auto next = _next_incarnation.load(std::memory_order_relaxed);
+    for (;;) {
+        if (next == (std::numeric_limits<std::uint64_t>::max)())
+            std::abort();
+        if (_next_incarnation.compare_exchange_weak(next, next + 1, std::memory_order_relaxed)) {
+            _incarnation = next;
+            break;
+        }
+    }
+}
 
 namespace detail {
 
@@ -672,7 +685,8 @@ report_unhandled_coroutine_exception(ActorId const owner, char const *const api,
 // file for the same reason `__fire_activation_waiters__` is at the end of VirtualCore.cpp: placed
 // among the hot bodies they moved every address after them.
 activation_state
-activation_wait(qb::ActorId const id, activation_waiter &w, void (*fire)(void *, bool) noexcept, void *ctx) noexcept {
+activation_wait(qb::ActorId const id, std::uint64_t const incarnation, activation_waiter &w, void (*fire)(void *, bool) noexcept,
+                void *ctx) noexcept {
     // The calling thread's core: a handle is resolved on the core that owns the actor, and
     // `ready_async` is awaited from an actor context on that core.
     VirtualCore *const core = VirtualCore::_handler;
@@ -681,6 +695,11 @@ activation_wait(qb::ActorId const id, activation_waiter &w, void (*fire)(void *,
     Actor *const actor = core->__actor_slot__(id);
     if (actor == nullptr || !actor->is_alive())
         return activation_state::gone; // not on this core, or killed (an Activating one included: it dies)
+    if (incarnation != 0) {
+        auto *service = dynamic_cast<Service const *>(actor);
+        if (!service || service->_incarnation != incarnation)
+            return activation_state::gone; // a new instance owns the logical service address
+    }
     if (actor->is_active())
         return activation_state::active;
     const auto it = core->_activating.find(id);

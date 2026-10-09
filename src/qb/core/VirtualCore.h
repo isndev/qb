@@ -149,8 +149,8 @@ private:
     friend bool detail::deadlines_armed() noexcept;
     // The activation waiters (`ActorHandle::ready_async`) are linked into `_activating` through
     // the thread's current core (Huly QB-62).
-    friend detail::activation_state detail::activation_wait(qb::ActorId, detail::activation_waiter &, void (*)(void *, bool) noexcept,
-                                                            void *) noexcept;
+    friend detail::activation_state detail::activation_wait(qb::ActorId, std::uint64_t, detail::activation_waiter &,
+                                                            void (*)(void *, bool) noexcept, void *) noexcept;
     friend void                     detail::activation_unwait(qb::ActorId, detail::activation_waiter &) noexcept;
     friend class CoroContext;
     friend class Service;
@@ -1440,8 +1440,11 @@ ActorHandle<_Actor>::get() const noexcept {
     // findActor is phase-aware: nullptr while the actor is still Activating, and after it
     // failed init / died. So `get()` returns a usable pointer only for an *active* actor.
     auto *resolved = handler->template findActor<_Actor>(_id);
-    // Keep the cache fresh if it drifted (e.g. handle copied after kill).
-    const_cast<ActorHandle<_Actor> *>(this)->_cached = resolved;
+    if (resolved && _incarnation != 0) {
+        auto *service = service_of(resolved);
+        if (!service || service->_incarnation != _incarnation)
+            return nullptr;
+    }
     return resolved;
 }
 

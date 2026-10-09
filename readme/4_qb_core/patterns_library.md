@@ -54,10 +54,10 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1459-1461`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1515`, `:2313-2317`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1515`, `:2316-2320`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
   `qb/src/qb/core/Actor.h:1657,1677,1689,1698,1705,1713`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2192-2193,2205-2207,2235-2237`). **Never capture `this` past a `co_await`** — capture by
+  (`qb/src/qb/core/Actor.h:2195-2196,2208-2210,2238-2240`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1463-1465`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id

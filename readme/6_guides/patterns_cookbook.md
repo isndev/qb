@@ -53,7 +53,7 @@ event handled in an ordinary `on()`.** Use a bare `callback` only for work that 
 outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
 [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
 the full contract.
-<!-- src: qb/src/qb/core/Actor.h:1482-1483,2235-2237, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:318-326,351 -->
+<!-- src: qb/src/qb/core/Actor.h:1482-1483,2238-2240, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:563-569, qb/src/qb/io/async/io.h:318-326,351 -->
 
 ## Recipe: one-shot timer
 
@@ -243,7 +243,7 @@ private:
 The chain stops itself: `kill()` cancels the actor's coroutine scope, so a parked `ctx.sleep` unwinds
 rather than pushing one more tick at a dead actor. A `callback`-based chain has no such property — its
 timer is loop-owned, so the last one armed still fires, and `[this]` inside it is a use-after-free.
-<!-- src: qb/src/qb/core/Actor.cpp:555-566 -->
+<!-- src: qb/src/qb/core/Actor.cpp:556-567 -->
 
 **Pitfalls.**
 

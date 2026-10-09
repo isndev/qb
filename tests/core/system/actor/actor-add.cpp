@@ -35,6 +35,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -924,3 +925,212 @@ TEST(KillActor, BroadcastKillLeavesNoSurvivors) {
 }
 
 } // namespace
+
+namespace actor_add_service_handle_test {
+
+struct ReplacedServiceTag {};
+struct ReplacedServiceProbe : qb::Event {};
+std::atomic<int>  g_replaced_service_destroyed{0};
+std::atomic<int>  g_replaced_service_events{0};
+std::atomic<bool> g_replaced_service_admitted{false};
+std::atomic<bool> g_replaced_service_id_stable{false};
+std::atomic<bool> g_old_service_handle_resolved{false};
+std::atomic<bool> g_old_service_copied_handle_resolved{false};
+std::atomic<bool> g_old_service_base_handle_resolved{false};
+std::atomic<bool> g_old_service_base_copied_handle_resolved{false};
+std::atomic<bool> g_old_service_base_moved_handle_resolved{false};
+std::atomic<bool> g_old_service_moved_handle_resolved{false};
+std::atomic<bool> g_old_service_ready{false};
+std::atomic<bool> g_old_service_async_checked{false};
+std::atomic<bool> g_old_service_async_ready{false};
+std::atomic<bool> g_new_service_handle_resolved{false};
+
+class ReplacedService : public qb::ServiceActor<ReplacedServiceTag> {
+public:
+    ReplacedService() {
+        registerEvent<ReplacedServiceProbe>(*this);
+    }
+    ~ReplacedService() override {
+        g_replaced_service_destroyed.fetch_add(1);
+    }
+
+    void
+    on(ReplacedServiceProbe &) {
+        g_replaced_service_events.fetch_add(1);
+        kill();
+    }
+};
+
+class ReplacedServiceDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorHandle<ReplacedService> _old;
+    qb::ActorHandle<qb::Actor>       _old_as_actor;
+    bool                             _replacement_attempted = false;
+
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        _old = addRefActor<ReplacedService>();
+        if (_old.valid()) {
+            _old_as_actor = qb::ActorHandle<qb::Actor>(_old.get());
+            push<qb::KillEvent>(_old.id());
+            registerCallback(*this);
+        } else {
+            kill();
+        }
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (!_replacement_attempted && g_replaced_service_destroyed.load() == 1) {
+            _replacement_attempted = true;
+            const auto replacement = addRefActor<ReplacedService>();
+            g_replaced_service_admitted.store(replacement.valid());
+            g_replaced_service_id_stable.store(replacement.valid() && replacement.id() == _old.id());
+            g_old_service_handle_resolved.store(_old.get() != nullptr);
+            g_old_service_base_handle_resolved.store(_old_as_actor.get() != nullptr);
+            auto old_copy = _old;
+            g_old_service_copied_handle_resolved.store(old_copy.get() != nullptr);
+            auto old_move = std::move(old_copy);
+            g_old_service_moved_handle_resolved.store(old_move.get() != nullptr);
+            auto base_copy = _old_as_actor;
+            g_old_service_base_copied_handle_resolved.store(base_copy.get() != nullptr);
+            auto base_move = std::move(base_copy);
+            g_old_service_base_moved_handle_resolved.store(base_move.get() != nullptr);
+            g_old_service_ready.store(_old.ready() || static_cast<bool>(_old));
+            g_new_service_handle_resolved.store(replacement.get() != nullptr);
+            spawn([old = _old](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                auto source = std::make_unique<qb::ActorHandle<ReplacedService>>(old);
+                auto wait   = source->ready_async(ctx);
+                source.reset(); // the lazy task must own the snapshot before its first suspension
+                const bool ready = co_await wait;
+                g_old_service_async_ready.store(ready);
+                g_old_service_async_checked.store(true);
+            });
+            if (replacement.valid())
+                push<ReplacedServiceProbe>(_old.id());
+            else
+                kill();
+        } else if (_replacement_attempted && g_replaced_service_events.load() == 1 && g_old_service_async_checked.load()) {
+            kill();
+        }
+    }
+};
+
+TEST(AddReferencedActor, ServiceIdReachesReplacementButOldHandleDoesNotResolveIt) {
+    g_replaced_service_destroyed.store(0);
+    g_replaced_service_events.store(0);
+    g_replaced_service_admitted.store(false);
+    g_replaced_service_id_stable.store(false);
+    g_old_service_handle_resolved.store(false);
+    g_old_service_copied_handle_resolved.store(false);
+    g_old_service_base_handle_resolved.store(false);
+    g_old_service_base_copied_handle_resolved.store(false);
+    g_old_service_base_moved_handle_resolved.store(false);
+    g_old_service_moved_handle_resolved.store(false);
+    g_old_service_ready.store(false);
+    g_old_service_async_checked.store(false);
+    g_old_service_async_ready.store(false);
+    g_new_service_handle_resolved.store(false);
+
+    qb::Main main;
+    main.addActor<ReplacedServiceDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_replaced_service_admitted.load());
+    EXPECT_TRUE(g_replaced_service_id_stable.load());
+    EXPECT_FALSE(g_old_service_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_copied_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_base_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_base_copied_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_base_moved_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_moved_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_ready.load());
+    EXPECT_TRUE(g_old_service_async_checked.load());
+    EXPECT_FALSE(g_old_service_async_ready.load());
+    EXPECT_TRUE(g_new_service_handle_resolved.load());
+    EXPECT_EQ(g_replaced_service_events.load(), 1);
+    EXPECT_EQ(g_replaced_service_destroyed.load(), 2);
+}
+
+struct ReplacedActivatingServiceTag {};
+std::atomic<int>  g_replaced_activating_constructed{0};
+std::atomic<bool> g_replaced_activating_started{false};
+std::atomic<bool> g_replaced_activating_admitted{false};
+std::atomic<bool> g_replaced_activating_id_stable{false};
+std::atomic<bool> g_replaced_activating_waited{false};
+std::atomic<bool> g_replaced_activating_old_ready{true};
+std::atomic<bool> g_replaced_activating_fresh_ready{false};
+
+class ReplacedActivatingService : public qb::ServiceActor<ReplacedActivatingServiceTag> {
+    int const _incarnation_number = g_replaced_activating_constructed.fetch_add(1) + 1;
+
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        if (_incarnation_number == 1) {
+            g_replaced_activating_started.store(true);
+            co_await context().until_cancelled();
+        }
+        co_return true;
+    }
+
+    ~ReplacedActivatingService() override {
+        if (_incarnation_number == 1) {
+            auto fresh = addRefActor<ReplacedActivatingService>();
+            g_replaced_activating_admitted.store(fresh.valid());
+            g_replaced_activating_fresh_ready.store(fresh.ready());
+            g_replaced_activating_id_stable.store(fresh.valid() && fresh.id() == id());
+        }
+    }
+};
+
+class ReplacedActivatingServiceDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        auto old = addRefActor<ReplacedActivatingService>();
+        if (old.valid()) {
+            push<qb::KillEvent>(old.id());
+            // This awaits the first service while it is still Activating. Its destructor
+            // admits the replacement before the old activation fires its linked waiter.
+            const bool ready = co_await old.ready_async(context());
+            g_replaced_activating_old_ready.store(ready || old.ready());
+            g_replaced_activating_waited.store(true);
+            if (auto *fresh = getService<ReplacedActivatingService>())
+                push<qb::KillEvent>(fresh->id());
+        }
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, LinkedServiceWaiterRejectsReplacementAfterKill) {
+    g_replaced_activating_constructed.store(0);
+    g_replaced_activating_started.store(false);
+    g_replaced_activating_admitted.store(false);
+    g_replaced_activating_id_stable.store(false);
+    g_replaced_activating_waited.store(false);
+    g_replaced_activating_old_ready.store(true);
+    g_replaced_activating_fresh_ready.store(false);
+
+    qb::Main main;
+    main.addActor<ReplacedActivatingServiceDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_replaced_activating_constructed.load(), 2);
+    EXPECT_TRUE(g_replaced_activating_started.load());
+    EXPECT_TRUE(g_replaced_activating_admitted.load());
+    EXPECT_TRUE(g_replaced_activating_id_stable.load());
+    EXPECT_TRUE(g_replaced_activating_fresh_ready.load());
+    EXPECT_TRUE(g_replaced_activating_waited.load());
+    EXPECT_FALSE(g_replaced_activating_old_ready.load());
+}
+
+} // namespace actor_add_service_handle_test

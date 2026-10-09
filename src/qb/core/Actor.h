@@ -1876,7 +1876,8 @@ enum class activation_state : std::uint8_t {
 
 /// Link `w` to the activation of `id` on the calling thread's core, unless there is nothing to
 /// wait for -- see `activation_state`. `w` is fired once, unlinked first, with the outcome.
-[[nodiscard]] activation_state activation_wait(qb::ActorId id, activation_waiter &w, void (*fire)(void *, bool) noexcept, void *ctx) noexcept;
+[[nodiscard]] activation_state activation_wait(qb::ActorId id, std::uint64_t incarnation, activation_waiter &w,
+                                               void (*fire)(void *, bool) noexcept, void *ctx) noexcept;
 /// Unlink `w` from `id`'s waiters if it is still linked. Idempotent, O(1), and safe after the
 /// entry -- or the core -- is gone.
 void activation_unwait(qb::ActorId id, activation_waiter &w) noexcept;
@@ -2067,6 +2068,7 @@ struct activation_awaiter {
     static constexpr char const *qb_suspension_kind = "actor ready"; ///< suspension tracking (coroutine/tracking.h)
 
     qb::ActorId                                    target;
+    std::uint64_t                                  incarnation;
     qb::duration                                   timeout;
     const qb::io::async::cancellation_token       &token; ///< the waiter's scope, by reference (lives in the same frame)
     std::coroutine_handle<>                        cont;
@@ -2076,8 +2078,9 @@ struct activation_awaiter {
     enum class kind : std::uint8_t { pending, ready, not_ready, cancelled } outcome = kind::pending;
     bool finished                                                                   = false;
 
-    activation_awaiter(qb::ActorId t, qb::duration to, const qb::io::async::cancellation_token &tok) noexcept
+    activation_awaiter(qb::ActorId t, std::uint64_t instance, qb::duration to, const qb::io::async::cancellation_token &tok) noexcept
         : target(t)
+        , incarnation(instance)
         , timeout(to)
         , token(tok) {}
     activation_awaiter(const activation_awaiter &)            = delete;
@@ -2088,7 +2091,7 @@ struct activation_awaiter {
     await_ready() noexcept {
         if (token.is_cancelled()) // outcome stays `pending` -> await_resume throws cancelled
             return true;
-        switch (activation_wait(target, waiter, &activation_awaiter::on_activation, this)) {
+        switch (activation_wait(target, incarnation, waiter, &activation_awaiter::on_activation, this)) {
             case activation_state::active:
                 outcome = kind::ready;
                 return true;
@@ -2323,6 +2326,14 @@ Actor::context() const {
  * @details Services are special actors, often used as singletons within a core.
  */
 class Service : public Actor {
+    template <typename>
+    friend class ActorHandle;
+    friend detail::activation_state detail::activation_wait(qb::ActorId, std::uint64_t, detail::activation_waiter &,
+                                                            void (*)(void *, bool) noexcept, void *) noexcept;
+
+    QB_ABI_ANCHOR static inline std::atomic<std::uint64_t> _next_incarnation{1};
+    std::uint64_t                                          _incarnation = 0;
+
 public:
     explicit Service(ServiceId const sid) noexcept;
 };
@@ -2361,10 +2372,11 @@ public:
  *
  * @details
  * `addRefActor<T>()` returns an `ActorHandle<T>` (the alias `RefActorHandle<T>` is retained for
- * source compatibility). The handle captures the `ActorId` at creation and resolves the live
- * pointer **on demand** through `VirtualCore::findActor<T>()`, so it never hands back a dangling
- * pointer: `get()` is *phase-aware* and returns `nullptr` while the actor is still **Activating**
- * (its async `onInit()` is in flight), after a failed init, or once it has been destroyed.
+ * source compatibility). The handle captures the `ActorId` and, for a service, its instance
+ * token at creation. It resolves the live pointer **on demand** through
+ * `VirtualCore::findActor<T>()`, so it never hands back a dangling pointer or a replacement
+ * service: `get()` is *phase-aware* and returns `nullptr` while the actor is still
+ * **Activating** (its async `onInit()` is in flight), after a failed init, or once it died.
  *
  * Callers can:
  * - Check `valid()` before sending via `id()` — an accepted child has a valid id immediately,
@@ -2384,8 +2396,32 @@ public:
  */
 template <typename _Actor>
 class ActorHandle {
-    ActorId _id;
-    _Actor *_cached = nullptr;
+    ActorId       _id;
+    std::uint64_t _incarnation = 0;
+
+    // ActorId has no service bit. A base Actor* needs one cold RTTI check when
+    // captured; a typed service handle already knows its base at compile time.
+    [[nodiscard]] static Service const *
+    service_of(_Actor const *actor) noexcept {
+        if constexpr (std::is_base_of_v<Service, _Actor>)
+            return static_cast<Service const *>(actor);
+        else
+            return dynamic_cast<Service const *>(actor); // Actor* may point to a service
+    }
+
+    [[nodiscard]] static std::uint64_t
+    service_incarnation(_Actor const *actor) noexcept {
+        if (!actor)
+            return 0;
+        auto *service = service_of(actor);
+        return service ? service->_incarnation : 0;
+    }
+
+    [[nodiscard]] static qb::io::async::task<bool>
+    ready_async_captured(ActorHandle captured, ScopedCoroContext ctx, qb::duration timeout) {
+        detail::activation_awaiter aw{captured._id, captured._incarnation, timeout, ctx.token()};
+        co_return (co_await aw) && captured.ready();
+    }
 
 public:
     ActorHandle() noexcept = default;
@@ -2397,7 +2433,7 @@ public:
      */
     explicit ActorHandle(_Actor *actor) noexcept
         : _id(actor ? actor->id() : ActorId{})
-        , _cached(actor) {}
+        , _incarnation(service_incarnation(actor)) {}
 
     /**
      * @brief The ActorId of the referenced actor (may be invalid).
@@ -2435,9 +2471,10 @@ public:
      * @param ctx A cancellation-aware context (e.g. the caller's `context()`), so a kill of
      *            the waiting actor unwinds this await cleanly.
      * @param timeout Maximum time to wait. Defaults to 5 s (the activation-deadline scale).
-     * @return `true` once the actor is `ready()`; `false` if it did not become active in time,
-     *         or as soon as it is known that it never will (its async init returned `false`,
-     *         threw, hit the activation deadline, or the actor was killed while Activating).
+     * @return `true` once the captured instance is `ready()`; `false` if it did not become
+     *         active in time, or as soon as it is known that it never will (its async init
+     *         returned `false`, threw, hit the activation deadline, the actor was killed while
+     *         Activating, or a replacement service now owns the logical ID).
      *         Safe to call when already active (returns at once, without suspending).
      * @details Lets a parent block on an async-init child before using it:
      * @code
@@ -2455,8 +2492,9 @@ public:
      */
     [[nodiscard]] qb::io::async::task<bool>
     ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const {
-        detail::activation_awaiter aw{_id, timeout, ctx.token()}; // ctx lives in this frame, and so does its token
-        co_return co_await aw;
+        // Capture before the lazy task's first suspension: its frame must never read this
+        // handle after the caller can replace or destroy it.
+        return ready_async_captured(*this, std::move(ctx), timeout);
     }
 
     /** @brief `get()` asserted ready in debug builds (deref-when-ready). */
