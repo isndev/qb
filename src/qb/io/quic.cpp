@@ -1559,6 +1559,16 @@ private:
         self->_events.push_back({backend_event::kind::connected, self->_connection_id, 0, 0, self->negotiated_alpn(), {}});
         return 0;
     }
+
+#ifdef QB_IO_QUIC_TEST_HOOKS
+
+public:
+    void
+    reset_stream_write_for_test(std::uint64_t stream_id, std::uint64_t application_error_code) {
+        if (!_conn || ngtcp2_conn_shutdown_stream_write(_conn, 0, static_cast<int64_t>(stream_id), application_error_code) != 0)
+            throw std::runtime_error("test peer write-half reset failed");
+    }
+#endif
 };
 
 } // namespace
@@ -1588,5 +1598,17 @@ make_native_backend() {
     throw std::runtime_error(unavailable_reason());
 #endif
 }
+
+#ifdef QB_IO_QUIC_TEST_HOOKS
+namespace test {
+void
+reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code) {
+    auto *native = dynamic_cast<native_backend *>(&peer);
+    if (!native)
+        throw std::invalid_argument("test peer must use the native QUIC backend");
+    native->reset_stream_write_for_test(stream_id, application_error_code);
+}
+} // namespace test
+#endif
 
 } // namespace qb::io::quic

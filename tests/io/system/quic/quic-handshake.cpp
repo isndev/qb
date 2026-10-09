@@ -1458,14 +1458,16 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     EXPECT_FALSE(client_synthesised) << "the peer must NOT synthesise a FIN: it already received one via recv_stream_data_cb";
 }
 
-class QuicReadStopRetransmissionTest : public ::testing::TestWithParam<bool> {};
+enum class QuicReadHalfAction { none, local_stop, peer_reset };
+
+class QuicReadHalfRetransmissionTest : public ::testing::TestWithParam<QuicReadHalfAction> {};
 
 /**
- * @test A lost packet is retransmitted intact whether the local read half stays open or stops
- * @brief The open-read case is the packet-loss control. The stop-read case must keep
- *        the same unacknowledged TX storage alive until ngtcp2 can retransmit it.
+ * @test A lost packet is retransmitted intact after a local read stop or a peer write reset
+ * @brief The open-read case is the packet-loss control. The two read-end cases must keep
+ *        unacknowledged TX storage alive until ngtcp2 retransmits and acknowledges it.
  */
-TEST_P(QuicReadStopRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
+TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     ASSERT_TRUE(require_ssl_files());
 
     auto                   server = qb::io::quic::make_native_backend();
@@ -1507,12 +1509,30 @@ TEST_P(QuicReadStopRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
                              std::span<const std::byte>{reinterpret_cast<const std::byte *>(payload.data()), payload.size()}, false);
     auto lost_packets = server->drain_packets();
     ASSERT_FALSE(lost_packets.empty()) << "the TX witness needs an unacknowledged packet to lose";
-    if (GetParam())
+    if (GetParam() == QuicReadHalfAction::local_stop)
         server->stop_stream(connection_id, stream, 0x29);
+#ifdef QB_IO_QUIC_TEST_HOOKS
+    if (GetParam() == QuicReadHalfAction::peer_reset) {
+        // The peer only resets its write half. A full reset would also send STOP_SENDING,
+        // legitimately cancelling the server's write and masking the TX lifetime bug.
+        qb::io::quic::test::reset_stream_write(*client, stream, 0x2a);
+        deliver_quic_packets(*client, *server);
+        std::size_t reset_events = 0;
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_closed && event.stream_id == stream
+                && event.text == "stream reset by peer" && event.error_code == 0x2a)
+                ++reset_events;
+        }
+        ASSERT_EQ(reset_events, 1u) << "the peer RESET_STREAM must reach stream_reset_cb with server TX unacknowledged";
+    }
+#endif
 
-    std::string received;
-    const auto  deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    for (int i = 0; i < 12 && received.size() < payload.size() && std::chrono::steady_clock::now() < deadline; ++i) {
+    std::string   received;
+    std::uint64_t acked_bytes = 0;
+    std::size_t   ack_events  = 0;
+    const auto    deadline    = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (int i = 0; i < 12 && (received.size() < payload.size() || acked_bytes < payload.size()) && std::chrono::steady_clock::now() < deadline;
+         ++i) {
         const auto expiry = server->next_timeout();
         ASSERT_NE(expiry, std::chrono::steady_clock::time_point::max());
         if (expiry > deadline)
@@ -1527,13 +1547,26 @@ TEST_P(QuicReadStopRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
                 received.append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
             }
         }
-        (void) server->drain_events();
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data_acked && event.stream_id == stream) {
+                acked_bytes += event.error_code;
+                ++ack_events;
+            }
+        }
     }
 
     EXPECT_EQ(received.size(), payload.size());
     EXPECT_TRUE(received == payload) << "retransmission used bytes from a retired TX buffer";
+    EXPECT_EQ(acked_bytes, payload.size()) << "the retained TX must release when the peer ACKs it";
+    EXPECT_EQ(ack_events, 1u) << "a single retransmitted frame must be acknowledged once";
 }
 
-INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadStopRetransmissionTest, ::testing::Values(false, true));
+#ifdef QB_IO_QUIC_TEST_HOOKS
+INSTANTIATE_TEST_SUITE_P(ReadOpenStoppedAndPeerReset, QuicReadHalfRetransmissionTest,
+                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop, QuicReadHalfAction::peer_reset));
+#else
+INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadHalfRetransmissionTest,
+                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop));
+#endif
 
 #endif // QB_HAS_QUIC
