@@ -35,6 +35,7 @@
 #include <atomic>
 #include <chrono>
 #include <stdexcept>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
@@ -71,6 +72,107 @@ cancel_token_after(cancellation_token tok, qb::duration d) {
 // ---------------------------------------------------------------------------
 // Happy path + boundary conditions
 // ---------------------------------------------------------------------------
+
+namespace deadline_lifetime_test {
+
+task<int>
+value_operation() {
+    co_return 42;
+}
+
+task<int>
+probe_operation(bool *entered) {
+    *entered = true;
+    co_return 1;
+}
+
+task<void>
+slow_operation() {
+    co_await sleep(5s);
+}
+
+task<int>
+throwing_operation() {
+    throw std::runtime_error("stored operation failed");
+    co_return 0;
+}
+
+task<int>
+make_deferred_value(std::chrono::steady_clock::time_point deadline) {
+    // The temporary is gone when this ordinary function returns. The wrapper
+    // must already own its frame, even though its coroutine has not started.
+    return with_deadline(value_operation(), deadline);
+}
+
+} // namespace deadline_lifetime_test
+
+using deadline_int_signature = task<int> (*)(task<int> &&, std::chrono::steady_clock::time_point, cancellation_token);
+static_assert(std::is_same_v<decltype(&with_deadline<int>), deadline_int_signature>);
+
+TEST_F(DeadlineCombinator, StoredWrapperOwnsTemporaryBeforeFirstResume) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto       wrapped  = deadline_lifetime_test::make_deferred_value(std::chrono::steady_clock::now() + 5s);
+
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2)
+        << "the lazy wrapper and its temporary operation must both be alive before co_await";
+    EXPECT_EQ(run_sync(wrapped), 42);
+}
+
+TEST_F(DeadlineCombinator, StoredWrapperPropagatesOperationException) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto       wrapped  = with_deadline(deadline_lifetime_test::throwing_operation(), std::chrono::steady_clock::now() + 5s);
+
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2);
+    try {
+        (void) run_sync(wrapped);
+        FAIL() << "the operation exception must propagate";
+    } catch (const std::runtime_error &e) {
+        EXPECT_STREQ(e.what(), "stored operation failed");
+    }
+}
+
+TEST_F(DeadlineCombinator, StoredWrapperChecksAbsoluteDeadlineOnResume) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    bool       entered  = false;
+    auto       wrapped  = with_deadline(deadline_lifetime_test::probe_operation(&entered), std::chrono::steady_clock::now() - 1ms);
+
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2);
+    EXPECT_THROW(run_sync(wrapped), timeout_error);
+    EXPECT_FALSE(entered) << "an expired wrapper must not start its operation";
+}
+
+TEST_F(DeadlineCombinator, StoredVoidWrapperTimesOutAndReclaimsOperation) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto       wrapped  = with_deadline(deadline_lifetime_test::slow_operation(), std::chrono::steady_clock::now() + 20ms);
+
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2);
+    EXPECT_THROW(run_sync(wrapped), timeout_error);
+    coro_scheduler().run_ready();
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1)
+        << "the timed-out operation must be reclaimed while the wrapper remains stored";
+}
+
+TEST_F(DeadlineCombinator, StoredVoidWrapperCancelsThroughOriginalToken) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    cancellation_token token;
+    auto               wrapped = with_deadline(deadline_lifetime_test::slow_operation(), std::chrono::steady_clock::now() + 5s, token);
+
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2);
+    coro_scheduler().spawn(cancel_token_after(token, 10ms));
+    EXPECT_THROW(run_sync(wrapped), cancelled_error);
+    coro_scheduler().run_ready();
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1) << "cancellation must reclaim the stored operation's frame";
+}
+
+TEST_F(DeadlineCombinator, NamedOperationMovesIntoStoredWrapperImmediately) {
+    const long baseline  = detail::CoroutineFrameAllocator::live_frames;
+    auto       operation = deadline_lifetime_test::value_operation();
+    auto       wrapped   = with_deadline(std::move(operation), std::chrono::steady_clock::now() + 5s);
+
+    ASSERT_FALSE(operation.handle()) << "the wrapper must take ownership before its first resume";
+    ASSERT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2);
+    EXPECT_EQ(run_sync(wrapped), 42);
+}
 
 TEST_F(DeadlineCombinator, OperationCompletesBeforeDeadlineReturnsValue) {
     std::atomic<int>  result{0};
