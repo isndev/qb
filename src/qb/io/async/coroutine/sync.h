@@ -29,6 +29,7 @@
 #include "task.h"
 #include "utils.h"
 #include <qb/system/container/growable_ring.h>
+#include <qb/utility/branch_hints.h> // QB_NOINLINE: the semaphore's park half stays out of the frame body
 // NOTE: No <mutex> needed — all primitives below are used exclusively within
 // a single qb-io thread whose coroutines are cooperatively scheduled.
 // Only one coroutine runs at a time; a suspension point (co_await) is the only
@@ -146,8 +147,10 @@ public:
 
         // Only parks: await_ready() has just found no permit, and nothing can run between the two calls (one thread,
         // cooperative). A "free" branch here would grant without parking -- a grant the destructor cannot give back
-        // if the frame is reclaimed before it resumes (Huly QB-287); there is none.
-        void
+        // if the frame is reclaimed before it resumes (Huly QB-287); there is none. Out of line: inlined into the
+        // frame body of every acquirer, this park half made the free path (await_ready) save and restore two more
+        // callee-saved registers on every acquire that never parks (Huly QB-287).
+        QB_NOINLINE void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
             node.h     = h;
@@ -211,8 +214,9 @@ public:
         }
 
         // Only parks: await_ready() has just found the token live and no permit, and nothing can run between the two
-        // calls (one thread; a token is cancelled on its own thread only) -- see acquire_awaiter::await_suspend.
-        void
+        // calls (one thread; a token is cancelled on its own thread only) -- see acquire_awaiter::await_suspend,
+        // out of line for the same reason.
+        QB_NOINLINE void
         await_suspend(std::coroutine_handle<> h) {
             detail::track_suspension(h.address(), qb_suspension_kind);
             node.h     = h;

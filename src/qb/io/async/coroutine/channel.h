@@ -30,8 +30,9 @@
 // thread under the cooperative scheduler. "Multi-Producer" here means multiple
 // coroutines; they are all on the same thread and never run concurrently.
 #include <qb/system/container/growable_ring.h>
-#include <qb/system/time.h> // qb::duration
-#include <any>              // std::any / std::any_cast — the type-erased slot in every waiter
+#include <qb/system/time.h>          // qb::duration
+#include <qb/utility/branch_hints.h> // QB_NOINLINE: the parked-sender hand-off stays out of the receivers' bodies
+#include <any>                       // std::any / std::any_cast — the type-erased slot in every waiter
 #include <chrono>
 #include <exception>
 #include <memory>
@@ -791,8 +792,13 @@ private:
      * back: a sender whose frame is reclaimed before it resumes (a `when_any` loser) has sent -- as a `send_for` woken
      * before its timer always had. The receive side mirrors it: a receiver handed a value that never resumes
      * re-buffers it (~recv_awaiter). Either way a value is delivered exactly once.
+     *
+     * Out of line, empty check included: inlined, this hand-off (two `pop_front` sites, an entry held across the
+     * `deliver()` call) entered the receive loop of every caller, and g++-14 then kept the caller's own loop values
+     * in memory -- `try_recv` +45 % (Huly QB-272). One call per pop instead; an inline empty check with only the
+     * hand-off out of line is faster on g++ but measured +7 % on MSVC.
      */
-    void
+    QB_NOINLINE void
     wake_one_sender() {
         while (!_send_waiters.empty()) {
             auto &entry = _send_waiters.front();

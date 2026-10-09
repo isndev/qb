@@ -272,7 +272,9 @@ policy.
   before anything else runs, and the sender resumes already done; it used to be woken and to deliver on resume.
   A sender reclaimed after its wake (a `when_any` loser) has therefore sent, exactly once, as a `send_for` woken
   before its timer always had. Every send path -- `send()`'s fast path, both `try_send`s and the wake -- now goes
-  through one hand-off, `channel::deliver()`.
+  through one hand-off, `channel::deliver()`. The wake is one out-of-line call per receive, its empty check
+  included: inlined, it made `try_recv` 45 % slower on g++-14 (the receive loop's own values spilled to memory);
+  the call costs under 2 % there and nothing on MSVC.
 - **`operator<<` on an io component returns the component, not its output buffer (Huly QB-292).** `async::output<>`,
   `async::io<>` and `async::buffered_io<>` returned what `publish()` returns -- the raw `out()` pipe -- so in
   `*this << a << b` every operand after the first went to the pipe directly: past the write-buffer cap, and appended
