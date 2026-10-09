@@ -628,7 +628,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
   never emit them. _(time.h:8-25, aliases :90, :93, :96)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range
-  `substr` throw). _(string.h:201)_
+  `substr` throw). _(string.h:226)_ Its value is its `size()` characters: comparisons, searches and
+  `operator<<` span that whole length, an interior `'\0'` included, as `std::string`'s do. A char
+  buffer is read up to its first NUL; only `(ptr, len)` keeps interior NULs.
 - **DoS bounds are enforced:** read/write buffers cap at 200 MB (`QB_MAX_READ/WRITE_BUFFER_SIZE`), a
   message at 100 MB (`QB_MAX_MESSAGE_SIZE`); exceeding them marks the protocol `not_ok()` and closes the
   connection. A protocol signals unrecoverable framing errors via `not_ok()` -- from `getMessageSize()` as from

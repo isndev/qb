@@ -404,9 +404,9 @@ Coroutine replacement for the legacy `Actor::require<...>()` + `is<T>()` dance (
 *   `[[nodiscard]] mono_time mono_now() noexcept` — current monotonic instant.
 *   `[[nodiscard]] wall_time wall_now() noexcept` — current wall-clock instant.
 *   `inline namespace time_literals { using namespace std::chrono_literals; }` — `30s`, `100ms`, `5us`, … usable directly under `qb`.
-*   `[[nodiscard]] std::int64_t unix_seconds(wall_time) noexcept` / `unix_millis` / `unix_micros` / `unix_nanos` — epoch scalars.
+*   `[[nodiscard]] std::int64_t unix_seconds(wall_time) noexcept` / `unix_millis` / `unix_micros` / `unix_nanos` — epoch scalars, truncated toward zero (`unix_seconds` of -500 ms is 0).
 *   `[[nodiscard]] wall_time wall_from_unix_seconds(std::int64_t) noexcept` / `wall_from_unix_millis(std::int64_t) noexcept` / `wall_from_unix_nanos(std::int64_t) noexcept` (no micros builder).
-*   `[[nodiscard]] std::string format_utc(wall_time, std::string_view fmt)` — strftime UTC; "" on failure.
+*   `[[nodiscard]] std::string format_utc(wall_time, std::string_view fmt)` — strftime UTC of the second CONTAINING the instant (floored: -500 ms is `1969-12-31T23:59:59Z`); "" on failure.
 *   `[[nodiscard]] std::string to_iso8601(wall_time)` — `YYYY-MM-DDTHH:MM:SSZ` (seconds resolution).
 *   `[[nodiscard]] std::optional<wall_time> parse_utc(std::string_view str, std::string_view fmt) noexcept` — always UTC; `nullopt` on error.
 *   `[[nodiscard]] std::optional<wall_time> from_iso8601(std::string_view) noexcept`
@@ -429,10 +429,10 @@ RFC 4122 128-bit UUID over the vendored uuids library.
 
 ### `class qb::string<_Size = 30> : public std::array<char, _Size + 1>` (`<qb/string.h>`)
 Fixed-capacity inline string with a std::string-like API. Truncates silently to `_Size`.
-*   ctors: `string()`, `string(const char(&)[N])`, sized, fill, and string-like.
-*   `at`/`operator[]`/`front`/`back`/`data`/`c_str`, `size`/`length`/`capacity`/`max_size`/`empty`, `clear`/`resize`/`swap`/`substr`/`compare`, `find`/`rfind`, `append`/`push_back`/`pop_back`/`operator+=`, `starts_with`/`ends_with`/`contains`, full comparison operators, implicit conversion to `std::string` / `std::string_view`.
+*   ctors: `string()`, `string(const char(&)[N])`, sized, fill, and string-like. A char array (a buffer; a literal takes the `const char*` overload) is read up to its first NUL, never past `N` — likewise `assign`/`operator=` of a char array; `(ptr, len)` keeps interior NULs.
+*   `at`/`operator[]`/`front`/`back`/`data`/`c_str`, `size`/`length`/`capacity`/`max_size`/`empty`, `clear`/`resize`/`swap`/`substr`/`compare`, `find`/`rfind`, `append`/`push_back`/`pop_back`/`operator+=`, `starts_with`/`ends_with`/`contains`, full comparison operators, implicit conversion to `std::string` / `std::string_view`. The value is the first `size()` characters: every comparison, search and `operator<<` spans that whole length, an interior `'\0'` included (`std::string` semantics); a `const char*` operand is read up to its NUL.
 *   `static constexpr std::size_t npos = numeric_limits<std::size_t>::max();`
-*   Non-members: `operator+` (result sized to max of operands), `swap`, `operator<<`/`operator>>`, reversed `operator==`/`!=` with C-strings.
+*   Non-members: `operator+` (result sized to max of operands), `swap`, `operator<<`/`operator>>` (`noexcept`: a stream that throws keeps the failure in its state, never terminates; a failed read leaves the target unchanged), reversed `operator==`/`!=` with C-strings.
 
 ### Containers (`<qb/system/container/...>`)
 *   `[T] using unordered_map<K,V,H=std::hash<K>,E=std::equal_to<K>,A>` — always `ska::unordered_map` (node-based; references survive a rehash). Not `NDEBUG`-conditional since 3.0. Carries `contains(k)` as of 3.0 — a qb addition to the vendored fork, since upstream predates C++20 and its absence was the one place the drop-in-for-`std::unordered_map` promise failed. Scoped like `count()`: same key type, O(1), **no** heterogeneous overload (`find()` has none either). The same addition reaches `unordered_set`, `unordered_flat_map` and `unordered_flat_set` — it lives on the two shared vendored bases.

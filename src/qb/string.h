@@ -30,7 +30,9 @@
 #include <limits>
 #include <qb/utility/build_macros.h>
 #include <string>
+#include <string_view>
 #include <stdexcept>
+#include <type_traits>
 
 #ifndef QB_STRING_H_
 #define QB_STRING_H_
@@ -80,6 +82,12 @@ struct best_size<_Size, false, true> {
  * than std::string for small strings. It uses a std::array for storage
  * and provides common string operations with bounds checking.
  *
+ * The value is its first `size()` characters, NOT the bytes up to the first NUL: `assign(ptr, len)` keeps an
+ * interior '\0', and every comparison, search and stream insertion works on the whole length, as std::string's
+ * do (a "a\0b" is neither equal to "a" nor to "a\0c"; Huly QB-386). An operand given as `char const *` is read up
+ * to its NUL, as std::string reads one. `c_str()` stays NUL-terminated for C interfaces, which see the string up
+ * to its first interior NUL.
+ *
  * @tparam _Size Maximum size of the string (default: 30)
  */
 template <std::size_t _Size = 30>
@@ -107,6 +115,21 @@ public:
 private:
     size_type _size = 0;
 
+    // The characters a char ARRAY holds, read as std::string reads one: up to its first NUL -- and, unlike strlen,
+    // never past the array. Overload resolution sends a string LITERAL (a const array) to the `char const *` forms,
+    // which use strlen; the array forms are what a non-const array, a buffer, reaches -- and they took `N - 1`
+    // characters of it: `char buf[32] = "abc"` gave a size() of 31, its tail of NULs included, which no longer
+    // equals "abc" now that comparisons span the whole length (Huly QB-386). The (pointer, length) forms are the
+    // ones that keep interior NULs.
+    template <std::size_t N>
+    [[nodiscard]] static constexpr std::size_t
+    array_length(const char (&str)[N]) noexcept {
+        std::size_t len = 0;
+        while (len < N && str[len] != '\0')
+            ++len;
+        return len;
+    }
+
 public:
     /**
      * @brief Default constructor
@@ -117,14 +140,16 @@ public:
         : base_t{'\0'} {}
 
     /**
-     * @brief Constructor from C-style string literal
+     * @brief Constructor from a char array (a buffer: a string literal takes the `const char *` overload)
      *
-     * @tparam N Size of the string literal including null terminator
-     * @param str The string literal to copy
+     * Reads the array as std::string reads one: up to its first NUL, never past the array (see array_length).
+     *
+     * @tparam N Size of the array
+     * @param str The array to copy
      */
     template <std::size_t N>
     constexpr string(const char (&str)[N]) noexcept {
-        assign(str, N - 1);
+        assign(str, array_length(str));
     }
 
     /**
@@ -200,23 +225,27 @@ public:
     assign(char const *rhs, std::size_t size) noexcept {
         _size = static_cast<size_type>(std::min(size, static_cast<std::size_t>(_Size)));
 
-        std::memcpy(base_t::data(), rhs, _size);
+        // memmove, not memcpy: the source may be a view of THIS string (`s.assign(std::string_view(s).substr(1))`),
+        // which overlaps the destination -- undefined for memcpy (Huly QB-387).
+        std::memmove(base_t::data(), rhs, _size);
         base_t::data()[_size] = '\0';
 
         return *this;
     }
 
     /**
-     * @brief Assign from C-style string literal
+     * @brief Assign from a char array (a buffer: a string literal takes the `const char *` overload)
      *
-     * @tparam N Size of the string literal including null terminator
-     * @param str The string literal to copy
+     * Reads the array up to its first NUL, never past the array (see array_length).
+     *
+     * @tparam N Size of the array
+     * @param str The array to copy
      * @return Reference to this string
      */
     template <std::size_t N>
     constexpr string &
     assign(const char (&str)[N]) noexcept {
-        return assign(str, N - 1);
+        return assign(str, array_length(str));
     }
 
     /**
@@ -259,16 +288,18 @@ public:
     }
 
     /**
-     * @brief Assignment operator for C-style string literals
+     * @brief Assignment operator for a char array (a buffer: a string literal takes the `const char *` overload)
      *
-     * @tparam N Size of the string literal including null terminator
-     * @param str The string literal to assign
+     * Reads the array up to its first NUL, never past the array (see array_length).
+     *
+     * @tparam N Size of the array
+     * @param str The array to assign
      * @return Reference to this string
      */
     template <std::size_t N>
     constexpr string &
     operator=(const char (&str)[N]) noexcept {
-        return assign(str, N - 1);
+        return assign(str, array_length(str));
     }
 
     /**
@@ -634,7 +665,7 @@ public:
      */
     int
     compare(const string &str) const noexcept {
-        return std::strcmp(base_t::data(), str.c_str());
+        return std::string_view(*this).compare(std::string_view(str));
     }
 
     /**
@@ -645,7 +676,7 @@ public:
      */
     int
     compare(const char *str) const noexcept {
-        return std::strcmp(base_t::data(), str);
+        return std::string_view(*this).compare(str);
     }
 
     /**
@@ -671,7 +702,9 @@ public:
      */
     std::size_t
     find(const string &str, std::size_t pos = 0) const noexcept {
-        return find(str.c_str(), pos);
+        if (pos >= _size)
+            return npos;
+        return std::string_view(*this).find(std::string_view(str), pos);
     }
 
     /**
@@ -685,9 +718,8 @@ public:
     find(const char *str, std::size_t pos = 0) const noexcept {
         if (pos >= _size)
             return npos;
-
-        const char *result = std::strstr(base_t::data() + pos, str);
-        return result ? static_cast<std::size_t>(result - base_t::data()) : npos;
+        // Over the whole length, not up to this string's first interior NUL as strstr searched (Huly QB-386).
+        return std::string_view(*this).find(str, pos);
     }
 
     /**
@@ -720,18 +752,7 @@ public:
      */
     std::size_t
     rfind(const char *str, std::size_t pos = npos) const noexcept {
-        std::size_t str_len = std::strlen(str);
-        if (str_len > _size)
-            return npos;
-
-        std::size_t start = std::min(pos, _size - str_len);
-
-        for (std::size_t i = start + 1; i > 0; --i) {
-            if (std::strncmp(base_t::data() + i - 1, str, str_len) == 0) {
-                return i - 1;
-            }
-        }
-        return npos;
+        return std::string_view(*this).rfind(str, pos);
     }
 
     /**
@@ -791,6 +812,8 @@ public:
         // Clamp on the free room, never on `_size + len`: the latter wraps when
         // `len > SIZE_MAX - _size`, making `new_size < _size` so `new_size - _size`
         // underflows to a huge count and the memcpy overruns the fixed buffer.
+        // memcpy is right here even for a view of this string (`s += s`): a valid view ends at or before
+        // `_size`, where the destination begins, so the two never overlap (unlike assign, Huly QB-387).
         const std::size_t room       = static_cast<std::size_t>(_Size) - _size;
         const std::size_t actual_len = std::min(len, room);
 
@@ -901,8 +924,7 @@ public:
      */
     bool
     starts_with(const char *prefix) const noexcept {
-        std::size_t prefix_len = std::strlen(prefix);
-        return _size >= prefix_len && std::strncmp(base_t::data(), prefix, prefix_len) == 0;
+        return std::string_view(*this).starts_with(prefix);
     }
 
     /**
@@ -913,7 +935,7 @@ public:
      */
     bool
     starts_with(const string &prefix) const noexcept {
-        return starts_with(prefix.c_str());
+        return std::string_view(*this).starts_with(std::string_view(prefix));
     }
 
     /**
@@ -935,8 +957,7 @@ public:
      */
     bool
     ends_with(const char *suffix) const noexcept {
-        std::size_t suffix_len = std::strlen(suffix);
-        return _size >= suffix_len && std::strncmp(base_t::data() + _size - suffix_len, suffix, suffix_len) == 0;
+        return std::string_view(*this).ends_with(suffix);
     }
 
     /**
@@ -947,7 +968,7 @@ public:
      */
     bool
     ends_with(const string &suffix) const noexcept {
-        return ends_with(suffix.c_str());
+        return std::string_view(*this).ends_with(std::string_view(suffix));
     }
 
     /**
@@ -1005,7 +1026,12 @@ public:
     template <typename T>
     bool
     operator==(T const &rhs) const noexcept {
-        return rhs == base_t::data();
+        // A string-like operand (std::string, std::string_view, a qb::string of another capacity) is compared over
+        // both lengths, as std::string compares (Huly QB-386); anything else keeps its own operator== on the C string.
+        if constexpr (std::is_convertible_v<T const &, std::string_view>)
+            return std::string_view(*this) == std::string_view(rhs);
+        else
+            return rhs == base_t::data();
     }
 
     /**
@@ -1016,7 +1042,7 @@ public:
      */
     bool
     operator==(char const *rhs) const noexcept {
-        return std::strcmp(base_t::data(), rhs) == 0;
+        return std::string_view(*this) == std::string_view(rhs);
     }
 
     /**
@@ -1027,7 +1053,8 @@ public:
      */
     bool
     operator==(const string &rhs) const noexcept {
-        return _size == rhs._size && std::strcmp(base_t::data(), rhs.c_str()) == 0;
+        // Every byte of the length, interior NULs included (strcmp stopped at the first one, Huly QB-386).
+        return _size == rhs._size && std::memcmp(base_t::data(), rhs.data(), _size) == 0;
     }
 
     /**
@@ -1240,6 +1267,10 @@ swap(string<_Size> &lhs, string<_Size> &rhs) noexcept {
 /**
  * @brief Output stream operator for qb::string
  *
+ * Writes the whole length, as for a std::string. It is noexcept, so a stream whose exceptions() the program
+ * enabled does not throw out of it: the failure is left where the caller reads it, in the stream's state, which
+ * the failed write has already set (badbit) -- the next operation on that stream throws.
+ *
  * @tparam _Size Maximum size of the string
  * @param os Output stream
  * @param str String to output
@@ -1248,12 +1279,21 @@ swap(string<_Size> &lhs, string<_Size> &rhs) noexcept {
 template <std::size_t _Size>
 std::ostream &
 operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
-    os << str.c_str();
+    // A throw out of a noexcept function is std::terminate (the class of Huly QB-388): contained here.
+    try {
+        os << static_cast<std::string_view>(str); // the whole length, as for a std::string (Huly QB-386)
+    } catch (...) {
+        // the stream's state already records the failure
+    }
     return os;
 }
 
 /**
  * @brief Input stream operator for qb::string
+ *
+ * Reads one whitespace-delimited word, as for a std::string, truncated to the capacity. It is noexcept: with the
+ * stream's exceptions() enabled, a failed read leaves @p str unchanged and its failure in the stream's state
+ * (failbit / badbit), the next operation on that stream throws.
  *
  * @tparam _Size Maximum size of the string
  * @param is Input stream
@@ -1263,9 +1303,14 @@ operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
 template <std::size_t _Size>
 std::istream &
 operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
-    std::string temp;
-    is >> temp;
-    str = temp;
+    // A throw out of a noexcept function is std::terminate (the class of Huly QB-388): contained here.
+    try {
+        std::string temp;
+        is >> temp;
+        str = temp;
+    } catch (...) {
+        // the stream's state already records the failure; str is left as it was
+    }
     return is;
 }
 

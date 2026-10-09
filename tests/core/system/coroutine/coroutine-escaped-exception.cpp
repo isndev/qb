@@ -21,7 +21,7 @@
  * The fix is a report, not a behaviour change, and this file pins both halves:
  *   - the diagnostic reaches `std::cerr` (via `qb::io::cerr`, which is always compiled — the
  *     structured `QB_LOG_CRIT` channel is a no-op unless the build defines QB_WITH_LOGGING or
- *     QB_STDOUT_LOGGING, `qb/io.h:262-265`), naming the actor, the API and the `what()`;
+ *     QB_STDOUT_LOGGING, `qb/io.h:269-272`), naming the actor, the API and the `what()`;
  *   - control flow is unchanged: the frame still unwinds, RAII in the body still runs, the
  *     coroutine counter still drops, the engine still keeps going, `hasError()` stays false.
  *

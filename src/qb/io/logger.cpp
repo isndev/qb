@@ -42,18 +42,34 @@ qb::io::log::setLevel(io::log::Level lvl) {
     nanolog::set_log_level(lvl);
 }
 #endif
+// The two destructors below are where a `qb::io::cout() << ...` / `qb::io::cerr() << ...` line is written, and a
+// destructor is implicitly noexcept: whatever they throw is std::terminate, BEFORE any try/catch around the statement
+// that built the line can see it. Three things can throw there -- the mutex (std::system_error), the copy of the
+// buffer (std::bad_alloc), and the write itself when the program enabled exceptions on the standard stream
+// (std::cerr.exceptions(std::ios::badbit) with a failing stream) -- and the report paths that write through
+// qb::io::cerr exist precisely for the moment something already went wrong (a coroutine's escaped exception, an
+// abandoned frame). Writing a line is best-effort: a line that cannot be written is lost, the process is not
+// (Huly QB-388). `ss.str()` stays a copy: `ss.view()` would avoid it, but it is not in every libc++ qb supports.
 std::mutex qb::io::cout::io_lock;
 
 qb::io::cout::~cout() {
-    std::lock_guard<std::mutex> lock(io_lock);
-    std::cout << ss.str() << std::flush;
+    try {
+        std::lock_guard<std::mutex> lock(io_lock);
+        std::cout << ss.str() << std::flush;
+    } catch (...) {
+        // best-effort: the line is lost, never the process
+    }
 }
 
 std::mutex qb::io::cerr::io_lock;
 
 qb::io::cerr::~cerr() {
-    std::lock_guard<std::mutex> lock(io_lock);
-    std::cerr << ss.str() << std::flush;
+    try {
+        std::lock_guard<std::mutex> lock(io_lock);
+        std::cerr << ss.str() << std::flush;
+    } catch (...) {
+        // best-effort: the line is lost, never the process
+    }
 }
 
 // Declared in qb/io/async/coroutine/task.h; see the note there for WHEN it is called. Defined

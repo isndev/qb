@@ -62,7 +62,7 @@ qb::to_number_prefix<int>("abc");                 // nullopt — no number at al
 qb::to_number_prefix<int>("+-7");                 // nullopt — two signs, as strtol
 ```
 
-`consumed` counts from the **start of the input**, including the skipped whitespace and the sign — which is what makes it usable as a cursor through a larger buffer. That is exactly how the date and time-of-day parsers on [the time page](./time.md#the-component-codecs-underneath) walk `"YYYY-MM-DD"` without `sscanf`: `qb::detail::scan_int_field` is a thin wrapper over it (`qb/src/qb/system/time.h:215-226`).
+`consumed` counts from the **start of the input**, including the skipped whitespace and the sign — which is what makes it usable as a cursor through a larger buffer. That is exactly how the date and time-of-day parsers on [the time page](./time.md#the-component-codecs-underneath) walk `"YYYY-MM-DD"` without `sscanf`: `qb::detail::scan_int_field` is a thin wrapper over it (`qb/src/qb/system/time.h:217-228`).
 
 `std::from_chars` itself rejects a leading `+` for both integral and floating types, so `to_number_prefix` skips one explicitly to match the `sto*` family it replaces (`qb/src/qb/system/parse.h:149-153`) — and only one sign: `from_chars` would accept the `-` of `"+-7"` and read -7, where `strtol` performs no conversion, so a `-` right after the skipped `+` is no number (Huly QB-359).
 

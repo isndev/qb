@@ -630,10 +630,10 @@ namespace detail {
 //
 // TWO CHANNELS, AND THE SECOND IS NOT BELT-AND-BRACES. `QB_LOG_CRIT` is the structured one and
 // it is a complete no-op unless the build defines QB_WITH_LOGGING or QB_STDOUT_LOGGING
-// (`qb/io.h:262-265`) -- and even when it is live it writes to nanolog, which produces nothing
+// (`qb/io.h:269-272`) -- and even when it is live it writes to nanolog, which produces nothing
 // until a program calls `qb::io::log::init()`. So on its own it would leave this report missing
 // in ordinary builds, which is the very failure being fixed. `qb::io::cerr()` is qb's own
-// mutex-guarded stderr (`qb/io.h:163`), always compiled, and is what the engine already uses to
+// mutex-guarded stderr (`qb/io.h:166`), always compiled, and is what the engine already uses to
 // announce a failed core init (`Main.cpp:619-620`). Nothing here is on a hot path: reaching this
 // function at all means a coroutine body threw.
 void

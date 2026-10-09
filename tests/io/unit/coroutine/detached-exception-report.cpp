@@ -43,12 +43,20 @@
  *                                     for `when_any` losers and cancelled scopes.
  *   5. `AwaitedTaskStillRethrows`   — the OWNED path is untouched: an awaited task still
  *                                     propagates by throwing, and does NOT also print.
+ *   6. `AFailingStderrNeverTerminatesTheReporter` (death test) — the report is best-effort: a
+ *                                     stderr that fails with exceptions enabled loses the line,
+ *                                     not the process. `qb::io::cerr`'s destructor is where the
+ *                                     line is written, and a destructor is implicitly noexcept, so
+ *                                     a throw there was std::terminate past the reporter's own
+ *                                     try/catch (Huly QB-388).
  *
  * stderr is captured by swapping `std::cerr`'s streambuf, which is what `qb::io::cerr` writes
  * through (logger.cpp).
  */
 
+#include <cstdlib>
 #include <exception>
+#include <ios>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -56,6 +64,7 @@
 #include <string>
 
 #include <gtest/gtest.h>
+#include <qb/io.h> // qb::io::cerr / qb::io::cout
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
 
@@ -78,6 +87,19 @@ public:
     [[nodiscard]] std::string
     str() const {
         return _sink.str();
+    }
+};
+
+// A stream that can write nothing: every put reports failure, so an ostream over it sets badbit.
+class FailingStreambuf : public std::streambuf {
+protected:
+    int_type
+    overflow(int_type) override {
+        return traits_type::eof();
+    }
+    std::streamsize
+    xsputn(char const *, std::streamsize) override {
+        return 0;
     }
 };
 
@@ -210,4 +232,32 @@ TEST_F(DetachedExceptionReport, AwaitedTaskStillRethrows) {
     EXPECT_TRUE(threw) << "an AWAITED task must still propagate by throwing";
     // The driver caught it, so nothing escaped: the owned path must not also print.
     EXPECT_TRUE(out.empty()) << "an awaited-and-caught exception was also reported; got: " << out;
+}
+
+// In a child process: the standard streams are made to fail with badbit exceptions enabled, a
+// legal program state the reporter cannot rule out. Before Huly QB-388 the throw left
+// `qb::io::cerr::~cerr` -- implicitly noexcept -- and the child died in std::terminate, the
+// reporter's own try/catch notwithstanding. The child reports through std::_Exit, as the
+// type-id death tests do: std::exit would run LeakSanitizer's exit check under ASan.
+TEST(DetachedExceptionReportDeathTest, AFailingStderrNeverTerminatesTheReporter) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        {
+            FailingStreambuf failing;
+            std::streambuf  *saved_err = std::cerr.rdbuf(&failing);
+            std::streambuf  *saved_out = std::cout.rdbuf(&failing);
+            std::cerr.exceptions(std::ios::badbit);
+            std::cout.exceptions(std::ios::badbit);
+            qb::io::async::report_detached_coroutine_exception(std::make_exception_ptr(std::runtime_error("unwritable-report")));
+            qb::io::cerr() << "a line stderr cannot take" << std::endl;
+            qb::io::cout() << "a line stdout cannot take" << std::endl;
+            std::cerr.exceptions(std::ios::goodbit);
+            std::cout.exceptions(std::ios::goodbit);
+            std::cerr.clear();
+            std::cout.clear();
+            std::cerr.rdbuf(saved_err);
+            std::cout.rdbuf(saved_out);
+            std::_Exit(0);
+        },
+        ::testing::ExitedWithCode(0), "");
 }

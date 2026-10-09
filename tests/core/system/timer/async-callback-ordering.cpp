@@ -120,7 +120,7 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 //
 // "Hard invariant" is a specific claim, so here is what backs it — this is the TIGHTEST floor in
 // the suite (50 links, so 50 chances to come in early) and it has zero slack by design:
-//   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — a
+//   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:813) — a
 //     requested delay is never rounded DOWN;
 //   - `async::callback` forces `ev_now_update` immediately before arming (qb/io/async/io.h:402-408),
 //     so each link's deadline is a FRESH clock read plus 1ms, never a stale cached one — that

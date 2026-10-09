@@ -237,16 +237,16 @@ The literal operators (`30s`, `100ms`, `5us`, …) are pulled into `qb` through 
 | `Duration::microseconds(n)` | `std::chrono::microseconds(n)` / `5us` | Implicitly converts to `qb::duration`. |
 | `someDuration.seconds()` / `.toSeconds()` | `std::chrono::duration_cast<std::chrono::seconds>(d).count()` | Explicit cast; `count()` yields the integer. |
 | `someDuration.milliseconds()` | `std::chrono::duration_cast<std::chrono::milliseconds>(d).count()` | |
-| `Timestamp::epochSeconds()` on a wall instant | `qb::unix_seconds(tp)` | `int64_t` seconds since the Unix epoch. _(`time.h:122`.)_ |
-| `Timestamp::epochMillis()` | `qb::unix_millis(tp)` (also `unix_micros`, `unix_nanos`) | `int64_t` since the Unix epoch. _(`time.h:128`.)_ |
-| `Timestamp::fromEpochSeconds(s)` | `qb::wall_from_unix_seconds(s)` | Returns `qb::wall_time`. _(`time.h:146`.)_ |
-| `Timestamp::fromEpochMillis(ms)` | `qb::wall_from_unix_millis(ms)` | Returns `qb::wall_time`. _(`time.h:152`.)_ |
-| `timestamp.toString(fmt)` / custom date formatting | `qb::format_utc(tp, fmt)` — strftime-compatible, UTC | Empty string on failure. _(`time.h:306`.)_ |
-| ISO-8601 string from a timestamp | `qb::to_iso8601(tp)`, returning `"YYYY-MM-DDTHH:MM:SSZ"` | _(`time.h:319`.)_ |
-| Parsing a date string | `qb::parse_utc(str, fmt)` / `qb::from_iso8601(str)` | Returns `std::optional<qb::wall_time>` (`nullopt` on error), UTC only. _(`time.h:327,346`.)_ |
+| `Timestamp::epochSeconds()` on a wall instant | `qb::unix_seconds(tp)` | `int64_t` seconds since the Unix epoch. _(`time.h:124`.)_ |
+| `Timestamp::epochMillis()` | `qb::unix_millis(tp)` (also `unix_micros`, `unix_nanos`) | `int64_t` since the Unix epoch. _(`time.h:130`.)_ |
+| `Timestamp::fromEpochSeconds(s)` | `qb::wall_from_unix_seconds(s)` | Returns `qb::wall_time`. _(`time.h:148`.)_ |
+| `Timestamp::fromEpochMillis(ms)` | `qb::wall_from_unix_millis(ms)` | Returns `qb::wall_time`. _(`time.h:154`.)_ |
+| `timestamp.toString(fmt)` / custom date formatting | `qb::format_utc(tp, fmt)` — strftime-compatible, UTC | Empty string on failure. _(`time.h:308`.)_ |
+| ISO-8601 string from a timestamp | `qb::to_iso8601(tp)`, returning `"YYYY-MM-DDTHH:MM:SSZ"` | _(`time.h:323`.)_ |
+| Parsing a date string | `qb::parse_utc(str, fmt)` / `qb::from_iso8601(str)` | Returns `std::optional<qb::wall_time>` (`nullopt` on error), UTC only. _(`time.h:331,350`.)_ |
 | `Duration::zero()` / a "no timeout" sentinel | `qb::duration::zero()` | Inherited from `std::chrono::nanoseconds`. |
-| A hand-rolled scope timer | `qb::ScopedTimer` / `qb::LogTimer` | Monotonic; callback receives a `qb::duration`. _(`time.h:718,769`.)_ |
-| A raw RDTSC / CPU-counter read | `qb::tsc_ticks()` | Per-core, uncalibrated — micro-benchmark deltas only, **not a clock**. _(`time.h:684`.)_ |
+| A hand-rolled scope timer | `qb::ScopedTimer` / `qb::LogTimer` | Monotonic; callback receives a `qb::duration`. _(`time.h:730,781`.)_ |
+| A raw RDTSC / CPU-counter read | `qb::tsc_ticks()` | Per-core, uncalibrated — micro-benchmark deltas only, **not a clock**. _(`time.h:696`.)_ |
 
 ### Before and after
 
@@ -304,8 +304,8 @@ The migration matters because the framework's own surfaces take these types. A f
 
 - **Do not pass a bare integer to a `qb::duration` parameter.** `setLatency(100)` does not compile by design; write `setLatency(100us)` (or `std::chrono::microseconds(100)`). This is the unit-confusion guard, not a defect. _(`qb/src/qb/system/time.h:8-11`.)_
 - **Do not mix the two instant clocks.** You cannot subtract a `qb::wall_time` from a `qb::mono_time`; the compiler rejects it. Measure and schedule with `mono_time`; record dates and expiry with `wall_time`. Converting between them means going through a Unix-epoch scalar (`unix_seconds` / `wall_from_unix_seconds`) and accepting that the wall clock can step. _(`qb/src/qb/system/time.h:18-20`.)_
-- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/src/qb/system/time.h:680-684`.)_
-- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/src/qb/system/time.h:27-30,305-342`.)_
+- **`tsc_ticks()` is not a clock.** It is monotonic per core but uncalibrated and not comparable across cores or to either clock. Use it only for single-thread micro-benchmark deltas. _(`qb/src/qb/system/time.h:692-696`.)_
+- **`format_utc`/`parse_utc` are UTC-only.** There is no time-zone database on this toolchain; formatting uses `strftime` and parsing uses `std::get_time` + `timegm`, both in UTC. `format_utc` returns an empty string on failure; `parse_utc` and `from_iso8601` return `std::nullopt`. _(`qb/src/qb/system/time.h:27-30,307-346`.)_
 - **`Actor::time()` returns a raw `uint64_t`, not a chrono type.** It is the core's cached epoch-nanosecond count (sourced from `qb::wall_now()`), constant within one handler or `on(qb::LoopEvent const&)` invocation; it is not a `qb::mono_time` or `qb::wall_time`. For a fresh high-precision wall instant use `qb::unix_nanos(qb::wall_now())`. _(`qb/src/qb/core/Actor.h:801-819`.)_
 
 ## Part 3 — From the synchronous `onInit()` to the async-init APIs

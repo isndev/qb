@@ -21,7 +21,8 @@
  *
  * Coverage targets (previously unhit lines in time.h):
  *   - unix_seconds/millis/micros/nanos and wall_from_unix_* on NEGATIVE instants
- *     (floor-toward-negative-infinity truncation).
+ *     (truncation toward zero), against the FLOOR of the calendar labels
+ *     (format_utc, date::from_wall_time; Huly QB-284).
  *   - the wall_from_unix_millis / wall_from_unix_nanos builders (only seconds was hit).
  *   - safe_gmtime / safe_timegm at the proleptic min/max and far-negative years,
  *     leap-day-vs-non-leap (1900/2000/2400), end-of-year tm_yday.
@@ -30,8 +31,9 @@
  *   - format_time_of_day for the 24:00:00 boundary and sub-second (1-digit) fraction.
  *   - parse_time_of_day verbatim-microseconds fraction + the <3-field reject branch.
  *   - format_utc_offset for the +HH (>=10h), the sub-minute-dropped, and the
- *     negative-magnitude paths; parse_utc_offset for "z", malformed, +HH:MM:SS,
- *     and the range-unvalidated forms.
+ *     negative-magnitude paths and the int32 extremes; parse_utc_offset for "z",
+ *     malformed, +HH:MM:SS, the range-unvalidated forms and a total outside int32
+ *     (Huly QB-285).
  *   - calendar_interval folding with NEGATIVE months/days/micros and the
  *     12-month-year vs residual-month split (truncation toward zero on % and /).
  *   - the date / time_of_day / time_of_day_tz value types at their boundaries.
@@ -55,9 +57,10 @@ using namespace std::chrono_literals;
 namespace {
 
 // ---------------------------------------------------------------------------
-// Unix-epoch scalar extraction on NEGATIVE instants (floor toward -inf).
-// The happy-path test only exercises a positive wall_now(); the truncation
-// direction on a sub-second negative instant is the interesting corner.
+// Unix-epoch scalar extraction on NEGATIVE instants (truncation toward zero; the
+// calendar labels floor instead -- FormatUtcEdge, DateEdge). The happy-path test
+// only exercises a positive wall_now(); the truncation direction on a sub-second
+// negative instant is the interesting corner.
 // ---------------------------------------------------------------------------
 
 TEST(UnixScalarsEdge, NegativeInstantTruncationDirection) {
@@ -360,6 +363,13 @@ TEST(UtcOffsetFormatEdge, SubMinuteSecondsAreDroppedFromFormat) {
     EXPECT_EQ(qb::format_utc_offset(-30), "+00:00") << "BUG: negative sub-minute offset prints negative-zero '-00:00'";
 }
 
+TEST(UtcOffsetFormatEdge, Int32ExtremesAreWellFormed) {
+    // Huly QB-285: |INT32_MIN| does not fit int32, and negating it in 32 bits was signed overflow -- in practice the
+    // magnitude stayed negative and the result read "--596523:-14". |INT32_MIN| = 596523 h 14 min 8 s.
+    EXPECT_EQ(qb::format_utc_offset(std::numeric_limits<std::int32_t>::min()), "-596523:14");
+    EXPECT_EQ(qb::format_utc_offset(std::numeric_limits<std::int32_t>::max()), "+596523:14");
+}
+
 TEST(UtcOffsetParseEdge, AllFormsLowercaseZAndMalformed) {
     // Lowercase 'z' (the existing file only covers uppercase 'Z').
     EXPECT_EQ(qb::parse_utc_offset("z").value(), 0);
@@ -388,8 +398,21 @@ TEST(UtcOffsetParseEdge, OutOfRangeIsNotValidated) {
     // DOCUMENTED LIMITATION (pinned, not a hidden bug): parse_utc_offset does NOT
     // range-check the fields — it returns the raw arithmetic. A future caller that
     // assumes |offset| <= 18h must validate itself. These pin the current contract.
+    // Only the TOTAL is bounded, by the int32 result (ATotalOutsideInt32IsRejected).
     EXPECT_EQ(qb::parse_utc_offset("+15:00").value(), 15 * 3600);
     EXPECT_EQ(qb::parse_utc_offset("+99:99").value(), 99 * 3600 + 99 * 60);
+}
+
+TEST(UtcOffsetParseEdge, ATotalOutsideInt32IsRejected) {
+    // Huly QB-285: each field is a valid int, their sum in int was not -- "+999999" is 3 599 996 400 s, signed
+    // overflow (UBSan: "signed integer overflow"), and a wrapped value came back as an offset.
+    EXPECT_FALSE(qb::parse_utc_offset("+999999").has_value());
+    EXPECT_FALSE(qb::parse_utc_offset("-999999").has_value());
+    // The int32 limits themselves parse, one second past them does not.
+    EXPECT_EQ(qb::parse_utc_offset("+596523:14:07").value(), std::numeric_limits<std::int32_t>::max());
+    EXPECT_EQ(qb::parse_utc_offset("-596523:14:08").value(), std::numeric_limits<std::int32_t>::min());
+    EXPECT_FALSE(qb::parse_utc_offset("+596523:14:08").has_value());
+    EXPECT_FALSE(qb::parse_utc_offset("-596523:14:09").has_value());
 }
 
 TEST(UtcOffsetRoundTrip, MinuteGranularSpanRoundTrips) {
@@ -483,6 +506,13 @@ TEST(DateEdge, MaxMinAndFromWallTimeFlooring) {
     EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_seconds(0)).to_string(), "1970-01-01");
     // One second before two days back: -86401s -> 1969-12-30.
     EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_seconds(-86401)).to_string(), "1969-12-30");
+
+    // A pre-epoch SUB-SECOND instant (Huly QB-284): -500 ms is 1969-12-31T23:59:59.5Z. Flooring the day count of
+    // unix_seconds(), which truncates -0.5 s to 0, put it on 1970-01-01; -86 400.5 s on 1969-12-31.
+    EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_millis(-500)).to_string(), "1969-12-31");
+    EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_millis(-86'400'500)).to_string(), "1969-12-30");
+    // Control: a positive sub-second instant.
+    EXPECT_EQ(qb::date::from_wall_time(qb::wall_from_unix_millis(500)).to_string(), "1970-01-01");
 }
 
 TEST(DateEdge, ArithmeticAcrossLeapDayAndYearBoundary) {
@@ -565,6 +595,18 @@ TEST(FormatUtcEdge, EmptyFormatAndTrailingLiteral) {
     EXPECT_EQ(qb::format_utc(w, "UTC"), "UTC");
     // %Y%m%d compact form.
     EXPECT_EQ(qb::format_utc(w, "%Y%m%d"), "20230115");
+}
+
+TEST(FormatUtcEdge, PreEpochSubSecondInstantIsLabelledWithTheSecondContainingIt) {
+    // Huly QB-284: a calendar label is the second CONTAINING the instant -- a floor. format_utc took
+    // unix_seconds(), which truncates toward zero, so every pre-epoch sub-second instant printed the NEXT second.
+    EXPECT_EQ(qb::to_iso8601(qb::wall_from_unix_millis(-500)), "1969-12-31T23:59:59Z");
+    EXPECT_EQ(qb::to_iso8601(qb::wall_from_unix_millis(-1500)), "1969-12-31T23:59:58Z");
+    // Controls: a positive sub-second instant and an exact pre-epoch second.
+    EXPECT_EQ(qb::to_iso8601(qb::wall_from_unix_millis(500)), "1970-01-01T00:00:00Z");
+    EXPECT_EQ(qb::to_iso8601(qb::wall_from_unix_seconds(-1)), "1969-12-31T23:59:59Z");
+    // The scalar keeps its truncation (pinned in UnixScalarsEdge): only the calendar label floors.
+    EXPECT_EQ(qb::unix_seconds(qb::wall_from_unix_millis(-500)), 0);
 }
 
 TEST(ParseUtcEdge, PartialAndTrailingGarbage) {

@@ -88,7 +88,7 @@
  * I2 — ELAPSED-FLOOR assertions (`EXPECT_GE(elapsed, nominal)`) are one-sided. Load only ADDS to a
  *      measured span, so it can only push them further into passing; they fail only if a timer
  *      fires EARLY on the clock the test reads. That is excluded by construction:
- *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:801) — it never
+ *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:813) — it never
  *          rounds a requested delay down;
  *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:352-353) and `async::callback`
  *          (async/io.h:402-408) both force `ev_now_update` immediately before `ev_timer_start`, so

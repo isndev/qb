@@ -120,9 +120,9 @@ wall_time wall_from_unix_nanos  (std::int64_t) noexcept;
 
 }
 ```
-<!-- src: qb/src/qb/system/time.h:121-160 -->
+<!-- src: qb/src/qb/system/time.h:123-162 -->
 
-All four extractors are a `duration_cast`, so they **truncate toward zero** rather than rounding, and all seven are `noexcept`.
+All four extractors are a `duration_cast`, so they **truncate toward zero** rather than rounding — `unix_seconds` of an instant 500 ms before the epoch is `0` — and all seven are `noexcept`. A calendar label does the opposite on purpose: `format_utc` (so `to_iso8601`) and `date::from_wall_time` take the second, or the day, that CONTAINS the instant, a floor, so that same instant prints `"1969-12-31T23:59:59Z"` and falls on 1969-12-31 (`qb/tests/core/unit/system/time-edge.cpp:600-610`).
 
 For text, qb formats and parses in **UTC only**, with no time-zone database dependency:
 
@@ -132,9 +132,9 @@ std::string              to_iso8601(wall_time);                        // "YYYY-
 std::optional<wall_time> parse_utc(std::string_view, std::string_view fmt) noexcept;
 std::optional<wall_time> from_iso8601(std::string_view) noexcept;      // the inverse of to_iso8601
 ```
-<!-- src: qb/src/qb/system/time.h:305-348 -->
+<!-- src: qb/src/qb/system/time.h:307-352 -->
 
-`format_utc` returns an **empty string** on failure (`qb/src/qb/system/time.h:305-315`); the two parsers return `std::nullopt` on any malformed input (`qb/src/qb/system/time.h:326-342`). Neither throws.
+`format_utc` returns an **empty string** on failure (`qb/src/qb/system/time.h:307-319`); the two parsers return `std::nullopt` on any malformed input (`qb/src/qb/system/time.h:330-346`). Neither throws.
 
 Two properties of the round trip are easy to assume wrongly, and both are pinned by the unit test:
 
@@ -150,15 +150,15 @@ bool        safe_gmtime(std::time_t, std::tm &out) noexcept;   // UTC breakdown
 std::time_t safe_timegm(const std::tm &in) noexcept;           // its exact inverse
 bool        safe_localtime(std::time_t, std::tm &out) noexcept;
 ```
-<!-- src: qb/src/qb/system/time.h:245-297 -->
+<!-- src: qb/src/qb/system/time.h:247-299 -->
 
 Three reasons, all of them things that bite:
 
 1. **`std::gmtime` and `std::localtime` return a pointer into a process-wide static `std::tm`.** Two threads formatting a timestamp at the same time race on it. Every helper here takes a caller-owned `std::tm`, so the race cannot be written.
-2. **`gmtime_s` / `_mkgmtime` reject a negative `time_t` on Windows.** Every instant before 1970-01-01 therefore diverges between platforms — POSIX `gmtime_r` accepts it, Windows does not. `safe_gmtime` and `safe_timegm` are pure integer arithmetic — Howard Hinnant's `days_from_civil` / `civil_from_days` (`qb/src/qb/system/time.h:178-209`) — exact for *all* `time_t` and identical on every platform. `qb::date::from_wall_time(qb::wall_from_unix_seconds(-1)).to_string()` is `"1969-12-31"` everywhere (`qb/tests/core/unit/system/time.cpp:464`).
-3. **`safe_timegm` has no `-1` sentinel.** `timegm` returns `-1` on error, which is also a perfectly good instant (1969-12-31T23:59:59Z). The integer path cannot fail that way; the only failure `safe_gmtime` reports is a year that would overflow the `int tm_year` field (`qb/src/qb/system/time.h:270-271`).
+2. **`gmtime_s` / `_mkgmtime` reject a negative `time_t` on Windows.** Every instant before 1970-01-01 therefore diverges between platforms — POSIX `gmtime_r` accepts it, Windows does not. `safe_gmtime` and `safe_timegm` are pure integer arithmetic — Howard Hinnant's `days_from_civil` / `civil_from_days` (`qb/src/qb/system/time.h:180-211`) — exact for *all* `time_t` and identical on every platform. `qb::date::from_wall_time(qb::wall_from_unix_seconds(-1)).to_string()` is `"1969-12-31"` everywhere (`qb/tests/core/unit/system/time.cpp:464`).
+3. **`safe_timegm` has no `-1` sentinel.** `timegm` returns `-1` on error, which is also a perfectly good instant (1969-12-31T23:59:59Z). The integer path cannot fail that way; the only failure `safe_gmtime` reports is a year that would overflow the `int tm_year` field (`qb/src/qb/system/time.h:272-273`).
 
-`safe_localtime` deliberately keeps the C library, because local time genuinely needs the platform time-zone database (`qb/src/qb/system/time.h:290-297`).
+`safe_localtime` deliberately keeps the C library, because local time genuinely needs the platform time-zone database (`qb/src/qb/system/time.h:292-299`).
 
 ## Civil types: a label is not an instant
 
@@ -171,7 +171,7 @@ A `wall_time` is a point on the UTC timeline. A date on a form, a shop's opening
 | `qb::time_of_day_tz` | a `time_of_day` plus a fixed UTC offset in seconds **east** | a zone — an offset is not a time zone with DST rules |
 | `qb::calendar_interval` | months, days and sub-day microseconds, kept **separate** | a `qb::duration` — see below |
 
-<!-- src: qb/src/qb/system/time.h:481-674 -->
+<!-- src: qb/src/qb/system/time.h:495-686 -->
 
 ```cpp
 #include <qb/system/time.h>
@@ -191,7 +191,7 @@ qb::time_of_day_tz::from_hms_offset( 8,  0,  0, 0, -18000).to_string(); // "08:0
 ```
 <!-- src: qb/tests/core/unit/system/time.cpp:442-482 -->
 
-`date` and `time_of_day` are `constexpr`-constructible, carry a defaulted `operator<=>`, and `date` supports `+= std::chrono::days`, `-= std::chrono::days` and date subtraction yielding `std::chrono::days` (`qb/src/qb/system/time.h:544-562`). `date::from_wall_time` floors toward negative infinity, so a pre-epoch instant lands on the day that contains it rather than the one after (`qb/src/qb/system/time.h:500-507`).
+`date` and `time_of_day` are `constexpr`-constructible, carry a defaulted `operator<=>`, and `date` supports `+= std::chrono::days`, `-= std::chrono::days` and date subtraction yielding `std::chrono::days` (`qb/src/qb/system/time.h:556-574`). `date::from_wall_time` floors toward negative infinity — from the instant itself, so a sub-second one too — and a pre-epoch instant lands on the day that contains it rather than the one after (`qb/src/qb/system/time.h:514-519`).
 
 ### `calendar_interval` keeps its units apart on purpose
 
@@ -204,9 +204,9 @@ struct calendar_interval {
     std::chrono::microseconds micros{};
 };
 ```
-<!-- src: qb/src/qb/system/time.h:633-642 -->
+<!-- src: qb/src/qb/system/time.h:645-654 -->
 
-`to_micros()` exists for when you *do* need a single number, and it is honest about what it costs: it applies the conventional fold PostgreSQL's `EXTRACT(EPOCH)` uses — a day is 24 h, a whole year (12 months) is 365.25 days, a residual month is 30 days — and is lossy by construction (`qb/src/qb/system/time.h:644-656`).
+`to_micros()` exists for when you *do* need a single number, and it is honest about what it costs: it applies the conventional fold PostgreSQL's `EXTRACT(EPOCH)` uses — a day is 24 h, a whole year (12 months) is 365.25 days, a residual month is 30 days — and is lossy by construction (`qb/src/qb/system/time.h:656-668`).
 
 ```cpp
 using us = std::chrono::microseconds;
@@ -231,13 +231,13 @@ Wire formats need the components rather than the value types, so the same arithm
 | `format_time_of_day(micros)` / `parse_time_of_day(sv)` | `"HH:MM:SS[.ffffff]"` ↔ microseconds since midnight |
 | `format_utc_offset(seconds_east)` / `parse_utc_offset(sv)` | `"±HH:MM"` ↔ signed seconds east of UTC |
 
-<!-- src: qb/src/qb/system/time.h:363-463 -->
+<!-- src: qb/src/qb/system/time.h:367-477 -->
 
 Three details that a codec has to get right, and that these already do:
 
-- `format_time_of_day` emits the fractional part **only when non-zero** (`qb/src/qb/system/time.h:390-401`), and `parse_time_of_day` takes the fraction verbatim as microseconds, so a literal six-digit fraction round-trips (`qb/tests/core/unit/system/time.cpp:233-241`).
-- `format_utc_offset` never emits `"-00:00"`. In ISO 8601 / RFC 3339 that spelling specifically means *offset unknown*, which is not the same statement as `+00:00`, so the sign tracks the printed magnitude rather than the raw value (`qb/src/qb/system/time.h:431-434`).
-- `parse_utc_offset` accepts `"Z"`/`"z"` as zero, and the `"+HH"`, `"±HH:MM"`, `"±HH:MM:SS"` forms PostgreSQL emits (`qb/src/qb/system/time.h:445-463`).
+- `format_time_of_day` emits the fractional part **only when non-zero** (`qb/src/qb/system/time.h:394-405`), and `parse_time_of_day` takes the fraction verbatim as microseconds, so a literal six-digit fraction round-trips (`qb/tests/core/unit/system/time.cpp:233-241`).
+- `format_utc_offset` never emits `"-00:00"`. In ISO 8601 / RFC 3339 that spelling specifically means *offset unknown*, which is not the same statement as `+00:00`, so the sign tracks the printed magnitude rather than the raw value (`qb/src/qb/system/time.h:437-440`).
+- `parse_utc_offset` accepts `"Z"`/`"z"` as zero, and the `"+HH"`, `"±HH:MM"`, `"±HH:MM:SS"` forms PostgreSQL emits (`qb/src/qb/system/time.h:453-477`). It does not range-check the fields (`"+99:99"` parses), but the total is composed in 64 bits and an offset that does not fit the `int32_t` result is `std::nullopt` (`qb/src/qb/system/time.h:470-476`); `format_utc_offset` prints every `int32_t`, `INT32_MIN` included (`"-596523:14"`).
 
 The parsers are built on `qb::to_number_prefix` rather than `sscanf`, which is what makes them locale-independent, non-throwing and overflow-safe — see [Encoding and conversion](./encoding.md#numbers-from-text).
 
@@ -256,13 +256,13 @@ void process() {
     // timer fires the callback with the measured qb::duration on scope exit.
 }
 ```
-<!-- src: qb/src/qb/system/time.h:718-763 -->
+<!-- src: qb/src/qb/system/time.h:730-775 -->
 
-`ScopedTimer` measures monotonic elapsed time between construction and `stop()`/destruction and invokes the callback with the measured `qb::duration`. `stop()` is idempotent and returns the measurement, `restart()` re-arms it, and `elapsed()` reads it live while running. It is non-copyable **and** non-movable — all four special members are deleted (`qb/src/qb/system/time.h:753-756`) — because the callback is bound to the object's own lifetime.
+`ScopedTimer` measures monotonic elapsed time between construction and `stop()`/destruction and invokes the callback with the measured `qb::duration`. `stop()` is idempotent and returns the measurement, `restart()` re-arms it, and `elapsed()` reads it live while running. It is non-copyable **and** non-movable — all four special members are deleted (`qb/src/qb/system/time.h:765-768`) — because the callback is bound to the object's own lifetime.
 
-`LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction (`qb/src/qb/system/time.h:769-790`). Its two members are declared in an order that is load-bearing rather than stylistic: the timer's callback reads `_reason` when it fires on destruction, and members are destroyed in reverse declaration order, so `_timer` must be declared *last* to be destroyed *first*, while `_reason` is still alive (`qb/src/qb/system/time.h:784-789`).
+`LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction (`qb/src/qb/system/time.h:781-802`). Its two members are declared in an order that is load-bearing rather than stylistic: the timer's callback reads `_reason` when it fires on destruction, and members are destroyed in reverse declaration order, so `_timer` must be declared *last* to be destroyed *first*, while `_reason` is still alive (`qb/src/qb/system/time.h:796-801`).
 
-`qb::tsc_ticks()` reads the raw CPU timestamp counter (`rdtsc`, `cntvct_el0`, or a `high_resolution_clock` fallback). It is **not a clock**: monotonic per core, very high resolution, uncalibrated, and not comparable to either `mono_time` or `wall_time`. Use it for single-thread micro-benchmark deltas and nothing else (`qb/src/qb/system/time.h:683-707`).
+`qb::tsc_ticks()` reads the raw CPU timestamp counter (`rdtsc`, `cntvct_el0`, or a `high_resolution_clock` fallback). It is **not a clock**: monotonic per core, very high resolution, uncalibrated, and not comparable to either `mono_time` or `wall_time`. Use it for single-thread micro-benchmark deltas and nothing else (`qb/src/qb/system/time.h:695-719`).
 
 `qb::TimingStats` is what qb reports about a sequence of spans it timed: how many (`count`), their sum (`total`), the most recent (`last`), the longest since timing began (`max`), and `recent_max`, the longest that ended in the current or the previous whole second of the monotonic clock — a sliding worst case over one to two seconds, so a stall stays visible to a monitor that polls once a second and then ages out. Two places fill it, both opt-in: a core's passes (`qb::CoreStats::pass_time`, `CoreInitializer::setPassTiming()`) and a listener's watcher dispatch (`listener::dispatch_timing()`). Every field is zero when nothing was timed (Huly QB-165).
 
@@ -276,7 +276,7 @@ double   to_ev_seconds(duration d) noexcept;      // qb::duration -> ev_tstamp
 duration from_ev_seconds(double seconds) noexcept;  // ev_tstamp -> qb::duration
 }
 ```
-<!-- src: qb/src/qb/system/time.h:796-811 -->
+<!-- src: qb/src/qb/system/time.h:808-823 -->
 
 Application code never calls these. They are documented because knowing the seam exists is what tells you where to look when a timer's resolution surprises you: a `double` has 53 bits of mantissa, so a nanosecond-resolution span stops being exactly representable somewhere past a few months of magnitude. Timer *APIs* — `async::callback`, `ScopedTimeout`, `ctx.sleep` — are on the [async I/O system](../3_qb_io/async_system.md) page; this page owns only the vocabulary they speak.
 
@@ -284,11 +284,11 @@ Application code never calls these. They are documented because knowing the seam
 
 - **A raw `int` timeout is not "the old API", it is not an API.** `500` does not convert to `qb::duration` at all (`qb/src/qb/system/time.h:90`). If you see a call site with a bare number, it is either calling something that is not a qb API or it wrote `qb::duration{500}` and meant 500 *nanoseconds*.
 - **`1.5s` compiles in some places and not others.** A `qb::duration` parameter rejects it; a template `std::chrono::duration<Rep, Period>` parameter accepts it and truncates. Write `1500ms` and the question does not arise.
-- **The extractors truncate, they do not round.** `unix_millis` on an instant 1.9 ms past the epoch is `1`, not `2` (`qb/src/qb/system/time.h:127-130`). If a wire format needs rounding, do it explicitly before the cast.
-- **`format_utc` reports failure as an empty string**, not an exception and not `std::nullopt` (`qb/src/qb/system/time.h:305-315`). An empty result and a format string that legitimately produced nothing are indistinguishable; check the input rather than the output.
+- **The extractors truncate, they do not round.** `unix_millis` on an instant 1.9 ms past the epoch is `1`, not `2` (`qb/src/qb/system/time.h:129-132`). If a wire format needs rounding, do it explicitly before the cast.
+- **`format_utc` reports failure as an empty string**, not an exception and not `std::nullopt` (`qb/src/qb/system/time.h:307-319`). An empty result and a format string that legitimately produced nothing are indistinguishable; check the input rather than the output.
 - **`from_iso8601` will not take a fractional-seconds timestamp.** It is the exact inverse of `to_iso8601`, which emits whole seconds (`qb/tests/core/unit/system/time.cpp:213`). Feed it a `.123Z` instant and you get `std::nullopt`, which is easy to misread as "the string is malformed".
-- **Do not fold a `calendar_interval` into a `qb::duration` and expect it back.** `to_micros()` is a lossy convention, not a conversion (`qb/src/qb/system/time.h:644-656`). Keep the interval in its own type until the moment you genuinely need one number.
-- **`tsc_ticks()` is not a clock and its ticks are not nanoseconds.** It is uncalibrated and per core; a thread migrating between cores can read it going backwards (`qb/src/qb/system/time.h:683-707`).
+- **Do not fold a `calendar_interval` into a `qb::duration` and expect it back.** `to_micros()` is a lossy convention, not a conversion (`qb/src/qb/system/time.h:656-668`). Keep the interval in its own type until the moment you genuinely need one number.
+- **`tsc_ticks()` is not a clock and its ticks are not nanoseconds.** It is uncalibrated and per core; a thread migrating between cores can read it going backwards (`qb/src/qb/system/time.h:695-719`).
 - **`qb::mono_time` values do not survive the process.** There is no `unix_*` helper for them because a steady-clock epoch is unspecified — persisting or transmitting one compares against a different origin on the other side.
 
 ## See also

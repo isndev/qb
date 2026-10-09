@@ -120,7 +120,9 @@ public:
      * @brief Destructor that flushes output
      *
      * When the cout object is destroyed, its buffered content is
-     * output to std::cout in a thread-safe manner.
+     * output to std::cout in a thread-safe manner. Best-effort: it never throws -- a line
+     * that cannot be written (a failing stream with exceptions enabled, a lock or an
+     * allocation failure) is lost, the process is not (Huly QB-388).
      */
     ~cout();
 
@@ -168,6 +170,11 @@ class cerr {
 public:
     cerr()             = default;
     cerr(cerr const &) = delete;
+    /**
+     * @brief Writes the buffered line to std::cerr under the shared lock. Best-effort: it never
+     *        throws -- a line that cannot be written is lost, the process is not (Huly QB-388); the
+     *        crash reporters write through it at the moment something already went wrong.
+     */
     ~cerr();
     template <typename T>
     inline std::stringstream &

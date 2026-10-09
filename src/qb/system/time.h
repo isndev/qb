@@ -117,7 +117,9 @@ using namespace std::chrono_literals;
 // Unix-epoch scalar extraction (wire / logging boundaries)
 // ---------------------------------------------------------------------------
 
-/// Whole seconds since the Unix epoch.
+/// Whole seconds since the Unix epoch, TRUNCATED toward zero like every scalar below (-500 ms -> 0): a
+/// wire count of elapsed units. A calendar label is the second CONTAINING the instant -- a floor
+/// (-500 ms is 1969-12-31T23:59:59Z) -- which is what format_utc and date::from_wall_time take.
 [[nodiscard]] inline std::int64_t
 unix_seconds(wall_time tp) noexcept {
     return std::chrono::duration_cast<std::chrono::seconds>(tp.time_since_epoch()).count();
@@ -304,7 +306,9 @@ safe_localtime(std::time_t t, std::tm &out) noexcept {
 /// Returns an empty string on failure.
 [[nodiscard]] inline std::string
 format_utc(wall_time tp, std::string_view fmt) {
-    const auto t = static_cast<std::time_t>(unix_seconds(tp));
+    // The second CONTAINING the instant, a floor: unix_seconds truncates toward zero, which labelled every
+    // pre-epoch sub-second instant with the NEXT second (-500 ms printed 1970-01-01T00:00:00Z; Huly QB-284).
+    const auto t = static_cast<std::time_t>(std::chrono::floor<std::chrono::seconds>(tp.time_since_epoch()).count());
     std::tm    tm{};
     if (!safe_gmtime(t, tm))
         return {};
@@ -425,9 +429,11 @@ parse_time_of_day(std::string_view tod) noexcept {
 /// (e.g. +7200 -> "+02:00", -18000 -> "-05:00").
 [[nodiscard]] inline std::string
 format_utc_offset(std::int32_t seconds_east) {
-    const int abs_secs = seconds_east < 0 ? -seconds_east : seconds_east;
-    const int hh       = abs_secs / 3600;
-    const int mm       = (abs_secs % 3600) / 60;
+    // The magnitude in 64 bits: negating INT32_MIN in 32 is signed overflow (Huly QB-285). |INT32_MIN| / 3600 =
+    // 596523 hours still fits the int the format takes.
+    const std::int64_t abs_secs = seconds_east < 0 ? -static_cast<std::int64_t>(seconds_east) : seconds_east;
+    const int          hh       = static_cast<int>(abs_secs / 3600);
+    const int          mm       = static_cast<int>((abs_secs % 3600) / 60);
     // Sign tracks the printed magnitude, not the raw value: a western offset smaller than
     // one minute rounds to 00:00, and "-00:00" is NOT a canonical UTC offset — in ISO 8601
     // / RFC 3339 it specifically means "offset unknown", semantically distinct from +00:00.
@@ -441,7 +447,9 @@ format_utc_offset(std::int32_t seconds_east) {
 /// Parse a UTC offset to signed seconds east of UTC. Accepts the forms
 /// PostgreSQL emits for timetz/timestamptz — "+HH", "±HH:MM", "±HH:MM:SS" — and
 /// "Z"/"z" (zero). Inverse of format_utc_offset. Returns std::nullopt if the
-/// leading sign and hour cannot be read.
+/// leading sign and hour cannot be read, or if the offset they spell does not fit
+/// the int32 result. The fields themselves are not range-checked ("+99:99" is
+/// 99 * 3600 + 99 * 60): the TOTAL is.
 [[nodiscard]] inline std::optional<std::int32_t>
 parse_utc_offset(std::string_view off) noexcept {
     if (off.size() == 1 && (off[0] == 'Z' || off[0] == 'z'))
@@ -459,7 +467,13 @@ parse_utc_offset(std::string_view off) noexcept {
         return std::nullopt;
     if (detail::scan_literal(s, pos, ':') && detail::scan_int_field(s, pos, minute) && detail::scan_literal(s, pos, ':'))
         (void) detail::scan_int_field(s, pos, second);
-    return sign * (hour * 3600 + minute * 60 + second);
+    // Composed in 64 bits and checked against the int32 result: each field is a valid int, their sum in
+    // int was not ("+999999" overflowed; Huly QB-285). |every field| <= 2^31, so the sum cannot wrap here.
+    const std::int64_t total =
+        sign * (static_cast<std::int64_t>(hour) * 3600 + static_cast<std::int64_t>(minute) * 60 + static_cast<std::int64_t>(second));
+    if (total < std::numeric_limits<std::int32_t>::min() || total > std::numeric_limits<std::int32_t>::max())
+        return std::nullopt;
+    return static_cast<std::int32_t>(total);
 }
 
 // ---------------------------------------------------------------------------
@@ -499,11 +513,9 @@ public:
     /// The UTC calendar date containing a wall instant (floored).
     [[nodiscard]] static date
     from_wall_time(wall_time tp) noexcept {
-        const std::int64_t s = unix_seconds(tp);
-        std::int64_t       d = s / 86400;
-        if (s % 86400 < 0) // floor toward negative infinity
-            --d;
-        return from_days_since_epoch(d);
+        // Floored in ONE step, from the instant itself: flooring the day count of unix_seconds(tp), which had already
+        // truncated the sub-second part toward zero, put -500 ms on 1970-01-01 (Huly QB-284).
+        return date{std::chrono::floor<std::chrono::days>(tp)};
     }
     [[nodiscard]] static date
     today() noexcept {

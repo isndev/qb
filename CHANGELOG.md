@@ -683,6 +683,40 @@ policy.
   path cannot be taken: `is_always_equal`, or `propagate_on_container_move_assignment` for the assignment.
   `std::allocator` keeps the pointer steal. Only a stateful allocator reaches either defect; qb uses none. The tests are
   in `tests/core/unit/container/unordered-map-contract.cpp`.
+- **`qb::string` compares, searches and prints its whole length (Huly QB-386).** A `qb::string` is its `size()`
+  characters, and `assign(ptr, len)` keeps an interior `'\0'` -- but `compare` (so `<`, `<=`, ...), `==`, `find`,
+  `contains`, `starts_with`, `ends_with` and `operator<<` read it with the C string functions, which stop at the first
+  `'\0'`: `"a\0b"` was equal to `"a"` and to `"a\0c"`, a needle after an interior NUL was never found, and a stream got
+  the prefix. They now work on `std::string_view(*this)`, with `std::string`'s semantics; an operand given as
+  `char const *` is still read up to its NUL, as `std::string` reads one. A char BUFFER is read the same way: the
+  constructor, `assign()` and `operator=` taking a char array -- what a non-const array reaches, a literal takes the
+  `char const *` overload -- took `N - 1` characters of any array, so `char buf[32] = "abc"` gave a `size()` of 31,
+  its tail of NULs included, and an unterminated `char raw[3]` lost its last character; they read up to the first NUL,
+  never past the array. **Observable difference:** a string holding an interior or trailing `'\0'` -- for instance one
+  grown by `resize()` -- no longer equals its NUL-free prefix, and `operator<<` writes those NULs; a string built from
+  a char buffer holds the characters before its first NUL. Strings without a NUL, and string literals, compare, search
+  and print exactly as before.
+- **`qb::string::assign` from a view of the same string is well defined (Huly QB-387).** `s.assign(s.data() + 1, n)`
+  copied with `memcpy` over the bytes it was reading: undefined, and reported by ASan as `memcpy-param-overlap`. It
+  copies with `memmove`. `append` keeps `memcpy`, whose source cannot overlap the bytes past `size()` it writes.
+- **`qb::io::cout` / `qb::io::cerr` never terminate the process (Huly QB-388).** The line is written in the
+  destructor, and a destructor is implicitly `noexcept`: a write to a standard stream whose exceptions the program
+  enabled (`std::cerr.exceptions(std::ios::badbit)` over a failing stream), a lock or an allocation failure ended in
+  `std::terminate`, past any `try` around the statement. That included the coroutine crash reports, which write
+  through `qb::io::cerr` at the moment something already went wrong. The write is best-effort: a line that cannot be
+  written is lost, the process is not. `qb::string`'s `operator<<` and `operator>>` had the same flaw -- both
+  `noexcept`, both terminating on a stream that throws -- and keep their signatures: the failure stays in the stream's
+  state, which the failed operation has already set, and the target of a failed read is left unchanged.
+- **`qb::format_utc` and `qb::date::from_wall_time` floor a pre-epoch instant (Huly QB-284).** Both took
+  `unix_seconds()`, which truncates toward zero, so every pre-epoch instant with a fraction of a second was labelled
+  with the NEXT second -- `-500 ms` printed `1970-01-01T00:00:00Z` and fell on 1970-01-01 instead of
+  `1969-12-31T23:59:59Z` and 1969-12-31. A calendar label is the second (or the day) that contains the instant; both
+  floor now. `unix_seconds()` keeps its truncation, which its contract states.
+- **`qb::parse_utc_offset` and `qb::format_utc_offset` no longer overflow `int32` (Huly QB-285).** The parser added
+  hours, minutes and seconds in `int`: `"+999999"` was signed overflow and came back as a wrapped offset. It composes
+  in 64 bits and answers `std::nullopt` when the total does not fit an `int32_t` (each field is still not
+  range-checked: `"+99:99"` parses, as documented). The formatter negated `INT32_MIN` in 32 bits and printed
+  `"--596523:-14"`; it prints `"-596523:14"`.
 
 ### Documentation
 

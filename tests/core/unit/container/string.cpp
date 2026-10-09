@@ -22,12 +22,21 @@
  * buffer with `= default` move — no ownership transfer, so the source stays valid and unchanged);
  * an interior-NUL `assign(ptr, len)` case proving `size()` honours the explicit length rather than
  * `strlen` (the bytes, including the embedded NUL, survive); and find/rfind start-position edge
- * cases (pos past the end, pos 0, and a substring present only before pos).
+ * cases (pos past the end, pos 0, and a substring present only before pos). Then the whole-length
+ * contract that follows from it (Huly QB-386: comparisons, searches and stream insertion over the
+ * size, not up to an interior NUL) and assign from a view of the string itself (Huly QB-387); a
+ * char buffer read up to its first NUL, and the stream operators under a throwing stream.
  */
 
+#include <ios>
+#include <istream>
+#include <ostream>
 #include <sstream>
+#include <streambuf>
 #include <string>
+#include <string_view>
 
+#include <cstdlib>
 #include <cstring>
 #include <gtest/gtest.h>
 #include <qb/string.h>
@@ -752,6 +761,149 @@ TEST_F(StringTest, AssignWithInteriorNul) {
     qb::string<30> ctor(raw, sizeof(raw));
     EXPECT_EQ(ctor.size(), 5u);
     EXPECT_EQ(ctor, str);
+}
+
+TEST_F(StringTest, ComparisonsSearchesAndOutputSpanTheWholeLength) {
+    // Huly QB-386: the value is its size() characters, not the bytes up to the first NUL. Every comparison, search
+    // and stream insertion below used to stop at the interior '\0' (strcmp / strstr / strlen over c_str()), so two
+    // strings differing only after it compared equal and a needle past it was never found.
+    const char     ab_raw[] = {'a', '\0', 'b'};
+    const char     ac_raw[] = {'a', '\0', 'c'};
+    qb::string<16> ab(ab_raw, sizeof(ab_raw));
+    qb::string<16> ac(ac_raw, sizeof(ac_raw));
+
+    // Equality and order: same prefix, different byte after the NUL.
+    EXPECT_FALSE(ab == ac) << "the comparison stopped at the interior NUL";
+    EXPECT_TRUE(ab != ac);
+    EXPECT_LT(ab.compare(ac), 0);
+    EXPECT_GT(ac.compare(ab), 0);
+    EXPECT_TRUE(ab < ac);
+    EXPECT_FALSE(ac <= ab);
+    // A `char const *` operand is read up to ITS NUL and compared with OUR whole length, as std::string does.
+    EXPECT_FALSE(ab == "a");
+    EXPECT_TRUE(ab != "a");
+    EXPECT_GT(ab.compare("a"), 0);
+    EXPECT_FALSE("a" == ab);
+    // String-like operands of every kind compare over both lengths.
+    EXPECT_FALSE(ab == std::string("a"));
+    EXPECT_TRUE(ab == std::string(ab_raw, sizeof(ab_raw)));
+    EXPECT_FALSE(ab == std::string_view(ac_raw, sizeof(ac_raw)));
+    EXPECT_TRUE(ab == qb::string<8>(ab_raw, sizeof(ab_raw)));
+    EXPECT_FALSE(ab == qb::string<8>(ac_raw, sizeof(ac_raw)));
+
+    // Searches run over the whole length, and a needle carrying a NUL is searched whole.
+    const char     hay_raw[] = {'x', 'x', '\0', 'y', 'y'};
+    qb::string<16> hay(hay_raw, sizeof(hay_raw));
+    EXPECT_EQ(hay.find("yy"), 3u) << "the search stopped at the interior NUL";
+    EXPECT_EQ(hay.find(qb::string<16>("yy")), 3u);
+    EXPECT_TRUE(hay.contains("yy"));
+    const char ny_raw[] = {'\0', 'y'};
+    EXPECT_EQ(hay.find(qb::string<16>(ny_raw, sizeof(ny_raw))), 2u) << "a needle with a NUL was cut to \"\"";
+    EXPECT_EQ(hay.rfind("y"), 4u);
+    const char nyy_raw[] = {'\0', 'y', 'y'};
+    const char nzz_raw[] = {'\0', 'z', 'z'};
+    EXPECT_TRUE(hay.ends_with(qb::string<16>(nyy_raw, sizeof(nyy_raw))));
+    EXPECT_FALSE(hay.ends_with(qb::string<16>(nzz_raw, sizeof(nzz_raw)))) << "a suffix with a NUL was cut to \"\"";
+    qb::string<16> abx(ab_raw, sizeof(ab_raw));
+    abx.append("X");
+    EXPECT_TRUE(abx.starts_with(ab));
+    EXPECT_FALSE(abx.starts_with(ac)) << "a prefix with a NUL was cut to \"a\"";
+
+    // Stream insertion writes the whole length, as for a std::string.
+    std::ostringstream oss;
+    oss << ab;
+    EXPECT_EQ(oss.str(), std::string(ab_raw, sizeof(ab_raw)));
+
+    // NUL-free strings are unchanged (the common case): the same answers as before.
+    qb::string<16> plain("abc");
+    EXPECT_TRUE(plain == "abc");
+    EXPECT_TRUE(plain == std::string("abc"));
+    EXPECT_LT(plain.compare("abd"), 0);
+    EXPECT_EQ(plain.find("bc"), 1u);
+}
+
+TEST_F(StringTest, AssignFromAViewOfItselfIsWellDefined) {
+    // Huly QB-387: assign() copied with memcpy, and a source that is a view of the same string overlaps the
+    // destination -- undefined behaviour, which ASan reports as memcpy-param-overlap (a release build usually
+    // copies forward and gets the right bytes by luck, so the ASan run is the witness that matters).
+    qb::string<16> s("abcdef");
+    s.assign(std::string_view(s).substr(1)); // [1,6) onto [0,5): overlapping
+    EXPECT_EQ(std::string_view(s), "bcdef");
+    s.assign(std::string_view(s).substr(0, 3)); // a prefix: the same start
+    EXPECT_EQ(std::string_view(s), "bcd");
+    s = std::string_view(s); // the whole string onto itself
+    EXPECT_EQ(std::string_view(s), "bcd");
+    s.assign(s.data() + 2, 1); // one byte
+    EXPECT_EQ(std::string_view(s), "d");
+    s.assign(s.data(), 0); // zero bytes
+    EXPECT_TRUE(s.empty());
+    // Control: an unrelated source.
+    const std::string other = "xyz";
+    s.assign(other);
+    EXPECT_EQ(std::string_view(s), "xyz");
+}
+
+TEST_F(StringTest, ACharBufferIsReadUpToItsFirstNul) {
+    // A non-const char array -- a buffer -- reaches the array forms of the constructor, assign() and operator=,
+    // which took `N - 1` characters of ANY array: the buffer's tail of NULs became characters (size() 31 below), and
+    // with comparisons spanning the whole length (Huly QB-386) such a string no longer equals "abc". It is read as
+    // std::string reads it now: up to the first NUL.
+    char           buf[32] = "abc";
+    qb::string<64> from_ctor(buf);
+    EXPECT_EQ(from_ctor.size(), 3u) << "the buffer's tail of NULs was taken as characters";
+    EXPECT_TRUE(from_ctor == "abc");
+    qb::string<64> from_assign;
+    from_assign.assign(buf);
+    EXPECT_EQ(from_assign.size(), 3u);
+    qb::string<64> from_operator;
+    from_operator = buf;
+    EXPECT_EQ(from_operator.size(), 3u);
+    EXPECT_TRUE(from_operator == std::string("abc"));
+    // A buffer with no NUL at all is read whole -- never past its end, where strlen would over-read.
+    char          raw[3] = {'x', 'y', 'z'};
+    qb::string<8> unterminated(raw);
+    EXPECT_EQ(std::string_view(unterminated), "xyz") << "the last character of an unterminated buffer was dropped";
+    // Controls. A string LITERAL takes the `const char *` overload and its strlen, so it was never affected: all its
+    // characters, or those before an inner NUL, as std::string reads it.
+    EXPECT_EQ(qb::string<16>("hello").size(), 5u);
+    EXPECT_EQ(qb::string<16>("a\0b").size(), 1u);
+    // The (pointer, length) forms keep interior NULs.
+    EXPECT_EQ(qb::string<16>("a\0b", 3).size(), 3u);
+}
+
+// A stream that can write nothing: every put reports failure, so an ostream over it sets badbit.
+class FailingStreambuf : public std::streambuf {
+protected:
+    int_type
+    overflow(int_type) override {
+        return traits_type::eof();
+    }
+    std::streamsize
+    xsputn(char const *, std::streamsize) override {
+        return 0;
+    }
+};
+
+// operator<< and operator>> are noexcept, and a stream whose exceptions() the program enabled throws from inside
+// them: that was std::terminate (the class of Huly QB-388). In a child process: the failure must stay in the
+// stream's state, the target of a failed read unchanged. std::_Exit, as the type-id death tests: std::exit would run
+// LeakSanitizer's exit check under ASan.
+TEST(StringStreamDeathTest, AStreamThatThrowsNeverTerminatesTheInsertionOrTheExtraction) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(
+        {
+            FailingStreambuf failing;
+            std::ostream     out(&failing);
+            out.exceptions(std::ios::badbit);
+            const qb::string<16> payload("payload");
+            out << payload; // the write fails: badbit, and a throw
+            std::istringstream in("");
+            in.exceptions(std::ios::failbit);
+            qb::string<16> target("kept");
+            in >> target; // nothing to read: failbit, and a throw
+            std::_Exit(out.bad() && in.fail() && std::string_view(target) == "kept" ? 0 : 1);
+        },
+        ::testing::ExitedWithCode(0), "");
 }
 
 // Edge cases and error handling
