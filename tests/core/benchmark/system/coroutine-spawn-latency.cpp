@@ -33,8 +33,8 @@
  * Benchmark methodology (perf harness, never a ctest gate — no `EXPECT_LT(duration,…)`):
  *   - per-iteration engine construction + actor registration is hoisted out of the timed region with
  *     `PauseTiming()`/`ResumeTiming()`; only `start(false)` (which blocks until `stop()`) is timed;
- *   - `SetItemsProcessed` (total coroutines) and the descriptor counters (delivered count, peak active
- *     coroutines, watchdog flag) are assigned ONCE after the loop from the last run;
+ *   - every timed run checks its delivery count and watchdog after pausing timing; a failed run
+ *     produces no nominal-work rate. Descriptor counters are assigned once after a valid loop;
  *   - a one-shot, out-of-loop probe runs one full fan-out and asserts every coroutine delivered and
  *     the watchdog never fired, so a coroutine that never resumes is caught before timing.
  *
@@ -172,6 +172,12 @@ run_bench(benchmark::State &state, qb::duration const delay) {
         reset_run();
         state.ResumeTiming();
         run_engine<WithSleep>(count, delay, watchdog);
+        state.PauseTiming();
+        if (g_watchdog_fired.load(std::memory_order_relaxed) || g_delivered.load(std::memory_order_relaxed) != count) {
+            state.SkipWithError("not all coroutines delivered (watchdog fired or count mismatch)");
+            return;
+        }
+        state.ResumeTiming();
     }
 
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * count));

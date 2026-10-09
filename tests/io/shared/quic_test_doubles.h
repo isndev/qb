@@ -70,6 +70,12 @@
 #include <qb/io/async.h>
 #include <qb/io/async/quic.h>
 
+#ifdef QB_IO_QUIC_TEST_HOOKS
+namespace qb::io::quic::test {
+void reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code);
+}
+#endif
+
 namespace qb::io::test {
 
 // ---------------------------------------------------------------------------

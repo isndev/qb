@@ -164,6 +164,12 @@ qb_add_library(
         DEFINES ${IO_DEFINITIONS}
 )
 
+# The native QUIC system test needs a peer that sends RESET_STREAM without also
+# closing its read half. Keep the hook out of normal and installable builds.
+if (QB_HAS_QUIC AND QB_BUILD_TESTS AND NOT QB_INSTALL)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE QB_IO_QUIC_TEST_HOOKS=1)
+endif ()
+
 # Set the export name to io (instead of qb-io)
 set_target_properties(${PROJECT_NAME} PROPERTIES EXPORT_NAME io)
 

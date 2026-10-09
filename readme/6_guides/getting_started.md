@@ -135,12 +135,12 @@ What each call does:
 
 `Main::start(bool async = true)` has two modes:
 
-- **`start()` (async, the default)** launches all `VirtualCore` worker threads and returns immediately. The calling thread is free; call `join()` to block until shutdown. This is the idiom used above.
-- **`start(false)`** turns the calling thread into one of the worker threads and blocks until the engine stops. Use it when you do not want a separate main thread; in that mode there is no separate thread to `join()`.
+- **`start()` (async, the default)** launches all `VirtualCore` worker threads and returns after the startup barrier succeeds; a pre-loop failure waits for their teardown. The calling thread is free; call `join()` to block until shutdown. This is the idiom used above.
+- **`start(false)`** turns the calling thread into one of the worker threads and normally blocks until that worker stops. Use it when you do not want a separate main thread; in that mode there is no separate thread to `join()`.
 
 Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
 
-<!-- src: qb/src/qb/core/Main.h:931-964 -->
+<!-- src: qb/src/qb/core/Main.h:941-950,952-958,969-975 -->
 
 ## 4. A two-actor program: ping/pong
 
@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:366-407, qb/src/qb/io/async/io.h:318-326,351,507-515, qb/src/qb/core/Actor.h:1480-1481,2233-2235, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:246-249 -->
+<!-- src: qb/src/qb/io/async/io.h:366-407, qb/src/qb/io/async/io.h:318-326,351,507-515, qb/src/qb/core/Actor.h:1482-1483,2235-2237, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:246-249 -->
 
 ## 6. Build and run
 
@@ -346,7 +346,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/src/qb/core/Main.cpp:644-646 (Main::core throws while running), :461-463 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:388-399 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:474-476 (onInit is where registerEvent belongs) -->
+<!-- src: qb/src/qb/core/Main.cpp:659-661 (Main::core throws while running), :470-472 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:388-399 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:474-476 (onInit is where registerEvent belongs) -->
 
 ## Where to go next
 

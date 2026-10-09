@@ -369,6 +369,14 @@ static_assert(std::atomic<unsigned int>::is_always_lock_free, "Main signal gener
 std::array<std::atomic<unsigned int>, Main::SignalSlots> Main::_signal_raised{};
 std::atomic<unsigned int>                                Main::_signal_generation{0};
 
+namespace {
+// A worker can fail in __workflow__ immediately after the startup barrier and
+// overwrite its ready count before Main::start reads it. Keep that runtime
+// error distinct from every startup sentinel plus the maximum barrier count.
+constexpr uint64_t kRuntimeExceptionThrown = static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) | (1ull << 13u);
+static_assert(kRuntimeExceptionThrown > static_cast<uint64_t>(VirtualCore::Error::ExceptionThrown) + qb::MaxCores);
+} // namespace
+
 void
 Main::onSignal(int const signum) noexcept {
     static_assert(static_cast<std::size_t>(SIGINT) < SignalSlots && static_cast<std::size_t>(SIGTERM) < SignalSlots,
@@ -405,17 +413,30 @@ Main::~Main() noexcept {
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto &initializer = params.initializer;
-    // Death watch (Huly QB-51): once this core is marked stopped (`exit_guard`) and destroyed with
-    // its actors, whatever ended it, tell the cores still running -- if a watch ever crossed cores.
+    // Death watch (Huly QB-51): after this core is destroyed with its actors,
+    // mark it stopped and tell the cores still running -- if a watch ever crossed cores.
     // Declared first, so it runs last.
     struct StopNotice {
         SharedCoreCommunication &com;
         CoreId                   index;
+        CoreId                   resolved_index;
         ~StopNotice() {
+            // Publish only after the stack core has destroyed its actors. A late
+            // death watch must not report core_stopped while a watched actor's
+            // destructor is still running on this thread.
+            com.mark_core_stopped(resolved_index);
             VirtualCore::__announce_stop__(com, index);
         }
-    } stop_notice{params.shared_com, initializer.getIndex()};
+    } stop_notice{params.shared_com, initializer.getIndex(), 0};
+    // The actor destructors in VirtualCore's terminal teardown still need the
+    // owning-thread context. This guard precedes `core`, hence runs after it.
+    struct ThreadContextGuard {
+        ~ThreadContextGuard() {
+            VirtualCore::_handler = nullptr;
+        }
+    } thread_context_guard;
     VirtualCore core(initializer.getIndex(), params.shared_com);
+    stop_notice.resolved_index = core._resolved_index;
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.
     core.__set_stop_token__(params.stop_token);
@@ -425,17 +446,10 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     core._dead_letter_handler = std::move(initializer._dead_letter_handler); // before any actor runs (Huly QB-163)
     core._pass_timing         = initializer.getPassTiming();                 // read once, by __workflow__ (Huly QB-165)
 
-    // Publish this core as stopped on EVERY exit from here on — including an
-    // exception escaping a callback / IO handler inside __workflow__. Normally
-    // __workflow__ marks itself stopped at its tail, but on a throw that tail is
-    // skipped, so peers keep treating the crashed core as live and the shutdown
-    // residual drain (which waits for every core's stopped flag) hangs
-    // Main::join() forever. mark_core_stopped is an idempotent release store on
-    // this core's own thread, so the normal in-workflow call is unaffected.
+    // Withdraw the listener on every exit before the core's terminal teardown.
+    // StopNotice publishes stopped only after that teardown is complete.
     struct ExitGuard {
-        SharedCoreCommunication &com;
-        CoreId                   idx;
-        VirtualCore             &core;
+        VirtualCore &core;
         ~ExitGuard() {
             // Withdraw the io loop the core published to its mailbox (`VirtualCore::__init__`)
             // before this thread's `listener::current` is destroyed: a producer that saw the
@@ -443,15 +457,10 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             // mailbox mutex, so a `wake()` already in flight completes first. Idempotent, and
             // harmless when init never got as far as publishing.
             core._mail_box.detach_loop();
-            com.mark_core_stopped(idx);
-            // `core` is a stack local; leaving `_handler` pointing at it dangles
-            // once this returns. Matters for start(false), where the caller's own
-            // thread ran start_thread and may touch the framework afterwards (an
-            // Actor ctor only asserts non-null). Fires on every exit path.
-            VirtualCore::_handler = nullptr;
         }
-    } exit_guard{params.shared_com, core._resolved_index, core};
+    } exit_guard{core};
 
+    bool entered_workflow = false;
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
@@ -472,16 +481,17 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         initializer.clear();
         if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))
             return;
+        entered_workflow = true;
         core.__workflow__();
     } catch (const std::exception &e) {
         QB_LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
-        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+        params.sync_start.store(entered_workflow ? kRuntimeExceptionThrown : VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     } catch (...) {
         // A non-std::exception throw would otherwise escape this noexcept
         // function and std::terminate — and skip the stopped-flag publish.
         QB_LOG_CRIT("Non-standard exception thrown on " << core);
-        params.sync_start.store(VirtualCore::Error::ExceptionThrown, std::memory_order_release);
+        params.sync_start.store(entered_workflow ? kRuntimeExceptionThrown : VirtualCore::Error::ExceptionThrown, std::memory_order_release);
         initializer.clear();
     }
 }
@@ -599,7 +609,12 @@ Main::start(bool async) noexcept {
         Main::install_default_signals();
     }
 
-    if (hasError()) {
+    // A runtime exception can overtake this load after every core passed the
+    // barrier. Only a startup failure requires joining here: on a runtime
+    // failure another core may still be live and need the caller to stop it.
+    const auto start_state = _sync_start.load(std::memory_order_acquire);
+    if (start_state >= VirtualCore::Error::BadInit && start_state < kRuntimeExceptionThrown) {
+        join(); // keep shared resources and initializers alive until every failed worker exits
         _is_running = false;
         QB_LOG_CRIT("[Main] Init Failed");
         std::cerr << "CRITICAL: Core Init Failed -> show logs to have more details" << std::endl;

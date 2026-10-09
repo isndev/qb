@@ -287,6 +287,83 @@ policy.
 
 ### Fixed
 
+- **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
+  retained iterators into the source cache's list. Looking up or replacing a key in the copy
+  could mutate the source, corrupt the LRU order or dereference freed nodes after the source
+  was destroyed. Copy construction rebuilds the index; copy assignment prepares the complete
+  replacement before changing the destination. Copy assignment is rejected at compile time for
+  key hash types whose index swap may throw; copy construction still works for copyable keys.
+  Moves retain the existing node transfer.
+- **`with_deadline` owns a temporary operation before its returned task is awaited (Huly QB-270).**
+  Its `task<T>&&` parameter formerly remained a reference in a lazy coroutine frame; storing or
+  returning the wrapper destroyed the temporary operation at the end of the call expression.
+  An eager factory now moves it into an owning coroutine frame while preserving the public
+  signature and the absolute deadline. Stored value, void, exception, timeout and cancellation
+  paths are covered in `deadline-combinator.cpp`.
+- **An abnormal core exit now tears down its actors and queued events before withdrawing their context (Huly QB-260).**
+  A failed startup or throwing loop callback could destroy surviving actors after their thread-local core pointer
+  was cleared, and release raw event storage without destroying owned payloads. Terminal teardown now cancels
+  coroutine scopes, destroys suspended init frames, removes actors through the normal lifecycle path, disposes
+  pending pipes, then publishes the stopped core. Actor destructors retain `getIndex()` and death watches cannot
+  report `core_stopped` before a watched destructor finishes. Once teardown begins, `addRefActor` refuses new
+  children before construction, so cancellation hooks, stashed payload destructors and coroutine frame
+  destructors cannot re-enter a dying actor registry or scheduler.
+- **A throwing routed event handler now stops only its `VirtualCore` and reports through `Main::hasError()` (Huly QB-262).**
+  Custom, default and death-watch handlers, including activation replay and broadcasts, previously crossed a
+  `noexcept` trampoline and terminated the process. The receive boundary now disposes the faulting event and
+  the rest of an already-dequeued batch exactly once before the exception reaches `Main::start_thread`.
+  SPSC copy-out `dequeue` retains `noexcept` for a non-throwing callback and propagates a throwing callback's
+  exception after publishing its read index; this avoids a new branch on ordinary core dispatch.
+- **Activation deadline cancellation tolerates children added by a cancellation hook (Huly QB-968).**
+  The activation map is now scanned by snapshotted actor ids and each entry is re-found before it is read:
+  a hook that adds a child with suspended `onInit()` cannot invalidate a live map iterator.
+- **A rejected duplicate service cannot replace the live service's event subscription (Huly QB-261).**
+  Runtime `addRefActor<Service>()` checks the occupied or in-construction service ID before constructing another instance.
+  A constructor that registers a custom event therefore cannot leave the router pointing at the
+  destroyed duplicate; the existing service keeps receiving its events. If a constructor throws
+  after registering events, a loop callback or a death watch, the partial registrations and
+  pending self-kill are removed. An ordinary actor constructor that throws receives the same
+  cleanup; its ID remains reserved so already queued events cannot hit a replacement.
+- **A first actor's `onInit()` now resumes after an immediate qb-io await (Huly QB-271).**
+  The core binds its listener scheduler before the first coroutine resume. `sleep(0)`, a negative
+  sleep and a callback completed inline therefore queue their continuation on the scheduler
+  that the actor loop drains, instead of an orphaned thread-local fallback. Positive waits and
+  synchronous initialization keep their behavior; the scheduler is allocated once on the cold
+  first-init path, with no change to per-pass dispatch.
+- **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
+  A producer counted completion after publishing the final ready slot, so the consumer could
+  retire and free the 32,768-record Buffer before that producer touched its counter. Completion
+  now precedes the ready publication, which is the producer's last access to that Buffer. A
+  deterministic ASan test catches the former use-after-free; rollover, a delayed earlier
+  producer and concurrent producers verify the guaranteed delivery contract.
+- **A QUIC read-side stop or peer reset keeps the other half's unacknowledged output alive (Huly QB-328).**
+  The native backend no longer discards queued and in-flight write buffers when only reception ends;
+  ngtcp2 may still need them for retransmission until ACK or full stream close. A direct two-peer
+  witness drops the first packet: the open-read control retransmitted all 512 bytes, while the
+  stopped-read path returned corrupted bytes before this fix. Full write shutdown still discards TX.
+- **A pre-loop `Main::start()` failure joins its workers before releasing their resources (Huly QB-259).**
+  The startup error flag used to let `start(true)` return while a worker was still tearing down; `_is_running`
+  became false, so `~Main()` skipped its explicit join and member destruction freed shared mailboxes before the
+  worker threads' automatic joins. The startup-failure branch now joins every worker before allowing reconfiguration,
+  destruction or another start. An exception after the startup barrier uses a distinct internal error marker:
+  `hasError()` still reports it, while `start()` leaves other live cores for the caller to stop. The existing
+  `main-lifecycle` suite gates a failed actor destructor and a post-barrier throw with a live peer; both caught the
+  prior behavior before the fix.
+- **Mixed-case URI schemes resolve their implicit service port (Huly QB-919).** `qb::io::uri`
+  keeps the original scheme bytes in `source()` and `scheme()`, while matching the default-port
+  table without ASCII case: `hTtP://host/` yields 80 and `HtTpS://host/` yields 443 instead of 0.
+  Explicit ports still win; a scheme with no registered default still reports no port. The
+  lowercase lookup is unchanged, and the rare mixed-case fallback uses no allocation.
+- **Peer-initiated QUIC streams return their concurrency slot when they close (Huly QB-934).** For a
+  bidirectional or unidirectional stream delivered through ngtcp2's `stream_open` callback, the native backend
+  marks it and extends `MAX_STREAMS` for that direction on close. Ngtcp2 renews implicitly opened streams
+  itself, so those receive no second grant; locally initiated closes do not grant the peer a slot.
+- **A QUIC endpoint reconnect rearms its UDP watcher on the new socket (Huly QB-930).** After `close()`
+  stops the existing watcher and closes the socket, a later `connect()` rebinds that watcher to the newly
+  opened descriptor and starts it, so the event loop can receive packets for the new attempt. If the endpoint
+  created its native backend, `connect()` or `listen()` also refreshes that backend after close; a backend
+  supplied by the caller remains under the caller's control.
+
 - **A zlib decompressor called with no input hands back what it was still holding (Huly QB-464).** A decompress call
   with an empty input returned at once, so output that an earlier call had no room for -- a match copy cut by a full
   window -- stayed inside inflate until more input came, and a caller whose input was all consumed could never get it.

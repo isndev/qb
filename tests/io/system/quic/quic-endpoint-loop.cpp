@@ -53,7 +53,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -251,6 +253,29 @@ TEST(QuicEndpointLoop, IdleTimeoutClosesConnectionViaTimerPath) {
 // DESTRUCTOR TEARDOWN — close() + unregister_watchers() on a live, connected endpoint
 // =============================================================================
 
+TEST(QuicEndpointLoop, ReconnectAfterCloseRearmsIoWatcherOnNewSocket) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs";
+    qb::io::async::init();
+
+    CallbackQuicServer server;
+    CallbackQuicClient client;
+    establish_loopback(server, client);
+    ASSERT_GE(server.connected, 1);
+
+    const auto uri = std::string{"quic://127.0.0.1:"} + std::to_string(server.local_endpoint().port());
+    client.close();
+    qb::io::quic::tls_config tls;
+    tls.server_name = "localhost";
+    tls.verify_peer = false;
+    ASSERT_TRUE(client.connect(qb::io::uri{uri}, tls, {"h3"}));
+    ASSERT_TRUE(pump_until([&] { return client.current_state() == State::connected && server.connected >= 2; }, std::chrono::seconds(5)))
+        << "reconnect did not deliver the new socket's read events";
+
+    client.close();
+    server.close();
+    qb::io::async::listener::current.clear();
+}
+
 /**
  * @test Destroying a still-connected live endpoint closes it and drops its watchers cleanly
  * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:250-253). The
@@ -293,6 +318,50 @@ TEST(QuicEndpointLoop, DestructorClosesAndUnregistersWatchersOnLiveEndpoint) {
     // size it had before the client connected (the server's own two watchers remain).
     EXPECT_EQ(qb::io::async::listener::current.size(), baseline) << "the destructor leaked a watcher";
 
+    server.close();
+    qb::io::async::listener::current.clear();
+}
+
+TEST(QuicEndpointLoop, RemoteUnidirectionalStreamQuotaRenewsAfterClose) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs";
+    qb::io::async::init();
+
+    CallbackQuicServer            server;
+    qb::io::async::quic::endpoint client;
+    auto                          settings = server.settings();
+    settings.max_streams_uni               = 1;
+    server.set_settings(settings);
+    establish_loopback(server, client);
+
+    for (int i = 0; i < 4; ++i) {
+        bool          opened    = false;
+        std::uint64_t stream_id = 0;
+        ASSERT_TRUE(pump_until(
+            [&] {
+                try {
+                    auto stream = client.open_unidirectional_stream();
+                    stream_id   = stream.id();
+                    opened      = true;
+                    return true;
+                } catch (std::runtime_error const &) {
+                    return false; // peer has not yet delivered its next MAX_STREAMS
+                }
+            },
+            std::chrono::seconds(1)))
+            << "remote unidirectional slot " << i << " was not restored";
+        ASSERT_TRUE(opened);
+
+        const char byte = static_cast<char>('a' + i);
+        client.send_stream_data(stream_id, std::string_view{&byte, 1}, true);
+        ASSERT_TRUE(pump_until([&] { return server.received.size() == static_cast<std::size_t>(i + 1); }, std::chrono::seconds(1)));
+    }
+    EXPECT_EQ(server.received, "abcd");
+    EXPECT_EQ(server.stream_started, 4);
+    EXPECT_EQ(server.last_stream_direction, qb::io::quic::stream_direction::unidirectional);
+    EXPECT_EQ(server.last_stream_origin, qb::io::quic::stream_origin::remote);
+    EXPECT_EQ(server.connected, 1);
+
+    client.close();
     server.close();
     qb::io::async::listener::current.clear();
 }

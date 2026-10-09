@@ -59,6 +59,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <thread>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -905,7 +906,166 @@ direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, b
     return server_connection_id;
 }
 
+void
+deliver_quota_packets(qb::io::quic::backend &client, qb::io::quic::backend &server) {
+    deliver_quic_packets(client, server);
+    deliver_quic_packets(server, client);
+}
+
+bool
+wait_for_quota_event(qb::io::quic::backend &client, qb::io::quic::backend &server, qb::io::quic::backend_event::kind kind,
+                     std::uint64_t stream_id) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+        deliver_quota_packets(client, server);
+        for (auto const &event : server.drain_events())
+            if (event.type == kind && event.stream_id == stream_id)
+                return true;
+        (void) client.drain_events();
+    }
+    return false;
+}
+
 } // namespace
+
+TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSlot) {
+    ASSERT_TRUE(require_ssl_files());
+
+    for (auto direction : {qb::io::quic::stream_direction::unidirectional, qb::io::quic::stream_direction::bidirectional}) {
+        auto                   server = qb::io::quic::make_native_backend();
+        auto                   client = qb::io::quic::make_native_backend();
+        qb::io::quic::settings limits;
+        limits.max_streams_uni  = 1;
+        limits.max_streams_bidi = 1;
+        server->configure(limits);
+
+        qb::io::quic::tls_config server_tls;
+        server_tls.certificate_file = ssl_resource_path("cert.pem");
+        server_tls.private_key_file = ssl_resource_path("key.pem");
+        server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+        qb::io::quic::tls_config client_tls;
+        client_tls.server_name = "localhost";
+        client_tls.verify_peer = false;
+        client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+        bool       client_connected     = false;
+        const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+        ASSERT_TRUE(client_connected);
+        ASSERT_NE(server_connection_id, 0u);
+
+        for (int i = 0; i < 4; ++i) {
+            std::uint64_t stream_id = 0;
+            bool          opened    = false;
+            const auto    deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            while (!opened && std::chrono::steady_clock::now() < deadline) {
+                deliver_quota_packets(*client, *server);
+                try {
+                    stream_id = client->open_stream(0, direction);
+                    opened    = true;
+                } catch (std::runtime_error const &) {
+                    (void) client->drain_events();
+                    (void) server->drain_events();
+                }
+            }
+            ASSERT_TRUE(opened) << "remote stream quota was not renewed at slot " << i;
+            client->send_stream_data(0, stream_id, std::span<const std::byte>{}, true);
+            if (direction == qb::io::quic::stream_direction::bidirectional) {
+                ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, stream_id));
+                server->send_stream_data(server_connection_id, stream_id, std::span<const std::byte>{}, true);
+            }
+            ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, stream_id));
+        }
+    }
+}
+
+TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwoSlots) {
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings limits;
+    limits.max_streams_uni = 2;
+    server->configure(limits);
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+    bool client_connected = false;
+    ASSERT_NE(direct_handshake(*client, *server, client_connected), 0u);
+    ASSERT_TRUE(client_connected);
+
+    const auto first  = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    ASSERT_EQ(second, first + 4);
+    // The higher ID reaches the peer first. The lower ID is materialized only
+    // when its own data arrives; it must then trigger stream_open before close.
+    client->send_stream_data(0, second, std::span<const std::byte>{}, true);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
+    constexpr std::array<std::byte, 1> lower_payload{std::byte{0x61}};
+    client->send_stream_data(0, first, lower_payload, false);
+    bool       lower_started = false;
+    bool       lower_closed  = false;
+    const auto deadline      = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!lower_started && std::chrono::steady_clock::now() < deadline) {
+        deliver_quota_packets(*client, *server);
+        for (auto const &event : server->drain_events()) {
+            if (event.stream_id != first)
+                continue;
+            lower_started |= event.type == qb::io::quic::backend_event::kind::stream_started;
+            lower_closed |= event.type == qb::io::quic::backend_event::kind::stream_closed;
+        }
+    }
+    ASSERT_TRUE(lower_started) << "referencing the lower ID must invoke stream_open";
+    EXPECT_FALSE(lower_closed) << "the lower stream remains open until its FIN";
+    client->send_stream_data(0, first, std::span<const std::byte>{}, true);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    EXPECT_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional), std::runtime_error)
+        << "both streams invoked stream_open, so their closes must renew exactly two slots";
+}
+
+TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings limits;
+    limits.max_streams_uni = 1;
+    server->configure(limits);
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+    bool       client_connected     = false;
+    const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(server_connection_id, 0u);
+
+    constexpr std::array<std::byte, 1> payload{std::byte{0x61}};
+    const auto                         first = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    client->send_stream_data(0, first, payload, false);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, first));
+    client->reset_stream(0, first, 0x123);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    client->send_stream_data(0, second, payload, false);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, second));
+    server->stop_stream(server_connection_id, second, 0x456);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+}
 
 /**
  * @test The peer ACKs server stream data, driving acked_stream_data_offset_cb / stream_data_acked
@@ -1456,5 +1616,116 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     EXPECT_TRUE(client_saw_finished) << "the peer (which learned the FIN through recv_stream_data_cb) must observe stream_closed(finished)";
     EXPECT_FALSE(client_synthesised) << "the peer must NOT synthesise a FIN: it already received one via recv_stream_data_cb";
 }
+
+enum class QuicReadHalfAction { none, local_stop, peer_reset };
+
+class QuicReadHalfRetransmissionTest : public ::testing::TestWithParam<QuicReadHalfAction> {};
+
+/**
+ * @test A lost packet is retransmitted intact after a local read stop or a peer write reset
+ * @brief The open-read case is the packet-loss control. The two read-end cases must keep
+ *        unacknowledged TX storage alive until ngtcp2 retransmits and acknowledges it.
+ */
+TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
+    ASSERT_TRUE(require_ssl_files());
+
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    const qb::io::endpoint server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint client_endpoint{"127.0.0.1", 54321};
+
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    bool       client_connected = false;
+    const auto connection_id    = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(connection_id, 0u);
+
+    const auto        stream = client->open_stream(qb::io::quic::stream_direction::bidirectional);
+    const std::string opener = "open";
+    client->send_stream_data(0, stream, std::span<const std::byte>{reinterpret_cast<const std::byte *>(opener.data()), opener.size()}, false);
+    bool server_saw_opener = false;
+    for (int i = 0; i < 64 && !server_saw_opener; ++i) {
+        deliver_quic_packets(*client, *server);
+        deliver_quic_packets(*server, *client);
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.stream_id == stream && !event.payload.empty())
+                server_saw_opener = true;
+        }
+        (void) client->drain_events();
+    }
+    ASSERT_TRUE(server_saw_opener);
+
+    const std::string payload(512, 'Q');
+    server->send_stream_data(connection_id, stream,
+                             std::span<const std::byte>{reinterpret_cast<const std::byte *>(payload.data()), payload.size()}, false);
+    auto lost_packets = server->drain_packets();
+    ASSERT_FALSE(lost_packets.empty()) << "the TX witness needs an unacknowledged packet to lose";
+    if (GetParam() == QuicReadHalfAction::local_stop)
+        server->stop_stream(connection_id, stream, 0x29);
+#ifdef QB_IO_QUIC_TEST_HOOKS
+    if (GetParam() == QuicReadHalfAction::peer_reset) {
+        // The peer only resets its write half. A full reset would also send STOP_SENDING,
+        // legitimately cancelling the server's write and masking the TX lifetime bug.
+        qb::io::quic::test::reset_stream_write(*client, stream, 0x2a);
+        deliver_quic_packets(*client, *server);
+        std::size_t reset_events = 0;
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_closed && event.stream_id == stream
+                && event.text == "stream reset by peer" && event.error_code == 0x2a)
+                ++reset_events;
+        }
+        ASSERT_EQ(reset_events, 1u) << "the peer RESET_STREAM must reach stream_reset_cb with server TX unacknowledged";
+    }
+#endif
+
+    std::string   received;
+    std::uint64_t acked_bytes = 0;
+    std::size_t   ack_events  = 0;
+    const auto    deadline    = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    for (int i = 0; i < 12 && (received.size() < payload.size() || acked_bytes < payload.size()) && std::chrono::steady_clock::now() < deadline;
+         ++i) {
+        const auto expiry = server->next_timeout();
+        ASSERT_NE(expiry, std::chrono::steady_clock::time_point::max());
+        if (expiry > deadline)
+            break;
+        if (expiry > std::chrono::steady_clock::now())
+            std::this_thread::sleep_until(expiry);
+        server->on_timeout(std::chrono::steady_clock::now());
+        deliver_quic_packets(*server, *client);
+        deliver_quic_packets(*client, *server);
+        for (auto const &event : client->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.stream_id == stream) {
+                received.append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
+            }
+        }
+        for (auto const &event : server->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::stream_data_acked && event.stream_id == stream) {
+                acked_bytes += event.error_code;
+                ++ack_events;
+            }
+        }
+    }
+
+    EXPECT_EQ(received.size(), payload.size());
+    EXPECT_TRUE(received == payload) << "retransmission used bytes from a retired TX buffer";
+    EXPECT_EQ(acked_bytes, payload.size()) << "the retained TX must release when the peer ACKs it";
+    EXPECT_EQ(ack_events, 1u) << "a single retransmitted frame must be acknowledged once";
+}
+
+#ifdef QB_IO_QUIC_TEST_HOOKS
+INSTANTIATE_TEST_SUITE_P(ReadOpenStoppedAndPeerReset, QuicReadHalfRetransmissionTest,
+                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop, QuicReadHalfAction::peer_reset));
+#else
+INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadHalfRetransmissionTest,
+                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop));
+#endif
 
 #endif // QB_HAS_QUIC

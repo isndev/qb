@@ -1052,26 +1052,18 @@ with_deadline_run_timeout(std::shared_ptr<with_deadline_timeout_state> s, std::c
     co_return co_await with_deadline_timeout_awaiter{std::move(s), dl, std::move(tok)};
 }
 
-} // namespace detail
-
-/**
- * @brief Helper to run operation with deadline
- *
- * Single sleep until deadline (no 10ms polling). Cancel wakes immediately via token callback.
- *
- * @param operation Task to run
- * @param deadline Max time point
- * @param token Cancellation token (optional)
- * @return Result or throws timeout_error / cancelled_error
- * @ingroup Coroutine
- */
+// The operation is a value parameter of this coroutine: it is moved into the
+// frame when the coroutine is created, before initial_suspend. The public
+// with_deadline() factory below must remain an ordinary function so a caller
+// can store its result after passing a temporary task.
 template <typename T>
 task<T>
-with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {}) {
+with_deadline_owned(task<T> operation, std::chrono::steady_clock::time_point deadline, cancellation_token token) {
     // Early short-circuit: if the deadline is already in the past when we
-    // enter, the contract is already violated — no point running the
-    // operation. Throwing synchronously here is safe and matches user
-    // expectations ("must complete **before** deadline"). Finding 2.B.5
+    // resume, the contract is already violated — no point running the
+    // operation. Checking the absolute point here (rather than turning it
+    // into a duration at factory call) also covers a wrapper stored past its
+    // deadline. Finding 2.B.5
     // is strictly about not reclassifying a *winning* operation after the
     // race has already been resolved; this pre-check runs *before* the
     // race and has a different intent.
@@ -1079,13 +1071,13 @@ with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadlin
         throw timeout_error();
     }
 
-    auto state = std::make_shared<detail::with_deadline_timeout_state>();
+    auto state = std::make_shared<with_deadline_timeout_state>();
 
     // Use a free function (not a lambda) to avoid the dangling-lambda-pointer bug:
-    // if we used a local lambda here, with_deadline's frame might be destroyed
+    // if we used a local lambda here, this frame might be destroyed
     // (after throwing timeout_error) while the spawned timeout coroutine still
     // holds a pointer to that local lambda object.
-    auto res = co_await when_any(std::move(operation), detail::with_deadline_run_timeout(state, deadline, token));
+    auto res = co_await when_any(std::move(operation), with_deadline_run_timeout(state, deadline, std::move(token)));
 
     // Finding 2.B.5: the operation branch **won** the race — that is
     // authoritative. Do not second-guess it against wall-clock time here:
@@ -1106,6 +1098,26 @@ with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadlin
         throw cancelled_error();
     }
     throw timeout_error();
+}
+
+} // namespace detail
+
+/**
+ * @brief Helper to run operation with deadline
+ *
+ * Single sleep until deadline (no 10ms polling). Cancel wakes immediately via token callback.
+ * Takes ownership of operation at the call, before the returned task first resumes.
+ *
+ * @param operation Task to run
+ * @param deadline Max time point
+ * @param token Cancellation token (optional)
+ * @return Result or throws timeout_error / cancelled_error
+ * @ingroup Coroutine
+ */
+template <typename T>
+task<T>
+with_deadline(task<T> &&operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {}) {
+    return detail::with_deadline_owned(std::move(operation), deadline, std::move(token));
 }
 
 } // namespace qb::io::async

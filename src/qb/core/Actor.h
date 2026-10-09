@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:684`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1309-1310`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -384,7 +384,7 @@ class Actor : nocopy {
      *          / `unregisterEvent`, read only by the core's `DefaultEventResolver<E>` on the owning
      *          thread; all five are nullptr for an actor built with `qb::no_default_events`.
      */
-    using DefaultDispatch = void (*)(Actor &, Event &) noexcept;
+    using DefaultDispatch = void (*)(Actor &, Event &);
     std::array<DefaultDispatch, std::tuple_size_v<default_events_t>> _default_on{};
 
     /**
@@ -1341,15 +1341,17 @@ public:
      *         (even if the child's async `onInit()` is still in flight); `get()`/`operator->`
      *         resolve the actor only once it is **active** (`onInit` completed), and are
      *         `nullptr` while Activating, after a failed init, or after it died. An empty
-     *         handle (`!valid()`) means creation failed.
+     *         handle (`!valid()`) means creation failed or the core has entered
+     *         terminal teardown; in the latter case no child constructor runs.
      * @details
      * Referenced actors are created on the same `VirtualCore` as the calling (parent) actor and
-     * manage their own lifecycle (the parent does **not** own them). Send to `handle.id()` at
-     * any time — events to a still-Activating child are stashed and replayed FIFO once it
+     * manage their own lifecycle (the parent does **not** own them). Once `valid()`, send to
+     * `handle.id()` — events to a still-Activating child are stashed and replayed FIFO once it
      * activates. To touch the child directly, gate on readiness:
      * @code
      * auto helper = addRefActor<HelperActor>(cfg);   // qb::ActorHandle<HelperActor>
-     * push<TaskEvent>(helper.id(), task_data);        // always safe (stashed if Activating)
+     * if (!helper.valid()) return;                    // creation refused during teardown
+     * push<TaskEvent>(helper.id(), task_data);        // stashed if Activating
      * if (helper.ready())                             // sync-init child: ready at once
      *     helper->doSomething();
      * // async-init child: co_await helper.ready_async(context()); then helper->doSomething();
@@ -2365,9 +2367,9 @@ public:
  * (its async `onInit()` is in flight), after a failed init, or once it has been destroyed.
  *
  * Callers can:
- * - Cheaply send events to the referenced actor via `id()` — valid the instant `addRefActor`
- *   returns, even while the actor is still Activating (events to it are stashed and replayed
- *   FIFO once active; events to ids whose actors have died are dropped by the router).
+ * - Check `valid()` before sending via `id()` — an accepted child has a valid id immediately,
+ *   even while it is still Activating (events to it are stashed and replayed FIFO once active;
+ *   events to ids whose actors have died are dropped by the router).
  * - Safely dereference via `get()` / `operator->()` / `operator*()`, which re-query
  *   `VirtualCore::_handler` and return the pointer only for an **active** actor (`is_active()`).
  * - Wait for an async-init child with `ready()` (sync) or `co_await ready_async(ctx)` (async).

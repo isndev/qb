@@ -941,10 +941,10 @@ public:
     /*!
      * @brief Start the engine and its VirtualCore worker threads.
      * @ingroup Engine
-     * @param async If `true` (default), the engine starts asynchronously, and this call returns immediately.
-     *              The main application thread continues execution. `join()` should be called later to wait.
-     *              If `false`, the calling thread becomes one of the VirtualCore worker threads (typically core 0).
-     *              This call will block until the engine is stopped.
+     * @param async If `true` (default), workers start asynchronously and this call returns after their startup barrier.
+     *              A pre-loop startup failure joins failed workers before returning; later runtime errors do not join live peers.
+     *              If `false`, the calling thread becomes one of the VirtualCore workers and normally blocks until it stops.
+     *              Use `join()` after a successful asynchronous start to wait for every worker.
      * @note All actors and core configurations (affinity, latency) must be set up *before* calling `start()`.
      */
     void start(bool async = true) noexcept;
@@ -1097,9 +1097,9 @@ using engine = Main;
 // header extension in qb.
 //
 // The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
-//   * Presence: the bodies need `TActorFactory` (Actor.h:2162), the `service_type` concept
-//     (Actor.h:112) and `Service` (Actor.h:1786). Main.h's own DECLARATIONS need none of
-//     them -- `IActorFactory` is forward-declared at Main.h:51 -- which is why this header
+//   * Presence: the bodies need `TActorFactory` (Actor.h:2741), the `service_type` concept
+//     (Actor.h:237) and `Service` (Actor.h:2323). Main.h's own DECLARATIONS need none of
+//     them -- `IActorFactory` is forward-declared at Main.h:55 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
 //     densely cited headers in the readme book (31 `Main.h:NNN` citations across seven

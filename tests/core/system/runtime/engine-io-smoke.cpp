@@ -21,7 +21,7 @@
  *   - every log file is created under a unique per-test directory inside the OS temp dir
  *     (`std::filesystem::temp_directory_path()`), never the CWD;
  *   - the directory is removed in TearDown, so the test leaves no artefacts;
- *   - nanolog is non-guaranteed and async, so before reading we FORCE A FLUSH by re-initialising
+ *   - nanolog is asynchronous, so before reading we FORCE A FLUSH by re-initialising
  *     the global logger to a throwaway temp path. `qb::io::log::init()` constructs the replacement
  *     logger and then destroys the previous one, whose destructor sets SHUTDOWN, joins its worker,
  *     and drains every queued line to disk — making the original file complete and readable.
@@ -210,22 +210,15 @@ TEST_F(EngineIoSmoke, MultiCoreLogsEveryActorAndLevelGateHolds) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// nanolog's MPSC ring buffer under real concurrency.
+// nanolog's guaranteed MPSC queue under real concurrency.
 //
-// `qb::io::log` sits on a HAND-ROLLED multi-producer / single-consumer ring (nanolog.cpp:
-// `RingBuffer` + a `SpinLock` over `std::atomic_flag`, drained by a background writer thread), in a
-// module this project has modified across 22 substantive commits. Until now exactly one test file
-// touched it at all, and never from more than one thread — so the sanitizers had nothing to look at
-// on the one structure in the logging path where a race would actually live.
-//
-// The ring is deliberately LOSSY (`NonGuaranteedLogger`): a producer that laps the consumer
-// overwrites an unread slot. So "every line arrives" is NOT the contract and must not be asserted.
-// What IS the contract, and what a torn write would break, is that any line which *does* arrive is
-// whole: the SpinLock plus the `written` flag mean a slot is either fully published or not popped.
+// `qb::io::log::init` selects `GuaranteedLogger` (`QueueBuffer` in nanolog.cpp), drained by a
+// background writer thread. Its slots are published with release/acquire atomics and every
+// accepted line must be delivered exactly once.
 //
 // Each record therefore carries a self-checking payload — `NLRACE|<producer>|<seq>|<producer*seq>`.
 // A torn or interleaved write breaks the arithmetic, so corruption fails loudly instead of hiding
-// in a byte count. Run under TSan this also exercises the flag's acquire/release pairing.
+// in a byte count. Run under TSan this also exercises the slot's acquire/release pairing.
 // ---------------------------------------------------------------------------
 
 TEST_F(EngineIoSmoke, ConcurrentLoggingNeverTearsARecord) {
@@ -272,6 +265,5 @@ TEST_F(EngineIoSmoke, ConcurrentLoggingNeverTearsARecord) {
     EXPECT_EQ(malformed, 0u) << malformed << " of " << seen
                              << " records were torn: a slot was popped while a producer was still writing it, so the "
                                 "ring's SpinLock / written-flag publication is not actually serialising producers";
-    // Non-vacuity: the ring is lossy, so demand a real sample rather than the full count.
-    EXPECT_GT(seen, static_cast<std::size_t>(kPerThread)) << "almost nothing reached the log file — the test proved nothing about tearing";
+    EXPECT_EQ(seen, static_cast<std::size_t>(kProducers * kPerThread)) << "GuaranteedLogger lost records";
 }

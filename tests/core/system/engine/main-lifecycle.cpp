@@ -18,26 +18,19 @@
  *     three graceful-stop routes: `Main::stop()`, and an out-of-band POSIX signal
  *     (`std::raise(SIGABRT)` against a registered signal) — all of which must leave
  *     `hasError() == false`;
- *   - failure paths — every way a core can refuse to start, each pinned to the SPECIFIC
- *     `qb::VirtualCore::Error` it raises (the enum is packed into `Main`'s private start
- *     barrier and surfaced only through the `hasError()` bool, so we distinguish the codes by
- *     their *observable side effects* — see below — not by reading the enum):
+ *   - failure paths — an empty core, a false-returning `onInit()`, and a throwing `onInit()`:
  *       · empty engine / a `core().clear()`'d core  → `Error::NoActor` (started with 0 actors);
- *       · `onInit()` co_returns false               → `Error::BadActorInit`  (a clean false);
- *       · `onInit()` THROWS                          → `Error::ExceptionThrown` (an uncaught throw).
+ *       · `onInit()` co_returns false               → `Error::BadActorInit` (a clean false);
+ *       · `onInit()` throws                         → `Error::BadActorInit` (`__drive_init__` catches it).
  *
- *     `BadActorInit` and `ExceptionThrown` both fail the start, so `hasError()` alone cannot
- *     tell them apart. We disambiguate with two in-actor atoms mirrored to the test body:
- *     a throwing init sets `g_threw` immediately before `throw` (and NEVER reaches its
- *     `co_return`), whereas a false-returning init sets `g_returned_false` at its `co_return
- *     false` (and never throws). The matrix {hasError, g_threw, g_returned_false} therefore
- *     identifies which enum the engine raised. (Mapping per VirtualCore.cpp / Main.cpp:
- *     a thrown onInit is caught and surfaced as `ExceptionThrown`; a false return is
- *     `BadActorInit`; a core with no actors is `NoActor`. All three are `>= BadInit`, the
- *     `hasError()` threshold.)
+ *     The atoms `g_threw` and `g_returned_false` prove which test stimulus ran; they do not
+ *     expose the private error word. `Main::hasError()` reports both paths as failures. An
+ *     exception that escapes a constructor before the loop uses `ExceptionThrown`; the
+ *     post-barrier handler exception has a distinct internal runtime marker.
  *
- * No wall-clock is used as an oracle: actors self-kill and the engine drains; the only timing
- * backstop is the ctest TIMEOUT. The multi-core failure case derandomizes which core is cleared
+ * The lifecycle cases use actor state as their oracle; the teardown regressions use bounded
+ * waits on explicit signals, with the ctest TIMEOUT as the outer backstop. The multi-core
+ * failure case derandomizes which core is cleared
  * (fixed seed, logged) so a failure reproduces. Multi-core cases `GTEST_SKIP` on a 1-core runner
  * instead of asserting hardware. The SIGABRT case is the sole signal-raiser in this binary and the
  * binary is labelled `serial` so it never races another test's signal handler.
@@ -47,8 +40,11 @@
  */
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <future>
+#include <latch>
 #include <random>
 #include <stdexcept>
 #include <thread>
@@ -147,7 +143,7 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// Failure actor — onInit THROWS (→ Error::ExceptionThrown). Sets g_threw at the
+// Failure actor — onInit THROWS (→ Error::BadActorInit). Sets g_threw at the
 // throw site; its co_return is unreachable, so g_init_ran stays false.
 // ---------------------------------------------------------------------------
 class ThrowInitActor : public qb::Actor {
@@ -303,7 +299,8 @@ TEST(MainLifecycle, MultiCoreWithAClearedCoreAbortsWithNoActor) {
 }
 
 // onInit co_returns false (the initial actor of a mono core) → Error::BadActorInit.
-// Distinguished from ExceptionThrown by: g_returned_false set, g_threw NOT set.
+// The atoms prove this case returned false rather than throwing; both paths
+// map to BadActorInit because __drive_init__ catches an onInit exception.
 TEST(MainLifecycle, FalseOnInitAbortsWithBadActorInit) {
     reset_atoms();
     qb::Main main;
@@ -312,13 +309,13 @@ TEST(MainLifecycle, FalseOnInitAbortsWithBadActorInit) {
     main.join();
     EXPECT_TRUE(main.hasError()) << "a co_return false onInit must fail the start";
     EXPECT_TRUE(g_returned_false.load()) << "the init reached its clean co_return false";
-    EXPECT_FALSE(g_threw.load()) << "BadActorInit is the false-return path, NOT a throw (≠ ExceptionThrown)";
+    EXPECT_FALSE(g_threw.load()) << "this init returned false instead of throwing";
     EXPECT_FALSE(g_init_ran.load());
 }
 
-// onInit THROWS (the initial actor of a mono core) → Error::ExceptionThrown.
-// Distinguished from BadActorInit by: g_threw set, g_returned_false NOT set.
-TEST(MainLifecycle, ThrowingOnInitAbortsWithExceptionThrown) {
+// onInit THROWS (the initial actor of a mono core) → Error::BadActorInit.
+// The atoms distinguish this stimulus from a clean false return, not the enum.
+TEST(MainLifecycle, ThrowingOnInitAbortsWithBadActorInit) {
     reset_atoms();
     qb::Main main;
     main.addActor<ThrowInitActor>(0);
@@ -326,8 +323,184 @@ TEST(MainLifecycle, ThrowingOnInitAbortsWithExceptionThrown) {
     main.join();
     EXPECT_TRUE(main.hasError()) << "a throwing onInit must fail the start";
     EXPECT_TRUE(g_threw.load()) << "the init reached its throw site";
-    EXPECT_FALSE(g_returned_false.load()) << "ExceptionThrown is the throw path, NOT a false return (≠ BadActorInit)";
+    EXPECT_FALSE(g_returned_false.load()) << "the throwing init did not reach a clean false return";
     EXPECT_FALSE(g_init_ran.load()) << "the throw aborts before co_return — onInit never completes";
+}
+
+// Keep the failed worker in actor teardown after it has published the startup
+// error. start() must not give its caller access to Main's resources until this
+// destructor and the worker's exit guards have completed.
+class HeldFailedInitActor : public qb::Actor {
+    std::promise<void> *_teardown_entered;
+    std::latch         *_teardown_release;
+
+public:
+    HeldFailedInitActor(std::promise<void> *entered, std::latch *release)
+        : _teardown_entered(entered)
+        , _teardown_release(release) {}
+
+    ~HeldFailedInitActor() override {
+        _teardown_entered->set_value();
+        _teardown_release->wait();
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        g_returned_false.store(true);
+        co_return false;
+    }
+};
+
+TEST(MainLifecycle, FailedStartupWaitsForWorkerTeardownBeforeReturning) {
+    reset_atoms();
+    std::promise<void> teardown_entered_promise;
+    auto               teardown_entered = teardown_entered_promise.get_future();
+    std::latch         teardown_release{1};
+    std::promise<void> start_returned_promise;
+    auto               start_returned = start_returned_promise.get_future();
+
+    qb::Main main;
+    main.addActor<HeldFailedInitActor>(0, &teardown_entered_promise, &teardown_release);
+    std::thread starter([&] {
+        main.start(true);
+        start_returned_promise.set_value();
+    });
+
+    // These are bounded waits on explicit lifecycle signals, not sleeps used to
+    // guess when a worker might run. The gate remains closed while we inspect
+    // whether start() has returned ahead of that worker's cleanup. Five seconds
+    // gives a loaded sanitizer or Windows runner time to schedule the caller.
+    const auto entered = teardown_entered.wait_for(std::chrono::seconds(5));
+    const bool returned_before_cleanup =
+        entered == std::future_status::ready && start_returned.wait_for(std::chrono::seconds(5)) == std::future_status::ready;
+    teardown_release.count_down(); // release on both red and green paths
+    starter.join();
+    main.join(); // safe cleanup on the red baseline, after the worker was released
+
+    EXPECT_EQ(entered, std::future_status::ready) << "the failed actor never reached worker teardown";
+    EXPECT_FALSE(returned_before_cleanup) << "start() returned while its failed worker still owned Main resources";
+    EXPECT_TRUE(main.hasError());
+    EXPECT_TRUE(g_returned_false.load());
+
+    // A failed attempt can be reconfigured and started again after teardown.
+    g_init_ran.store(false);
+    EXPECT_TRUE(main.addActor<TestActor>(0, false).is_valid());
+    main.start();
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_init_ran.load());
+}
+
+// With start(false), the calling thread is one of the workers. Identify roles
+// by that thread rather than relying on unordered CoreInitializer iteration.
+struct RuntimeFailureState {
+    qb::Main           *main;
+    std::thread::id     caller;
+    std::atomic<bool>   thrower_claimed{false};
+    std::atomic<int>    caller_count{0};
+    std::atomic<int>    thrower_count{0};
+    std::atomic<int>    survivor_count{0};
+    std::atomic<bool>   runtime_seen_reported{false};
+    std::promise<void> *runtime_seen;
+    std::atomic<int>    peers_in_workflow{0};
+};
+
+class RuntimeFailureActor
+    : public qb::Actor
+    , public qb::ICallback {
+    enum class Role { Caller, Thrower, Survivor } _role = Role::Survivor;
+    RuntimeFailureState *_state;
+    bool                 _announced_workflow = false;
+
+public:
+    explicit RuntimeFailureActor(RuntimeFailureState *state)
+        : _state(state) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<qb::SignalEvent>(*this);
+        if (std::this_thread::get_id() == _state->caller) {
+            _role = Role::Caller;
+            _state->caller_count.fetch_add(1);
+            registerCallback(*this);
+        } else if (!_state->thrower_claimed.exchange(true)) {
+            _role = Role::Thrower;
+            _state->thrower_count.fetch_add(1);
+            registerCallback(*this);
+        } else {
+            _state->survivor_count.fetch_add(1);
+            registerCallback(*this);
+        }
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (_role == Role::Thrower) {
+            // All cores reached the barrier, but one may not have left it yet.
+            // Wait for both peers' first loop tick before publishing the error.
+            int peers = _state->peers_in_workflow.load(std::memory_order_acquire);
+            while (peers < 2) {
+                _state->peers_in_workflow.wait(peers);
+                peers = _state->peers_in_workflow.load(std::memory_order_acquire);
+            }
+            throw std::runtime_error("failure after the startup barrier");
+        }
+        if (!_announced_workflow) {
+            _announced_workflow = true;
+            _state->peers_in_workflow.fetch_add(1, std::memory_order_release);
+            _state->peers_in_workflow.notify_all();
+        }
+        if (_role == Role::Caller && _state->main->hasError()) {
+            if (!_state->runtime_seen_reported.exchange(true))
+                _state->runtime_seen->set_value();
+            kill();
+        }
+    }
+
+    void
+    on(qb::SignalEvent const &) {
+        kill();
+    }
+};
+
+TEST(MainLifecycle, RuntimeFailureDoesNotJoinLivePeerInsideStart) {
+    qb::Main            main;
+    std::promise<void>  runtime_seen_promise;
+    auto                runtime_seen = runtime_seen_promise.get_future();
+    std::promise<void>  start_returned_promise;
+    auto                start_returned = start_returned_promise.get_future();
+    RuntimeFailureState state{&main, std::this_thread::get_id(), {}, {}, {}, {}, {}, &runtime_seen_promise};
+    for (qb::CoreId core = 0; core < 3; ++core)
+        main.addActor<RuntimeFailureActor>(core, &state);
+
+    std::atomic<bool> watchdog_stopped_peer{false};
+    std::atomic<bool> runtime_was_seen{false};
+    std::thread       watchdog([&] {
+        const bool seen = runtime_seen.wait_for(std::chrono::seconds(10)) == std::future_status::ready;
+        runtime_was_seen.store(seen);
+        if (!seen || start_returned.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+            watchdog_stopped_peer.store(true);
+            if (!seen) {
+                state.peers_in_workflow.fetch_add(2, std::memory_order_release);
+                state.peers_in_workflow.notify_all(); // release a thrower parked before peer ticks
+            }
+            qb::Main::stop(); // only a bounded escape from a wedged start(false)
+        }
+    });
+
+    main.start(false); // caller's core exits after it observes the thrower's error
+    start_returned_promise.set_value();
+    main.stop(); // the survivor is still live on the correct runtime-error path
+    main.join();
+    watchdog.join();
+
+    EXPECT_TRUE(runtime_was_seen.load()) << "the caller core never observed the runtime exception";
+    EXPECT_FALSE(watchdog_stopped_peer.load()) << "start(false) joined a live peer after a runtime exception";
+    EXPECT_EQ(state.caller_count.load(), 1);
+    EXPECT_EQ(state.thrower_count.load(), 1);
+    EXPECT_EQ(state.survivor_count.load(), 1);
+    EXPECT_TRUE(main.hasError());
 }
 
 } // namespace

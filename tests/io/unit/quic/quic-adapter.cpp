@@ -222,6 +222,12 @@ TEST(QuicAdapterEndpoint, DelegatesClientLifecycleToBackend) {
     EXPECT_EQ(raw->close_calls, 1);
     EXPECT_EQ(raw->close_code, 42u);
     EXPECT_EQ(raw->close_reason, "done");
+
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    EXPECT_EQ(endpoint.backend(), raw) << "a caller-injected backend must not be replaced on reconnect";
+    EXPECT_EQ(raw->configure_calls, 2);
+    EXPECT_EQ(raw->start_client_calls, 2);
+    endpoint.close();
 }
 
 /**

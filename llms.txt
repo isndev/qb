@@ -33,6 +33,10 @@ Five rules decide whether generated qb code is correct; everything else is detai
 5. **Register every event you handle.** `registerEvent<T>(*this)` inside `onInit()`, which is
    itself a coroutine returning `qb::io::async::task<bool>`; `co_return false` or a throw
    fails creation and yields an invalid `ActorId`.
+6. **A throwing event handler stops its whole `VirtualCore`.** This includes overrides of
+   default events and handlers called during activation replay or death-watch delivery.
+   After `join()`, check `Main::hasError()`; other cores may continue. The faulting event
+   and events already removed from the same receive batch are disposed on that core.
 
 ## Agent reference
 

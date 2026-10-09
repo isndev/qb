@@ -37,6 +37,8 @@
  */
 
 #include <cstddef>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -46,6 +48,24 @@ namespace {
 
 constexpr std::size_t kSlots = 8;
 using Ring                   = qb::lockfree::spsc::ringbuffer<int, kSlots>;
+using DynamicRing            = qb::lockfree::spsc::ringbuffer<int, 0>;
+
+struct NothrowBatch {
+    void
+    operator()(int *, std::size_t) const noexcept {}
+};
+
+struct ThrowingBatch {
+    void
+    operator()(int *, std::size_t) const {
+        throw std::runtime_error("batch failed");
+    }
+};
+
+static_assert(noexcept(std::declval<Ring &>().dequeue(std::declval<NothrowBatch const &>(), std::declval<int *>(), 1)));
+static_assert(noexcept(std::declval<DynamicRing &>().dequeue(std::declval<NothrowBatch const &>(), std::declval<int *>(), 1)));
+static_assert(!noexcept(std::declval<Ring &>().dequeue(std::declval<ThrowingBatch const &>(), std::declval<int *>(), 1)));
+static_assert(!noexcept(std::declval<DynamicRing &>().dequeue(std::declval<ThrowingBatch const &>(), std::declval<int *>(), 1)));
 
 // Advance the read/write indices so the NEXT enqueue of `item_len` straddles the wrap.
 void
@@ -89,6 +109,17 @@ TEST(RingWrapBatching, CopyOutDequeueDeliversAWrappedItemContiguously) {
     ASSERT_EQ(calls, 1) << "a copy-out dequeue must deliver the wrapped item in a single batch";
     ASSERT_EQ(batches.size(), 1u);
     EXPECT_EQ(batches[0], (std::vector<int>{11, 12, 13, 14})) << "the item must arrive intact and in order";
+}
+
+TEST(RingWrapBatching, ThrowingCopyOutCallbackKeepsPublishedReadIndex) {
+    Ring      ring;
+    const int input[2] = {11, 12};
+    int       scratch[2]{};
+    ASSERT_EQ(ring.enqueue(input, 2), 2u);
+    EXPECT_THROW(ring.dequeue(ThrowingBatch{}, scratch, 2), std::runtime_error);
+    EXPECT_EQ(scratch[0], 11);
+    EXPECT_EQ(scratch[1], 12);
+    EXPECT_TRUE(ring.empty()); // copy-out advances the read index before invoking the callback
 }
 
 // consume_all walks in place and therefore SPLITS the item — the documented hazard that made it

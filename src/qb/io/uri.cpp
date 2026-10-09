@@ -24,6 +24,7 @@
  */
 
 #include <qb/io/uri.h>
+#include <array>
 #include <charconv>
 
 namespace qb::io {
@@ -1044,8 +1045,39 @@ uri::parse() noexcept {
     if (port_begin) {
         _port = make_string_view(port_begin, port_end);
     } else if (!_scheme.empty()) {
-        // Try to use default port for known schemes
+        // Keep the common lowercase lookup unchanged. Scheme spelling is retained
+        // in _source/_scheme, but RFC schemes compare without ASCII case: only a
+        // missed lookup with uppercase bytes needs a folded, allocation-free key.
         auto it = default_ports.find(_scheme);
+        if (it == std::end(default_ports)) {
+            const auto ascii_lower = [](char c) noexcept {
+                return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
+            };
+            bool had_uppercase = false;
+            for (char c : _scheme)
+                had_uppercase = had_uppercase || (c >= 'A' && c <= 'Z');
+            if (had_uppercase && _scheme.size() <= 64) {
+                std::array<char, 64> folded{}; // current longest default_ports key is 23 bytes
+                for (std::size_t i = 0; i < _scheme.size(); ++i)
+                    folded[i] = ascii_lower(_scheme[i]);
+                it = default_ports.find(std::string_view(folded.data(), _scheme.size()));
+            } else if (had_uppercase) {
+                // No allocation in parse() noexcept, even for an exceptional long
+                // scheme. Length-filtered scan keeps a future >64-byte table key
+                // case-insensitive; today's 662 keys are all shorter than 64.
+                for (auto const &[name, port] : default_ports) {
+                    if (name.size() != _scheme.size())
+                        continue;
+                    bool same = true;
+                    for (std::size_t i = 0; i < name.size(); ++i)
+                        same = same && ascii_lower(_scheme[i]) == name[i];
+                    if (same) {
+                        _port = port;
+                        break;
+                    }
+                }
+            }
+        }
         if (it != std::end(default_ports)) {
             _port = it->second;
         }

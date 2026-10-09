@@ -85,10 +85,12 @@ if(Ngtcp2_FOUND)
     endif()
 
     if(NOT TARGET Ngtcp2::crypto_ossl)
+        # Static archives need their prerequisites after the crypto helper on the link line.
         add_library(Ngtcp2::crypto_ossl UNKNOWN IMPORTED)
         set_target_properties(Ngtcp2::crypto_ossl PROPERTIES
             IMPORTED_LOCATION "${NGTCP2_CRYPTO_OSSL_LIBRARY}"
             INTERFACE_INCLUDE_DIRECTORIES "${NGTCP2_CRYPTO_INCLUDE_DIR};${NGTCP2_CRYPTO_OSSL_INCLUDE_DIR}"
+            INTERFACE_LINK_LIBRARIES "Ngtcp2::ngtcp2;OpenSSL::SSL;OpenSSL::Crypto"
         )
     endif()
 endif()

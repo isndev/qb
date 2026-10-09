@@ -1,0 +1,95 @@
+# Link one native QUIC test against the pinned vcpkg x64-linux static archives.
+# The original link failure is recorded at
+# https://github.com/isndev/qb-dev/actions/runs/37798605239 (undefined
+# SSL_set_quic_tls_cbs and SSL_set_quic_tls_transport_params).
+name: quic-static-vcpkg
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - .github/workflows/quic-static-vcpkg.yml
+      - .github/ci/quic-static/vcpkg.json
+      - CMakeLists.txt
+      - cmake/**
+      - src/qb/io/**
+      - tests/io/system/quic/**
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - .github/workflows/quic-static-vcpkg.yml
+      - .github/ci/quic-static/vcpkg.json
+      - CMakeLists.txt
+      - cmake/**
+      - src/qb/io/**
+      - tests/io/system/quic/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quic-static-vcpkg-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  link-native-quic:
+    name: x64-linux static native QUIC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Read pinned vcpkg baseline
+        id: baseline
+        run: |
+          echo "sha=$(python3 -c 'import json; print(json.load(open(".github/ci/quic-static/vcpkg.json"))["builtin-baseline"])')" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          repository: microsoft/vcpkg
+          ref: ${{ steps.baseline.outputs.sha }}
+          path: _vcpkg
+
+      - name: Restore vcpkg binary archives
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: quic-static-vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/ci/quic-static/vcpkg.json') }}
+
+      - name: Bootstrap vcpkg
+        run: bash _vcpkg/bootstrap-vcpkg.sh -disableMetrics
+
+      - name: Configure static QUIC
+        run: |
+          test "$(uname -m)" = x86_64
+          test "$(git -C _vcpkg rev-parse HEAD)" = "${{ steps.baseline.outputs.sha }}"
+          grep -Fqx 'set(VCPKG_LIBRARY_LINKAGE static)' _vcpkg/triplets/x64-linux.cmake
+          cmake -S . -B build-quic-static -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/_vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_MANIFEST_DIR="$PWD/.github/ci/quic-static" \
+            -DVCPKG_INSTALLED_DIR="$PWD/build-quic-static/vcpkg_installed" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DQB_WITH_SSL=ON -DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON \
+            -DQB_WITH_COMPRESSION=OFF \
+            -DQB_USE_SYSTEM_NLOHMANN=ON -DQB_USE_SYSTEM_GTEST=ON \
+            -DQB_DEPS_FETCH_FALLBACK=OFF \
+            -DQB_BUILD_TESTS=ON -DQB_BUILD_EXAMPLES=OFF -DQB_INSTALL=OFF
+
+      - name: Assert vcpkg static archives were selected
+        run: |
+          libs="$PWD/build-quic-static/vcpkg_installed/x64-linux/lib"
+          for archive in libngtcp2.a libngtcp2_crypto_ossl.a libssl.a libcrypto.a; do
+            test -f "$libs/$archive"
+          done
+          grep -Fqx "NGTCP2_LIBRARY:FILEPATH=$libs/libngtcp2.a" build-quic-static/CMakeCache.txt
+          grep -Fqx "NGTCP2_CRYPTO_OSSL_LIBRARY:FILEPATH=$libs/libngtcp2_crypto_ossl.a" build-quic-static/CMakeCache.txt
+          grep -Fqx "OPENSSL_SSL_LIBRARY:FILEPATH=$libs/libssl.a" build-quic-static/CMakeCache.txt
+          grep -Fqx "OPENSSL_CRYPTO_LIBRARY:FILEPATH=$libs/libcrypto.a" build-quic-static/CMakeCache.txt
+          grep '^QB_COMPILE_DEFINITIONS:INTERNAL=' build-quic-static/CMakeCache.txt | tr ';' '\n' | grep -Fqx 'QB_HAS_QUIC=1'
+
+      - name: Link and run native QUIC endpoint test
+        run: |
+          cmake --build build-quic-static --target qb-io-test-system-quic-endpoint-loop --parallel 2 --verbose
+          ctest --test-dir build-quic-static --no-tests=error --output-on-failure -R '^qb-io-test-system-quic-endpoint-loop$'

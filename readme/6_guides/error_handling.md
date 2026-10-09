@@ -23,34 +23,36 @@ The single most consequential rule: **an uncaught exception does not crash one a
 
 ### The exception policy
 
-qb has no per-event or per-actor `try`/`catch`. The worker loop (`VirtualCore::__workflow__`, `src/qb/core/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks directly, with no exception barrier around each call. The only `catch` is one level up, in `Main::start_thread` (`src/qb/core/Main.cpp`), which wraps the *entire* lifetime of the loop:
+qb has no per-actor recovery. The worker loop (`VirtualCore::__workflow__`, `src/qb/core/VirtualCore.cpp`) dispatches events and `on(qb::LoopEvent const&)` ticks; an event-batch catch disposes the faulting event and the rest of an already-dequeued batch before rethrowing. `Main::start_thread` (`src/qb/core/Main.cpp`) catches that exception around the *entire* lifetime of the loop:
 
 ```cpp
 // src: qb/src/qb/core/Main.cpp (Main::start_thread, abridged)
+bool entered_workflow = false;
 try {
     // ... initialise the core and its actors ...
+    // ... startup barrier succeeded ...
+    entered_workflow = true;
     core.__workflow__();                       // runs until all actors die
 } catch (const std::exception &e) {
     LOG_CRIT("Exception thrown on " << core << " what:" << e.what());
-    params.sync_start.store(VirtualCore::Error::ExceptionThrown,
+    params.sync_start.store(entered_workflow ? kRuntimeExceptionThrown : VirtualCore::Error::ExceptionThrown,
                             std::memory_order_release);
 }
 ```
 
-The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` throws and the actor does not catch it, the stack unwinds out of `__workflow__`, the worker thread of that `VirtualCore` exits, and **every actor pinned to that core stops** — no further events, no further `on(qb::LoopEvent const&)` ticks. The engine flags the core with `VirtualCore::Error::ExceptionThrown`.
+The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` throws and the actor does not catch it, the stack unwinds out of `__workflow__`, the worker thread of that `VirtualCore` exits, and **every actor pinned to that core stops** — no further events, no further `on(qb::LoopEvent const&)` ticks. The engine stores an internal runtime-error marker containing the `ExceptionThrown` bit, and `Main::hasError()` reports it.
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". **Both store the same `VirtualCore::Error::ExceptionThrown`** (`src/qb/core/Main.cpp:476-486`), so a non-`std::exception` throw does not terminate the process — that handler exists precisely to stop it escaping a `noexcept` function. Throw `std::exception` subtypes anyway: only that arm can log *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:463-496`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
 
 ```mermaid
 flowchart TD
-    H["handler / on(LoopEvent) throws"] --> NOEX{"in a noexcept context?<br/>(push OOM · on(KillEvent) · …)"}
-    NOEX -- yes --> TERM["std::terminate — process aborts"]
-    NOEX -- no --> UW["stack unwinds out of VirtualCore::__workflow__"]
+    H["event handler / on(LoopEvent) throws"] --> UW["withdrawn event batch disposed when present<br/>stack unwinds out of VirtualCore::__workflow__"]
     UW --> SC["caught one level up in Main::start_thread"]
-    SC --> FLAG["core flagged ExceptionThrown<br/>worker thread exits → every actor on that core stops"]
+    SC --> FLAG["runtime error recorded<br/>worker thread exits → every actor on that core stops"]
     FLAG --> OBS["Main::hasError() reports it after the run"]
+    OP["event constructor / pipe allocation throws inside push or send"] --> TERM["std::terminate — process aborts"]
 ```
 
 ### `noexcept` boundaries
@@ -66,14 +68,14 @@ Several framework operations are marked `noexcept` and therefore cannot signal f
 | `Actor::on(KillEvent const&)` | `void on(KillEvent const&) noexcept` | The default kill path is `noexcept`. |
 | `IProtocol::not_ok()` / `ok()` / `reset()` | all `noexcept` | `not_ok()`/`reset()` mutate state, `ok()` queries it; none can fail. |
 
-Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is dropped, not an error — the receiving core reports it as a **dead letter** (counted, logged, handed to its `DeadLetterHandler`), but the sender learns nothing (see [Failure modes at a glance](#failure-modes-at-a-glance) and [Dead letters](#dead-letters-what-reached-no-actor)). Second, if you override a handler the framework calls in a `noexcept` context, do not let it throw: an exception crossing a `noexcept` boundary is an immediate `std::terminate`, bypassing even the `start_thread` catch.
+Two practical rules follow. First, sending an event never throws, so you cannot use `try`/`catch` around `push()` to detect a bad destination — sending to a dead or nonexistent `ActorId` is dropped, not an error — the receiving core reports it as a **dead letter** (counted, logged, handed to its `DeadLetterHandler`), but the sender learns nothing (see [Failure modes at a glance](#failure-modes-at-a-glance) and [Dead letters](#dead-letters-what-reached-no-actor)). Second, the base `Actor::on(KillEvent const&)` is itself `noexcept`, but a derived handler registered for that event dispatches through a throwing trampoline and follows the core's fail-stop policy. A user function explicitly declared `noexcept` still calls `std::terminate` if it throws.
 
 ### Failure modes at a glance
 
 | Failure | How it surfaces | Default behavior | Who observes it |
 |---|---|---|---|
-| Exception escapes a handler / `on(qb::LoopEvent const&)` | Stack unwind to `start_thread` | Worker thread exits; all actors on that core stop; core flagged `ExceptionThrown` | `Main::hasError()` after the run |
-| Exception in `noexcept` context (e.g. `push` OOM, throwing `on(KillEvent)`) | `std::terminate` | Process aborts | OS / crash handler |
+| Exception escapes a handler / `on(qb::LoopEvent const&)` | Stack unwind to `start_thread` | Worker thread exits; all actors on that core stop; internal runtime-error marker set | `Main::hasError()` after the run |
+| Exception in `noexcept` context (e.g. `push` OOM, a user handler declared `noexcept`) | `std::terminate` | Process aborts | OS / crash handler |
 | `onInit()` returns `false` at runtime (`addRefActor`) | Actor not added | Actor destroyed immediately; never processes events | The code calling `addRefActor` (returns an invalid handle/id) |
 | `onInit()` returns `false` at startup (pre-start `addActor`) | Core flagged `BadActorInit` | Core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
 | `onInit()` throws at startup | Caught inside `__drive_init__`; converted to an init failure | Core flagged `BadActorInit` (not `ExceptionThrown`); core fails to start | `Main::hasError()` after the run; `LOG_CRIT` logs |
@@ -200,18 +202,19 @@ if (main.hasError()) {
 }
 ```
 
-`Main::hasError()` is `[[nodiscard]] bool hasError() const noexcept`. It reports `true` when the engine's start-barrier word reached any value at or above the first error sentinel, `VirtualCore::Error::BadInit`. The error sentinels, from `qb::VirtualCore::Error` (`src/qb/core/VirtualCore.h`), are bit flags:
+`Main::hasError()` is `[[nodiscard]] bool hasError() const noexcept`. It reports `true` while the engine's start-barrier word holds a value at or above the first error sentinel, `VirtualCore::Error::BadInit`. Four flags come from `qb::VirtualCore::Error` (`src/qb/core/VirtualCore.h`); `Main.cpp` adds one internal compound marker for a post-barrier exception:
 
 | Sentinel | Value | Meaning |
 |---|---|---|
 | `BadInit` | `1u << 9` | The `VirtualCore` itself failed to initialize. |
 | `NoActor` | `1u << 10` | The core started with zero actors. |
 | `BadActorInit` | `1u << 11` | An actor's `onInit()` failed during startup — either it returned `false`, or it threw (the throw is caught inside `__drive_init__` and converted to this outcome, not `ExceptionThrown`). |
-| `ExceptionThrown` | `1u << 12` | During execution, an unhandled exception escaped an actor handler or `on(qb::LoopEvent const&)` out of `__workflow__` and was caught at `start_thread` (a startup `onInit()` throw does *not* reach here — it becomes `BadActorInit`). |
+| `ExceptionThrown` | `1u << 12` | An exception escaped during pre-loop startup, such as from an actor constructor. A startup `onInit()` throw is caught in `__drive_init__` and becomes `BadActorInit`. |
+| Runtime failure (internal) | `ExceptionThrown \| (1u << 13)` | An exception escaped `__workflow__`. It remains distinguishable from a startup failure so `start()` cannot join a different live core before its caller can stop it. |
 
 `hasError()` collapses all of these to a single boolean; it does not tell you *which* core failed or which sentinel fired. Use it as a post-run health gate (CI, supervised relaunch) and rely on the critical log lines (`LOG_CRIT`) for the specific cause. For finer-grained detection at runtime, build it yourself with the supervision patterns below.
 
-> **Note.** `hasError()` is only meaningful after the run has stopped — after `main.start(false)` returns, or after the thread you joined from `main.start(true)` has been joined. It reflects the start barrier, not a live per-iteration health signal.
+> **Note.** `hasError()` can become true while other cores are still running. A false reading during a run says only that no error has been published *yet*; check it again after `join()` for the final verdict.
 
 ## Supervision
 
@@ -456,8 +459,8 @@ Decision table:
 ## Pitfalls
 
 - **Letting an exception escape a handler.** It stops every actor on the core, not just the one that threw. Catch recoverable failures locally; reserve uncaught throws for genuinely unrecoverable invariant violations where stopping the core is acceptable.
-- **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path, a `noexcept` handler, or a `noexcept` override calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
-- **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both flag `ExceptionThrown` — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
+- **Throwing across a `noexcept` boundary.** A throw from `push`'s OOM path or a user handler declared `noexcept` calls `std::terminate` and bypasses even `start_thread`'s catch. Keep `noexcept` code non-throwing.
+- **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both publish a phase-appropriate error — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
 - **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination to the SENDER. A message to a dead or unknown `ActorId` is dropped — and since 3.3 reported as a dead letter by the core that received it — but nothing comes back. If delivery matters, design an explicit acknowledgement plus a timeout.
 - **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.

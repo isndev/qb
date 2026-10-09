@@ -52,17 +52,17 @@ this page only states what the patterns depend on.
   hold (quorum tallies, dedup caches, breaker state) needs no locking
   (`qb/src/qb/core/patterns/scatter.h:155-157`, `qb/src/qb/core/patterns/idempotency.h:60-62`).
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
-  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1457-1459`);
+  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1459-1461`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1513`, `:2311-2315`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1515`, `:2313-2317`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1655,1675,1687,1696,1703,1711`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2190-2191,2204-2206,2233-2235`). **Never capture `this` past a `co_await`** — capture by
-  value (`qb/src/qb/core/Actor.h:1461-1463`).
+  `qb/src/qb/core/Actor.h:1657,1677,1689,1698,1705,1713`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:2192-2193,2205-2207,2235-2237`). **Never capture `this` past a `co_await`** — capture by
+  value (`qb/src/qb/core/Actor.h:1463-1465`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:771-772`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1725`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  (`qb/src/qb/core/Actor.h:1727`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:794,813`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
@@ -74,7 +74,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 
 - **Cancel-on-kill.** When an actor is killed/destroyed its scope token is cancelled; any pattern
   parked on a cancellation-aware wait wakes within the next loop iteration and throws
-  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1450-1454`).
+  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1452-1456`).
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:262-266`).
@@ -152,7 +152,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:369-374`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1533-1549`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1535-1551`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -225,7 +225,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1533-1549 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1535-1551 -->
 
 ---
 
@@ -723,8 +723,8 @@ once.
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::idempotent_event` | `concept` — an `ask_event_type` that also has `e.response` and `e.idempotency_key` | `idempotency.h:48-52` |
-| `qb::dedup_map<Key,Resp>` | `class { explicit dedup_map(std::size_t capacity = 1024); const Resp* find(const Key&); void put(const Key&, Resp); bool contains(const Key&) const; std::size_t size() const; std::size_t capacity() const; void clear(); }` | `idempotency.h:64-133` |
-| `qb::answer_idempotent` | `void answer_idempotent(Actor &self, E &e, Cache &cache, Fn &&fn)` | `idempotency.h:158-179` |
+| `qb::dedup_map<Key,Resp>` | `class { explicit dedup_map(std::size_t capacity = 1024); const Resp* find(const Key&); void put(const Key&, Resp); bool contains(const Key&) const; std::size_t size() const; std::size_t capacity() const; void clear(); }` | `idempotency.h:64-170` |
+| `qb::answer_idempotent` | `void answer_idempotent(Actor &self, E &e, Cache &cache, Fn &&fn)` | `idempotency.h:195-216` |
 
 Because `ask_retry` re-sends a request with a fresh correlation id per attempt, a reply lost to a
 timeout would make the responder run its effect twice. Carry a **stable** `idempotency_key` on the
@@ -734,10 +734,10 @@ request (added to your `Request<Resp>` subtype) and let the responder de-duplica
 - `answer_idempotent` (1) routes any reply via `resolve_ask(e)`, (2) for a non-default key already in
   the cache, replies the cached response **without** running `fn`, otherwise (3) runs `fn`, caches
   the result, and replies. A default-valued key (`{}`) bypasses the cache — always runs `fn`
-  (`idempotency.h:135-179`).
+  (`idempotency.h:172-216`).
 - `dedup_map` is a bounded **LRU** cache (`find` promotes to most-recently-used; inserting past
   `capacity` evicts the least-recently-used entry). Core-local, no locking — use it as a responder
-  member (`idempotency.h:54-133`).
+  member (`idempotency.h:54-170`). Copies rebuild their index against their own LRU list, so source and copy can be changed independently. Copy assignment requires a hash index whose swap cannot throw; copy construction remains available with other copyable key types.
 
 ### Example
 
@@ -804,7 +804,7 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1497-1513`,
+continuation registry (`qb/src/qb/core/Actor.h:1499-1515`,
 `qb/src/qb/core/Event.h:764-768`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
@@ -840,7 +840,7 @@ qb::io::async::task<bool> onInit() override {
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:147,88`); `qb::supervision::watch` also restarts a child that died without `stop()` (`:56`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
-| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:160,65`) |
+| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:197,65`) |
 | Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:66`) |
 
 ---
@@ -851,7 +851,7 @@ qb::io::async::task<bool> onInit() override {
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
   carry failure in the response payload (`request.h:406-413`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
-  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1461-1463`). The
+  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1463-1465`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
   `std::shared_ptr` and captured by value so they outlive the actor
   (`resilience.h:115-118`, `:268-271`, `:360-362`).

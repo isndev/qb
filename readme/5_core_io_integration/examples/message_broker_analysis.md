@@ -494,7 +494,7 @@ auto server_ids = engine.core(1).builder()                        // core 1
 engine.core(0).builder()                                          // core 0
     .addActor<AcceptActor>(qb::io::uri{"tcp://0.0.0.0:12345"}, server_ids);
 
-engine.start(true);   // asynchronous: returns immediately
+engine.start(true);   // asynchronous: returns after the startup barrier
 std::cin.get();
 engine.stop();
 engine.join();
@@ -562,7 +562,7 @@ The connection deadline and the reconnect delay are both five seconds. Both reco
 > `qb::KillEvent` the actor would be destroyed with a five-second timer still holding `this`. An
 > `if (is_alive())` guard inside the lambda does not help — `is_alive()` is a member read
 > (`qb/src/qb/core/Actor.h:863-866`), so on a destroyed actor the guard *is* the use-after-free.
-> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1480-1481`),
+> `spawn` puts the coroutine in the actor's cancellation scope (`qb/src/qb/core/Actor.h:1482-1483`),
 > which `Actor::kill()` cancels (`qb/src/qb/core/Actor.cpp:555-566`). Note the shape of the
 > conversion: a coroutine may not touch actor state after a `co_await`, so the delay is captured by
 > value and everything that reads `_should_reconnect` or calls `connect()` moved into the

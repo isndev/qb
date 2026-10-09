@@ -60,6 +60,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -191,6 +192,7 @@ public:
         int              fd                 = -1;
         int              peer_fd            = -1;
         int              n_connect_calls    = 0;
+        std::uint16_t    last_remote_port   = 0;
         int              disconnect_calls   = 0;
         int              connected_calls    = 0;
         int              get_optval_calls   = 0;
@@ -240,8 +242,9 @@ public:
     }
 
     int
-    n_connect(qb::io::uri const &) {
+    n_connect(qb::io::uri const &remote) {
         ++_state->n_connect_calls;
+        _state->last_remote_port = remote.u_port();
         if (_state->result == connect_result::fail) {
             qb::io::socket::set_last_errno(ECONNREFUSED);
             return -1;
@@ -399,6 +402,29 @@ TEST_F(TcpConnectorStateMachineTest, DirectHandshakeSuccessDeliversOpen) {
     EXPECT_TRUE(connected);
     EXPECT_EQ(shared->n_connect_calls, 1);
     EXPECT_EQ(shared->disconnect_calls, 0);
+}
+
+TEST_F(TcpConnectorStateMachineTest, MixedCaseUriDefaultPortReachesSocketConnect) {
+    for (const auto &[source, expected_port] : {
+             std::pair{"http://127.0.0.1/path", std::uint16_t{80}},
+             std::pair{"hTtP://127.0.0.1/path", std::uint16_t{80}},
+             std::pair{"https://127.0.0.1/path", std::uint16_t{443}},
+             std::pair{"HtTpS://127.0.0.1/path", std::uint16_t{443}},
+             std::pair{"HtTpS://127.0.0.1:9443/path", std::uint16_t{9443}},
+         }) {
+        auto shared    = std::make_shared<FakeConnectorSocket::state>();
+        int  callbacks = 0;
+        qb::io::async::tcp::connect<FakeConnectorSocket>(
+            FakeConnectorSocket{shared}, qb::io::uri{source},
+            [&](FakeConnectorSocket &&socket) {
+                ++callbacks;
+                socket.disconnect();
+            },
+            0ms);
+        EXPECT_EQ(callbacks, 1) << source;
+        EXPECT_EQ(shared->n_connect_calls, 1) << source;
+        EXPECT_EQ(shared->last_remote_port, expected_port) << source;
+    }
 }
 
 // ---------------------------------------------------------------------------

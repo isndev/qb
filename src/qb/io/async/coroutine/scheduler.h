@@ -641,8 +641,8 @@ public:
     /**
      * @brief The coroutines parked on this thread, with what they wait on (since 3.3, Huly QB-71).
      * @details See `parked_coroutine`; the longest waits come first. A coroutine that is running when it calls `dump()`
-     *          is reported with its last suspension. Call it on the scheduler's thread; it allocates, and its cost is
-     *          linear in the parked coroutines.
+     *          is reported with its last suspension. Call it on the scheduler's thread; it allocates and sorts
+     *          the parked coroutines.
      */
     [[nodiscard]] std::vector<parked_coroutine> dump() const;
 

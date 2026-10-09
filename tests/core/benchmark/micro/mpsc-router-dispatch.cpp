@@ -30,8 +30,8 @@
  *
  * Benchmark methodology (perf harness, never a ctest gate — no `EXPECT_LT(duration,…)`):
  *   - the timed region is `run_router_mailbox()`; thread spin-up is absorbed by the start gate;
- *   - `SetItemsProcessed` / `SetBytesProcessed` and the descriptor counters (the final checksum and
- *     reserved-bytes footprint) are assigned ONCE after the loop;
+ *   - each timed run verifies its drained total, the same number of handler calls, zero route
+ *     misses and a nonzero checksum after pausing timing; descriptor counters follow a valid loop;
  *   - a one-shot, out-of-loop probe runs the smallest fan-in, `DoNotOptimize`s the consumer checksum,
  *     and asserts the dispatch actually happened (`checksum != 0`) — so a router that silently routed
  *     nothing (every message mis-routed) is caught before any timing, not turned into a timing gate.
@@ -40,6 +40,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <benchmark/benchmark.h>
 #include <cstddef>
 #include <cstdint>
@@ -107,6 +108,41 @@ struct MsgNotify final : BenchEvt {
     std::uint16_t code = 0;
 };
 
+// The cold-to-the-router but common-to-a-fanout-core path: no actor subscribed
+// to this broadcast type. A non-trivial payload must be disposed by memh's
+// type-erased disposer even though no handler ran.
+struct BroadcastMissOwned {
+    using id_type                       = qb::EventId;
+    using id_handler_type               = qb::ActorId;
+    id_type                      evt_id = qb::detail::type_id_for<BroadcastMissOwned>();
+    qb::ActorId                  dest{qb::BroadcastId(0)};
+    std::array<std::uint64_t, 8> payload{};
+    std::uint64_t               *disposed;
+
+    explicit BroadcastMissOwned(std::uint64_t &count) noexcept
+        : disposed(&count) {}
+    ~BroadcastMissOwned() {
+        ++*disposed;
+    }
+    template <typename T>
+    [[nodiscard]] static id_type
+    type_to_id() noexcept {
+        return qb::detail::type_id_for<T>();
+    }
+    [[nodiscard]] id_type
+    getID() const noexcept {
+        return evt_id;
+    }
+    [[nodiscard]] qb::ActorId
+    getDestination() const noexcept {
+        return dest;
+    }
+    [[nodiscard]] bool
+    is_alive() const noexcept {
+        return false;
+    }
+};
+
 static_assert(std::is_trivially_copyable_v<MsgOrder>);
 static_assert(std::is_trivially_copyable_v<MsgPing>);
 static_assert(std::is_trivially_copyable_v<MsgNotify>);
@@ -125,9 +161,11 @@ constexpr std::uint32_t kBenchDstNote  = pack_actor(203);
 
 // Consumer-local checksum: keeps handler work observable without an atomic per message.
 struct LocalChecksum {
-    std::uint64_t value = 0;
+    std::uint64_t value   = 0;
+    std::uint64_t handled = 0;
     void
     mix(std::uint64_t const x) noexcept {
+        ++handled;
         value ^= x + 0x9E3779B97F4A7C15ULL + (value << 6) + (value >> 2);
     }
 };
@@ -240,6 +278,8 @@ struct RouterRunResult {
     std::uint64_t enqueue_failures = 0;
     std::uint64_t checksum         = 0;
     std::uint64_t drained          = 0;     ///< buckets the harness consumer actually took
+    std::uint64_t handled          = 0;     ///< successful handler invocations
+    std::uint64_t route_misses     = 0;     ///< buckets no subscribed handler accepted
     bool          stalled          = false; ///< the drain gave up short of `total` (see fan_in_result)
 };
 
@@ -247,6 +287,7 @@ template <std::size_t MailboxCap>
 [[nodiscard]] RouterRunResult
 run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, std::size_t const dequeue_batch) {
     LocalChecksum local_checksum{};
+    std::uint64_t route_misses = 0; // consumer-local; read only after run_mpsc_fan_in joins it
 
     qb::router::memh<BenchEvt> router;
     HandlerOrder               h_order(kBenchDstOrder, local_checksum);
@@ -256,7 +297,7 @@ run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, st
     router.subscribe<MsgPing>(h_ping);
     router.subscribe<MsgNotify>(h_note);
 
-    const auto consume = [&router](EventBucket *buffer, std::size_t const nb_buckets) noexcept {
+    const auto consume = [&router, &route_misses](EventBucket *buffer, std::size_t const nb_buckets) noexcept {
         for (std::size_t i = 0; i < nb_buckets; ++i) {
             // The dequeued bucket is raw storage. memcpy its bytes into a typed BenchEvt header in
             // place (the buckets ARE trivially-copyable messages), then route a std::launder'd view —
@@ -270,15 +311,13 @@ run_router_mailbox(std::size_t const nb_producers, std::uint64_t const total, st
             std::memcpy(static_cast<void *>(&header), static_cast<const void *>(buffer + i), sizeof(BenchEvt));
             std::memcpy(static_cast<void *>(buffer + i), static_cast<const void *>(&header), sizeof(BenchEvt));
             auto *evt = std::launder(reinterpret_cast<BenchEvt *>(buffer + i));
-            router.route(*evt, [](BenchEvt &) noexcept {
-                // Mis-routed message: must never happen in this benchmark.
-            });
+            router.route(*evt, [&route_misses](BenchEvt &) noexcept { ++route_misses; });
         }
     };
 
     const auto run = qb::bench::run_mpsc_fan_in<MailboxCap>(nb_producers, total, dequeue_batch, make_routed_bucket, consume);
 
-    return {run.enqueue_failures, local_checksum.value, run.drained, run.stalled};
+    return {run.enqueue_failures, local_checksum.value, run.drained, local_checksum.handled, route_misses, run.stalled};
 }
 
 template <std::size_t MailboxCap>
@@ -293,16 +332,23 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
         return;
     }
 
-    // One-shot out-of-loop correctness probe: dispatch must actually fire — a router that routed
-    // nothing (everything mis-routed to the dispose lambda) leaves checksum == 0. Caught here, before
-    // any timing, rather than expressed as a timing gate. A drain that cannot finish is reported the
-    // same way rather than hanging the run (see qb::bench::fan_in_result).
+    // One-shot out-of-loop correctness probe: all buckets must reach a subscribed handler,
+    // and a nonzero checksum confirms handler work. A drain that cannot finish is reported rather
+    // than hanging the run (see qb::bench::fan_in_result).
     {
         auto probe = run_router_mailbox<MailboxCap>(nb_producers, total, dequeue_batch);
         benchmark::DoNotOptimize(probe.checksum);
-        if (probe.stalled) {
+        if (probe.stalled || probe.drained != total) {
             state.SkipWithError(
                 ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets").c_str());
+            return;
+        }
+        if (probe.route_misses != 0u) {
+            state.SkipWithError("router missed " + std::to_string(probe.route_misses) + " messages");
+            return;
+        }
+        if (probe.handled != total) {
+            state.SkipWithError("router handled " + std::to_string(probe.handled) + " of " + std::to_string(total) + " messages");
             return;
         }
         if (probe.checksum == 0ull) {
@@ -314,6 +360,25 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
     RouterRunResult result{};
     for (auto _ : state) {
         result = run_router_mailbox<MailboxCap>(nb_producers, total, dequeue_batch);
+        state.PauseTiming();
+        if (result.stalled || result.drained != total) {
+            state.SkipWithError("fan-in drain stalled: consumer took " + std::to_string(result.drained) + " of " + std::to_string(total)
+                                + " buckets");
+            return;
+        }
+        if (result.route_misses != 0u) {
+            state.SkipWithError("router missed " + std::to_string(result.route_misses) + " messages");
+            return;
+        }
+        if (result.handled != total) {
+            state.SkipWithError("router handled " + std::to_string(result.handled) + " of " + std::to_string(total) + " messages");
+            return;
+        }
+        if (result.checksum == 0ull) {
+            state.SkipWithError("router dispatched zero messages (no handler fired)");
+            return;
+        }
+        state.ResumeTiming();
         benchmark::DoNotOptimize(result.checksum);
     }
 
@@ -336,6 +401,34 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
 }
 
 } // namespace
+
+static void
+BM_RouterBroadcastMissOwned(benchmark::State &state) {
+    qb::router::ensure_disposer<BroadcastMissOwned, BroadcastMissOwned>();
+    qb::router::memh<BroadcastMissOwned>  router; // deliberately no subscription
+    std::uint64_t                         disposed = 0;
+    alignas(BroadcastMissOwned) std::byte storage[sizeof(BroadcastMissOwned)];
+    auto                                  no_handler = [](BroadcastMissOwned &) noexcept {
+    };
+
+    auto *probe = new (storage) BroadcastMissOwned(disposed);
+    router.route(*probe, no_handler);
+    if (disposed != 1) {
+        state.SkipWithError("broadcast miss failed to dispose the non-trivial event");
+        return;
+    }
+    disposed = 0;
+    for (auto _ : state) {
+        auto *event = new (storage) BroadcastMissOwned(disposed);
+        router.route(*event, no_handler);
+    }
+    benchmark::DoNotOptimize(disposed);
+    if (disposed != static_cast<std::uint64_t>(state.iterations()))
+        state.SkipWithError("broadcast miss did not dispose each event exactly once");
+    state.SetItemsProcessed(state.iterations());
+}
+
+BENCHMARK(BM_RouterBroadcastMissOwned)->Unit(benchmark::kNanosecond);
 
 #define QB_REGISTER_ROUTER_MAILBOX_BENCH(Cap)                        \
     BENCHMARK_TEMPLATE(BM_MpscRouterMailbox_FanIn, Cap)              \

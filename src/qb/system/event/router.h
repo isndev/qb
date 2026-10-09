@@ -376,40 +376,52 @@ public:
      */
     template <bool _CleanEvent = true>
     void
-    route(_RawEvent &event) noexcept {
-        // C++20: use concept directly
-        if constexpr (qb::has_is_broadcast<_HandlerId>) {
-            if (event.getDestination().is_broadcast()) {
-                // Snapshot before dispatch: a handler may (un)subscribe on this
-                // table mid-broadcast (e.g. spawning an actor), which grows the
-                // dense vector (or rehashes the hash-map fallback) and invalidates
-                // a live iterator. See the heterogeneous route() below for the full
-                // rationale; handlers are not destroyed until end-of-frame and
-                // invoke() re-checks is_alive(), so the snapshot stays valid.
-                static thread_local std::vector<_Handler *> bcast_snapshot;
-                const std::size_t                           base = bcast_snapshot.size();
-                _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
-                const std::size_t end = bcast_snapshot.size();
-                for (std::size_t i = base; i < end; ++i)
-                    invoke(*bcast_snapshot[i], event);
-                bcast_snapshot.resize(base);
-
-                if constexpr (_CleanEvent)
-                    dispose(event);
-
-                return;
+    route(_RawEvent &event) {
+        auto dispatch = [&] {
+            // C++20: use concept directly
+            if constexpr (qb::has_is_broadcast<_HandlerId>) {
+                if (event.getDestination().is_broadcast()) {
+                    // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
+                    static thread_local std::vector<_Handler *> bcast_snapshot;
+                    const std::size_t                           base = bcast_snapshot.size();
+                    struct RestoreSnapshot {
+                        std::vector<_Handler *> &entries;
+                        std::size_t              base;
+                        ~RestoreSnapshot() {
+                            entries.resize(base);
+                        }
+                    } restore{bcast_snapshot, base};
+                    _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
+                    const std::size_t end = bcast_snapshot.size();
+                    for (std::size_t i = base; i < end; ++i)
+                        invoke(*bcast_snapshot[i], event);
+                    return;
+                }
             }
-        }
 
-        if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
-            invoke(**handler, event);
-        else [[unlikely]] {
-            if constexpr (internal::reports_undelivered<_RawEvent>)
-                _RawEvent::__undelivered__(event);
-        }
-
-        if constexpr (_CleanEvent)
+            if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
+                invoke(**handler, event);
+            else [[unlikely]] {
+                if constexpr (internal::reports_undelivered<_RawEvent>)
+                    _RawEvent::__undelivered__(event);
+            }
+        };
+        if constexpr (_CleanEvent) {
+            try {
+                dispatch();
+            } catch (...) {
+                if constexpr (qb::has_is_alive<_RawEvent>) {
+                    if (!event.is_alive())
+                        dispose(event);
+                } else {
+                    dispose(event);
+                }
+                throw;
+            }
             dispose(event);
+        } else {
+            dispatch();
+        }
     }
 
     /**
@@ -458,7 +470,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
     using _EventId   = typename _RawEvent::id_type;
     using _HandlerId = typename _RawEvent::id_handler_type;
 
-    using Trampoline = void (*)(void *, _RawEvent &) noexcept;
+    using Trampoline = void (*)(void *, _RawEvent &);
 
     struct Entry {
         void      *handler  = nullptr;
@@ -472,7 +484,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
      */
     template <typename _Handler>
     static void
-    dispatch_trampoline(void *opaque_handler, _RawEvent &event) noexcept {
+    dispatch_trampoline(void *opaque_handler, _RawEvent &event) {
         auto &handler = *static_cast<_Handler *>(opaque_handler);
         if constexpr (qb::has_is_alive<_RawEvent>) {
             if (handler.is_alive())
@@ -499,33 +511,37 @@ public:
      */
     template <bool _CleanEvent = false>
     void
-    route(_RawEvent &event) const noexcept {
-        if constexpr (qb::has_is_broadcast<_HandlerId>) {
-            // The broadcast walk is out of line: inlined here, its thread-local snapshot vector
-            // and loop made the unicast path -- every event of a ping-pong -- a function with a
-            // six-register prologue for one table lookup and one indirect call (QB-182).
-            if (unlikely(event.getDestination().is_broadcast())) {
-                route_broadcast<_CleanEvent>(event);
-                return;
+    route(_RawEvent &event) const {
+        auto dispatch_event = [&] {
+            if constexpr (qb::has_is_broadcast<_HandlerId>) {
+                // Keep the broadcast walk out of line so unicast has no snapshot prologue.
+                if (unlikely(event.getDestination().is_broadcast())) {
+                    route_broadcast(event);
+                    return;
+                }
             }
-        }
 
-        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
-            const auto  dispatch = entry->dispatch;
-            auto *const target   = entry->handler;
-            QB_ASSUME(dispatch != nullptr);
-            dispatch(target, event);
-        } else [[unlikely]] {
-            // No handler under this id: a stale, unknown or never-subscribed destination (Huly
-            // QB-163). The attributes are for MSVC, which ignores `likely()` and lays blocks out
-            // in source order: without them this call sat between the dispatch and the epilogue,
-            // and every delivered event jumped over it (+5 % one-core ping-pong, measured). On the
-            // `else`, not on the `if constexpr` inside it: clang refuses a likelihood there.
-            if constexpr (internal::reports_undelivered<_RawEvent>)
-                _RawEvent::__undelivered__(event);
-        }
-        if constexpr (_CleanEvent)
+            if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
+                const auto  dispatch = entry->dispatch;
+                auto *const target   = entry->handler;
+                QB_ASSUME(dispatch != nullptr);
+                dispatch(target, event);
+            } else [[unlikely]] {
+                if constexpr (internal::reports_undelivered<_RawEvent>)
+                    _RawEvent::__undelivered__(event);
+            }
+        };
+        if constexpr (_CleanEvent) {
+            try {
+                dispatch_event();
+            } catch (...) {
+                dispose(event);
+                throw;
+            }
             dispose(event);
+        } else {
+            dispatch_event();
+        }
     }
 
     /**
@@ -541,11 +557,17 @@ public:
      *          keeps nested broadcasts allocation-free and correct (each nested route
      *          pushes/pops its own [base,end)).
      */
-    template <bool _CleanEvent>
     QB_NOINLINE QB_COLD void
-    route_broadcast(_RawEvent &event) const noexcept {
+    route_broadcast(_RawEvent &event) const {
         static thread_local std::vector<Entry> bcast_snapshot;
         const std::size_t                      base = bcast_snapshot.size();
+        struct RestoreSnapshot {
+            std::vector<Entry> &entries;
+            std::size_t         base;
+            ~RestoreSnapshot() {
+                entries.resize(base);
+            }
+        } restore{bcast_snapshot, base};
         _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
         const std::size_t end = bcast_snapshot.size();
         for (std::size_t i = base; i < end; ++i) {
@@ -557,10 +579,6 @@ public:
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }
-        bcast_snapshot.resize(base);
-
-        if constexpr (_CleanEvent)
-            dispose(event);
     }
 
     /**
@@ -923,7 +941,13 @@ private:
         void
         dispose(_RawEvent *event) final {
             if constexpr (!std::is_trivially_destructible_v<T>) {
-                reinterpret_cast<T *>(event)->~T();
+                auto *typed = reinterpret_cast<T *>(event);
+                if constexpr (qb::has_is_alive<T>) {
+                    if (!typed->is_alive())
+                        typed->~T();
+                } else {
+                    typed->~T();
+                }
             } else {
                 (void) event;
             }
@@ -1006,6 +1030,10 @@ public:
          * @brief Resolve and route an event to appropriate handlers
          *
          * @param event The event to route
+         * @details With `_CleanEvent=true`, the resolver owns disposal on both
+         *          normal return and exception. The built-in EventResolver does
+         *          this through `semh::route<true>`; an installed resolver must
+         *          uphold the same contract.
          */
         virtual void resolve(_RawEvent &event) const = 0;
 
@@ -1109,7 +1137,13 @@ public:
             QB_ASSUME(resolver != nullptr);
             resolver->resolve(event);
         } else {
-            onError(event);
+            try {
+                onError(event);
+            } catch (...) {
+                if constexpr (_CleanEvent)
+                    dispose(event);
+                throw;
+            }
             if constexpr (_CleanEvent) {
                 // Free the payload of an event nobody subscribed to. The lookup is deliberately
                 // tolerant (find, never `.at()`): `.at()` would throw std::out_of_range, and that
@@ -1128,8 +1162,7 @@ public:
                 //
                 // This is the hot one: `broadcast<E>()` lands here on every core with no subscriber
                 // for `E`. Goes through the per-router memo — see `_disposer_cache`.
-                if (auto *const disposer = find_disposer(event.getID()))
-                    disposer->dispose(&event);
+                dispose(event);
             }
         }
     }

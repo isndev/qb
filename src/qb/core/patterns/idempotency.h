@@ -63,12 +63,41 @@ concept idempotent_event = ask_event_type<E> && requires(E e) {
  */
 template <class Key, class Resp>
 class dedup_map {
-    using list_t = std::list<std::pair<Key, Resp>>; // front = LRU, back = MRU
+    using list_t  = std::list<std::pair<Key, Resp>>; // front = LRU, back = MRU
+    using index_t = std::unordered_map<Key, typename list_t::iterator>;
+
+    // Copy-and-swap keeps the destination intact only when the final swaps cannot throw.
+    static constexpr bool copy_assign_safe = std::is_nothrow_swappable_v<list_t> && std::is_nothrow_swappable_v<index_t>;
 
 public:
     /** @brief Create a cache holding at most `capacity` entries (clamped to >= 1). */
     explicit dedup_map(std::size_t capacity = 1024)
         : _cap(capacity ? capacity : std::size_t{1}) {}
+
+    dedup_map(const dedup_map &other)
+        : _cap(other._cap)
+        , _order(other._order) {
+        for (auto it = _order.begin(); it != _order.end(); ++it)
+            _index.emplace(it->first, it);
+    }
+
+    dedup_map &
+    operator=(const dedup_map &other)
+    requires(copy_assign_safe)
+    {
+        if (this != &other) {
+            dedup_map copy(other);
+            swap(copy);
+        }
+        return *this;
+    }
+
+    dedup_map &operator=(const dedup_map &)
+    requires(!copy_assign_safe)
+    = delete;
+
+    dedup_map(dedup_map &&)            = default;
+    dedup_map &operator=(dedup_map &&) = default;
 
     /**
      * @brief Look up `key`; on a hit, promote it to most-recently-used.
@@ -127,9 +156,17 @@ public:
     }
 
 private:
-    std::size_t                                        _cap;
-    list_t                                             _order;
-    std::unordered_map<Key, typename list_t::iterator> _index;
+    void
+    swap(dedup_map &other) {
+        using std::swap;
+        swap(_cap, other._cap);
+        _order.swap(other._order);
+        _index.swap(other._index);
+    }
+
+    std::size_t _cap;
+    list_t      _order;
+    index_t     _index;
 };
 
 /**

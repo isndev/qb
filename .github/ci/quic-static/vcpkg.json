@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "qb-quic-static-ci",
+  "version-string": "0.0.1",
+  "builtin-baseline": "a900048467b8199f82c31411e0f1597c267fdada",
+  "dependencies": [
+    "openssl",
+    "nlohmann-json",
+    "gtest",
+    {
+      "name": "ngtcp2",
+      "features": ["openssl"]
+    }
+  ]
+}

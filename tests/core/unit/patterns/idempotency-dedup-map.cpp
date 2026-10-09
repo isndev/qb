@@ -20,10 +20,57 @@
  *   - `put` on an existing key UPDATES in place (no growth, value replaced) and promotes;
  *   - `contains` reports membership WITHOUT promoting (a peek must not perturb LRU order);
  *   - `clear` empties the map; `capacity` clamps to >= 1.
+ *   - copies own their index and remain independent through source mutation/destruction;
+ *   - failed copy assignment leaves the destination unchanged; moves keep a valid LRU.
+ *   - a hash with throwing swap keeps copy construction but cannot use copy assignment.
  */
 
 #include <gtest/gtest.h>
 #include <qb/core/patterns.h>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+
+namespace throwing_swap_test {
+struct Key {
+    int  value;
+    bool operator==(const Key &) const = default;
+};
+} // namespace throwing_swap_test
+
+template <>
+struct std::hash<throwing_swap_test::Key> {
+    std::size_t
+    operator()(throwing_swap_test::Key key) const noexcept {
+        return std::hash<int>{}(key.value);
+    }
+    friend void
+    swap(hash &, hash &) noexcept(false) {}
+};
+
+static_assert(!std::is_nothrow_swappable_v<std::hash<throwing_swap_test::Key>>);
+static_assert(!std::is_copy_assignable_v<qb::dedup_map<throwing_swap_test::Key, int>>);
+static_assert(std::is_copy_assignable_v<qb::dedup_map<int, int>>);
+
+namespace {
+struct CopyFault {
+    int   value;
+    bool *fail_copy;
+
+    CopyFault(int value, bool &fail_copy)
+        : value(value)
+        , fail_copy(&fail_copy) {}
+    CopyFault(const CopyFault &other)
+        : value(other.value)
+        , fail_copy(other.fail_copy) {
+        if (*fail_copy)
+            throw std::runtime_error("copy failed");
+    }
+    CopyFault(CopyFault &&)                 = default;
+    CopyFault &operator=(const CopyFault &) = default;
+    CopyFault &operator=(CopyFault &&)      = default;
+};
+} // namespace
 
 TEST(DedupMap, FindPromotesAndEvictsLeastRecentlyUsed) {
     qb::dedup_map<int, int> m(2);
@@ -84,4 +131,88 @@ TEST(DedupMap, ZeroCapacityClampsToOne) {
     EXPECT_EQ(z.size(), 1u);
     EXPECT_FALSE(z.contains(1));
     EXPECT_TRUE(z.contains(2));
+}
+
+TEST(DedupMap, CopyConstructionKeepsValuesAndLruIndependent) {
+    qb::dedup_map<int, int> source(2);
+    source.put(1, 10);
+    source.put(2, 20);
+
+    qb::dedup_map<int, int> copy(source);
+    ASSERT_NE(copy.find(1), nullptr); // promote 1 only in the copy
+    EXPECT_EQ(*copy.find(1), 10);
+    source.put(1, 11); // changing the source must not change the copy
+    EXPECT_EQ(*copy.find(1), 10);
+
+    copy.put(3, 30); // copy's LRU is 2
+    EXPECT_FALSE(copy.contains(2));
+    EXPECT_TRUE(copy.contains(1));
+    EXPECT_TRUE(source.contains(2));
+    EXPECT_EQ(*source.find(1), 11);
+}
+
+TEST(DedupMap, CopyConstructionAllowsHashWithThrowingSwap) {
+    qb::dedup_map<throwing_swap_test::Key, int> source(2);
+    source.put({1}, 10);
+    qb::dedup_map<throwing_swap_test::Key, int> copy(source);
+    ASSERT_NE(copy.find({1}), nullptr);
+    EXPECT_EQ(*copy.find({1}), 10);
+}
+
+TEST(DedupMap, CopyAssignmentSurvivesSourceDestruction) {
+    qb::dedup_map<int, int> copy(2);
+    copy.put(9, 90);
+    {
+        qb::dedup_map<int, int> source(2);
+        source.put(1, 10);
+        source.put(2, 20);
+        copy = source;
+    }
+
+    EXPECT_FALSE(copy.contains(9));
+    ASSERT_NE(copy.find(1), nullptr);
+    EXPECT_EQ(*copy.find(1), 10);
+    copy.put(3, 30);
+    EXPECT_FALSE(copy.contains(2));
+    EXPECT_TRUE(copy.contains(1));
+    const auto &alias = copy;
+    copy              = alias;
+    EXPECT_EQ(*copy.find(1), 10);
+}
+
+TEST(DedupMap, FailedCopyAssignmentLeavesDestinationUnchanged) {
+    bool                          fail_copy = false;
+    qb::dedup_map<int, CopyFault> source(2);
+    source.put(1, CopyFault{10, fail_copy});
+    qb::dedup_map<int, CopyFault> destination(1);
+    destination.put(9, CopyFault{90, fail_copy});
+
+    fail_copy = true;
+    EXPECT_THROW(destination = source, std::runtime_error);
+    fail_copy = false;
+    EXPECT_EQ(destination.capacity(), 1u);
+    EXPECT_TRUE(destination.contains(9));
+    EXPECT_FALSE(destination.contains(1));
+    ASSERT_NE(destination.find(9), nullptr);
+    EXPECT_EQ(destination.find(9)->value, 90);
+}
+
+TEST(DedupMap, MoveConstructionAndAssignmentRetainLru) {
+    qb::dedup_map<int, int> source(2);
+    source.put(1, 10);
+    source.put(2, 20);
+    qb::dedup_map<int, int> moved(std::move(source));
+    source.clear();
+    ASSERT_NE(moved.find(1), nullptr);
+    moved.put(3, 30);
+    EXPECT_FALSE(moved.contains(2));
+
+    qb::dedup_map<int, int> assigned(1);
+    assigned.put(9, 90);
+    assigned = std::move(moved);
+    moved.clear();
+    EXPECT_EQ(assigned.capacity(), 2u);
+    ASSERT_NE(assigned.find(1), nullptr);
+    EXPECT_EQ(*assigned.find(1), 10);
+    EXPECT_TRUE(assigned.contains(3));
 }

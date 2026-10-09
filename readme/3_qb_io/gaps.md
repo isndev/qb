@@ -63,9 +63,9 @@ Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight 
 
 Three properties of the design make an awaiter genuinely hard here, and they are visible in the code rather than being a matter of taste:
 
-- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:609`). `wait_readable` has nothing to park on.
-- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:271`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
-- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:209-243`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
+- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:624`). `wait_readable` has nothing to park on.
+- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:283`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
+- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:221-255`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
 
 Use the callback surface, and if you want coroutine ergonomics on top of it, park on your own `async_awaiter<T>` that a `dispatch(event::stream_data)` handler completes — after copying the payload.
 
@@ -73,7 +73,7 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 `event::signal<Sig>` wraps a libev `ev::sig` watcher (`src/qb/io/async/event/signal.h:82`) and is delivered like any other event: register it, implement `on(event::signal<SIGINT>&)`. There is no `co_await wait_signal(SIGINT)`.
 
-Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1307-1340`). That is the supported path, and it is an actor-tier concern.
+Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1446-1479`). That is the supported path, and it is an actor-tier concern.
 
 ## File I/O is watched metadata plus a blocking read
 
