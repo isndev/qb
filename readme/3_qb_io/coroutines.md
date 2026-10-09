@@ -530,7 +530,7 @@ What `close()` does to each parked party is worth a table of its own, because th
 |---|---|
 | `recv()` / `recv_for()` | resumes with `std::nullopt` — never an exception, and a value still in `_buffer` is drained first (`channel.h:330-334`) |
 | `send()` | resumes and **throws `channel_closed`** — a parked sender is resumed without a hand-off only by `close()` (`channel.h:220-225`) |
-| `send_for()` | resumes and returns **`false`** — no exception: it reports whether a wake handed its value over, and `close()` hands nothing (`channel.h:674`) |
+| `send_for()` | resumes and returns **`false`** — no exception: it reports whether a wake handed its value over, and `close()` hands nothing (`channel.h:613`, `:667-674`) |
 | `select()` | resumes with `closed == true` and an empty `value` (`channel.h:415`) |
 
 `~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:136-142`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
