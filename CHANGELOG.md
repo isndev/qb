@@ -717,6 +717,27 @@ policy.
   in 64 bits and answers `std::nullopt` when the total does not fit an `int32_t` (each field is still not
   range-checked: `"+99:99"` parses, as documented). The formatter negated `INT32_MIN` in 32 bits and printed
   `"--596523:-14"`; it prints `"-596523:14"`.
+- **The one-shot zlib `compress()` / `uncompress()` take any `std::size_t` length (Huly QB-353).** zlib counts bytes
+  in a 32-bit `uInt`, and the one-shots narrowed their lengths unchecked -- the checks sat under `#ifdef DEBUG`, which
+  qb never defines: 4 GiB + 17 bytes of input were compressed as 17, into a valid stream of those 17, and an uncompress
+  whose output window (twice its input) passed 4 GiB counted bytes zlib had never written. The input now goes to zlib
+  in slices it can count, `Z_NO_FLUSH` until the last one, and no output window is wider than zlib can count
+  (`qb::compression::detail::deflate_into` / `inflate_into`, the body of the generic templates and of the `pipe<char>`
+  specializations alike); below 4 GiB the calls zlib sees are the ones it saw. Pinned always-on at the helpers' level
+  with a 7-byte chunk (`CompressionOneShot.ZlibIsFedInSlicesAndWindowsItCanCount`), and end to end past 4 GiB by the
+  opt-in `CompressionBeyondUIntMax` cases (`DISABLED_`, run by name on a host with about 10 GB to spare).
+- **A one-shot compress or uncompress whose output throws releases zlib's state (Huly QB-354).** An exception from the
+  output's growth -- a `std::bad_alloc` from `resize()` -- left the call between `deflateInit2` / `inflateInit2` and
+  `deflateEnd` / `inflateEnd`, and zlib's state leaked. A guard armed right after the init releases it on every way
+  out. The `pipe<char>` one-shots, which append to the pipe, also take back what they had appended when they throw: a
+  truncated stream or a refused bomb left its partial output behind. Pinned by
+  `CompressionOneShot.AThrowingOutputReleasesZlibStateAndAPipeIsLeftAsFound` (the leak shows under LeakSanitizer).
+- **A gzip, deflate or zstd compressor called without input drains a flush that did not fit its window (Huly
+  QB-355).** A call without `is_last` flushes what its input produced; when its output window was too small for that
+  flush, the rest stayed inside zlib or zstd, and the call without input that should drain it returned at once with
+  nothing -- the flushed data reached the peer only when more input came or the stream finished. The compressors now
+  remember a flush that filled its window and run the codec on the empty call until it leaves room unused, as brotli
+  already did. The provider contract (`codec_contract.h`) holds the case for the four codecs.
 
 ### Documentation
 

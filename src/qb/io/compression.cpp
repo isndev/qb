@@ -91,7 +91,9 @@ public:
             throw std::runtime_error("Compressor not properly initialized");
         }
 
-        if (m_state == Z_STREAM_END || (hint != operation_hint::is_last && !input_size)) {
+        // An empty call without `is_last` has nothing to do -- unless the previous one filled its buffer before its
+        // flush was complete: then deflate still holds output, and this call is how the caller drains it (Huly QB-355).
+        if (m_state == Z_STREAM_END || (hint != operation_hint::is_last && !input_size && !m_flushing)) {
             input_bytes_processed = 0;
             done                  = (m_state == Z_STREAM_END);
             return 0;
@@ -119,11 +121,15 @@ public:
         m_stream.avail_out = static_cast<unsigned int>(output_size);
 
         m_state = ::deflate(&m_stream, (hint == operation_hint::is_last) ? Z_FINISH : Z_PARTIAL_FLUSH);
-        if (m_state != Z_OK && m_state != Z_STREAM_ERROR
-            && !(hint == operation_hint::is_last && (m_state == Z_STREAM_END || m_state == Z_BUF_ERROR))) {
+        // Z_BUF_ERROR is "no progress was possible", never fatal: a drain call that found the flush already complete.
+        if (m_state != Z_OK && m_state != Z_STREAM_ERROR && m_state != Z_BUF_ERROR
+            && !(hint == operation_hint::is_last && m_state == Z_STREAM_END)) {
             throw std::runtime_error("Unrecoverable compression stream error " + std::to_string(m_state));
         }
 
+        // deflate's own rule: a flush that returned with the output buffer full may not be complete, and the call is
+        // repeated -- with the same flush and more room -- until it leaves room unused.
+        m_flushing            = hint != operation_hint::is_last && m_stream.avail_out == 0;
         input_bytes_processed = input_size - m_stream.avail_in;
         done                  = (m_state == Z_STREAM_END);
         return output_size - m_stream.avail_out;
@@ -134,7 +140,8 @@ public:
         if (!m_initialized) {
             throw std::runtime_error("Compressor not properly initialized");
         }
-        m_state = deflateReset(&m_stream);
+        m_flushing = false;
+        m_state    = deflateReset(&m_stream);
         if (m_state != Z_OK) {
             throw std::runtime_error("Failed to reset zlib compressor " + std::to_string(m_state));
         }
@@ -153,6 +160,7 @@ private:
     z_stream           m_stream;
     const std::string &m_algorithm;
     bool               m_initialized;
+    bool               m_flushing = false; ///< a flush filled the output buffer and may still hold output
 };
 
 const std::string zlib_compressor_base::GZIP(algorithm::GZIP);
@@ -323,7 +331,8 @@ public:
     std::size_t
     compress(const uint8_t *input, std::size_t input_size, uint8_t *output, std::size_t output_size, operation_hint hint,
              std::size_t &input_bytes_processed, bool &done) override {
-        if (m_done || (hint != operation_hint::is_last && !input_size)) {
+        // An empty call without `is_last` drains a flush the previous call had no room to complete (Huly QB-355).
+        if (m_done || (hint != operation_hint::is_last && !input_size && !m_flushing)) {
             input_bytes_processed = 0;
             done                  = m_done;
             return 0;
@@ -335,6 +344,7 @@ public:
         if (ZSTD_isError(remaining))
             throw std::runtime_error(std::string("zstd compression error: ") + ZSTD_getErrorName(remaining));
         input_bytes_processed = in.pos;
+        m_flushing            = (mode == ZSTD_e_flush && remaining > 0); // bytes the flush could not write yet
         m_done                = (mode == ZSTD_e_end && remaining == 0 && in.pos == in.size);
         done                  = m_done;
         return out.pos;
@@ -343,12 +353,14 @@ public:
     void
     reset() override {
         ZSTD_CCtx_reset(m_ctx, ZSTD_reset_session_only);
-        m_done = false;
+        m_done     = false;
+        m_flushing = false;
     }
 
 private:
     ZSTD_CCtx *m_ctx;
-    bool       m_done = false;
+    bool       m_done     = false;
+    bool       m_flushing = false; ///< a flush is still draining
 };
 
 class zstd_decompressor final : public decompress_provider {
@@ -821,143 +833,54 @@ make_decompress_factory(const std::string &algorithm, uint16_t weight,
 
 namespace qb::compression {
 
+// The pipe<char> one-shots append after what the pipe already holds (`out_size` bytes): room for `window` bytes past
+// the `produced` ones, which may move the pipe's storage, so the address is taken afresh on every call.
+static Bytef *
+grow_pipe_output(qb::allocator::pipe<char> &output, std::size_t out_size, std::size_t produced, std::size_t window) {
+    const std::size_t room = output.size() - out_size;
+    if (room < produced + window)
+        output.allocate_back(produced + window - room);
+    return reinterpret_cast<Bytef *>(output.begin() + out_size + produced);
+}
+
 template <>
 size_t
 compress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, int level, int window_bits) {
-#ifdef DEBUG
-    // Verify if size input will fit into unsigned int, type used for zlib's avail_in
-    if (size > std::numeric_limits<unsigned int>::max()) {
-        throw std::runtime_error("size arg is too large to fit into unsigned int type");
-    }
-#endif
-
-    z_stream deflate_s;
-    deflate_s.zalloc   = Z_NULL;
-    deflate_s.zfree    = Z_NULL;
-    deflate_s.opaque   = Z_NULL;
-    deflate_s.avail_in = 0;
-    deflate_s.next_in  = Z_NULL;
-
-    constexpr int mem_level = 8;
-    // The memory requirements for deflate are (in bytes):
-    // (1 << (window_bits+2)) +  (1 << (mem_level+9))
-    // with a default value of 8 for mem_level and our window_bits of 15
-    // this is 128Kb
-
-    DISABLE_WARNING_PUSH
-    DISABLE_WARNING_OLD_STYLE_CAST
-    if (deflateInit2(&deflate_s, level, Z_DEFLATED, window_bits, mem_level, Z_DEFAULT_STRATEGY) != Z_OK) {
-        throw std::runtime_error("deflate init failed");
-    }
-    DISABLE_WARNING_POP
-
     const std::size_t out_size = output.size();
-    deflate_s.next_in          = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
-    deflate_s.avail_in         = static_cast<unsigned int>(size);
-
-    std::size_t size_compressed = 0;
-    do {
-        size_t increase = size / 2 + 1024;
-        if ((output.size() - out_size) < (size_compressed + increase)) {
-            output.allocate_back(increase);
-        }
-        // There is no way we see that "increase" would not fit in an unsigned int,
-        // hence we use static cast here to avoid -Wshorten-64-to-32 error
-        deflate_s.avail_out = static_cast<unsigned int>(increase);
-        deflate_s.next_out  = reinterpret_cast<Bytef *>((output.begin() + out_size + size_compressed));
-        // From http://www.zlib.net/zlib_how.html
-        // "deflate() has a return value that can indicate errors, yet we do not check it
-        // here. Why not? Well, it turns out that deflate() can do no wrong here."
-        // Basically only possible error is from deflateInit not working properly
-        ::deflate(&deflate_s, Z_FINISH);
-        size_compressed += (increase - deflate_s.avail_out);
-    } while (deflate_s.avail_out == 0);
-
-    deflateEnd(&deflate_s);
-    output.free_back(output.size() - (size_compressed + out_size));
-    return size_compressed;
+    try {
+        const std::size_t size_compressed =
+            detail::deflate_into(data, size, level, window_bits, [&output, out_size](std::size_t produced, std::size_t window) {
+                return grow_pipe_output(output, out_size, produced, window);
+            });
+        output.free_back(output.size() - (size_compressed + out_size));
+        return size_compressed;
+    } catch (...) {
+        output.free_back(output.size() - out_size); // a call that fails leaves the pipe as it found it
+        throw;
+    }
 }
 
 template <>
 size_t
 uncompress(qb::allocator::pipe<char> &output, const char *data, std::size_t size, std::size_t max, int window_bits) {
     // Empty input decompresses to nothing. Return early: with size == 0 the
-    // decode loop below computes chunk = 2*size = 0, so avail_out stays 0 every
-    // iteration and `while (inflate_s.avail_out == 0)` never terminates (hang).
+    // decode loop computes a window of 2*size = 0, so avail_out stays 0 every
+    // iteration and the loop on a full window never terminates (hang).
     if (size == 0)
         return 0;
 
-    z_stream inflate_s;
-
-    inflate_s.zalloc   = Z_NULL;
-    inflate_s.zfree    = Z_NULL;
-    inflate_s.opaque   = Z_NULL;
-    inflate_s.avail_in = 0;
-    inflate_s.next_in  = Z_NULL;
-
-    // The windowBits parameter is the base two logarithm of the window size (the size of
-    // the history buffer). It should be in the range 8..15 for this version of the
-    // library. Larger values of this parameter result in better compression at the
-    // expense of memory usage. This range of values also changes the decoding type:
-    //  -8 to -15 for raw deflate
-    //  8 to 15 for zlib
-    // (8 to 15) + 16 for gzip
-    // (8 to 15) + 32 to automatically detect gzip/zlib header
-
-    DISABLE_WARNING_PUSH
-    DISABLE_WARNING_OLD_STYLE_CAST if (inflateInit2(&inflate_s, window_bits) != Z_OK) {
-        throw std::runtime_error("inflate init failed");
+    const std::size_t out_size = output.size();
+    try {
+        const std::size_t size_uncompressed =
+            detail::inflate_into(data, size, max, window_bits, [&output, out_size](std::size_t produced, std::size_t window) {
+                return grow_pipe_output(output, out_size, produced, window);
+            });
+        output.free_back(output.size() - (size_uncompressed + out_size));
+        return size_uncompressed;
+    } catch (...) {
+        output.free_back(output.size() - out_size); // a call that fails leaves the pipe as it found it
+        throw;
     }
-    DISABLE_WARNING_POP
-    inflate_s.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
-
-#ifdef DEBUG
-    // Verify if size (long type) input will fit into unsigned int, type used for zlib's
-    // avail_in
-    std::uint64_t size_64 = size * 2;
-    if (size_64 > std::numeric_limits<unsigned int>::max()) {
-        inflateEnd(&inflate_s);
-        throw std::runtime_error("size arg is too large to fit into unsigned int type x2");
-    }
-#endif
-    // Overflow-safe budget check (2 * size without wrapping size_t).
-    if (max && size > max / 2) {
-        inflateEnd(&inflate_s);
-        throw std::runtime_error("size may use more memory than intended when decompressing");
-    }
-    inflate_s.avail_in                  = static_cast<unsigned int>(size);
-    const std::size_t out_size          = output.size();
-    std::size_t       size_uncompressed = 0;
-    int               ret               = Z_OK;
-    do {
-        // chunk = 2*size; check size_uncompressed + chunk against the budget
-        // overflow-safe (decompression-bomb guard).
-        const std::size_t chunk = 2 * size;
-        if (max && (size_uncompressed > max || chunk > max - size_uncompressed)) {
-            inflateEnd(&inflate_s);
-            throw std::runtime_error("size of output string will use more memory then"
-                                     "intended when decompressing");
-        }
-        output.allocate_back(chunk);
-        inflate_s.avail_out = static_cast<unsigned int>(chunk);
-        inflate_s.next_out  = reinterpret_cast<Bytef *>(output.begin() + out_size + size_uncompressed);
-        ret                 = inflate(&inflate_s, Z_FINISH);
-        if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
-            // inflate_s.msg may be null; never construct std::string from nullptr.
-            std::string error_msg = inflate_s.msg ? inflate_s.msg : "inflate error";
-            inflateEnd(&inflate_s);
-            throw std::runtime_error(error_msg);
-        }
-
-        size_uncompressed += (chunk - inflate_s.avail_out);
-    } while (inflate_s.avail_out == 0);
-    inflateEnd(&inflate_s);
-    // Reject truncated/incomplete streams instead of returning partial output.
-    if (ret != Z_STREAM_END) {
-        throw std::runtime_error("incomplete or truncated compressed stream");
-    }
-    output.free_back(output.size() - (size_uncompressed + out_size));
-    return size_uncompressed;
 }
 
 namespace deflate {

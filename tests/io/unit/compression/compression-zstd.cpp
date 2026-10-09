@@ -39,3 +39,8 @@ TEST(CompressionZstd, ATruncatedStreamIsNeverDoneAndACorruptOneThrows) {
 TEST(CompressionZstd, ResetMakesTheProvidersReusable) {
     contract::expect_reset_reuses(builtin::algorithm::ZSTD);
 }
+
+// A flush that did not fit its window is drained by the calls without input that follow (Huly QB-355).
+TEST(CompressionZstd, AnEmptyCallWithoutIsLastDrainsAFlushThatDidNotFit) {
+    contract::expect_empty_continuation_drains(builtin::algorithm::ZSTD, 7);
+}

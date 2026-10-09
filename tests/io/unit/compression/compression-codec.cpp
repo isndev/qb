@@ -26,8 +26,13 @@
 #include <qb/io/compression.h>
 #include <qb/io/crypto.h>
 #include <qb/system/allocator/pipe.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstring>
+#include <new>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -280,6 +285,15 @@ TEST(Compression, GzipAndDeflateHonourTheProviderContract) {
     }
 }
 
+// A partial flush that did not fit its window is drained by the calls without input that follow: those calls returned
+// nothing, and the flush stayed inside zlib until the stream was finished (Huly QB-355). A 512-byte window: zlib's own
+// caveat on tiny drain windows is in the helper.
+TEST(Compression, GzipAndDeflateDrainAFlushThatDidNotFitOnAnEmptyCall) {
+    namespace contract = qb::io::test::codec_contract;
+    for (const char *name : {qb::compression::builtin::algorithm::GZIP, qb::compression::builtin::algorithm::DEFLATE})
+        contract::expect_empty_continuation_drains(name, 512);
+}
+
 TEST(Compression, BuiltinFactoriesAndAlgorithms) {
     namespace builtin = qb::compression::builtin;
 
@@ -523,4 +537,186 @@ TEST(Compression, EmptyInputUncompressTerminates) {
 
     ASSERT_TRUE(done) << "uncompress(data, 0) never returned — the size == 0 guard is missing";
     EXPECT_EQ(completed.load(), 4) << "every empty-input uncompress shape must yield empty output";
+}
+
+// =============================================================================
+// ONE-SHOT compress / uncompress: zlib's 32-bit counts (Huly QB-353), an output that throws (Huly QB-354)
+// =============================================================================
+
+namespace compression_codec_test {
+
+// The output growth of the chunked helpers into a std::string, recording the widest window asked for.
+inline auto
+grow_string(std::string &out, std::size_t &widest) {
+    return [&out, &widest](std::size_t produced, std::size_t window) {
+        widest = (std::max) (widest, window);
+        if (out.size() < produced + window)
+            out.resize(produced + window);
+        return reinterpret_cast<Bytef *>(&out[0] + produced);
+    };
+}
+
+// An output whose growths throw once `growths` have been granted: a std::bad_alloc in the middle of a one-shot.
+struct ThrowingOutput {
+    std::string bytes;
+    int         growths = 1;
+
+    std::size_t
+    size() const noexcept {
+        return bytes.size();
+    }
+    void
+    resize(std::size_t n) {
+        if (n > bytes.size() && growths-- == 0)
+            throw std::bad_alloc();
+        bytes.resize(n);
+    }
+    char &
+    operator[](std::size_t i) {
+        return bytes[i];
+    }
+};
+
+// `size` bytes of a 251-byte cycle, written by doubling copies (seconds for gigabytes), ending in a sentinel.
+inline std::string
+patterned_body(std::size_t size) {
+    std::string       body(size, '\0');
+    const std::size_t seed = (std::min) (size, std::size_t{251});
+    for (std::size_t i = 0; i < seed; ++i)
+        body[i] = static_cast<char>('!' + i % 90);
+    for (std::size_t filled = seed; filled && filled < size; filled *= 2)
+        std::memcpy(body.data() + filled, body.data(), (std::min) (filled, size - filled));
+    constexpr char tail[] = "<end of body>";
+    if (size >= sizeof tail - 1)
+        std::memcpy(body.data() + size - (sizeof tail - 1), tail, sizeof tail - 1);
+    return body;
+}
+
+} // namespace compression_codec_test
+
+// zlib counts bytes in a 32-bit uInt: the one-shots hand it the input in slices it can count and output windows no
+// wider, so a length past 4 GiB is processed whole instead of wrapping to its remainder (Huly QB-353). The always-on
+// witness, at the helpers' level with a 7-byte chunk: every window within the bound, the stream intact both ways, the
+// bomb and truncation guards still holding. The end-to-end proof past 4 GiB is the opt-in CompressionBeyondUIntMax.
+TEST(CompressionOneShot, ZlibIsFedInSlicesAndWindowsItCanCount) {
+    namespace detail = qb::compression::detail;
+    using compression_codec_test::grow_string;
+    static_assert(detail::zlib_max_chunk == 0xFFFFFFFFu, "zlib's uInt is 32 bits wide");
+
+    constexpr std::size_t chunk    = 7;
+    const std::string     bodies[] = {
+        std::string{}, std::string("q"), qb::io::test::codec_contract::random_bytes(100000, 5) + std::string(100000, 'z')
+    };
+    for (const std::string &body : bodies) {
+        for (const int window_bits : {15, 15 + 16}) {
+            std::string       packed;
+            std::size_t       widest = 0;
+            const std::size_t packed_size =
+                detail::deflate_into(body.data(), body.size(), Z_DEFAULT_COMPRESSION, window_bits, grow_string(packed, widest), chunk);
+            packed.resize(packed_size);
+            EXPECT_LE(widest, chunk) << "a window wider than the chunk";
+            ASSERT_GT(packed.size(), 0u) << "even an empty body has a header and a trailer";
+
+            // zlib's whole-buffer one-shot reads the sliced stream back ...
+            std::string back;
+            EXPECT_NO_THROW((void) qb::compression::uncompress(back, packed.data(), packed.size(), 0, window_bits));
+            EXPECT_TRUE(back == body) << body.size() << " bytes came back as " << back.size();
+
+            // ... and so does the sliced inflate, within the same bound.
+            std::string       again;
+            std::size_t       again_widest = 0;
+            const std::size_t again_size =
+                detail::inflate_into(packed.data(), packed.size(), 0, window_bits, grow_string(again, again_widest), chunk);
+            again.resize(again_size);
+            EXPECT_LE(again_widest, chunk) << "a window wider than the chunk";
+            EXPECT_TRUE(again == body) << body.size() << " bytes came back as " << again.size();
+        }
+    }
+
+    // The guards hold through the slices: a bomb past `max`, then a stream cut before its trailer, are refused.
+    const std::string zeros(1u << 20, '\0');
+    const std::string bomb = qb::gzip::compress(zeros.data(), zeros.size());
+    const std::string cut  = bomb.substr(0, bomb.size() - 4);
+    std::string       sink;
+    std::size_t       widest = 0;
+    EXPECT_THROW((void) detail::inflate_into(bomb.data(), bomb.size(), 64u << 10, 15 + 16, grow_string(sink, widest), chunk),
+                 std::runtime_error);
+    EXPECT_THROW((void) detail::inflate_into(cut.data(), cut.size(), 0, 15 + 16, grow_string(sink, widest), chunk), std::runtime_error);
+}
+
+// An output growth that throws -- a std::bad_alloc from resize() -- leaves the one-shot with zlib's state allocated:
+// it must still be released. deflateEnd / inflateEnd were skipped and the state leaked, which LeakSanitizer reports
+// at exit (Huly QB-354). The pipe one-shots, which APPEND, leave the pipe as they found it when they throw.
+TEST(CompressionOneShot, AThrowingOutputReleasesZlibStateAndAPipeIsLeftAsFound) {
+    using compression_codec_test::ThrowingOutput;
+
+    // The first window is granted and the second throws: 64 KiB of noise needs two windows of half its size.
+    const std::string noise = qb::io::test::codec_contract::random_bytes(64u << 10, 3);
+    ThrowingOutput    packed;
+    EXPECT_THROW((void) qb::compression::compress(packed, noise.data(), noise.size(), Z_DEFAULT_COMPRESSION, 15 + 16), std::bad_alloc);
+    EXPECT_EQ(packed.growths, -1) << "the second growth is the one that threw";
+
+    // Windows of twice the input: a megabyte of zeros needs hundreds of them.
+    const std::string zeros(1u << 20, '\0');
+    const std::string bomb = qb::gzip::compress(zeros.data(), zeros.size());
+    ThrowingOutput    unpacked;
+    EXPECT_THROW((void) qb::compression::uncompress(unpacked, bomb.data(), bomb.size(), 0, 15 + 16), std::bad_alloc);
+    EXPECT_EQ(unpacked.growths, -1) << "the second growth is the one that threw";
+
+    // The pipe one-shots append after what the pipe holds, and take it back when they throw.
+    const std::string         cut = bomb.substr(0, bomb.size() - 4);
+    qb::allocator::pipe<char> pipe;
+    pipe.put("kept", 4);
+    EXPECT_THROW((void) qb::gzip::uncompress(pipe, cut.data(), cut.size()), std::runtime_error);
+    EXPECT_EQ(pipe.str(), "kept") << "a truncated stream left " << pipe.size() - 4 << " bytes behind";
+    EXPECT_THROW((void) qb::gzip::uncompress(pipe, bomb.data(), bomb.size(), 64u << 10), std::runtime_error);
+    EXPECT_EQ(pipe.str(), "kept") << "a refused bomb left " << pipe.size() - 4 << " bytes behind";
+    EXPECT_GT(qb::gzip::uncompress(pipe, bomb.data(), bomb.size()), 0u);
+    EXPECT_EQ(pipe.size(), 4u + zeros.size()) << "and a call that succeeds appends";
+}
+
+// =============================================================================
+// LENGTHS PAST 4 GiB (Huly QB-353) -- OPT-IN, never run by default
+//
+// zlib counts bytes in a 32-bit uInt, and the one-shots narrowed their std::size_t lengths unchecked -- the checks sat
+// under `#ifdef DEBUG`, which qb never defines: 4 GiB + 17 bytes of input were compressed as 17, into a valid stream of
+// them, and an uncompress whose output window (twice its input) passed 4 GiB counted bytes zlib had never written.
+// These cases move real multi-GiB buffers (up to about 10 GB of memory, tens of seconds), so they are DISABLED_ and
+// run by name on a host that has the memory:
+//
+//   qb-io-test-unit-compression-codec --gtest_also_run_disabled_tests --gtest_filter='CompressionBeyondUIntMax.*'
+//
+// The always-on witness of the same contract is CompressionOneShot.ZlibIsFedInSlicesAndWindowsItCanCount above.
+// =============================================================================
+
+TEST(CompressionBeyondUIntMax, DISABLED_OneShotRoundTripsMoreThan4GiB) {
+    static_assert(sizeof(std::size_t) >= 8, "a buffer past 4 GiB needs a 64-bit size_t");
+    const std::string body = compression_codec_test::patterned_body((std::size_t{1} << 32) + 17);
+
+    std::string packed;
+    ASSERT_NO_THROW((void) qb::gzip::compress(packed, body.data(), body.size(), Z_BEST_SPEED));
+    packed.shrink_to_fit();
+
+    std::string back;
+    back.reserve(body.size() + 2 * packed.size()); // the widest the windows reach: no doubling copies
+    ASSERT_NO_THROW((void) qb::gzip::uncompress(back, packed.data(), packed.size()));
+    ASSERT_EQ(back.size(), body.size()) << "4 GiB + 17 bytes came back as " << back.size() << ": the length wrapped modulo 2^32";
+    EXPECT_TRUE(back == body);
+}
+
+TEST(CompressionBeyondUIntMax, DISABLED_UncompressWindowsPast4GiB) {
+    static_assert(sizeof(std::size_t) >= 8, "a buffer past 4 GiB needs a 64-bit size_t");
+    // Stored (level 0), a stream is longer than its body: past 2 GiB, its first output window -- twice its size -- is
+    // past what zlib can count.
+    const std::string body = compression_codec_test::patterned_body((std::size_t{1} << 31) + 4096);
+
+    std::string packed;
+    ASSERT_NO_THROW((void) qb::gzip::compress(packed, body.data(), body.size(), Z_NO_COMPRESSION));
+    packed.shrink_to_fit();
+    ASSERT_GT(packed.size(), std::size_t{1} << 31) << "a stored stream is longer than its body";
+
+    std::string back;
+    ASSERT_NO_THROW((void) qb::gzip::uncompress(back, packed.data(), packed.size()));
+    ASSERT_EQ(back.size(), body.size()) << "2 GiB + 4 KiB came back as " << back.size();
+    EXPECT_TRUE(back == body);
 }

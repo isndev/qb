@@ -26,6 +26,8 @@
  * @ingroup Compression
  */
 
+#include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -394,32 +396,54 @@ std::shared_ptr<compress_factory> make_compress_factory(const std::string       
 std::shared_ptr<decompress_factory> make_decompress_factory(const std::string &algorithm, uint16_t weight,
                                                             std::function<std::unique_ptr<decompress_provider>()> make_decompressor);
 
-/**
- * @brief Compress data using a generic output container
- *
- * This template function compresses the provided data using the zlib
- * library and stores the result in an output container that supports
- * resize() and size() operations.
- *
- * @tparam Output Type of the output container
- * @param output Container for the compressed data (will be resized as needed)
- * @param data Pointer to the data to compress
- * @param size Size of the data in bytes
- * @param level Compression level (1-9, where 9 is max compression)
- * @param window_bits Window size bits with encoding format flag
- * @return Size of the compressed data in bytes
- * @throws std::runtime_error If initialization fails or input is too large
- */
-template <typename Output>
-size_t
-compress(Output &output, const char *data, std::size_t size, int level, int window_bits) {
-#ifdef DEBUG
-    // Verify if size input will fit into unsigned int, type used for zlib's avail_in
-    if (size > std::numeric_limits<unsigned int>::max()) {
-        throw std::runtime_error("size arg is too large to fit into unsigned int type");
-    }
-#endif
+namespace detail {
 
+/**
+ * @brief The largest byte count zlib's `avail_in` / `avail_out` hold: they are `uInt`, 32 bits wide on every target.
+ * @details A one-shot compress or uncompress hands zlib its input in slices of at most this many bytes and gives it
+ *          output windows no wider, so a `std::size_t` length past 4 GiB is processed whole instead of wrapping
+ *          modulo 2^32 -- which compressed only the remainder and returned a valid stream of it (Huly QB-353).
+ */
+inline constexpr std::size_t zlib_max_chunk = (std::numeric_limits<uInt>::max)();
+
+/**
+ * @brief Ends a one-shot deflate stream on every way out of its function, a throwing output growth included.
+ * @details Armed right after `deflateInit2` succeeds; without it, an exception from the output container -- a
+ *          `std::bad_alloc` from a `resize` -- skipped `deflateEnd` and leaked zlib's state (Huly QB-354).
+ */
+struct deflate_end_guard {
+    z_stream &stream;
+    ~deflate_end_guard() {
+        (void) deflateEnd(&stream);
+    }
+};
+
+/**
+ * @brief Ends a one-shot inflate stream on every way out of its function (see `deflate_end_guard`).
+ */
+struct inflate_end_guard {
+    z_stream &stream;
+    ~inflate_end_guard() {
+        (void) inflateEnd(&stream);
+    }
+};
+
+/**
+ * @brief One-shot deflate of `[data, data + size)` into storage `grow` provides -- the body of every `compress()`.
+ * @tparam Grow `Bytef *(std::size_t produced, std::size_t window)`: makes room for `window` bytes after the
+ *              `produced` bytes already written and returns where they start. It may throw.
+ * @param data        Pointer to the data to compress
+ * @param size        Size of the data in bytes, any `std::size_t`
+ * @param level       Compression level
+ * @param window_bits Window size bits with encoding format flag
+ * @param grow        The output's growth
+ * @param max_chunk   The widest input slice and output window handed to zlib (`zlib_max_chunk`; smaller in tests)
+ * @return Size of the compressed data in bytes
+ * @throws std::runtime_error If initialization fails; whatever `grow` throws
+ */
+template <typename Grow>
+std::size_t
+deflate_into(const char *data, std::size_t size, int level, int window_bits, Grow &&grow, std::size_t max_chunk = zlib_max_chunk) {
     z_stream deflate_s;
     deflate_s.zalloc   = Z_NULL;
     deflate_s.zfree    = Z_NULL;
@@ -447,29 +471,142 @@ compress(Output &output, const char *data, std::size_t size, int level, int wind
         throw std::runtime_error("deflate init failed");
     }
     DISABLE_WARNING_POP
+    const deflate_end_guard end_guard{deflate_s};
 
-    deflate_s.next_in  = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
-    deflate_s.avail_in = static_cast<unsigned int>(size);
-
-    std::size_t size_compressed = 0;
+    // The input goes in slices zlib can count, Z_NO_FLUSH until the last one is given, then Z_FINISH -- which zlib
+    // requires to be repeated, with no more input, until it returns Z_STREAM_END.
+    const auto       *next_in         = reinterpret_cast<const Bytef *>(data);
+    std::size_t       left_in         = size;
+    const std::size_t window          = (std::min) (size / 2 + 1024, max_chunk);
+    std::size_t       size_compressed = 0;
+    int               ret             = Z_OK;
     do {
-        size_t increase = size / 2 + 1024;
-        if (output.size() < (size_compressed + increase)) {
-            output.resize(size_compressed + increase);
+        if (deflate_s.avail_in == 0 && left_in) {
+            const std::size_t slice = (std::min) (left_in, max_chunk);
+            deflate_s.next_in       = const_cast<Bytef *>(next_in);
+            deflate_s.avail_in      = static_cast<uInt>(slice);
+            next_in += slice;
+            left_in -= slice;
         }
-        // There is no way we see that "increase" would not fit in an unsigned int,
-        // hence we use static cast here to avoid -Wshorten-64-to-32 error
-        deflate_s.avail_out = static_cast<unsigned int>(increase);
-        deflate_s.next_out  = reinterpret_cast<Bytef *>((&output[0] + size_compressed));
-        // From http://www.zlib.net/zlib_how.html
-        // "deflate() has a return value that can indicate errors, yet we do not check it
-        // here. Why not? Well, it turns out that deflate() can do no wrong here."
-        // Basically only possible error is from deflateInit not working properly
-        ::deflate(&deflate_s, Z_FINISH);
-        size_compressed += (increase - deflate_s.avail_out);
-    } while (deflate_s.avail_out == 0);
+        deflate_s.next_out  = grow(size_compressed, window);
+        deflate_s.avail_out = static_cast<uInt>(window);
+        ret                 = ::deflate(&deflate_s, left_in ? Z_NO_FLUSH : Z_FINISH);
+        // Every call has input or a fresh output window, so progress is always possible: only a stream error can
+        // come back, and it would mean the state itself is broken.
+        if (ret == Z_STREAM_ERROR)
+            throw std::runtime_error("deflate error");
+        size_compressed += window - deflate_s.avail_out;
+    } while (ret != Z_STREAM_END);
+    return size_compressed;
+}
 
-    deflateEnd(&deflate_s);
+/**
+ * @brief One-shot inflate of `[data, data + size)` into storage `grow` provides -- the body of every `uncompress()`.
+ * @tparam Grow As for `deflate_into`.
+ * @param data        Pointer to the compressed data
+ * @param size        Size of the compressed data in bytes, any `std::size_t` but 0
+ * @param max         Maximum allowed output size (0 for unlimited)
+ * @param window_bits Window size bits with encoding format flag
+ * @param grow        The output's growth
+ * @param max_chunk   The widest input slice and output window handed to zlib (`zlib_max_chunk`; smaller in tests)
+ * @return Size of the uncompressed data in bytes
+ * @throws std::runtime_error If initialization fails, the stream is corrupt or truncated, or the output would
+ * exceed `max`; whatever `grow` throws
+ */
+template <typename Grow>
+std::size_t
+inflate_into(const char *data, std::size_t size, std::size_t max, int window_bits, Grow &&grow, std::size_t max_chunk = zlib_max_chunk) {
+    // Overflow-safe budget check (2 * size without wrapping size_t).
+    if (max && size > max / 2)
+        throw std::runtime_error("size may use more memory than intended when decompressing");
+
+    z_stream inflate_s;
+    inflate_s.zalloc   = Z_NULL;
+    inflate_s.zfree    = Z_NULL;
+    inflate_s.opaque   = Z_NULL;
+    inflate_s.avail_in = 0;
+    inflate_s.next_in  = Z_NULL;
+
+    // The windowBits parameter is the base two logarithm of the window size (the size of
+    // the history buffer). It should be in the range 8..15 for this version of the
+    // library. Larger values of this parameter result in better compression at the
+    // expense of memory usage. This range of values also changes the decoding type:
+    //  -8 to -15 for raw deflate
+    //  8 to 15 for zlib
+    // (8 to 15) + 16 for gzip
+    // (8 to 15) + 32 to automatically detect gzip/zlib header
+
+    DISABLE_WARNING_PUSH
+    DISABLE_WARNING_OLD_STYLE_CAST
+    if (inflateInit2(&inflate_s, window_bits) != Z_OK) {
+        throw std::runtime_error("inflate init failed");
+    }
+    DISABLE_WARNING_POP
+    const inflate_end_guard end_guard{inflate_s};
+
+    // Each output window is twice the input -- computed without wrapping -- but never wider than zlib can count.
+    const auto       *next_in           = reinterpret_cast<const Bytef *>(data);
+    std::size_t       left_in           = size;
+    const std::size_t chunk             = size > max_chunk / 2 ? max_chunk : 2 * size;
+    std::size_t       size_uncompressed = 0;
+    int               ret               = Z_OK;
+    do {
+        if (inflate_s.avail_in == 0 && left_in) {
+            const std::size_t slice = (std::min) (left_in, max_chunk);
+            inflate_s.next_in       = const_cast<Bytef *>(next_in);
+            inflate_s.avail_in      = static_cast<uInt>(slice);
+            next_in += slice;
+            left_in -= slice;
+        }
+        // size_uncompressed + chunk checked against the budget overflow-safe (decompression-bomb guard).
+        if (max && (size_uncompressed > max || chunk > max - size_uncompressed))
+            throw std::runtime_error("size of output string will use more memory then "
+                                     "intended when decompressing");
+        inflate_s.next_out  = grow(size_uncompressed, chunk);
+        inflate_s.avail_out = static_cast<uInt>(chunk);
+        ret                 = ::inflate(&inflate_s, left_in ? Z_NO_FLUSH : Z_FINISH);
+        if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
+            // inflate_s.msg may be null; never construct std::string from nullptr.
+            throw std::runtime_error(inflate_s.msg ? inflate_s.msg : "inflate error");
+        }
+        size_uncompressed += chunk - inflate_s.avail_out;
+        // Go on while the window came back full (more output may follow) or a slice is spent with input still
+        // to give; a window with room left and no input left is the end of what this stream can yield.
+    } while (ret != Z_STREAM_END && (inflate_s.avail_out == 0 || (inflate_s.avail_in == 0 && left_in)));
+    // Reject truncated/incomplete streams instead of returning partial output.
+    if (ret != Z_STREAM_END)
+        throw std::runtime_error("incomplete or truncated compressed stream");
+    return size_uncompressed;
+}
+
+} // namespace detail
+
+/**
+ * @brief Compress data using a generic output container
+ *
+ * This template function compresses the provided data using the zlib
+ * library and stores the result in an output container that supports
+ * resize() and size() operations.
+ *
+ * @tparam Output Type of the output container
+ * @param output Container for the compressed data (will be resized as needed)
+ * @param data Pointer to the data to compress
+ * @param size Size of the data in bytes, any `std::size_t` (zlib is fed in slices it can count)
+ * @param level Compression level (1-9, where 9 is max compression)
+ * @param window_bits Window size bits with encoding format flag
+ * @return Size of the compressed data in bytes
+ * @throws std::runtime_error If initialization fails; whatever the container's resize() throws (zlib's state is
+ * released either way)
+ */
+template <typename Output>
+size_t
+compress(Output &output, const char *data, std::size_t size, int level, int window_bits) {
+    const std::size_t size_compressed =
+        detail::deflate_into(data, size, level, window_bits, [&output](std::size_t produced, std::size_t window) {
+            if (output.size() < produced + window)
+                output.resize(produced + window);
+            return reinterpret_cast<Bytef *>(&output[0] + produced);
+        });
     output.resize(size_compressed);
     return size_compressed;
 }
@@ -497,21 +634,21 @@ size_t compress(qb::allocator::pipe<char> &output, const char *data, std::size_t
  * @tparam Output Type of the output container
  * @param output Container for the uncompressed data (will be resized as needed)
  * @param data Pointer to the compressed data
- * @param size Size of the compressed data in bytes
+ * @param size Size of the compressed data in bytes, any `std::size_t` (zlib is fed in slices it can count)
  * @param max Maximum allowed output size (0 for unlimited)
  * @param window_bits Window size bits with encoding format flag
  * @return Size of the uncompressed data in bytes
- * @throws std::runtime_error If initialization fails, input is too large, or max size
- * exceeded
+ * @throws std::runtime_error If initialization fails, the stream is corrupt or truncated, or the output would
+ * exceed max; whatever the container's resize() throws (zlib's state is released either way)
  */
 template <typename Output>
 std::size_t
 uncompress(Output &output, const char *data, std::size_t size, std::size_t max, int window_bits) {
     // Empty input decompresses to nothing. This early return is REQUIRED, not an
-    // optimisation: with `size == 0` the decode loop below computes `chunk = 2 * size == 0`,
+    // optimisation: with `size == 0` the decode loop computes a window of `2 * size == 0`,
     // so `avail_out` is 0 on entry, `inflate()` can make no progress and returns Z_BUF_ERROR
-    // (an accepted status), `size_uncompressed` never advances, and
-    // `while (inflate_s.avail_out == 0)` spins FOREVER — an unkillable 100%-CPU loop on the
+    // (an accepted status), `size_uncompressed` never advances, and the loop on a full
+    // window spins FOREVER — an unkillable 100%-CPU loop on the
     // calling (event-loop) thread that allocates nothing, so it never even trips a memory
     // limit. The `pipe<char>` specialisation in compression.cpp has carried this guard; the
     // generic template — which is what `std::string` and every user-supplied container
@@ -520,75 +657,12 @@ uncompress(Output &output, const char *data, std::size_t size, std::size_t max, 
     if (size == 0)
         return 0;
 
-    z_stream inflate_s;
-
-    inflate_s.zalloc   = Z_NULL;
-    inflate_s.zfree    = Z_NULL;
-    inflate_s.opaque   = Z_NULL;
-    inflate_s.avail_in = 0;
-    inflate_s.next_in  = Z_NULL;
-
-    // The windowBits parameter is the base two logarithm of the window size (the size of
-    // the history buffer). It should be in the range 8..15 for this version of the
-    // library. Larger values of this parameter result in better compression at the
-    // expense of memory usage. This range of values also changes the decoding type:
-    //  -8 to -15 for raw deflate
-    //  8 to 15 for zlib
-    // (8 to 15) + 16 for gzip
-    // (8 to 15) + 32 to automatically detect gzip/zlib header
-
-    DISABLE_WARNING_PUSH
-    DISABLE_WARNING_OLD_STYLE_CAST
-    if (inflateInit2(&inflate_s, window_bits) != Z_OK) {
-        throw std::runtime_error("inflate init failed");
-    }
-    DISABLE_WARNING_POP
-    inflate_s.next_in = const_cast<Bytef *>(reinterpret_cast<const Bytef *>(data));
-
-#ifdef DEBUG
-    // Verify if size (long type) input will fit into unsigned int, type used for zlib's
-    // avail_in
-    std::uint64_t size_64 = size * 2;
-    if (size_64 > std::numeric_limits<unsigned int>::max()) {
-        inflateEnd(&inflate_s);
-        throw std::runtime_error("size arg is too large to fit into unsigned int type x2");
-    }
-#endif
-    // Overflow-safe budget check (2 * size without wrapping size_t).
-    if (max && size > max / 2) {
-        inflateEnd(&inflate_s);
-        throw std::runtime_error("size may use more memory than intended when decompressing");
-    }
-    inflate_s.avail_in            = static_cast<unsigned int>(size);
-    std::size_t size_uncompressed = 0;
-    int         ret               = Z_OK;
-    do {
-        // resize_to = size_uncompressed + 2*size, computed overflow-safe and
-        // checked against the output budget (decompression-bomb guard).
-        const std::size_t chunk = 2 * size;
-        if (max && (size_uncompressed > max || chunk > max - size_uncompressed)) {
-            inflateEnd(&inflate_s);
-            throw std::runtime_error("size of output string will use more memory then "
-                                     "intended when decompressing");
-        }
-        output.resize(size_uncompressed + chunk);
-        inflate_s.avail_out = static_cast<unsigned int>(chunk);
-        inflate_s.next_out  = reinterpret_cast<Bytef *>(&output[0] + size_uncompressed);
-        ret                 = inflate(&inflate_s, Z_FINISH);
-        if (ret != Z_STREAM_END && ret != Z_OK && ret != Z_BUF_ERROR) {
-            // inflate_s.msg may be null; never construct std::string from nullptr.
-            std::string error_msg = inflate_s.msg ? inflate_s.msg : "inflate error";
-            inflateEnd(&inflate_s);
-            throw std::runtime_error(error_msg);
-        }
-
-        size_uncompressed += (chunk - inflate_s.avail_out);
-    } while (inflate_s.avail_out == 0);
-    inflateEnd(&inflate_s);
-    // Reject truncated/incomplete streams instead of returning partial output.
-    if (ret != Z_STREAM_END) {
-        throw std::runtime_error("incomplete or truncated compressed stream");
-    }
+    const std::size_t size_uncompressed =
+        detail::inflate_into(data, size, max, window_bits, [&output](std::size_t produced, std::size_t window) {
+            if (output.size() < produced + window)
+                output.resize(produced + window);
+            return reinterpret_cast<Bytef *>(&output[0] + produced);
+        });
     output.resize(size_uncompressed);
     return size_uncompressed;
 }

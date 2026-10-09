@@ -697,7 +697,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   is the one that tells them apart (`nullopt` = rejected, an engaged empty vector = an empty plaintext). No length
   is handed to OpenSSL's `int` parameters unchecked: buffers past INT_MAX are processed in chunks (crypto.h:105-116),
   an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973). _(crypto.h:33-44;
-  compression.h:37-39; crypto.h:666-668, :908-914)_
+  compression.h:39-41; crypto.h:666-668, :908-914)_
 
 ## Build / integration
 

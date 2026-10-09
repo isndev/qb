@@ -56,6 +56,11 @@ TEST(CompressionBrotli, ResetMakesTheProvidersReusable) {
     contract::expect_reset_reuses(builtin::algorithm::BROTLI);
 }
 
+// A flush that did not fit its window is drained by the calls without input that follow (Huly QB-355).
+TEST(CompressionBrotli, AnEmptyCallWithoutIsLastDrainsAFlushThatDidNotFit) {
+    contract::expect_empty_continuation_drains(builtin::algorithm::BROTLI, 7);
+}
+
 // On Windows a body given whole in the first call is encoded with the narrowest window that holds it, never wider than
 // the configured one: at 16 bits or under brotli takes its light hasher, which made a 4 KiB response 7 times cheaper
 // there. Elsewhere the configured window stays, the wide hasher being the faster one on glibc. A body fed in pieces

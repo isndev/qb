@@ -16,7 +16,8 @@
  * pass vacuously. The contract is the one the zlib pair defines and qbm-http's `Body` relies on:
  *   - the codec is registered for both directions, AFTER gzip and deflate (the server's order of preference);
  *   - an `is_last` call finishes the stream and is repeated until `done`, through any output buffer size;
- *   - calls without `is_last` flush what their input produced, so a stream may be fed in pieces;
+ *   - calls without `is_last` flush what their input produced, so a stream may be fed in pieces -- and a flush that
+ *     did not fit its window is drained by the calls without input that follow (Huly QB-355);
  *   - a decompress call with no input still hands back output an earlier call had no room for;
  *   - a truncated stream never reports `done` (and stops making progress); a corrupted one throws;
  *   - `reset()` makes the provider reusable for a second, independent stream.
@@ -153,6 +154,73 @@ expect_truncation_never_done_and_corruption_throws(const std::string &name) {
     auto d    = qb::compression::builtin::make_decompressor(name);
     bool done = false;
     EXPECT_THROW((void) decompress_all(*d, corrupt, 4096, done), std::runtime_error) << name << ": a corrupted stream was not refused";
+}
+
+// A call without `is_last` flushes what its input produced; when its window is too small for the flush, the calls that
+// follow with NO input drain the rest, until one hands back nothing (Huly QB-355). What came out by then decompresses
+// to every byte fed -- before the stream is finished -- and the stream still finishes. The body ends incompressible,
+// so the last flush is far wider than the window. zlib wants a window of more than a few bytes here: on a drain call
+// that fills the window exactly, deflate emits another flush marker, which a 1-byte window would never get past.
+inline void
+expect_empty_continuation_drains(const std::string &name, std::size_t window) {
+    const std::string body = std::string(64u << 10, 'd') + random_bytes(64u << 10, 11);
+    const auto       *end  = reinterpret_cast<const uint8_t *>(body.data()) + body.size();
+    auto              c    = qb::compression::builtin::make_compressor(name);
+    std::string       out;
+
+    // The whole body, without `is_last`, through the small window.
+    std::size_t at   = 0;
+    int         idle = 0;
+    while (at < body.size()) {
+        std::size_t       used = 0;
+        bool              done = false;
+        std::string       w(window, '\0');
+        const std::size_t written = c->compress(reinterpret_cast<const uint8_t *>(body.data()) + at, body.size() - at,
+                                                reinterpret_cast<uint8_t *>(w.data()), w.size(), operation_hint::has_more, used, done);
+        out.append(w.data(), written);
+        at += used;
+        EXPECT_FALSE(done) << name << ": a call without is_last finished the stream";
+        idle = (written || used) ? 0 : idle + 1;
+        ASSERT_LT(idle, 4) << name << ": has_more stopped making progress at " << at << " / " << body.size();
+    }
+
+    // Then calls without input, until one hands back nothing.
+    for (std::size_t calls = 0;; ++calls) {
+        ASSERT_LT(calls, std::size_t{1} << 20) << name << ": the drain never ends";
+        std::size_t       used = 0;
+        bool              done = false;
+        std::string       w(window, '\0');
+        const std::size_t written = c->compress(end, 0, reinterpret_cast<uint8_t *>(w.data()), w.size(), operation_hint::has_more, used, done);
+        EXPECT_EQ(used, 0u);
+        EXPECT_FALSE(done) << name << ": a call without is_last finished the stream";
+        if (!written)
+            break;
+        out.append(w.data(), written);
+    }
+
+    // Everything fed is in what came out, and the stream is not finished.
+    {
+        auto       d    = qb::compression::builtin::make_decompressor(name);
+        bool       done = false;
+        const auto back = decompress_all(*d, out, 4096, done);
+        EXPECT_FALSE(done) << name << ": the stream ended before is_last";
+        EXPECT_TRUE(back == body) << name << ": " << back.size() << " of the " << body.size() << " bytes fed came out of the flushes";
+    }
+
+    // And it still finishes: `is_last` until done, the round trip whole.
+    bool done = false;
+    for (std::size_t calls = 0; !done; ++calls) {
+        ASSERT_LT(calls, std::size_t{1} << 20) << name << ": the finish never ends";
+        std::size_t       used = 0;
+        std::string       w(window, '\0');
+        const std::size_t written = c->compress(end, 0, reinterpret_cast<uint8_t *>(w.data()), w.size(), operation_hint::is_last, used, done);
+        out.append(w.data(), written);
+    }
+    auto       d         = qb::compression::builtin::make_decompressor(name);
+    bool       back_done = false;
+    const auto back      = decompress_all(*d, out, 4096, back_done);
+    EXPECT_TRUE(back_done) << name;
+    EXPECT_TRUE(back == body) << name << ": " << body.size() << " bytes came back as " << back.size();
 }
 
 inline void
