@@ -256,6 +256,13 @@ policy.
 
 ### Fixed
 
+- **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
+  retained iterators into the source cache's list. Looking up or replacing a key in the copy
+  could mutate the source, corrupt the LRU order or dereference freed nodes after the source
+  was destroyed. Copy construction rebuilds the index; copy assignment prepares the complete
+  replacement before changing the destination. Copy assignment is rejected at compile time for
+  key hash types whose index swap may throw; copy construction still works for copyable keys.
+  Moves retain the existing node transfer.
 - **`with_deadline` owns a temporary operation before its returned task is awaited (Huly QB-270).**
   Its `task<T>&&` parameter formerly remained a reference in a lazy coroutine frame; storing or
   returning the wrapper destroyed the temporary operation at the end of the call expression.

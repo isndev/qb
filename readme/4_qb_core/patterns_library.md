@@ -717,8 +717,8 @@ once.
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::idempotent_event` | `concept` — an `ask_event_type` that also has `e.response` and `e.idempotency_key` | `idempotency.h:48-52` |
-| `qb::dedup_map<Key,Resp>` | `class { explicit dedup_map(std::size_t capacity = 1024); const Resp* find(const Key&); void put(const Key&, Resp); bool contains(const Key&) const; std::size_t size() const; std::size_t capacity() const; void clear(); }` | `idempotency.h:64-133` |
-| `qb::answer_idempotent` | `void answer_idempotent(Actor &self, E &e, Cache &cache, Fn &&fn)` | `idempotency.h:158-179` |
+| `qb::dedup_map<Key,Resp>` | `class { explicit dedup_map(std::size_t capacity = 1024); const Resp* find(const Key&); void put(const Key&, Resp); bool contains(const Key&) const; std::size_t size() const; std::size_t capacity() const; void clear(); }` | `idempotency.h:64-170` |
+| `qb::answer_idempotent` | `void answer_idempotent(Actor &self, E &e, Cache &cache, Fn &&fn)` | `idempotency.h:195-216` |
 
 Because `ask_retry` re-sends a request with a fresh correlation id per attempt, a reply lost to a
 timeout would make the responder run its effect twice. Carry a **stable** `idempotency_key` on the
@@ -728,10 +728,10 @@ request (added to your `Request<Resp>` subtype) and let the responder de-duplica
 - `answer_idempotent` (1) routes any reply via `resolve_ask(e)`, (2) for a non-default key already in
   the cache, replies the cached response **without** running `fn`, otherwise (3) runs `fn`, caches
   the result, and replies. A default-valued key (`{}`) bypasses the cache — always runs `fn`
-  (`idempotency.h:135-179`).
+  (`idempotency.h:172-216`).
 - `dedup_map` is a bounded **LRU** cache (`find` promotes to most-recently-used; inserting past
   `capacity` evicts the least-recently-used entry). Core-local, no locking — use it as a responder
-  member (`idempotency.h:54-133`).
+  member (`idempotency.h:54-170`). Copies rebuild their index against their own LRU list, so source and copy can be changed independently. Copy assignment requires a hash index whose swap cannot throw; copy construction remains available with other copyable key types.
 
 ### Example
 
@@ -834,7 +834,7 @@ qb::io::async::task<bool> onInit() override {
 | Fan an event to many subscribers (per core) | pub/sub | `qb::PubSub<Topic>` (`pubsub.h:62`) |
 | Restart child actors on failure | supervision | `qb::Supervisor` + `qb::SupervisedActor` (`supervisor.h:147,88`); `qb::supervision::watch` also restarts a child that died without `stop()` (`:56`) |
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
-| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:160,65`) |
+| Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:197,65`) |
 | Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:66`) |
 
 ---

@@ -342,7 +342,7 @@ Coroutine replacement for the legacy `Actor::require<...>()` + `is<T>()` dance (
 
 ### Idempotency (`idempotency.h`)
 *   `[concept] idempotent_event<E>` — `ask_event_type<E>` + has `e.response` and `e.idempotency_key`.
-*   `[T<Key,Resp>] class dedup_map { explicit dedup_map(size_t capacity=1024); const Resp* find(Key); void put(Key,Resp); bool contains(Key) const; size_t size()/capacity() const; void clear(); }` — bounded **LRU** of key→response (responder member).
+*   `[T<Key,Resp>] class dedup_map { explicit dedup_map(size_t capacity=1024); const Resp* find(Key); void put(Key,Resp); bool contains(Key) const; size_t size()/capacity() const; void clear(); }` — bounded **LRU** of key→response (responder member). Copy construction rebuilds the index for the copied list; copy assignment is available when list and index swaps cannot throw. Move construction and assignment retain the LRU order.
 *   `[T<E:idempotent_event,Cache,Fn>] void answer_idempotent(Actor& self, E& e, Cache& cache, Fn&& fn)` — runs `fn` (the effect) **once per non-default `idempotency_key`**, replays the cached response on repeats; a default-valued key bypasses the cache.
 
 ### Aggregation (`aggregate.h`)
