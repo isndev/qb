@@ -38,6 +38,7 @@
 #include <memory>
 #include <new>
 #include <stdexcept>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 #include <qb/system/event/router.h>
@@ -512,6 +513,57 @@ TEST(EventRouting, DenseKeyTableGrowsGeometricallyUnderSequentialInserts) {
 }
 
 namespace router_throw_test {
+
+struct TrivialEvent : RawEvent {
+    TrivialEvent() {
+        dest = ActorId::broadcastId;
+    }
+};
+static_assert(std::is_trivially_destructible_v<TrivialEvent>);
+
+struct TrivialHandler {
+    ActorId target{1};
+    bool    throw_now = true;
+    int     calls     = 0;
+    ActorId
+    id() const noexcept {
+        return target;
+    }
+    bool
+    is_alive() const noexcept {
+        return true;
+    }
+    void
+    on(TrivialEvent const &) {
+        ++calls;
+        if (throw_now)
+            throw std::runtime_error("trivial handler failed");
+    }
+};
+
+template <typename Router>
+void
+check_trivial_route_after_throw() {
+    Router         router;
+    TrivialHandler handler;
+    router.subscribe(handler);
+
+    TrivialEvent event;
+    EXPECT_THROW(router.template route<true>(event), std::runtime_error);
+    EXPECT_EQ(handler.calls, 1);
+
+    handler.throw_now = false;
+    router.template route<true>(event);
+    EXPECT_EQ(handler.calls, 2);
+}
+
+TEST(EventRouting, GenericSemhPropagatesTrivialHandlerThrow) {
+    check_trivial_route_after_throw<qb::router::semh<TrivialEvent, TrivialHandler>>();
+}
+
+TEST(EventRouting, HeterogeneousSemhPropagatesTrivialHandlerThrow) {
+    check_trivial_route_after_throw<qb::router::semh<TrivialEvent, void>>();
+}
 
 struct OwnedEvent : RawEvent {
     static int           destroyed;

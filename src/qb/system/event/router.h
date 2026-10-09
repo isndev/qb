@@ -406,7 +406,7 @@ public:
                     _RawEvent::__undelivered__(event);
             }
         };
-        if constexpr (_CleanEvent) {
+        if constexpr (_CleanEvent && !std::is_trivially_destructible_v<_RawEvent>) {
             try {
                 dispatch();
             } catch (...) {
@@ -531,7 +531,7 @@ public:
                     _RawEvent::__undelivered__(event);
             }
         };
-        if constexpr (_CleanEvent) {
+        if constexpr (_CleanEvent && !std::is_trivially_destructible_v<_RawEvent>) {
             try {
                 dispatch_event();
             } catch (...) {
