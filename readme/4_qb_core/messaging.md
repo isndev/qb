@@ -72,7 +72,7 @@ The journey of a single `push` across a core boundary, in the order it happens.
 3. `__getPipe__(dest._core_id)` selects the outbound buffer for the destination core.
 4. `pipe.allocate_back(BUCKET_SIZE)` reserves `ceil(sizeof(E) / 64)` buckets at the tail. `BUCKET_SIZE` is `allocator::getItemSize<E, EventBucket>()` (`src/qb/system/allocator/pipe.h:42-44`).
 5. `detail::prepare_event_storage` zeroes that whole bucket range **in debug builds only** — the relocation guard in step 9 scans it, and an event's range is never fully written by its payload (`src/qb/core/Event.h:294-299`).
-6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1302-1306`, `:1177-1195`).
+6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1302-1306`, `:1236-1252`).
 7. `push` returns a reference into the pipe. It stays valid until the handler that obtained it returns — see [below](#the-reference-push-returns-lives-until-your-handler-returns).
 
 **Later in the same loop pass, in `__flush_all__`.**
@@ -87,8 +87,8 @@ The journey of a single `push` across a core boundary, in the order it happens.
 12. `__receive__` calls `_mail_box.consume_all(fn, _event_buffer->data(), MaxRingEvents)`, which copies a contiguous batch out of *each* producer ring into the core's own `EventBuffer` — the third argument bounds one producer's batch, not the total, so every peer core is read on every pass (`src/qb/core/VirtualCore.cpp:378-383`).
 13. `__receive_events__` walks that batch bucket-by-bucket, `reinterpret_cast`ing each offset to an `Event *` and trusting `bucket_size` to find the next one. A `bucket_size == 0` would make the walk stand still, so it is checked and the batch abandoned (`src/qb/core/VirtualCore.cpp:254-265`).
 14. `_router.route(*event, onError)` — and nothing writes the header first. Until 3.2 this step stored `alive = 0` into every event before routing it; the bit is already 0 in the bytes (see [`alive` is settled at the copy](#alive-is-an-ownership-bit-and-it-is-settled-at-the-copy)), and measured on savina/bank-transaction that one byte store, into a line the dispatch then loads whole, was a store-forwarding stall on every cross-core event — 70 % of `deliver_thunk`'s time on its first header load (`src/qb/core/VirtualCore.cpp:316`).
-15. The router resolves `event.getID()` to the per-type resolver, which looks the destination up in `_subscribed_handlers.find(event.getDestination())` (`src/qb/system/event/router.h:519-523`) and calls `dispatch_trampoline` — a per-handler-type static function that recasts a `void *` and calls `handler.on(event)` (`src/qb/system/event/router.h:480-490`).
-16. After the handler returns, the same call disposes the event: `~E()` runs exactly once, on the receiving core, at an address the event was never constructed at (`src/qb/system/event/router.h:529-536`).
+15. The router resolves `event.getID()` to the per-type resolver, which looks the destination up in `_subscribed_handlers.find(event.getDestination())` (`src/qb/system/event/router.h:524-528`) and calls `dispatch_trampoline` — a per-handler-type static function that recasts a `void *` and calls `handler.on(event)` (`src/qb/system/event/router.h:485-494`).
+16. After the handler returns, or in the catch path if it throws, the same call disposes the event: `~E()` runs exactly once, on the receiving core, at an address the event was never constructed at (`src/qb/system/event/router.h:534-541`).
 
 Two things in that sequence are worth pinning down, because they are where the surprises live: step 11 (nobody destroys the source copy) and step 16 (somebody destroys the *relocated* copy).
 
@@ -103,13 +103,13 @@ if constexpr (qb::has_is_alive<_RawEvent>) {
         handler.on(event);
 }
 ```
-<!-- src: qb/src/qb/system/event/router.h:480-489 -->
+<!-- src: qb/src/qb/system/event/router.h:485-494 -->
 
-So "events to a dead actor are dropped" is precise, and it is a *dispatch-time* check on the destination core. The event is still copied, still flushed, still routed, and still disposed — only the handler call is skipped.
+While a killed actor is still registered before its reap, dispatch checks `is_alive()` on the destination core: the event is copied, flushed, routed and disposed, but its handler is skipped. After reap removes its subscription, the missing-handler or missing-type path above handles the unicast as a dead letter and still disposes it.
 
 ### An event nobody subscribed to
 
-If no actor on the destination core registered *that event type at all*, `memh::route` takes its `onError` branch. `VirtualCore` passes a lambda that hands a unicast to `__dead_letter__` with the reason `__undelivered_reason__` decides — `unhandled` when an actor lives under the destination id, `not_found` when none does — and stays silent for a broadcast, since a broadcast reaching a core with no subscriber is normal (`src/qb/core/VirtualCore.cpp:316-322`). The router then disposes the event itself through the disposer registry that step 2 populated (`src/qb/system/event/router.h:1130-1165`). That is why `ensure_disposer` sits at the enqueue funnel and not at `subscribe`: a type that is pushed but subscribed nowhere would otherwise have no disposer, and every drop path would leak its heap members.
+If no resolver for the event type was ever installed on the destination core, `memh::route` takes its `onError` branch. `VirtualCore` hands a unicast to `__dead_letter__` with reason `unhandled` when an actor lives under the destination id, or `not_found` when none does; it stays silent for a broadcast (`src/qb/core/VirtualCore.cpp:316-322`). The router disposes the event through the registry populated at enqueue (`src/qb/system/event/router.h:1130-1165`). A resolver persists after its last subscription is removed: in that case its per-handler lookup reports a missing destination through `Event::__undelivered__`, then disposes the event (`src/qb/system/event/router.h:524-541`; `src/qb/core/VirtualCore.cpp:1538-1546`). Both paths are why `ensure_disposer` belongs at enqueue rather than `subscribe`: a type pushed but never subscribed still needs its payload destroyed.
 
 ## The primitives at a glance
 
@@ -303,7 +303,7 @@ for (const auto it : _engine._core_set.raw())
 
 One `send` per registered core, addressed to `BroadcastId(core)`. Note `init...` rather than `std::forward<_Init>(init)...`: forwarding an rvalue would move it into the first core's event and leave every later core constructing from moved-from arguments — an empty string on every core but one (`src/qb/core/VirtualCore.h:1282-1286`).
 
-On the receiving side, a broadcast destination makes the router snapshot every subscribed handler for that type into a `thread_local` buffer and then dispatch from the snapshot, because a handler may subscribe or unsubscribe during the walk — spawning an actor registers `KillEvent`, and that insert can rehash and reallocate the entry array under a live iterator (`src/qb/system/event/router.h:555-577`).
+On the receiving side, a broadcast destination makes the router snapshot every subscribed handler for that type into a `thread_local` buffer and then dispatch from the snapshot, because a handler may subscribe or unsubscribe during the walk — spawning an actor registers `KillEvent`, and that insert can rehash and reallocate the entry array under a live iterator (`src/qb/system/event/router.h:560-580`).
 
 To reach every actor on **one** core, push to a `qb::BroadcastId` instead. That keeps `push`'s ordering, because it goes through the ordinary tail allocation:
 

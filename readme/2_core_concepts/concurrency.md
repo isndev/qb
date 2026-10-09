@@ -55,7 +55,7 @@ Read-only sharing is fine: immutable data, or a `std::shared_ptr<const T>`, can 
 
 ## Ordered, one-at-a-time delivery
 
-Within a single `VirtualCore`, actors execute their `on(Event&)` handlers and `on(qb::LoopEvent const&)` ticks **one at a time, to completion**. The core finishes processing one event for one actor before it starts the next event for any actor on that core. This is what eliminates data races on an actor's own state — no handler can ever observe a half-updated member, because no two handlers run at the same time on that thread. (`src/qb/core/VirtualCore.cpp:251,302`, ticks at `src/qb/core/VirtualCore.cpp:984-995`)
+Within a single `VirtualCore`, actors execute their `on(Event&)` handlers and `on(qb::LoopEvent const&)` ticks **one at a time, to completion**. The core finishes processing one event for one actor before it starts the next event for any actor on that core. This is what eliminates data races on an actor's own state — no handler can ever observe a half-updated member, because no two handlers run at the same time on that thread. (`src/qb/core/VirtualCore.cpp:251,315-322`, ticks at `src/qb/core/VirtualCore.cpp:984-995`)
 
 Delivery ordering between two specific actors depends on which send primitive you use:
 

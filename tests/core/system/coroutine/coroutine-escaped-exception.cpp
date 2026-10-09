@@ -16,7 +16,7 @@
  * after a `co_await` in a `spawn()` body produced NO output at any log level, left
  * `Main::hasError()` false, and the engine carried on. That was the last silent failure path in
  * the actor surface — an exception out of `onInit()` has been reported since 2.x
- * (`VirtualCore.cpp:513`), and the two are now in line.
+ * (`VirtualCore.cpp:715-725`), and the two are now in line.
  *
  * The fix is a report, not a behaviour change, and this file pins both halves:
  *   - the diagnostic reaches `std::cerr` (via `qb::io::cerr`, which is always compiled — the

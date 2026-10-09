@@ -128,7 +128,12 @@ The consumer that explained why it existed was `VirtualCore::__receive__`, which
 if (!_self_pipe.empty()) {
     auto fence = _self_pipe.mark();
     for (auto run = _self_pipe.front(fence); !run.empty(); run = _self_pipe.front(fence)) {
-        __receive_events__(run);
+        try {
+            __receive_events__(run);
+        } catch (...) {
+            _self_pipe.pop_front(fence);
+            throw;
+        }
         _self_pipe.pop_front(fence);
     }
 }

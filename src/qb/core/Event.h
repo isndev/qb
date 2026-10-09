@@ -529,7 +529,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:354`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:553-565`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -1048,7 +1048,7 @@ inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>()
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:920) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1236-1239) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1100,7 +1100,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:925-927), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:1241-1244), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this
@@ -1112,7 +1112,7 @@ routing_safe_type_id() noexcept {
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
     // full, and it discards it WITHOUT disposing it -- one `if (!event.state.bits.qos)` and a
-    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:354-362). Every other event is
+    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:553-565). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See

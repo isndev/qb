@@ -16,7 +16,7 @@
  * quic-handshake.cpp` proves the happy-path loopback handshake end-to-end. What neither covers — and
  * what this file targets — are the `endpoint`'s own *event-loop body* branches that only execute when
  * a REAL libngtcp2 backend produces real packets/timeouts AND the framework's libev watchers actually
- * fire (`endpoint.h:119-185, 499-533`):
+ * fire (`endpoint.h:143-156,173-219,595-640`):
  *
  *   - the `on(event::io)` EV_READ receive loop bounded by `settings.udp_rx_batch_size` — the
  *     budget-limited datagram drain (the live handshake leaves the budget unlimited, so the
@@ -106,7 +106,7 @@ establish_loopback(Server &server, Client &client, std::vector<std::string> cons
 /**
  * @test A tiny udp_rx_batch_size still delivers a multi-packet payload across several poll cycles
  * @brief `on(event::io)` reads at most `settings.udp_rx_batch_size` datagrams per EV_READ wakeup
- *        (endpoint.h:504-518). With the budget pinned to 1 on the server, a client payload that the
+ *        (endpoint.h:599-625). With the budget pinned to 1 on the server, a client payload that the
  *        backend fragments across multiple QUIC packets cannot all be consumed in a single readable
  *        wakeup — the loop hits the `budget-- > 0` ceiling and yields, and the framework re-arms
  *        EV_READ so the remainder is drained on subsequent wakeups. Driving a payload to the server
@@ -151,10 +151,10 @@ TEST(QuicEndpointLoop, RxBatchBudgetDeliversMultiPacketPayloadAcrossPolls) {
 /**
  * @test A tiny udp_tx_batch_size still flushes a large response across several poll cycles
  * @brief `flush_udp_packets` sends at most `settings.udp_tx_batch_size` datagrams per call before
- *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:150-167). With the budget
+ *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:173-200). With the budget
  *        pinned to 1 on the server, a large server-initiated payload cannot drain in a single flush:
  *        `drain_backend_packets` must observe the still-non-empty pending queue, arm EV_WRITE
- *        (endpoint.h:180-181), and the subsequent writable wakeups must flush the rest. The client
+ *        (endpoint.h:203-218), and the subsequent writable wakeups must flush the rest. The client
  *        receiving the whole payload proves the throttled multi-poll flush over the REAL socket (the
  *        unit test only throttles the mock backend; here the bytes travel a live loopback datagram
  *        path and the EV_WRITE re-arm is genuinely taken).
@@ -213,7 +213,7 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
 /**
  * @test The endpoint's timer watcher tears down an idle connection without any inbound packet
  * @brief `arm_timer` programs the libev timer from `backend::next_timeout()` and `on(event::timer&)`
- *        feeds `backend::on_timeout(now)` (endpoint.h:119-131, 526-533). With a very short idle_timeout
+ *        feeds `backend::on_timeout(now)` (endpoint.h:143-156,633-640). With a very short idle_timeout
  *        on the client and the server then stopped (no more packets ever arrive), the ONLY thing that
  *        can close the client is its own timer firing: the connection must transition to `closed`
  *        purely through the timer path. This is the one teardown the packet-driven tests never reach
@@ -278,7 +278,7 @@ TEST(QuicEndpointLoop, ReconnectAfterCloseRearmsIoWatcherOnNewSocket) {
 
 /**
  * @test Destroying a still-connected live endpoint closes it and drops its watchers cleanly
- * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:250-253). The
+ * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:325-328). The
  *        unit-tier ListenerClearDoesNotDangleEndpointWatchers proves this for a MOCK-backed endpoint
  *        torn down by an explicit listener clear; here a NATIVE-backed client is brought to `connected`
  *        over the live loopback and then destroyed while still open, so the destructor's close() runs

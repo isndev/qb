@@ -19,8 +19,8 @@ The three `src:`-marked forms below were, for a long time, the only ones parsed 
 three require the literal token `src:`.  The readme books also cite in PROSE, with no
 marker at all:
 
-    ... throws `"Not enough names in row data extraction"` (`resultset.h:957`).
-    ... the coroutine path (`src/qbm/pgsql/commands.h:1309,1337,1412`).
+    ... throws `"Not enough names in row data extraction"` (`resultset.h:974`).
+    ... the coroutine path (`src/qbm/pgsql/commands.h:1312,1332,1412`).
     ... `geosearch`'s callback overload (geo_commands.h:105-109) is the lone exception.
 
 The second contains `src/` but not `src:`, so it missed the parenthetical form too.  These

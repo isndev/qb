@@ -61,7 +61,7 @@ endif ()
 # --- actor ------------------------------------------------------------------
 # actor-add and actor-dependency each bring up a SECOND VirtualCore -- actor-add's
 # BroadcastKillLeavesNoSurvivors puts its sender on core 0 and 1024 targets on core 1
-# (actor/actor-add.cpp:298-301), and three of actor-dependency's cases run cores 0+1 to
+# (actor/actor-add.cpp:914-917), and three of actor-dependency's cases run cores 0+1 to
 # completion (actor/actor-dependency.cpp:141-143, :155-157, :169-171). Neither is guarded by
 # hardware_concurrency(), so both belong under the shared qb-multicore lock the label derives.
 qb_add_test(MODULE qb-core TIER system NAME actor-add        SOURCES actor/actor-add.cpp         DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

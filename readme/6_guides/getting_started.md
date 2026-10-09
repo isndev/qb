@@ -136,9 +136,9 @@ What each call does:
 `Main::start(bool async = true)` has two modes:
 
 - **`start()` (async, the default)** launches all `VirtualCore` worker threads and returns after the startup barrier succeeds; a pre-loop failure waits for their teardown. The calling thread is free; call `join()` to block until shutdown. This is the idiom used above.
-- **`start(false)`** turns the calling thread into one of the worker threads and normally blocks until that worker stops. Use it when you do not want a separate main thread; in that mode there is no separate thread to `join()`.
+- **`start(false)`** turns the calling thread into one of the worker threads and normally blocks until that worker stops. Use it when you do not want a separate main thread; the calling-thread worker needs no join, but call `join()` afterward if other cores must finish before proceeding.
 
-Either way, check `engine.hasError()` after the engine stops to detect a core that terminated on an error.
+After `join()` (or after `start(false)` in a single-core engine), check `engine.hasError()` to detect a core that terminated on an error.
 
 <!-- src: qb/src/qb/core/Main.h:941-950,952-958,969-975 -->
 

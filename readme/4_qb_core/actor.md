@@ -159,7 +159,7 @@ qb::io::async::task<bool> onInit() override {
 }
 ```
 
-`co_return true` activates the actor; `co_return false` **or an uncaught exception** fails it, and the actor is removed without ever processing a message (`src/qb/core/VirtualCore.cpp:703-730`). Both are pinned, on the synchronous and the suspended path alike, by `InitLifecycle.SyncOnInitReturnsFalseWithoutCoAwait`, `…SyncOnInitThrowsWithoutCoAwait`, `…AsyncInitFailureRemovesActor` and `…ExceptionAfterSuspensionFailsInit` (`qb/tests/core/system/init/init-lifecycle.cpp`).
+`co_return true` activates the actor; `co_return false` **or an uncaught exception** fails it. A failed init never replays its stashed inbound unicast business events; control broadcasts, `KillEvent` and replies to an ask inside `onInit()` may still be processed during activation (`src/qb/core/VirtualCore.cpp:274-313`, `:703-730`, `:832-854`). Both failure paths are pinned by `InitLifecycle.SyncOnInitReturnsFalseWithoutCoAwait`, `…SyncOnInitThrowsWithoutCoAwait`, `…AsyncInitFailureRemovesActor` and `…ExceptionAfterSuspensionFailsInit` (`qb/tests/core/system/init/init-lifecycle.cpp`).
 
 Use `context()` rather than a bare `qb::io::async::sleep`. It returns a `qb::ScopedCoroContext` carrying this actor's cancellation scope, so a kill during init throws `cancelled_error` and unwinds the frame cleanly instead of leaving it parked (`src/qb/core/Actor.h:1499-1515`, `:2191-2195`).
 
@@ -280,7 +280,7 @@ The tick fires once per `VirtualCore` pass, **after** the core has flushed its o
 
 > **The tick runs on the `VirtualCore` thread, like everything else.** It must be fast and non-blocking: no mutex wait, no synchronous I/O, no `sleep` (`src/qb/core/ICallback.h:164-170`). Its rate follows the core's load and its `CoreInitializer::setLatency` setting (`src/qb/core/ICallback.h:141-143`).
 
-`unregisterCallback()` with no argument routes through a `UnregisterCallbackEvent` pushed to yourself, so it takes effect on a later pass; the typed `unregisterCallback(*this)` removes the entry immediately (`src/qb/core/Actor.cpp:507-510`; `src/qb/core/VirtualCore.cpp:1332-1335`, `:1304-1316`; `src/qb/core/VirtualCore.h:1401-1405`).
+Both `unregisterCallback()` and typed `unregisterCallback(*this)` queue an `UnregisterCallbackEvent` to the actor, so neither removes the callback synchronously. Its handler performs the removal when the event is delivered (`src/qb/core/Actor.cpp:465-466`, `:507-510`; `src/qb/core/VirtualCore.cpp:1319-1335`; `src/qb/core/VirtualCore.h:1401-1405`).
 
 ### `kill()` flags; the destructor runs later
 
@@ -304,9 +304,9 @@ What follows, in order, on the same pass:
 4. **A non-service id goes back to the pool.** Service ids never do, so `ServiceIndex` stays stable for the life of the process (`src/qb/core/VirtualCore.cpp:1289-1293`).
 5. **Its watchers are told.** Each actor that `watch()`ed it is sent one `qb::DownEvent{id, killed}`, from here, by `__on_actor_down__` — after the destructor, the id back in the pool ([death watch](#death-watch-learning-that-another-actor-is-gone); `src/qb/core/VirtualCore.cpp:1294-1297`).
 
-`is_alive()` is `true` until step 3. Do not send events from `~Actor()`: the actor is mid-teardown and its id is about to be recycled.
+`kill()` sets `is_alive()` to `false` immediately; the object remains allocated until step 3. Do not send events from `~Actor()`: the actor is mid-teardown and its id is about to be recycled (`src/qb/core/Actor.h:857-865`; `src/qb/core/Actor.cpp:555-566`).
 
-There is exactly one case where destruction is *deferred past* the reap. If the actor is killed while its `onInit()` frame is still suspended, `removeActor` cancels the scope, records the id in `_dying_with_frame` and **returns without destroying anything** — the actor must outlive its own coroutine frame. Teardown completes on a later pass, once the frame reports `done()` (`src/qb/core/VirtualCore.cpp:1231-1263`, `:798-846`). Pinned by `InitLifecycle.KillDuringInitCancelsAndDestroysCleanly`.
+There is exactly one case where destruction is *deferred past* the reap. If the actor is killed while its `onInit()` frame is still suspended, `removeActor` cancels the scope, records the id in `_dying_with_frame` and **returns without destroying anything** — the actor must outlive its own coroutine frame. Teardown completes on a later pass, once the frame reports `done()` (`src/qb/core/VirtualCore.cpp:1231-1263`, `:812-857`). Pinned by `InitLifecycle.KillDuringInitCancelsAndDestroysCleanly`.
 
 ## Death watch: learning that another actor is gone
 
@@ -338,7 +338,7 @@ public:
 
 What it guarantees, and what holds each guarantee up:
 
-- **One answer per watch, after the destructor.** A watch is a record on the watcher's core, opened by `watch()` and closed once — by its answer, by `unwatch()`, or by the watcher's own removal. The watched actor's core answers from `removeActor`, whose `__on_actor_down__` runs after the destructor ran and the id was released (`src/qb/core/VirtualCore.cpp:1294-1297`, `:1683-1711`). Every answer travels as an internal `detail::WatchDown` carrying the watch's ticket, a number the watcher's core gave it, and becomes the `DownEvent` only where it closes the record holding that ticket (`src/qb/core/VirtualCore.cpp:1632-1651`): two answers to one watch deliver one.
+- **One answer per watch; target-down answers follow the destructor.** A watch is a record on the watcher's core, opened by `watch()` and closed once — by its answer, by `unwatch()`, or by the watcher's own removal. The watched actor's core answers from `removeActor`, whose `__on_actor_down__` runs after the destructor ran and the id was released (`src/qb/core/VirtualCore.cpp:1294-1297`, `:1698-1711`). Every answer travels as an internal `detail::WatchDown` carrying the watch's ticket, a number the watcher's core gave it, and becomes the `DownEvent` only where it closes the record holding that ticket (`src/qb/core/VirtualCore.cpp:1632-1651`): two answers to one watch deliver one.
 - **`unwatch()` is final.** It closes the record (`__unwatch__`), so no `DownEvent` of that watch arrives afterwards, not even one already on its way (`src/qb/core/VirtualCore.cpp:1591-1603`).
 - **Ids are reused.** The actor you spawn to replace a dead one is likely to get its id. Watching an id already watched is a no-op until the answer arrives, so to watch a replacement while its predecessor's answer may still be on its way, unwatch the predecessor first: the old answer then carries a ticket no open watch holds, and is dropped. `qb::Supervisor` does exactly that in watch mode.
 - **Every watch is answered, a core that stops included.** A watch of an actor on another core travels to that core as a request addressed to the core, not to the actor (`__watch__`), so an actor still in its `onInit()` cannot stash it and lose it with a failed init (`src/qb/core/VirtualCore.cpp:1559-1589`). A request that reaches a core after its last receive is answered by the watcher's own core: once a watch has crossed cores, a core that stops tells every core still running, as the last thing its thread does — after its actors were destroyed and it was marked stopped (`src/qb/core/Main.cpp:416-430`, `src/qb/core/VirtualCore.cpp:1665-1689`). A store-load fence on each side guarantees that either the watcher sees the stop, or the stopping core sees the watch.
@@ -360,7 +360,7 @@ if (helper.ready())                             // sync-init child: ready at onc
     helper->doSomething();
 ```
 
-The handle never dangles. Check `valid()` before using its id: terminal core teardown refuses `addRefActor` before running the child's constructor and returns an empty handle. A valid handle stores the `ActorId` and resolves the pointer **on demand** through `VirtualCore::findActor<T>()`, which is phase-aware, so `get()` / `operator->` / `operator*` return `nullptr` while the child is Activating, after a failed init, and once it has been destroyed (`src/qb/core/VirtualCore.h:1431-1446`, `:1116-1134`).
+The handle never dangles. Check `valid()` before using its id: terminal core teardown refuses `addRefActor` before running the child's constructor and returns an empty handle. A valid handle stores the `ActorId` and resolves the pointer **on demand** through `VirtualCore::findActor<T>()`; `get()` returns `nullptr` while the child is Activating, after a failed init, or after destruction. Check `ready()` before `operator->` or `operator*`: both assert in debug when unresolved, and dereference is invalid in release (`src/qb/core/VirtualCore.h:1431-1446`, `:1116-1134`; `src/qb/core/Actor.h:2462-2475`).
 
 | Member | Behaviour |
 |---|---|

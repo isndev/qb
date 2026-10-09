@@ -12,8 +12,8 @@
  *        it must NOT be told to register instead.
  *
  * `Main::stop()` does not send anything. It stores a signum and bumps a generation counter
- * (`Main.cpp:595-603`); each `VirtualCore` notices the bump on its next pass and synthesises a
- * **`qb::SignalEvent`** addressed to every actor it owns (`VirtualCore.cpp:684-688`). Nothing in
+ * (`Main.cpp:630-638`); each `VirtualCore` notices the bump on its next pass and synthesises a
+ * **`qb::SignalEvent`** addressed to every actor it owns (`VirtualCore.cpp:1445-1477`). Nothing in
  * the engine ever constructs a `qb::KillEvent` — that type exists so a PEER can kill an actor by
  * pushing one. So the minimum subscription for a graceful shutdown is `SignalEvent`.
  *

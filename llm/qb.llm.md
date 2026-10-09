@@ -461,7 +461,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `co_await qb::require<Target>(context(), timeout)`, which correlates the replies for you.
   _(Event.h:809-822)_
 - **Death watch (3.3)** — `registerEvent<qb::DownEvent>(*this); watch(id);` from any actor, of an actor on any core: one
-  `DownEvent{watched, reason}` after its destructor, whatever ended it. `unwatch(id)` is final (no answer after it, even one
+  `DownEvent{watched, reason}` per watch. Target-down answers follow the destructor; `unknown` and `core_stopped` need no target destructor. `unwatch(id)` is final (no answer after it, even one
   in flight). Ids are reused, so unwatch an outgoing actor before watching its replacement. `qb::Supervisor(...,
   qb::supervision::watch)` restarts children gone for any reason. Death watch says *gone*; `co_await qb::ping` says
   *responsive*. _(Actor.h:515-538; DeathWatch.h:36-96)_
@@ -487,11 +487,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   block it holds, so a read through a dead actor's pointer (a `this` captured by a loop-owned callback, a
   handle read without its gate) is reported as `use-after-poison` -- the report `malloc` used to give and
   the arena had taken away. _(Actor.h:561-582, thread_arena.h:125-170)_
-- **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; it must
-  `registerEvent<T>(*this)` for every handled event.** `co_return true` activates the actor; `co_return false`
-  or throwing fails init and the resulting `ActorId` is invalid. While `onInit()` is suspended the actor
-  is *Activating*. The listener scheduler is bound before the first resume, so an immediate
-  `sleep(0)` or inline callback completes on the loop's next ready drain. _(Actor.h:461-474; VirtualCore.cpp:708-712)_
+- **`onInit()` is an async coroutine (`qb::io::async::task<bool>`) that may `co_await`; register each
+  non-default handled event with `registerEvent<T>(*this)`** (five defaults are registered by `Actor`, unless opted out).
+  `co_return true` activates; `co_return false` or throwing fails init. A synchronous dynamic failure
+  returns an invalid handle, but a suspended init may already have returned a valid id before later
+  failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
+  The listener scheduler is bound before first resume, so `sleep(0)` or an inline callback queues on
+  the loop's ready drain. _(Actor.cpp:388-410; VirtualCore.cpp:708-712, :842-854, :1181-1202)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -543,10 +545,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   replied/forwarded. _(Actor.cpp:577-595)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   check `valid()` before sending, because terminal core teardown returns an empty handle without constructing
-  a child. `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while the child is Activating,
-  after a failed init, or once it died — never a dangling pointer. Send to a valid `handle.id()`; gate
-  direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1340-1345, :1366, :2381-2383)_
+  a child. `get()` resolves on demand and returns `nullptr` while Activating, after failed init or after death;
+  `operator->` requires `ready()` and asserts in debug if unavailable. Send to a valid `handle.id()`;
+  gate direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
+  _(Actor.h:1340-1345, :1366, :2408-2428, :2462-2467)_
 - **`getService<T>()` is the ONE lookup that is not phase-gated: it hands back a service whose async
   `onInit()` is still in flight AND one that has been `kill()`ed but not yet reaped.** Deliberate — it
   is what lets a service look itself or a peer up from inside its own `onInit()`, and what keeps a
@@ -599,10 +601,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   actor and a QoS-0 drop are not dead letters, and an event reaching an actor that handles its type but was killed earlier
   in the SAME pass is skipped unreported (once the actor is reaped, its id is `not_found`). Delivery proof still needs an ack and a timeout.
   _(DeadLetter.h:42-61)_
-- **A watch is answered exactly once, after the watched actor's destructor ran** — `killed` / `init_failed` / `init_threw`
-  from its core, `unknown` for an id nobody holds, `core_stopped` for a core that had stopped (or ended on an exception);
-  nothing after `unwatch()`. A `DownEvent` whose type the watcher did not register is an `unhandled` dead letter; the death
-  watch's internal events never are. _(VirtualCore.cpp:1632-1651, :1697-1725)_
+- **A watch is answered exactly once; target-down answers follow that actor's destructor** — `killed` /
+  `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
+  core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
+  register is an `unhandled` dead letter; internal watch events never are.
+  _(VirtualCore.cpp:1283-1297, :1573-1588, :1632-1662, :1698-1725)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:65-70, :85-86, :94-98)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

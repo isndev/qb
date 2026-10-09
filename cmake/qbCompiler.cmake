@@ -188,7 +188,7 @@ if(QB_COMPILER_MSVC)
                             # clang enable -Wreturn-type, the same class, and are correctly silent
                             # on the identical code -- measured with gcc 14.2 over the whole tree,
                             # zero diagnostics for examples/03-coroutines/13-retry-and-single-
-                            # flight.cpp:150 and examples/06-modules/pgsql/03-transactions.cpp:206,
+                            # flight.cpp:150 and examples/06-modules/pgsql/03-transactions.cpp:206-209,
                             # the two sites MSVC flags. Suppressed here rather than at those sites
                             # because the alternative is an unreachable `co_return` planted in
                             # teaching material, which would teach that one is required. The class

@@ -53,7 +53,7 @@ its own root, with its own floor, for the same reason every other root has one.
 
 Headers are scanned because in `examples/` the fixture is routinely NOT in the `.cpp`. The
 multi-file tiers (`05-services/`, `07-applications/`) put actor and session classes in
-`.h` files, and `examples/07-applications/03-market-data-hub/src/actors.h:122` instantiates
+`.h` files, and `examples/07-applications/03-market-data-hub/src/actors.h:123` instantiates
 `qb::batcher<Quote>` in a header — a carrier use a `.cpp`-only scan cannot see. An anonymous
 namespace in a header is a worse form of the same defect (every TU gets its own no-linkage
 type), so the scan covers `.cpp`, `.h` and `.hpp`. Measured at 3.0.0 the header scope adds

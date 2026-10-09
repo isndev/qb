@@ -854,11 +854,11 @@ public:
     // void setCoreLowLatency(bool state) const noexcept;
 
     /**
-     * @brief Check if Actor is alive and processing events.
-     * @return true if Actor is alive (i.e., `kill()` has not been effectively processed yet), false otherwise.
-     * @details An actor is considered alive until its `kill()` method has been called AND the
-     *          `VirtualCore` has processed its removal. It might still process events in its queue
-     *          after `kill()` is called but before it's fully removed.
+     * @brief Read the actor's live flag.
+     * @return `true` before `kill()`, `false` immediately after its first call.
+     * @details `kill()` clears `_alive` before deferred removal. The core may still drain and
+     *          dispose queued events, but dispatch skips this actor's handler.
+     *          Reap later frees the object; this accessor reports the flag, not that phase.
      */
     [[nodiscard]] bool
     is_alive() const noexcept {
