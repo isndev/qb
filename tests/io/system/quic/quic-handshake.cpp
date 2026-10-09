@@ -906,7 +906,150 @@ direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, b
     return server_connection_id;
 }
 
+void
+deliver_quota_packets(qb::io::quic::backend &client, qb::io::quic::backend &server) {
+    deliver_quic_packets(client, server);
+    deliver_quic_packets(server, client);
+}
+
+bool
+wait_for_quota_event(qb::io::quic::backend &client, qb::io::quic::backend &server, qb::io::quic::backend_event::kind kind,
+                     std::uint64_t stream_id) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+        deliver_quota_packets(client, server);
+        for (auto const &event : server.drain_events())
+            if (event.type == kind && event.stream_id == stream_id)
+                return true;
+        (void) client.drain_events();
+    }
+    return false;
+}
+
 } // namespace
+
+TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSlot) {
+    ASSERT_TRUE(require_ssl_files());
+
+    for (auto direction : {qb::io::quic::stream_direction::unidirectional, qb::io::quic::stream_direction::bidirectional}) {
+        auto                   server = qb::io::quic::make_native_backend();
+        auto                   client = qb::io::quic::make_native_backend();
+        qb::io::quic::settings limits;
+        limits.max_streams_uni  = 1;
+        limits.max_streams_bidi = 1;
+        server->configure(limits);
+
+        qb::io::quic::tls_config server_tls;
+        server_tls.certificate_file = ssl_resource_path("cert.pem");
+        server_tls.private_key_file = ssl_resource_path("key.pem");
+        server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+        qb::io::quic::tls_config client_tls;
+        client_tls.server_name = "localhost";
+        client_tls.verify_peer = false;
+        client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+        bool       client_connected     = false;
+        const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+        ASSERT_TRUE(client_connected);
+        ASSERT_NE(server_connection_id, 0u);
+
+        for (int i = 0; i < 4; ++i) {
+            std::uint64_t stream_id = 0;
+            bool          opened    = false;
+            const auto    deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+            while (!opened && std::chrono::steady_clock::now() < deadline) {
+                deliver_quota_packets(*client, *server);
+                try {
+                    stream_id = client->open_stream(0, direction);
+                    opened    = true;
+                } catch (std::runtime_error const &) {
+                    (void) client->drain_events();
+                    (void) server->drain_events();
+                }
+            }
+            ASSERT_TRUE(opened) << "remote stream quota was not renewed at slot " << i;
+            client->send_stream_data(0, stream_id, std::span<const std::byte>{}, true);
+            if (direction == qb::io::quic::stream_direction::bidirectional) {
+                ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, stream_id));
+                server->send_stream_data(server_connection_id, stream_id, std::span<const std::byte>{}, true);
+            }
+            ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, stream_id));
+        }
+    }
+}
+
+TEST(QuicHandshakeNativeBackend, ImplicitRemoteStreamCloseDoesNotDoubleRenewQuota) {
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings limits;
+    limits.max_streams_uni = 2;
+    server->configure(limits);
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+    bool client_connected = false;
+    ASSERT_NE(direct_handshake(*client, *server, client_connected), 0u);
+    ASSERT_TRUE(client_connected);
+
+    const auto first  = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    ASSERT_EQ(second, first + 4);
+    // Announcing the higher ID first makes ngtcp2 create the lower stream
+    // implicitly, without calling stream_open for it.
+    client->send_stream_data(0, second, std::span<const std::byte>{}, true);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
+    client->send_stream_data(0, first, std::span<const std::byte>{}, true);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    EXPECT_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional), std::runtime_error)
+        << "one explicit and one implicit close must renew exactly two slots";
+}
+
+TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings limits;
+    limits.max_streams_uni = 1;
+    server->configure(limits);
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+    bool       client_connected     = false;
+    const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(server_connection_id, 0u);
+
+    constexpr std::array<std::byte, 1> payload{std::byte{0x61}};
+    const auto                         first = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    client->send_stream_data(0, first, payload, false);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, first));
+    client->reset_stream(0, first, 0x123);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    client->send_stream_data(0, second, payload, false);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, second));
+    server->stop_stream(server_connection_id, second, 0x456);
+    ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
+    for (int i = 0; i < 4; ++i)
+        deliver_quota_packets(*client, *server);
+    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+}
 
 /**
  * @test The peer ACKs server stream data, driving acked_stream_data_offset_cb / stream_data_acked
