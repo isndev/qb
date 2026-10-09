@@ -112,12 +112,11 @@ ALLOWED: dict[str, str] = {}
 # runs the check against a copy of `qb/src` alone, where ska_hash's key is
 # `qb/vendor/ska_hash/...` and not `src/qb/vendor/ska_hash/...` -- and every vendored .hpp was
 # reported unrecorded. The control caught it on the first run after the change. A suffix is
-# root-independent and still unambiguous here: no two of these eleven share a tail.
+# root-independent and still unambiguous here: no two entries share a tail.
 HPP_CENSUS: dict[str, str] = {
     # vendored -- renaming any of these makes every future vendor drop a merge conflict
     # (modules/nlohmann/json.hpp was here until 3.0 stopped vendoring nlohmann; it is now
     #  resolved by find_package / FetchContent and no copy of it exists in the tree)
-    "qb/vendor/ska_hash/bytell_hash_map.hpp": "vendored ska_hash (Malte Skarupke)",
     "qb/vendor/ska_hash/flat_hash_map.hpp": "vendored ska_hash (Malte Skarupke)",
     "qb/vendor/ska_hash/unordered_map.hpp": "vendored ska_hash (Malte Skarupke)",
     "qb/vendor/uuid/catch/catch.hpp": "vendored Catch2 v2, stduuid's own test material",

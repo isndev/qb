@@ -74,7 +74,11 @@ marked "in-header" and have no separate file — the notice travels with the cod
    Author      Malte Skarupke
    Version     unversioned upstream snapshot
    License     Boost Software License 1.0
-   Vendored    src/qb/vendor/ska_hash/{flat_hash_map,bytell_hash_map,unordered_map}.hpp
+   Vendored    src/qb/vendor/ska_hash/{flat_hash_map,unordered_map}.hpp
+   Modified    yes -- every local change carries a `qb local modification`
+               comment in the source. Upstream's bytell_hash_map.hpp is not
+               vendored: qb never used it, and it is unsafe for over-aligned
+               value types.
    Installed   <prefix>/include/qb/vendor/ska_hash/
    License at  <prefix>/share/licenses/qb/third-party/ska_hash/LICENSE_1_0.txt
 

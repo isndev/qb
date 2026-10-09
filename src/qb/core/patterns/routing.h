@@ -59,12 +59,14 @@ public:
     add(qb::ActorId worker) {
         _workers.push_back(worker);
     }
-    /** @brief Remove a worker from the pool (if present). */
+    /** @brief Remove a worker from the pool -- every occurrence of it -- if present. */
     void
     remove(qb::ActorId worker) {
         _workers.erase(std::remove(_workers.begin(), _workers.end(), worker), _workers.end());
-        if (!_workers.empty())
-            _cursor %= _workers.size();
+        // The cursor stays an index of the pool, 0 once it is empty: a pool emptied with the cursor
+        // past 0 (every copy of a duplicated id removed at once) kept it, and the next refill's
+        // next() read past the end (Huly QB-298).
+        _cursor = _workers.empty() ? 0 : _cursor % _workers.size();
     }
     [[nodiscard]] bool
     empty() const noexcept {

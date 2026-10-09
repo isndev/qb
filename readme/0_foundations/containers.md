@@ -56,6 +56,20 @@ The reason is that this is a **public type used as a data member of public class
 
 The invariant has a configure-time guard: qb publishes the implementation as a token, `set(QB_ABI_UNORDERED_MAP "ska" CACHE INTERNAL ...)` (`qb/cmake/qbConfig.cmake:610`), each installed module records the token it was built against (its `qbm-<mod>Config.cmake` is generated from `qb/cmake/qbmModuleConfig.cmake.in`), and a mismatch fails at `find_package()` rather than at run time. That is the same family of protection as the [link-time ABI fingerprint](./abi_and_build_fingerprint.md), one layer up in the build system.
 
+### The standard members the fork had wrong
+
+Upstream `ska_hash` predates C++20 and is no longer maintained. qb's copy is a declared fork, and every local change carries a `qb local modification` comment in the source. Besides `contains()`, 3.3 brought five members to the standard's contract (Huly QB-369 to QB-373):
+
+- **`try_emplace(k, args...)`** builds the mapped value from all of `args` (zero, one or several), and constructs nothing when `k` is present; its arguments are then not moved from. Upstream passed `k, args...` to the pair's constructor, so only the one-argument form compiled. The node map builds the element in place. The flat map builds a pair and moves it into its slot, because its robin-hood displacement moves elements anyway.
+- **`unordered_map::merge(src)`** (lvalue and rvalue) moves every element whose key is absent and leaves the others in `src`. Upstream copied everything and left `src` whole. `unordered_flat_map` has no `merge`.
+- **`bucket(k)`** compiles on the node map and set, and is below `bucket_count()` even on an empty table, which counts one bucket. Upstream called a member template that does not exist.
+- **Moves across unequal allocators.** Two members can meet an allocator that does not compare equal to the source's: the allocator-extended move constructor, and a move assignment whose allocator does not propagate. Each now moves the elements one by one into storage the destination's allocator owns. The assignment also installs the source's hasher and equality before it re-inserts. Upstream stole the storage anyway and later freed it through the wrong allocator, and it re-inserted with the old hasher, so keys could not be found. Both members are `noexcept` only when that path cannot be taken. With `std::allocator`, which is always equal, they are the same pointer steal as before.
+
+Upstream's third table, `bytell_hash_map.hpp`, is no longer shipped. qb never used it, and it placed over-aligned value types in storage aligned only for `unsigned char`.
+
+<!-- src: qb/src/qb/vendor/ska_hash/unordered_map.hpp:171-201, :226-262, :431-456, :883-905, :932-943 -->
+<!-- src: qb/src/qb/vendor/ska_hash/flat_hash_map.hpp:399-426, :446-477, :2298-2312 -->
+
 ### Custom keys
 
 `qb::hash_combine` folds several values into one hash, so a struct key needs no hand-rolled mixing:

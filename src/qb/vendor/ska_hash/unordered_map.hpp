@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <tuple> // qb local modification: std::forward_as_tuple for try_emplace (Huly QB-369)
 #include <type_traits>
 #include <utility>
 
@@ -167,13 +168,36 @@ public:
         , _max_load_factor(other._max_load_factor) {
         swap_pointers(other);
     }
-    sherwood_v10_table(sherwood_v10_table &&other, const ArgumentAlloc &alloc) noexcept
+    // qb local modification (Huly QB-370): the storage is stolen only when `alloc` can free it. With
+    // an unequal allocator the elements are moved one by one into storage `alloc` owns -- upstream
+    // stole the pointers whatever the allocators, and `alloc` later freed storage another allocator
+    // made. noexcept only when every allocator of the type is equal (std::allocator: the steal alone).
+    sherwood_v10_table(sherwood_v10_table &&other, const ArgumentAlloc &alloc) noexcept(AllocatorTraits::is_always_equal::value
+                                                                                         && BucketAllocatorTraits::is_always_equal::value)
         : EntryAlloc(alloc)
         , Hasher(std::move(other))
         , Equal(std::move(other))
         , BucketAllocator(alloc)
         , _max_load_factor(other._max_load_factor) {
-        swap_pointers(other);
+        if constexpr (AllocatorTraits::is_always_equal::value && BucketAllocatorTraits::is_always_equal::value) {
+            swap_pointers(other);
+        } else {
+            if (static_cast<EntryAlloc &>(*this) == static_cast<EntryAlloc &>(other)
+                && static_cast<BucketAllocator &>(*this) == static_cast<BucketAllocator &>(other)) {
+                swap_pointers(other);
+                return;
+            }
+            try {
+                rehash_for_other_container(other);
+                for (T &elem : other)
+                    emplace(std::move(elem));
+            } catch (...) {
+                clear();
+                deallocate_data();
+                throw;
+            }
+            other.clear();
+        }
     }
     sherwood_v10_table &
     operator=(const sherwood_v10_table &other) {
@@ -199,8 +223,14 @@ public:
         insert(other.begin(), other.end());
         return *this;
     }
+    // qb local modification (Huly QB-371): in the unequal-allocator branch the hasher and the equality
+    // are installed BEFORE the elements are re-inserted -- upstream re-inserted with the OLD hasher and
+    // installed the new one after, so every key sat in the bucket of a hash the table no longer
+    // computes. noexcept only when that branch cannot be taken: it allocates, and a bad_alloc there
+    // was std::terminate.
     sherwood_v10_table &
-    operator=(sherwood_v10_table &&other) noexcept {
+    operator=(sherwood_v10_table &&other) noexcept(AllocatorTraits::propagate_on_container_move_assignment::value
+                                                   || AllocatorTraits::is_always_equal::value) {
         static_assert(AllocatorTraits::propagate_on_container_move_assignment::value
                           == BucketAllocatorTraits::propagate_on_container_move_assignment::value,
                       "The allocators have to behave the same way");
@@ -217,11 +247,14 @@ public:
             swap_pointers(other);
         } else {
             clear();
-            _max_load_factor = other._max_load_factor;
+            _max_load_factor             = other._max_load_factor;
+            static_cast<Hasher &>(*this) = std::move(other);
+            static_cast<Equal &>(*this)  = std::move(other);
             rehash_for_other_container(other);
             for (T &elem : other)
                 emplace(std::move(elem));
             other.clear();
+            return *this;
         }
         static_cast<Hasher &>(*this) = std::move(other);
         static_cast<Equal &>(*this)  = std::move(other);
@@ -395,6 +428,33 @@ public:
         return emplace_new_key(bucket, std::forward<Key>(key), std::forward<Args>(args)...);
     }
 
+    // qb local modification (Huly QB-369): insert a pair for `key` -- known to be absent -- built in
+    // place, piecewise, from `key` and `args`: try_emplace's contract, where `args` construct the
+    // MAPPED value (zero, one or several of them). It grows first and hashes `key` itself, because
+    // emplace_new_key's growth path re-enters emplace() with its arguments and would hash the
+    // piecewise tag instead of the key.
+    template <typename Key, typename... Args>
+    std::pair<iterator, bool>
+    emplace_absent_piecewise(Key &&key, Args &&...args) {
+        while (is_full())
+            grow();
+        size_t        index     = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        EntryPointer *bucket    = entries + ptrdiff_t(index);
+        EntryPointer  new_entry = AllocatorTraits::allocate(*this, 1);
+        try {
+            AllocatorTraits::construct(*this, std::addressof(new_entry->value), std::piecewise_construct,
+                                       std::forward_as_tuple(std::forward<Key>(key)),
+                                       std::forward_as_tuple(std::forward<Args>(args)...));
+        } catch (...) {
+            AllocatorTraits::deallocate(*this, new_entry, 1);
+            throw;
+        }
+        ++num_elements;
+        new_entry->next = *bucket;
+        *bucket         = new_entry;
+        return {{new_entry, bucket}, true};
+    }
+
     std::pair<iterator, bool>
     insert(const value_type &value) {
         return emplace(value);
@@ -566,7 +626,11 @@ public:
     }
     size_t
     bucket(const FindKey &key) const {
-        return hash_policy.template index_for_hash<0>(hash_object(key), num_slots_minus_one);
+        // qb local modification (Huly QB-373): the hash policies' index_for_hash is not a template;
+        // upstream's `.template index_for_hash<0>` failed to compile at the first use of bucket(). An
+        // empty table counts ONE bucket while its hash policy still spans the two slots of the shared
+        // empty sentinel (fibonacci: shift 63), so its only bucket is answered directly.
+        return num_slots_minus_one ? hash_policy.index_for_hash(hash_object(key), num_slots_minus_one) : 0;
     }
     float
     load_factor() const {
@@ -816,16 +880,28 @@ public:
         return __ret.first;
     }
 
+    // qb local modification (Huly QB-372): std::unordered_map::merge -- an element whose key is absent
+    // here MOVES in and leaves `source`; one whose key is already here stays in `source`, untouched.
+    // Upstream copied every element and left `source` whole, and its rvalue overload read through
+    // const iterators, so it copied too (a move-only mapped type did not compile). One lookup per
+    // element: emplace() only reads its arguments on a hit, and moves them only on a miss.
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
     void
     merge(unordered_map<K2, V2, H2, E2, A2> &source) {
-        std::copy(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
+        if (static_cast<const void *>(&source) == static_cast<const void *>(this))
+            return; // every key of a map is already in it
+        for (auto it = source.begin(); it != source.end();) {
+            if (this->emplace(std::move(it->first), std::move(it->second)).second)
+                it = source.erase(it);
+            else
+                ++it;
+        }
     }
 
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
     void
     merge(unordered_map<K2, V2, H2, E2, A2> &&source) {
-        std::move(std::cbegin(source), std::cend(source), std::inserter(*this, this->end()));
+        merge(source);
     }
 
     friend bool
@@ -853,12 +929,16 @@ private:
         }
     };
 
+    // qb local modification (Huly QB-369): on a miss the mapped value is built in place from ALL of
+    // `args` -- zero, one or several -- as std::unordered_map::try_emplace does; upstream forwarded
+    // `key, args...` to the PAIR's constructor, so `try_emplace(k)` and `try_emplace(k, a, b)` did not
+    // compile. On a hit nothing is constructed, `args` are not touched.
     template <typename KeyType = key_type, class... Args>
     std::pair<typename Table::iterator, bool>
     try_emplace_impl(KeyType &&key, Args &&...args) {
         auto res = this->find(key);
         if (res == this->end())
-            return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
+            return this->emplace_absent_piecewise(std::forward<KeyType>(key), std::forward<Args>(args)...);
         return {{res}, false};
     }
 };

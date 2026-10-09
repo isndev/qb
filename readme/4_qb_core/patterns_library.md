@@ -608,24 +608,28 @@ coroutine required.
 | `qb::supervision` | `enum class { cooperative, watch }` | `supervisor.h:56-60` |
 | `qb::ChildDown` | `struct ChildDown : qb::Event { std::size_t slot; std::uint64_t generation; ChildDown(std::size_t,std::uint64_t); }` | `supervisor.h:69-75` |
 | `qb::SupervisedActor` | `class SupervisedActor : public qb::Actor { SupervisedActor(ActorId,std::size_t,std::uint64_t); ActorId supervisor() const; void notify_supervisor_down() const; void stop(); }` | `supervisor.h:88-117` |
-| `qb::Supervisor` | `class Supervisor : public qb::Actor` | `supervisor.h:147-336` |
+| `qb::Supervisor` | `class Supervisor : public qb::Actor` | `supervisor.h:147-358` |
 | `Supervisor` ctor | `Supervisor(restart_strategy, std::size_t child_count, unsigned max_restarts = 0, qb::duration restart_window = qb::duration::zero(), qb::supervision mode = qb::supervision::cooperative)` | `supervisor.h:158-164` |
-| `Supervisor::spawn_child` | `virtual ActorId spawn_child(std::size_t slot, std::uint64_t generation) = 0` | `supervisor.h:237-242` |
-| `Supervisor::on_escalate` | `virtual void on_escalate()` (default no-op) | `supervisor.h:244-246` |
-| `Supervisor::child` / `restarts` / `child_count` | `ActorId child(std::size_t) const · unsigned restarts() const · std::size_t child_count() const` | `supervisor.h:220-234` |
+| `Supervisor::spawn_child` | `virtual ActorId spawn_child(std::size_t slot, std::uint64_t generation) = 0` | `supervisor.h:257-262` |
+| `Supervisor::on_escalate` | `virtual void on_escalate()` (default no-op) | `supervisor.h:264-266` |
+| `Supervisor::child` / `restarts` / `restarts_in_window` / `child_count` | `ActorId child(std::size_t) const · unsigned restarts() const · std::size_t restarts_in_window() const · std::size_t child_count() const` | `supervisor.h:220-254` |
 
 - Override `spawn_child(slot, generation)` to create child `slot` with
   `addRefActor<Child>(id(), slot, generation, …)` where `Child` derives from `SupervisedActor`. A
   child calls `stop()` to terminate cooperatively (it sends `ChildDown`, then `kill()`s itself); the
   supervisor restarts it per the strategy, bumping each restarted slot's **generation** so stale
-  `ChildDown`s are ignored (`supervisor.h:122-147`, `:181-186`, `:250-276`).
+  `ChildDown`s are ignored (`supervisor.h:122-147`, `:181-186`, `:270-296`).
 - `one_for_one` restarts only the dead child; `one_for_all` restarts every child; `rest_for_one`
-  restarts the dead child and every child started after it (`supervisor.h:45-49`, `:264-275`).
+  restarts the dead child and every child started after it (`supervisor.h:45-49`, `:284-295`).
 - `max_restarts` (0 = unlimited) caps restart intensity and calls `on_escalate()` past the cap —
   cumulative, or, with a non-zero `restart_window`, as a sliding-window "N restarts within T" rule
-  (`supervisor.h:122-147`, `:293-313`). A slot given up on holds no child from then on (`child(slot)`
+  (`supervisor.h:122-147`, `:313-335`). A slot given up on holds no child from then on (`child(slot)`
   is invalid): its id is free for any new actor, and the supervisor's teardown must not kill one
-  that reused it (`supervisor.h:252-263`).
+  that reused it (`supervisor.h:272-283`). `restarts()` counts every restart since the start;
+  `restarts_in_window()` counts those the window cap still sees, the number compared with
+  `max_restarts`: how close the next failure is to escalating. It is 0 with no window, and 0 with no
+  cap: an uncapped supervisor records no restart time, so its history cannot grow (3.3, Huly QB-299;
+  `supervisor.h:230-249`, `:327-335`).
 - Killing the supervisor tears down its children first (sending each a `KillEvent`, then `kill()`ing
   itself), so children are never orphaned; `Main::stop()` / `SIGINT` already broadcast to every actor
   (`supervisor.h:203-218`).
@@ -639,7 +643,7 @@ coroutine required.
   child whose `onInit()` fails synchronously (`spawn_child` returns an invalid id) is restarted on the
   next pass, never recursively. A child that calls `stop()` is still restarted once: the supervisor
   unwatches a child before it replaces it, so the death of the outgoing child is never taken for its
-  replacement's, which most likely reuses its id (`supervisor.h:188-201`, `:278-291`). Pair the mode
+  replacement's, which most likely reuses its id (`supervisor.h:188-201`, `:298-311`). Pair the mode
   with `max_restarts`: a child that always fails would otherwise be restarted forever.
 
 ### Example
@@ -674,12 +678,12 @@ protected:
     }
 };
 ```
-<!-- src: qb/tests/core/system/patterns/supervisor-strategies.cpp:195-248 -->
+<!-- src: qb/tests/core/system/patterns/supervisor-strategies.cpp:199-252 -->
 
 A subclass that overrides `onInit()` must `co_await qb::Supervisor::onInit()` — the base registers
 `ChildDown` and `KillEvent` (and `qb::DownEvent` in watch mode) and spawns the initial children
 (`qb/src/qb/core/patterns/supervisor.h:166-179`,
-`qb/tests/core/system/patterns/supervisor-strategies.cpp:229-233`).
+`qb/tests/core/system/patterns/supervisor-strategies.cpp:233-237`).
 
 ---
 
@@ -692,13 +696,17 @@ small, allocation-light helper. No coroutine required.
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::WorkerPool` | `class { WorkerPool(); explicit WorkerPool(std::vector<ActorId>); void add(ActorId); void remove(ActorId); bool empty() const; std::size_t size() const; const std::vector<ActorId>& workers() const; ActorId next(); ActorId for_key(std::uint64_t) const; }` | `routing.h:48-100` |
+| `qb::WorkerPool` | `class { WorkerPool(); explicit WorkerPool(std::vector<ActorId>); void add(ActorId); void remove(ActorId); bool empty() const; std::size_t size() const; const std::vector<ActorId>& workers() const; ActorId next(); ActorId for_key(std::uint64_t) const; }` | `routing.h:48-102` |
 
 `WorkerPool` holds a list of worker `ActorId`s and a round-robin cursor. The actor picks a worker and
 `push`es to it: `pool.next()` (round-robin), `pool.for_key(k)` (sticky — the same key always maps to
 the same worker until the pool size changes), or iterate `workers()` to broadcast. It does **not**
 own the workers or track liveness — pair it with discovery/supervision if workers come and go.
-`next()` and `for_key()` require a non-empty pool (asserted) (`routing.h:33-99`).
+`remove(id)` drops every occurrence of `id` (an id added twice weighs twice in the round-robin) and
+keeps the cursor an index of the pool, back to 0 once the pool is empty — before 3.3 a pool emptied by
+one `remove()` with the cursor past 0 kept it, and the next refill's `next()` read past the end (Huly
+QB-298; `routing.h:62-70`).
+`next()` and `for_key()` require a non-empty pool (asserted) (`routing.h:33-101`).
 
 ### Example
 

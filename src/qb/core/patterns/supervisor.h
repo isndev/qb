@@ -227,6 +227,26 @@ public:
     restarts() const noexcept {
         return _restarts;
     }
+    /**
+     * @brief The restarts the sliding-window cap counts right now: those recorded within the trailing
+     *        `restart_window`.
+     * @details How close a windowed supervisor is to escalating: once this reaches `max_restarts`, the
+     *          next child failure calls `on_escalate()` instead of restarting. 0 when there is no window,
+     *          and 0 when there is no cap: a supervisor without a cap records no restart time, so its
+     *          history cannot grow without bound (Huly QB-299).
+     */
+    [[nodiscard]] std::size_t
+    restarts_in_window() const noexcept {
+        if (_window <= qb::duration::zero())
+            return 0;
+        const auto  now    = time();
+        const auto  win_ns = static_cast<std::uint64_t>(_window.count());
+        const auto  cutoff = now > win_ns ? now - win_ns : std::uint64_t{0};
+        std::size_t n      = 0;
+        for (auto it = _restart_times.rbegin(); it != _restart_times.rend() && *it >= cutoff; ++it)
+            ++n;
+        return n;
+    }
     /** @brief Number of supervised slots. */
     [[nodiscard]] std::size_t
     child_count() const noexcept {
@@ -304,11 +324,13 @@ private:
         return _restart_times.size() >= _max_restarts;
     }
 
-    /// Record a restart for both the cumulative counter and the sliding window.
+    /// Record a restart for the cumulative counter and, when a windowed cap reads it, the sliding
+    /// window. Only over_restart_limit() prunes the window, and it runs only under a cap: recording
+    /// without one kept every restart time for the supervisor's whole life (Huly QB-299).
     void
     record_restart() {
         ++_restarts;
-        if (_window > qb::duration::zero())
+        if (_max_restarts && _window > qb::duration::zero())
             _restart_times.push_back(time());
     }
 

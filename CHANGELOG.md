@@ -214,6 +214,10 @@ policy.
   number a call admitted while closed holds, and for a trial already verdicted and superseded. It is the form for a
   caller that may not hold the trial in flight; `qb::ask_guarded` uses it. The number sits in the padding after the
   threshold: `sizeof(CircuitBreaker)` is unchanged on x86-64 and arm64.
+- **`qb::Supervisor::restarts_in_window()`: how close a supervisor is to escalating (Huly QB-299).** The restarts its
+  sliding-window cap still counts, the number compared with `max_restarts`: once it reaches the cap, the next child
+  failure escalates instead of restarting. It reads 0 with no window, and 0 with no cap, where no restart history is
+  kept any more (under Fixed). `restarts()` stays the cumulative count.
 
 ### Changed
 
@@ -293,6 +297,15 @@ policy.
   pipe (`auto &p = (*this << x);`) no longer does -- `publish()` still returns the raw buffer, for that use. Pinned by
   `OutputChainedInsertionAdmitsEveryOperand`, `DuplexChainedInsertionAdmitsEveryOperand` and
   `BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap`.
+
+### Removed
+
+- **`qb/vendor/ska_hash/bytell_hash_map.hpp` (Huly QB-374).** Upstream's third hash table was installed with qb and
+  never used: no source of qb, of the modules or of the examples includes it, and no `qb::` alias names it. It was
+  also unsafe. It allocated its blocks through an `unsigned char` allocator, so a value type aligned beyond
+  `__STDCPP_DEFAULT_NEW_ALIGNMENT__` sat in misaligned storage, and its empty-table sentinel was a byte array read
+  as a block. A consumer that included it directly can take the header from upstream,
+  https://github.com/skarupke/flat_hash_map (Boost Software License 1.0), or use `qb::unordered_flat_map`.
 
 ### Fixed
 
@@ -637,6 +650,39 @@ policy.
   the breaker under that trial, so a second trial could run beside it once the cooldown passed. The call admitted as
   the trial now holds it in a lease released by its verdict, its cancellation or its destructor -- naming its own
   trial (`on_abandoned(now_ns, trial)`, under Added) -- and a closed-state call releases nothing.
+- **`qb::WorkerPool::remove()` resets the cursor when it empties the pool (Huly QB-298).** `remove(id)` drops every
+  occurrence of `id`. When that emptied the pool with the round-robin cursor past 0, the cursor kept its value, and
+  after a refill `next()` read past the end of the workers: the stale id the vector's capacity still held, never
+  the worker just added. The cursor of an empty pool is now 0. Pinned by
+  `WorkerPoolUnit.EmptyingTheRemoveOfADuplicatedIdResetsTheCursor`.
+- **An uncapped `qb::Supervisor` with a restart window no longer keeps every restart time (Huly QB-299).** With
+  `max_restarts = 0` and a non-zero `restart_window`, each restart recorded a timestamp, and only the cap check pruned
+  them, which an uncapped supervisor never runs: a supervisor restarting a crashing child forever grew that history
+  for its whole life. A restart time is now recorded only under a cap. Pinned, through `restarts_in_window()` (under
+  Added), by `SupervisorRestartWindow.AnUncappedSupervisorKeepsNoRestartHistory`.
+- **`qb::unordered_map` / `qb::unordered_flat_map`: `try_emplace` builds the mapped value from every argument (Huly
+  QB-369).** The vendored fork passed `key, args...` to the pair's constructor, so `try_emplace(k)` and
+  `try_emplace(k, a, b)` did not compile; only the one-argument form did. On a miss the mapped value is now built from
+  all of `args`: in place in the node map (a type that is neither copyable nor movable fits), and as a pair moved into
+  its slot in the flat map. A hit constructs nothing and does not move from its arguments.
+- **`qb::unordered_map::merge` moves the elements it takes and leaves the others (Huly QB-372).** It copied every
+  element of the source and left the source whole; the rvalue overload copied too, through const iterators, so a
+  move-only mapped type did not compile. As with `std::unordered_map::merge`, an element whose key is absent now moves
+  in and leaves the source, and one whose key is present stays in the source.
+- **`bucket(key)` compiles on `qb::unordered_map` and `qb::unordered_set` (Huly QB-373).** It called
+  `index_for_hash` as a member template, which it is not. On an empty table, whose `bucket_count()` is 1, it now
+  answers 0: the hash policy still spans the two slots of the shared empty sentinel and could answer 1, past the
+  table -- found by the new witness.
+- **Moves of the ska tables across unequal allocators (Huly QB-370, QB-371).** The allocator-extended move
+  constructor stole the source's storage whatever the allocators, and the destination later freed it through an
+  allocator that had not allocated it. The move assignment, with unequal allocators that do not propagate,
+  re-inserted the elements with the destination's OLD hasher and installed the source's afterwards: every key sat in
+  the bucket of a hash the table no longer computed, and `find` missed it. Both now move the elements one by one into
+  storage of the destination's allocator, the hasher and the equality installed first. Their `noexcept` was
+  unconditional although that path allocates, so a `bad_alloc` there was `std::terminate`. It now holds only when the
+  path cannot be taken: `is_always_equal`, or `propagate_on_container_move_assignment` for the assignment.
+  `std::allocator` keeps the pointer steal. Only a stateful allocator reaches either defect; qb uses none. The tests are
+  in `tests/core/unit/container/unordered-map-contract.cpp`.
 
 ### Documentation
 

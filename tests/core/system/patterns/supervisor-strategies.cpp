@@ -66,6 +66,9 @@ std::atomic<int>  g_spawns{0}; // total worker onInit() calls (initial + restart
 std::atomic<int>  g_acks{0};   // total SpawnAcks the coordinator saw
 std::atomic<bool> g_escalated{false};
 std::atomic<bool> g_slot_replaced{false}; // a restarted slot reported a NEW ActorId
+// restarts_in_window() as the escalating supervisor read it at its LAST spawn_child -- which runs
+// right after the restart is recorded, so it includes that restart (Huly QB-299).
+std::atomic<std::size_t> g_window_history{0};
 
 void
 reset_globals() {
@@ -73,6 +76,7 @@ reset_globals() {
     g_acks.store(0);
     g_escalated.store(false);
     g_slot_replaced.store(false);
+    g_window_history.store(0);
 }
 } // namespace
 
@@ -383,6 +387,7 @@ public:
 protected:
     qb::ActorId
     spawn_child(std::size_t slot, std::uint64_t gen) override {
+        g_window_history.store(restarts_in_window()); // a restart is recorded before its respawn
         // Workers ack the SUPERVISOR (so it can script crashes); it forwards a copy to the coord.
         return addRefActor<TestWorker>(id(), slot, gen, id()).id();
     }
@@ -409,6 +414,7 @@ TEST(ActorSupervisor, MaxRestartsEscalatesCumulative) {
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_escalated.load()) << "the third failure must escalate (cumulative cap=2)";
     EXPECT_EQ(g_spawns.load(), 3) << "1 initial + 2 restarts (the third did not respawn)";
+    EXPECT_EQ(g_window_history.load(), 0u) << "a cumulative cap (no window) records no restart time";
 }
 
 TEST(SupervisorRestartWindow, EscalatesWithinWindow) {
@@ -425,6 +431,26 @@ TEST(SupervisorRestartWindow, EscalatesWithinWindow) {
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_escalated.load()) << "the 4th restart within the window must escalate";
     EXPECT_EQ(g_spawns.load(), 1 + 3) << "1 initial + 3 restarts (4th escalated, no respawn)";
+    EXPECT_EQ(g_window_history.load(), 3u) << "the window counted the 3 restarts the cap then escalated on";
+}
+
+// Huly QB-299: with NO cap, nothing reads the sliding window -- only the capped check pruned it -- yet
+// every restart time was recorded: the history of an unlimited supervisor grew for its whole life.
+TEST(SupervisorRestartWindow, AnUncappedSupervisorKeepsNoRestartHistory) {
+    reset_globals();
+    qb::Main main;
+    // stop_at_acks: the initial spawn + 5 restarts; the supervisor never escalates (no cap).
+    auto coord = main.addActor<SpawnCoordinator>(0, /*initial*/ 1, 1, std::vector<std::size_t>{},
+                                                 /*stop_at_acks*/ 1 + 5);
+    main.addActor<EscalatingSupervisor>(0, coord, /*max_restarts*/ 0u, /*window*/ 10s, /*crashes*/ 5);
+
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_escalated.load()) << "no cap: never escalates";
+    EXPECT_EQ(g_spawns.load(), 1 + 5) << "1 initial + 5 restarts";
+    EXPECT_EQ(g_window_history.load(), 0u) << "no cap: no restart time is recorded (5 before the fix)";
 }
 
 // ===========================================================================

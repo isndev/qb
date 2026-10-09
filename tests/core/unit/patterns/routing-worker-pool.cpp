@@ -151,6 +151,26 @@ TEST(WorkerPoolUnit, RemoveWrapsCursorAndHandlesEmptyEdges) {
     EXPECT_EQ(r.next(), c);
 }
 
+// Huly QB-298: removing every copy of a duplicated id empties the pool in ONE call, with the cursor
+// past 0 -- and the cursor used to stay there: the next refill's next() read past the end (here the
+// stale `a` the vector's retained capacity still held), never the worker just added.
+TEST(WorkerPoolUnit, EmptyingTheRemoveOfADuplicatedIdResetsTheCursor) {
+    ActorId    a(1), b(2), c(3);
+    WorkerPool r{{a, a, a}};
+    (void) r.next(); // cursor -> 1
+    (void) r.next(); // cursor -> 2
+    r.remove(a);     // every copy at once: the pool is empty, the cursor must be 0
+    EXPECT_TRUE(r.empty());
+
+    r.add(b);
+    EXPECT_EQ(r.next(), b) << "a refilled pool starts at its head";
+    EXPECT_EQ(r.next(), b);
+
+    r.add(c); // the cursor still cycles the refilled pool from its head
+    EXPECT_EQ(r.next(), b);
+    EXPECT_EQ(r.next(), c);
+}
+
 // ===========================================================================
 // for_key() after remove() — the sticky mapping re-hashes when the pool shrinks.
 // (Missing case the source never exercised: stickiness holds only *until* size changes.)

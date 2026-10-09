@@ -25,6 +25,7 @@
 #include <functional>
 #include <iterator>
 #include <new> // qb local modification: placement new + std::launder in empty_default_table()
+#include <tuple> // qb local modification: std::forward_as_tuple for try_emplace (Huly QB-369)
 #include <type_traits>
 #include <utility>
 #include <stdexcept>
@@ -395,11 +396,33 @@ public:
         , Equal(std::move(other)) {
         swap_pointers(other);
     }
-    sherwood_v3_table(sherwood_v3_table &&other, const ArgumentAlloc &alloc) noexcept
+    // qb local modification (Huly QB-370): the storage is stolen only when `alloc` can free it. With
+    // an unequal allocator the elements are moved one by one into storage `alloc` owns -- upstream
+    // stole the pointers whatever the allocators, and `alloc` later freed storage another allocator
+    // made. noexcept only when every allocator of the type is equal (std::allocator: the steal alone).
+    sherwood_v3_table(sherwood_v3_table &&other, const ArgumentAlloc &alloc) noexcept(AllocatorTraits::is_always_equal::value)
         : EntryAlloc(alloc)
         , Hasher(std::move(other))
         , Equal(std::move(other)) {
-        swap_pointers(other);
+        if constexpr (AllocatorTraits::is_always_equal::value) {
+            swap_pointers(other);
+        } else {
+            if (static_cast<EntryAlloc &>(*this) == static_cast<EntryAlloc &>(other)) {
+                swap_pointers(other);
+                return;
+            }
+            _max_load_factor = other._max_load_factor;
+            try {
+                rehash_for_other_container(other);
+                for (T &elem : other)
+                    emplace(std::move(elem));
+            } catch (...) {
+                clear();
+                deallocate_data(entries, num_slots_minus_one, max_lookups);
+                throw;
+            }
+            other.clear();
+        }
     }
     sherwood_v3_table &
     operator=(const sherwood_v3_table &other) {
@@ -420,8 +443,14 @@ public:
         insert(other.begin(), other.end());
         return *this;
     }
+    // qb local modification (Huly QB-371): in the unequal-allocator branch the hasher and the equality
+    // are installed BEFORE the elements are re-inserted -- upstream re-inserted with the OLD hasher and
+    // installed the new one after, so every key sat in the slot of a hash the table no longer
+    // computes. noexcept only when that branch cannot be taken: it allocates, and a bad_alloc there
+    // was std::terminate.
     sherwood_v3_table &
-    operator=(sherwood_v3_table &&other) noexcept {
+    operator=(sherwood_v3_table &&other) noexcept(AllocatorTraits::propagate_on_container_move_assignment::value
+                                                  || AllocatorTraits::is_always_equal::value) {
         if (this == std::addressof(other))
             return *this;
         else if (AllocatorTraits::propagate_on_container_move_assignment::value) {
@@ -433,11 +462,14 @@ public:
             swap_pointers(other);
         } else {
             clear();
-            _max_load_factor = other._max_load_factor;
+            _max_load_factor             = other._max_load_factor;
+            static_cast<Hasher &>(*this) = std::move(other);
+            static_cast<Equal &>(*this)  = std::move(other);
             rehash_for_other_container(other);
             for (T &elem : other)
                 emplace(std::move(elem));
             other.clear();
+            return *this;
         }
         static_cast<Hasher &>(*this) = std::move(other);
         static_cast<Equal &>(*this)  = std::move(other);
@@ -2263,12 +2295,19 @@ private:
         }
     };
 
+    // qb local modification (Huly QB-369): on a miss the mapped value is built from ALL of `args` --
+    // zero, one or several -- as std::unordered_map::try_emplace does; upstream forwarded `key, args...`
+    // to the PAIR's constructor, so `try_emplace(k)` and `try_emplace(k, a, b)` did not compile. The
+    // pair is built piecewise, then moved into its slot: this open-addressing table relocates its
+    // elements anyway (growth, robin-hood displacement), so it requires them movable. On a hit nothing
+    // is constructed.
     template <typename KeyType = key_type, class... Args>
     std::pair<typename Table::iterator, bool>
     try_emplace_impl(KeyType &&key, Args &&...args) {
         auto res = this->find(key);
         if (res == this->end())
-            return this->emplace(std::forward<KeyType>(key), std::forward<Args>(args)...);
+            return this->emplace(std::pair<K, V>(std::piecewise_construct, std::forward_as_tuple(std::forward<KeyType>(key)),
+                                                 std::forward_as_tuple(std::forward<Args>(args)...)));
         return {{res}, false};
     }
 };
