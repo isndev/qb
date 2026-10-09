@@ -262,6 +262,30 @@ policy.
   An eager factory now moves it into an owning coroutine frame while preserving the public
   signature and the absolute deadline. Stored value, void, exception, timeout and cancellation
   paths are covered in `deadline-combinator.cpp`.
+- **An abnormal core exit now tears down its actors and queued events before withdrawing their context (Huly QB-260).**
+  A failed startup or throwing loop callback could destroy surviving actors after their thread-local core pointer
+  was cleared, and release raw event storage without destroying owned payloads. Terminal teardown now cancels
+  coroutine scopes, destroys suspended init frames, removes actors through the normal lifecycle path, disposes
+  pending pipes, then publishes the stopped core. Actor destructors retain `getIndex()` and death watches cannot
+  report `core_stopped` before a watched destructor finishes. Once teardown begins, `addRefActor` refuses new
+  children before construction, so cancellation hooks, stashed payload destructors and coroutine frame
+  destructors cannot re-enter a dying actor registry or scheduler.
+- **A throwing routed event handler now stops only its `VirtualCore` and reports through `Main::hasError()` (Huly QB-262).**
+  Custom, default and death-watch handlers, including activation replay and broadcasts, previously crossed a
+  `noexcept` trampoline and terminated the process. The receive boundary now disposes the faulting event and
+  the rest of an already-dequeued batch exactly once before the exception reaches `Main::start_thread`.
+  SPSC copy-out `dequeue` retains `noexcept` for a non-throwing callback and propagates a throwing callback's
+  exception after publishing its read index; this avoids a new branch on ordinary core dispatch.
+- **Activation deadline cancellation tolerates children added by a cancellation hook (Huly QB-968).**
+  The activation map is now scanned by snapshotted actor ids and each entry is re-found before it is read:
+  a hook that adds a child with suspended `onInit()` cannot invalidate a live map iterator.
+- **A rejected duplicate service cannot replace the live service's event subscription (Huly QB-261).**
+  Runtime `addRefActor<Service>()` checks the occupied or in-construction service ID before constructing another instance.
+  A constructor that registers a custom event therefore cannot leave the router pointing at the
+  destroyed duplicate; the existing service keeps receiving its events. If a constructor throws
+  after registering events, a loop callback or a death watch, the partial registrations and
+  pending self-kill are removed. An ordinary actor constructor that throws receives the same
+  cleanup; its ID remains reserved so already queued events cannot hit a replacement.
 - **GuaranteedLogger's final record no longer races destruction of its Buffer (Huly QB-341).**
   A producer counted completion after publishing the final ready slot, so the consumer could
   retire and free the 32,768-record Buffer before that producer touched its counter. Completion

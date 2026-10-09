@@ -35,6 +35,10 @@
  * asserted to actually fire for an unregistered event id.
  */
 
+#include <memory>
+#include <new>
+#include <stdexcept>
+
 #include <gtest/gtest.h>
 #include <qb/system/event/router.h>
 
@@ -506,3 +510,145 @@ TEST(EventRouting, DenseKeyTableGrowsGeometricallyUnderSequentialInserts) {
         EXPECT_EQ(*v, static_cast<int>(i == 0 ? 1 : i));
     }
 }
+
+namespace router_throw_test {
+
+struct OwnedEvent : RawEvent {
+    static int           destroyed;
+    std::unique_ptr<int> payload{std::make_unique<int>(7)};
+    OwnedEvent() {
+        alive = false;
+        id    = type_to_id<OwnedEvent>();
+    }
+    ~OwnedEvent() {
+        ++destroyed;
+    }
+};
+int OwnedEvent::destroyed = 0;
+
+struct Handler {
+    ActorId target{1};
+    bool    throw_now = true;
+    int     calls     = 0;
+    ActorId
+    id() const noexcept {
+        return target;
+    }
+    bool
+    is_alive() const noexcept {
+        return true;
+    }
+    void
+    on(OwnedEvent const &) {
+        ++calls;
+        if (throw_now)
+            throw std::runtime_error("router handler failed");
+    }
+};
+
+template <typename Router>
+void
+check_clean_route_after_throw() {
+    Router  router;
+    Handler handler;
+    router.subscribe(handler);
+    OwnedEvent::destroyed = 0;
+    alignas(OwnedEvent) unsigned char storage[sizeof(OwnedEvent)];
+
+    auto *fault = new (storage) OwnedEvent;
+    fault->dest = ActorId::broadcastId;
+    bool threw  = false;
+    try {
+        router.template route<true>(*fault);
+    } catch (std::runtime_error const &) {
+        threw = true;
+    }
+    EXPECT_TRUE(threw);
+    EXPECT_EQ(OwnedEvent::destroyed, 1) << "route<true> must dispose the faulting payload";
+    if (OwnedEvent::destroyed != 1) {
+        fault->~OwnedEvent(); // release the payload on the red baseline
+        return;
+    }
+
+    handler.throw_now = false;
+    auto *next        = new (storage) OwnedEvent;
+    next->dest        = ActorId::broadcastId;
+    router.template route<true>(*next); // stale snapshot entries must not survive the throw
+    EXPECT_EQ(handler.calls, 2);
+    EXPECT_EQ(OwnedEvent::destroyed, 2);
+
+    handler.throw_now = true;
+    auto *unclean     = new (storage) OwnedEvent;
+    unclean->dest     = ActorId{1};
+    EXPECT_THROW(router.template route<false>(*unclean), std::runtime_error);
+    EXPECT_EQ(OwnedEvent::destroyed, 2) << "route<false> leaves disposal with the caller";
+    unclean->~OwnedEvent();
+    EXPECT_EQ(OwnedEvent::destroyed, 3);
+
+    auto *unicast_fault = new (storage) OwnedEvent;
+    unicast_fault->dest = ActorId{1};
+    EXPECT_THROW(router.template route<true>(*unicast_fault), std::runtime_error);
+    EXPECT_EQ(OwnedEvent::destroyed, 4) << "route<true> must dispose a throwing unicast too";
+    if (OwnedEvent::destroyed != 4)
+        unicast_fault->~OwnedEvent(); // release the payload on the red baseline
+}
+
+TEST(EventRouting, GenericSemhDisposesAfterThrowWhenCleanRequested) {
+    check_clean_route_after_throw<qb::router::semh<OwnedEvent, Handler>>();
+}
+
+TEST(EventRouting, HeterogeneousSemhDisposesAfterThrowWhenCleanRequested) {
+    check_clean_route_after_throw<qb::router::semh<OwnedEvent, void>>();
+}
+
+TEST(EventRouting, MemhOnErrorThrowDisposesOwnedEvent) {
+    qb::router::ensure_disposer<RawEvent, OwnedEvent>();
+    qb::router::memh<RawEvent, true, void> router;
+    OwnedEvent::destroyed = 0;
+    alignas(OwnedEvent) unsigned char storage[sizeof(OwnedEvent)];
+    auto                             *event = new (storage) OwnedEvent;
+    event->dest                             = ActorId{1};
+    bool threw                              = false;
+    try {
+        router.route(*event, [](RawEvent &) { throw std::runtime_error("unhandled event callback failed"); });
+    } catch (std::runtime_error const &) {
+        threw = true;
+    }
+    EXPECT_TRUE(threw);
+    EXPECT_EQ(OwnedEvent::destroyed, 1);
+    if (OwnedEvent::destroyed != 1)
+        event->~OwnedEvent(); // release the payload on the red baseline
+}
+
+TEST(EventRouting, MemhOnErrorThrowPreservesTransferredOwnership) {
+    qb::router::ensure_disposer<RawEvent, OwnedEvent>();
+    qb::router::memh<RawEvent, true, void> router;
+    OwnedEvent::destroyed = 0;
+    alignas(OwnedEvent) unsigned char storage[sizeof(OwnedEvent)];
+    auto                             *event = new (storage) OwnedEvent;
+    event->dest                             = ActorId{1};
+    EXPECT_THROW(router.route(*event,
+                              [](RawEvent &e) {
+                                  e.alive = true; // models reply/forward handing ownership to another pipe
+                                  throw std::runtime_error("error callback failed after transfer");
+                              }),
+                 std::runtime_error);
+    EXPECT_EQ(OwnedEvent::destroyed, 0);
+    event->~OwnedEvent(); // the caller owns the transferred payload in this isolated unit test
+    EXPECT_EQ(OwnedEvent::destroyed, 1);
+}
+
+TEST(EventRouting, MemhOnErrorReturnPreservesTransferredOwnership) {
+    qb::router::ensure_disposer<RawEvent, OwnedEvent>();
+    qb::router::memh<RawEvent, true, void> router;
+    OwnedEvent::destroyed = 0;
+    alignas(OwnedEvent) unsigned char storage[sizeof(OwnedEvent)];
+    auto                             *event = new (storage) OwnedEvent;
+    event->dest                             = ActorId{1};
+    router.route(*event, [](RawEvent &e) { e.alive = true; }); // reply/forward took ownership
+    EXPECT_EQ(OwnedEvent::destroyed, 0);
+    event->~OwnedEvent(); // the transferred owner releases it in this isolated unit test
+    EXPECT_EQ(OwnedEvent::destroyed, 1);
+}
+
+} // namespace router_throw_test

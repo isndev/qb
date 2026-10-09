@@ -36,6 +36,7 @@
 #include <qb/utility/prefix.h>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 namespace qb::lockfree::spsc {
 namespace internal {
@@ -563,7 +564,8 @@ public:
      */
     template <typename Func>
     inline size_t
-    dequeue(Func const &func, T *ret, size_t size) noexcept {
+    dequeue(Func const &func, T *ret,
+            size_t size) noexcept(noexcept(std::declval<Func const &>()(std::declval<T *>(), std::declval<size_t>()))) {
         const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.data(), max_size);
         if (nb_consume)
             func(ret, nb_consume);
@@ -680,7 +682,8 @@ public:
      */
     template <typename Func>
     inline size_t
-    dequeue(Func const &func, T *ret, size_t size) noexcept {
+    dequeue(Func const &func, T *ret,
+            size_t size) noexcept(noexcept(std::declval<Func const &>()(std::declval<T *>(), std::declval<size_t>()))) {
         const size_t nb_consume = internal::ringbuffer<T>::dequeue(ret, size, array_.get(), max_size_);
         if (nb_consume)
             func(ret, nb_consume);

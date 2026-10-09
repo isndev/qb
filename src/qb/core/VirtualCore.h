@@ -304,7 +304,7 @@ private:
      */
     template <typename _Actor, typename _Event>
     static void
-    default_trampoline(Actor &base, Event &raw) noexcept {
+    default_trampoline(Actor &base, Event &raw) {
         auto &actor = static_cast<_Actor &>(base);
         if (actor.is_alive())
             actor.on(reinterpret_cast<_Event &>(raw));
@@ -339,7 +339,7 @@ private:
         VirtualCore const &_core;
 
         static void
-        dispatch(Actor &actor, _Event &event) noexcept {
+        dispatch(Actor &actor, _Event &event) {
             if (auto *const fn = actor._default_on[static_cast<std::size_t>(k)]; likely(fn != nullptr)) [[likely]]
                 fn(actor, event);
             else [[unlikely]]
@@ -353,26 +353,43 @@ private:
 
         void
         resolve(Event &raw) const final {
-            auto      &event = reinterpret_cast<_Event &>(raw);
-            const auto dest  = event.getDestination();
-            if (dest.is_broadcast()) {
-                static thread_local std::vector<Actor *> snapshot;
-                const std::size_t                        base = snapshot.size();
-                for (auto const &slot : _core._actors)
-                    if (Actor *const actor = slot.get())
-                        snapshot.push_back(actor);
-                const std::size_t end = snapshot.size();
-                for (std::size_t i = base; i < end; ++i)
-                    dispatch(*snapshot[i], event);
-                snapshot.resize(base);
-            } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
-                dispatch(*actor, event);
-            } else [[unlikely]] {
-                Event::__undelivered__(event); // no actor under this id
-            }
+            auto      &event       = reinterpret_cast<_Event &>(raw);
+            const auto dest        = event.getDestination();
+            auto       route_event = [&] {
+                if (dest.is_broadcast()) {
+                    static thread_local std::vector<Actor *> snapshot;
+                    const std::size_t                        base = snapshot.size();
+                    struct RestoreSnapshot {
+                        std::vector<Actor *> &entries;
+                        std::size_t           base;
+                        ~RestoreSnapshot() {
+                            entries.resize(base);
+                        }
+                    } restore{snapshot, base};
+                    for (auto const &slot : _core._actors)
+                        if (Actor *const actor = slot.get())
+                            snapshot.push_back(actor);
+                    const std::size_t end = snapshot.size();
+                    for (std::size_t i = base; i < end; ++i)
+                        dispatch(*snapshot[i], event);
+                } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
+                    dispatch(*actor, event);
+                } else [[unlikely]] {
+                    Event::__undelivered__(event); // no actor under this id
+                }
+            };
             if constexpr (!std::is_trivially_destructible_v<_Event>) {
+                try {
+                    route_event();
+                } catch (...) {
+                    if (!event.is_alive())
+                        event.~_Event();
+                    throw;
+                }
                 if (!event.is_alive())
                     event.~_Event();
+            } else {
+                route_event();
             }
         }
 
@@ -693,7 +710,8 @@ private:
     // actor that is in either -- never by the pass.
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watchers_of;
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
-    std::uint64_t                                       _watch_tickets = 0; ///< the last ticket a watch of this core got
+    std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
+    bool                                                _tearing_down  = false; ///< terminal teardown refuses new actors
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -828,7 +846,7 @@ private:
     QB_NOINLINE QB_COLD void __unregister_watch__(ActorId target, ActorId watcher) noexcept;
     /// On the watcher's core: the answer to a watch (`detail::WatchDown`) -- close the watch and
     /// deliver its `DownEvent`, or drop the answer when that watch is not open any more.
-    QB_NOINLINE QB_COLD void __on_watch_down__(ActorId watcher, ActorId target, DownReason reason, std::uint64_t ticket) noexcept;
+    QB_NOINLINE QB_COLD void __on_watch_down__(ActorId watcher, ActorId target, DownReason reason, std::uint64_t ticket);
     /// On every core still running: `core` has stopped -- answer the watches still open on it.
     QB_NOINLINE QB_COLD void __on_core_stopping__(CoreId core) noexcept;
     /// After a core's thread is done with it -- the core marked stopped, then destroyed with its
@@ -844,7 +862,7 @@ private:
     /// Fire -- unlinked first -- every `ready_async` waiter of `act` with the outcome `ok`.
     static void __fire_activation_waiters__(Activation &act, bool ok) noexcept;
     /// Per-iteration pump: complete finished inits, replay stashes, enforce deadlines.
-    void __pump_activations__() noexcept;
+    void __pump_activations__();
     /// Cold (the signal generation moved): one `SignalEvent` per signal raised since this core's last
     /// scan, in ascending signum order, and the cooperative stop's synthetic SIGINT once. Returns the
     /// generation scanned, for the pass's register copy.
@@ -860,7 +878,7 @@ private:
      * @return Pointer to the newly created actor or nullptr if creation failed
      */
     template <typename _Actor, typename... _Init>
-    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init) noexcept;
+    [[nodiscard]] _Actor *addReferencedActor(_Init &&...init);
     /*!
      * @brief Get a service actor of specified type
      * @tparam _ServiceActor Type of service actor to get
@@ -1016,6 +1034,13 @@ public:
      *         plain integers the core writes as it runs.
      */
     [[nodiscard]] CoreStats getCoreStats() const noexcept;
+
+private:
+    // A service constructor may add another service before either reaches `_actors`.
+    std::vector<ServiceId> _constructing_services;
+    // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
+    ActorId *_constructing_actor_id_out = nullptr;
+    void     __rollback_failed_admission__(ActorId id) noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1076,18 +1101,73 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 
 template <typename _Actor, typename... _Init>
 _Actor *
-VirtualCore::addReferencedActor(_Init &&...init) noexcept {
-    // Route through the same allocation customization point used by TActorFactory so
-    // users who override qb::allocate_actor<_Actor> get consistent behaviour for
-    // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
-    auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
-    std::unique_ptr<_Actor> actor_ptr(raw_actor);
-    // Use the ActorProxy customization point so dynamically created actors get the
-    // same demangled name and typed id_type as factory-created ones.
-    ActorProxy::setTypeInfo<_Actor>(*raw_actor);
-    if (appendActor(std::move(actor_ptr), true).is_valid())
-        return raw_actor;
-    return nullptr;
+VirtualCore::addReferencedActor(_Init &&...init) {
+    // Cancellation/frame/payload destructors can call back into an actor while
+    // this core is being destroyed. Refuse admission before allocating or
+    // invoking a user constructor; no new frame may enter a dying scheduler.
+    if (unlikely(_tearing_down))
+        return nullptr;
+    auto construct = [&]() -> _Actor * {
+        // Route through the same allocation customization point used by TActorFactory so
+        // users who override qb::allocate_actor<_Actor> get consistent behaviour for
+        // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
+        auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+        std::unique_ptr<_Actor> actor_ptr(raw_actor);
+        // Use the ActorProxy customization point so dynamically created actors get the
+        // same demangled name and typed id_type as factory-created ones.
+        ActorProxy::setTypeInfo<_Actor>(*raw_actor);
+        if (appendActor(std::move(actor_ptr), true).is_valid())
+            return raw_actor;
+        return nullptr;
+    };
+
+    struct AdmissionGuard {
+        VirtualCore &core;
+        ActorId     &id;
+        ActorId     *previous_id_out;
+        bool         service;
+        bool         admitted = false;
+        ~AdmissionGuard() noexcept {
+            if (!admitted && id.is_valid())
+                core.__rollback_failed_admission__(id);
+            if (service)
+                core._constructing_services.pop_back();
+            else
+                core._constructing_actor_id_out = previous_id_out;
+        }
+    };
+
+    if constexpr (service_type<_Actor>) {
+        // A service's constructor may register custom events. Constructing a duplicate
+        // would replace the live service's router entry before appendActor rejects it,
+        // leaving a pointer to the destroyed duplicate behind.
+        const ServiceId sid      = _Actor::ServiceIndex;
+        bool            occupied = __actor_slot__(ActorId(sid, _index)) != nullptr;
+        for (ServiceId const constructing : _constructing_services)
+            occupied |= constructing == sid;
+        if (unlikely(occupied)) {
+            QB_LOG_CRIT("Error Cannot add Service Actor multiple times: " << typeid(_Actor).name());
+            return nullptr;
+        }
+        _constructing_services.push_back(sid);
+        ActorId        admission_id(sid, _index);
+        AdmissionGuard guard{*this, admission_id, nullptr, true};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        return actor;
+    } else {
+        // A failed ordinary constructor has no pointer to return, but Actor::Actor()
+        // already reserved an ID. Nested adds temporarily replace this output slot.
+        ActorId        admission_id    = ActorId::NotFound;
+        ActorId *const previous_id_out = _constructing_actor_id_out;
+        _constructing_actor_id_out     = &admission_id;
+        AdmissionGuard guard{*this, admission_id, previous_id_out, false};
+        auto *const    actor = construct();
+        guard.admitted       = actor != nullptr;
+        // Do not recycle a failed constructor's ID here: an event published from
+        // its body may still be queued and must not reach the next actor.
+        return actor;
+    }
 }
 
 template <typename _Actor>
