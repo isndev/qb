@@ -21,6 +21,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <future>
 #include <memory>
 #include <stdexcept>
@@ -30,21 +31,31 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 
+#include "../../shared/InitFixtures.h"
+
 using namespace std::chrono_literals;
 
 namespace handler_throw_test {
 
-std::atomic<int>  g_payloads{0};
-std::atomic<int>  g_calls{0};
-std::atomic<int>  g_actors{0};
-std::atomic<bool> g_wait_for_peer{false};
-std::atomic<bool> g_peer_entered_workflow{false};
+std::atomic<int>         g_payloads{0};
+std::atomic<int>         g_calls{0};
+std::atomic<int>         g_actors{0};
+std::atomic<std::size_t> g_faulting_width{0};
+std::atomic<int>         g_payloads_at_throw{-1};
+std::atomic<bool>        g_stash_started{false};
+std::atomic<int>         g_stash_calls{0};
+std::atomic<bool>        g_wait_for_peer{false};
+std::atomic<bool>        g_peer_entered_workflow{false};
 
 void
 reset() {
-    g_payloads = 0;
-    g_calls    = 0;
-    g_actors   = 0;
+    g_payloads          = 0;
+    g_calls             = 0;
+    g_actors            = 0;
+    g_faulting_width    = 0;
+    g_payloads_at_throw = -1;
+    g_stash_started     = false;
+    g_stash_calls       = 0;
 }
 
 struct PayloadDeleter {
@@ -57,9 +68,13 @@ struct PayloadDeleter {
 
 struct OwnedEvent : qb::Event {
     std::unique_ptr<int, PayloadDeleter> payload;
+    // The base's tail padding can absorb the pointer on g++/clang. Keep this event wider than
+    // one bucket on every ABI so an interrupted mailbox walk must honor bucket_size.
+    char padding[QB_LOCKFREE_EVENT_BUCKET_BYTES]{};
     explicit OwnedEvent(int n)
         : payload(new int(n)) {}
 };
+static_assert(qb::allocator::getItemSize<OwnedEvent, EventBucket>() > 1u);
 
 class ThrowsOnOwnedEvent : public qb::Actor {
 public:
@@ -331,6 +346,24 @@ TEST(HandlerThrow, BroadcastSnapshotIsRestoredAfterException) {
 std::atomic<int>  g_producers_flushed{0};
 std::atomic<bool> g_receiver_waiting{false};
 
+class StashedMailboxTarget final : public qb::Actor {
+public:
+    ~StashedMailboxTarget() final {
+        ++g_actors;
+    }
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<OwnedEvent>(*this);
+        g_stash_started.store(true, std::memory_order_release);
+        co_await context().until_cancelled(); // only core teardown releases this activation gate
+        co_return true;
+    }
+    void
+    on(OwnedEvent const &) {
+        ++g_stash_calls; // a stashed event must not reach the handler before activation
+    }
+};
+
 class ThrowsFromMailbox final
     : public qb::Actor
     , public qb::ICallback {
@@ -355,7 +388,9 @@ public:
         }
     }
     void
-    on(OwnedEvent const &) {
+    on(OwnedEvent const &event) {
+        g_faulting_width.store(event.getSize() / sizeof(EventBucket), std::memory_order_relaxed);
+        g_payloads_at_throw.store(g_payloads.load(), std::memory_order_relaxed);
         ++g_calls;
         throw std::runtime_error("mailbox batch handler failed");
     }
@@ -365,11 +400,13 @@ class MailboxProducer final
     : public qb::Actor
     , public qb::ICallback {
     qb::ActorId _receiver;
+    qb::ActorId _stash;
     int         _ticks = 0;
 
 public:
-    explicit MailboxProducer(qb::ActorId receiver)
-        : _receiver(receiver) {}
+    MailboxProducer(qb::ActorId receiver, qb::ActorId stash)
+        : _receiver(receiver)
+        , _stash(stash) {}
     qb::io::async::task<bool>
     onInit() override {
         registerCallback(*this);
@@ -383,6 +420,7 @@ public:
                 g_receiver_waiting.wait(false);
                 waiting = g_receiver_waiting.load(std::memory_order_acquire);
             }
+            push<OwnedEvent>(_stash, 0); // copied into the activating actor's stash, then retired in this batch
             push<OwnedEvent>(_receiver, 1);
             push<OwnedEvent>(_receiver, 2);
         } else if (_ticks == 2) {
@@ -397,17 +435,23 @@ TEST(HandlerThrow, MailboxBatchesFromBothProducersDisposeAfterFirstThrow) {
     reset();
     g_producers_flushed = 0;
     g_receiver_waiting  = false;
-    qb::Main main;
-    auto     receiver = main.addActor<ThrowsFromMailbox>(0);
-    main.addActor<MailboxProducer>(1, receiver);
-    main.addActor<MailboxProducer>(2, receiver);
+    qb::test::ScopedDeadline deadline{0}; // a loaded host cannot expire the activation gate
+    qb::Main                 main;
+    auto                     receiver = main.addActor<ThrowsFromMailbox>(0);
+    auto                     stash    = main.addActor<StashedMailboxTarget>(0);
+    main.addActor<MailboxProducer>(1, receiver, stash);
+    main.addActor<MailboxProducer>(2, receiver, stash);
     main.start(true);
     main.join();
     EXPECT_TRUE(main.hasError());
     EXPECT_EQ(g_producers_flushed.load(), 2);
+    EXPECT_TRUE(g_stash_started.load()) << "the first event must target an activating actor";
+    EXPECT_EQ(g_stash_calls.load(), 0) << "the first event must stay stashed until teardown";
+    EXPECT_EQ(g_payloads_at_throw.load(), 0) << "the stashed event must still own its payload when the next handler throws";
+    EXPECT_GT(g_faulting_width.load(), 1u) << "the faulting event must span multiple buckets";
     EXPECT_EQ(g_calls.load(), 1);
-    EXPECT_EQ(g_payloads.load(), 4);
-    EXPECT_EQ(g_actors.load(), 1);
+    EXPECT_EQ(g_payloads.load(), 6) << "stashed, faulting, later and unconsumed events must each be disposed once";
+    EXPECT_EQ(g_actors.load(), 2);
 }
 
 } // namespace handler_throw_test

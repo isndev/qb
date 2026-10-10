@@ -30,8 +30,9 @@
  *     as its next holder's while the answer about its previous one is still on its way, it waits
  *     for the answer about the next one;
  *   - an id whose core has stopped answers `core_stopped`, and so does a core that ends on an
- *     exception, after its actors' destructors; every watch is answered while its target's core
- *     stops, whichever side of the stop it lands on;
+ *     exception, after its actors' destructors; a watch opened during a blocked exceptional
+ *     destructor gets no early answer; every watch is answered while its target's core stops,
+ *     whichever side of the stop it lands on;
  *   - the engine shuts down cleanly, without a dead letter, with watches in place across cores.
  *
  * Results are written on the cores' threads and read after `join()`, which orders them.
@@ -40,8 +41,10 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
+#include <mutex>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -761,7 +764,8 @@ TEST(DeathWatch, AnAnswerToAWatcherWhoseInitFailsDiesWithIt) {
 struct Boom : qb::Event {};
 
 // Throws from its per-pass callback once told to: the exception unwinds its core's thread, which
-// takes it along. (A throw from an event handler would end the process: event dispatch is noexcept.)
+// takes it along. A throwing routed event handler also stops its VirtualCore; a throw from
+// event construction inside noexcept push/send still terminates the process.
 // Its destructor takes its time, so an answer sent before it ran would be seen to be.
 class Bomb
     : public Target
@@ -829,6 +833,167 @@ TEST(DeathWatch, ACoreThatEndsOnAnExceptionAnswersCoreStopped) {
     EXPECT_EQ(g_seen[0].watched, bomb);
     EXPECT_EQ(g_seen[0].reason, qb::DownReason::core_stopped);
     EXPECT_TRUE(g_seen[0].target_destroyed_first) << "after the destructor, as for any end";
+}
+
+// A watch opened while the target's exceptional teardown is inside its destructor must not
+// observe core_stopped until that destructor completes. Each stage is acknowledged by the
+// owning thread; timeouts below are only deadlock guards, never the ordering oracle.
+struct LateWatchGate {
+    std::mutex              mutex;
+    std::condition_variable cv;
+    bool                    destructor_entered = false;
+    bool                    release_destructor = false;
+    bool                    pass_after_watch   = false;
+    bool                    settled_after_down = false;
+    int                     downs              = 0;
+    qb::ActorId             watched{};
+    qb::DownReason          reason                 = qb::DownReason::killed;
+    bool                    target_destroyed_first = false;
+};
+
+class GatedBomb
+    : public Target
+    , public qb::ICallback {
+    LateWatchGate *_gate;
+
+public:
+    explicit GatedBomb(LateWatchGate *gate)
+        : _gate(gate) {}
+
+    ~GatedBomb() override {
+        std::unique_lock lock(_gate->mutex);
+        _gate->destructor_entered = true;
+        _gate->cv.notify_all();
+        _gate->cv.wait(lock, [this] { return _gate->release_destructor; });
+        // Target::~Target() sets g_target_destroyed only after this returns.
+    }
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Boom>(*this);
+        co_return true;
+    }
+    void
+    on(Boom const &) {
+        registerCallback(*this);
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        throw std::runtime_error("boom, on purpose");
+    }
+};
+
+class LateWatchProbe
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId    _target;
+    LateWatchGate *_gate;
+    bool           _watch_opened      = false;
+    bool           _pass_seen         = false;
+    int            _passes_after_down = 0;
+
+public:
+    LateWatchProbe(qb::ActorId target, LateWatchGate *gate)
+        : _target(target)
+        , _gate(gate) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::DownEvent>(*this);
+        registerCallback(*this);
+        push<Boom>(_target);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        if (!_watch_opened) {
+            {
+                std::lock_guard lock(_gate->mutex);
+                if (!_gate->destructor_entered)
+                    return;
+            }
+            watch(_target);
+            _watch_opened = true;
+            return;
+        }
+        if (!_pass_seen) {
+            _pass_seen = true;
+            {
+                std::lock_guard lock(_gate->mutex);
+                _gate->pass_after_watch = true;
+            }
+            _gate->cv.notify_all();
+        }
+        // Reception runs before callbacks on each pass. Two more passes after the first
+        // answer let any duplicate answer already in the self pipe surface before join.
+        bool has_down = false;
+        {
+            std::lock_guard lock(_gate->mutex);
+            has_down = _gate->downs != 0;
+        }
+        if (has_down && ++_passes_after_down == 2) {
+            {
+                std::lock_guard lock(_gate->mutex);
+                _gate->settled_after_down = true;
+            }
+            _gate->cv.notify_all();
+        }
+    }
+    void
+    on(qb::DownEvent const &event) {
+        {
+            std::lock_guard lock(_gate->mutex);
+            ++_gate->downs;
+            _gate->watched                = event.watched;
+            _gate->reason                 = event.reason;
+            _gate->target_destroyed_first = g_target_destroyed.load();
+        }
+        _gate->cv.notify_all();
+    }
+};
+
+TEST(DeathWatch, AWatchOpenedDuringExceptionalDestructorWaitsForIt) {
+    reset();
+    LateWatchGate gate;
+    qb::Main      engine;
+    const auto    target = engine.addActor<GatedBomb>(1, &gate);
+    engine.addActor<LateWatchProbe>(0, target, &gate);
+    engine.start();
+
+    // The second observer tick follows one complete receive phase after watch(). On the old
+    // ordering, __watch__ saw stopped and queued a local WatchDown, delivered in that phase.
+    bool ready                    = false;
+    bool early_down               = false;
+    bool destroyed_before_release = false;
+    {
+        std::unique_lock lock(gate.mutex);
+        ready                    = gate.cv.wait_for(lock, 10s, [&] { return gate.pass_after_watch; });
+        early_down               = gate.downs != 0;
+        destroyed_before_release = g_target_destroyed.load();
+        gate.release_destructor  = true; // also release on timeout, before stop/join
+    }
+    gate.cv.notify_all();
+
+    bool settled = false;
+    if (ready && !early_down) {
+        std::unique_lock lock(gate.mutex);
+        settled = gate.cv.wait_for(lock, 10s, [&] { return gate.settled_after_down; });
+    }
+    qb::Main::stop();
+    engine.join();
+
+    ASSERT_TRUE(ready) << "the watcher did not finish a pass after opening the watch";
+    EXPECT_FALSE(early_down) << "DownEvent arrived while the target destructor was blocked";
+    EXPECT_FALSE(destroyed_before_release) << "the target destructor passed its barrier before release";
+    if (!early_down)
+        EXPECT_TRUE(settled) << "the watch was not answered after destructor release";
+    EXPECT_TRUE(engine.hasError()) << "the target core ended on its callback exception";
+    EXPECT_TRUE(g_target_destroyed.load());
+    std::lock_guard lock(gate.mutex);
+    EXPECT_EQ(gate.downs, 1);
+    EXPECT_EQ(gate.watched, target);
+    EXPECT_EQ(gate.reason, qb::DownReason::core_stopped);
+    EXPECT_TRUE(gate.target_destroyed_first);
 }
 
 // Core 1's only actor dies in its onInit, so core 1 stops at once. Round after round, the watch from

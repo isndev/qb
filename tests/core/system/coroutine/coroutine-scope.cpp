@@ -581,9 +581,9 @@ TEST(ActorCoroutineScope, ActiveCountCountsScopedCoroutines) {
 //     `ctx.cancellable(task)` and `ctx.child_token()` + `cancellable_sleep`
 //     spawn a DETACHED helper coroutine that parks on the full original
 //     duration. When the scope is cancelled mid-flight, that helper frame must
-//     be reclaimed too — not left parked until its (e.g. 2s) timer fires (or,
-//     since core 0 runs on the test thread via start(false), leaked past the
-//     run entirely because `listener::current` is never torn down here).
+//     be reclaimed too — not left parked until its (e.g. 2s) timer fires. Measure
+//     the frame drop inside the kill callback: ~VirtualCore now recycles the
+//     scheduler and would hide a cancellation leak in a post-join count.
 //
 //     The measurement is valid because start(false) runs core 0 on THIS thread,
 //     so the test thread's `thread_local live_frames` IS the worker's counter.
@@ -595,30 +595,43 @@ long
 live_frames_now() {
     return qb::io::async::detail::CoroutineFrameAllocator::live_frames;
 }
+std::atomic<long> g_frames_before_kill{-1};
+std::atomic<long> g_frames_after_kill{-1};
+std::atomic<bool> g_helper_started{false};
 } // namespace
 
-class CancellableLeakActor : public qb::Actor {
+class CancellableLeakActor
+    : public qb::Actor
+    , public qb::ICallback {
 public:
     qb::io::async::task<bool>
     onInit() override {
+        registerCallback(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
+                g_helper_started.store(true, std::memory_order_release);
                 co_await ctx.cancellable(scope_slow_task()); // arms a detached runner + inner 2s task
             } catch (const qb::io::async::cancelled_error &) {
             }
         });
-        qb::io::async::callback(
-            [this] {
-                if (is_alive())
-                    kill();
-            },
-            20ms);
         co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        // The loop drains run_ready() before dispatching this callback. Seeing the flag here
+        // proves the wrapper reached its await_suspend and both helper frames were created.
+        if (!g_helper_started.load(std::memory_order_acquire))
+            return;
+        g_frames_before_kill = live_frames_now();
+        kill();
+        g_frames_after_kill = live_frames_now();
     }
 };
 
 TEST(ActorCoroutineScope, CancellableDetachedTimerReclaimedNoLeak) {
-    const long baseline = live_frames_now();
+    g_frames_before_kill = g_frames_after_kill = -1;
+    g_helper_started                           = false;
+    const long baseline                        = live_frames_now();
     {
         qb::Main main;
         main.addActor<CancellableLeakActor>(0);
@@ -626,35 +639,46 @@ TEST(ActorCoroutineScope, CancellableDetachedTimerReclaimedNoLeak) {
         main.join();
         EXPECT_FALSE(main.hasError());
     }
-    // Pre-fix this ended at baseline+2 (the detached runner frame + the inner 2s
-    // task frame, both parked until the inner timer fired — i.e. leaked here,
-    // since core 0's listener is never torn down on this thread).
-    EXPECT_EQ(live_frames_now(), baseline) << "ctx.cancellable() must reclaim its detached runner + inner task frames on cancel";
+    const long before = g_frames_before_kill.load();
+    const long after  = g_frames_after_kill.load();
+    ASSERT_GE(before, baseline + 2) << "the detached runner and inner task must be armed before kill";
+    EXPECT_EQ(before - after, 2) << "kill must reclaim both helper frames before core teardown can recycle them";
+    EXPECT_EQ(live_frames_now(), baseline) << "no coroutine frame may survive the engine";
 }
 
-class ChildSleepLeakActor : public qb::Actor {
+class ChildSleepLeakActor
+    : public qb::Actor
+    , public qb::ICallback {
 public:
     qb::io::async::task<bool>
     onInit() override {
+        registerCallback(*this);
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             auto child = ctx.child_token();
             try {
+                g_helper_started.store(true, std::memory_order_release);
                 co_await qb::io::async::cancellable_sleep(2s, child); // arms a detached timer_task
             } catch (const qb::io::async::cancelled_error &) {
             }
         });
-        qb::io::async::callback(
-            [this] {
-                if (is_alive())
-                    kill();
-            },
-            20ms);
         co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) override {
+        // run_ready() finishes before the core's LoopEvent callback, so the timer_task has
+        // been spawned and drained to its sleep before this can observe g_helper_started.
+        if (!g_helper_started.load(std::memory_order_acquire))
+            return;
+        g_frames_before_kill = live_frames_now();
+        kill();
+        g_frames_after_kill = live_frames_now();
     }
 };
 
 TEST(ActorCoroutineScope, CancellableSleepDetachedTimerReclaimedNoLeak) {
-    const long baseline = live_frames_now();
+    g_frames_before_kill = g_frames_after_kill = -1;
+    g_helper_started                           = false;
+    const long baseline                        = live_frames_now();
     {
         qb::Main main;
         main.addActor<ChildSleepLeakActor>(0);
@@ -662,10 +686,11 @@ TEST(ActorCoroutineScope, CancellableSleepDetachedTimerReclaimedNoLeak) {
         main.join();
         EXPECT_FALSE(main.hasError());
     }
-    // Pre-fix this ended at baseline+1 (the detached timer_task frame, parked on
-    // the full 2s sleep). child_token() routes the actor-scope cancel into the
-    // cancellable_sleep awaiter, which now tears the timer_task down on cancel.
-    EXPECT_EQ(live_frames_now(), baseline) << "cancellable_sleep must reclaim its detached timer_task frame on cancel";
+    const long before = g_frames_before_kill.load();
+    const long after  = g_frames_after_kill.load();
+    ASSERT_GE(before, baseline + 1) << "the detached timer must be armed before kill";
+    EXPECT_EQ(before - after, 1) << "kill must reclaim the timer frame before core teardown can recycle it";
+    EXPECT_EQ(live_frames_now(), baseline) << "no coroutine frame may survive the engine";
 }
 
 // ---------------------------------------------------------------------------
