@@ -19,9 +19,13 @@
  *
  * WHY THE FIX WORKS
  * -----------------
- * Bind the listener scheduler before that first resume. Keep `onInit()` owned by the activation
- * record until a later listener turn drains its continuation; resuming inline would re-enter
- * actor initialization and change the coroutine scheduling contract.
+ * The queueing path binds it: `CoroutineScheduler::current()` / `schedule_via_current()` find no
+ * scheduler bound and bind the thread's `listener::current` one (`detail::bind_thread_scheduler`),
+ * so the continuation lands on the scheduler the actor loop drains. Nothing is bound before the
+ * first resume: a core whose actors never suspend keeps a loop pass that asks no scheduler for
+ * work. `onInit()` stays owned by the activation record until a later listener turn drains its
+ * continuation; resuming inline would re-enter actor initialization and change the coroutine
+ * scheduling contract.
  *
  * WHAT IS ASSERTED
  * ----------------
