@@ -16,7 +16,7 @@ The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned t
 Two properties distinguish the benchmark targets from the test targets:
 
 - **They are not CTest targets.** `ctest` never runs them. They build only when `QB_BUILD_BENCHMARKS=ON` and must be launched manually. (`qb/tests/core/CMakeLists.txt:37-38`; `qb/cmake/qbFunctions.cmake:779-782`.)
-- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/` (`<build>/bin/benchmarks/<CONFIG>/` under a multi-config generator), not next to the test binaries. (`qb/cmake/qbFunctions.cmake:850-851`; the per-configuration subdirectory, `:532-548`.)
+- **They live in their own output directory.** Every benchmark executable is written to `<build>/bin/benchmarks/`, not next to the test binaries (`qb/cmake/qbFunctions.cmake:850-851`); under a multi-config generator, to `<build>/bin/benchmarks/<CONFIG>/` (`qb/cmake/qbFunctions.cmake:532-548`).
 
 The sources are organized into topic subgroups under each library's `tests/benchmark/` directory, with the source named for the subject it measures (`<subgroup>/<name>.cpp`). The build derives each target name by prepending `<module>-bench-`, so `messaging/ping-pong-throughput.cpp` produces the executable `qb-core-bench-ping-pong-throughput`. (`qb/tests/core/benchmark/CMakeLists.txt:31-43`.)
 
