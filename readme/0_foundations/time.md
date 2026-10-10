@@ -236,7 +236,7 @@ Wire formats need the components rather than the value types, so the same arithm
 Three details that a codec has to get right, and that these already do:
 
 - `format_time_of_day` emits the fractional part **only when non-zero** (`qb/src/qb/system/time.h:394-405`), and `parse_time_of_day` takes the fraction verbatim as microseconds, so a literal six-digit fraction round-trips (`qb/tests/core/unit/system/time.cpp:233-241`).
-- `format_utc_offset` never emits `"-00:00"`. In ISO 8601 / RFC 3339 that spelling specifically means *offset unknown*, which is not the same statement as `+00:00`, so the sign tracks the printed magnitude rather than the raw value (`qb/src/qb/system/time.h:437-440`).
+- `format_utc_offset` never emits `"-00:00"`. In ISO 8601 / RFC 3339 that spelling specifically means *offset unknown*, which is not the same statement as `+00:00`, so the sign tracks the printed magnitude rather than the raw value (`qb/src/qb/system/time.h:431-445`, the sign at `:437-440`).
 - `parse_utc_offset` accepts `"Z"`/`"z"` as zero, and the `"+HH"`, `"±HH:MM"`, `"±HH:MM:SS"` forms PostgreSQL emits (`qb/src/qb/system/time.h:453-477`). It does not range-check the fields (`"+99:99"` parses), but the total is composed in 64 bits and an offset that does not fit the `int32_t` result is `std::nullopt` (`qb/src/qb/system/time.h:470-476`); `format_utc_offset` prints every `int32_t`, `INT32_MIN` included (`"-596523:14"`).
 
 The parsers are built on `qb::to_number_prefix` rather than `sscanf`, which is what makes them locale-independent, non-throwing and overflow-safe — see [Encoding and conversion](./encoding.md#numbers-from-text).
