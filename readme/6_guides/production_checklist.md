@@ -335,7 +335,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:627-631 (LOG_CRIT/stderr on init failure), :624-627 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:618-620 (LOG_CRIT/stderr on init failure), :624-627 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 
