@@ -985,8 +985,9 @@ TEST(DeathWatch, AWatchOpenedDuringExceptionalDestructorWaitsForIt) {
     ASSERT_TRUE(ready) << "the watcher did not finish a pass after opening the watch";
     EXPECT_FALSE(early_down) << "DownEvent arrived while the target destructor was blocked";
     EXPECT_FALSE(destroyed_before_release) << "the target destructor passed its barrier before release";
-    if (!early_down)
+    if (!early_down) {
         EXPECT_TRUE(settled) << "the watch was not answered after destructor release";
+    }
     EXPECT_TRUE(engine.hasError()) << "the target core ended on its callback exception";
     EXPECT_TRUE(g_target_destroyed.load());
     std::lock_guard lock(gate.mutex);
