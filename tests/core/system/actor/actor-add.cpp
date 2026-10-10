@@ -13,7 +13,7 @@
  *
  * The reference-quality "how do actors come into and out of existence" system suite. It pins, on a
  * real `qb::Main`:
- *   - `addActor<>()` returns a valid `ActorId` (and a `ServiceActor`'s id is the deterministic 1);
+ *   - `addActor<>()` returns a valid `ActorId` (and a `ServiceActor`'s id is its service index on that core);
  *   - `getService<T>()` identity: null before init, exactly `this` inside `onInit()`, non-null to a peer;
  *   - the `CoreInitializer::builder()` ordered `idList()` + its `valid()` flip on a duplicate service;
  *   - a rejected dynamic duplicate service leaves the first service's custom subscription intact;
@@ -200,7 +200,11 @@ TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
     reset_atoms();
     qb::Main main;
     auto     id = main.addActor<TestServiceActor>(0, true);
-    EXPECT_EQ(static_cast<std::uint32_t>(id), 1u); // first ServiceActor id is deterministic 1
+    // A service's id is its registered index on its core -- WHICH index a Tag gets is not fixed. It is
+    // drawn when `ServiceActor<Tag>::ServiceIndex` is dynamically initialised, and the standard leaves
+    // that order unspecified across Tags: with the nine service Tags of this file, g++ gives `Tag` 1
+    // and MSVC 9. Asserting 1 tested the compiler, not qb.
+    EXPECT_EQ(static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(qb::Actor::getServiceId<Tag>(0)));
 
     main.start(false);
     main.join();
@@ -226,7 +230,7 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     auto     builder = main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
-    EXPECT_EQ(static_cast<std::uint32_t>(builder.idList()[0]), 1u); // service id
+    EXPECT_EQ(static_cast<std::uint32_t>(builder.idList()[0]), static_cast<std::uint32_t>(qb::Actor::getServiceId<Tag>(0))); // service id
     EXPECT_NE(static_cast<std::uint32_t>(builder.idList()[1]), 0u);
     builder.addActor<TestServiceActor>(true); // duplicate service → builder invalidates
     EXPECT_FALSE(static_cast<bool>(builder));
