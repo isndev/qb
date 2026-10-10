@@ -276,7 +276,7 @@ using pipe = Pipe;
 //     bodies. router.h pulls nothing from qb/core, so there is no cycle either way.
 //   * the `service_event_type` concept, which lived at Actor.h:143-144 and was unreachable
 //     from here: Actor.h includes THIS header at its line 50, 91 lines before it declared the
-//     concept. It now lives at Event.h:714, which Pipe.h already includes at :41.
+//     concept. It now lives at Event.h:725, which Pipe.h already includes at :41.
 // Both are position problems, not file-extension problems -- which is the whole reason a `.tpp`
 // was never the fix.
 //

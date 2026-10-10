@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1409-1412`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1422-1425`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -96,7 +96,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1424`).
+  (`src/qb/io/async/listener.h:1437`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -122,7 +122,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1484-1487`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1497-1500`).
 
 ---
 
@@ -314,14 +314,16 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:158-162`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:126-130`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
-- A `thread_local` scheduler is established automatically when a
-  `qb::io::async::listener` is created on the thread. `schedule_via_current()`
-  asserts in debug and silently no-ops in release if no scheduler exists,
-  leaving any queued waiter permanently unresumed
-  (`src/qb/io/async/coroutine/scheduler.h:1206-1220`).
+- A thread's scheduler is its `listener::current` loop's, created on first use:
+  `coro_scheduler()`, or the first coroutine that needs one --
+  `CoroutineScheduler::current()` and `schedule_via_current()` bind it when none
+  is bound, so a waiter queued before anything bound a scheduler is drained by
+  that loop. `schedule_via_current()` used to assert in debug and drop the
+  handle in release, and `current()` to create a private scheduler no loop pumped
+  (`src/qb/io/async/coroutine/scheduler.h:850-854`, `:1185-1191`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -330,7 +332,7 @@ with I/O lifetime are:
 - `~CoroutineScheduler` destroys only the ready-queue and deferred-completed
   frames it owns. **Suspended frames are intentionally leaked**, because their
   libev watchers still reference them
-  (`src/qb/io/async/coroutine/scheduler.h:374-378`). **Stop the event loop
+  (`src/qb/io/async/coroutine/scheduler.h:346-350`). **Stop the event loop
   before destroying the scheduler**, or those watchers fire against freed
   frames.
 - `spawn()` takes ownership of the coroutine handle and runs it to completion

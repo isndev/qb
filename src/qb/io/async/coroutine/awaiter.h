@@ -176,14 +176,16 @@ struct awaiter_base {
      * THE RESUME RESOLVES THE SCHEDULER *NOW*, NOT AT SUSPEND TIME
      * ------------------------------------------------------------
      * `scheduler_` is whatever was current when `await_suspend` ran, and that is not always the
-     * scheduler that will be PUMPED. The case that bites is an actor's `onInit()` whose first
+     * scheduler that will be PUMPED. The case that bit was an actor's `onInit()` whose first
      * suspension is one of these awaiters: `VirtualCore::__drive_init__` resumes the frame
-     * directly and never `spawn()`s it, so no scheduler is bound yet, `CoroutineScheduler::current()`
-     * lazily builds a thread-local FALLBACK (scheduler.h:856-857) and we cache that — and then
-     * `__begin_activation__` calls `listener::current.coro_scheduler()`, whose first call
-     * `set_current()`s the LISTENER's scheduler (listener.h:1288). `listener::run()` pumps only
-     * `_coro_scheduler` (listener.h:1039-1040), so a resume queued into the orphaned fallback is
-     * never drained: the awaited operation succeeds and the coroutine never wakes.
+     * directly and never `spawn()`s it, so no scheduler was bound yet, `CoroutineScheduler::current()`
+     * built a thread-local FALLBACK and we cached that -- and then `__begin_activation__` called
+     * `listener::current.coro_scheduler()`, whose first call `set_current()`s the LISTENER's
+     * scheduler (listener.h:1288). `listener::run()` pumps only `_coro_scheduler`
+     * (listener.h:1039-1040), so a resume queued into the orphaned fallback was never drained: the
+     * awaited operation succeeded and the coroutine never woke. `current()` now binds the
+     * listener's scheduler on that cold path (scheduler.h:850-854), so the two are one object there
+     * too; resolving at resume time stays the rule.
      *
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest

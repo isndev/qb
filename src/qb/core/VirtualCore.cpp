@@ -165,9 +165,10 @@ VirtualCore::~VirtualCore() noexcept {
 
     // Cancellation may have queued coroutine resumes. Destroy the frames and
     // withdraw loop watchers while their actors are still alive. In particular,
-    // start(false) leaves the thread-local listener in the caller's thread.
+    // start(false) leaves the thread-local listener in the caller's thread. Recycle, not reset:
+    // the frames die with this engine, the scheduler's storage stays warm for the next one.
     auto &listener = io::async::listener::current;
-    listener.reset_coro_scheduler();
+    listener.recycle_coro_scheduler();
     listener.clear();
 
     // Destructors can kill peers or create a referenced child. Re-scan until
@@ -204,6 +205,30 @@ VirtualCore::~VirtualCore() noexcept {
             pipe.pop_front();
         }
     }
+
+    // A handler threw while a mailbox batch was being routed: its events still sit in `_event_buffer`.
+    // Every event the batch already got rid of -- routed and disposed, replied or forwarded, stashed --
+    // carries `alive` (router::internal::mark_disposed); the rest are destroyed here, once. The self
+    // pipe needs nothing of the kind: an interrupted run is never popped, so the walk above saw it.
+    if (unlikely(_rx_len != 0)) {
+        auto       *cur  = _event_buffer->data();
+        auto *const last = cur + _rx_len;
+        while (cur < last) {
+            auto      &event = *reinterpret_cast<Event *>(cur);
+            const auto width = event.bucket_size;
+            if (unlikely(width == 0))
+                break;
+            _router.dispose(event);
+            cur += width;
+        }
+        _rx_len = 0;
+    }
+
+    // A continuation queued by the teardown above (an actor or payload destructor that wakes a
+    // coroutine) lands in this loop's scheduler (bound lazily if none was). Destroy it with this
+    // core: under start(false) the thread outlives the engine, and the next engine on it must
+    // not inherit a frame of this one.
+    listener.recycle_coro_scheduler();
 }
 
 void
@@ -312,28 +337,13 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
                 continue;
             }
         }
-        try {
-            _router.route(*event, [this](auto &event) {
-                // No actor on this core registered the type. A broadcast reaching such a core is
-                // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
-                // handles no such event, or it is not there at all.
-                if (!event.getDestination().is_broadcast())
-                    __dead_letter__(event, __undelivered_reason__(event.getDestination()));
-            });
-        } catch (...) {
-            // The type resolver disposed the faulting event, including on a
-            // handler throw. Dispose only later events in this copied-out batch;
-            // their bytes would otherwise be dropped when the callback unwinds.
-            for (i += width; i < nb_events;) {
-                auto &pending = *reinterpret_cast<Event *>(events.data() + i);
-                if (unlikely(pending.bucket_size == 0))
-                    break;
-                if (!pending.is_alive())
-                    _router.dispose(pending);
-                i += pending.bucket_size;
-            }
-            throw;
-        }
+        _router.route(*event, [this](auto &event) {
+            // No actor on this core registered the type. A broadcast reaching such a core is
+            // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
+            // handles no such event, or it is not there at all.
+            if (!event.getDestination().is_broadcast())
+                __dead_letter__(event, __undelivered_reason__(event.getDestination()));
+        });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += width;
         i += width;
@@ -366,12 +376,7 @@ VirtualCore::__receive__() {
     if (!_self_pipe.empty()) {
         auto fence = _self_pipe.mark();
         for (auto run = _self_pipe.front(fence); !run.empty(); run = _self_pipe.front(fence)) {
-            try {
-                __receive_events__(run);
-            } catch (...) {
-                _self_pipe.pop_front(fence); // the faulting run was disposed by __receive_events__
-                throw;
-            }
+            __receive_events__(run);
             _self_pipe.pop_front(fence);
         }
     }
@@ -379,7 +384,11 @@ VirtualCore::__receive__() {
     // argument is a PER-PRODUCER batch limit, so every peer core's ring is drained on every
     // turn. A shared budget would let one saturated producer consume it and starve the rest.
     _mail_box.consume_all(
-        [this](EventBucket *buffer, std::size_t const nb_events) { __receive_events__(std::span<EventBucket>{buffer, nb_events}); },
+        [this](EventBucket *buffer, std::size_t const nb_events) {
+            _rx_len = nb_events; // ~VirtualCore's walk if a handler throws mid-batch
+            __receive_events__(std::span<EventBucket>{buffer, nb_events});
+            _rx_len = 0;
+        },
         _event_buffer->data(), MaxRingEvents);
 }
 
@@ -705,10 +714,12 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
     auto h = init.handle();
     if (unlikely(!h))
         return InitOutcome::ReadyTrue; // defensive: a null task ⇒ trivially successful
-    // `task` starts suspended. Bind the listener scheduler before the first direct
-    // resume: zero sleep or inline completion can queue during await_suspend, and
-    // the TLS fallback queue is never drained. Synchronous init keeps no continuation.
-    (void) qb::io::async::listener::current.coro_scheduler();
+    // `task` starts suspended: resume once to reach the first `co_await` or the `co_return`.
+    // No scheduler is bound here on purpose. A zero sleep or an inline completion that queues
+    // during this resume reaches `CoroutineScheduler::current()` / `schedule_via_current()`,
+    // whose cold path binds THIS loop's scheduler (`detail::bind_thread_scheduler`), so the
+    // continuation is drained by the owning loop; a synchronous init creates no scheduler, and
+    // a core whose actors never suspend keeps a loop pass that asks no scheduler for work.
     h.resume();
     if (h.done()) {
         auto &p = qb::io::async::detail::promise_of(h);
@@ -731,8 +742,8 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
 
 void
 VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept {
-    // The scheduler was bound before __drive_init__ resumed the frame, so any
-    // immediate completion is already queued for listener::run(). Keep the frame
+    // Any immediate completion during __drive_init__'s resume was queued on this loop's
+    // scheduler (bound lazily by the queueing path), so listener::run() drains it. Keep the frame
     // alive here until that loop drains the continuation and the activation pump
     // observes its verdict; never resume it inline from this activation path.
     // In particular, a ready continuation still owns the suspended init frame.
@@ -771,6 +782,7 @@ VirtualCore::__stash_event__(ActorId const dest, Event *event) noexcept {
     // caller); the copy is disposed either on replay (route) or on drop (__pump_activations__).
     auto *buckets = reinterpret_cast<EventBucket *>(event);
     stash.emplace_back(buckets, buckets + event->bucket_size);
+    event->__retire__(); // AFTER the copy (which keeps alive == 0): a teardown walk of the batch skips it
     return true;
 }
 

@@ -78,7 +78,7 @@ qb::io::async::report_detached_coroutine_exception(std::exception_ptr ep) noexce
             std::rethrow_exception(ep);
         } catch (qb::io::async::cancelled_error const &) {
             // Cancellation is the teardown protocol, not a failure — the same exemption
-            // `actor_coro_wrapper` makes (VirtualCore.h:1618-1624). A `when_any` loser or a
+            // `actor_coro_wrapper` makes (VirtualCore.h:1632-1638). A `when_any` loser or a
             // cancelled scope must not print a CRITICAL line.
             return;
         } catch (std::exception const &e) {

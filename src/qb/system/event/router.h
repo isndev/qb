@@ -245,6 +245,22 @@ concept reports_undelivered = requires(_Event &event) {
 };
 
 /**
+ * @brief Raise `alive` on an event about to be destroyed, so that no later walk destroys it again.
+ * @details The flag already means "do not destroy these bytes" -- `reply()`/`forward()` raise it on an
+ *          original whose bytes moved on. Raised on every disposed event, it lets a core that stops on a
+ *          handler's exception dispose whatever is left of an interrupted batch by walking ALL of it
+ *          (`~VirtualCore`): the events already routed are skipped, the rest are destroyed once -- with
+ *          no bookkeeping, no try block and no guard on the receive loop, which MSVC charged 3 to 7 %
+ *          per event (TinyEvent, 19.51). Written before the destructor, never after it.
+ */
+template <typename _Event>
+inline void
+mark_disposed(_Event &event) noexcept {
+    if constexpr (requires { event.__retire__(); })
+        event.__retire__();
+}
+
+/**
  * @brief Base policy for event handling
  *
  * Defines common event handling operations like invocation and disposal.
@@ -294,8 +310,10 @@ protected:
         if constexpr (!std::is_trivially_destructible_v<_Event>) {
             // C++20: use concept directly instead of trait with ::value
             if constexpr (qb::has_is_alive<_Event>) {
-                if (!event.is_alive())
+                if (!event.is_alive()) {
+                    mark_disposed(event);
                     event.~_Event();
+                }
             } else
                 event.~_Event();
         }
@@ -377,53 +395,59 @@ public:
     template <bool _CleanEvent = true>
     void
     route(_RawEvent &event) {
-        auto dispatch = [&] {
-            // C++20: use concept directly
-            if constexpr (qb::has_is_broadcast<_HandlerId>) {
-                if (event.getDestination().is_broadcast()) {
-                    // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
-                    static thread_local std::vector<_Handler *> bcast_snapshot;
-                    const std::size_t                           base = bcast_snapshot.size();
-                    struct RestoreSnapshot {
-                        std::vector<_Handler *> &entries;
-                        std::size_t              base;
-                        ~RestoreSnapshot() {
-                            entries.resize(base);
-                        }
-                    } restore{bcast_snapshot, base};
-                    _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
-                    const std::size_t end = bcast_snapshot.size();
-                    for (std::size_t i = base; i < end; ++i)
-                        invoke(*bcast_snapshot[i], event);
-                    return;
-                }
-            }
-
-            if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
-                invoke(**handler, event);
-            else [[unlikely]] {
-                if constexpr (internal::reports_undelivered<_RawEvent>)
-                    _RawEvent::__undelivered__(event);
-            }
-        };
         if constexpr (_CleanEvent && !std::is_trivially_destructible_v<_RawEvent>) {
-            try {
-                dispatch();
-            } catch (...) {
-                if constexpr (qb::has_is_alive<_RawEvent>) {
-                    if (!event.is_alive())
-                        dispose(event);
-                } else {
-                    dispose(event);
+            // A destructor, not a try/catch: it disposes on return AND while a handler's exception
+            // unwinds (dispose() applies the is_alive rule itself), and unlike a try block it does not
+            // stop MSVC from inlining this function into its caller.
+            struct dispose_on_exit {
+                semh      &router;
+                _RawEvent &event;
+                ~dispose_on_exit() {
+                    router.dispose(event);
                 }
-                throw;
-            }
-            dispose(event);
+            } const guard{*this, event};
+            dispatch_event(event);
         } else {
-            dispatch();
+            dispatch_event(event);
         }
     }
 
+private:
+    // The dispatch of `route()`: a member forced inline on MSVC, not a lambda -- MSVC 19.51 compiled
+    // the lambda out of line, a call per routed event (the default events' resolvers: 191 instructions
+    // inline before, an 11-instruction stub plus a 193-instruction call after).
+    QB_MSVC_FORCEINLINE void
+    dispatch_event(_RawEvent &event) {
+        // C++20: use concept directly
+        if constexpr (qb::has_is_broadcast<_HandlerId>) {
+            if (event.getDestination().is_broadcast()) {
+                // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
+                static thread_local std::vector<_Handler *> bcast_snapshot;
+                const std::size_t                           base = bcast_snapshot.size();
+                struct RestoreSnapshot {
+                    std::vector<_Handler *> &entries;
+                    std::size_t              base;
+                    ~RestoreSnapshot() {
+                        entries.resize(base);
+                    }
+                } restore{bcast_snapshot, base};
+                _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
+                const std::size_t end = bcast_snapshot.size();
+                for (std::size_t i = base; i < end; ++i)
+                    invoke(*bcast_snapshot[i], event);
+                return;
+            }
+        }
+
+        if (auto *const handler = _subscribed_handlers.find(event.dest); likely(handler != nullptr)) [[likely]]
+            invoke(**handler, event);
+        else [[unlikely]] {
+            if constexpr (internal::reports_undelivered<_RawEvent>)
+                _RawEvent::__undelivered__(event);
+        }
+    }
+
+public:
     /**
      * @brief Subscribe a handler to receive events
      *
@@ -512,38 +536,48 @@ public:
     template <bool _CleanEvent = false>
     void
     route(_RawEvent &event) const {
-        auto dispatch_event = [&] {
-            if constexpr (qb::has_is_broadcast<_HandlerId>) {
-                // Keep the broadcast walk out of line so unicast has no snapshot prologue.
-                if (unlikely(event.getDestination().is_broadcast())) {
-                    route_broadcast(event);
-                    return;
-                }
-            }
-
-            if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
-                const auto  dispatch = entry->dispatch;
-                auto *const target   = entry->handler;
-                QB_ASSUME(dispatch != nullptr);
-                dispatch(target, event);
-            } else [[unlikely]] {
-                if constexpr (internal::reports_undelivered<_RawEvent>)
-                    _RawEvent::__undelivered__(event);
-            }
-        };
         if constexpr (_CleanEvent && !std::is_trivially_destructible_v<_RawEvent>) {
-            try {
-                dispatch_event();
-            } catch (...) {
-                dispose(event);
-                throw;
-            }
-            dispose(event);
+            // A destructor, not a try/catch (see the generic semh::route): disposes on return and
+            // on a handler throw, and keeps this function inlinable on MSVC.
+            struct dispose_on_exit {
+                semh const &router;
+                _RawEvent  &event;
+                ~dispose_on_exit() {
+                    router.dispose(event);
+                }
+            } const guard{*this, event};
+            dispatch_event(event);
         } else {
-            dispatch_event();
+            dispatch_event(event);
         }
     }
 
+private:
+    // The unicast/broadcast dispatch of `route()`. A member forced inline on MSVC, not a lambda in
+    // route(): MSVC 19.51 compiled that lambda out of line, so every event of every type -- trivial
+    // ones included -- jumped to it from route() (TinyEvent 1-core, part of +12.9 %).
+    QB_MSVC_FORCEINLINE void
+    dispatch_event(_RawEvent &event) const {
+        if constexpr (qb::has_is_broadcast<_HandlerId>) {
+            // Keep the broadcast walk out of line so unicast has no snapshot prologue.
+            if (unlikely(event.getDestination().is_broadcast())) {
+                route_broadcast(event);
+                return;
+            }
+        }
+
+        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
+            const auto  dispatch = entry->dispatch;
+            auto *const target   = entry->handler;
+            QB_ASSUME(dispatch != nullptr);
+            dispatch(target, event);
+        } else [[unlikely]] {
+            if constexpr (internal::reports_undelivered<_RawEvent>)
+                _RawEvent::__undelivered__(event);
+        }
+    }
+
+public:
     /**
      * @brief The broadcast half of `route()`: every subscribed handler, from a snapshot.
      * @details A handler invoked here may (un)subscribe on THIS table — e.g. spawning an actor
@@ -943,8 +977,10 @@ private:
             if constexpr (!std::is_trivially_destructible_v<T>) {
                 auto *typed = reinterpret_cast<T *>(event);
                 if constexpr (qb::has_is_alive<T>) {
-                    if (!typed->is_alive())
+                    if (!typed->is_alive()) {
+                        internal::mark_disposed(*typed); // see internal::mark_disposed
                         typed->~T();
+                    }
                 } else {
                     typed->~T();
                 }
@@ -1136,34 +1172,38 @@ public:
             auto *const resolver = entry->get();
             QB_ASSUME(resolver != nullptr);
             resolver->resolve(event);
+        } else if constexpr (_CleanEvent) {
+            // Free the payload of an event nobody subscribed to, after `onError` returns AND while
+            // an exception it threw unwinds -- a destructor, not a try/catch: a try block here, even
+            // on this cold branch, stopped MSVC from inlining route() into
+            // VirtualCore::__receive_events__ (a call per event, TinyEvent +12.9 % on MSVC 19.51).
+            //
+            // The lookup is deliberately tolerant (find, never `.at()`): `.at()` would throw
+            // std::out_of_range, and that exception propagates out of VirtualCore::__receive_events__
+            // / __workflow__ — start_thread() catches it and flags ExceptionThrown, killing the whole
+            // VirtualCore (every actor on it) for one misaddressed event.
+            //
+            // A missing disposer used to be the NORM here, not a corner case: disposers were
+            // registered only by `subscribe<T>()`, so a type that was pushed but never subscribed
+            // anywhere had none and this branch silently leaked its `std::string` / `std::vector`
+            // members on every such event — unbounded, and reachable by an ordinary refactor mistake.
+            // `router::ensure_disposer<Event, T>()` now runs at every enqueue funnel
+            // (VirtualCore::push/send, Pipe::push/allocated_push), so the disposer always exists by
+            // the time an event can reach this branch. The find-and-skip stays as the no-throw
+            // safety net.
+            //
+            // This is the hot one: `broadcast<E>()` lands here on every core with no subscriber for
+            // `E`. Goes through the per-router memo — see `_disposer_cache`.
+            struct dispose_on_exit {
+                memh const &router;
+                _RawEvent  &event;
+                ~dispose_on_exit() {
+                    router.dispose(event);
+                }
+            } const guard{*this, event};
+            onError(event);
         } else {
-            try {
-                onError(event);
-            } catch (...) {
-                if constexpr (_CleanEvent)
-                    dispose(event);
-                throw;
-            }
-            if constexpr (_CleanEvent) {
-                // Free the payload of an event nobody subscribed to. The lookup is deliberately
-                // tolerant (find, never `.at()`): `.at()` would throw std::out_of_range, and that
-                // exception propagates out of VirtualCore::__receive_events__ / __workflow__ —
-                // start_thread() catches it and flags ExceptionThrown, killing the whole
-                // VirtualCore (every actor on it) for one misaddressed event.
-                //
-                // A missing disposer used to be the NORM here, not a corner case: disposers were
-                // registered only by `subscribe<T>()`, so a type that was pushed but never
-                // subscribed anywhere had none and this branch silently leaked its
-                // `std::string` / `std::vector` members on every such event — unbounded, and
-                // reachable by an ordinary refactor mistake. `router::ensure_disposer<Event, T>()`
-                // now runs at every enqueue funnel (VirtualCore::push/send, Pipe::push/
-                // allocated_push), so the disposer always exists by the time an event can reach
-                // this branch. The find-and-skip stays as the no-throw safety net.
-                //
-                // This is the hot one: `broadcast<E>()` lands here on every core with no subscriber
-                // for `E`. Goes through the per-router memo — see `_disposer_cache`.
-                dispose(event);
-            }
+            onError(event);
         }
     }
 

@@ -73,48 +73,16 @@ class CoroutineScheduler;
 
 namespace detail {
 /**
- * @brief Deleter for `CoroutineScheduler::owned_current_`. Declared here, defined below the class.
- *
- * @details
- * `owned_current_` is a `static inline thread_local` member of `CoroutineScheduler` whose value
- * type is `CoroutineScheduler` itself, so its `unique_ptr` is instantiated while the class is
- * still **incomplete**. With `std::default_delete` that is fatal from C++23 onwards: P2273R3 made
- * `~unique_ptr` `constexpr`, so libc++ and libstdc++ instantiate its body eagerly at the member's
- * definition, reaching `default_delete::operator()` and its
- * `static_assert(sizeof(_Tp) >= 0, "cannot delete an incomplete type")`:
- *
- * ```
- * error: invalid application of 'sizeof' to an incomplete type 'qb::io::async::CoroutineScheduler'
- *   note: in instantiation of member function 'std::unique_ptr<...>::~unique_ptr' requested here
- *   note: definition of 'qb::io::async::CoroutineScheduler' is not complete until the closing '}'
- * ```
- *
- * Measured at `-std=c++23` on AppleClang 21/libc++, clang++-19/libstdc++ and clang++-21/libstdc++.
- * It made **45 of qb's 134** public headers uncompilable on their own — `qb/main.h`, `qb/actor.h`,
- * `qb/io/async.h` and every coroutine header — while `-std=c++20` stayed green, which is why no
- * C++20-only gate could see it. `dev-cxx23` is in the gate now for exactly this reason.
- *
- * A deleter whose `operator()` is **declared** here and **defined** after the class removes the
- * eager instantiation at the root: `~unique_ptr` needs only the deleter's declaration, and the one
- * `delete` is compiled where `CoroutineScheduler` is complete. This is the standard pimpl remedy.
- *
- * @warning Do **not** "simplify" this back to `std::unique_ptr<CoroutineScheduler>`, and do not
- *          move the member out of the class to dodge the same error. Both alternatives were
- *          measured and both are worse:
- *          - reverting to an out-of-line definition in `io.cpp` emits a `non-external` TLS
- *            descriptor, i.e. one scheduler per image instead of one per process — the exact
- *            split `qb/utility/abi.h` documents;
- *          - declaring the member non-`inline` in the class and defining it `inline` below makes
- *            clang emit the **thread-local wrapper** `_ZTWN2qb2io5async18CoroutineScheduler14owned_current_E`
- *            as a *strong* symbol (`nm -m`: `external` instead of `weak private external`),
- *            because `current()`'s in-class body uses the member while only the non-`inline`
- *            declaration is visible. Two translation units then fail to link:
- *            `duplicate symbol 'thread-local wrapper routine for ...owned_current_'`.
- *          The shape kept here leaves every symbol byte-identical to what 3.0.0 already ships.
+ * @brief The cold path of every "no scheduler bound on this thread yet" case: binds the thread's
+ *        `listener::current` scheduler (creating it) as the current one, and returns it.
+ * @details Defined in `listener.cpp`, where `listener` is complete. A continuation queued before
+ *          anything bound a scheduler used to land in a scheduler nobody pumps (`current()`'s old
+ *          owned fallback) or be dropped (`schedule_via_current`); binding the LISTENER's scheduler
+ *          here, at the moment the first coroutine needs one, gives every such continuation to the
+ *          loop that drains it -- and a core that never runs a coroutine never gets a scheduler,
+ *          so its loop pass never asks one for work.
  */
-struct scheduler_deleter {
-    void operator()(CoroutineScheduler *p) const noexcept;
-};
+CoroutineScheduler &bind_thread_scheduler();
 } // namespace detail
 
 /**
@@ -264,6 +232,10 @@ public:
     template <typename F>
     void
     for_each(F &&f) const {
+        // An empty set keeps its capacity (it never shrinks): without this, walking it at every engine
+        // teardown cost a 2048-slot scan per set for nothing (spawn-1000 +5 % on MSVC, Huly QB-985).
+        if (!_count)
+            return;
         for (std::size_t i = 0; i < _cap; ++i)
             if (_tab[i])
                 f(_tab[i]);
@@ -394,6 +366,34 @@ public:
      */
     ~CoroutineScheduler() {
         QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void *) this);
+        drain_for_teardown();
+        QB_SCHED_TRACE("~CoroutineScheduler() end this=%p", (void *) this);
+    }
+
+    /**
+     * @brief Return this scheduler to the state of a freshly constructed one, KEEPING its storage.
+     * @details Destroys every frame it tracks -- `destroy_all_suspended()`, then the drains the
+     *          destructor runs -- so nothing of an engine survives into the next one on the same
+     *          thread (`start(false)` runs core 0 on the caller's thread, which outlives the
+     *          engine). What it keeps is memory: the ready ring, the deferred-destroy vector and the
+     *          three pointer sets keep their capacity, and a set whose entries were all erased is
+     *          already all-null, so the next engine's coroutines neither re-grow (rehash) nor
+     *          re-zero (calloc) them. Deleting and re-creating the scheduler instead cost a fresh
+     *          32 -> 2048 growth of each set per engine start: +5.8 % on a 1000-coroutine spawn
+     *          (g++-14, ~64 KB zeroed and ~4 000 rehashed slots per start). Owner thread only, outside
+     *          `run_ready()`.
+     */
+    void
+    recycle() {
+        destroy_all_suspended();
+        drain_for_teardown();
+    }
+
+private:
+    // The destructor's drains: owned ready frames and deferred-destroy frames are destroyed, a
+    // suspended frame is reported (Huly QB-84), the bookkeeping is cleared.
+    void
+    drain_for_teardown() {
         std::size_t ready_drained = 0;
         while (!ready_queue_.empty()) {
             ready_item item = ready_queue_.front();
@@ -430,9 +430,9 @@ public:
         // are intentionally leaked at teardown per Finding 2.B.8 — just drop the
         // bookkeeping; the OS reclaims them at process/thread exit.
         owned_frames_.clear();
-        QB_SCHED_TRACE("~CoroutineScheduler() end this=%p", (void *) this);
     }
 
+public:
     /**
      * @brief Spawn a new coroutine
      *
@@ -841,21 +841,15 @@ public:
      * @brief Get the current thread's scheduler
      * @return Reference to the thread-local scheduler
      *
-     * Creates the scheduler on first access if it doesn't exist. Used as fallback
-     * when no listener has set one. The fallback is owned by a thread_local
-     * unique_ptr (`owned_current_`) so it is reclaimed at thread exit instead of
-     * leaking; when a listener is present it owns its scheduler via set_current()
-     * and this fallback stays empty. Prefer listener::coro_scheduler().
+     * When none is bound yet, binds the thread's `listener::current` scheduler (creating the
+     * listener and its scheduler on a thread that has none) on the cold out-of-line path
+     * `detail::bind_thread_scheduler()`, so whatever is queued here is drained by that loop.
+     * There is no private fallback: a scheduler nobody pumps was the defect (Huly QB-271).
      */
     static CoroutineScheduler &
     current() {
-        if (!current_) {
-            // `reset(new ...)`, not `make_unique`: `owned_current_` carries
-            // `detail::scheduler_deleter`, and `make_unique` only ever produces a
-            // `std::default_delete` pointer.
-            owned_current_.reset(new CoroutineScheduler());
-            current_ = owned_current_.get();
-        }
+        if (!current_) [[unlikely]]
+            return detail::bind_thread_scheduler();
         return *current_;
     }
 
@@ -950,6 +944,12 @@ public:
         // (the symptom: an abandoned coroutine_scope whose worker is parked on a
         // non-cancellable sleep when the scope is torn down — `cancel_all` cannot
         // wake a plain sleep(), so the worker tree is still parked at reset).
+        //
+        // Nothing owned and nothing parked -- every engine teardown after a clean run -- is nothing
+        // to destroy: return before building the two snapshots (`recycle()` runs this twice per
+        // `~VirtualCore`; the vectors and the scans were the whole of its +5 % on MSVC spawn-1000).
+        if (owned_frames_.empty() && suspended_coroutines_.empty())
+            return;
         std::vector<void *> owned_roots;
         owned_roots.reserve(owned_frames_.size());
         owned_frames_.for_each([&owned_roots](void *addr) { owned_roots.push_back(addr); });
@@ -1160,26 +1160,7 @@ private:
     // out-of-line thread_local emits a `non-external` TLS descriptor, which gives a host and a
     // statically-linked plugin two "current schedulers" on one thread. See qb/utility/abi.h.
     QB_ABI_ANCHOR static inline thread_local CoroutineScheduler *current_ = nullptr;
-
-    // Owns the fallback scheduler lazily created by current() on a thread that has
-    // no listener, so it is freed at thread exit rather than leaked. A listener owns
-    // its own scheduler (set via set_current()), so this stays empty in that case.
-    // Same anchoring rule as current_ above.
-    //
-    // The deleter is `detail::scheduler_deleter`, not `std::default_delete`, and that is
-    // load-bearing: see the note on that struct above. Every other property of this declaration
-    // -- `QB_ABI_ANCHOR`, `static inline thread_local`, the in-class definition -- is unchanged
-    // and must stay unchanged, because those are what make the TLS descriptor a
-    // **weak external** one the dynamic linker coalesces across images.
-    QB_ABI_ANCHOR static inline thread_local std::unique_ptr<CoroutineScheduler, detail::scheduler_deleter> owned_current_{};
 };
-
-// Defined here, below the class, where `CoroutineScheduler` is complete. Declaring it above and
-// defining it here is the whole point of the custom deleter (see `detail::scheduler_deleter`).
-inline void
-detail::scheduler_deleter::operator()(CoroutineScheduler *const p) const noexcept {
-    delete p;
-}
 
 // Global function for awaiters to get current scheduler
 [[nodiscard]] inline CoroutineScheduler *
@@ -1193,31 +1174,20 @@ current_scheduler_ptr() noexcept {
  * Helper function used by final_awaiter to schedule continuations, by
  * `shared_task`'s state flush, by channels / sync primitives / timers, etc.
  *
- * Precondition: a thread-local `CoroutineScheduler` must have been
- * established on this thread (this is done automatically for every
- * `qb::io::async::listener` when it is created). Calling from a thread
- * without a listener is a programming error — we `QB_ASSERT` in debug and
- * fall back to a silent no-op in release to avoid taking down the process,
- * but this means any waiter queued in that state will **never** be
- * resumed. Finding 2.A.2 documents this invariant.
+ * With no scheduler bound on this thread yet, it binds the loop's own first
+ * (`detail::bind_thread_scheduler()`, the cold path `CoroutineScheduler::current()`
+ * shares), so the handle is drained by `listener::current`. It used to assert in
+ * debug and drop the handle in release: a waiter queued that way was never resumed
+ * (Finding 2.A.2, Huly QB-271).
  *
  * @param handle The coroutine handle to schedule
  */
 inline void
 schedule_via_current(std::coroutine_handle<> handle) noexcept {
     auto *sched = CoroutineScheduler::current_ptr();
-#ifndef NDEBUG
-    // Finding 2.A.2: fail loudly in debug so misconfigured test harnesses
-    // or incorrect thread affinity bugs surface immediately rather than
-    // manifesting as a test hang. Only guard when a real handle is queued.
-    assert(sched
-           && "schedule_via_current called without a TLS scheduler — "
-              "did you forget to create a qb::io::async::listener on "
-              "this thread?");
-#endif
-    if (sched) {
-        sched->schedule_resume(handle);
-    }
+    if (!sched) [[unlikely]]
+        sched = &detail::bind_thread_scheduler(); // first coroutine on this thread: the loop's scheduler
+    sched->schedule_resume(handle);
 }
 
 /**
@@ -1228,9 +1198,7 @@ schedule_via_current(std::coroutine_handle<> handle) noexcept {
  */
 inline void
 enqueue_for_later_via_current(std::coroutine_handle<> handle) noexcept {
-    if (auto *sched = CoroutineScheduler::current_ptr()) {
-        sched->enqueue_for_later(handle);
-    }
+    CoroutineScheduler::current().enqueue_for_later(handle);
 }
 
 /**
@@ -1242,9 +1210,7 @@ enqueue_for_later_via_current(std::coroutine_handle<> handle) noexcept {
  */
 inline void
 defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
-    if (auto *sched = CoroutineScheduler::current_ptr()) {
-        sched->defer_destroy(handle);
-    }
+    CoroutineScheduler::current().defer_destroy(handle);
 }
 
 /**

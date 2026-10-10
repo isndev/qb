@@ -1300,6 +1300,19 @@ public:
     }
 
     /**
+     * @brief Destroy every frame the coroutine scheduler tracks and return it to a fresh state,
+     *        keeping the scheduler (and its storage) bound to this loop -- see
+     *        `CoroutineScheduler::recycle()`. What a `VirtualCore` does at its teardown: the frames
+     *        die with their engine, and the next engine on this thread starts warm. No-op when no
+     *        scheduler exists.
+     */
+    inline void
+    recycle_coro_scheduler() {
+        if (_coro_scheduler)
+            _coro_scheduler->recycle();
+    }
+
+    /**
      * @brief Reset the coroutine scheduler (for test isolation).
      *
      * Destroys the current scheduler and clears the thread-local current pointer.

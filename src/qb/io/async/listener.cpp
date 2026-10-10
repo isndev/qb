@@ -39,4 +39,17 @@ namespace qb::io::async {
 // The file itself stays: it is a member of `libqb-io.a` (the amalgamation includes it), and it is
 // where a future non-inline `listener` member belongs.
 
+// Out of line on purpose: `scheduler.h` cannot see `listener`, and this is the cold path (once per
+// thread, at the first coroutine that needs a scheduler) behind `CoroutineScheduler::current()` and
+// the `*_via_current` helpers, so the hot paths stay one TLS load and a predicted branch.
+// `coro_scheduler()` binds only the scheduler it creates; binding here as well covers a thread
+// whose loop scheduler exists but was unbound (`set_current(nullptr)`), which would otherwise
+// take this cold path on every call.
+CoroutineScheduler &
+detail::bind_thread_scheduler() {
+    auto &sched = listener::current.coro_scheduler();
+    CoroutineScheduler::set_current(&sched);
+    return sched;
+}
+
 } // namespace qb::io::async

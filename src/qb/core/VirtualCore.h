@@ -353,46 +353,55 @@ private:
 
         void
         resolve(Event &raw) const final {
-            auto      &event       = reinterpret_cast<_Event &>(raw);
-            const auto dest        = event.getDestination();
-            auto       route_event = [&] {
-                if (dest.is_broadcast()) {
-                    static thread_local std::vector<Actor *> snapshot;
-                    const std::size_t                        base = snapshot.size();
-                    struct RestoreSnapshot {
-                        std::vector<Actor *> &entries;
-                        std::size_t           base;
-                        ~RestoreSnapshot() {
-                            entries.resize(base);
-                        }
-                    } restore{snapshot, base};
-                    for (auto const &slot : _core._actors)
-                        if (Actor *const actor = slot.get())
-                            snapshot.push_back(actor);
-                    const std::size_t end = snapshot.size();
-                    for (std::size_t i = base; i < end; ++i)
-                        dispatch(*snapshot[i], event);
-                } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
-                    dispatch(*actor, event);
-                } else [[unlikely]] {
-                    Event::__undelivered__(event); // no actor under this id
-                }
-            };
+            auto &event = reinterpret_cast<_Event &>(raw);
             if constexpr (!std::is_trivially_destructible_v<_Event>) {
-                try {
-                    route_event();
-                } catch (...) {
-                    if (!event.is_alive())
-                        event.~_Event();
-                    throw;
-                }
-                if (!event.is_alive())
-                    event.~_Event();
+                // Destroy on return AND while a handler's exception unwinds: a destructor, not a
+                // try/catch, which MSVC refuses to inline into (see router::semh::route).
+                struct destroy_on_exit {
+                    _Event &event;
+                    ~destroy_on_exit() {
+                        if (!event.is_alive()) {
+                            router::internal::mark_disposed(event); // a later teardown walk skips it
+                            event.~_Event();
+                        }
+                    }
+                } const guard{event};
+                route_event(event);
             } else {
-                route_event();
+                route_event(event);
             }
         }
 
+    private:
+        // A member forced inline on MSVC, not a lambda in resolve(): MSVC 19.51 compiled the lambda
+        // out of line (191 instructions inline before, an 11-instruction stub plus a call after).
+        QB_MSVC_FORCEINLINE void
+        route_event(_Event &event) const {
+            const auto dest = event.getDestination();
+            if (dest.is_broadcast()) {
+                static thread_local std::vector<Actor *> snapshot;
+                const std::size_t                        base = snapshot.size();
+                struct RestoreSnapshot {
+                    std::vector<Actor *> &entries;
+                    std::size_t           base;
+                    ~RestoreSnapshot() {
+                        entries.resize(base);
+                    }
+                } restore{snapshot, base};
+                for (auto const &slot : _core._actors)
+                    if (Actor *const actor = slot.get())
+                        snapshot.push_back(actor);
+                const std::size_t end = snapshot.size();
+                for (std::size_t i = base; i < end; ++i)
+                    dispatch(*snapshot[i], event);
+            } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
+                dispatch(*actor, event);
+            } else [[unlikely]] {
+                Event::__undelivered__(event); // no actor under this id
+            }
+        }
+
+    public:
         void
         unsubscribe(ActorId const &) final {}
     };
@@ -698,7 +707,12 @@ private:
     // `CoreInitializer` installed, if any. Touched only when an event reaches no actor.
     std::uint64_t                                _nb_dead_letters = 0;
     std::array<std::uint64_t, DeadLetterReasons> _nb_dead_letters_by_reason{};
-    DeadLetterHandler                            _dead_letter_handler;
+    // Buckets of the mailbox batch `_event_buffer` holds while it is being routed, 0 between batches:
+    // what `~VirtualCore` walks when a handler's exception stopped the core mid-batch (two stores
+    // per batch, nothing per event -- see router::internal::mark_disposed). Down here with the cold
+    // counters, not beside `_event_buffer`: placed there it shifted every hot member behind it by 8 bytes.
+    std::size_t       _rx_len = 0;
+    DeadLetterHandler _dead_letter_handler;
     // Pass timing (Huly QB-165): chosen once, at thread start, from `CoreInitializer::setPassTiming`;
     // only the timed instantiation of the loop touches the recorder.
     bool                   _pass_timing = false;
@@ -1578,7 +1592,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:610-619`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:619-628`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

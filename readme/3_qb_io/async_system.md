@@ -17,10 +17,10 @@ The one set of threads qb-io starts itself is the offload pool (3.3), and it is 
 Three consequences follow immediately, and all three are load-bearing:
 
 - **An I/O object may not be shared across threads.** Not "should not" — the watcher it registered lives in another thread's loop, and stopping or restarting it from here corrupts libev's per-fd bookkeeping. On Windows the epoll backend is wepoll (IOCP), which additionally requires the whole loop lifecycle to stay on one thread (`src/qb/io/async/listener.h:80-82`).
-- **`listener::current` is one per thread, not one per thread per binary image.** Its definition is `inline` **in the header** and `QB_ABI_ANCHOR`-annotated, because an out-of-line `thread_local` emits a `non-external` TLS descriptor: a host executable and a `dlopen`ed plugin that each statically link `libqb-io.a` would then hold *two* event loops for one thread, and everything the second registers goes into a loop nobody runs — silently (`src/qb/io/async/listener.h:1399`). The definition site carries the measurement. Do not move it into a `.cpp`.
+- **`listener::current` is one per thread, not one per thread per binary image.** Its definition is `inline` **in the header** and `QB_ABI_ANCHOR`-annotated, because an out-of-line `thread_local` emits a `non-external` TLS descriptor: a host executable and a `dlopen`ed plugin that each statically link `libqb-io.a` would then hold *two* event loops for one thread, and everything the second registers goes into a loop nobody runs — silently (`src/qb/io/async/listener.h:1412`). The definition site carries the measurement. Do not move it into a `.cpp`.
 - **The libev backend is auto-selected, and overridable for measurement only.** The constructor passes `_resolve_backend_flags()` (`src/qb/io/async/listener.h:649`), which reads `QB_EV_BACKEND` and accepts `select`, `poll`, `epoll`, `kqueue`, `port`, `linuxaio`, `iouring`/`io_uring` and `auto`. The selection is safe by construction: an unknown name, a backend not compiled in, and a backend that fails to initialise at runtime (io_uring under a restrictive seccomp profile, for instance) all degrade to `EVFLAG_AUTO` with a one-line stderr notice, never a throw — the last case is caught by creating and destroying a throwaway probe loop first (`src/qb/io/async/listener.h:685-688`). Ask the running loop what it chose with `backend()` and `backend_name(unsigned)` (`src/qb/io/async/listener.h:728`, `:721`).
 
-`qb::io::async::init()` exists for symmetry and is a **no-op** — its whole body is a comment (`src/qb/io/async/listener.h:1409`). It deliberately does *not* clear anything: fixtures that share a thread's listener would have their already-registered watchers invalidated, leaving dangling `_async_event` references in live objects. When you genuinely want a clean loop — a test `TearDown`, a restart — call `listener::current.clear()` (`src/qb/io/async/listener.h:768`).
+`qb::io::async::init()` exists for symmetry and is a **no-op** — its whole body is a comment (`src/qb/io/async/listener.h:1422`). It deliberately does *not* clear anything: fixtures that share a thread's listener would have their already-registered watchers invalidated, leaving dangling `_async_event` references in live objects. When you genuinely want a clean loop — a test `TearDown`, a restart — call `listener::current.clear()` (`src/qb/io/async/listener.h:768`).
 
 ## The turn
 
@@ -62,7 +62,7 @@ The drain is also re-entrancy-guarded by an RAII flag, and it contains exception
 
 | Context | What drives the loop |
 |---|---|
-| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()`, a ready coroutine or a completed spawned frame still to free — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:936-940`; `src/qb/io/async/listener.h:1174-1177`). |
+| Under `qb-core` | `qb::Main` starts one `VirtualCore` thread per core, and each calls `listener::current.run(EVRUN_NOWAIT)` once per pass, and only when there is work: the gate is `listener::has_work()` — a referenced active watcher, a pending event, an outstanding `defer()`, a ready coroutine or a completed spawned frame still to free — so a pure-actor core with no live qb-io object skips the pass entirely, and still pumps when a bare `defer()` is outstanding (`src/qb/core/VirtualCore.cpp:948-952`; `src/qb/io/async/listener.h:1174-1177`). |
 | Standalone | You call `run()`, `run_once()` or `run_until()` yourself. |
 
 Every timed API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span) or any `std::chrono::duration`, which converts implicitly. There is no `double`-seconds overload anywhere on the public surface.
@@ -71,11 +71,11 @@ The free functions all operate on `listener::current`:
 
 | Function | Behaviour | Declared |
 |---|---|---|
-| `async::run(int flag = 0)` | One turn with a libev flag. `0` blocks until the loop is broken or no active watcher remains. Returns the number of events invoked. | `listener.h:1449` |
-| `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h:1493` |
-| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds, sleeping 50 µs between idle passes so an idle loop does not spin. | `listener.h:1508` |
-| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:1529` |
-| `async::defer(func)` | Queue `func` for the tail of this turn. | `listener.h:1475` |
+| `async::run(int flag = 0)` | One turn with a libev flag. `0` blocks until the loop is broken or no active watcher remains. Returns the number of events invoked. | `listener.h:1462` |
+| `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h:1506` |
+| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds, sleeping 50 µs between idle passes so an idle loop does not spin. | `listener.h:1521` |
+| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:1542` |
+| `async::defer(func)` | Queue `func` for the tail of this turn. | `listener.h:1488` |
 | `async::run_for(qb::duration)` | Pump the loop and the scheduler for a `steady_clock`-measured window, then return. | `coroutine/utils.h:227` |
 | `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump until it completes, returning its result. | `coroutine/utils.h:285` |
 
@@ -91,7 +91,7 @@ So while `run_sync` is running, **the loop keeps turning**: sockets are serviced
 
 ### The guard, and what it actually checks
 
-Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1424-1436`; `src/qb/io/async/coroutine/scheduler.h:741-750`, `:826-829`). When it fires it asserts in debug and throws `std::logic_error`.
+Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1437-1449`; `src/qb/io/async/coroutine/scheduler.h:741-750`, `:826-829`). When it fires it asserts in debug and throws `std::logic_error`.
 
 That covers exactly one case, and covers it well:
 
@@ -99,7 +99,7 @@ That covers exactly one case, and covers it well:
 
 It does not cover the case people actually hit:
 
-- **An actor event handler** does not run under `run_ready()`. `VirtualCore::__workflow__` calls `listener::current.run(EVRUN_NOWAIT)` **first** — and `run()` is where `run_ready()` lives — and only *after that call has returned* does it reach `__flush_all__()` and `__receive__()`, which is what dispatches actor handlers (`src/qb/core/VirtualCore.cpp:936-940`, `:951-954`). During any actor handler `in_run_ready_` is false, the guard passes, and `run_sync` proceeds: **no assertion, no throw, no log, no trace.**
+- **An actor event handler** does not run under `run_ready()`. `VirtualCore::__workflow__` calls `listener::current.run(EVRUN_NOWAIT)` **first** — and `run()` is where `run_ready()` lives — and only *after that call has returned* does it reach `__flush_all__()` and `__receive__()`, which is what dispatches actor handlers (`src/qb/core/VirtualCore.cpp:948-952`, `:963-966`). During any actor handler `in_run_ready_` is false, the guard passes, and `run_sync` proceeds: **no assertion, no throw, no log, no trace.**
 
 ### What blocking the calling thread costs, and when it costs nothing
 
@@ -110,9 +110,9 @@ The pump runs *on whatever thread called it*. Everything therefore turns on whos
 > *Pre-engine setup: there is no actor loop yet, so we drive a coroutine to completion synchronously.*
 > — `examples/07-applications/02-auction-house/src/main.cpp:45-46`
 
-**Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:952-954`). Every actor on the core is frozen.
+**Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:964-966`). Every actor on the core is frozen.
 
-And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event burns a bounded backoff and then makes the sender partial-bail and retry next pass, so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:563-577`).
+And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event burns a bounded backoff and then makes the sender partial-bail and retry next pass, so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:572-586`).
 
 The failure is *hard to notice*, which is why it needs prose rather than a warning box. Watchers and coroutines keep firing inside the pump, so a sanity check that "the socket still responds" passes. The only symptom is actor latency.
 
@@ -154,7 +154,7 @@ Four primitives answer "run this later", and they differ in ways the names do no
 | Ownership | listener-owned queue entry | none | self-deleting `Timeout<std::decay_t<F>>`, its own copy of `f` | caller-owned `unique_ptr<ScopedTimeout<std::decay_t<F>>>`, its own copy of `f` |
 | Heap traffic in steady state | one `std::function` per call | none | zero (freelist) | one allocation per call |
 
-<!-- src: qb/src/qb/io/async/listener.h:1475 (defer), qb/src/qb/io/async/io.h:376 (callback inline), :392 (callback delayed), :495 (scoped_callback), :509 (scoped_callback timed) -->
+<!-- src: qb/src/qb/io/async/listener.h:1488 (defer), qb/src/qb/io/async/io.h:376 (callback inline), :392 (callback delayed), :495 (scoped_callback), :509 (scoped_callback timed) -->
 
 A fifth shape does not belong in that table because it is not a one-shot: [`with_timeout<Derived>`](#inactivity-timeouts-with_timeoutderived) is a member timer that lives with the object and measures from the last activity rather than from arming.
 
@@ -386,7 +386,7 @@ The same silence has a second cause: **access**. The concept reads a requires-ex
 | `backend()` | the libev backend actually in use, as an `EVBACKEND_*` value | `listener.h:728` |
 | `backend_name(b)` | that value as a human-readable string | `listener.h:736` |
 | `has_coro_scheduler()` | whether the coroutine scheduler has been created yet | `listener.h:1298` |
-| `dispatch_timing()` | the timed watcher dispatches — count, total, last, max, recent worst — once `set_dispatch_timing(true)` was called; zero otherwise | `listener.h:1347` |
+| `dispatch_timing()` | the timed watcher dispatches — count, total, last, max, recent worst — once `set_dispatch_timing(true)` was called; zero otherwise | `listener.h:1360` |
 
 Both counters include deferred callbacks and coroutine resumes, not just libev watchers: `run()` adds the drained counts to each (`src/qb/io/async/listener.h:1008-1009`, `:1041-1042`).
 
@@ -394,7 +394,7 @@ Both counters include deferred callbacks and coroutine resumes, not just libev w
 
 ## Pitfalls
 
-- **`init()` does not reset anything.** It is a no-op by design (`src/qb/io/async/listener.h:1409`). For a clean loop — tests, restarts — call `listener::current.clear()`.
+- **`init()` does not reset anything.** It is a no-op by design (`src/qb/io/async/listener.h:1422`). For a clean loop — tests, restarts — call `listener::current.clear()`.
 - **`callback(func)` runs `func` inline.** So does `callback(func, d)` with `d <= 0`. If a handler must continue *after it unwinds* — above all if it must destroy or replace the object it is running on — that is `defer()`, not `callback()`, and not `callback(func, 1ms)`.
 - **Timer callbacks swallow exceptions.** `Timeout` and `ScopedTimeout` wrap the callable in `catch (...)`; so does the deferred drain, and so does the watcher dispatch boundary. Errors that escape your callable are logged at most, never propagated.
 - **`run_sync` / `run_for` block the thread that calls them.** Legitimate in a `main()`, a test or a CLI; a defect inside an actor handler, where the thread is the `VirtualCore` and the framework's guard does not fire. See [the rule above](#the-rule).
