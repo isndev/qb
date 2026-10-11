@@ -4548,8 +4548,8 @@ ev_timer_count_addr(EV_P) EV_NOEXCEPT {
  * 1e13 seconds, beyond any reading -- when it holds none): the top of the timer heap, and of the periodic heap brought onto the
  * monotonic scale when periodics are compiled in. What an embedder compares a reading of its
  * own against before deciding that a non-blocking pass has nothing to fire: timers_reify fires
- * a timer once the loop's time has passed its deadline, so a deadline at or before the
- * embedder's reading is due, one after it is not. */
+ * a timer only once the loop's time is strictly past its deadline, so a deadline before the
+ * embedder's reading is due, one at or after it is not. */
 ev_tstamp
 ev_timer_next(EV_P) EV_NOEXCEPT {
     ev_tstamp at = timercnt ? ANHE_at(timers[HEAP0]) : EV_TS_CONST(EV_TSTAMP_HUGE);
