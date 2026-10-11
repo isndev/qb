@@ -174,6 +174,14 @@ it at poll latency and a callback armed on it fires at its delay — `latency` o
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
+**An engine's memory follows its traffic.** Each core's mailbox has one 8-byte slot per core of the engine; the
+64 KiB ring behind a slot is allocated by the first event that core sends there (3.3, Huly QB-203), and a core's
+outbound pipe allocates nothing before its first push. Before its first event an engine holds memory linear in its
+cores — a 64 KiB receive buffer each, its slots, its loops — where through 3.2 every mailbox held a written ring per
+core from `start()` (1 GiB at 128 cores). A full mesh is still quadratic: a ring per pair that talked, `N × (N − 1)`.
+The first send between two cores allocates; like a pipe growth under `push`, an allocation failure there terminates the
+process (the cross-core send path is `noexcept`). `qb/system/lockfree/mpsc.h` has the mechanism.
+
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
 arm64 macOS does not implement: it answers `KERN_NOT_SUPPORTED` for every core (measured on an Apple M4

@@ -69,3 +69,7 @@ qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buf
 # std::byteswap (C++23) and the portable (C++20) path, wider integers and enums reverse their bytes, floating point
 # reverses its representation, and the to/from conversions swap on the opposite-order host only.
 qb_add_test(MODULE qb-core TIER unit NAME endian SOURCES system/endian.cpp DEPENDS ${PROJECT_NAME})
+# mpsc-ring-allocation pins the runtime-producer mpsc::ringbuffer's rings (Huly QB-203): none at construction and none from
+# a consumer's walk, a producer's own on its first enqueue (each producing form, ringOf too) and no other, and rings
+# published while the consumer walks deliver every item once and in order. The engine side is mailbox-footprint.
+qb_add_test(MODULE qb-core TIER unit NAME mpsc-ring-allocation SOURCES lockfree/mpsc-ring-allocation.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)

@@ -189,6 +189,14 @@ it at poll latency and a callback armed on it fires at its delay — `latency` o
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
+**An engine's memory follows its traffic.** Each core's mailbox has one 8-byte slot per core of the engine; the
+64 KiB ring behind a slot is allocated by the first event that core sends there (3.3, Huly QB-203), and a core's
+outbound pipe allocates nothing before its first push. Before its first event an engine holds memory linear in its
+cores — a 64 KiB receive buffer each, its slots, its loops — where through 3.2 every mailbox held a written ring per
+core from `start()` (1 GiB at 128 cores). A full mesh is still quadratic: a ring per pair that talked, `N × (N − 1)`.
+The first send between two cores allocates; like a pipe growth under `push`, an allocation failure there terminates the
+process (the cross-core send path is `noexcept`). `qb/system/lockfree/mpsc.h` has the mechanism.
+
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
 arm64 macOS does not implement: it answers `KERN_NOT_SUPPORTED` for every core (measured on an Apple M4
@@ -1255,7 +1263,7 @@ Single-producer single-consumer ring. Fixed (`std::array`) or dynamic (`explicit
 *   `[[nodiscard]] bool empty() const noexcept` — consumer thread only (it reads the consumer's private read index).
 
 #### `qb::lockfree::mpsc::ringbuffer<T,max_size,nb_producer>` / `<T,max_size,0>` (`mpsc.h`)
-Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`explicit ringbuffer(size_t nb_producer)`, asserts `> 0`). The runtime form keeps its producers in a `qb::allocator::region_vector` (3.3, Huly QB-1012): from 64 KiB they are a `region_cache` region, which stays mapped for the next ring set of the same size when this one is destroyed (`region_cache::trim()` returns it to the OS).
+Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`explicit ringbuffer(size_t nb_producer)`, asserts `> 0`). The fixed form holds every producer's ring in the object. The runtime form holds one slot per producer and allocates **a producer's ring on that producer's first enqueue** (3.3, Huly QB-203): construction and the consumer's walks allocate nothing, a producer that never enqueues costs its 8-byte slot, and the first enqueue on an index — any producing form, or `ringOf` — allocates and publishes that ring, so it can throw `std::bad_alloc` (the engine's sends are `noexcept`: there, a terminate). A ring is a `qb::allocator::region_allocator` allocation: from 64 KiB (an engine mailbox's rings are 66 176 bytes) a `region_cache` region, which stays mapped for the next ring of its size when the buffer is destroyed (Huly QB-1012; `region_cache::trim()` returns it to the OS). Until 3.3 it value-initialised all its rings at construction.
 *   `[T<_Index>] bool enqueue_at(const T&)` — by compile-time producer index (no lock; one producer per index); `[T<_Index, std::same_as<bool> auto _All=true>] size_t enqueue_at(const T*, size_t)` its bulk form; both variants. Spelled `enqueue<_Index>` before 3.3; renamed, with no alias (Huly QB-980), because `enqueue<false>(t, n)` was ambiguous with it (`false` converts to `_Index`).
 *   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index); `[T<std::same_as<bool> auto _All=true>] size_t enqueue(size_t index, const T*, size_t)` its bulk form. Every bulk overload forwards `_All`: `true` enqueues all or none, `false` as many as fit (3.3, Huly QB-280). Every `_All` here and in `spsc` is `std::same_as<bool> auto`: an integer never binds it, so `enqueue<0>(index, t, n)` — which compiled before 3.3 as a partial enqueue into `index` — does not compile (Huly QB-980).
 *   `size_t enqueue(const T&)` — round-robin under that producer's SpinLock. The producer comes from a per-thread counter that is **per overload instance** — this form, `enqueue<true>(t, n)` and `enqueue<false>(t, n)` each rotate on their own — and shared by every ring of the same type on that thread; one thread's items are FIFO within a producer ring, not across rings.
@@ -1263,8 +1271,9 @@ Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`expl
 *   `size_t dequeue(T*, size_t)` — `ret` is the OUTPUT, producers append, `size` is a **total** budget, return ≤ `size`.
 *   `[T<Func>] size_t consume_all(const Func&, T* scratch, size_t chunk)` — `scratch` is rewritten from index 0 per producer, so `chunk` is a **per-producer** batch limit and the return is a total that **may exceed** it (up to `nb_producer * chunk`). This is the overload the engine drains mailboxes with, and the per-producer form is what stops one saturated core starving the rest. Spelled `dequeue(Func, T*, size_t)` before 3.0; renamed, with no alias.
 *   `[T<Func>] size_t consume_all(const Func&)` — in-place walk, no copy; splits an item that spans the ring's wrap, so use the scratch overload for multi-slot items.
-*   `auto& ringOf(size_t index)` — direct per-producer spsc ring.
-*   `[[nodiscard]] bool has_data() const noexcept` — consumer thread only: does any producer ring hold an unread item (the park/unpark predicate).
+*   `auto& ringOf(size_t index)` — direct per-producer spsc ring, a producer-side handle: in the runtime form it allocates the ring first when its producer has not enqueued yet.
+*   `[[nodiscard]] size_t rings() const noexcept` — runtime form only (3.3): the producer rings allocated so far; any thread, a reading rather than a synchronisation point.
+*   `[[nodiscard]] bool has_data() const noexcept` — consumer thread only: does any producer ring hold an unread item (the park/unpark predicate). This walk, `dequeue` and both `consume_all` skip a producer with no ring yet: one load of its slot.
 
 #### `[T] class qb::lockfree::mpsc_unbounded_queue<T> : public nocopy` (`mpsc_unbounded_queue.h`)
 Unbounded lock-free Michael-Scott MPSC queue.

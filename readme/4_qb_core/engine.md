@@ -401,9 +401,9 @@ main() {
 }
 ```
 
-## Memory: committed before the first event
+## Memory: what an engine holds before its first event
 
-The engine allocates eagerly and quadratically in the core count, and none of it ever shrinks: every core keeps a private outbound pipe to every other core, and every mailbox keeps a private inbound ring from every other core. Measured on this checkout, the resting footprint is about **0.6 MiB at 1 core, 6.3 at 4, 22.5 at 8 and 85 at 16** — doubling the core count roughly quadruples it. The per-structure figures, and why the buffers never come back, are on [the pipe](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back). Worth knowing before you configure a 64-core engine inside a container memory limit.
+Before its first event an engine holds memory in proportion to its core count: per core, a 64 KiB receive buffer, its `VirtualCore` and io loop, and one 8-byte mailbox slot per core of the engine. Everything that exists per pair of cores waits for that pair to talk: a core's outbound pipe to another allocates nothing before its first push, and the 64 KiB mailbox ring that carries one core's events to another is allocated by the first of them (since 3.3, Huly QB-203). A 128-core engine at rest therefore holds about 8 MiB of buffers and slots where, through 3.2, it held 1 GiB of rings that `start()` had written — every mailbox kept a private inbound ring from every core, used or not. What traffic adds stays: a ring per pair of cores that has talked, at most `N × (N − 1)` on a full mesh, and a core's pipe pool at the high water of its busiest burst, in 2 MB slabs kept until the core stops and then cached for the next engine (`slab_cache::trim()` returns them). The per-structure figures, and why the buffers never come back, are on [the pipe](../0_foundations/buffers.md#memory-it-grows-and-it-does-not-come-back). A full mesh is still quadratic — worth knowing before you configure a 64-core engine inside a container memory limit.
 
 ## Pitfalls
 

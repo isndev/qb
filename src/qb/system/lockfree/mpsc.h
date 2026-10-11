@@ -296,6 +296,33 @@ public:
  * This specialization provides a MPSC ring buffer with a runtime-determined number of producers specified during construction.
  * Same three ways in as the fixed-producer form: `enqueue_at<Index>(...)`, `enqueue(index, ...)`, and the round-robin `enqueue(...)`.
  *
+ * **A producer's ring exists once that producer has used it** (Huly QB-203). Construction allocates one pointer per
+ * producer and nothing else; the first enqueue on an index -- or `ringOf(index)` -- allocates that producer's ring and
+ * publishes it, and the consumer's walks skip an index whose ring was never published. Memory is therefore proportional to
+ * the producers that have produced, not to the producers that might. Until 3.3 the rings were a `std::vector<Producer>` of
+ * `nb_producer` elements, value-initialised: every byte of every ring -- a `max_size + 1` slot array each -- was written
+ * at construction. The engine builds one of these per core with one producer per core, so an engine of N cores held
+ * N² rings before its first event: 66 176 bytes each with the engine's event buckets, 1 GiB at 128 cores, almost all
+ * of it for pairs of cores that never talk.
+ *
+ * - **Storage.** A ring comes from `qb::allocator::region_allocator` (`region.h`, Huly QB-1012): from 64 KiB -- the
+ *   engine's rings are 66 176 bytes -- a `region_cache` region, below it the global allocator. Destroyed, a region-backed
+ *   ring stays mapped in that cache, so the next ring of its size -- the next engine's, in a process that restarts its
+ *   engine -- is built in pages already faulted, until `region_cache::trim()` gives them back to the OS.
+ * - **Publication.** The allocation is default-initialisation (placement `new Producer`, never `Producer()`): the lock
+ *   and the ring's four index blocks are constructed, the slot array is left as the allocator hands it -- the pages of
+ *   a fresh region the producer has not written yet are pages the process does not hold yet. The ring is published by a
+ *   compare-exchange (release) of its slot from null; every reader of a slot loads it with acquire, so the indices the
+ *   constructor wrote happen-before any use of the ring on another thread. One thread per index never loses the
+ *   exchange; the round-robin forms and `ringOf` may race the index's owner, and the loser gives its unpublished ring
+ *   back and uses the winner's.
+ * - **What each path pays.** A producer: one load of its slot and a branch it predicts after the first enqueue, where it
+ *   used to compute an address in the vector; the allocation itself is out of line. The consumer: one load per producer
+ *   per walk -- a cache line holds eight slots with 64-byte lines, and the slot array is whole lines so nothing else
+ *   shares them -- and an index with no ring costs that load and nothing more, where it used to cost the two lines of a
+ *   ring's header.
+ * - **Failure.** The first enqueue on an index allocates, so it can throw `std::bad_alloc`; every later one cannot.
+ *
  * @tparam T The type of elements stored in the buffer
  * @tparam max_size The maximum capacity per producer buffer
  */
@@ -316,8 +343,57 @@ class ringbuffer<T, max_size, 0> : public nocopy {
         spsc::ringbuffer<T, max_size> _ringbuffer;              ///< The producer's dedicated ring buffer
     };
 
-    qb::allocator::region_vector<Producer> _producers;   ///< The producers: a region once they reach 64 KiB (region.h)
-    const std::size_t                      _nb_producer; ///< Number of producers
+    /// A producer's slot: its published ring, or null until its first enqueue.
+    using Slot                             = std::atomic<Producer *>;
+    static constexpr size_t slots_per_line = QB_LOCKFREE_CACHELINE_BYTES / sizeof(Slot);
+    /// One cache line of slots. The array is made of whole lines, so no other object shares a line the consumer reads
+    /// on every walk.
+    struct alignas(QB_LOCKFREE_CACHELINE_BYTES) SlotLine {
+        Slot entry[slots_per_line]{};
+    };
+    static_assert(sizeof(SlotLine) == QB_LOCKFREE_CACHELINE_BYTES, "a line of slots is one cache line, no padding");
+
+    std::unique_ptr<SlotLine[]> _slots;       ///< One slot per producer, `slots_per_line` to a line
+    const std::size_t           _nb_producer; ///< Number of producers
+
+    [[nodiscard]] Slot &
+    slot(size_t const index) const noexcept {
+        return _slots[index / slots_per_line].entry[index % slots_per_line];
+    }
+
+    /// The ring producer @p index has published, or null: what every consumer walk reads.
+    [[nodiscard]] Producer *
+    published(size_t const index) const noexcept {
+        return slot(index).load(std::memory_order_acquire);
+    }
+
+    /// The ring of producer @p index, allocated by the first call that needs it.
+    [[nodiscard]] Producer &
+    producer(size_t const index) {
+        if (Producer *const ring = published(index); likely(ring != nullptr)) [[likely]]
+            return *ring;
+        return allocate_producer(index);
+    }
+
+    // The cold half of `producer()`, out of line so that an enqueue path inlining the hot half keeps its registers.
+    [[nodiscard]] QB_NOINLINE QB_COLD Producer &
+    allocate_producer(size_t const index) {
+        // Default-initialisation -- placement `new Producer`, never `Producer()` and never `make_region`, both of which
+        // value-initialise: the slot array stays untouched. See the class note.
+        Producer *const fresh  = ::new (static_cast<void *>(qb::allocator::region_allocator<Producer>{}.allocate(1))) Producer;
+        Producer       *winner = nullptr;
+        if (slot(index).compare_exchange_strong(winner, fresh, std::memory_order_acq_rel, std::memory_order_acquire))
+            return *fresh;
+        release(fresh); // another thread published this index's ring first; it was never seen by anyone
+        return *winner;
+    }
+
+    /// Destroys a ring `allocate_producer` made and gives its storage back: to the region cache from 64 KiB.
+    static void
+    release(Producer *const ring) noexcept {
+        ring->~Producer();
+        qb::allocator::region_allocator<Producer>{}.deallocate(ring, 1);
+    }
 
 public:
     /**
@@ -329,14 +405,24 @@ public:
      * @brief Constructor with runtime number of producers
      *
      * @param nb_producer The number of producers to create
+     * @details Allocates one slot per producer and no ring: a producer's ring is allocated by its first enqueue.
      */
     explicit ringbuffer(std::size_t const nb_producer)
-        : _producers(nb_producer)
+        : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
         , _nb_producer(nb_producer) {
         // At least one producer is required: the round-robin enqueue paths
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
         // when constructed with zero producers.
         assert(nb_producer > 0 && "mpsc::ringbuffer requires at least one producer");
+    }
+
+    /**
+     * @brief Frees every ring a producer allocated. No producer or consumer may still be using the buffer.
+     */
+    ~ringbuffer() noexcept {
+        for (size_t i = 0; i < _nb_producer; ++i)
+            if (Producer *const ring = slot(i).load(std::memory_order_relaxed))
+                release(ring);
     }
 
     /**
@@ -349,7 +435,7 @@ public:
     template <size_t _Index>
     bool
     enqueue_at(T const &t) {
-        return _producers[_Index]._ringbuffer.enqueue(t);
+        return producer(_Index)._ringbuffer.enqueue(t);
     }
 
     /**
@@ -364,7 +450,7 @@ public:
     template <size_t _Index, std::same_as<bool> auto _All = true>
     size_t
     enqueue_at(T const *t, size_t const size) {
-        return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
+        return producer(_Index)._ringbuffer.template enqueue<_All>(t, size);
     }
 
     /**
@@ -376,7 +462,7 @@ public:
      */
     bool
     enqueue(size_t const index, T const &t) {
-        return _producers[index]._ringbuffer.enqueue(t);
+        return producer(index)._ringbuffer.enqueue(t);
     }
 
     /**
@@ -391,7 +477,7 @@ public:
     template <std::same_as<bool> auto _All = true>
     size_t
     enqueue(size_t const index, T const *t, size_t const size) {
-        return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
+        return producer(index)._ringbuffer.template enqueue<_All>(t, size);
     }
 
     /**
@@ -406,9 +492,9 @@ public:
     size_t
     enqueue(T const &t) {
         static thread_local size_t tl_index = 0;
-        const size_t               index    = tl_index++ % _nb_producer;
-        std::lock_guard<SpinLock>  lock(_producers[index].lock);
-        return _producers[index]._ringbuffer.enqueue(t);
+        Producer                  &chosen   = producer(tl_index++ % _nb_producer);
+        std::lock_guard<SpinLock>  lock(chosen.lock);
+        return chosen._ringbuffer.enqueue(t);
     }
 
     /**
@@ -426,9 +512,9 @@ public:
     size_t
     enqueue(T const *t, size_t const size) {
         static thread_local size_t tl_index = 0;
-        const size_t               index    = tl_index++ % _nb_producer;
-        std::lock_guard<SpinLock>  lock(_producers[index].lock);
-        return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
+        Producer                  &chosen   = producer(tl_index++ % _nb_producer);
+        std::lock_guard<SpinLock>  lock(chosen.lock);
+        return chosen._ringbuffer.template enqueue<_All>(t, size);
     }
 
     /**
@@ -451,10 +537,13 @@ public:
     dequeue(T *ret, size_t size) {
         const size_t save_size = size;
         for (std::size_t i = 0; i < _nb_producer; ++i) {
+            Producer *const ring = published(i);
+            if (!ring)
+                continue; // never enqueued into: nothing to take
             // Advance ret by the amount taken so each producer appends after
             // the previous one's items instead of overwriting them (silent
             // data loss: items consumed from the ring but lost in the output).
-            const size_t n = _producers[i]._ringbuffer.dequeue(ret, size);
+            const size_t n = ring->_ringbuffer.dequeue(ret, size);
             ret += n;
             size -= n;
             if (!size)
@@ -467,6 +556,9 @@ public:
      * @brief Does any producer ring hold at least one unread item?
      * @details Consumer thread only, for a park/unpark decision: each ring's `empty()` reads the
      *          producer's published write index and the consumer's own private read index; no lock.
+     *          A producer with no ring yet has enqueued nothing: its slot is read, its ring is not. A
+     *          ring is published before its first item and so before the producer's fence: the
+     *          handshake covers the slot exactly as it covers the write index.
      *          Meant to be evaluated AFTER a `std::atomic_thread_fence(seq_cst)` by the consumer
      *          that has just announced it is about to block (the Dekker half of a race-free
      *          wait), so that a producer's enqueue is either seen here or sees the announcement.
@@ -475,7 +567,7 @@ public:
     [[nodiscard]] bool
     has_data() const noexcept { // consumer thread only: `empty()` reads the consumer's private index
         for (std::size_t i = 0; i < _nb_producer; ++i)
-            if (!_producers[i]._ringbuffer.empty())
+            if (Producer const *const ring = published(i); ring && !ring->_ringbuffer.empty())
                 return true;
         return false;
     }
@@ -497,7 +589,8 @@ public:
     consume_all(Func const &func) {
         size_t nb_consume = 0;
         for (std::size_t i = 0; i < _nb_producer; ++i) {
-            nb_consume += _producers[i]._ringbuffer.consume_all(func);
+            if (Producer *const ring = published(i))
+                nb_consume += ring->_ringbuffer.consume_all(func);
         }
         return nb_consume;
     }
@@ -543,8 +636,10 @@ public:
             if (_producers[i]._ringbuffer.empty())
                 continue;
             // `chunk` is deliberately NOT decremented across producers — see the note above.
-            // `scratch` is rewritten from index 0 by each producer's copy-out.
-            nb_consume += _producers[i]._ringbuffer.dequeue(func, scratch, chunk);
+            // `scratch` is rewritten from index 0 by each producer's copy-out. A producer that has
+            // never enqueued has no ring to drain.
+            if (Producer *const ring = published(i))
+                nb_consume += ring->_ringbuffer.dequeue(func, scratch, chunk);
         }
         return nb_consume;
     }
@@ -553,11 +648,26 @@ public:
      * @brief Get direct access to a specific producer's ring buffer
      *
      * @param index The index of the producer
-     * @return Reference to the producer's ring buffer
+     * @return Reference to the producer's ring buffer -- allocated by this call when its producer has
+     *         not enqueued yet, exactly as that first enqueue would (and with the same `std::bad_alloc`)
      */
     auto &
     ringOf(size_t const index) {
-        return _producers[index]._ringbuffer;
+        return producer(index)._ringbuffer;
+    }
+
+    /**
+     * @brief Producer rings allocated so far: one per index that has enqueued, or that `ringOf` handed out.
+     * @details Any thread, no lock. A ring being allocated concurrently may or may not be counted yet: a reading of
+     *          what the buffer holds, never a synchronisation point. Construction leaves it at 0.
+     */
+    [[nodiscard]] size_t
+    rings() const noexcept {
+        size_t allocated = 0;
+        for (size_t i = 0; i < _nb_producer; ++i)
+            if (slot(i).load(std::memory_order_relaxed) != nullptr)
+                ++allocated;
+        return allocated;
     }
 };
 
