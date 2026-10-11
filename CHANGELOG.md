@@ -994,7 +994,16 @@ policy.
   most: a stall spoils one attempt, while a pass that never fits inside the interval spoils every one and still
   fails the case. Each attempt runs on a fresh thread, so on a fresh listener: the cadence state outlives
   `listener::clear()`, and in declaration order the timers case had opened its interval inside the case before it.
-  The blocking-pass case's 40 ms bound is replaced by the same judgement.
+  The blocking-pass case's 40 ms bound is replaced by the same judgement. The rest of the class, the same way:
+  `listener-timer-gate`'s `ASocketKeepsItsCadence` (identical; both files now share
+  `tests/io/shared/io_cadence_window.h`); its 2 ms bound on how late a 5 ms timer fires, now "no pass that began past
+  the deadline leaves the timer unfired, and only the firing pass ran the loop", read on the loop's own clock; its
+  12 ms bound on the raw-arm negative control, now "the first pass after the arm fires it", counted only when that
+  pass came within the timer's 20 ms and replayed otherwise -- so the binary needs no `serial` slot any more;
+  `timer-timeout`'s `UpdateTimeoutDefersTheDeadline`, which reads each refresh-to-pass gap on the loop's clock and
+  replays an attempt in which one reached the timeout; and `core-park-wake`, whose two wake bounds are half the
+  500 ms park cap instead of a tenth -- a wake that fell through to the cap is ~480 ms late, while 50 ms is a stall
+  the macOS runner reached.
 
 ### Documentation
 

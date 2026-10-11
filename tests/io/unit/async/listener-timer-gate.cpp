@@ -26,6 +26,7 @@
 #include <qb/io/async.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/io_cadence_window.h"
 #include "../../shared/raw_fd_fixture.h"
 
 namespace listener_timer_gate_test {
@@ -103,18 +104,30 @@ TEST_F(ListenerTimerGate, AFarTimerCostsNoLoopPass) {
 }
 
 TEST_F(ListenerTimerGate, ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline) {
-    RawTimer   soon(0.005); // 5 ms
-    const auto t0     = qb::mono_now();
-    int        passes = 0;
+    // Judged pass by pass on the loop's own clock, the one the deadline is on (Huly QB-975): a bound
+    // on how late the timer fires, read on the test's clock, is a bound on how long the host leaves
+    // the thread alone around the deadline -- 2 ms here, which a loaded host did not keep (3.3 ms
+    // under ASan in a parallel ctest). What the estimate must never do is let a pass that began past
+    // the deadline go by without the real reading that fires the timer.
+    RawTimer       soon(0.005); // 5 ms
+    const double   deadline = ev_timer_next(loop());
+    const unsigned before   = iterations();
+    const auto     t0       = qb::mono_now();
+    int            passes   = 0;
+    int            missed   = 0; // passes that began at or past the deadline and left the timer unfired
     while (soon.hits == 0 && qb::mono_now() - t0 < 1s) {
+        const bool past = ev_clock_now() >= deadline;
         listener::current.run(EVRUN_NOWAIT);
         ++passes;
+        if (past && soon.hits == 0)
+            ++missed;
     }
-    const auto late = qb::mono_now() - t0 - 5ms;
     EXPECT_EQ(soon.hits, 1) << "the timer fired";
-    EXPECT_LT(late, 2ms) << "on a pass right after its deadline: the estimate only decides WHEN the real readings start (" << passes
+    EXPECT_EQ(missed, 0) << "on the first pass that began past its deadline: the estimate only decides WHEN the real readings start (" << passes
                          << " passes)";
-    EXPECT_GT(passes, 100) << "the driver spun through the wait, so most of those passes were the cheap kind";
+    EXPECT_EQ(iterations() - before, 1u) << "every pass before that one skipped the loop: the driver spun through the wait on the "
+                                            "cheap kind ("
+                                         << passes << " passes)";
 }
 
 TEST_F(ListenerTimerGate, ThePassBeforeTheDeadlineHandsItsReadingToTheLoop) {
@@ -154,16 +167,25 @@ TEST_F(ListenerTimerGate, TheLoopRunsForAWakeFromAnotherThread) {
 TEST_F(ListenerTimerGate, ASocketKeepsItsCadence) {
     // A far timer beside a quiet socket: the passes between two polls skip the loop entirely now
     // (before, they ran it with EVRUN_NOPOLL), and the byte is still seen at the cadence's next poll.
-    Pipe     p;
-    RawTimer far_off(3600.); // not `far`: a Windows macro
-    listener::current.set_io_poll_interval(50ms);
-    listener::current.run(EVRUN_NOWAIT); // the first pass is hot: it polls, finds nothing, goes cold
-    EXPECT_EQ(loop_runs_over(100), 0u) << "cold and inside the interval: no poll, and no loop pass either";
-    p.put();
-    EXPECT_EQ(loop_runs_over(1), 0u) << "the byte is not looked for before the interval";
-    std::this_thread::sleep_for(60ms);
-    EXPECT_EQ(loop_runs_over(1), 1u) << "due: the pass polls";
-    EXPECT_EQ(p.hits, 1) << "and delivers";
+    // "Inside the interval" holds only if the host left the passes inside it: each attempt runs on a
+    // fresh listener, judges its window on the cadence's counter and is replayed when it was stalled
+    // past the interval (Huly QB-975, `io_cadence_window.h`).
+    qb::io::test::replay_until_conclusive([] {
+        Pipe                              p;
+        RawTimer                          far_off(3600.);                                   // not `far`: a Windows macro
+        const qb::io::test::CadenceWindow w       = qb::io::test::open_cold_interval(50ms); // polls, finds nothing, goes cold
+        const unsigned                    skipped = loop_runs_over(100);
+        p.put();
+        const unsigned looked = loop_runs_over(1);
+        if (!qb::io::test::ran_inside(w))
+            return false; // the host stalled the attempt past the interval: a pass may have polled, legitimately
+        EXPECT_EQ(skipped, 0u) << "cold and inside the interval: no poll, and no loop pass either";
+        EXPECT_EQ(looked, 0u) << "the byte is not looked for before the interval";
+        qb::io::test::wait_until_due(w);
+        EXPECT_EQ(loop_runs_over(1), 1u) << "due: the pass polls";
+        EXPECT_EQ(p.hits, 1) << "and delivers";
+        return true;
+    });
 }
 
 /// A handler for a registered `event::timer`. The callback counts.
@@ -179,23 +201,31 @@ TEST_F(ListenerTimerGate, AnEventTimerArmedAfterALongSkipStretchFiresOnTime) {
     // While the loop is not run its cached clock stands still. `event::timer::start` refreshes it
     // before arming (see event/timer.h), so a 20 ms timer armed after 30 ms of skipped passes fires
     // ~20 ms after the arm -- and the raw C arm without the refresh, the negative control, fires it
-    // early: its deadline was computed against a clock 30 ms behind.
+    // early: its deadline was computed against a clock 30 ms behind, so it is already past.
     RawTimer far_off(3600.); // not `far`: a Windows macro
     {
-        ev_timer   raw{};
-        int        hits = 0;
-        const auto t0   = qb::mono_now();
-        skip_for(30ms);
-        EXPECT_EQ(loop_runs_over(1), 0u) << "the stretch skipped the loop, so its clock is 30 ms stale";
-        ev_timer_init(&raw, [](struct ev_loop *, ev_timer *w, int) { ++*static_cast<int *>(w->data); }, 0.02, 0.);
-        raw.data = &hits;
-        ev_timer_start(loop(), &raw); // the C arm: no refresh, against the stale clock
-        while (hits == 0 && qb::mono_now() - t0 < 1s)
-            listener::current.run(EVRUN_NOWAIT);
-        const auto after_arm = qb::mono_now() - t0 - 30ms;
-        ev_timer_stop(loop(), &raw);
-        EXPECT_EQ(hits, 1);
-        EXPECT_LT(after_arm, 12ms) << "negative control: the raw arm against the stale clock fired the 20 ms timer early";
+        // The control's verdict is the first pass after the arm firing the timer, read on the loop's
+        // clock (Huly QB-975): it was a 12 ms bound on the test's clock, which a host that holds the
+        // thread for one scheduler quantum breaks. That pass counts only if it began less than the
+        // timer's 20 ms after the arm -- past that, a refreshed arm would fire on it too -- and an
+        // attempt the host stalled that long is replayed.
+        bool conclusive = false;
+        for (int attempt = 0; attempt < qb::io::test::kCadenceAttempts && !conclusive && !HasFailure(); ++attempt) {
+            ev_timer raw{};
+            int      hits = 0;
+            skip_for(30ms);
+            EXPECT_EQ(loop_runs_over(1), 0u) << "the stretch skipped the loop, so its clock is 30 ms stale";
+            ev_timer_init(&raw, [](struct ev_loop *, ev_timer *w, int) { ++*static_cast<int *>(w->data); }, 0.02, 0.);
+            raw.data              = &hits;
+            const double armed_at = ev_clock_now();
+            ev_timer_start(loop(), &raw);        // the C arm: no refresh, against the stale clock
+            listener::current.run(EVRUN_NOWAIT); // the first pass after the arm
+            const double judged_by = ev_clock_now();
+            ev_timer_stop(loop(), &raw);
+            EXPECT_EQ(hits, 1) << "negative control: the raw arm against the stale clock fired the 20 ms timer on the first pass after it";
+            conclusive = judged_by - armed_at < 0.02 - 0.02 / 16;
+        }
+        EXPECT_TRUE(conclusive) << "no attempt reached its first pass inside the timer's 20 ms after the arm";
     }
     {
         TimerOwner owner;

@@ -151,21 +151,37 @@ TEST_F(TimerTimeoutTest, SetTimeoutZeroDisablesTimer) {
 // =============================================================================
 
 TEST_F(TimerTimeoutTest, UpdateTimeoutDefersTheDeadline) {
-    CountingTimer timer(150ms);
+    // Repeatedly refresh the activity timestamp for ~250ms: each updateTimeout() pushes the
+    // effective deadline forward, so the timer must NOT have fired yet even though more than 150ms
+    // of wall time has elapsed. That verdict holds only if no pass judged the timer a whole timeout
+    // after the refresh before it, and a host that stalls the thread between a refresh and the pass
+    // that follows makes the timer fire legitimately (the class of Huly QB-975). So each gap is read
+    // on the loop's own clock -- the one `with_timeout` judges `_last_activity` against -- and an
+    // attempt in which one reached the timeout is replayed, on a fresh timer.
+    constexpr auto kTimeout   = 150ms;
+    const double   limit      = qb::detail::to_ev_seconds(kTimeout) * 15 / 16;
+    auto *const    loop       = static_cast<struct ev_loop *>(async::listener::current.loop());
+    bool           conclusive = false;
+    for (int attempt = 0; attempt < 20 && !conclusive && !HasFailure(); ++attempt) {
+        CountingTimer timer(kTimeout);
+        double        widest           = 0.; // the longest refresh-to-pass gap, on the loop's clock
+        const auto    keep_alive_until = std::chrono::steady_clock::now() + 250ms;
+        while (std::chrono::steady_clock::now() < keep_alive_until) {
+            timer.updateTimeout();
+            const double refreshed = ev_now(loop); // what updateTimeout() just stored as the last activity
+            async::run(EVRUN_NOWAIT);
+            widest = std::max(widest, ev_now(loop) - refreshed); // the loop's time as of the pass that judged it
+            std::this_thread::sleep_for(20ms);
+        }
+        if (widest >= limit)
+            continue; // a pass came a whole timeout after its refresh: firing was legitimate, the verdict proves nothing
+        conclusive = true;
+        EXPECT_FALSE(timer.triggered.load()) << "updateTimeout() failed to defer the deadline";
 
-    // Repeatedly refresh the activity timestamp for ~250ms: each updateTimeout()
-    // pushes the effective deadline forward, so the timer must NOT have fired yet
-    // even though more than 150ms of wall time has elapsed.
-    const auto keep_alive_until = std::chrono::steady_clock::now() + 250ms;
-    while (std::chrono::steady_clock::now() < keep_alive_until) {
-        timer.updateTimeout();
-        async::run(EVRUN_NOWAIT);
-        std::this_thread::sleep_for(20ms);
+        // Stop refreshing — now it must fire within one further timeout window.
+        EXPECT_TRUE(pump_until([&] { return timer.triggered.load(); })) << "timer never fired after refresh stopped";
     }
-    EXPECT_FALSE(timer.triggered.load()) << "updateTimeout() failed to defer the deadline";
-
-    // Stop refreshing — now it must fire within one further timeout window.
-    EXPECT_TRUE(pump_until([&] { return timer.triggered.load(); })) << "timer never fired after refresh stopped";
+    EXPECT_TRUE(conclusive) << "no attempt ran every pass inside a timeout of its refresh";
 }
 
 // =============================================================================

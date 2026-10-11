@@ -248,9 +248,10 @@ expect_pushed_and_seen() {
 TEST(CoreParkWake, SocketReadinessWakesACoreParkedInItsLoop) {
     // The echo core sleeps in its loop with a 500 ms cap. Each request lands well after the floor
     // — 20 ms of silence against a floor of zero — and must be answered at poll latency, not at the
-    // cap: the bound is a tenth of the latency, so a single round that waited for the timeout
-    // fails on its own. Across the rounds the process (echo core + this thread, which sleeps and
-    // blocks in `read`) must have charged well under the wall time, or the core polled.
+    // cap: a round that waited for the timeout is ~480 ms late, so the bound is half the latency,
+    // not a tenth -- 50 ms is a stall a loaded runner reaches (Huly QB-975). Across the rounds the
+    // process (echo core + this thread, which sleeps and blocks in `read`) must have charged well
+    // under the wall time, or the core polled.
     reset_atoms();
     constexpr auto kLatency = 500ms;
     constexpr auto kGap     = 20ms;
@@ -292,9 +293,9 @@ TEST(CoreParkWake, SocketReadinessWakesACoreParkedInItsLoop) {
         const auto rtt = round_trip();
         ASSERT_GT(rtt, 0ns) << "round " << i << " failed";
         worst = std::max(worst, rtt);
-        EXPECT_LT(rtt, kLatency / 10) << "round " << i
-                                      << " waited for the park timeout: " << std::chrono::duration_cast<std::chrono::microseconds>(rtt).count()
-                                      << " us";
+        EXPECT_LT(rtt, kLatency / 2) << "round " << i
+                                     << " waited for the park timeout: " << std::chrono::duration_cast<std::chrono::microseconds>(rtt).count()
+                                     << " us";
     }
     const auto wall = Clock::now() - wall_before;
     const auto cpu  = process_cpu_time() - cpu_before;
@@ -431,10 +432,11 @@ public:
 };
 
 TEST(CoreParkWake, AnOffloadReturningOnThePoolWakesACoreParkedInItsLoop) {
-    // Each resume must follow its call's return by a tenth of the 500 ms cap at most -- a wake
-    // that fell through to the cap is 500 ms late on its own -- and across the rounds the process
-    // (this core and a pool thread that sleeps) must have charged well under the wall time, or the
-    // core polled while it waited instead of parking.
+    // Each resume must follow its call's return by half the 500 ms cap at most -- a wake that fell
+    // through to the cap is ~480 ms late on its own, while a tenth, 50 ms, is a stall a loaded runner
+    // reaches (Huly QB-975) -- and across the rounds the process (this core and a pool thread that
+    // sleeps) must have charged well under the wall time, or the core polled while it waited
+    // instead of parking.
     g_offload_rounds.store(0, std::memory_order_release);
     g_offload_worst_ns.store(-1, std::memory_order_release);
     constexpr auto kLatency = 500ms;
@@ -450,8 +452,8 @@ TEST(CoreParkWake, AnOffloadReturningOnThePoolWakesACoreParkedInItsLoop) {
     EXPECT_FALSE(main.hasError());
     ASSERT_EQ(g_offload_rounds.load(std::memory_order_acquire), OffloadingActor::kRounds) << "an offload never resumed";
     const auto worst = std::chrono::nanoseconds{g_offload_worst_ns.load(std::memory_order_acquire)};
-    EXPECT_LT(worst, kLatency / 10) << "an offload's resume waited for the park cap: "
-                                    << std::chrono::duration_cast<std::chrono::milliseconds>(worst).count() << " ms after its call returned";
+    EXPECT_LT(worst, kLatency / 2) << "an offload's resume waited for the park cap: "
+                                   << std::chrono::duration_cast<std::chrono::milliseconds>(worst).count() << " ms after its call returned";
     EXPECT_LT(cpu, wall / 2) << "the core polled while its offloads ran instead of parking: "
                              << std::chrono::duration_cast<std::chrono::microseconds>(cpu).count() << " us of CPU across "
                              << std::chrono::duration_cast<std::chrono::microseconds>(wall).count() << " us";

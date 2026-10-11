@@ -85,9 +85,9 @@ qb_add_test(MODULE qb-io TIER unit NAME listener-clear-reentrant-defer SOURCES a
 qb_add_test(MODULE qb-io TIER unit NAME listener-has-work SOURCES async/listener-has-work.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-io-cadence SOURCES async/listener-io-cadence.cpp DEPENDS ${PROJECT_NAME})
 # listener-timer-gate pins the pass that does not run the loop: nothing pending, no wake, no poll, no timer within reach (QB-190).
-# It also asserts how late a 5 ms timer fires, to 2 ms: run alone (serial), since a lateness read beside other tests reads
-# them -- 3.3 ms under ASan in a parallel ctest, 40/40 alone on the same build.
-qb_add_test(MODULE qb-io TIER unit NAME listener-timer-gate SOURCES async/listener-timer-gate.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
+# Its timing verdicts are read pass by pass on the loop's own clock, no longer as a 2 ms lateness bound on the test's
+# (3.3 ms under ASan in a parallel ctest; Huly QB-975), so it needs no serial slot.
+qb_add_test(MODULE qb-io TIER unit NAME listener-timer-gate SOURCES async/listener-timer-gate.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic-adapter.cpp          DEPENDS ${PROJECT_NAME} LABELS quic)
 
 # --- coroutine (pure: scheduler/awaiter/generator/channel/sync/combinator/scope/etc.) ---
