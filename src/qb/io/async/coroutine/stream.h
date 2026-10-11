@@ -80,22 +80,22 @@ private:
     // from it into a buffer nobody reads. On a caller-supplied semaphore it also hands back the
     // permit of every element still buffered (the producer's own in-flight permit goes back through
     // the producer's destructors).
+    //
+    // The lease on the coroutine itself is detail::worker_lease (coroutine/utils.h), the one
+    // make_pipeline() holds on its worker as well (Huly QB-981): one mechanism for every detached
+    // worker these primitives start. It spawns the producer and keeps its handle in a slot; ending
+    // the producer is CoroutineScheduler::cancel_spawned() on that handle, unless the producer has
+    // already ended and cleared the slot. What only a stream needs stays here: the buffer channel,
+    // the permits of backpressure(), the source's error handed to the consumer, and when the
+    // producer starts -- at once for backpressure(), on the first pull for debounce().
     // ---------------------------------------------------------------------------------------------
 
-    // Lives in the producer frame: clears the slot when the producer ends -- normally (before its
-    // final_suspend frees the frame) or destroyed while parked -- so a lease never hands a finished
-    // frame's address to cancel_spawned(), where it could already name another coroutine.
-    struct producer_slot_guard {
-        std::shared_ptr<std::coroutine_handle<>> slot;
-        explicit producer_slot_guard(std::shared_ptr<std::coroutine_handle<>> s) noexcept
-            : slot(std::move(s)) {}
-        producer_slot_guard(const producer_slot_guard &)            = delete;
-        producer_slot_guard &operator=(const producer_slot_guard &) = delete;
-        ~producer_slot_guard() {
-            if (slot)
-                *slot = {};
-        }
-    };
+    // The producer's end of its lease (detail::worker_lease::slot_guard). It lives in the producer
+    // frame, constructed first in its body, and clears the slot when the producer ends -- normally
+    // (before its final_suspend frees the frame) or destroyed while parked -- so a lease never hands
+    // a finished frame's address to cancel_spawned(), where it could already name another coroutine.
+    // Both producers below construct it under this name.
+    using producer_slot_guard = detail::worker_lease::slot_guard;
 
     // backpressure(): the permit the producer took for the element in flight, released on every exit
     // until the element is in the buffer -- from then on its consumer releases it on recv().
@@ -116,11 +116,11 @@ private:
     };
 
     struct producer_lease {
-        std::shared_ptr<channel<T>>              buffer;
-        std::shared_ptr<semaphore>               sem; ///< backpressure() only: one permit per buffered element
-        std::shared_ptr<std::exception_ptr>      error    = std::make_shared<std::exception_ptr>();
-        std::shared_ptr<std::coroutine_handle<>> producer = std::make_shared<std::coroutine_handle<>>();
-        bool                                     started  = false;
+        std::shared_ptr<channel<T>>         buffer;
+        std::shared_ptr<semaphore>          sem; ///< backpressure() only: one permit per buffered element
+        std::shared_ptr<std::exception_ptr> error = std::make_shared<std::exception_ptr>();
+        detail::worker_lease                producer; ///< the producer coroutine (utils.h), ended first below
+        bool                                started = false;
 
         producer_lease()                                  = default;
         producer_lease(const producer_lease &)            = delete;
@@ -128,9 +128,9 @@ private:
         ~producer_lease() {
             // The producer first, so nothing below can wake it into one more pull of the source. A
             // producer already finished cleared its slot; with no scheduler left (thread teardown) its
-            // frame went with it.
-            if (auto h = std::exchange(*producer, {}); h && listener::current.has_coro_scheduler())
-                coro_scheduler().cancel_spawned(h);
+            // frame went with it. Ended here rather than by the member's own destructor, which runs
+            // after this body and then finds the slot empty.
+            producer.end();
             // Every element still buffered carries a permit its consumer will never release now.
             if (sem)
                 while (buffer->try_recv())
@@ -363,8 +363,8 @@ public:
         return async_stream([source, lease, delay]() -> task<std::optional<T>> {
             // Lazy start: spawn producer on first pull
             if (!lease->started) {
-                lease->started   = true;
-                *lease->producer = coro_scheduler().spawn_tracked(debounce_produce_task(source, lease->buffer, lease->error, lease->producer));
+                lease->started = true;
+                lease->producer.start(debounce_produce_task(source, lease->buffer, lease->error, lease->producer.slot()));
             }
 
             // Block until at least one value arrives
@@ -574,8 +574,8 @@ public:
         lease->buffer  = std::make_shared<channel<T>>(max_buffer);
         lease->sem     = acquire_semaphore ? std::move(acquire_semaphore) : std::make_shared<semaphore>(max_buffer);
         lease->started = true;
-        *lease->producer =
-            coro_scheduler().spawn_tracked(backpressure_fill_task(std::move(source), lease->buffer, lease->sem, lease->error, lease->producer));
+        // The lease spawns the producer and keeps its handle; the producer holds only the slot (Huly QB-289).
+        lease->producer.start(backpressure_fill_task(std::move(source), lease->buffer, lease->sem, lease->error, lease->producer.slot()));
 
         // Consumer: read from buffer and release one semaphore slot so the
         // producer may push the next item.

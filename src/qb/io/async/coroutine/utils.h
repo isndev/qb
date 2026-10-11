@@ -384,6 +384,81 @@ pin_frame_copy(T &copy) noexcept {
 #endif
 }
 
+namespace detail {
+
+/**
+ * @brief The lease on a detached worker coroutine: what ends the worker once nothing can use it any more (Huly QB-289,
+ *        QB-981).
+ * @details A primitive that runs a coroutine apart from the handles it hands out -- `async_stream::backpressure()`'s
+ *          filler, `async_stream::debounce()`'s producer, `make_pipeline()`'s worker -- gives that coroutine to the
+ *          scheduler, not to the handles: left alone, it ends with its source, or it parks for the life of the thread
+ *          with everything it captured. The handles own this lease instead -- one object, shared by every copy of them
+ *          -- and the worker holds only its slot. When the last handle goes, the lease destroys the worker wherever it
+ *          is parked (`CoroutineScheduler::cancel_spawned()`): its awaiters retract their claims, its destructors run,
+ *          and nothing resumes it.
+ *
+ *          The worker constructs a `slot_guard` first in its body, from the `slot()` it was handed by value; the guard
+ *          clears the slot when the worker ends -- normally, before its `final_suspend` frees the frame, or destroyed
+ *          while parked -- so the lease never hands `cancel_spawned()` the address of a freed frame, which another
+ *          coroutine may already occupy. The slot is shared because either side may go first.
+ *
+ *          Same thread only, like the scheduler. The lease must not end from inside the worker itself (a callable the
+ *          worker runs dropping the last handle): `cancel_spawned()` never destroys the running coroutine. With no
+ *          scheduler left (thread teardown) the worker's frame went with it, and `end()` does nothing.
+ */
+class worker_lease {
+public:
+    /// The worker's end of the lease: a local constructed first in the worker's body, from the slot it was handed.
+    class slot_guard {
+    public:
+        explicit slot_guard(std::shared_ptr<std::coroutine_handle<>> slot) noexcept
+            : _slot(std::move(slot)) {}
+
+        slot_guard(const slot_guard &)            = delete;
+        slot_guard &operator=(const slot_guard &) = delete;
+
+        ~slot_guard() {
+            if (_slot)
+                *_slot = {};
+        }
+
+    private:
+        std::shared_ptr<std::coroutine_handle<>> _slot;
+    };
+
+    worker_lease()                                = default;
+    worker_lease(const worker_lease &)            = delete;
+    worker_lease &operator=(const worker_lease &) = delete;
+
+    ~worker_lease() {
+        end();
+    }
+
+    /// The slot to hand the worker coroutine by value, for the `slot_guard` it constructs first.
+    [[nodiscard]] const std::shared_ptr<std::coroutine_handle<>> &
+    slot() const noexcept {
+        return _slot;
+    }
+
+    /// Spawns `worker` -- a coroutine created with `slot()` -- on this thread's scheduler, and keeps its handle.
+    void
+    start(task<void> &&worker) {
+        *_slot = coro_scheduler().spawn_tracked(std::move(worker));
+    }
+
+    /// Destroys the worker wherever it waits, unless it has already ended. Idempotent.
+    void
+    end() noexcept {
+        if (auto h = std::exchange(*_slot, {}); h && listener::current.has_coro_scheduler())
+            coro_scheduler().cancel_spawned(h);
+    }
+
+private:
+    std::shared_ptr<std::coroutine_handle<>> _slot = std::make_shared<std::coroutine_handle<>>();
+};
+
+} // namespace detail
+
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_UTILS_H
