@@ -37,6 +37,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
@@ -411,6 +412,12 @@ TEST(ServiceRegistration, AFirstRegistrationIsAcceptedOnceEveryCoreIsGone) {
 }
 
 TEST(ServiceRegistration, ACoreWhosePromisedIdATagTookDoesNotStart) {
+    // The scenario is GapTag's FIRST registration, and a tag registers once per process: a repetition in the same
+    // process (--gtest_repeat) cannot rebuild it, and says so instead of failing its setup. No other test names GapTag,
+    // so the order of a shuffled run does not matter -- only a second pass over this one does.
+    static bool tag_spent = false;
+    if (std::exchange(tag_spent, true))
+        GTEST_SKIP() << "GapTag registered in an earlier repetition of this process: its first registration happens once";
     g_gap_ran_as.store(0);
     qb::Main          main;
     qb::ActorId const promised = main.addActor<GapProbe>(0);         // core(0) is built here, and promises the probe an id
@@ -427,6 +434,10 @@ TEST(ServiceRegistration, ACoreWhosePromisedIdATagTookDoesNotStart) {
 
 TEST(ServiceRegistration, ACoreThatPromisedNoOrdinaryIdStartsAfterALateRegistration) {
     // The control: a core that promised only a service has nothing to correct, and its pool starts above the tag.
+    // Like the case above, it needs QuietTag's first registration: once per process.
+    static bool tag_spent = false;
+    if (std::exchange(tag_spent, true))
+        GTEST_SKIP() << "QuietTag registered in an earlier repetition of this process: its first registration happens once";
     g_quiet_ran.store(false);
     g_quiet_child_id.store(0);
     qb::Main main;
