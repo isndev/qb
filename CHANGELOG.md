@@ -984,6 +984,17 @@ policy.
   Pinned by `AServerPresentsTheWholeChainItsCertificateFileHolds` (both server loaders, and a leaf served without
   its intermediate still refused) and `AClientPresentsTheWholeChainItsCertificateFileHolds` (mutual TLS)
   (`tls-peer-verification.cpp`).
+- **`listener-io-cadence` no longer fails when the host stalls a case past its poll interval (Huly QB-975).** A
+  test fix; the library is unchanged. Four cases assert what a non-blocking pass does inside a 50 ms io poll
+  interval, and assumed their passes ran inside it: on a loaded macOS runner a 3 ms sleep overran the interval, the
+  pass legitimately polled and delivered, and `TimersAndPendingEventsIgnoreTheCadence` read one delivery where it
+  expected none. Each case is now an attempt that judges its own window on the cadence's counter --
+  `qb::tsc_ticks()` against `io_poll_interval_ticks()`, the reading and the threshold the listener judges on --
+  asserts the inside-the-interval outcome only when the window held, and is replayed otherwise, twenty times at
+  most: a stall spoils one attempt, while a pass that never fits inside the interval spoils every one and still
+  fails the case. Each attempt runs on a fresh thread, so on a fresh listener: the cadence state outlives
+  `listener::clear()`, and in declaration order the timers case had opened its interval inside the case before it.
+  The blocking-pass case's 40 ms bound is replaced by the same judgement.
 
 ### Documentation
 
