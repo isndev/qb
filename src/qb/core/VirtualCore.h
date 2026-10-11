@@ -111,11 +111,11 @@ class VirtualCore : detail::service_registry_seal {
         static std::mutex mtx;
         return mtx;
     }
-    /**
-     * @brief `Actor::registerIndex<Tag>()`'s cold path (VirtualCore.cpp): the id of `tag`, registered now if it is
-     *        new -- or 0, refused, while a core is alive or once the 16-bit id space is spent. Publishes it in `slot`.
-     */
+    /// `Actor::registerIndex<Tag>()`'s cold path (VirtualCore.cpp): the id of `tag`, registered now if it is new -- or
+    /// 0, refused, while a core is alive or once the 16-bit id space is spent. Publishes it in `slot`.
     static ServiceId __register_service__(std::atomic<ServiceId> &slot, TypeId tag) noexcept;
+    /// At start (`Main::start_thread`): whether the ordinary ids `initializer` promised are the ones this core draws.
+    [[nodiscard]] bool __predicted_ids_hold__(CoreInitializer const &initializer) const noexcept;
 
 public:
     /*!

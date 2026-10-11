@@ -239,7 +239,10 @@ policy.
   `{0, core}`, `addActor` returns `NotFound` and `addRefActor` an invalid handle without constructing the service, a
   CRIT line names the tag and a debug build asserts. Once every core is gone the next use registers it: load an
   image that brings service tags before `Main::start`. A registration that would take the 65535th id
-  (`BroadcastSid`) is refused the same way.
+  (`BroadcastSid`) is refused the same way. And a tag that registers between the first `core(index)` and `start()`
+  -- after `addActor` promised a core's ordinary actors their ids, before that core's pool exists -- fails that
+  core's start: a CRIT names the core and the tag, `hasError()` reports it, where the core used to start with the
+  promised ids naming other actors. A core that promised no ordinary id starts normally.
 - **`CoroutineScheduler::current()` and `schedule_via_current()` bind the thread's loop scheduler when none
   is bound.** `current()` used to create a private fallback that no loop pumped, and `schedule_via_current()`
   dropped the handle in release (asserting in debug): a continuation queued before anything bound a scheduler

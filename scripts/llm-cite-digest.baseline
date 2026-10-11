@@ -52,6 +52,7 @@ llm/qb.llm.api.md	VirtualCore.cpp:1585-1600	54e820ca29af	if (!_engine._core_set.
 llm/qb.llm.api.md	VirtualCore.cpp:1644-1663	73311f4ebccc	void
 llm/qb.llm.api.md	VirtualCore.cpp:1665-1674	c027cf31c3fe	void
 llm/qb.llm.api.md	VirtualCore.cpp:1759-1794	6255f8b6dda5	ServiceId
+llm/qb.llm.api.md	VirtualCore.cpp:1796-1821	3c42a027ac9f	bool
 llm/qb.llm.api.md	VirtualCore.h:1207-1230	f5f18dc56a93	template <typename _ServiceActor>
 llm/qb.llm.api.md	VirtualCore.h:1501-1510	a57c15ec1d9a	template <typename Tag>
 llm/qb.llm.api.md	VirtualCore.h:1525-1539	5337a095ca99	template <typename Tag>

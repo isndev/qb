@@ -1793,6 +1793,33 @@ VirtualCore::__register_service__(std::atomic<ServiceId> &slot, TypeId const tag
     return sid;
 }
 
+bool
+VirtualCore::__predicted_ids_hold__(CoreInitializer const &initializer) const noexcept {
+    // `CoreInitializer::addActor` promised each ordinary actor `_next_id++`, counting from the `_nb_service + 1` it read
+    // when it was built; this core's pool draws from the `_nb_service + 1` it read when IT was built, frozen while it
+    // lives. A tag that registered in between -- between the first `core(index)` and `start()` -- moved the pool's floor,
+    // and every promised id now names another actor than the one it was handed for: the tag's service, or the next
+    // ordinary actor. A core that promised no ordinary id has nothing to correct: its floor is simply the current one.
+    // Cold: once per core, at start (Huly QB-1007).
+    auto const promised = static_cast<std::size_t>(
+        std::ranges::count_if(initializer._actor_factories, [](auto const &factory) { return !factory->isService(); }));
+    if (promised == 0)
+        return true;
+    auto const floor          = static_cast<std::size_t>(_nb_service.load(std::memory_order_relaxed)) + 1u;
+    auto const promised_floor = static_cast<std::size_t>(initializer._next_id) - promised;
+    if (likely(promised_floor == floor))
+        return true;
+    std::lock_guard<std::mutex> const lock(servicesMutex()); // the registry map, read below
+    QB_LOG_CRIT("Core(" << _index << ") promised its ordinary actors the ids from " << promised_floor
+                        << ", but service tags registered since moved its pool to " << floor
+                        << ": refusing to start it -- register every service tag before the first core(index)");
+    for (auto const &[tag, sid] : getServices())
+        if (sid >= promised_floor && sid < floor)
+            QB_LOG_CRIT("Core(" << _index << "): service tag " << qb::event_type_name(tag) << " took id " << sid
+                                << ", an id this core had promised to an ordinary actor");
+    return false;
+}
+
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

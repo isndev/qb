@@ -21,6 +21,9 @@
  *     `getServiceId<Tag>()`, from inside a running actor, does not draw the id of an ordinary actor of that core.
  *   - A tag whose FIRST registration comes while a core is alive is refused -- NotFound, a CRIT log and, in a debug
  *     build, an assert -- and a first registration is accepted again once every core is gone.
+ *   - A tag registered between the first `core(index)` and `start()` -- after the core promised its ordinary actors
+ *     their ids, before its pool exists -- fails the start of that core if it promised one (the tag took it), and is
+ *     harmless to a core that promised none.
  *
  * Two tools make the order deterministic on every compiler. An EXPLICIT specialization of `ServiceIndex` has ordered
  * initialisation ([basic.start.dynamic]): defined after a global, it is initialised after that global, whereas the
@@ -153,7 +156,7 @@ public:
         auto duplicate = addRefActor<PinnedService>();
         g_rt_duplicate_refused.store(!duplicate.valid());
         g_rt_constructed.store(g_pinned_constructed.load());
-        push<Poke>(expected);                              // the registered id reaches the service...
+        push<Poke>(expected);                             // the registered id reaches the service...
         push<qb::KillEvent>(qb::BroadcastId(getIndex())); // ...and the run ends whatever happened above
         g_rt_ran.store(true);
         co_return true;
@@ -235,7 +238,7 @@ class LateProbe : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() final {
-        g_late_probe_id.store(raw(id())); // the first ordinary actor of the core: the pool's lowest id
+        g_late_probe_id.store(raw(id()));                                   // the first ordinary actor of the core: the pool's lowest id
         g_late_id.store(raw(qb::Actor::getServiceId<LateTag>(getIndex()))); // LateTag's FIRST registration
         g_late_ref_valid.store(addRefActor<LateService>().valid());
         kill();
@@ -256,6 +259,54 @@ public:
     qb::io::async::task<bool>
     onInit() final {
         kill();
+        co_return true;
+    }
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// 5. A tag registered between the first core(index) and start().
+// ---------------------------------------------------------------------------------------------------------------
+struct GapTag {};
+struct QuietTag {};
+
+} // namespace service_registration_test
+
+namespace qb {
+// Neither registers at static initialisation: each test registers its tag after `core(0)` was built.
+template <>
+const ServiceId ServiceActor<service_registration_test::GapTag>::ServiceIndex = 0;
+template <>
+const ServiceId ServiceActor<service_registration_test::QuietTag>::ServiceIndex = 0;
+} // namespace qb
+
+namespace service_registration_test {
+
+std::atomic<std::uint32_t> g_gap_ran_as{0};
+
+class GapProbe : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_gap_ran_as.store(raw(id()));
+        kill();
+        co_return true;
+    }
+};
+
+struct QuietServiceTag {}; // an ordinary tag: registered at static initialisation
+
+std::atomic<bool>          g_quiet_ran{false};
+std::atomic<std::uint32_t> g_quiet_child_id{0};
+
+class QuietChild : public qb::Actor {};
+
+class QuietService : public qb::ServiceActor<QuietServiceTag> {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_quiet_child_id.store(raw(addRefActor<QuietChild>().id()));
+        g_quiet_ran.store(true);
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
         co_return true;
     }
 };
@@ -357,4 +408,36 @@ TEST(ServiceRegistration, AFirstRegistrationIsAcceptedOnceEveryCoreIsGone) {
     qb::ActorId const fresh = qb::Actor::getServiceId<FreshTag>(0);
     EXPECT_TRUE(fresh.is_valid()) << "a first registration with no core alive was refused";
     EXPECT_EQ(raw(qb::Actor::getServiceId<FreshTag>(0)), raw(fresh)) << "a registered id must not move";
+}
+
+TEST(ServiceRegistration, ACoreWhosePromisedIdATagTookDoesNotStart) {
+    g_gap_ran_as.store(0);
+    qb::Main          main;
+    qb::ActorId const promised = main.addActor<GapProbe>(0);         // core(0) is built here, and promises the probe an id
+    qb::ActorId const gap      = qb::Actor::getServiceId<GapTag>(0); // GapTag registers now: no core is alive yet
+    ASSERT_TRUE(promised.is_valid());
+    ASSERT_TRUE(gap.is_valid());
+    ASSERT_EQ(gap.sid(), promised.sid()) << "the setup: the tag took the very id the probe was promised";
+    main.start(false);
+    main.join();
+    // Until 3.3 the core started, and the probe ran under the next id: the one addActor returned named GapTag's service.
+    EXPECT_TRUE(main.hasError()) << "the core started although an id it had promised now names a service";
+    EXPECT_EQ(g_gap_ran_as.load(), 0u) << "the probe ran as " << g_gap_ran_as.load() << ", it was promised " << raw(promised);
+}
+
+TEST(ServiceRegistration, ACoreThatPromisedNoOrdinaryIdStartsAfterALateRegistration) {
+    // The control: a core that promised only a service has nothing to correct, and its pool starts above the tag.
+    g_quiet_ran.store(false);
+    g_quiet_child_id.store(0);
+    qb::Main main;
+    main.addActor<QuietService>(0);
+    qb::ActorId const quiet = qb::Actor::getServiceId<QuietTag>(0);
+    ASSERT_TRUE(quiet.is_valid());
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_quiet_ran.load());
+    qb::ActorId const child(g_quiet_child_id.load());
+    EXPECT_TRUE(child.is_valid()) << "the service's child was refused";
+    EXPECT_GT(child.sid(), quiet.sid()) << "the core's pool does not start above the tag registered before it was built";
 }

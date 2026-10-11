@@ -464,7 +464,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
-        if (!core.__init__(initializer.getAffinity())) {
+        if (!core.__predicted_ids_hold__(initializer) || !core.__init__(initializer.getAffinity())) { // the first: Huly QB-1007
             QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
         } else if (core_factory.empty()) {
