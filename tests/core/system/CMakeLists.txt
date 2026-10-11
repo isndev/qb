@@ -210,3 +210,7 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-dump SOURCES coroutine/cor
 # cores exist; a tag first registered while a core is alive is refused (a death test in debug) and accepted again
 # once every core is gone. Single-core engines on the calling thread.
 qb_add_test(MODULE qb-core TIER system NAME service-registration SOURCES actor/service-registration.cpp DEPENDS ${PROJECT_NAME})
+# flush-yields-to-inbound pins the flush's backpressure rule (Huly QB-979): a core whose peer's ring is full and
+# that has inbound work of its own -- here a self-addressed chain -- tries the head event once per pass and runs
+# that work, so `sends_blocked` never exceeds `loop_passes` (513 per blocked pass before); the flood arrives whole.
+qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES concurrency/flush-yields-to-inbound.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

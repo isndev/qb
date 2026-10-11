@@ -117,6 +117,8 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     for (std::size_t i = 0; i < _pipes.size(); ++i)
         if (i != _resolved_index)
             _peer_pipes.push_back(&_pipes[i]);
+    _peer_seen_read.assign(_pipes.size(), SIZE_MAX);
+    _peer_stalls.assign(_pipes.size(), 0);
     // Seed the pool above the last registered service id. The base `detail::service_registry_seal` counted this core
     // alive under the registry mutex before any member was built: every registration before it is visible to this
     // relaxed load, and none can follow it while the core lives -- it would be refused (Huly QB-1007).
@@ -417,7 +419,8 @@ VirtualCore::__receive__() {
 // (`__workflow__`) then drains the local mailbox via `__receive__`, which
 // frees space for peers and lets the next `__flush_all__` pass make progress.
 //
-// Backoff policy (monotonic, cache-friendly):
+// Backoff policy (monotonic, cache-friendly) -- entered only by a core with no inbound work of
+// its own; a core that has some bails at once and runs it (Huly QB-979, in the body):
 //   [0, SPIN_THRESHOLD)   pure spin + `qb::spin_loop_pause()` (CPU hint — no
 //                         scheduler involvement, minimal latency)
 //   [SPIN_THRESHOLD, YIELD_THRESHOLD) `std::this_thread::yield()` — give the
@@ -443,6 +446,13 @@ static_assert(kFlushSpinAttempts < kFlushYieldAttempts, "spin phase must precede
 // holding one event (a ping-pong) forms a run of one and pays what `try_send` paid. See
 // `SharedCoreCommunication::send_run` for the measurement.
 constexpr std::size_t kFlushRunBuckets = 256;
+// Refusals in a row, each finding the peer's consumer index where the previous one left it, before the
+// flush calls the peer STALLED and gives the pass back to inbound work instead of retrying (Huly
+// QB-979). Each refusal before that runs the whole budget above: two budgets (~250 us on g++, the
+// yields' price) are what a peer that merely drains slowly -- savina/nqueens' master, in a kernel of its
+// own core's workers between two drains -- is given to show it is alive, and what a peer held for
+// milliseconds in one handler (savina/barber's factory) costs this core once per such episode.
+constexpr std::uint8_t kFlushStallRefusals = 2;
 } // namespace
 
 // Widest event a destination mailbox ring can EVER accept — `kMaxDeliverableBuckets`,
@@ -556,48 +566,22 @@ VirtualCore::__flush_pipes__() noexcept {
                     continue;
                 }
 
-                // From here the destination's mailbox is full: backpressure, counted for
-                // `Actor::getCoreStats()` once per failed attempt (Huly QB-162).
-                ++_nb_send_blocked;
-                if (!event.state.bits.qos) {
-                    // Best-effort event: dropped on backpressure (preserves the
-                    // original fire-and-forget semantics for QoS-0 events such as
-                    // metrics or heartbeats). Counted as dropped, not as sent: it
-                    // was counted "sent" until 3.3, which made the two read the same.
-                    ++_nb_event_dropped;
-                    cur += event.bucket_size;
-                    continue;
+                // The ring is full: backpressure. The cold half of this function -- the count, the QoS-0
+                // drop, the stall test, the bounded backoff and the two partial bails -- is `__refused__`,
+                // out of line at the end of this file (Huly QB-979). What that does NOT buy is the
+                // compiler's schedule of the run-gathering loop above as it was before the rule: g++
+                // and MSVC redo it whenever this function changes, however cold the change, and
+                // savina/big at two cores -- where none of the rule's code runs -- reads ~1.5 % slower
+                // for it on g++ (forty interleaved launches; the same with the branch inline, and worse,
+                // +6.5 %, with the loop in a function of its own, which pays a call per run). Size,
+                // member layout and alignment were excluded by their own controls; Windows is level
+                // (qb-vs-others docs/TUNING.md 21.8). `true` gives the pass back with the event still
+                // at the head of its pipe.
+                if (__refused__(event, pipe_idx)) {
+                    partial = true;
+                    break;
                 }
-
-                // QoS-guaranteed event: bounded backoff.
-                bool sent = false;
-                for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
-                    ++_metrics._nb_event_sent_try;
-                    if (try_send(event)) {
-                        sent = true;
-                        break;
-                    }
-                    ++_nb_send_blocked;
-                    if (attempt < kFlushSpinAttempts) {
-                        qb::spin_loop_pause();
-                    } else {
-                        std::this_thread::yield();
-                    }
-                }
-
-                if (sent) {
-                    ++_metrics._nb_event_sent;
-                    _metrics._nb_bucket_sent += event.bucket_size;
-                    cur += event.bucket_size;
-                    continue;
-                }
-
-                // Budget exhausted — surrender cleanly. The destination's consumer
-                // is woken so it runs immediately (at zero latency only the fence
-                // runs — see `Mailbox::notify()`).
-                _engine.getMailBox(event.dest.index()).notify();
-                partial = true;
-                break;
+                cur += event.bucket_size;
             }
 
             // Everything before `cur` in this segment is published or disposed. Consuming exactly
@@ -1818,6 +1802,109 @@ VirtualCore::__predicted_ids_hold__(CoreInitializer const &initializer) const no
             QB_LOG_CRIT("Core(" << _index << "): service tag " << qb::event_type_name(tag) << " took id " << sid
                                 << ", an id this core had promised to an ordinary actor");
     return false;
+}
+
+// The flush's question on backpressure (Huly QB-979): does this core hold work of its own that
+// `__receive__` or the io pump would run if the flush gave the pass back now? Cold -- asked only
+// once a peer's ring is found full -- and at the end of the file for the layout reason above.
+bool
+VirtualCore::__has_inbound_work__() const noexcept {
+    return !_self_pipe.empty() || _mail_box.has_data() || io::async::listener::current.has_work();
+}
+
+// The flush's refused event (Huly QB-979): the cold half of `__flush_pipes__`, out of line and at the end
+// of the file for the layout reason above (what that does and does not buy the hot loop is said at its
+// call site). `event` is the head of
+// the pipe to `pipe_idx`'s core, whose ring `try_send` has just refused; the two undeliverable shapes
+// were taken out by the caller. Returns true when the pass must be given back with the event still at
+// the head of its pipe (a partial flush), false when the event was published or dropped and the walk
+// moves past it.
+bool
+VirtualCore::__refused__(Event &event, std::size_t const pipe_idx) noexcept {
+    // From here the destination's mailbox is full: backpressure, counted for
+    // `Actor::getCoreStats()` once per failed attempt (Huly QB-162).
+    ++_nb_send_blocked;
+    if (!event.state.bits.qos) {
+        // Best-effort event: dropped on backpressure (preserves the
+        // original fire-and-forget semantics for QoS-0 events such as
+        // metrics or heartbeats). Counted as dropped, not as sent: it
+        // was counted "sent" until 3.3, which made the two read the same.
+        ++_nb_event_dropped;
+        return false;
+    }
+
+    // QoS-guaranteed event. Only the peer's own receive pass frees its ring, and what
+    // this core does meanwhile depends on two things (Huly QB-979): whether the peer is
+    // STALLED -- it consumed nothing since this core last found its ring full, which the
+    // producer ring's snapshot of the consumer's index says without a cross-line read --
+    // and whether this core has INBOUND work of its own waiting: a peer's ring into it
+    // holds events, the self pipe holds the same-core pushes of the last pass, or the io
+    // loop has something to deliver.
+    //
+    //   * stalled peer AND inbound work -- bail NOW, exactly as the exhausted budget
+    //     below bails: the event stays at the head of the pipe for the next pass, the
+    //     peer is notified, and `__receive__` runs. That work may be what the peer is
+    //     waiting on (the mutual-full-rings scenario at the top of this block is
+    //     resolved by this very drain), and it is throughput this core would otherwise
+    //     burn in the backoff: savina/barber at two cores spent its barber's passes
+    //     here -- up to 64 pauses and 448 yields per pass -- while its factory held the
+    //     peer core in one handler for the whole production (94 285 blocked attempts
+    //     per run, benchmarks/savina/barber.md), and the second core bought 5 % of the
+    //     one-core time.
+    //   * a peer that IS draining -- then the bounded backoff below, even with inbound
+    //     work waiting: savina/nqueens' master drains its ring every pass and relays
+    //     what the workers send it, so a worker that ran its own kernels instead of
+    //     waiting a few tens of microseconds hoarded the children the master was about to
+    //     relay, and the search fell into its slower schedule more often (72 % of the
+    //     repetitions against 28 %, measured, with a rule that bailed on inbound work
+    //     alone; 46 % with a stall called on the first unmoved refusal). A stall is
+    //     called on the `kFlushStallRefusals`-th refusal in a row that finds the index
+    //     unmoved; the refusals before it run the whole budget, the first of an episode
+    //     always (there is nothing to compare with yet).
+    //   * nothing else to do -- the bounded backoff: a spin that re-tries at the ring's
+    //     latency, then yields that give the CPU to a peer that may share it. A core with
+    //     nothing to do has nothing better to spend the time on, and the yield phase is
+    //     what keeps an oversubscribed pair out of a livelock.
+    //
+    // Ticks (`_callback_list`) are not inbound work, on purpose: a ticking producer that
+    // floods a slower peer keeps the throttle the backoff gives it.
+    auto &peer_ring = _engine.getMailBox(event.dest.index()).ringOf(_resolved_index);
+    {
+        const std::size_t seen    = peer_ring.producer_seen_read_index();
+        const bool        unmoved = seen == _peer_seen_read[pipe_idx];
+        _peer_seen_read[pipe_idx] = seen;
+        std::uint8_t &stalls      = _peer_stalls[pipe_idx];
+        stalls                    = unmoved ? static_cast<std::uint8_t>(stalls == 255 ? 255 : stalls + 1) : 0;
+        if (stalls >= kFlushStallRefusals && __has_inbound_work__()) {
+            _engine.getMailBox(event.dest.index()).notify();
+            return true;
+        }
+    }
+
+    // Bounded backoff.
+    for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
+        ++_metrics._nb_event_sent_try;
+        if (try_send(event)) {
+            ++_metrics._nb_event_sent;
+            _metrics._nb_bucket_sent += event.bucket_size;
+            return false;
+        }
+        ++_nb_send_blocked;
+        if (attempt < kFlushSpinAttempts) {
+            qb::spin_loop_pause();
+        } else {
+            std::this_thread::yield();
+        }
+    }
+
+    // Budget exhausted — surrender cleanly. The destination's consumer
+    // is woken so it runs immediately (at zero latency only the fence
+    // runs — see `Mailbox::notify()`). What the peer consumed DURING the budget is
+    // not a stall's evidence: the snapshot the next refusal compares with is the one
+    // the last attempt refreshed.
+    _peer_seen_read[pipe_idx] = peer_ring.producer_seen_read_index();
+    _engine.getMailBox(event.dest.index()).notify();
+    return true;
 }
 
 } // namespace qb

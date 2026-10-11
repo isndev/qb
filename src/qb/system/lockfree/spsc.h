@@ -465,6 +465,19 @@ public:
     empty() const noexcept {
         return write_index_.load(std::memory_order_relaxed) == read_index_local_;
     }
+
+    /**
+     * @brief Producer-side: the consumer's index as the producer last saw it -- its own snapshot, no
+     *        cross-line read.
+     * @details Refreshed by every enqueue the snapshot could not prove room for, so right after a
+     *          refused enqueue it is the consumer's published index at that moment. A producer that
+     *          finds the ring full twice and reads the same value here knows the consumer took
+     *          nothing in between: the stall test of the core's flush (Huly QB-979). Producer thread only.
+     */
+    [[nodiscard]] size_t
+    producer_seen_read_index() const noexcept {
+        return cached_read_index_;
+    }
 };
 static_assert(sizeof(ringbuffer<int>) == 8 * QB_LOCKFREE_CACHELINE_BYTES,
               "spsc::internal::ringbuffer is four two-line blocks: each side's private line and published line");

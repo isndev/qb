@@ -508,7 +508,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:388-410; VirtualCore.cpp:717-723, :854-866, :1193-1214; coroutine/scheduler.h:850-854)_
+  _(Actor.cpp:388-410; VirtualCore.cpp:701-707, :838-850, :1177-1198; coroutine/scheduler.h:850-854)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -571,7 +571,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
   target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
-  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1207-1230;
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1220-1243;
   the inventory table Actor.h:868-912)_
 - **A service tag registers before the cores, or not while they live.** Every tag a program names registers at
   static initialisation, and each core seeds its ordinary-actor ids above the registered tags. A tag whose FIRST
@@ -585,8 +585,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1446 / VirtualCore.h:1668; `spawn` Actor.h:1483 /
-  VirtualCore.h:1694)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1446 / VirtualCore.h:1681; `spawn` Actor.h:1483 /
+  VirtualCore.h:1707)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -603,7 +603,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:802-819; VirtualCore.h:1030-1042; VirtualCore.cpp:1417-1424)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:802-819; VirtualCore.h:1043-1055; VirtualCore.cpp:1401-1408)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
@@ -627,7 +627,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1295-1309, :1585-1600, :1644-1674, :1710-1737)_
+  _(VirtualCore.cpp:1279-1293, :1569-1584, :1628-1658, :1694-1721)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:67-79; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

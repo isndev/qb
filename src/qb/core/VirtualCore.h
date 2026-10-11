@@ -703,6 +703,12 @@ private:
     // backpressure paths and declared after everything the pass reads, for the same reason.
     std::uint64_t _nb_send_blocked  = 0; ///< publish attempts that found the destination's mailbox full
     std::uint64_t _nb_event_dropped = 0; ///< best-effort (QoS-0) events discarded on backpressure
+    /// Per outbound pipe (dense core index): the peer's consumer index as this core's producer ring saw
+    /// it the last time the flush found that peer's ring full, and how many refusals in a row found it
+    /// unmoved -- the stall test of the backpressure rule (Huly QB-979). Sized by the constructor;
+    /// `SIZE_MAX` and 0 until a first refusal.
+    std::vector<std::size_t>  _peer_seen_read;
+    std::vector<std::uint8_t> _peer_stalls;
     // The dead letters (Huly QB-163): counted by reason, and handed to the handler the core's
     // `CoreInitializer` installed, if any. Touched only when an event reaches no actor.
     std::uint64_t                                _nb_dead_letters = 0;
@@ -774,6 +780,13 @@ private:
     //! with the backoff and the two undeliverable shapes. Out of line and only entered when
     //! the inline scan found a pipe holding events.
     bool __flush_pipes__() noexcept;
+    //! The flush's question on backpressure (Huly QB-979): inbound work -- a peer's ring, the
+    //! self pipe, the io loop -- that this pass would run if the flush gave it back now.
+    [[nodiscard]] bool __has_inbound_work__() const noexcept;
+    //! The refused event of a flush (Huly QB-979): the blocked count, the QoS-0 drop, the stall test,
+    //! the bounded backoff and the partial bails -- the cold half of `__flush_pipes__`, out of line.
+    //! True: give the pass back, the event stays at its pipe's head.
+    [[nodiscard]] QB_NOINLINE QB_COLD bool __refused__(Event &event, std::size_t pipe_idx) noexcept;
     //! Shutdown residual drain helper: dispose the events queued in this core's outbound
     //! pipes whose destination core has already left __workflow__ (published its "stopped"
     //! flag) and will never drain its mailbox again — those events can never be delivered, so
@@ -1592,7 +1605,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:619-628`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:685-694`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

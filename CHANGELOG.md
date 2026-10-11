@@ -243,6 +243,43 @@ policy.
   -- after `addActor` promised a core's ordinary actors their ids, before that core's pool exists -- fails that
   core's start: a CRIT names the core and the tag, `hasError()` reports it, where the core used to start with the
   promised ids naming other actors. A core that promised no ordinary id starts normally.
+- **A core blocked on a STALLED peer's full mailbox drains its own inbound work instead of waiting (Huly
+  QB-979).** The flush of a QoS-guaranteed event that finds the destination's ring full used to retry it up to
+  512 times per pass -- 64 `spin_loop_pause()`s, then 448 `std::this_thread::yield()`s -- before leaving it in
+  the pipe for the next pass, whatever this core had waiting and whatever the peer was doing. It now leaves it at
+  once when the peer is stalled -- its consumer index, as this core's producer ring last saw it, unmoved over two
+  refusals in a row (`kFlushStallRefusals`): a peer held in one long handler, or itself blocked on this core's
+  ring -- and this core has inbound work: a peer's ring holds events, the self pipe holds the last pass's
+  same-core pushes, or the io loop has something to deliver. A peer that is draining, however slowly, keeps the
+  whole budget, and so does a core with nothing else to do, where the yield phase is what gives an oversubscribed
+  peer the CPU. The shape that found it is `savina/barber` at two cores (qb-vs-others
+  `benchmarks/savina/barber.md`): the factory's core drains nothing during the reference's one-handler
+  production, its ring from the barber's core fills after ~340 customers, and the barber's core spent its passes
+  in the backoff -- 94 285 blocked attempts per run, the two-core cell at 95 % of the one-core time. Measured on
+  WSL2 g++-14 against `9aebf2fc` (three physical copies a side, seeded random order, eight rounds; the control's
+  copy spread as the yardstick): barber 2c-spin and 2c-park -28.6 / -28.8 % (spread 0.3-0.5 %),
+  bank-transaction 2c -4.9 % (2.4 %), every other Savina cell and every dev/bench case level but one, nqueens 2c level
+  (its two schedules at 33 % / 36 % of the repetitions, n = 72). The one residual cost: `savina/big` at two cores on g++,
+  +1.4 / +1.5 % (spin / park) with the rule inline, +2.0 / +1.6 % with its refused-event branch out of line (the
+  form shipped here), +1.1 / +0.9 % on a pair built with `-falign-*` on both sides -- a census of 40 interleaved
+  launches per configuration each time, bootstrap 95 % CIs excluding zero; ~0.3 ns per flushed run. The rule's code
+  never runs there (`sends_blocked` 0 on both cores): it is the compiler's schedule of `__flush_pipes__`'s
+  run-gathering loop, which g++ and MSVC redo whenever the function changes, however cold the change -- shown by
+  four controls in the same session: the control plus 640 bytes of never-executed code is level (not size or
+  aliasing), the rule with its new members at the class tail keeps the cost (not member layout), the aligned pair
+  keeps it (not alignment), the control's own function body with two cold calls recompiles differently too, and
+  the loop isolated in a function of its own is worse (+6.5 %: a call and a vectorised counter update per run).
+  Bounded to the run-heavy cells that never block (chameneos, counting, ping-pong, thread-ring level), Windows
+  level (+0.5 % inside 0.6 %); recorded in qb-vs-others `docs/TUNING.md` §21.8; Windows MSVC 19.51: barber 2c-spin and 2c-park
+  -29.5 / -29.2 % (spread 1.1 / 0.7 %), every other cell inside its spread (nqueens 2c -0.1 %, bank-transaction
+  +0.4 %), dev/bench's nine cases level, and a one-core ping-pong -4.6 % that is layout: no changed instruction
+  runs at one core, and the pass, the receive and the direct send are instruction-identical in the /FAs listings. The stall test is what the first form of this
+  rule -- bail on inbound work alone -- lacked: nqueens' master drains its ring every pass and relays the workers'
+  children, and a worker that ran its own kernels instead of waiting out the budget hoarded them, so the search
+  fell into its slower schedule in 72 % of the repetitions against 28 % (measured, +12 % on the cell). Nothing is
+  dropped and no order changes: it is the partial bail the exhausted budget already took, taken earlier. Pinned by
+  `tests/core/system/concurrency/flush-yields-to-inbound.cpp` (the first two refusals of a blocked episode spend
+  the budget, every one after them tries once).
 - **`CoroutineScheduler::current()` and `schedule_via_current()` bind the thread's loop scheduler when none
   is bound.** `current()` used to create a private fallback that no loop pumped, and `schedule_via_current()`
   dropped the handle in release (asserting in debug): a continuation queued before anything bound a scheduler

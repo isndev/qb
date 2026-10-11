@@ -565,7 +565,7 @@ t_tpp.cpp:1:10: fatal error: 'qb/core/Actor.tpp' file not found
 ```
 
 Template bodies moved to the tail of the `.h` that declares them — except `qb::Actor`'s, which moved
-to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1407-1412`). Most of those bodies name
+to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1420-1425`). Most of those bodies name
 `VirtualCore::` in a nested-name-specifier and need a complete `qb::VirtualCore`, and `VirtualCore.h`
 already includes `Actor.h` — so `Actor.h` can never host them. The body has to go where the include
 cycle *closes*, which is a position, not a file you get to choose.
