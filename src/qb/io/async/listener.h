@@ -378,30 +378,30 @@ private:
         return _timer_due(tsc);
     }
 
-    /// Whether this non-blocking pass polls the backend (see the cadence above). Called only
-    /// when the loop has an fd to look at and the previous pass delivered nothing.
-    [[nodiscard]] bool
-    _io_poll_due() noexcept {
-        const std::uint64_t t = qb::tsc_ticks();
-        if (t - _last_poll_tsc < _poll_every_tsc)
-            return false;
-        _last_poll_tsc = t;
-        return true;
-    }
+    // ---- The counter's rate (Huly QB-1013) ---------------------------------------------------
+    // Every io interval above is converted into ticks with it, and `_timer_due` turns the counter's
+    // advance back into time with it, so its error is theirs. It was read as two pairs -- the
+    // clock, then the counter, at each end of the window -- and a pair takes whatever ran between
+    // its two reads (an interrupt, a preemption, a VM exit) for elapsed ticks or elapsed time,
+    // multiplied by the window over the delay. Measured with a 1 ms sleep injected between the
+    // closing pair's reads (WSL2, g++-14): the counter read 6.3-6.5 times too fast, every io
+    // interval as many times longer and the estimate as many times short, so a 100 ms timer on a
+    // core that never parks fired after 616-634 ms (885-1030 ms on MSVC, whose 1 ms sleep lasts
+    // longer). Between the opening pair's reads the error goes the other way: a rate near zero,
+    // an interval of nothing, a clock read on every pass. `qb::detail::calibrate_tsc_per_ns`
+    // reads each end's clock between two counter reads and keeps the tightest of five such
+    // brackets, so the delay lands in a bracket that is not kept, for 0.2-0.3 µs on top of the
+    // 200 µs spin. The suspension tracker calibrates with the same function (`coroutine/tracking.cpp`).
 
     /// Calibrate `tsc_ticks()` against `mono_now()` over ~200 µs, once per listener (a fixed
     /// tick rate is assumed: an invariant TSC on x86, the architected counter on arm64; the
-    /// portable fallback of `tsc_ticks()` IS a nanosecond clock and calibrates to 1).
+    /// portable fallback of `tsc_ticks()` IS a nanosecond clock and calibrates to 1), each end
+    /// of the window bracketed (see the block above). A zero rate -- a counter that does not
+    /// move -- leaves the cadence polling on every pass and the timer gate handing every pass
+    /// that holds a timer to the loop.
     void
     _calibrate_tsc() noexcept {
-        const auto          m0 = qb::mono_now();
-        const std::uint64_t t0 = qb::tsc_ticks();
-        while (qb::mono_now() - m0 < std::chrono::microseconds{200}) {
-        }
-        const auto          m1 = qb::mono_now();
-        const std::uint64_t t1 = qb::tsc_ticks();
-        const auto          ns = std::chrono::duration_cast<std::chrono::nanoseconds>(m1 - m0).count();
-        _tsc_per_ns            = (ns > 0 && t1 > t0) ? static_cast<double>(t1 - t0) / static_cast<double>(ns) : 0.;
+        _tsc_per_ns = qb::detail::calibrate_tsc_per_ns();
     }
 
     /// The loop's own liveness rule, read inline: a referenced active watcher, or a pending event

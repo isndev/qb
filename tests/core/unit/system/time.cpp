@@ -564,4 +564,87 @@ TEST(TimingRecorder, AGapOfSecondsDropsTheStaleBucket) {
     EXPECT_EQ(r.snapshot(mono_at(ms{15'010})).max, ms{50});
 }
 
+// ---------------------------------------------------------------------------
+// The counter's rate: a delay between two reads stays out of it (Huly QB-1013)
+// ---------------------------------------------------------------------------
+
+/// A clock and a counter on one virtual timeline, `kRate` ticks per nanosecond, each read taking its own few
+/// nanoseconds -- and one delay, `delay`, landing right before the `delayed_call`-th read of either: an interrupt,
+/// a preemption, a VM exit, wherever it happens to fall.
+struct OneDelay {
+    static constexpr double kRate = 3.;
+
+    std::int64_t now_ns       = 1'000'000'000;
+    std::int64_t delay_ns     = 0;
+    int          delayed_call = 0; // 1-based; 0: none
+    int          calls        = 0;
+
+    void
+    step(std::int64_t const cost_ns) {
+        if (++calls == delayed_call)
+            now_ns += delay_ns;
+        now_ns += cost_ns;
+    }
+    qb::mono_time
+    clock() {
+        step(25);
+        return qb::mono_time{std::chrono::nanoseconds{now_ns}};
+    }
+    std::uint64_t
+    counter() {
+        step(7);
+        return static_cast<std::uint64_t>(static_cast<double>(now_ns) * kRate);
+    }
+};
+
+double
+measured_with(OneDelay &t, qb::duration const window) {
+    return qb::detail::measure_tsc_per_ns([&t] { return t.clock(); }, [&t] { return t.counter(); }, window);
+}
+
+TEST(TscRate, ADelayBetweenAnyTwoReadsLeavesTheRateWhereItWas) {
+    // A pair read one after the other -- the clock, then the counter -- took a delay between its two reads for
+    // elapsed ticks or elapsed time: at the window's close, a 1 ms delay over a 200 µs window read the counter six
+    // times too fast. The delay is swept over every read of the measurement, one run each: none may move the rate
+    // by more than a part in a thousand.
+    constexpr auto kWindow = 20us;
+    OneDelay       clean;
+    ASSERT_NEAR(measured_with(clean, kWindow), OneDelay::kRate, OneDelay::kRate * 1e-6) << "without a delay the fake reads exact";
+    const int reads = clean.calls;
+    ASSERT_GT(reads, 100) << "the window was spun through";
+    int    moved = 0, first = 0, last = 0; // the reads a delay landed before and moved the rate
+    double worst = 0.;                     // the farthest it moved it, as a fraction of the rate
+    for (int at = 1; at <= reads; ++at) {
+        OneDelay delayed;
+        delayed.delay_ns     = 1'000'000; // 1 ms
+        delayed.delayed_call = at;
+        const double rate    = measured_with(delayed, kWindow);
+        const double off     = (rate > OneDelay::kRate ? rate - OneDelay::kRate : OneDelay::kRate - rate) / OneDelay::kRate;
+        if (off > 1e-3) {
+            ++moved;
+            first = first ? first : at;
+            last  = at;
+            worst = off > worst ? off : worst;
+        }
+    }
+    EXPECT_EQ(moved, 0) << "a 1 ms delay moved the rate at " << moved << " of " << reads << " positions, the first before read " << first
+                        << " and the last before read " << last << ", by up to " << worst * 100. << " %";
+}
+
+TEST(TscRate, ACounterThatDoesNotMoveHasNoRate) {
+    OneDelay   t;
+    const auto rate = qb::detail::measure_tsc_per_ns([&t] { return t.clock(); }, [] { return std::uint64_t{42}; }, 20us);
+    EXPECT_EQ(rate, 0.) << "0 is the no-counter answer: the cadence then polls on every pass";
+}
+
+TEST(TscRate, TheCalibrationAgreesWithATenMillisecondMeasurement) {
+    // The real clock and counter: the 200 µs calibration qb uses against the same measurement over fifty times the
+    // window. Two per cent is far above the clocks' own resolution over 200 µs (100 ns on Windows' 10 MHz counter);
+    // a counter that does not move (no hardware counter) reads 0 for both.
+    const double calibrated = qb::detail::calibrate_tsc_per_ns();
+    const double reference  = qb::detail::measure_tsc_per_ns([] { return qb::mono_now(); }, [] { return qb::tsc_ticks(); }, 10ms);
+    ASSERT_GT(reference, 0.) << "the platform has a counter";
+    EXPECT_NEAR(calibrated, reference, reference * 0.02);
+}
+
 } // namespace

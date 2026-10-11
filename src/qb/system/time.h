@@ -890,6 +890,58 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------
+// The CPU counter's rate (Huly QB-1013)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief The CPU counter's rate against the monotonic clock -- `tsc_ticks()` ticks per nanosecond -- measured over
+ *        `window`; 0 when the counter does not move (no usable counter).
+ * @details Each end of the window reads the clock between two counter reads, `tries` times, and keeps the tightest
+ *          such bracket, its clock reading paired with the middle of its two counter reads. A pair read one after the
+ *          other takes whatever ran between its two reads -- an interrupt, a preemption, a VM exit -- for counter
+ *          ticks or clock time, and the rate carries that delay multiplied by the window over it: a 1 ms delay
+ *          between the closing pair's reads measured the counter six times too fast over a 200 µs window. A delay
+ *          lands inside one bracket, which is then the wide one and is not kept; only a delay in every one of the
+ *          `tries` brackets of an end gets through. `clock` returns a `qb::mono_time` and `counter` a
+ *          `std::uint64_t`: qb passes `mono_now` and `tsc_ticks` (`calibrate_tsc_per_ns`), a test drives its own.
+ */
+template <typename Clock, typename Counter>
+[[nodiscard]] double
+measure_tsc_per_ns(Clock &&clock, Counter &&counter, duration const window, int const tries = 5) noexcept {
+    struct end_reading {
+        std::uint64_t ticks  = 0; ///< the middle of the bracket's two counter reads
+        mono_time     at     = {};
+        std::uint64_t spread = ~std::uint64_t{0}; ///< the bracket's width in ticks; all ones: no bracket kept
+    };
+    const auto read_end = [&clock, &counter, tries]() noexcept {
+        end_reading best;
+        for (int i = 0; i < tries; ++i) {
+            const std::uint64_t before = counter();
+            const mono_time     at     = clock();
+            const std::uint64_t after  = counter();
+            if (after >= before && after - before < best.spread)
+                best = {before + (after - before) / 2, at, after - before};
+        }
+        return best;
+    };
+    const end_reading start = read_end();
+    while (clock() - start.at < window) {
+    }
+    const end_reading end = read_end();
+    const auto        ns  = std::chrono::duration_cast<std::chrono::nanoseconds>(end.at - start.at).count();
+    if (start.spread == ~std::uint64_t{0} || end.spread == ~std::uint64_t{0} || ns <= 0 || end.ticks <= start.ticks)
+        return 0.;
+    return static_cast<double>(end.ticks - start.ticks) / static_cast<double>(ns);
+}
+
+/// The counter's rate as qb calibrates it, once per listener (its io cadence and its timer gate) and once per thread
+/// that tracks its coroutines' suspensions: `measure_tsc_per_ns` over 200 µs of the monotonic clock.
+[[nodiscard]] inline double
+calibrate_tsc_per_ns() noexcept {
+    return measure_tsc_per_ns([] { return mono_now(); }, [] { return tsc_ticks(); }, std::chrono::microseconds{200});
+}
+
 } // namespace detail
 
 } // namespace qb

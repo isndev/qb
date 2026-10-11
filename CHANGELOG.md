@@ -1004,6 +1004,23 @@ policy.
   replays an attempt in which one reached the timeout; and `core-park-wake`, whose two wake bounds are half the
   500 ms park cap instead of a tenth -- a wake that fell through to the cap is ~480 ms late, while 50 ms is a stall
   the macOS runner reached.
+- **The CPU counter's calibration keeps a delay between two reads out of the rate (Huly QB-1013).** The listener --
+  for its io cadence and its timer gate -- and the coroutine suspension tracker measured `qb::tsc_ticks()` against
+  `mono_now()` over 200 µs as two pairs, the clock then the counter at each end of the window, and whatever ran
+  between a pair's two reads -- an interrupt, a preemption, a VM exit -- went into the rate, multiplied by the window
+  over the delay. Measured with a 1 ms sleep injected between the closing pair's reads, against a 50 ms bracketed
+  reference: the counter read 6.3-6.5 times too fast on WSL2 g++-14 (9.0-10.5 on MSVC, whose 1 ms sleep lasts
+  longer), every io interval as many times longer, and on a core that never parks a 100 ms timer fired after
+  616-634 ms (885-1030 on MSVC), the timer gate's estimate of the elapsed time as many times short; between the
+  opening pair's reads the rate came out near zero instead (an interval of nothing, a clock read on every pass), and
+  with nothing injected one MSVC run in three still read 0.8 % off. Both now call
+  `qb::detail::calibrate_tsc_per_ns()` (`qb/system/time.h`), which reads each end's clock between two counter reads
+  and keeps the tightest of five such brackets, so a delay lands in a bracket that is not kept: with the same
+  injections the rate stays within 0.03 % of the reference and the timer fires at 100 ms on both compilers, for
+  0.2 µs (g++) and 0.3 µs (MSVC) more than the 200 µs spin (medians of 200 calibrations each). Pinned by
+  `TscRate.ADelayBetweenAnyTwoReadsLeavesTheRateWhereItWas` (`tests/core/unit/system/time.cpp`: a 1 ms delay swept
+  over every read of the measurement on a virtual clock and counter). `listener::_io_poll_due()`, which nothing
+  called, is removed.
 
 ### Documentation
 

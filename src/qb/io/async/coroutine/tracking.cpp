@@ -246,18 +246,18 @@ frame_name(void const *frame) noexcept {
 
 namespace {
 
-/// The CPU counter's ticks per nanosecond, measured against the monotonic clock over ~200 us, as the listener measures
-/// it for its own cadence; 0 when the counter does not move (no usable counter on this platform).
+/// The CPU counter's ticks per nanosecond, measured against the monotonic clock over ~200 us by the calibration the
+/// listener uses for its own cadence (`qb::detail::calibrate_tsc_per_ns`, qb/system/time.h); 0 when the counter does
+/// not move (no usable counter on this platform), and the stamps then stay on the monotonic clock in nanoseconds.
+///
+/// Each end of the window brackets its clock reading between two counter reads and keeps the tightest of several such
+/// brackets. Read as one pair after the other, as this function did, a delay between the two reads went into the rate
+/// (Huly QB-1013): a 1 ms preemption at the end of the 200 us window reads the counter six times too fast, and every age
+/// `visit_suspensions` reports -- the parked coroutines a dump lists, longest wait first -- came out that many times
+/// too young.
 [[nodiscard]] double
 calibrate_ticks_per_ns() noexcept {
-    const auto          m0 = qb::mono_now();
-    const std::uint64_t t0 = qb::tsc_ticks();
-    while (qb::mono_now() - m0 < std::chrono::microseconds{200}) {
-    }
-    const auto          m1 = qb::mono_now();
-    const std::uint64_t t1 = qb::tsc_ticks();
-    const auto          ns = std::chrono::duration_cast<std::chrono::nanoseconds>(m1 - m0).count();
-    return (ns > 0 && t1 > t0) ? static_cast<double>(t1 - t0) / static_cast<double>(ns) : 0.;
+    return qb::detail::calibrate_tsc_per_ns();
 }
 
 } // namespace
