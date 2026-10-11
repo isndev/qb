@@ -227,3 +227,7 @@ endif()
 if(NOT QB_SANITIZE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     qb_add_test(MODULE qb-core TIER system NAME engine-restart-mailboxes SOURCES engine/engine-restart-mailboxes.cpp DEPENDS ${PROJECT_NAME})
 endif()
+# mailbox-footprint pins what an engine holds before its first event (Huly QB-203): an engine of 64 idle cores grows the
+# process's resident memory (Windows: also its private commit) by a budget per core, not by a mailbox ring per pair of
+# cores. Counts bytes, never time; a platform with no reading skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
+qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mailbox-footprint.cpp DEPENDS ${PROJECT_NAME})
