@@ -1032,7 +1032,12 @@ policy.
   `qb/system/time.h`) on the very reading it hands over, so it runs the loop exactly when the loop fires; the timer
   fires on the same pass as before. The comparison is one instruction either way: `setae` became `seta` in
   `listener::_nowait_gate`, and every other function of qb-io and qb-core compiles identically (g++-14 -O3 objects,
-  MSVC /FAs listings). Pinned by
+  MSVC /FAs listings). Measured with `dev/bench/ab.py` (`qb-io-bench-timer-dispatch` and `qb-io-bench-async-hotpaths`,
+  every case; 3 physical copies a side, 6 rounds, seed 7101, a reserved host): all 14 cases level on MSVC, deltas
+  -1.2 to +0.8 % each inside its A/A spread; 12 of 14 level on WSL2 g++-14, and the two register/unregister cases read
+  +0.24 % and +0.67 % past a tight A/A run code that is byte-identical at the same addresses on both sides (the two
+  binaries differ by that one `.text` byte), read -0.01 % and +0.38 % (level) with seed 7202, and moved by up to
+  0.52 % when the control was measured against itself. Pinned by
   `ListenerTimerGate.ADeadlineExactlyAtThePassTimeIsDueNeitherForTheGateNorForTheLoop` (on a supplied clock, every
   platform) and by one loop run per fired timer in `ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline` (red on
   MSVC before the change).
