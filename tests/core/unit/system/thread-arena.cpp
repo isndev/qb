@@ -172,3 +172,28 @@ TEST(ThreadArena, AThreadThatLeavesABlockLiveOrphansItsChunksInsteadOfRecyclingT
     EXPECT_EQ(slabs_in_use(), in_use_before + slabs_taken);
     EXPECT_EQ(thread_arena::orphaned(), orphaned_before + slabs_taken + 1);
 }
+
+TEST(ThreadArena, AThreadThatFreedEverythingLeavesItsFirstChunkForTheNextThread) {
+    // The first chunk of a thread that exits with nothing live is not handed back to the global
+    // allocator: it waits on the spare list, and the next thread's first refill takes it before
+    // asking ::operator new -- so a thread's exit never frees a 64 KiB block into malloc (the
+    // note at the end of thread_arena: that free let glibc trim the arena's top, which the next
+    // engine re-faulted inside its measured window).
+    const std::size_t spare_before = thread_arena::spare();
+    void             *first_block  = nullptr;
+    std::thread([&] {
+        first_block = thread_arena::allocate(64); // the first block of a fresh chunk
+        thread_arena::deallocate(first_block, 64);
+    }).join();
+    EXPECT_EQ(thread_arena::spare(), spare_before + 1);
+    void       *next_block   = nullptr;
+    std::size_t spare_inside = 0;
+    std::thread([&] {
+        next_block   = thread_arena::allocate(64); // the same chunk, taken from the spare list
+        spare_inside = thread_arena::spare();
+        thread_arena::deallocate(next_block, 64);
+    }).join();
+    EXPECT_EQ(next_block, first_block);
+    EXPECT_EQ(spare_inside, spare_before);
+    EXPECT_EQ(thread_arena::spare(), spare_before + 1); // given back again at its exit
+}

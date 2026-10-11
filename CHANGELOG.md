@@ -350,6 +350,18 @@ policy.
 
 ### Fixed
 
+- **`thread_arena` keeps a thread's first chunk for the next thread instead of freeing it at thread exit.**
+  The 64 KiB chunk of an exited core thread now waits on a process-wide spare list (`thread_arena::spare()`)
+  and the next thread's first refill takes it, warm, before asking `::operator new`. Freeing it was a 64 KiB
+  `free()` of the chunk right below the arena's top once the engine's buffers were gone: the merged top crossed
+  glibc's dynamic trim threshold and every core-thread exit released 4 MB of the arena with
+  `madvise(MADV_DONTNEED)`, which the next engine on that thread re-faulted page by page while creating its
+  actors. Measured on qb-vs-others `savina/fork-join-create` at one core (WSL2 g++-14, three physical copies,
+  seeded order): 61.2 -> 76.5 ns per actor between v3.2.1 and the 3.3 candidate at 40 000 live actors, level at
+  1 000, +7 200 minor faults per 11 engines, instruction count and simulated cache misses unchanged; the first
+  bad commit by bisection is the one whose removal of a 16-byte thread-local moved that chunk next to the top,
+  and v3.2.1 sat 7.9 KB under the threshold. With the spare list the cell and the fault count return to v3.2.1's.
+
 - **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
   retained iterators into the source cache's list. Looking up or replacing a key in the copy
   could mutate the source, corrupt the LRU order or dereference freed nodes after the source

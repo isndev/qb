@@ -33,14 +33,14 @@
  *    thread-local (`reaper`), constructed once on the slow path that takes the first chunk and
  *    destroyed at thread exit -- the pattern `CoroutineFrameAllocator` uses, minus the guard.
  *  - **teardown gives the chunks back only when nothing is live.** At thread exit every actor
- *    of a `VirtualCore` is already destroyed (`VirtualCore` is a stack object of the worker
- *    thread, torn down before its thread-locals), so `live()` is 0 and the slabs go back to the
- *    cache. If it is not -- a block outliving its thread is a contract violation -- the chunks
- *    are ORPHANED rather than released: moved to a process-wide list where they stay mapped,
- *    reachable and counted (`orphaned()`), never recycled. A bounded, visible retention is the
- *    safe failure; a use-after-free through a recycled slab is not, and an unreachable chunk
- *    would read as a leak to a checker. A `deallocate()` that arrives after teardown is a no-op
- *    for the same reason.
+ *    of a `VirtualCore` is already destroyed (a stack object of the worker thread, torn down
+ *    before its thread-locals), so `live()` is 0: the slabs go back to the cache, the first
+ *    chunk to a process-wide SPARE list (`spare()`) the next thread's refill takes from --
+ *    never to `::operator delete`; the note at the end of the class says why. If it is not --
+ *    a block outliving its thread is a contract violation -- the chunks are ORPHANED rather
+ *    than released: moved to a process-wide list where they stay mapped, reachable and
+ *    counted (`orphaned()`), never recycled. A bounded, visible retention is the safe failure;
+ *    a use-after-free through a recycled slab is not, an unreachable chunk would read as a leak.
  *  - **under AddressSanitizer a free block is poisoned.** `deallocate()` writes the link and
  *    poisons the whole block, `allocate()` unpoisons a block before it reads the link, a chunk is
  *    poisoned as it is taken and unpoisoned as it is given back (Huly QB-217). Without this the
@@ -285,7 +285,7 @@ private:
         char       *chunk;
         std::size_t bytes;
         if (!st.first_chunk) {
-            chunk                             = static_cast<char *>(::operator new(first_chunk_bytes));
+            chunk                             = static_cast<char *>(take_first_chunk()); // a spare, else ::operator new
             bytes                             = first_chunk_bytes;
             *reinterpret_cast<void **>(chunk) = nullptr;
             st.first_chunk                    = chunk;
@@ -314,7 +314,7 @@ private:
             orphan(st); // a block outlives its thread: keep the chunks, never recycle them (poisoned, under ASan)
         } else {
             // Addressable again before the next owner takes them: the cache hands a slab to any
-            // pool, and the global allocator's own bookkeeping owns the first chunk.
+            // pool, the spare list the first chunk to any thread's refill, which poisons it whole.
             for (void *slab = st.slabs; slab;) {
                 void *const next = *static_cast<void **>(slab);
                 if constexpr (poisons_free_blocks)
@@ -325,7 +325,7 @@ private:
             if (st.first_chunk) {
                 if constexpr (poisons_free_blocks)
                     unpoison(static_cast<char *>(st.first_chunk) + granule, first_chunk_bytes - granule);
-                ::operator delete(st.first_chunk); // unsized: see allocate()
+                give_spare(st.first_chunk); // never ::operator delete at thread exit: the note below
             }
         }
         st.slabs       = nullptr;
@@ -348,6 +348,68 @@ private:
         do {
             *static_cast<void **>(tail) = old;
         } while (!orphans_.compare_exchange_weak(old, head, std::memory_order_release, std::memory_order_relaxed));
+    }
+
+    // The spare list: first chunks of threads that exited with nothing live, linked through their
+    // first word, taken by the next thread's first refill before it asks `::operator new`.
+    //
+    // Why the first chunk is never freed at thread exit. Giving it back was a `free()` of 64 KiB,
+    // above glibc's consolidation threshold, of the chunk that sits right below the arena's top
+    // chunk by then (the engine's buffers above it are freed first, by `~VirtualCore`): the merged
+    // top crossed malloc's dynamic trim threshold (twice the largest mmapped chunk ever freed --
+    // 4 MB after a 2 MB pipe segment) and glibc released the whole arena top with one
+    // `madvise(MADV_DONTNEED)` of 4 096 000 bytes at EVERY core-thread exit, whether anything
+    // else had changed or not. The next engine on that thread's arena re-faulted the pages one by
+    // one while it created its actors, i.e. inside a benchmark's measured window: qb-vs-others
+    // `savina/fork-join-create` one core, +24 % per actor at 40 000 live actors and 0 at 1 000,
+    // +7 200 minor faults per 11 engines, with the instruction count, the simulated cache misses
+    // and the code unchanged (WSL2 g++-14, found by bisection to qb 0e818396, whose removal of a
+    // 16-byte thread-local moved the chunk next to the top; 3.2.1 sat 7.9 KB under the threshold).
+    // A chunk that stays allocated keeps the top below the threshold and is warm for the next
+    // thread; the retention is bounded by the number of threads that exited and were not replaced
+    // (one 64 KiB chunk each), reachable here, so no checker reads it as a leak. The list is
+    // popped as well as pushed, so it sits under a spin lock rather than being a lock-free stack
+    // that would need an ABA guard; both ends are cold -- once per thread start, once per exit.
+    QB_ABI_ANCHOR static inline constinit void            *spares_{nullptr};
+    QB_ABI_ANCHOR static inline constinit std::atomic_flag spares_flag_{};
+
+    static void
+    spares_lock() noexcept {
+        while (spares_flag_.test_and_set(std::memory_order_acquire))
+            ;
+    }
+    static void
+    spares_unlock() noexcept {
+        spares_flag_.clear(std::memory_order_release);
+    }
+    /// A first chunk for `refill`: a spare when one is waiting, `::operator new` otherwise.
+    [[nodiscard]] static void *
+    take_first_chunk() {
+        spares_lock();
+        void *const chunk = spares_;
+        if (chunk)
+            spares_ = *static_cast<void **>(chunk);
+        spares_unlock();
+        return chunk ? chunk : ::operator new(first_chunk_bytes);
+    }
+    static void
+    give_spare(void *const chunk) noexcept {
+        spares_lock();
+        *static_cast<void **>(chunk) = spares_;
+        spares_                      = chunk;
+        spares_unlock();
+    }
+
+public:
+    /// First chunks waiting on the spare list (the note above). Diagnostics only.
+    [[nodiscard]] static std::size_t
+    spare() noexcept {
+        std::size_t n = 0;
+        spares_lock();
+        for (void *c = spares_; c; c = *static_cast<void **>(c))
+            ++n;
+        spares_unlock();
+        return n;
     }
 };
 
