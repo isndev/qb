@@ -1,7 +1,6 @@
 # QB Coroutine Documentation Guide
 
-**Last Updated**: 2026-03-16  
-**Status**: ✅ All 164 tests passing across 9 suites  
+**Last Updated**: 2026-10-11 (every name below checked against the headers of this directory)  
 **Model**: Single-thread cooperative — one `VirtualCore` per thread, one `CoroutineScheduler` per thread
 
 ---
@@ -10,7 +9,7 @@
 
 ```
 qb::io::async::listener  (one per thread, owns the libev loop)
-    └── CoroutineScheduler  (thread_local, lock-free MPSC ready queue)
+    └── CoroutineScheduler  (one per thread, owned by the listener; a single-thread ring buffer of ready coroutines)
             ├── spawn(task<void>&&)          — owned, fire-and-forget
             ├── spawn(Callable)              — owned, lambda-safe overload
             ├── schedule_resume(handle)      — continuation wakeup
@@ -33,14 +32,15 @@ interleaving point is `co_await`. This means:
 | `task.h`         | `task<T>` — primary coroutine return type                                                                       |
 | `scheduler.h`    | `CoroutineScheduler`, `schedule_via_current()`                                                                  |
 | `awaiter.h`      | `timer_awaiter`, `socket_awaiter`, `async_awaiter<T>`                                                           |
-| `utils.h`        | `sleep()`, `wait_readable()`, `wait_writable()`, `coro_scheduler()`, `run_for()`                                |
+| `utils.h`        | `sleep()`, `wait_readable()`, `wait_writable()`, `wait_for_io()`, `coro_scheduler()`, `run_for()`, `run_sync()` |
 | `combinators.h`  | `when_all()`, `when_any()`, `race()`, `coro_with_timeout()`                                                     |
 | `cancellation.h` | `cancellation_token`, `cancellable_operation`, `cancellable_sleep`, `with_deadline`                             |
 | `sync.h`         | `semaphore`, `async_mutex`, `async_rw_lock`, `barrier`, `async_event`, `async_latch`                            |
-| `channel.h`      | `channel<T>`, `select()`, `recv_for()`, `send_for()`, `transform()`, `filter()`                                 |
+| `channel.h`      | `channel<T>` (timed members `recv_for()` / `send_for()`), `select()`, `make_channel()`, `make_pipeline()`, `transform()`, `filter()`, `collect()` |
 | `scope.h`        | `coroutine_scope`, `with_scope()`, `parallel_map()`, `repeat_while()`                                           |
 | `generator.h`    | `generator<T>`, `async_generator<T>`, `for_each()`, `collect_to_vector()`, `map_to_vector()`, `filter_to_vector()`, `reduce()` |
-| `stream.h`       | `async_stream<T>` — functional stream pipeline                                                                  |
+| `stream.h`       | `async_stream<T>` — functional stream pipeline; `range_stream()`, `interval()`, `merge_streams()`, `zip()`      |
+| `shared_task.h`  | `shared_task<T>`, `make_shared_task()` — one computation, many awaiters                                         |
 | `retry.h`        | `retry_policy`, `with_retry()`, `with_retry_until()`, `make_retryable()`                                        |
 | `offload.h`      | `offload()` — a blocking call on the process-wide pool, resumed on its loop; `set_offload_threads()`, `current_offload_stats()` |
 | `coroutine.h`    | Umbrella include for all of the above                                                                           |
@@ -59,7 +59,7 @@ coroutine frame with a dangling `this` pointer to the closure.
 ```cpp
 // Store the lambda so it outlives the coroutine invocation:
 auto fn = [captured]() -> task<void> { co_await ...; };
-coro_scheduler().spawn(fn());   // fn is alive, no dangle
+coro_scheduler().spawn(fn());   // valid only while fn outlives the spawned coroutine
 ```
 
 #### New preferred pattern — `spawn(Callable)` overload
@@ -134,11 +134,11 @@ task<void> best(async_mutex& mtx) {
 `cancellation_token` has **no mutex**. Cross-thread cancellation must be routed through the qb actor event system:
 
 ```cpp
-// Thread B — send a Cancel event to Thread A
-actor_on_B.send<CancelEvent>(actor_on_A.id());
+// Thread B — an actor there pushes a Cancel event to the actor on thread A
+push<CancelEvent>(actor_a_id);
 
-// Thread A — event handler calls cancel on its own thread
-void on(CancelEvent) { my_token.cancel(); }
+// Thread A — the event handler calls cancel on its own thread
+void on(const CancelEvent &) { my_token.cancel(); }
 ```
 
 ---
@@ -175,7 +175,7 @@ coro_scheduler().spawn(std::move(task));     // task<void>
 coro_scheduler().spawn([]() -> task<void> { co_await ...; }); // callable
 
 // State inspection
-coro_scheduler().active_count();   // in-flight + ready queue
+coro_scheduler().active_count();   // ready + suspended (parked on a timer or I/O awaiter)
 coro_scheduler().pending_count();  // ready queue size only
 coro_scheduler().has_ready();
 
@@ -204,19 +204,19 @@ int result = co_await async_awaiter<int>([](auto cb) {
 ### Combinators (`combinators.h`)
 
 ```cpp
-// Wait for ALL — returns std::tuple or std::vector
+// Wait for ALL — std::tuple for the variadic form (a void task gives std::monostate), std::vector for a vector
 auto [a, b] = co_await when_all(task_a(), task_b());
 std::vector<int> results = co_await when_all(std::move(vec_of_tasks));
 
-// Wait for FIRST — returns when_any_result { .index, .value }
-auto [idx, val] = co_await when_any(fast_task(), slow_task());
+// Wait for FIRST — when_any_result { index, value (std::any), exception }; the losers are reclaimed
+when_any_result first = co_await when_any(fast_task(), slow_task());
+int v = first.get<int>();                   // first.index: which task won
 
-// Wait for first, no result needed
+// race() is when_any() under another name
 co_await race(timer_task(), data_task());
 
-// With timeout
-auto result = co_await coro_with_timeout(fetch(), 500ms);
-// result is std::optional<T>; nullopt = timed out
+// With timeout — the value, or timeout_error; the task is not cancelled (use with_deadline + a token for that)
+int r = co_await coro_with_timeout(fetch(), 500ms);
 ```
 
 ---
@@ -231,13 +231,13 @@ task<void> worker(cancellation_token tok) {
     co_await cancellable_sleep(500ms, tok);   // throws cancelled_error on cancel
 }
 
-// Deadline wrapper
+// Deadline wrapper — an absolute deadline; throws timeout_error past it, cancelled_error on cancel
 task<void> bounded(cancellation_token tok) {
-    co_await with_deadline(tok, 200ms, inner_task());
+    co_await with_deadline(inner_task(), std::chrono::steady_clock::now() + 200ms, tok);
 }
 
-// Register callback
-token.on_cancel([]() { cleanup(); });
+// Register callback — returns an id for remove_on_cancel(id)
+auto id = token.on_cancel([]() { cleanup(); });
 
 // Cancel (same thread only!)
 token.cancel();
@@ -258,10 +258,10 @@ async_mutex mtx;
 co_await mtx.lock();
 auto lk = co_await mtx.scoped_lock();       // RAII
 
-// Read-write lock
+// Read-write lock (writers prioritized); lock_read()/lock_write() + unlock_read()/unlock_write() without RAII
 async_rw_lock rw;
-auto r = co_await rw.read_lock();
-auto w = co_await rw.write_lock();
+auto r = co_await rw.scoped_read_lock();
+auto w = co_await rw.scoped_write_lock();
 
 // Barrier (reusable rendezvous)
 barrier b(3);
@@ -310,23 +310,25 @@ co_await ch.send(42);
 bool ok = ch.try_send(42);               // non-blocking
 
 // Consumer
-auto opt = co_await ch.recv();           // std::optional<int>; nullopt = closed
-auto opt = ch.try_recv();               // non-blocking
+std::optional<int> v = co_await ch.recv();      // nullopt = closed
+std::optional<int> w = ch.try_recv();           // non-blocking
 
-// Timed operations
-auto opt = co_await recv_for(ch, 200ms);
-bool ok  = co_await send_for(ch, val, 200ms);
+// Timed operations — MEMBER functions, each a task
+std::optional<int> got = co_await ch.recv_for(200ms);    // nullopt on timeout or close
+bool sent              = co_await ch.send_for(42, 200ms); // false on timeout or close
 
 // Close
 ch.close();
 
-// Select — wait on multiple channels
-auto [winner, value] = co_await select(ch_a, ch_b, ch_c);
-// winner: channel index; value: std::any
+// Select — wait on several channels: select_result { index, closed, value (std::any) }
+select_result res = co_await select(ch_a, ch_b, ch_c);
+if (!res.closed)
+    use(res.index, res.get<int>());             // value is empty when the winner closed
 
 // Pipelines
 co_await transform(in_ch, out_ch, [](int x) { return x * 2; });
 co_await filter(in_ch, out_ch, [](int x) { return x % 2 == 0; });
+// Two shared_ptr handles (in, out); the worker lives as long as the last of them (Huly QB-981)
 auto [in, out] = make_pipeline<int, int>([](int x) { return x + 1; });
 ```
 
@@ -355,18 +357,18 @@ co_await with_scope([](coroutine_scope& s) -> task<void> {
     co_await s.join_all();
 });
 
-// Parallel map
-auto results = co_await parallel_map(items, max_concurrency,
-    [](Item item) -> task<Result> { co_return process(item); });
+// Parallel map — items, then the mapper, then the concurrency cap (default 10)
+auto results = co_await parallel_map(items,
+    [](Item item) -> task<Result> { co_return process(item); }, max_concurrency);
 
-// Repeat with condition
+// Repeat with condition — a task factory, then a synchronous predicate, then an optional token
 co_await repeat_while(
-    []() -> task<bool> { co_return should_continue(); },
-    []() -> task<void> { co_await do_one_iteration(); }
+    []() -> task<void> { co_await do_one_iteration(); },
+    []() { return should_continue(); }
 );
 ```
 
-Cleanup policies: `cancel_all` (default), `join_all`, `detach`.
+Cleanup policies (`coroutine_scope::cleanup_policy`): `cancel_all` (default), `join_all`, `detach`.
 
 ---
 
@@ -415,8 +417,8 @@ auto gen = iota(0);  // infinite
 auto s = async_stream<int>::from_vector({1,2,3});
 auto s = async_stream<int>::from_channel(ch);              // ch must outlive s
 auto s = async_stream<int>::from_channel_shared(ch_ptr);   // lifetime-safe
-auto s = async_stream<int>::range(0, 100);
-auto s = interval(100ms);                                   // stream<size_t> ticks
+auto s = range_stream(0, 100);                              // there is no async_stream<T>::range
+auto s = interval(100ms);                                   // async_stream<size_t> ticks
 
 // Transforms (lazy, chainable)
 auto s2 = s.map([](int v)    { return v * 2; })
@@ -437,8 +439,8 @@ auto opt  = co_await stream.find([](int v) { return v == 42; });
 co_await stream.drain_to(output_channel);
 
 // Merging
-auto merged = merge_streams({s1, s2, s3});
-auto zipped = zip(s_a, s_b);               // stream<pair<A,B>>
+auto merged = merge_streams(std::vector{s1, s2, s3});      // takes a std::vector<async_stream<T>>
+auto zipped = zip(s_a, s_b);                                // async_stream<std::pair<A, B>>
 ```
 
 ---
@@ -486,20 +488,13 @@ auto p = idempotent_policy();
 
 ---
 
-## Test Suite Summary
+## Tests
 
-| Suite                  | Tests   | File                              |
-|------------------------|---------|-----------------------------------|
-| coroutine-stream       | 23      | `test-coroutine-stream.cpp`       |
-| coroutine-retry        | 9       | `test-coroutine-retry.cpp`        |
-| coroutine-generator    | 23      | `test-coroutine-generator.cpp`    |
-| coroutine-scope        | 20      | `test-coroutine-scope.cpp`        |
-| coroutine-channel      | 21      | `test-coroutine-channel.cpp`      |
-| coroutine-shared-task  | 10      | `test-coroutine-shared-task.cpp`  |
-| coroutine-sync         | 21      | `test-coroutine-sync.cpp`         |
-| coroutine-combinators  | 20      | `test-coroutine-combinators.cpp`  |
-| coroutine-cancellation | 17      | `test-coroutine-cancellation.cpp` |
-| **Total**              | **164** |                                   |
+The coroutine tests live in `tests/io/unit/coroutine/` and `tests/io/system/coroutine/` (the system tier drives a live
+loop), split by feature and registered by `qb_add_test` as `qb-io-test-unit-<name>` / `qb-io-test-system-<name>` (for
+instance `qb-io-test-system-channel-lifetime`, the destroy-while-parked cases meant to run under ASan). The
+`test-coroutine-*.cpp` files an earlier version of this guide listed were split into those tiers; count the suite with ctest, never
+from a number written here.
 
 ---
 

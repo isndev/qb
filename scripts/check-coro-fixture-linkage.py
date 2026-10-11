@@ -29,10 +29,10 @@ them (`ws-framing-edge.cpp`, twice — once per fixture pair). Exactly four qbm-
 sources instantiate `coro_session` at all, and pre-fix all four passed anonymous-namespace
 fixtures to it: `ws-framing-edge.cpp` plus `ws-coro-server.cpp`, `ws-coro-handoff.cpp` and
 `ws-coro-handshake-negative.cpp`, which carry the identical shape and compile silently. The
-fifth is qb's own `tests/io/unit/coroutine/stream-transforms.cpp`, which reaches the same
-frame through a different carrier — so the set is NOT one repo's, and a check scoped to
-qbm-http would miss a fifth of it. A rule enforced only by the instance gcc happens to
-notice is not enforced.
+fifth is qb's own `tests/io/unit/coroutine/stream-transforms.cpp`, which reached the same
+frame through a different carrier (`async_stream`, one until 3.3) — so the set is NOT one
+repo's, and a check scoped to qbm-http would miss a fifth of it. A rule enforced only by
+the instance gcc happens to notice is not enforced.
 
 (`ws-lifecycle.cpp`, `ws-robustness.cpp` and `ws-client-echo.cpp` are where the
 `<file>_test` naming convention comes from, but they instantiate no carrier and were never
@@ -74,12 +74,16 @@ For every translation-unit source AND header (`*.cpp`, `*.h`, `*.hpp`) under eac
 The carriers are DERIVED from the framework source, never typed here: `--framework <dir>`
 roots are scanned for `template <…> class|struct NAME` whose brace-matched body contains a
 `spawn(` call taking a lambda literal. At 3.0.0, with `--framework qb/src --framework
-qbm/http/src`, that finds THREE — `async_stream` (qb/src/qb/io/async/coroutine/stream.h),
+qbm/http/src`, that found THREE — `async_stream` (qb/src/qb/io/async/coroutine/stream.h),
 `batcher` (qb/src/qb/core/patterns/aggregate.h) and `coro_session`
-(qbm/http/src/qbm/http/ws/coro.h) — the same three AGENTS.md names, and two of them are
-qb's own, which is why the qb tree is scanned and not only the module that owns the
-diagnosed file. The run PRINTS what it found — a carrier set that silently empties is the
-vacuity this guard would otherwise die of, so an empty set is a hard failure.
+(qbm/http/src/qbm/http/ws/coro.h). Since 3.3 it finds TWO: the QB-289 change (commit
+38ea6392) made `async_stream::debounce()`'s producer the named coroutine
+`debounce_produce_task` instead of a lambda spawned in place, so `async_stream` spawns no
+lambda and left the derived set — exactly what deriving the set is for; the negative
+control keeps that shape ALLOWED. One carrier is still qb's own (`batcher`), which is why
+the qb tree is scanned and not only the module that owns the diagnosed file. The run PRINTS
+what it found — a carrier set that silently empties is the vacuity this guard would
+otherwise die of, so an empty set is a hard failure.
 
 WHAT IT DELIBERATELY DOES NOT CATCH
 -----------------------------------
