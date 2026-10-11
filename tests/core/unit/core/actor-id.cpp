@@ -94,7 +94,7 @@ TEST(ActorId, NonBroadcastSidIndexConstruction) {
     EXPECT_EQ(id.sid(), sid);
     EXPECT_EQ(id.index(), index);
     EXPECT_FALSE(id.is_broadcast()) << "a sid below BroadcastSid is NOT a broadcast id";
-    EXPECT_TRUE(id.is_valid()) << "a non-zero packed id is valid";
+    EXPECT_TRUE(id.is_valid()) << "a non-zero service id is valid";
 
     // uint32 codec is a faithful inverse: unpacking the packed value recovers both components.
     const std::uint32_t packed = static_cast<std::uint32_t>(id);
@@ -116,6 +116,24 @@ TEST(ActorId, NonBroadcastSidIndexConstruction) {
     NormalId zero(0, 0);
     EXPECT_EQ(static_cast<std::uint32_t>(zero), ActorId::NotFound);
     EXPECT_FALSE(zero.is_valid());
+}
+
+// No actor ever holds service id 0: every core's pool starts above the registered service tags, and a tag's id
+// starts at 1. So an id whose sid is 0 names nothing on ANY core, not only on core 0 (Huly QB-1007). Until 3.3
+// `is_valid()` tested the whole packed value, and `(0, core)` read valid on every core but 0 -- the very id a
+// service was given when its tag's `ServiceIndex` was read before its static initialiser had run.
+TEST(ActorId, ServiceIdZeroIsInvalidOnEveryCore) {
+    for (CoreId const core : {CoreId{0}, CoreId{1}, CoreId{3}, CoreId{255}, std::numeric_limits<CoreId>::max()}) {
+        NormalId const id(0, core);
+        ASSERT_EQ(id.sid(), ServiceId{0});
+        ASSERT_EQ(id.index(), core);
+        EXPECT_FALSE(id.is_valid()) << "(0, " << core << ") names no actor";
+        EXPECT_FALSE(ActorId(static_cast<std::uint32_t>(id)).is_valid()) << "(0, " << core << ") unpacked from its raw value";
+    }
+    // Validity is the service id alone: sid 1 on core 0, the smallest packed value an actor can have, is valid...
+    EXPECT_TRUE(NormalId(1, 0).is_valid());
+    // ...and so is a broadcast id, core 0 included.
+    EXPECT_TRUE(BroadcastId(0).is_valid());
 }
 
 // `ask_take()` names the OWNER actor's core index in the high 16 bits of the id, so two

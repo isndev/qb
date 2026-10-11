@@ -464,12 +464,12 @@ public:
     }
 
     /*!
-     * @brief Check if this ActorId is valid (not NotFound)
-     * @return true if ActorId is valid, false otherwise
+     * @brief Check if this ActorId can name an actor: its service id is not 0, which no actor ever holds (Huly QB-1007)
+     * @return false for NotFound and for every `(0, core)` id, true otherwise -- a `BroadcastId` included
      */
     [[nodiscard]] bool
     is_valid() const noexcept {
-        return static_cast<uint32_t>(*this) != NotFound;
+        return _service_id != 0;
     }
 };
 

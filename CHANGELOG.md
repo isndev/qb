@@ -228,6 +228,10 @@ policy.
 
 ### Changed
 
+- **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
+  tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
+  id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
+  invalid and a `BroadcastId` valid; an id built with service id 0 for a non-zero core now tests invalid.
 - **`CoroutineScheduler::current()` and `schedule_via_current()` bind the thread's loop scheduler when none
   is bound.** `current()` used to create a private fallback that no loop pumped, and `schedule_via_current()`
   dropped the handle in release (asserting in debug): a continuation queued before anything bound a scheduler

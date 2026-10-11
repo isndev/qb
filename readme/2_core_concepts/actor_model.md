@@ -96,7 +96,7 @@ The default `KillEvent` handler in `qb::Actor` already calls `kill()` for you, s
 Every actor has a unique `qb::ActorId` (`qb/core/ActorId.h`). The id is the address you send events to.
 
 - **Composition.** An `ActorId` packs two 16-bit fields into a 32-bit value: a `ServiceId` (the actor's slot within its core) and a `CoreId` (which `VirtualCore` hosts it). Both `CoreId` and `ServiceId` are `uint16_t`. The value is bit-castable to and from `uint32_t` (`ActorId` defines `operator uint32_t()` and a `uint32_t` constructor, both implemented with `std::bit_cast`).
-- **Accessors.** `sid()` returns the `ServiceId`; `index()` returns the `CoreId`; `is_valid()` reports whether the id is assigned (not the default `NotFound == 0`); `is_broadcast()` reports whether it is a per-core broadcast id.
+- **Accessors.** `sid()` returns the `ServiceId`; `index()` returns the `CoreId`; `is_valid()` reports whether the id can name an actor — its `ServiceId` is not `0`, which no actor ever holds, so `NotFound == 0` and every `(0, core)` id are invalid and a broadcast id is valid (`src/qb/core/ActorId.h:470-473`); `is_broadcast()` reports whether it is a per-core broadcast id.
 - **Obtaining it.** Inside an actor, call `id()`. At creation time, `engine.addActor<MyActor>(core_id, ...)` returns the new actor's id, and `addRefActor<Child>()` returns a phase-aware `qb::ActorHandle<Child>` whose `.id()` gives the child's id (valid immediately, even while the child is still Activating).
 
 Two special values:

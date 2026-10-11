@@ -49,7 +49,7 @@ Compound unique actor address = `ServiceId` + `CoreId`, bit-castable to/from `ui
 *   `[[nodiscard]] ServiceId sid() const noexcept` — service id.
 *   `[[nodiscard]] CoreId index() const noexcept` — core index.
 *   `[[nodiscard]] bool is_broadcast() const noexcept` — true when `sid() == BroadcastSid`.
-*   `[[nodiscard]] bool is_valid() const noexcept` — true when raw value `!= NotFound`.
+*   `[[nodiscard]] bool is_valid() const noexcept` — true when `sid() != 0`. No actor ever holds service id 0, so `NotFound` and every `(0, core)` id are invalid and a `BroadcastId` is valid (until 3.3 it tested the whole raw value, and `(0, core)` read valid on every core but 0) _(ActorId.h:470-473)_.
 *   `operator uint32_t() const noexcept` — raw value.
 *   `std::hash<qb::ActorId>` specialization exists (hash = the uint32 value).
 *   use: `qb::ActorId dst = actor.id();`
