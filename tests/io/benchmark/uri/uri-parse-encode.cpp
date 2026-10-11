@@ -123,6 +123,43 @@ BM_Uri_ParseQueryHeavy(benchmark::State &state) {
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(fields));
 }
 
+// Default-port lookup retains the original scheme bytes. Mixed-case cells must
+// reject the pre-fix parser instead of timing its incorrect port-zero result.
+void
+BM_Uri_DefaultPort(benchmark::State &state) {
+    struct DefaultPortCase {
+        std::string source;
+        std::string scheme;
+        unsigned    port;
+        const char *label;
+    };
+    const std::string                    long_scheme = "X" + std::string(79, 'a');
+    const std::array<DefaultPortCase, 5> cases{{
+        {"http://example.com/path", "http", 80, "http_lower"},
+        {"https://example.com/path", "https", 443, "https_lower"},
+        {"hTtP://example.com/path", "hTtP", 80, "http_mixed"},
+        {"HtTpS://example.com/path", "HtTpS", 443, "https_mixed"},
+        {long_scheme + "://example.com/path", long_scheme, 0, "long_unknown_mixed"},
+    }};
+    const auto                          &c = cases[static_cast<std::size_t>(state.range(0))];
+    const qb::io::uri                    guard(c.source);
+    if (!guard.is_valid() || guard.u_port() != c.port || guard.scheme() != c.scheme || guard.source() != c.source
+        || guard.host() != "example.com" || guard.path() != "/path") {
+        state.SkipWithError("URI default-port or source-preservation oracle failed");
+        return;
+    }
+
+    for (auto _ : state) {
+        qb::io::uri parsed(c.source);
+        benchmark::DoNotOptimize(parsed.u_port());
+        benchmark::DoNotOptimize(parsed.scheme().data());
+        benchmark::DoNotOptimize(parsed.source().data());
+    }
+    state.SetLabel(c.label);
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(c.source.size()));
+    state.SetItemsProcessed(state.iterations());
+}
+
 void
 BM_Uri_Encode(benchmark::State &state) {
     const auto input = make_encoding_payload(static_cast<std::size_t>(state.range(0)));
@@ -183,6 +220,7 @@ BM_Uri_NormalizePath(benchmark::State &state) {
 
 BENCHMARK(BM_Uri_ParseCommon)->DenseRange(0, static_cast<int>(kUriCases.size() - 1))->ArgName("case")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Uri_ParseQueryHeavy)->Args({4})->Args({16})->Args({64})->ArgName("query_fields")->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Uri_DefaultPort)->DenseRange(0, 4)->ArgName("case")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Uri_Encode)->Args({64})->Args({1024})->Args({16 * 1024})->ArgName("bytes")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Uri_Decode)->Args({64})->Args({1024})->Args({16 * 1024})->ArgName("source_bytes")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Uri_DecodeInvalidEscapes)->Args({64})->Args({1024})->Args({16 * 1024})->ArgName("source_bytes")->Unit(benchmark::kNanosecond);
