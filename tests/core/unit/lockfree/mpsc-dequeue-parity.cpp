@@ -10,8 +10,10 @@
 /**
  * @file unit/lockfree/mpsc-dequeue-parity.cpp
  * @brief Pins the two drain contracts of `mpsc::ringbuffer` — one bounded, one not — against
- *        each other, and against the spsc primitive whose name they used to borrow; and the
- *        `_All` policy every bulk-enqueue overload must forward (Huly QB-280).
+ *        each other, and against the spsc primitive whose name they used to borrow; the
+ *        `_All` policy every bulk-enqueue overload must forward (Huly QB-280); and the name of
+ *        the producer chosen at compile time, `enqueue_at<Index>`, which is what leaves
+ *        `enqueue<_All>(t, n)` to the round-robin form alone (Huly QB-980).
  *
  * Two operations, deliberately different, and since 3.0 differently named:
  *
@@ -48,6 +50,7 @@
  * against each other and across the two layers.
  */
 
+#include <concepts>
 #include <cstddef>
 #include <vector>
 
@@ -311,11 +314,45 @@ leave_two_free(R &ring, std::size_t producers, std::size_t capacity) {
             ASSERT_TRUE(ring.enqueue(p, static_cast<int>(p * 100 + i)));
 }
 
+/// The round-robin bulk form takes an explicit `_All` (Huly QB-980). Until the compile-time-index form was renamed
+/// `enqueue_at`, `enqueue<false>(t, n)` and `enqueue<true>(t, n)` were ambiguous with `enqueue<_Index>(t, n)` -- each
+/// `bool` converts to an index, and the two templates have the same function parameters, so neither is more
+/// specialised -- and this concept was false on both variants.
+template <typename R>
+concept round_robin_bulk_takes_an_explicit_all = requires(R &ring, int const *items, std::size_t n) {
+    { ring.template enqueue<false>(items, n) } -> std::same_as<std::size_t>;
+    { ring.template enqueue<true>(items, n) } -> std::same_as<std::size_t>;
+};
+
+/// The round-robin bulk form in both polarities, on a ring of two producers that `leave_two_free` left with two free
+/// slots each. Consecutive calls of one instantiation from one thread alternate between the two producers whatever
+/// its per-thread counter started at, so nothing here depends on what ran before on this thread.
+template <typename R>
+void
+expect_round_robin_forwards_all(R &ring, int const (&items)[5], std::size_t capacity, char const *variant) {
+    EXPECT_EQ(ring.template enqueue<true>(items, 5), 0u) << variant << ", round-robin, explicit _All=true: none";
+    EXPECT_EQ(ring.template enqueue<true>(items, 5), 0u) << variant << ", round-robin, explicit _All=true, the other producer: none";
+    EXPECT_EQ(ring.enqueue(items, 5), 0u) << variant << ", round-robin, default _All=true: none";
+    EXPECT_EQ(ring.template enqueue<false>(items, 5), 2u) << variant << ", round-robin, _All=false: the two that fit";
+    EXPECT_EQ(ring.template enqueue<false>(items, 5), 2u) << variant << ", round-robin, _All=false, the other producer: the two that fit";
+    EXPECT_EQ(ring.template enqueue<false>(items, 5), 0u) << variant << ", round-robin, _All=false, both producers full: none";
+    for (std::size_t p = 0; p < 2; ++p) {
+        std::vector<int> drained(capacity);
+        ASSERT_EQ(ring.ringOf(p).dequeue(drained.data(), capacity), capacity) << variant << ": producer " << p << " is full";
+        EXPECT_EQ(drained[0], static_cast<int>(p * 100)) << variant << ": producer " << p << " kept its own items first";
+        EXPECT_EQ(drained[capacity - 2], 90) << variant << ": producer " << p << " took the FIRST items, in order";
+        EXPECT_EQ(drained[capacity - 1], 91) << variant << ": producer " << p;
+    }
+}
+
 TEST(MpscDequeueParity, EveryBulkEnqueueOverloadForwardsAll) {
     // One of the six bulk overloads (the fixed-producer one with a compile-time index) used to
     // call the spsc ring's `enqueue(t, size)` without its `_All`, so `enqueue<0, false>` was
-    // silently all-or-nothing and returned 0 where two items fit. Every overload callable with an
-    // explicit `_All` is asserted in both polarities, so another written the same way fails here too.
+    // silently all-or-nothing and returned 0 where two items fit (Huly QB-280). Every bulk overload
+    // is asserted in both polarities, so another written the same way fails here too. The round-robin
+    // form could only be asserted with its default until Huly QB-980: an explicit `enqueue<false>(t, n)`
+    // was ambiguous with the compile-time-index form, now `enqueue_at<Index>`, so its partial mode
+    // could not be called at all.
     constexpr std::size_t kSmall = 8;
     // Five asked, two free: more than fits, less than the ring holds (a request wider than the ring makes
     // g++-14 see an unreachable over-long memcpy on the all-or-nothing path, -Wstringop-overflow).
@@ -323,12 +360,14 @@ TEST(MpscDequeueParity, EveryBulkEnqueueOverloadForwardsAll) {
 
     using Fixed   = qb::lockfree::mpsc::ringbuffer<int, kSmall, 2>;
     using Dynamic = qb::lockfree::mpsc::ringbuffer<int, kSmall, 0>;
+    static_assert(round_robin_bulk_takes_an_explicit_all<Fixed>, "fixed: `enqueue<_All>(t, n)` must name the round-robin form");
+    static_assert(round_robin_bulk_takes_an_explicit_all<Dynamic>, "runtime-count: `enqueue<_All>(t, n)` must name the round-robin form");
 
     {
         Fixed ring;
         leave_two_free(ring, 2, kSmall);
-        EXPECT_EQ((ring.enqueue<0, true>(items, 5)), 0u) << "fixed, compile-time index, _All=true: none";
-        EXPECT_EQ((ring.enqueue<0, false>(items, 5)), 2u) << "fixed, compile-time index, _All=false: the two that fit";
+        EXPECT_EQ((ring.enqueue_at<0, true>(items, 5)), 0u) << "fixed, compile-time index, _All=true: none";
+        EXPECT_EQ((ring.enqueue_at<0, false>(items, 5)), 2u) << "fixed, compile-time index, _All=false: the two that fit";
         int  tail[kSmall]{};
         auto n = ring.ringOf(0).dequeue(tail, kSmall);
         ASSERT_EQ(n, kSmall);
@@ -341,28 +380,72 @@ TEST(MpscDequeueParity, EveryBulkEnqueueOverloadForwardsAll) {
         EXPECT_EQ(ring.enqueue<true>(1, items, 5), 0u) << "fixed, runtime index, _All=true: none";
         EXPECT_EQ(ring.enqueue<false>(1, items, 5), 2u) << "fixed, runtime index, _All=false";
     }
-    // The round-robin bulk form is reachable only with its default `_All = true`: an explicit
-    // `enqueue<false>(t, n)` is ambiguous with `enqueue<_Index = 0>(t, n)` (`false` converts to the
-    // index) on every compiler, so its partial mode cannot be called at all — reported, not
-    // papered over here. Its default is asserted, on both variants.
     {
         Fixed ring;
-        leave_two_free(ring, 2, kSmall); // round-robin picks either ring: both have exactly two free
-        EXPECT_EQ(ring.enqueue(items, 5), 0u) << "fixed, round-robin, default _All=true: none";
+        leave_two_free(ring, 2, kSmall);
+        expect_round_robin_forwards_all(ring, items, kSmall, "fixed");
     }
     {
         Dynamic ring(2);
         leave_two_free(ring, 2, kSmall);
-        EXPECT_EQ((ring.enqueue<0, true>(items, 5)), 0u) << "runtime-count, compile-time index, _All=true: none";
-        EXPECT_EQ((ring.enqueue<0, false>(items, 5)), 2u) << "runtime-count, compile-time index, _All=false";
+        EXPECT_EQ((ring.enqueue_at<0, true>(items, 5)), 0u) << "runtime-count, compile-time index, _All=true: none";
+        EXPECT_EQ((ring.enqueue_at<0, false>(items, 5)), 2u) << "runtime-count, compile-time index, _All=false";
         EXPECT_EQ(ring.enqueue<true>(1, items, 5), 0u) << "runtime-count, runtime index, _All=true: none";
         EXPECT_EQ(ring.enqueue<false>(1, items, 5), 2u) << "runtime-count, runtime index, _All=false";
     }
     {
         Dynamic ring(2);
         leave_two_free(ring, 2, kSmall);
-        EXPECT_EQ(ring.enqueue(items, 5), 0u) << "runtime-count, round-robin, default _All=true: none";
+        expect_round_robin_forwards_all(ring, items, kSmall, "runtime-count");
     }
+}
+
+// ---------------------------------------------------------------------------
+// The producer chosen at compile time is `enqueue_at<Index>` (Huly QB-980)
+// ---------------------------------------------------------------------------
+
+/// Both compile-time-index forms are spelled `enqueue_at`, with the return types of their runtime-index siblings.
+template <typename R>
+concept producer_chosen_at_compile_time_is_enqueue_at = requires(R &ring, int const &item, int const *items, std::size_t n) {
+    { ring.template enqueue_at<1>(item) } -> std::same_as<bool>;
+    { ring.template enqueue_at<1>(items, n) } -> std::same_as<std::size_t>;
+    { ring.template enqueue_at<1, false>(items, n) } -> std::same_as<std::size_t>;
+};
+
+/// ...and `enqueue<Index>` no longer reaches them: the rename kept no alias (no deprecated aliases since 3.0). The
+/// shapes are the ones nothing else can take -- one item, or an index AND an `_All` -- so a forwarder put back
+/// under the old name makes one of these true again.
+template <typename R>
+concept old_single_index_spelling_compiles = requires(R &ring, int const &item) { ring.template enqueue<1>(item); };
+template <typename R>
+concept old_bulk_index_spelling_compiles = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue<1, true>(items, n); };
+
+TEST(MpscDequeueParity, CompileTimeIndexFormsAreEnqueueAt) {
+    using Dynamic = qb::lockfree::mpsc::ringbuffer<int, kCapacity, 0>;
+    static_assert(producer_chosen_at_compile_time_is_enqueue_at<Ring>);
+    static_assert(producer_chosen_at_compile_time_is_enqueue_at<Dynamic>);
+    static_assert(!old_single_index_spelling_compiles<Ring> && !old_bulk_index_spelling_compiles<Ring>,
+                  "fixed: the compile-time index is `enqueue_at<Index>`, with no alias under the old name");
+    static_assert(!old_single_index_spelling_compiles<Dynamic> && !old_bulk_index_spelling_compiles<Dynamic>,
+                  "runtime-count: the compile-time index is `enqueue_at<Index>`, with no alias under the old name");
+
+    // Each lands in the ring of the producer it names, and in no other one.
+    auto check = [](auto &ring, char const *variant) {
+        const int bulk[3]{8, 9, 10};
+        EXPECT_TRUE(ring.template enqueue_at<1>(7)) << variant;
+        EXPECT_EQ(ring.template enqueue_at<2>(bulk, 3), 3u) << variant;
+        int out[kCapacity]{};
+        EXPECT_EQ(ring.ringOf(0).dequeue(out, kCapacity), 0u) << variant << ": producer 0 was not named";
+        ASSERT_EQ(ring.ringOf(1).dequeue(out, kCapacity), 1u) << variant << ": the single item, in producer 1";
+        EXPECT_EQ(out[0], 7) << variant;
+        ASSERT_EQ(ring.ringOf(2).dequeue(out, kCapacity), 3u) << variant << ": the three items, in producer 2";
+        EXPECT_EQ(out[0], 8) << variant;
+        EXPECT_EQ(out[2], 10) << variant;
+    };
+    Ring fixed;
+    check(fixed, "fixed");
+    Dynamic dynamic(kProducers);
+    check(dynamic, "runtime-count");
 }
 
 } // namespace mpsc_dequeue_parity_test

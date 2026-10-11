@@ -36,9 +36,9 @@ namespace qb::lockfree::mpsc {
 /**
  * @brief Multi-Producer Single-Consumer ring buffer with fixed number of producers
  *
- * This implementation provides a lock-free MPSC ring buffer with a compile-time
- * fixed number of producers. Each producer has its own dedicated SPSC ring buffer,
- * eliminating contention between producers.
+ * A lock-free MPSC ring buffer with a compile-time fixed number of producers, each with its own SPSC ring: no contention between them.
+ * Three ways in: a producer chosen at compile time, `enqueue_at<Index>(...)`, or at run time, `enqueue(index, ...)` -- both lock-free,
+ * one thread per index -- or a round-robin producer, `enqueue(t)` / `enqueue<_All>(t, size)`, any thread, under that producer's lock.
  *
  * @tparam T The type of elements stored in the buffer
  * @tparam max_size The maximum capacity per producer buffer
@@ -65,30 +65,30 @@ class ringbuffer : public nocopy {
 
 public:
     /**
-     * @brief Enqueue an item using a compile-time producer index
+     * @brief Enqueue an item into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
-     * @tparam _Index The compile-time index of the producer
+     * @tparam _Index The compile-time index of the producer; `enqueue(index, t)` is the runtime-index form
      * @param t The item to enqueue
      * @return true if the item was successfully enqueued, false if the buffer was full
      */
     template <size_t _Index>
     bool
-    enqueue(T const &t) {
+    enqueue_at(T const &t) {
         return _producers[_Index]._ringbuffer.enqueue(t);
     }
 
     /**
-     * @brief Enqueue multiple items using a compile-time producer index
+     * @brief Enqueue multiple items into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
      * @tparam _Index The compile-time index of the producer
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
     template <size_t _Index, bool _All = true>
     size_t
-    enqueue(T const *t, size_t const size) {
+    enqueue_at(T const *t, size_t const size) {
         return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
@@ -139,10 +139,10 @@ public:
     /**
      * @brief Enqueue multiple items using a round-robin producer index
      *
-     * This method automatically selects a producer using a per-thread
-     * round-robin counter, providing even load balancing across producers.
+     * Selects a producer with a per-thread round-robin counter, for even load across producers, and takes its lock.
+     * `enqueue<false>(t, size)` names this form: the compile-time-index form is `enqueue_at` (Huly QB-980).
      *
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
@@ -293,8 +293,8 @@ public:
  * @brief Multi-Producer Single-Consumer ring buffer with runtime-determined number of
  * producers
  *
- * This specialization provides a MPSC ring buffer with a runtime-determined
- * number of producers specified during construction.
+ * This specialization provides a MPSC ring buffer with a runtime-determined number of producers specified during construction.
+ * Same three ways in as the fixed-producer form: `enqueue_at<Index>(...)`, `enqueue(index, ...)`, and the round-robin `enqueue(...)`.
  *
  * @tparam T The type of elements stored in the buffer
  * @tparam max_size The maximum capacity per producer buffer
@@ -340,30 +340,30 @@ public:
     }
 
     /**
-     * @brief Enqueue an item using a compile-time producer index
+     * @brief Enqueue an item into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
-     * @tparam _Index The compile-time index of the producer
+     * @tparam _Index The compile-time index of the producer; `enqueue(index, t)` is the runtime-index form
      * @param t The item to enqueue
      * @return true if the item was successfully enqueued, false if the buffer was full
      */
     template <size_t _Index>
     bool
-    enqueue(T const &t) {
+    enqueue_at(T const &t) {
         return _producers[_Index]._ringbuffer.enqueue(t);
     }
 
     /**
-     * @brief Enqueue multiple items using a compile-time producer index
+     * @brief Enqueue multiple items into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
      * @tparam _Index The compile-time index of the producer
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
     template <size_t _Index, bool _All = true>
     size_t
-    enqueue(T const *t, size_t const size) {
+    enqueue_at(T const *t, size_t const size) {
         return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
     }
 
@@ -417,7 +417,7 @@ public:
      * This method automatically selects a producer using a per-thread
      * round-robin counter, providing even load balancing across producers.
      *
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit -- `enqueue<false>(t, size)`
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued

@@ -328,6 +328,18 @@ policy.
   Nothing in qb, its modules or the examples copied one; code that did no longer compiles. Pinned at compile time by
   `AwaitersAreNeitherCopyableNorMovable` (`tcp-connector-state-machine.cpp`, `coroutine-combinators.cpp`) and
   `SelectAwaitersAreNeitherCopyableNorMovable` (`channel-sync-ops.cpp`).
+- **Public API rename: `qb::lockfree::mpsc::ringbuffer::enqueue<Index>(...)` is now `enqueue_at<Index>(...)`, with no
+  alias (Huly QB-980).** Both compile-time-index forms -- one item, `enqueue_at<Index>(item)`, and the bulk form,
+  `enqueue_at<Index, All>(items, n)` -- on both variants (fixed and runtime producer count); what they do is
+  unchanged. The old name made the round-robin bulk form's partial mode uncallable: an explicit
+  `enqueue<false>(items, n)` was ambiguous with `enqueue<Index>(items, n)` on every compiler, `false` converting to
+  an index and the two templates having the same parameters, so the round-robin form could only be called with its
+  default `All = true`. Under the new name `enqueue<false>(items, n)` and `enqueue<true>(items, n)` name the
+  round-robin form alone, and `false` takes as many items as fit. Code that called `enqueue<Index>(...)` no longer
+  compiles: write `enqueue_at<Index>(...)`. The runtime-index forms, `enqueue(index, ...)`, and the round-robin
+  ones keep their names. Nothing in qb, its modules, the examples or qb-vs-others called the compile-time-index
+  forms outside the test that pins them, `mpsc-dequeue-parity` (`EveryBulkEnqueueOverloadForwardsAll`, now in both
+  polarities on the round-robin form, and `CompileTimeIndexFormsAreEnqueueAt`).
 
 ### Removed
 
@@ -694,7 +706,8 @@ policy.
 - **The fixed-producer `mpsc::ringbuffer::enqueue<Index, false>(items, n)` takes as many items as fit (Huly
   QB-280).** That one bulk overload dropped its `_All` argument and always enqueued all-or-nothing, returning 0 where
   a partial enqueue was asked for; it now forwards `_All` like its three siblings. The engine's mailbox is the
-  runtime-count variant and never reached it.
+  runtime-count variant and never reached it. The overload is spelled `enqueue_at<Index, false>(items, n)` since
+  the rename under Changed (Huly QB-980).
 - **`coroutine_scope::join_any()` on a scope with no task returns the `total_count()` sentinel (Huly QB-283).** It
   promised "the index of the first completed task, or `total_count()` if empty", but an empty scope -- never spawned
   into, or emptied by `prune_completed()` after every task finished -- was not a ready case: the caller parked where
