@@ -117,9 +117,9 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     for (std::size_t i = 0; i < _pipes.size(); ++i)
         if (i != _resolved_index)
             _peer_pipes.push_back(&_pipes[i]);
-    // Seed the pool after the last statically-registered service id. The
-    // atomic load is relaxed because every writer publishes through the
-    // magic-static acquire edge of `Actor::registerIndex<Tag>()` (2.3).
+    // Seed the pool above the last registered service id. The base `detail::service_registry_seal` counted this core
+    // alive under the registry mutex before any member was built: every registration before it is visible to this
+    // relaxed load, and none can follow it while the core lives -- it would be refused (Huly QB-1007).
     _ids.init(static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1));
     // The five default events resolve through the actor registry, not a handler table: install
     // their resolvers now, before any actor can register one (`memh::install` must precede the
@@ -1734,6 +1734,63 @@ VirtualCore::__on_actor_down__(ActorId const id, DownReason const reason) noexce
                 push<detail::UnwatchRequest>(BroadcastId(core), id, w.peer);
         }
     }
+}
+
+// The service registry (Huly QB-1007). Cold, and at the END of the file like the other cold bodies here: a tag
+// registers once per process, a core is counted twice in its life.
+
+namespace detail {
+service_registry_seal::service_registry_seal() noexcept {
+    // VirtualCore's base, so this runs before the core seeds `_ids` from `_nb_service`: the floor the constructor
+    // reads is frozen from here until the destructor below, and no registration can land inside the pool.
+    std::lock_guard<std::mutex> const lock(VirtualCore::servicesMutex());
+    ++VirtualCore::_live_cores;
+}
+
+service_registry_seal::~service_registry_seal() noexcept {
+    std::lock_guard<std::mutex> const lock(VirtualCore::servicesMutex());
+    --VirtualCore::_live_cores;
+}
+} // namespace detail
+
+static_assert(std::is_empty_v<detail::service_registry_seal>,
+              "VirtualCore's registry seal must stay empty: as an empty base it leaves VirtualCore's layout unchanged");
+
+ServiceId
+VirtualCore::__register_service__(std::atomic<ServiceId> &slot, TypeId const tag) noexcept {
+    std::lock_guard<std::mutex> const lock(servicesMutex());
+    // Another thread of this image registered the tag while this one waited for the lock.
+    if (ServiceId const sid = slot.load(std::memory_order_relaxed); sid != 0)
+        return sid;
+    // Another image registered it (its own slot, the same type id): one id per tag per process, not a second one.
+    auto &services = getServices();
+    if (auto const it = services.find(tag); it != services.end()) {
+        slot.store(it->second, std::memory_order_release);
+        return it->second;
+    }
+    auto const registered = _nb_service.load(std::memory_order_relaxed);
+    if (unlikely(_live_cores != 0)) {
+        // Every live core seeded its pool at `registered + 1` and hands those ids to ordinary actors: the id this tag
+        // would get may already be an actor's. Static initialisation registers every tag a program names; a tag that
+        // first appears now -- an image loaded mid-run -- must be loaded before the cores are built. Not stored in
+        // `slot`: the next call, once no core is alive, registers it.
+        QB_LOG_CRIT("Service tag " << qb::event_type_name(tag) << " first registered while " << _live_cores
+                                   << " VirtualCore(s) are alive: refused, its service id is NotFound -- load it before Main::start");
+        assert(false && "qb: a service tag registered while a VirtualCore is alive is refused (Huly QB-1007) -- see the CRIT log");
+        return 0;
+    }
+    if (unlikely(registered + 1 >= ActorId::BroadcastSid)) {
+        // 65534 tags: the next id would be BroadcastSid -- a service addressed as "every actor of the core".
+        QB_LOG_CRIT("Service tag " << qb::event_type_name(tag) << " refused: the service id space is spent (" << registered
+                                   << " tags registered)");
+        assert(false && "qb: the service id space is exhausted (Huly QB-1007) -- see the CRIT log");
+        return 0;
+    }
+    auto const sid = static_cast<ServiceId>(registered + 1);
+    services.emplace(tag, sid);
+    _nb_service.store(sid, std::memory_order_relaxed);
+    slot.store(sid, std::memory_order_release);
+    return sid;
 }
 
 } // namespace qb

@@ -432,7 +432,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   for this: that timer outlives the actor and an `is_alive()` re-check inside it is itself the
   use-after-free.
 - **Service (core-local singleton)** — `class Cfg : public qb::ServiceActor<CfgTag> {...};` add via
-  `addActor`; reach same-core via `getService<Cfg>()`.
+  `addActor`; reach same-core via `getService<Cfg>()`, any core via `qb::Actor::getServiceId<CfgTag>(core)`.
+  The tag registers at static initialisation; register an image that brings one before `Main::start`.
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware
   `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
   and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
@@ -572,6 +573,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
   every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1207-1230;
   the inventory table Actor.h:868-912)_
+- **A service tag registers before the cores, or not while they live.** Every tag a program names registers at
+  static initialisation, and each core seeds its ordinary-actor ids above the registered tags. A tag whose FIRST
+  registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
+  ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
+  without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1525-1539; VirtualCore.cpp:1759-1794;
+  ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
   cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);

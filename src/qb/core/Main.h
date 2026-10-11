@@ -1140,7 +1140,7 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
         } else {
             QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
                                                                         << " in Core(" << _index << ")"
-                                                                        << " : Already registered");
+                                                                        << " : Already registered, or its tag was refused");
             return id;
         }
     } else {

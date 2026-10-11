@@ -78,44 +78,44 @@ namespace qb {
  * events to and from other VirtualCores via mailboxes.
  * Each VirtualCore typically runs in its own dedicated thread.
  */
-class VirtualCore {
+class VirtualCore : detail::service_registry_seal {
     // `inline` + QB_ABI_ANCHOR, NOT an out-of-line definition in VirtualCore.cpp: an out-of-line
     // thread_local emits a `non-external` TLS descriptor, private to its image, so a host and a
     // statically-linked plugin each got their own "current VirtualCore" on one thread. See
     // qb/utility/abi.h for the measurement.
     QB_ABI_ANCHOR static inline thread_local VirtualCore *_handler = nullptr;
     /**
-     * @brief Global, race-free counter of registered service types.
-     * @details
-     * Finding 2.3 — each `ServiceActor<Tag>` triggers a single registration
-     * through `Actor::registerIndex<Tag>()` whose magic-static barrier guards
-     * an `std::atomic` increment here. All subsequent reads are relaxed
-     * (no happens-before needed: writes are published under the magic static
-     * acquire edge).
+     * @brief The service registry (Huly QB-1007): `_nb_service` counts the registered tags, `_live_cores` the cores
+     *        alive, and both are written under `servicesMutex()` only.
+     * @details A tag registers through `Actor::registerIndex<Tag>()` -- at static initialisation for every tag the
+     *          program names, through `ServiceActor<Tag>::ServiceIndex` -- and gets `_nb_service + 1`. A core seeds
+     *          its id pool at `_nb_service + 1` and stays counted in `_live_cores` (its empty base
+     *          `detail::service_registry_seal`) until it is gone. While a core is counted `_nb_service` cannot
+     *          move: a tag registering then would take an id that pool hands to ordinary actors, so
+     *          `__register_service__` refuses it. The relaxed loads outside the mutex (`CoreInitializer`, the
+     *          pool's recycling test) read a value that only moves while no core exists.
      */
     QB_ABI_ANCHOR static inline std::atomic<ServiceId> _nb_service{0};
-    /**
-     * @brief Access the `Tag → ServiceId` registration map (lazy singleton).
-     * @details
-     * Reads are safe once all static initialisers have run. Writes are only
-     * performed under `servicesMutex()` from `Actor::registerIndex<Tag>()`
-     * inside a magic static, guaranteeing at most one insertion per `Tag`
-     * regardless of the number of concurrent TU initialisations.
-     */
+    QB_ABI_ANCHOR static inline std::size_t            _live_cores = 0;
+    friend struct detail::service_registry_seal;
+    /// `TypeId` of a tag -> its `ServiceId`, one map per process: an image whose own `registerIndex<Tag>()` slot is
+    /// still 0 finds there the id another image drew, instead of drawing a second one for the same tag.
     QB_ABI_ANCHOR static qb::unordered_map<TypeId, ServiceId> &
     getServices() {
         static qb::unordered_map<TypeId, ServiceId> service_ids;
         return service_ids;
     }
-    /**
-     * @brief Mutex protecting mutating access to `getServices()`.
-     * @details Magic static → safe to call from any TU's static initialiser.
-     */
+    /// Guards the registry. A magic static: safe to call from any TU's static initialiser.
     QB_ABI_ANCHOR static std::mutex &
     servicesMutex() noexcept {
         static std::mutex mtx;
         return mtx;
     }
+    /**
+     * @brief `Actor::registerIndex<Tag>()`'s cold path (VirtualCore.cpp): the id of `tag`, registered now if it is
+     *        new -- or 0, refused, while a core is alive or once the 16-bit id space is spent. Publishes it in `slot`.
+     */
+    static ServiceId __register_service__(std::atomic<ServiceId> &slot, TypeId tag) noexcept;
 
 public:
     /*!
@@ -1154,13 +1154,13 @@ VirtualCore::addReferencedActor(_Init &&...init) {
     if constexpr (service_type<_Actor>) {
         // A service's constructor may register custom events. Constructing a duplicate would replace the live
         // service's router entry before appendActor rejects it, leaving a pointer to the destroyed duplicate behind.
-        // The id comes from registerIndex<Tag>(), never from ServiceIndex, which is 0 until initialised (QB-1007).
+        // The id comes from registerIndex<Tag>(), never ServiceIndex; 0 is a tag refused at registration (QB-1007).
         const ServiceId sid      = Actor::registerIndex<detail::service_tag_t<_Actor>>();
-        bool            occupied = __actor_slot__(ActorId(sid, _index)) != nullptr;
+        bool            occupied = sid == 0 || __actor_slot__(ActorId(sid, _index)) != nullptr;
         for (ServiceId const constructing : _constructing_services)
             occupied |= constructing == sid;
         if (unlikely(occupied)) {
-            QB_LOG_CRIT("Error Cannot add Service Actor multiple times: " << typeid(_Actor).name());
+            QB_LOG_CRIT("Error Cannot add Service Actor (its tag was refused, or it is already here): " << typeid(_Actor).name());
             return nullptr;
         }
         _constructing_services.push_back(sid);
@@ -1504,8 +1504,8 @@ Actor::getServiceId(CoreId const index) noexcept {
     // Through `registerIndex<Tag>()`, like every reader of a service id: `ServiceActor<Tag>::ServiceIndex` is 0 until
     // its dynamic initialiser has run, and that initialiser is unordered against every other static -- a read of it
     // from another global's initialiser saw 0: NotFound on core 0, a "valid" id designating nothing elsewhere (Huly
-    // QB-1007). Past the first call this is arithmetic: nothing here proves that a service of `Tag` runs on `index`,
-    // and `registerIndex<Tag>()` hands back the same id for every core.
+    // QB-1007). A tag refused at registration yields `{0, index}`, which `is_valid()` rejects. Past the first call
+    // this is arithmetic: nothing here proves that a service of `Tag` runs on `index`.
     return {registerIndex<Tag>(), index};
 }
 
@@ -1525,17 +1525,17 @@ Actor::EventBuilder::push(_Args &&...args) noexcept {
 template <typename Tag>
 ServiceId
 Actor::registerIndex() noexcept {
-    // ServiceIndex's initialiser calls this at static initialisation, so every tag the program names registers early;
-    // once initialised it holds the id. Until then (another global's initialiser) it is 0: the magic static answers.
+    // ServiceIndex's initialiser calls this at static initialisation, so every tag the program names registers before
+    // any core exists; reading it here is a real reference, which a linker dropping unreferenced data cannot discard
+    // with that initialiser. Once initialised it holds the id: one plain load, what its readers always paid. Until
+    // then -- from another global's initialiser -- and for good after a refused registration it is 0: then a slot,
+    // filled under the registry mutex, which refuses a first registration while a core is alive (Huly QB-1007).
     if (const ServiceId sid = ServiceActor<Tag>::ServiceIndex; sid != 0) [[likely]]
         return sid;
-    static const ServiceId idx = [] {
-        const auto                  new_id = VirtualCore::_nb_service.fetch_add(1, std::memory_order_relaxed) + 1;
-        std::lock_guard<std::mutex> lk(VirtualCore::servicesMutex());
-        VirtualCore::getServices()[type_id<Tag>()] = new_id;
-        return new_id;
-    }();
-    return idx;
+    static std::atomic<ServiceId> slot{0};
+    if (const ServiceId sid = slot.load(std::memory_order_acquire); sid != 0)
+        return sid;
+    return VirtualCore::__register_service__(slot, type_id<Tag>());
 }
 
 // CoroContext implementation (needs VirtualCore access)

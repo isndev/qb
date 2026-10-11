@@ -150,7 +150,7 @@ Send an event in **unordered** fashion. `send<Event>(dest, args...)` is `noexcep
 
 #### `ServiceActor<Tag>` (`qb::ServiceActor`)
 
-A singleton-style actor: one instance per [`VirtualCore`](#virtualcore-qbvirtualcore) per `Tag` struct, reachable from sibling actors on the same core via `getService<T>()`. Its `ServiceIndex` is registered once under a magic-static guard, so the service id is unique and valid even under concurrent first use. Declared in `src/qb/core/Actor.h`. See [Patterns](../4_qb_core/patterns.md).
+A singleton-style actor: one instance per [`VirtualCore`](#virtualcore-qbvirtualcore) per `Tag` struct, reachable from sibling actors on the same core via `getService<T>()`. Its tag registers once per process — at static initialisation, for every tag the program names — under the service registry's mutex, so the service id is unique and valid even under concurrent first use; a first registration while a core is alive is refused (`NotFound`). Declared in `src/qb/core/Actor.h`. See [Patterns](../4_qb_core/patterns.md).
 
 #### `ServiceId` (`qb::ServiceId`)
 

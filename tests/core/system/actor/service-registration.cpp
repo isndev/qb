@@ -9,7 +9,7 @@
 
 /**
  * @file system/actor/service-registration.cpp
- * @brief When a service tag registers, and which id its readers see (Huly QB-1007).
+ * @brief When a service tag registers, which id its readers see, and when a registration is refused (Huly QB-1007).
  *
  * A `ServiceActor<Tag>`'s id is drawn when `Tag` registers (`Actor::registerIndex<Tag>()`), and every core seeds its
  * pool of ordinary-actor ids above the tags registered when it is built. Pinned here:
@@ -19,12 +19,14 @@
  *     `addRefActor<Service>()` and `getService<Service>()` -- all see the registered id.
  *   - Naming a tag registers it at static initialisation, before any core exists: a tag only ever named through
  *     `getServiceId<Tag>()`, from inside a running actor, does not draw the id of an ordinary actor of that core.
+ *   - A tag whose FIRST registration comes while a core is alive is refused -- NotFound, a CRIT log and, in a debug
+ *     build, an assert -- and a first registration is accepted again once every core is gone.
  *
  * Two tools make the order deterministic on every compiler. An EXPLICIT specialization of `ServiceIndex` has ordered
  * initialisation ([basic.start.dynamic]): defined after a global, it is initialised after that global, whereas the
  * shipped, implicitly instantiated definition is unordered and its place is the compiler's choice. And an explicit
  * specialization defined as `0` holds a tag in the state "its static initialiser has not run" for the whole process:
- * the window a reader meets from another global's initialiser.
+ * the window a reader meets from another global's initialiser, or the state of a tag an image loaded mid-run brings.
  *
  * Every in-actor observation is mirrored to a process-global atom asserted after `join()`; the engines run on the
  * calling thread (`start(false)`, one core) and end by themselves.
@@ -193,6 +195,71 @@ public:
     }
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// 4. A tag whose first registration comes while a core is alive, and the control: once the cores are gone.
+// ---------------------------------------------------------------------------------------------------------------
+struct LateTag {};
+struct FreshTag {};
+
+} // namespace service_registration_test
+
+namespace qb {
+// Neither tag registers at static initialisation: the state of a tag that an image loaded mid-run brings.
+template <>
+const ServiceId ServiceActor<service_registration_test::LateTag>::ServiceIndex = 0;
+template <>
+const ServiceId ServiceActor<service_registration_test::FreshTag>::ServiceIndex = 0;
+} // namespace qb
+
+namespace service_registration_test {
+
+std::atomic<int> g_late_constructed{0};
+
+class LateService : public qb::ServiceActor<LateTag> {
+public:
+    LateService() {
+        g_late_constructed.fetch_add(1);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        co_return true;
+    }
+};
+
+std::atomic<std::uint32_t> g_late_id{0};
+std::atomic<std::uint32_t> g_late_probe_id{0};
+std::atomic<bool>          g_late_ref_valid{true};
+
+class LateProbe : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_late_probe_id.store(raw(id())); // the first ordinary actor of the core: the pool's lowest id
+        g_late_id.store(raw(qb::Actor::getServiceId<LateTag>(getIndex()))); // LateTag's FIRST registration
+        g_late_ref_valid.store(addRefActor<LateService>().valid());
+        kill();
+        co_return true;
+    }
+};
+
+void
+run_a_registration_on_a_live_core() {
+    qb::Main main;
+    main.addActor<LateProbe>(0);
+    main.start(false);
+    main.join();
+}
+
+class IdleProbe : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        kill();
+        co_return true;
+    }
+};
+
 } // namespace service_registration_test
 
 using namespace service_registration_test;
@@ -256,4 +323,38 @@ TEST(ServiceRegistration, ATagNamedOnlyFromARunningActorWasRegisteredBeforeTheCo
     EXPECT_TRUE(phantom.is_valid());
     EXPECT_NE(raw(phantom), raw(probe)) << "the tag drew the id of the core's first ordinary actor";
     EXPECT_LT(phantom.sid(), probe.sid()) << "a service id must lie below the pool the core seeded";
+}
+
+TEST(ServiceRegistrationDeathTest, ATagFirstRegisteredWhileACoreIsAliveIsRefused) {
+    // The statement runs a whole engine, so the child re-executes rather than forking a process with threads.
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    g_late_constructed.store(0);
+    g_late_id.store(0);
+    g_late_probe_id.store(0);
+    g_late_ref_valid.store(true);
+    // Debug: the refusal asserts, naming why. Release: the statement runs here, and the refusal is its result.
+    EXPECT_DEBUG_DEATH(run_a_registration_on_a_live_core(), "registered while a VirtualCore is alive");
+#ifdef NDEBUG
+    qb::ActorId const late(g_late_id.load());
+    qb::ActorId const probe(g_late_probe_id.load());
+    ASSERT_TRUE(probe.is_valid()) << "the probe never ran";
+    EXPECT_FALSE(late.is_valid()) << "a first registration on a live core was accepted";
+    EXPECT_NE(raw(late), raw(probe)) << "the late tag drew the id of the core's first ordinary actor";
+    EXPECT_FALSE(g_late_ref_valid.load()) << "addRefActor<Service>() of a refused tag returned a valid handle";
+    EXPECT_EQ(g_late_constructed.load(), 0) << "the service of a refused tag was constructed";
+#endif
+}
+
+TEST(ServiceRegistration, AFirstRegistrationIsAcceptedOnceEveryCoreIsGone) {
+    // The control of the refusal above: it lasts as long as the cores, not as long as the process.
+    {
+        qb::Main main;
+        main.addActor<IdleProbe>(0);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    qb::ActorId const fresh = qb::Actor::getServiceId<FreshTag>(0);
+    EXPECT_TRUE(fresh.is_valid()) << "a first registration with no core alive was refused";
+    EXPECT_EQ(raw(qb::Actor::getServiceId<FreshTag>(0)), raw(fresh)) << "a registered id must not move";
 }

@@ -411,7 +411,7 @@ protected:
      * @brief The service id of `Tag`, registering `Tag` on first use: the ONE reader of a service id (Huly QB-1007)
      *
      * @tparam Tag Type tag for the service; must be a **complete** type (reaches `typeid(Tag)`)
-     * @return ServiceId The service ID
+     * @return ServiceId The service ID; 0 -- the sid of NotFound -- when a first registration is refused (a core is alive)
      * @private
      */
     template <typename Tag>
@@ -2335,10 +2335,10 @@ public:
  *             `struct MyTag {};` first: `ServiceActor<struct MyTag>` only *declares* the tag,
  *             and since 3.0 the service index reaches `typeid(Tag)`, so an incomplete tag is a
  *             compile error in every build mode.
- * @details
- * ServiceActor is a special actor where DerivedActor
- * must define a unique service index by Tag.\n
- * Inherited Service Actors are unique per VirtualCore.
+ * @details One instance per VirtualCore per Tag, with the same service id on every core. The id is drawn once,
+ * when Tag registers -- at static initialisation for every tag the program names -- and a tag whose first
+ * registration comes while a VirtualCore is alive (an image loaded mid-run) is REFUSED: its id is NotFound,
+ * with a CRIT log and, in a debug build, an assert. Register service tags before `Main::start` (Huly QB-1007).
  */
 template <typename Tag>
 class ServiceActor : public Service {
@@ -2845,6 +2845,19 @@ std::type_identity<Tag> service_tag_of(ServiceActor<Tag> const *) noexcept;
 template <typename _ServiceActor>
 using service_tag_t = typename decltype(detail::service_tag_of(static_cast<_ServiceActor const *>(nullptr)))::type;
 
+/**
+ * @brief Counts a `VirtualCore` alive in the service registry for exactly as long as the core exists (Huly QB-1007).
+ * @details `VirtualCore`'s empty base: it is built before the core seeds its id pool from the registered-tag count
+ *          and destroyed after the pool. While any core is counted, that count cannot move -- a service tag that
+ *          registered then would take an id the pool hands to ordinary actors, so `Actor::registerIndex<Tag>()`
+ *          refuses it. Defined in VirtualCore.cpp, under the registry mutex.
+ */
+struct service_registry_seal {
+    service_registry_seal() noexcept;
+    ~service_registry_seal() noexcept;
+    service_registry_seal(service_registry_seal const &)            = delete;
+    service_registry_seal &operator=(service_registry_seal const &) = delete;
+};
 } // namespace detail
 
 } // namespace qb

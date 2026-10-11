@@ -207,5 +207,6 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-dump SOURCES coroutine/cor
 # service-registration pins the service registry (Huly QB-1007): no reader of a service id loads
 # ServiceActor<Tag>::ServiceIndex, which is 0 until its unordered initialiser has run -- an addActor<Service> made from
 # a global initialiser and the three runtime readers all see the registered id; naming a tag registers it before the
-# cores exist. Single-core engines on the calling thread.
+# cores exist; a tag first registered while a core is alive is refused (a death test in debug) and accepted again
+# once every core is gone. Single-core engines on the calling thread.
 qb_add_test(MODULE qb-core TIER system NAME service-registration SOURCES actor/service-registration.cpp DEPENDS ${PROJECT_NAME})

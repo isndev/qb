@@ -219,7 +219,9 @@ push<LogLine>(logger_id, "hello from another core");
 `getService<T>()` returns the registered pointer on the **current** core, or `nullptr` if no such
 service runs there. `getServiceId<Tag>(core)` computes the deterministic `ActorId` a
 `ServiceActor<Tag>` would occupy on `core`; it does **not** verify that an instance is actually
-registered there, so a send to an unpopulated core's service id is dropped by the router.
+registered there, so a send to an unpopulated core's service id is dropped by the router. For a tag
+refused at registration — first named while a core was alive — it is `{0, core}`, which
+`is_valid()` rejects ([Writing actors](./actor.md#services-one-per-core-per-tag)).
 
 > **`getService<T>()` is not phase-gated, and that is deliberate.** Unlike `ActorHandle::get()` and
 > `VirtualCore::findActor()`, it consults neither `is_active()` nor `is_alive()`. It hands back the

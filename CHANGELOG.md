@@ -232,6 +232,14 @@ policy.
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
   invalid and a `BroadcastId` valid; an id built with service id 0 for a non-zero core now tests invalid.
+- **A service tag whose first registration comes while a `VirtualCore` is alive is refused (Huly QB-1007).** Every
+  tag a program names registers at static initialisation, and each core seeds its pool of ordinary-actor ids above
+  the registered tags; a tag registering later -- one an image loaded mid-run brings -- took the next id, the first
+  one every live core's pool hands to an ordinary actor. It is now refused: `getServiceId<Tag>()` gives
+  `{0, core}`, `addActor` returns `NotFound` and `addRefActor` an invalid handle without constructing the service, a
+  CRIT line names the tag and a debug build asserts. Once every core is gone the next use registers it: load an
+  image that brings service tags before `Main::start`. A registration that would take the 65535th id
+  (`BroadcastSid`) is refused the same way.
 - **`CoroutineScheduler::current()` and `schedule_via_current()` bind the thread's loop scheduler when none
   is bound.** `current()` used to create a private fallback that no loop pumped, and `schedule_via_current()`
   dropped the handle in release (asserting in debug): a continuation queued before anything bound a scheduler
@@ -397,8 +405,8 @@ policy.
   so an `addActor<Service>` run from another global's initialiser before it got `NotFound` on core 0 and, on any
   other core, an id designating nothing. All four now read the id through `Actor::registerIndex<Tag>()`, as
   `getServiceId<Tag>()` already did. Its fast path is the plain load of `ServiceIndex` the four always paid, taken
-  once that member is non-zero; until then its one-time registration answers. None of the four is on an event
-  path. `ServiceIndex` stays: its initialiser is what registers the tag at
+  once that member is non-zero; until then a constant-initialised per-tag slot, filled under the registry mutex,
+  answers. None of the four is on an event path. `ServiceIndex` stays: its initialiser is what registers the tag at
   static initialisation. Pinned by `qb-core-test-system-service-registration`.
 - **A service tag first named from a running actor no longer takes an ordinary actor's id (Huly QB-1007).** A tag
   named only through `getServiceId<Tag>()` registered at its first call; from inside a running actor that drew the
