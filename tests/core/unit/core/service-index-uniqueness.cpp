@@ -9,12 +9,17 @@
 
 /**
  * @file unit/core/service-index-uniqueness.cpp
- * @brief `ServiceActor<Tag>::ServiceIndex` uniqueness + concurrent-first-access stability.
+ * @brief A service tag's id: uniqueness + concurrent-first-registration stability.
  *
- * A service actor is identified by a per-Tag `ServiceId` assigned through a magic-static index
+ * A service actor is identified by a per-Tag `ServiceId` assigned once per process
  * (`Actor::registerIndex<Tag>()`). The id must be unique per tag, identical for every reader of
  * the same tag (even when many threads race the first access), and 1-based (0 marks "not a
  * service"). Pure logic exercised via the public `Actor::getServiceId<Tag>(CoreId)`.
+ *
+ * Naming a tag registers it at static initialisation, through `ServiceActor<Tag>::ServiceIndex`
+ * (Huly QB-1007), so a test body would only ever read ids registered long before. The three tags
+ * below define that member as 0 instead: nothing registers them early, and the first access the
+ * threads race is the registration itself.
  */
 
 #include <array>
@@ -31,6 +36,16 @@ struct ServiceTagA {};
 struct ServiceTagB {};
 struct ServiceTagC {};
 } // namespace
+
+// Explicit specializations, defined before any use: these three tags do not register at static initialisation.
+namespace qb {
+template <>
+const ServiceId ServiceActor<ServiceTagA>::ServiceIndex = 0;
+template <>
+const ServiceId ServiceActor<ServiceTagB>::ServiceIndex = 0;
+template <>
+const ServiceId ServiceActor<ServiceTagC>::ServiceIndex = 0;
+} // namespace qb
 
 TEST(ServiceIndex, IsUniqueAcrossTagsAndStableUnderConcurrency) {
     constexpr std::size_t kThreads = 8;

@@ -52,7 +52,7 @@ The common unparked enqueue path uses SPSC atomics and fences without a mutex. W
 
 ### Identity
 
-- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:98,250-256,337-341`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use (`src/qb/core/VirtualCore.h:1527-1537`).
+- Each event type has a stable 16-bit `qb::TypeId` assigned at first use through a magic-static, atomically incremented counter (`qb::type_id<T>()`, `src/qb/core/Event.h:98,250-256,337-341`). `ServiceActor<Tag>` indices are allocated once under that same magic-static guarantee, with a mutex guarding the shared service-id map insertion, so the id is unique and valid even under concurrent first use; every reader goes through `Actor::registerIndex<Tag>()`, which loads `ServiceIndex` once that member is initialised (`src/qb/core/VirtualCore.h:1527-1537`).
 - A `type_id<T>()` value is stable within a single process run but is **not** stable across runs. Do not persist it.
 
 ### Identifiers

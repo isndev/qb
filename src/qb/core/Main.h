@@ -1134,9 +1134,9 @@ CoreInitializer::addActor(_Args &&...args) noexcept {
     ActorId id = ActorId::NotFound;
     // C++20: use service_type concept instead of std::is_base_of_v
     if constexpr (service_type<_Actor>) {
-        if (_registered_services.find(_Actor::ServiceIndex) == _registered_services.end()) {
-            _registered_services.insert(_Actor::ServiceIndex);
-            id = ActorId(_Actor::ServiceIndex, _index);
+        const ActorId service = Actor::getServiceId<detail::service_tag_t<_Actor>>(_index); // never ServiceIndex: QB-1007
+        if (service.is_valid() && _registered_services.insert(service.sid()).second) {
+            id = service;
         } else {
             QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
                                                                         << " in Core(" << _index << ")"

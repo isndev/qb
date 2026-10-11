@@ -390,6 +390,21 @@ policy.
   the way `crypto_jwt.h` already did: on a host with the OpenSSL headers an SSL-off TU that included one of them
   used to compile against TLS code qb never built. Every other includer is already guarded: qbm-http, qbm-pgsql
   and qbm-redis include them under `QB_HAS_SSL`, and the two TLS examples are `REQUIRES ssl`.
+- **A service reserved from another global's initialiser gets its id: no reader of a service id loads
+  `ServiceIndex` any more (Huly QB-1007).** `ServiceActor<Tag>::ServiceIndex` is 0 until its dynamic initialiser has
+  run, and C++ leaves that initialiser unordered against every other static. `CoreInitializer::addActor`,
+  `VirtualCore::addReferencedActor`, `VirtualCore::getService` and the `ServiceActor` constructor read it directly,
+  so an `addActor<Service>` run from another global's initialiser before it got `NotFound` on core 0 and, on any
+  other core, an id designating nothing. All four now read the id through `Actor::registerIndex<Tag>()`, as
+  `getServiceId<Tag>()` already did. Its fast path is the plain load of `ServiceIndex` the four always paid, taken
+  once that member is non-zero; until then its one-time registration answers. None of the four is on an event
+  path. `ServiceIndex` stays: its initialiser is what registers the tag at
+  static initialisation. Pinned by `qb-core-test-system-service-registration`.
+- **A service tag first named from a running actor no longer takes an ordinary actor's id (Huly QB-1007).** A tag
+  named only through `getServiceId<Tag>()` registered at its first call; from inside a running actor that drew the
+  id the core's pool had given its first ordinary actor, so events sent to the "service" reached that actor.
+  `registerIndex<Tag>()` now reads `ServiceIndex`, which instantiates it, so every tag the program names registers
+  at static initialisation, below every pool.
 - **`thread_arena` keeps a thread's first chunk for the next thread instead of freeing it at thread exit.**
   The 64 KiB chunk of an exited core thread now waits on a process-wide spare list (`thread_arena::spare()`)
   and the next thread's first refill takes it, warm, before asking `::operator new`. Freeing it was a 64 KiB

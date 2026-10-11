@@ -336,7 +336,7 @@ engine.core(0)
 **Properties and pitfalls.**
 
 - One instance **per core**: `getService<T>()` only resolves a service that exists on the *calling* actor's core. For cross-core access, send an event to the service's `ActorId` instead of holding a pointer. The returned pointer must never be cached and dereferenced from another core's thread.
-- A `ServiceActor`'s `ServiceIndex` is allocated once per `Tag` at static initialization and reserved for the process lifetime; the id is never recycled, so service ids stay stable even as ordinary actors come and go.
+- A `ServiceActor`'s service id is allocated once per `Tag` — at static initialization, for every tag the program names — and reserved for the process lifetime; the id is never recycled, so service ids stay stable even as ordinary actors come and go.
 - The service is still an actor: it has a mailbox and can `registerEvent`/`on(...)` like any other actor. `getService<T>()` is a fast path for same-core callers, not a replacement for the event system across cores.
 
 ## Composing qbm modules

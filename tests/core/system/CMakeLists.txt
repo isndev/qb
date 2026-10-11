@@ -204,3 +204,8 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-offload SOURCES coroutine/
 # coroutine-dump pins an actor's named coroutine in its core's dump (Huly QB-71): spawn(name, fn), tracking turned on
 # for the core, the named root and, at the end of its chain, an ask. The qb-io half is qb-io-test-system-suspension-tracking.
 qb_add_test(MODULE qb-core TIER system NAME coroutine-dump SOURCES coroutine/coroutine-dump.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# service-registration pins the service registry (Huly QB-1007): no reader of a service id loads
+# ServiceActor<Tag>::ServiceIndex, which is 0 until its unordered initialiser has run -- an addActor<Service> made from
+# a global initialiser and the three runtime readers all see the registered id; naming a tag registers it before the
+# cores exist. Single-core engines on the calling thread.
+qb_add_test(MODULE qb-core TIER system NAME service-registration SOURCES actor/service-registration.cpp DEPENDS ${PROJECT_NAME})

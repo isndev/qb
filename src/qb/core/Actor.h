@@ -408,7 +408,7 @@ class Actor : nocopy {
 
 protected:
     /**
-     * @brief Register a service index
+     * @brief The service id of `Tag`, registering `Tag` on first use: the ONE reader of a service id (Huly QB-1007)
      *
      * @tparam Tag Type tag for the service; must be a **complete** type (reaches `typeid(Tag)`)
      * @return ServiceId The service ID
@@ -2342,14 +2342,14 @@ public:
  */
 template <typename Tag>
 class ServiceActor : public Service {
-    friend class Main;
-    friend class CoreInitializer;
-    friend class VirtualCore;
+    // ServiceIndex is how Tag registers at static initialisation. It holds 0 until its (unordered) dynamic initialiser
+    // has run, so only `Actor::registerIndex<Tag>()` reads it, as a cache it checks for 0; every other reader asks that.
+    friend class Actor;
     static const ServiceId ServiceIndex;
 
 public:
     ServiceActor()
-        : Service(ServiceIndex) {}
+        : Service(Actor::registerIndex<Tag>()) {}
 };
 
 /**
@@ -2832,6 +2832,20 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::Actor const &actor)
  * @ingroup Actor
  */
 std::ostream &operator<<(std::ostream &os, qb::Actor const &actor);
+
+namespace detail {
+/**
+ * @brief The `Tag` a service actor type registers under, deduced from its `ServiceActor<Tag>` base (Huly QB-1007).
+ * @details Declared only: it is named in `decltype`, never called. The engine reads a service's id through
+ *          `Actor::registerIndex<service_tag_t<T>>()`, never through `ServiceActor<Tag>::ServiceIndex`, which is 0
+ *          until its dynamic initialiser has run -- an initialiser unordered against every other static.
+ */
+template <typename Tag>
+std::type_identity<Tag> service_tag_of(ServiceActor<Tag> const *) noexcept;
+template <typename _ServiceActor>
+using service_tag_t = typename decltype(detail::service_tag_of(static_cast<_ServiceActor const *>(nullptr)))::type;
+
+} // namespace detail
 
 } // namespace qb
 

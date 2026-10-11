@@ -1152,10 +1152,10 @@ VirtualCore::addReferencedActor(_Init &&...init) {
     };
 
     if constexpr (service_type<_Actor>) {
-        // A service's constructor may register custom events. Constructing a duplicate
-        // would replace the live service's router entry before appendActor rejects it,
-        // leaving a pointer to the destroyed duplicate behind.
-        const ServiceId sid      = _Actor::ServiceIndex;
+        // A service's constructor may register custom events. Constructing a duplicate would replace the live
+        // service's router entry before appendActor rejects it, leaving a pointer to the destroyed duplicate behind.
+        // The id comes from registerIndex<Tag>(), never from ServiceIndex, which is 0 until initialised (QB-1007).
+        const ServiceId sid      = Actor::registerIndex<detail::service_tag_t<_Actor>>();
         bool            occupied = __actor_slot__(ActorId(sid, _index)) != nullptr;
         for (ServiceId const constructing : _constructing_services)
             occupied |= constructing == sid;
@@ -1207,7 +1207,7 @@ VirtualCore::findActor(ActorId const id) const noexcept {
 template <typename _ServiceActor>
 _ServiceActor *
 VirtualCore::getService() const noexcept {
-    Actor *const raw = __actor_slot__(ActorId(_ServiceActor::ServiceIndex, _index));
+    Actor *const raw = __actor_slot__(ActorId(Actor::registerIndex<detail::service_tag_t<_ServiceActor>>(), _index));
     if (raw == nullptr) {
         QB_LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
                                              << " in Core(" << _index << ")"
@@ -1501,11 +1501,11 @@ Actor::broadcast(_Args &&...args) const noexcept {
 template <typename Tag>
 ActorId
 Actor::getServiceId(CoreId const index) noexcept {
-    // Route through `registerIndex<Tag>()` so that callers hitting this path
-    // *before* `ServiceActor<Tag>::ServiceIndex` has been touched (rare, but
-    // possible when DSOs are loaded lazily) still observe a valid, unique
-    // service id rather than the `0` stamped by `unordered_map::operator[]`
-    // on a fresh key (2.3).
+    // Through `registerIndex<Tag>()`, like every reader of a service id: `ServiceActor<Tag>::ServiceIndex` is 0 until
+    // its dynamic initialiser has run, and that initialiser is unordered against every other static -- a read of it
+    // from another global's initialiser saw 0: NotFound on core 0, a "valid" id designating nothing elsewhere (Huly
+    // QB-1007). Past the first call this is arithmetic: nothing here proves that a service of `Tag` runs on `index`,
+    // and `registerIndex<Tag>()` hands back the same id for every core.
     return {registerIndex<Tag>(), index};
 }
 
@@ -1525,10 +1525,10 @@ Actor::EventBuilder::push(_Args &&...args) noexcept {
 template <typename Tag>
 ServiceId
 Actor::registerIndex() noexcept {
-    // Magic static — the C++ standard guarantees that the initializer runs
-    // exactly once, even if multiple threads race on first call. This fully
-    // serialises the `_nb_service` increment and the insertion into the
-    // registration map, fixing the non-atomic mutation reported in 2.3.
+    // ServiceIndex's initialiser calls this at static initialisation, so every tag the program names registers early;
+    // once initialised it holds the id. Until then (another global's initialiser) it is 0: the magic static answers.
+    if (const ServiceId sid = ServiceActor<Tag>::ServiceIndex; sid != 0) [[likely]]
+        return sid;
     static const ServiceId idx = [] {
         const auto                  new_id = VirtualCore::_nb_service.fetch_add(1, std::memory_order_relaxed) + 1;
         std::lock_guard<std::mutex> lk(VirtualCore::servicesMutex());
