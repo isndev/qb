@@ -578,7 +578,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
   ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
   without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
-  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1525-1539; VirtualCore.cpp:1759-1794;
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1538-1552; VirtualCore.cpp:1743-1778;
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,

@@ -46,20 +46,20 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:855-856	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:864-865	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.cpp:1295-1309	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.api.md	VirtualCore.cpp:1565-1570	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1585-1600	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1644-1663	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1665-1674	c027cf31c3fe	void
-llm/qb.llm.api.md	VirtualCore.cpp:1759-1794	6255f8b6dda5	ServiceId
-llm/qb.llm.api.md	VirtualCore.cpp:1796-1821	3c42a027ac9f	bool
-llm/qb.llm.api.md	VirtualCore.h:1207-1230	f5f18dc56a93	template <typename _ServiceActor>
-llm/qb.llm.api.md	VirtualCore.h:1501-1510	a57c15ec1d9a	template <typename Tag>
-llm/qb.llm.api.md	VirtualCore.h:1525-1539	5337a095ca99	template <typename Tag>
-llm/qb.llm.api.md	VirtualCore.h:1680-1680	e9dc7855af62	Actor::spawn_detached(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1680-1682	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1694-1694	4112605310a9	Actor::spawn(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1694-1697	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.cpp:1279-1293	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.api.md	VirtualCore.cpp:1549-1554	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
+llm/qb.llm.api.md	VirtualCore.cpp:1569-1584	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1628-1647	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1649-1658	c027cf31c3fe	void
+llm/qb.llm.api.md	VirtualCore.cpp:1743-1778	6255f8b6dda5	ServiceId
+llm/qb.llm.api.md	VirtualCore.cpp:1780-1805	3c42a027ac9f	bool
+llm/qb.llm.api.md	VirtualCore.h:1220-1243	f5f18dc56a93	template <typename _ServiceActor>
+llm/qb.llm.api.md	VirtualCore.h:1514-1523	a57c15ec1d9a	template <typename Tag>
+llm/qb.llm.api.md	VirtualCore.h:1538-1552	5337a095ca99	template <typename Tag>
+llm/qb.llm.api.md	VirtualCore.h:1693-1693	e9dc7855af62	Actor::spawn_detached(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1693-1695	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1707-1707	4112605310a9	Actor::spawn(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1707-1710	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
@@ -137,20 +137,20 @@ llm/qb.llm.md	Main.h:305-305	5130406e8b76	CoreInitializer &setLatency(qb::durati
 llm/qb.llm.md	Main.h:322-322	1bf8f0dd34f5	CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpi...
 llm/qb.llm.md	Main.h:405-407	8e039460f53f	/// Default `setIdleSpin()`: measured to hold a two-core ping-pong on...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1193-1214	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1295-1309	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.md	VirtualCore.cpp:1417-1424	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1585-1600	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1644-1674	904dffe89372	void
-llm/qb.llm.md	VirtualCore.cpp:1710-1737	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:1759-1794	6255f8b6dda5	ServiceId
-llm/qb.llm.md	VirtualCore.cpp:717-723	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
-llm/qb.llm.md	VirtualCore.cpp:854-866	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
-llm/qb.llm.md	VirtualCore.h:1030-1042	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
-llm/qb.llm.md	VirtualCore.h:1207-1230	f5f18dc56a93	template <typename _ServiceActor>
-llm/qb.llm.md	VirtualCore.h:1525-1539	5337a095ca99	template <typename Tag>
-llm/qb.llm.md	VirtualCore.h:1668-1668	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
-llm/qb.llm.md	VirtualCore.h:1694-1694	4112605310a9	Actor::spawn(std::string_view name, Func &&func) const {
+llm/qb.llm.md	VirtualCore.cpp:1177-1198	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1279-1293	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.md	VirtualCore.cpp:1401-1408	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1569-1584	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1628-1658	904dffe89372	void
+llm/qb.llm.md	VirtualCore.cpp:1694-1721	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:1743-1778	6255f8b6dda5	ServiceId
+llm/qb.llm.md	VirtualCore.cpp:701-707	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
+llm/qb.llm.md	VirtualCore.cpp:838-850	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.h:1043-1055	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
+llm/qb.llm.md	VirtualCore.h:1220-1243	f5f18dc56a93	template <typename _ServiceActor>
+llm/qb.llm.md	VirtualCore.h:1538-1552	5337a095ca99	template <typename Tag>
+llm/qb.llm.md	VirtualCore.h:1681-1681	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
+llm/qb.llm.md	VirtualCore.h:1707-1707	4112605310a9	Actor::spawn(std::string_view name, Func &&func) const {
 llm/qb.llm.md	async/io.h:106-110	4ab46a163948	~base() {
 llm/qb.llm.md	async/io.h:77-82	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:97-98	bc5b8adc7b00	base()

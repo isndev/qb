@@ -112,7 +112,7 @@ The pump runs *on whatever thread called it*. Everything therefore turns on whos
 
 **Inside an actor handler, that thread is the `VirtualCore`.** Until the awaitable completes, this core never returns to its workflow loop: no `__flush_all__()`, no `__receive__()`, no `LoopEvent` tick, no actor reaping (`src/qb/core/VirtualCore.cpp:948-950`). Every actor on the core is frozen.
 
-And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event makes the sender partial-bail and retry next pass — at once when the sender has inbound work of its own and the blocked core has taken nothing over two refusals, after a bounded backoff otherwise — so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:1742-1823`).
+And because the core stops draining its own mailbox, peers pushing to it eventually find the ring full. A `try_send` that fails on a QoS-guaranteed event makes the sender partial-bail and retry next pass — at once when the sender has inbound work of its own and the blocked core has taken nothing over two refusals, after a bounded backoff otherwise — so the stall propagates outward as backpressure; a QoS-0 event is simply dropped (`src/qb/core/VirtualCore.cpp:1826-1907`).
 
 The failure is *hard to notice*, which is why it needs prose rather than a warning box. Watchers and coroutines keep firing inside the pump, so a sanity check that "the socket still responds" passes. The only symptom is actor latency.
 
