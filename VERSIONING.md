@@ -101,8 +101,15 @@ hand-written -I/-l, no usage requirements  undefined: _qb_abi_version_unknown__c
 -DQB_COMPAT_FORCE_THREAD_FALLBACK          undefined: _qb_abi_std_jthread_0
 -fno-exceptions                            undefined: _qb_abi_exceptions_0
 -DNDEBUG                                   LINK OK    (not an axis — see below)
--std=c++23                                 LINK OK    (not an axis — layout is identical)
+-std=c++23                                 LINK OK    (not an axis — this probe does not exchange expected)
 ```
+
+The C++23 row proves that the fingerprint permits that consumer, not that every public type has the
+same representation. `qb::expected` uses qb's fallback when the standard-library implementation is
+unavailable and aliases `std::expected` when it is available; its selector is not a fingerprint axis.
+Redis constructs the result in caller-side templates and exchanges values and errors by reference with
+its compiled helpers. Its inline parser uses distinct template symbols for the result implementation.
+Those boundaries avoid exchanging a mode-dependent result object; they do not make its layouts equal.
 
 On MSVC and clang-cl the same axes are additionally emitted as `#pragma detect_mismatch` records,
 which the Microsoft linker reports as `LNK2038` naming **both** values. That pragma is an inert

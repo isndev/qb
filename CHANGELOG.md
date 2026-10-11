@@ -489,6 +489,12 @@ policy.
   id the core's pool had given its first ordinary actor, so events sent to the "service" reached that actor.
   `registerIndex<Tag>()` now reads `ServiceIndex`, which instantiates it, so every tag the program names registers
   at static initialisation, below every pool.
+
+- **Long unknown URI schemes avoid a full default-port table scan (Huly QB-919).**
+  A bound computed once from the actual table skips impossible case-folded lookups.
+  Known schemes retain their spelling and case-insensitive ports; explicit ports and
+  future registered keys longer than the stack folding buffer remain supported.
+
 - **`thread_arena` keeps a thread's first chunk for the next thread instead of freeing it at thread exit.**
   The 64 KiB chunk of an exited core thread now waits on a process-wide spare list (`thread_arena::spare()`)
   and the next thread's first refill takes it, warm, before asking `::operator new`. Freeing it was a 64 KiB
@@ -525,6 +531,10 @@ policy.
   instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its final buffers until
   `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 % (1c) and -5.0 % (2c)
   on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a side.
+
+- **ABI documentation distinguishes the C++20/23 `expected` implementations (Huly QB-286).** A successful
+  fingerprint probe does not establish identical layouts. The `expected` selector is not fingerprinted;
+  Redis constructs its result in caller-side templates and isolates the parser's inline result symbols.
 
 - **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
   retained iterators into the source cache's list. Looking up or replacing a key in the copy

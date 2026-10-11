@@ -753,6 +753,16 @@ static const qb::unordered_map<std::string_view, std::string_view> default_ports
     {"z39.50", "210"}
 };
 
+// Compute the actual limit once with the immutable table. Long unknown schemes
+// can then skip the fallback scan without excluding future longer table keys.
+static const std::size_t default_port_max_scheme_size = []() noexcept {
+    std::size_t max_size = 0;
+    for (auto const &entry : default_ports)
+        if (entry.first.size() > max_size)
+            max_size = entry.first.size();
+    return max_size;
+}();
+
 // Helper function to check if a character is a digit
 inline bool
 is_digit(char c) {
@@ -1049,7 +1059,7 @@ uri::parse() noexcept {
         // in _source/_scheme, but RFC schemes compare without ASCII case: only a
         // missed lookup with uppercase bytes needs a folded, allocation-free key.
         auto it = default_ports.find(_scheme);
-        if (it == std::end(default_ports)) {
+        if (it == std::end(default_ports) && _scheme.size() <= default_port_max_scheme_size) {
             const auto ascii_lower = [](char c) noexcept {
                 return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
             };
@@ -1063,8 +1073,8 @@ uri::parse() noexcept {
                 it = default_ports.find(std::string_view(folded.data(), _scheme.size()));
             } else if (had_uppercase) {
                 // No allocation in parse() noexcept, even for an exceptional long
-                // scheme. Length-filtered scan keeps a future >64-byte table key
-                // case-insensitive; today's 662 keys are all shorter than 64.
+                // scheme. Skip lengths beyond the longest table key; a future
+                // >64-byte key still compares without ASCII case.
                 for (auto const &[name, port] : default_ports) {
                     if (name.size() != _scheme.size())
                         continue;

@@ -206,14 +206,26 @@ TEST(UriParse, DefaultPortLookupPreservesSourceSchemeAndRejectsUnknownDefault) {
     EXPECT_TRUE(unknown.port().empty());
     EXPECT_EQ(unknown.u_port(), 0u); // caller must supply a port for an unknown scheme
 
-    std::string long_scheme(80, 'a');
-    long_scheme[0]                = 'A';
-    const std::string long_source = long_scheme + "://example.com/resource";
-    const uri         long_unknown(long_source);
-    EXPECT_TRUE(long_unknown.is_valid());
-    EXPECT_EQ(long_unknown.source(), long_source);
-    EXPECT_TRUE(long_unknown.port().empty());
-    EXPECT_EQ(long_unknown.u_port(), 0u); // rare >64-byte path has no default and preserves bytes
+    for (const std::size_t size : {64u, 65u, 80u}) {
+        std::string long_scheme(size, 'a');
+        long_scheme[0]                = 'A';
+        const std::string long_source = long_scheme + "://example.com/resource";
+        const uri         long_unknown(long_source);
+        ASSERT_TRUE(long_unknown.is_valid()) << size;
+        EXPECT_EQ(long_unknown.source(), long_source);
+        EXPECT_EQ(long_unknown.scheme(), long_scheme);
+        EXPECT_EQ(long_unknown.host(), "example.com");
+        EXPECT_EQ(long_unknown.path(), "/resource");
+        EXPECT_TRUE(long_unknown.port().empty());
+        EXPECT_EQ(long_unknown.u_port(), 0u);
+
+        const std::string explicit_source = long_scheme + "://example.com:8443/resource";
+        const uri         explicit_port(explicit_source);
+        ASSERT_TRUE(explicit_port.is_valid()) << size;
+        EXPECT_EQ(explicit_port.source(), explicit_source);
+        EXPECT_EQ(explicit_port.scheme(), long_scheme);
+        EXPECT_EQ(explicit_port.u_port(), 8443u);
+    }
 }
 
 // =============================================================================
