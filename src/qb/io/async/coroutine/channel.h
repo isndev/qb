@@ -1011,36 +1011,36 @@ collect(channel<T> &ch) {
  * }, buffer_size);
  * @endcode
  *
- * Lifetime: the worker CO-OWNS both channels via shared_ptr captured by value in its coroutine
- * frame, so they stay alive for as long as the worker runs regardless of when the caller drops its
- * own handles. The caller therefore has no "keep the channels alive" obligation, and the worker can
- * never dereference (recv/send/close) a freed channel — the previous raw-pointer design left the
- * loop-exit `close()` (and an in-flight `send`) writing through freed memory if the caller dropped
- * the channels early (the recv side was already liveness-guarded; close()/send were not).
+ * Lifetime: a worker coroutine transforms every value `in` receives into `out` until `in` is closed, then closes
+ * `out`. It co-owns both channels, so it never touches a freed one. The two handles returned, and every copy of them,
+ * share one lease on it (Huly QB-981): when the last of them goes, the worker is destroyed wherever it waits, `in`
+ * closed or not -- it transforms nothing more, and values still buffered in either channel go with the channels. A
+ * coroutine that feeds `in` or reads `out` after the caller's own handles are gone holds a copy of its handle, not a
+ * raw pointer: the handles are the only owners of the pipeline.
  */
 template <typename T, typename U, typename F>
 auto
 make_pipeline(F f, size_t buffer_size = 10) {
-    auto in  = std::make_shared<channel<T>>(buffer_size);
-    auto out = std::make_shared<channel<U>>(buffer_size);
-
-    // The worker takes shared_ptr copies (value parameters in the frame) — it co-owns the channels
-    // and uses a static function (not a lambda) so nothing dangles after make_pipeline returns.
-    coro_scheduler().spawn(pipeline_worker<T, U>(std::move(f), in, out));
-
-    return std::make_pair(std::move(in), std::move(out));
+    struct pipeline_lease { // what the handles share; `worker` is declared last, so it ends before the channels go
+        std::shared_ptr<channel<T>> in;
+        std::shared_ptr<channel<U>> out;
+        detail::worker_lease        worker; // coroutine/utils.h
+    };
+    auto lease = std::make_shared<pipeline_lease>();
+    lease->in  = std::make_shared<channel<T>>(buffer_size);
+    lease->out = std::make_shared<channel<U>>(buffer_size);
+    // The worker co-owns the channels and holds only its lease's slot; the two handles alias the lease, and own it alone.
+    lease->worker.start(pipeline_worker<T, U>(std::move(f), lease->in, lease->out, lease->worker.slot()));
+    return std::make_pair(std::shared_ptr<channel<T>>(lease, lease->in.get()), std::shared_ptr<channel<U>>(lease, lease->out.get()));
 }
 
-// Free function: fn, in, out are VALUE parameters stored in the coroutine frame by the standard
-// (the channels are co-owned for the worker's whole lifetime). No dangling/UAF possible.
+// Free function: fn, in, out and the slot of its lease are VALUE parameters stored in the coroutine frame, so nothing
+// dangles once make_pipeline returns, and the channels are co-owned for the worker's whole lifetime.
 template <typename T, typename U, typename F>
 task<void>
-pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out) {
-    // Close `out` on EVERY exit so a consumer parked on out->recv() wakes instead
-    // of hanging forever when the transform `fn` (or a send) throws. make_pipeline
-    // exposes no error channel, so a transform exception is reported downstream as
-    // end-of-stream rather than rethrown (surfacing it would require a
-    // make_pipeline API change) — but the pipeline never deadlocks.
+pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out, std::shared_ptr<std::coroutine_handle<>> self = {}) {
+    detail::worker_lease::slot_guard ends_the_slot{std::move(self)}; // first: clears the slot however this frame ends
+    // Close `out` on EVERY exit: a transform (or a send) that throws ends the stream for the consumer, never strands it.
     try {
         while (true) {
             auto val = co_await in->recv();

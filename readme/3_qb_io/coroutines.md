@@ -521,11 +521,11 @@ co_await filter   (in_ch, out_ch, [](int x) { return x % 2 == 0; });
 std::vector<int> all = co_await collect(in_ch);
 
 auto chan          = make_channel<int>(16);              // std::unique_ptr<channel<int>>
-auto [in_p, out_p] = make_pipeline<int, int>(            // pair of unique_ptr channels
+auto [in_p, out_p] = make_pipeline<int, int>(            // pair of shared_ptr handles: in, out
     [](int x) { return x + 1; });
 ```
 
-`recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` and `make_pipeline` return `std::unique_ptr` so the caller owns the channel's lifetime.
+`recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` returns a `std::unique_ptr`, so the caller owns the channel's lifetime; `make_pipeline` returns two `std::shared_ptr` handles whose lifetime rules come below.
 
 What `close()` does to each parked party is worth a table of its own, because the three answers differ (`channel.h:397-418`):
 
@@ -541,6 +541,8 @@ What `close()` does to each parked party is worth a table of its own, because th
 **A parked sender is served by its wake** (since 3.3, Huly QB-272). When room appears for a parked `send()` or `send_for()` — a slot freed by a receive, a receiver or a `select()` / `recv_for()` that parks — the first parked sender's value is handed over on the spot, to that receiver, select waiter or slot, and only then is the sender resumed, already done (`channel.h:802-819`). Every send goes through the one hand-off, `deliver()`: a waiting receiver, then a live select waiter, then a free buffer slot (`channel.h:767-782`). The buffer therefore never holds more than `capacity()` values, a capacity-0 channel never buffers, and parked senders are served in FIFO order. Until 3.3 the sender was only woken and delivered when it resumed, so a `try_send` or a fast-path send running in between took the freed room, and the woken sender then buffered past the capacity. One consequence to know when a send races in a `when_any`: a sender reclaimed after its wake has sent — its value is in the channel exactly once, as a `send_for` woken before its timer always was.
 
 `send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:614`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
+
+**A pipeline lives as long as its handles** (since 3.3, Huly QB-981). `make_pipeline<T, U>(f, buffer_size = 10)` returns two `std::shared_ptr` handles, `in` and `out`, and spawns a worker that sends `f(v)` to `out` for every `v` that `in` receives, and closes `out` once `in` is closed or `f` throws. The worker co-owns both channels, so it never touches a freed one, and the handles — every copy of them included — share one lease on it, the lease `backpressure()` and `debounce()` hold on their producer ([Async streams](#async-streams)). When the last handle goes, the worker is destroyed wherever it waits, `in` closed or not: it transforms nothing more, and values still buffered in either channel go with the channels. So keep a handle for as long as you read `out`, and hand a coroutine that feeds or reads the pipeline beyond your own handles a copy of the handle, never a raw pointer. Until 3.3 a pipeline dropped without closing `in` left its worker parked for the life of the thread, holding the two channels and everything `f` captured.
 <!-- src: qb/src/qb/io/async/coroutine/channel.h:131 (capacity default 0), :237 (send), :347 (recv), :514 (recv_for), :614 (send_for), :357/:380 (try_send/try_recv), :397 (close), :846 (make_channel), :1023 (make_pipeline), :947/:969/:991 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
@@ -557,7 +559,7 @@ One asymmetry to know before you compose `select` with anything that can abandon
 <!-- src: qb/src/qb/io/async/coroutine/channel.h:1070 (select_result), :1210 (select variadic), :1295 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :854-857 (channel_range does not suspend, Factbook); stream.h:98/:110 -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :854-857 (channel_range does not suspend, Factbook); stream.h:169/:181 -->
 
 ## Structured concurrency: `coroutine_scope`
 
@@ -736,8 +738,8 @@ auto zipped = zip(stream_of_ints, stream_of_strings);             // pairs
 The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::range`). `merge_streams` takes a `std::vector<async_stream<T>>`; `zip(a, b)` yields `async_stream<std::pair<T, U>>`; `reduce(initial, f)` takes the seed then the reducer, and its accumulator need not be the element type; `for_each` also accepts a callable returning `task<void>` for an async sink.
 <!-- src: qb/src/qb/io/async/coroutine/stream.h:169/:181/:189 (from_channel/_shared/_vector), :973 (range_stream), :922 (interval), :781 (merge_streams), :834 (zip), :227/:244/:261/:277 (map/filter/take/skip), :447/:455/:463/:494/:502/:511/:520/:529/:539 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
 
-`backpressure(max_buffer[, semaphore])` and `debounce(delay)` run their source in a producer coroutine of their own — eagerly for `backpressure`, from the first pull for `debounce`. That producer lives as long as its source or the stream, whichever ends first: the stream and every copy of it hold it, and when the last one is gone — an early terminal (`first`, `take`, `any`, `find`), a stream dropped unread — the producer is destroyed wherever it waits, pulls nothing more from the source, and a caller-supplied semaphore gets back every permit it held. Values already pulled and buffered go with the stream (Huly QB-289).
-<!-- src: qb/src/qb/io/async/coroutine/stream.h:118-140 (producer_lease), :348 (debounce), :561 (backpressure), :720/:746 (the two producers) -->
+`backpressure(max_buffer[, semaphore])` and `debounce(delay)` run their source in a producer coroutine of their own — eagerly for `backpressure`, from the first pull for `debounce`. That producer lives as long as its source or the stream, whichever ends first: the stream and every copy of it hold it, and when the last one is gone — an early terminal (`first`, `take`, `any`, `find`), a stream dropped unread — the producer is destroyed wherever it waits, pulls nothing more from the source, and a caller-supplied semaphore gets back every permit it held. Values already pulled and buffered go with the stream (Huly QB-289). The lease is the one `make_pipeline`'s handles hold on its worker ([Channels](#channels), Huly QB-981): a single mechanism, `detail::worker_lease`, which spawns the coroutine, keeps its handle in a slot the coroutine clears when it ends, and destroys it through `CoroutineScheduler::cancel_spawned()` when the last handle goes.
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:118-140 (producer_lease), :348 (debounce), :561 (backpressure), :720/:746 (the two producers); qb/src/qb/io/async/coroutine/utils.h:409 (worker_lease) -->
 
 ## Safe integration with `qb::Actor`
 

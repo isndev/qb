@@ -733,6 +733,19 @@ policy.
   stream and every copy of it now hold a lease on the producer: when the last one goes, the producer is destroyed
   wherever it waits and every permit it held is handed back. A copy still in use keeps it running. `debounce()` had
   no test at all; it has two.
+- **A `make_pipeline()` whose handles are dropped without closing its input no longer leaves its worker parked for
+  the life of the thread (Huly QB-981).** The worker co-owns both channels so that it never touches a freed one, and
+  nothing else ended it: once the caller let go of both handles without closing `in`, nothing could feed the worker
+  or read what it made, and it stayed parked on `in->recv()` -- or on `out->send()` when its output was full -- with
+  its frame, the two channels and everything the transform captured. The two handles returned, and every copy of
+  them, now share one lease on the worker, the one `backpressure()` and `debounce()` hold on their producer since
+  QB-289 -- one mechanism for the three (`detail::worker_lease`): when the last handle goes, the worker is destroyed
+  wherever it waits, `in` closed or not. It transforms nothing more then, and values still buffered in either
+  channel go with the channels, so a coroutine that keeps feeding `in` or reading `out` after the caller's own
+  handles are gone holds a copy of its handle, not a raw pointer. A copy still alive keeps the worker running.
+  Pinned in `channel-lifetime.cpp` by `MakePipelineWorkerWaitingForInputEndsWithTheLastHandle` and
+  `MakePipelineWorkerBlockedOnItsOutputEndsWithTheLastHandle` (the worker's frame never released on the base), with
+  `MakePipelineWorkerServesWhileACopyOfItsHandlesLives` as the control.
 - **A half-open `qb::CircuitBreaker` trial abandoned by frame destruction is released (Huly QB-297).** `ask_guarded`
   released its trial from the `cancelled_error` catch of an actor kill, but a frame destroyed while parked -- a
   `when_any` / race loser, a `with_deadline` expiry, a torn-down scope -- runs destructors, not catch blocks: the

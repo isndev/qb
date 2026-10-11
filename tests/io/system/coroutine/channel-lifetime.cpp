@@ -23,10 +23,11 @@
  * these tests are therefore only meaningful when the binary is built with ASan, and they are
  * the canonical place that exercises that build.
  *
- * Also re-homed here: the `make_pipeline` raw-pointer regression — `make_pipeline` spawns its
- * worker holding *raw pointers* into the two heap channels it returns by `unique_ptr`; the
- * worker (`pipeline_worker`, a free function, not a dangling local lambda) must run correctly
- * after `make_pipeline` returns and the temporaries are gone.
+ * Also re-homed here: the `make_pipeline` lifetime cases. Its worker (`pipeline_worker`, a free
+ * function, not a dangling local lambda) co-owns the two heap channels and must run correctly
+ * after `make_pipeline` returns and the temporaries are gone; and it must not outlive the
+ * caller's handles — the two `shared_ptr`s returned, and every copy of them, share one lease on
+ * it, and the last of them to go ends it wherever it waits (Huly QB-981).
  *
  * De-flake: parking is confirmed via `pump_until` on an explicit "parked / not-yet-done"
  * predicate rather than a blind fixed `run_for`, and the post-destruction resume is awaited
@@ -36,6 +37,7 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -144,12 +146,12 @@ TEST_F(ChannelLifetime, DestroyChannelWhileSendParkedThrowsChannelClosedNoUAF) {
 }
 
 // ---------------------------------------------------------------------------
-// make_pipeline raw-pointer regression
+// make_pipeline: the worker against make_pipeline's temporaries and the caller's handles
 // ---------------------------------------------------------------------------
 
 TEST_F(ChannelLifetime, MakePipelineWorkerRunsAfterFactoryReturnsNoDangling) {
-    // make_pipeline spawns pipeline_worker holding raw pointers into the two heap channels it
-    // returns by unique_ptr. The worker (a free function, not a local lambda) must run
+    // make_pipeline spawns pipeline_worker over the two heap channels it returns. The worker (a
+    // free function, not a local lambda) holds its own shared_ptr copies of them and must run
     // correctly once make_pipeline has returned and its temporaries are gone — a dangling
     // capture here would corrupt or crash (caught under ASan).
     auto [in, out] = make_pipeline<int, int>([](int v) { return v; }, 4);
@@ -175,4 +177,97 @@ TEST_F(ChannelLifetime, MakePipelineWorkerRunsAfterFactoryReturnsNoDangling) {
     EXPECT_TRUE(pump_until([&] { return consumer_done.load(); })) << "pipeline worker never delivered through the heap channels";
     EXPECT_EQ(count.load(), 2) << "every value sent into the pipeline must arrive";
     EXPECT_TRUE(out->is_closed()) << "the worker must close the output channel on input close";
+}
+
+// The caller lets both handles go without closing `in`: nothing can feed the worker any more, nothing can read what
+// it would make. The worker co-owned both channels, so it stayed parked for the life of the thread, with its frame,
+// the two channels and everything the transform captured (Huly QB-981). The handles hold a lease on it now, and the
+// last one to go destroys it where it waits. The transform is a value parameter of the worker's frame: what it
+// captures goes when the frame goes, so `frame.expired()` is the worker's end.
+TEST_F(ChannelLifetime, MakePipelineWorkerWaitingForInputEndsWithTheLastHandle) {
+    auto                     calls = std::make_shared<int>(0);
+    const std::weak_ptr<int> frame{calls};
+    auto [in, out] = make_pipeline<int, int>(
+        [calls](int v) {
+            ++*calls;
+            return v;
+        },
+        4);
+    calls.reset(); // the worker's frame holds the only reference now
+
+    // One value through: the worker runs, delivers it, and parks again on in->recv().
+    std::optional<int> first;
+    std::atomic<bool>  received{false};
+    ASSERT_TRUE(in->try_send(7));
+    coro_scheduler().spawn([out = out.get(), &first, &received]() -> task<void> {
+        first = co_await out->recv();
+        received.store(true);
+    });
+    ASSERT_TRUE(pump_until([&] { return received.load(); })) << "the pipeline never delivered its first value";
+    EXPECT_EQ(first, std::optional<int>{7});
+    ASSERT_FALSE(frame.expired()) << "the worker must live while the caller holds its handles";
+
+    in.reset();
+    out.reset();
+
+    EXPECT_TRUE(pump_until([&] { return frame.expired(); }))
+        << "the worker of a pipeline dropped without closing its input stayed parked on it for good (QB-981)";
+}
+
+// Same end for a worker parked on the other side: its output full and unread, it waits in out->send() with a value it
+// already transformed. Destroyed there, its send retracts from the output channel before the channel goes (ASan).
+TEST_F(ChannelLifetime, MakePipelineWorkerBlockedOnItsOutputEndsWithTheLastHandle) {
+    auto                     calls = std::make_shared<int>(0);
+    const std::weak_ptr<int> frame{calls};
+    const int *const         transformed = calls.get(); // read only while the frame lives
+    auto [in, out]                       = make_pipeline<int, int>(
+        [calls](int v) {
+            ++*calls;
+            return v;
+        },
+        1);
+    calls.reset();
+
+    ASSERT_TRUE(in->try_send(1));
+    ASSERT_TRUE(pump_until([&] { return out->size() == 1u; })) << "the first value never reached the output";
+    ASSERT_TRUE(in->try_send(2));
+    // Transformed, then parked: the output holds 1 already and nobody reads it.
+    ASSERT_TRUE(pump_until([&] { return *transformed == 2; })) << "the worker never took the second value";
+    EXPECT_EQ(out->size(), 1u);
+
+    in.reset();
+    out.reset();
+
+    EXPECT_TRUE(pump_until([&] { return frame.expired(); }))
+        << "the worker of a pipeline dropped with its output full stayed parked on it for good (QB-981)";
+}
+
+// The lease is the caller's handles' -- all of them, every copy: the originals dropped while copies live end nothing.
+// That is what makes the fix a lease on the LAST handle rather than an end on the first (the counterpart of
+// BackpressureProducerServesASurvivingCopyAfterAnotherEnded in stream-async-sources.cpp).
+TEST_F(ChannelLifetime, MakePipelineWorkerServesWhileACopyOfItsHandlesLives) {
+    auto [in, out] = make_pipeline<int, int>([](int v) { return v * 10; }, 4);
+    auto feed      = in;
+    auto drain     = out;
+    in.reset();
+    out.reset();
+
+    std::vector<int>  got;
+    std::atomic<bool> done{false};
+    coro_scheduler().spawn([drain, &got, &done]() -> task<void> {
+        while (auto v = co_await drain->recv())
+            got.push_back(*v);
+        done.store(true);
+    });
+    coro_scheduler().spawn([feed]() -> task<void> {
+        co_await feed->send(1);
+        co_await feed->send(2);
+        feed->close();
+    });
+    // The two coroutines' copies are the last handles now: the worker serves them to the end.
+    feed.reset();
+    drain.reset();
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the worker was ended while a copy of its handles lived";
+    EXPECT_EQ(got, (std::vector<int>{10, 20}));
 }

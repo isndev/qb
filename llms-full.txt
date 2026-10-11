@@ -1634,7 +1634,8 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
     *   `task<std::optional<T>> recv_for(qb::duration timeout)` (nullopt on timeout/close), `task<bool> send_for(T value, qb::duration timeout)` (false on timeout/close).
 *   `class channel_closed : public std::runtime_error`
 *   `[T<...Ts>] auto select(channel<Ts>&...)` / `[T<T>] auto select(std::vector<channel<T>*>)` — first channel to deliver/close; → `select_result {index, closed, value}`. The awaiter is neither copyable nor movable since 3.3 (Huly QB-302): `co_await` what the call returns.
-*   Helpers: `make_channel<T>(size_t)`, `make_pipeline<T,U,F>(F,size_t)`, `transform(channel&,channel&,F)`, `filter(channel&,channel&,F)`, `collect(channel&)`.
+*   Helpers: `make_channel<T>(size_t)` (→ `std::unique_ptr<channel<T>>`), `make_pipeline<T,U,F>(F,size_t=10)`, `transform(channel&,channel&,F)`, `filter(channel&,channel&,F)`, `collect(channel&)`.
+*   `make_pipeline<T,U>(f, buffer_size)` → `std::pair<std::shared_ptr<channel<T>>, std::shared_ptr<channel<U>>>` (`in`, `out`): a worker coroutine sends `f(v)` to `out` for every `v` `in` receives, and closes `out` when `in` closes or `f` throws. The two handles and every copy of them share one lease on the worker: when the LAST one goes, the worker is destroyed wherever it waits, `in` closed or not — nothing more is transformed and values still buffered go with the channels (3.3, Huly QB-981; the lease of `backpressure`/`debounce`). A coroutine that feeds `in` or reads `out` beyond the caller's own handles holds a copy of the handle, never a raw pointer.
 
 ### Sync primitives (`sync.h`)
 *   `class semaphore` — async counting semaphore: `acquire()`, `acquire(cancellation_token)` (cancellation-aware: a kill while parked unwinds via `cancelled_error` and retracts the queued claim — no permit leak), `try_acquire()`, `release()`, `scoped_acquire()` → `task<guard>`.
