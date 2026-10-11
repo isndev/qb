@@ -340,7 +340,8 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 
 - TCP: `qb::io::use<T>::tcp::client<Server=void>`, `::tcp::server<Session>`, `::tcp::acceptor`,
   `::tcp::io_handler<Session>`.
-- TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`).
+- TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`; the TLS headers
+  `#error` without it, so guard their include the same way -- 3.3, Huly QB-1015).
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
   carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
@@ -1320,6 +1321,7 @@ TCP listener. `constexpr is_secure() == false`.
 *   `int disconnect() const noexcept`
 
 #### Secure TCP (`<qb/io/tcp/ssl/...>`, requires `QB_HAS_SSL`/OpenSSL)
+Without `QB_HAS_SSL`, `<qb/io/tcp/ssl/context.h>`, `socket.h`, `listener.h`, `<qb/io/transport/stcp.h>` and `<qb/io/transport/saccept.h>` stop at an `#error` (through `<qb/io/tcp/ssl/openssl_required.h>`, their one route to `<openssl/ssl.h>`; 3.3, Huly QB-1015): guard the include, as `<qb/io/async.h>` does for `use<>::tcp::ssl`.
 *   **`class qb::io::ssl::Context` (`<qb/io/tcp/ssl/context.h>`) — the PREFERRED TLS config type.** Value-semantic, reference-counted, secure-by-default, RAII. Copyable (copies share one `SSL_CTX`, freed exactly once — **there is no user-visible `SSL_CTX_free`**). Fail-closed: a construction/config error yields a falsy Context whose `error()` explains why (it never degrades to an insecure context).
     *   Factories: `static Context client()` (TLS 1.2+, system trust store, `VerifyMode::peer`), `static Context server(std::filesystem::path cert, std::filesystem::path key)` (loads+checks the identity; `VerifyMode::none`; `cert` is a CHAIN file -- since 3.3 every certificate it holds is presented, the leaf first, then its intermediates, Huly QB-611), `static Context adopt(SSL_CTX*) noexcept` (**TRANSFER** the caller's single ref — no up-ref), `static Context share(SSL_CTX*) noexcept` (**up-ref**; caller keeps + frees their own).
     *   Fluent config (chainable; a no-op once errored): `min_version(TlsVersion)`/`max_version(TlsVersion)`, `verify(VerifyMode)`, `trust(std::filesystem::path)`/`trust_system()`, `identity(cert,key)` (client mTLS / extra server cert; `cert` is a chain file, every certificate presented since 3.3), `alpn(std::vector<std::string>)` (**empty list = no-op**), `ciphers(std::string)`/`ciphersuites(std::string)`/`curves(std::string)`, `dh_params(path)`, `session_cache(std::size_t)`/`session_timeout(std::chrono::seconds)`.

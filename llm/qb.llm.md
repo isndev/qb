@@ -325,7 +325,8 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 
 - TCP: `qb::io::use<T>::tcp::client<Server=void>`, `::tcp::server<Session>`, `::tcp::acceptor`,
   `::tcp::io_handler<Session>`.
-- TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`).
+- TCP+TLS: `qb::io::use<T>::tcp::ssl::{client,server,acceptor,io_handler}` (needs `QB_HAS_SSL`; the TLS headers
+  `#error` without it, so guard their include the same way -- 3.3, Huly QB-1015).
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
   carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).

@@ -66,7 +66,10 @@ false, and the entire SSL/TLS slice is absent.
 
 All SSL headers — `qb/io/tcp/ssl/socket.h`, `qb/io/tcp/ssl/context.h`,
 `qb/io/tcp/ssl/listener.h`, `qb/io/transport/stcp.h` and `qb/io/transport/saccept.h` — require
-an OpenSSL-enabled build. (They are still installed; they simply do not compile without it.)
+an OpenSSL-enabled build. They are still installed; without `QB_HAS_SSL` they stop at an `#error` that says so,
+through `qb/io/tcp/ssl/openssl_required.h`, the one place they reach `<openssl/ssl.h>` (since 3.3, Huly QB-1015 —
+they used to include it regardless: "file not found" on a host without the OpenSSL headers, a silent compile against
+code qb never built on a host with them).
 The `use<>::tcp::ssl` async aliases in `qb/io/async.h` are themselves guarded by
 `#ifdef QB_HAS_SSL`, so code that references them must also be compiled under that definition.
 

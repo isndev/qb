@@ -29,7 +29,7 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <openssl/ssl.h>
+#include "openssl_required.h" // <openssl/ssl.h>, or an #error without QB_HAS_SSL (Huly QB-1015)
 #include <qb/system/time.h>
 #include "../socket.h"
 #include "context.h"

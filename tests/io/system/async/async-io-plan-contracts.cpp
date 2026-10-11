@@ -66,12 +66,12 @@
 #include <qb/io/async/protocol.h>
 #include <qb/io/async/tcp/server.h>
 #include <qb/io/protocol/text.h>
-#include <qb/io/transport/saccept.h>
 #include <qb/io/transport/udp.h>
 #include <qb/io/udp/socket.h>
 
 #ifdef QB_HAS_SSL
 #include <qb/io/protocol/handshake.h>
+#include <qb/io/transport/saccept.h>
 #endif
 
 #include "../../shared/coroutine_test_support.h"

@@ -350,6 +350,19 @@ policy.
 
 ### Fixed
 
+- **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
+  build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
+  `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a
+  `QB_WITH_SSL=OFF` build -- or one whose OpenSSL was not found, the default on a Windows host without it -- stopped
+  at `C1083: Cannot open include file: 'openssl/ssl.h'`. Linux never showed it, its OpenSSL headers being installed
+  even when qb does not use them. The include moved under the guard its TLS cases already had. The sweep of the
+  class -- every TU of an SSL-off configure and every qb header included alone, preprocessed with the build's own
+  flags and searched for `openssl/` -- found no other TU, and five headers that reached `<openssl/ssl.h>` whatever
+  the configuration: `qb/io/tcp/ssl/context.h`, `socket.h`, `listener.h`, `qb/io/transport/stcp.h` and
+  `saccept.h`. They reach it now through `qb/io/tcp/ssl/openssl_required.h`, which `#error`s without `QB_HAS_SSL`,
+  the way `crypto_jwt.h` already did: on a host with the OpenSSL headers an SSL-off TU that included one of them
+  used to compile against TLS code qb never built. Every other includer is already guarded: qbm-http, qbm-pgsql
+  and qbm-redis include them under `QB_HAS_SSL`, and the two TLS examples are `REQUIRES ssl`.
 - **`thread_arena` keeps a thread's first chunk for the next thread instead of freeing it at thread exit.**
   The 64 KiB chunk of an exited core thread now waits on a process-wide spare list (`thread_arena::spare()`)
   and the next thread's first refill takes it, warm, before asking `::operator new`. Freeing it was a 64 KiB
