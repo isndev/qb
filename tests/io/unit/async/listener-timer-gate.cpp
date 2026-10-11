@@ -108,26 +108,33 @@ TEST_F(ListenerTimerGate, ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline) 
     // on how late the timer fires, read on the test's clock, is a bound on how long the host leaves
     // the thread alone around the deadline -- 2 ms here, which a loaded host did not keep (3.3 ms
     // under ASan in a parallel ctest). What the estimate must never do is let a pass that began past
-    // the deadline go by without the real reading that fires the timer.
-    RawTimer       soon(0.005); // 5 ms
-    const double   deadline = ev_timer_next(loop());
-    const unsigned before   = iterations();
-    const auto     t0       = qb::mono_now();
-    int            passes   = 0;
-    int            missed   = 0; // passes that began at or past the deadline and left the timer unfired
+    // the deadline go by without the real reading that fires the timer -- nor run the loop on a pass
+    // that ended before it. The loop fires a timer whose deadline is strictly before its time, so a
+    // pass that reads the deadline exactly may run it and leave the firing to the next one: on a
+    // 100 ns clock (Windows) that pass is the rule, and neither count includes it.
+    RawTimer     soon(0.005); // 5 ms
+    const double deadline = ev_timer_next(loop());
+    const auto   t0       = qb::mono_now();
+    int          passes   = 0;
+    int          missed   = 0; // passes that began past the deadline and left the timer unfired
+    unsigned     early    = 0; // loop runs by passes that ended before the deadline
     while (soon.hits == 0 && qb::mono_now() - t0 < 1s) {
-        const bool past = ev_clock_now() >= deadline;
+        const double   began = ev_clock_now();
+        const unsigned runs  = iterations();
         listener::current.run(EVRUN_NOWAIT);
+        const double ended = ev_clock_now();
         ++passes;
-        if (past && soon.hits == 0)
+        if (ended < deadline)
+            early += iterations() - runs;
+        if (began > deadline && soon.hits == 0)
             ++missed;
     }
     EXPECT_EQ(soon.hits, 1) << "the timer fired";
     EXPECT_EQ(missed, 0) << "on the first pass that began past its deadline: the estimate only decides WHEN the real readings start (" << passes
                          << " passes)";
-    EXPECT_EQ(iterations() - before, 1u) << "every pass before that one skipped the loop: the driver spun through the wait on the "
-                                            "cheap kind ("
-                                         << passes << " passes)";
+    EXPECT_EQ(early, 0u) << "every pass that ended before the deadline skipped the loop: the driver spun through the wait on the cheap "
+                            "kind ("
+                         << passes << " passes)";
 }
 
 TEST_F(ListenerTimerGate, ThePassBeforeTheDeadlineHandsItsReadingToTheLoop) {
