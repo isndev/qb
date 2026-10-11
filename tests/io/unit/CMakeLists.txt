@@ -172,3 +172,8 @@ if(_qb_multi_config)
     set_tests_properties(qb-io-test-unit-multiconfig-layout PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 endif()
 unset(_qb_multi_config)
+# region-cache pins qb::allocator::region_cache and region_allocator (Huly QB-1012): a released region is the next acquire
+# of its rounded size, still mapped; another size is a fresh mapping; the cache holds at most twice the high water of what
+# was lent and unmaps the oldest first; trim() unmaps every cached region and never a lent one; the allocator sends a
+# request there from 64 KiB and no smaller, and a region_vector lends exactly the buffer it holds.
+qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.cpp DEPENDS ${PROJECT_NAME})

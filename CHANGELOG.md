@@ -240,6 +240,16 @@ policy.
   (`SSL_want_write`), with no I/O and no new member. The second is the raw sibling of `set_alpn_protos_client`: a
   server `SSL_CTX`'s ALPN accept-list, most preferred first, kept on the context where `Context::alpn()` keeps it.
   Both serve the fixes below.
+- **`qb::allocator::region_cache` and `region_allocator<T>` (`qb/system/allocator/region.h`, Huly QB-1012).** A
+  process-wide cache of page-granular regions mapped by the platform (`mmap`, `VirtualAlloc`), the home of the
+  engine's per-core buffers that grow with it. `acquire(bytes)` takes the region of the same size,
+  rounded up to 4 KiB, that was released most recently, or maps one; `release()` keeps it mapped, the cache holding
+  at most twice the most bytes ever lent at once (`peak_bytes()`) and unmapping the regions released longest ago
+  first; `trim()` unmaps every cached region -- never a lent one -- and resets the high water; `cached()`,
+  `cached_bytes()`, `lent_bytes()` and `mappings()` count. `region_allocator<T>` is the stateless standard
+  allocator over it: a request of at least `region_cache::min_bytes` (64 KiB) is a region, a smaller one the global
+  allocator's. `region_vector<T>` and `region_ptr<T>` (built by `make_region<T>()`) are its two shapes. Cold path
+  only: a container reaches it when it grows or dies, never per event. Pinned by `qb-io-test-unit-region-cache`.
 
 ### Changed
 

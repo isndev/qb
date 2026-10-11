@@ -24,6 +24,10 @@
  *    what `malloc` gives every per-message allocator and what the segmented pipe had given up.
  *    `trim()` returns the cached slabs to the OS for the caller that wants its footprint back.
  *
+ * Its sibling `region_cache` (`region.h`) does the same for the engine's other per-core buffers
+ * that grow with it -- the router's tables, the actor registry, the mailbox rings -- whose sizes
+ * are not a slab's: exact-size regions, kept mapped from one engine to the next (Huly QB-1012).
+ *
  * The cache is cold-path only. A `segment_pool` touches it when a pipe grows PAST the pool's
  * high water (a slab is 8 standard segments, so one acquire covers eight growths), on
  * `shrink()`, and at destruction; the per-event path never sees it. Its lock guards a few

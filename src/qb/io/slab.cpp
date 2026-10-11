@@ -1,6 +1,7 @@
 /**
  * @file qb/io/slab.cpp
- * @brief The platform half of `qb::allocator::slab_cache` — see the header for the why.
+ * @brief The platform half of `qb::allocator::slab_cache` and of `qb::allocator::region_cache` —
+ *        see the two headers (`slab.h`, `region.h`) for the why.
  *
  * Three mappers, one per platform family, behind one `map_slab()` / `unmap_slab()` pair:
  *  - POSIX: `mmap` twice the slab, trim to a 2 MB boundary. Linux then advises huge pages and
@@ -21,11 +22,13 @@
  * @ingroup Container
  */
 
+#include <qb/system/allocator/region.h>
 #include <qb/system/allocator/slab.h>
 #include <qb/system/cpu.h> // spin_loop_pause
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <mutex>
 #include <new>
 #include <thread>
@@ -166,6 +169,77 @@ platform_alignment() noexcept {
 
 #endif
 
+// ---------------------------------------------------------------------------------------------
+// region_cache (region.h). A region is a plain mapping of its rounded size, faulted on first
+// touch: a container writes its storage as it grows, never all at once, so nothing is prefaulted
+// or advised -- what makes the second engine warm is that the region is still mapped.
+// ---------------------------------------------------------------------------------------------
+
+#if defined(_WIN32) || defined(_WIN64)
+
+void *
+map_region(std::size_t const bytes) noexcept {
+    return ::VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+void
+unmap_region(void *const region, [[maybe_unused]] std::size_t const bytes) noexcept {
+    ::VirtualFree(region, 0, MEM_RELEASE);
+}
+
+#else // POSIX
+
+void *
+map_region(std::size_t const bytes) noexcept {
+#if defined(MAP_ANONYMOUS)
+    constexpr int anon = MAP_ANONYMOUS;
+#else
+    constexpr int anon = MAP_ANON;
+#endif
+    void *const region = ::mmap(nullptr, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | anon, -1, 0);
+    return region == MAP_FAILED ? nullptr : region;
+}
+
+void
+unmap_region(void *const region, std::size_t const bytes) noexcept {
+    ::munmap(region, bytes);
+}
+
+#endif
+
+// A CACHED region carries its link in its first bytes; a lent one carries nothing. The list runs
+// from the most recently released region, which `acquire()` looks at first, to the one released
+// longest ago, which the bound unmaps first. Its own lock: a region request never waits on a slab.
+struct region_link {
+    region_link *newer;
+    region_link *older;
+    std::size_t  bytes; ///< the rounded size
+};
+
+lock_type    r_lock;
+region_link *r_newest       = nullptr;
+region_link *r_oldest       = nullptr;
+std::size_t  r_cached       = 0;
+std::size_t  r_cached_bytes = 0;
+std::size_t  r_lent_bytes   = 0;
+std::size_t  r_peak_bytes   = 0; ///< the high water of r_lent_bytes since the last trim()
+std::size_t  r_mappings     = 0;
+
+// Under r_lock.
+void
+r_unlink(region_link *const link) noexcept {
+    (link->newer ? link->newer->older : r_newest) = link->older;
+    (link->older ? link->older->newer : r_oldest) = link->newer;
+}
+
+// Under r_lock.
+void
+r_lend(std::size_t const bytes) noexcept {
+    r_lent_bytes += bytes;
+    if (r_lent_bytes > r_peak_bytes)
+        r_peak_bytes = r_lent_bytes;
+}
+
 } // namespace
 
 void *
@@ -245,6 +319,124 @@ slab_cache::alignment() noexcept {
 bool
 slab_cache::prefaulted() noexcept {
     return g_prefaulted.load(std::memory_order_relaxed);
+}
+
+void *
+region_cache::acquire(std::size_t const bytes) {
+    if (bytes > (std::numeric_limits<std::size_t>::max)() - page_bytes)
+        throw std::bad_alloc();
+    std::size_t const size = rounded(bytes);
+    {
+        scoped_lock const guard(r_lock);
+        for (region_link *link = r_newest; link; link = link->older) {
+            if (link->bytes != size)
+                continue;
+            r_unlink(link);
+            --r_cached;
+            r_cached_bytes -= size;
+            r_lend(size);
+            return link;
+        }
+    }
+    // Miss: map outside the lock, account inside it -- slab_cache::acquire()'s reason.
+    void *const region = map_region(size);
+    if (!region)
+        throw std::bad_alloc();
+    scoped_lock const guard(r_lock);
+    ++r_mappings;
+    r_lend(size);
+    return region;
+}
+
+void
+region_cache::release(void *const region, std::size_t const bytes) noexcept {
+    if (!region)
+        return;
+    std::size_t const size    = rounded(bytes);
+    auto *const       link    = static_cast<region_link *>(region);
+    region_link      *evicted = nullptr; // past the bound, unmapped outside the lock, chained through `older`
+    {
+        scoped_lock const guard(r_lock);
+        r_lent_bytes -= size;
+        link->bytes = size;
+        link->newer = nullptr;
+        link->older = r_newest;
+        if (r_newest)
+            r_newest->newer = link;
+        else
+            r_oldest = link;
+        r_newest = link;
+        ++r_cached;
+        r_cached_bytes += size;
+        // The bound (region.h): at most twice the high water. It never reaches `link` itself:
+        // the high water is at least its size, so once every older region is gone it holds.
+        while (r_oldest != link && r_cached_bytes > r_peak_bytes && r_cached_bytes - r_peak_bytes > r_peak_bytes) {
+            region_link *const oldest = r_oldest;
+            r_unlink(oldest);
+            --r_cached;
+            r_cached_bytes -= oldest->bytes;
+            oldest->older = evicted;
+            evicted       = oldest;
+        }
+    }
+    while (evicted) {
+        region_link *const next = evicted->older;
+        unmap_region(evicted, evicted->bytes);
+        evicted = next;
+    }
+}
+
+std::size_t
+region_cache::trim() noexcept {
+    // Detach the whole list under the lock, unmap it outside, as slab_cache::trim() does.
+    region_link *list;
+    std::size_t  count;
+    {
+        scoped_lock const guard(r_lock);
+        list           = r_newest;
+        count          = r_cached;
+        r_newest       = nullptr;
+        r_oldest       = nullptr;
+        r_cached       = 0;
+        r_cached_bytes = 0;
+        r_peak_bytes   = r_lent_bytes;
+    }
+    while (list) {
+        region_link *const next = list->older;
+        unmap_region(list, list->bytes);
+        list = next;
+    }
+    return count;
+}
+
+std::size_t
+region_cache::cached() noexcept {
+    scoped_lock const guard(r_lock);
+    return r_cached;
+}
+
+std::size_t
+region_cache::cached_bytes() noexcept {
+    scoped_lock const guard(r_lock);
+    return r_cached_bytes;
+}
+
+std::size_t
+region_cache::lent_bytes() noexcept {
+    scoped_lock const guard(r_lock);
+    return r_lent_bytes;
+}
+
+std::size_t
+region_cache::peak_bytes() noexcept {
+    scoped_lock const guard(r_lock);
+    return r_peak_bytes;
+}
+
+std::size_t
+region_cache::mappings() noexcept {
+    scoped_lock const guard(r_lock);
+    return r_mappings;
 }
 
 } // namespace qb::allocator
