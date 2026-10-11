@@ -28,7 +28,6 @@
 
 #ifndef QB_EVENT_ROUTER_H
 #define QB_EVENT_ROUTER_H
-
 #include <algorithm>
 #include <cassert>
 #include <concepts>
@@ -38,6 +37,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <qb/system/allocator/region.h>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/branch_hints.h>
@@ -125,7 +125,7 @@ class key_table {
         bool  used = false;
     };
 
-    using Dense  = std::vector<Slot>;
+    using Dense  = qb::allocator::region_vector<Slot>;
     using Sparse = qb::unordered_map<Key, Value>;
 
     std::conditional_t<dense, Dense, Sparse> _table;
@@ -422,11 +422,11 @@ private:
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
-                static thread_local std::vector<_Handler *> bcast_snapshot;
-                const std::size_t                           base = bcast_snapshot.size();
+                static thread_local qb::allocator::region_vector<_Handler *> bcast_snapshot;
+                const std::size_t                                            base = bcast_snapshot.size();
                 struct RestoreSnapshot {
-                    std::vector<_Handler *> &entries;
-                    std::size_t              base;
+                    qb::allocator::region_vector<_Handler *> &entries;
+                    std::size_t                               base;
                     ~RestoreSnapshot() {
                         entries.resize(base);
                     }
@@ -593,11 +593,11 @@ public:
      */
     QB_NOINLINE QB_COLD void
     route_broadcast(_RawEvent &event) const {
-        static thread_local std::vector<Entry> bcast_snapshot;
-        const std::size_t                      base = bcast_snapshot.size();
+        static thread_local qb::allocator::region_vector<Entry> bcast_snapshot;
+        const std::size_t                                       base = bcast_snapshot.size();
         struct RestoreSnapshot {
-            std::vector<Entry> &entries;
-            std::size_t         base;
+            qb::allocator::region_vector<Entry> &entries;
+            std::size_t                          base;
             ~RestoreSnapshot() {
                 entries.resize(base);
             }

@@ -13,12 +13,16 @@
  *        core's live actors, its chunks grow to slabs), the slabs go back to the process-wide
  *        cache when the worker thread exits, an over-aligned actor type stays aligned, a large
  *        actor falls through to the global allocator, and a derived class that declares its own
- *        `operator new` / `operator delete` keeps them (the arena never sees its objects).
+ *        `operator new` / `operator delete` keeps them (the arena never sees its objects). The
+ *        core's other buffers that grow with its population -- the router's tables, the actor
+ *        registry, the broadcast snapshot -- come from `region_cache`, and the second engine of
+ *        a process builds them in the regions the first gave back (Huly QB-1012).
  */
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <qb/system/allocator/region.h>
 #include <qb/system/allocator/slab.h>
 #include <qb/system/allocator/thread_arena.h>
 #include <atomic>
@@ -304,4 +308,63 @@ TEST(ActorArena, ADerivedClassWithItsOwnOperatorsKeepsThem) {
     EXPECT_EQ(g_custom_new.load(), 1);
     EXPECT_EQ(g_custom_delete.load(), 1);
     EXPECT_EQ(obs.live_after_reap, 0u);
+}
+
+namespace actor_arena_test {
+
+template <int N>
+struct RegionTag : qb::Event {};
+
+// Subscribed to two event types: two router tables on its core.
+class Subscriber final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<RegionTag<0>>(*this);
+        registerEvent<RegionTag<1>>(*this);
+        co_return true;
+    }
+    void
+    on(RegionTag<0> const &) {}
+    void
+    on(RegionTag<1> const &) {}
+};
+
+// 10 000 subscribers, then one broadcast KillEvent: both tables (16 384 slots), the registry and the
+// broadcast snapshot pass 64 KiB, so each is a region.
+class Populator final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        for (int i = 0; i < 10000; ++i)
+            if (!addRefActor<Subscriber>().valid())
+                co_return false;
+        broadcast<qb::KillEvent>();
+        co_return true;
+    }
+};
+
+inline void
+run_populated_engine() {
+    qb::Main main;
+    main.core(0).addActor<Populator>();
+    main.start(); // a worker thread: its thread-local snapshot goes back when it exits
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+} // namespace actor_arena_test
+
+TEST(ActorArena, ASecondEngineBuildsItsPerCoreBuffersInTheRegionsTheFirstReleased) {
+    using qb::allocator::region_cache;
+    std::size_t const lent_before = region_cache::lent_bytes();
+    std::size_t const maps_before = region_cache::mappings();
+    run_populated_engine();
+    std::size_t const maps_after_first = region_cache::mappings();
+    EXPECT_GT(maps_after_first, maps_before);           // the first engine's tables were regions
+    EXPECT_EQ(region_cache::lent_bytes(), lent_before); // and all of them came back when it went
+    run_populated_engine();
+    EXPECT_EQ(region_cache::mappings(), maps_after_first); // the second mapped nothing: every buffer was a cached region
+    EXPECT_EQ(region_cache::lent_bytes(), lent_before);
+    EXPECT_LE(region_cache::cached_bytes(), 2 * region_cache::peak_bytes());
 }

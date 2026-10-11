@@ -184,7 +184,7 @@ private:
      * handed out stays as valid as it was. The live count is `_actor_count`: the vector's
      * `size()` is the highest sid ever seen plus one, not the population.
      */
-    using ActorMap    = std::vector<std::unique_ptr<Actor>>;
+    using ActorMap    = allocator::region_vector<std::unique_ptr<Actor>>;
     using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
     using PipeMap     = std::vector<VirtualPipe>;
     /**
@@ -196,7 +196,7 @@ private:
      * walks the batch, so a `kill()` issued from a destructor lands in a fresh queue and
      * never in the vector being walked (see `_actor_remove_batch`).
      */
-    using RemoveActorList = std::vector<ActorId>;
+    using RemoveActorList = allocator::region_vector<ActorId>;
     using DyingActorSet   = qb::unordered_set<ActorId>;
 
     /**
@@ -379,11 +379,11 @@ private:
         route_event(_Event &event) const {
             const auto dest = event.getDestination();
             if (dest.is_broadcast()) {
-                static thread_local std::vector<Actor *> snapshot;
-                const std::size_t                        base = snapshot.size();
+                static thread_local allocator::region_vector<Actor *> snapshot;
+                const std::size_t                                     base = snapshot.size();
                 struct RestoreSnapshot {
-                    std::vector<Actor *> &entries;
-                    std::size_t           base;
+                    allocator::region_vector<Actor *> &entries;
+                    std::size_t                        base;
                     ~RestoreSnapshot() {
                         entries.resize(base);
                     }
@@ -453,9 +453,9 @@ private:
     const CoreId             _resolved_index;
     SharedCoreCommunication &_engine;
     // event reception
-    Mailbox                     &_mail_box;
-    std::unique_ptr<EventBuffer> _event_buffer;
-    router::memh<Event>          _router;
+    Mailbox                           &_mail_box;
+    allocator::region_ptr<EventBuffer> _event_buffer;
+    router::memh<Event>                _router;
     // event flush. The pool is declared BEFORE every pipe that draws from it: members are
     // destroyed in reverse order, so each pipe releases its segments into a pool that is still
     // alive. One pool per core -- a segment a receive pass has consumed is the one the next
@@ -499,8 +499,8 @@ private:
         Actor const *actor;
         ActorId      id;
     };
-    std::vector<CallbackEntry> _callback_list;
-    RemoveActorList            _actor_to_remove;
+    allocator::region_vector<CallbackEntry> _callback_list;
+    RemoveActorList                         _actor_to_remove;
     /**
      * @brief Scratch buffer the reap loop drains `_actor_to_remove` into.
      * @details

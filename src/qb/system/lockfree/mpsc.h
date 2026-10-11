@@ -22,12 +22,12 @@
  * limitations under the License.
  * @ingroup LockFree
  */
-
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
 #include <cassert>
 #include <concepts>
 #include <mutex>
+#include <qb/system/allocator/region.h>
 #include "spinlock.h"
 #include "spsc.h"
 
@@ -316,8 +316,8 @@ class ringbuffer<T, max_size, 0> : public nocopy {
         spsc::ringbuffer<T, max_size> _ringbuffer;              ///< The producer's dedicated ring buffer
     };
 
-    std::vector<Producer> _producers;   ///< Vector of producer structures
-    const std::size_t     _nb_producer; ///< Number of producers
+    qb::allocator::region_vector<Producer> _producers;   ///< The producers: a region once they reach 64 KiB (region.h)
+    const std::size_t                      _nb_producer; ///< Number of producers
 
 public:
     /**

@@ -242,7 +242,7 @@ policy.
   Both serve the fixes below.
 - **`qb::allocator::region_cache` and `region_allocator<T>` (`qb/system/allocator/region.h`, Huly QB-1012).** A
   process-wide cache of page-granular regions mapped by the platform (`mmap`, `VirtualAlloc`), the home of the
-  engine's per-core buffers that grow with it. `acquire(bytes)` takes the region of the same size,
+  engine's per-core buffers that grow with it (under Fixed). `acquire(bytes)` takes the region of the same size,
   rounded up to 4 KiB, that was released most recently, or maps one; `release()` keeps it mapped, the cache holding
   at most twice the most bytes ever lent at once (`peak_bytes()`) and unmapping the regions released longest ago
   first; `trim()` unmaps every cached region -- never a lent one -- and resets the high water; `cached()`,
@@ -253,6 +253,11 @@ policy.
 
 ### Changed
 
+- **The run-time `qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` keeps its producers in a `region_vector` (Huly
+  QB-1012).** From 64 KiB its rings -- `nb_producer` of them, 65 728 bytes each for an engine's mailbox -- are a
+  `region_cache` region: destroyed, they stay mapped for the next ring set of the same size instead of going back to
+  `malloc`, until `region_cache::trim()` returns them to the OS. The compile-time form is unchanged, and so is every
+  access: the vector's element type and layout are the same.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
@@ -496,6 +501,24 @@ policy.
   1 000, +7 200 minor faults per 11 engines, instruction count and simulated cache misses unchanged; the first
   bad commit by bisection is the one whose removal of a 16-byte thread-local moved that chunk next to the top,
   and v3.2.1 sat 7.9 KB under the threshold. With the spare list the cell and the fault count return to v3.2.1's.
+- **An engine started after another one in the same process builds its per-core buffers in memory the first left
+  mapped (Huly QB-1012).** What a core builds that grows with the engine -- the router's handler table of each event
+  type (65 536 slots of 32 bytes once the actor ids pass 32 768), the actor registry, the kill queues, the callback
+  list, the broadcast snapshots -- with its receive buffer and the engine's mailbox rings, lived in `malloc`, so glibc
+  decided at every engine stop whether the next engine would fault them in again. Above the `mmap` threshold a block
+  was unmapped when freed, and that free raised the threshold, and the trim threshold to twice it, for the whole
+  process; below it the blocks were freed into the core thread's arena, whose top glibc gives back with
+  `madvise(MADV_DONTNEED)` once a free merges it past the trim threshold. The fix above kept one 64 KiB chunk from
+  pushing a 4 MB top over its threshold, 38 KB under it; a second event type or a larger population pushes it over
+  again, and every engine after the first re-faulted its tables page by page inside its first window. They are
+  `region_cache` regions now (under Added), kept mapped and reused by size from one engine to the next, within the
+  cache's bound, until `region_cache::trim()`. qb sets none of glibc's thresholds (`mallopt` is process-wide, turns
+  the dynamic adjustment off for every allocation and overrides the program's own choice), and the engine's
+  buffers no longer move them. Pinned by `qb-core-test-system-engine-restart-faults` (one core, 40 000 actors on eight event
+  types: the page faults of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16
+  cores: the faults `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
+  `ActorArena.ASecondEngineBuildsItsPerCoreBuffersInTheRegionsTheFirstReleased` (no fresh mapping from the second
+  engine on). The io loop's and the coroutines' per-thread storage still goes back to `malloc` at thread exit.
 
 - **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
   retained iterators into the source cache's list. Looking up or replacing a key in the copy

@@ -106,7 +106,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     , _resolved_index(engine._core_set.resolve(id))
     , _engine(engine)
     , _mail_box(engine.getMailBox(id))
-    , _event_buffer(std::make_unique<EventBuffer>())
+    , _event_buffer(allocator::make_region<EventBuffer>())
     , _pipes(__make_pipes__(_pipe_pool, engine.getNbCore()))
     , _self_pipe(_pipes[_resolved_index]) {
     // Every logical core id, member of the set or not, maps to the pipe `resolve()` names for it;
@@ -779,8 +779,8 @@ VirtualCore::__pump_activations__() {
     // Collect ids before invoking cancellation hooks: a hook may add an actor
     // whose onInit suspends, rehashing _activating. No map iterator or reference
     // may span that callback. New entries are considered on the next pump.
-    thread_local std::vector<ActorId> scan_ids;
-    thread_local std::vector<ActorId> done_ids;
+    thread_local allocator::region_vector<ActorId> scan_ids;
+    thread_local allocator::region_vector<ActorId> done_ids;
     scan_ids.clear();
     done_ids.clear();
     scan_ids.reserve(_activating.size());
@@ -974,8 +974,8 @@ VirtualCore::__workflow_loop__() {
             // consistent with `Actor::time()` (the same per-pass sample; a pass with no
             // registered callback and no caller never reads the clock). Delivered by a direct
             // virtual call (not routed).
-            const qb::LoopEvent                     loop_ev{time(), _loop_count};
-            thread_local std::vector<CallbackEntry> cb_snapshot;
+            const qb::LoopEvent                                  loop_ev{time(), _loop_count};
+            thread_local allocator::region_vector<CallbackEntry> cb_snapshot;
             cb_snapshot = _callback_list;
             for (auto const &entry : cb_snapshot) {
                 // Skip the callback of an actor killed earlier in this same

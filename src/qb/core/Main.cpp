@@ -337,8 +337,8 @@ SharedCoreCommunication::dispose_residual_mailbox_events() noexcept {
     // call reinterprets that event's TAIL buckets as a fresh event header and disposes a bogus
     // type. A saturated mailbox (exactly the state this teardown sweep exists for) is guaranteed
     // to wrap. Copying out first yields one contiguous, event-aligned batch per producer ring.
-    router::memh<Event>      disposer;
-    std::vector<EventBucket> scratch(MaxRingEvents);
+    router::memh<Event>                   disposer;
+    allocator::region_vector<EventBucket> scratch(MaxRingEvents);
     for (auto &mb : _mail_boxes) {
         if (!mb)
             continue;
