@@ -357,6 +357,7 @@ run_populated_engine() {
 
 TEST(ActorArena, ASecondEngineBuildsItsPerCoreBuffersInTheRegionsTheFirstReleased) {
     using qb::allocator::region_cache;
+    region_cache::trim(); // what an earlier test or repetition left cached: the first engine must map its own
     std::size_t const lent_before = region_cache::lent_bytes();
     std::size_t const maps_before = region_cache::mappings();
     run_populated_engine();

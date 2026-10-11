@@ -22,7 +22,8 @@
  * tests/core/system/engine/engine-restart-faults.cpp.
  *
  * The cache is process-wide: every case works on sizes no other case uses and judges deltas, so
- * the cases hold in any order; the one that needs an empty cache starts with `trim()`.
+ * the cases hold in any order and under `--gtest_repeat`; a case that needs a size not to be
+ * cached starts with `trim()`.
  */
 
 #include <algorithm>
@@ -88,6 +89,7 @@ TEST(RegionCache, SizesThatRoundAlikeShareARegion) {
 }
 
 TEST(RegionCache, AnotherSizeIsAFreshMapping) {
+    region_cache::trim(); // an earlier repetition of this case left both sizes cached
     void *const first = region_cache::acquire(size_of(3));
     region_cache::release(first, size_of(3));
     std::size_t const maps  = region_cache::mappings();
