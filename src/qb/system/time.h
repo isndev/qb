@@ -942,6 +942,24 @@ calibrate_tsc_per_ns() noexcept {
     return measure_tsc_per_ns([] { return mono_now(); }, [] { return tsc_ticks(); }, std::chrono::microseconds{200});
 }
 
+// ---------------------------------------------------------------------------
+// The event loop's timer rule (Huly QB-1016)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Whether the event loop fires a timer due at `deadline` on a pass whose time is `now`, both on
+ *        `ev_clock_now()`'s scale: when the deadline is STRICTLY before it, the way qev's `timers_reify` judges
+ *        (`ANHE_at (timers [HEAP0]) < mn_now`).
+ * @details A deadline exactly at the reading is not due: a pass that ran the loop on it ran `ev_run` for nothing and
+ *          left the firing to the next pass -- and on a clock that moves in 100 ns steps (Windows') the first pass
+ *          past a deadline reads it exactly, as a rule. The listener's timer gate judges with this, against the
+ *          reading it then hands the loop (`ev_now_set`), so it runs the loop exactly when the loop will fire.
+ */
+[[nodiscard]] constexpr bool
+ev_deadline_passed(double const deadline, double const now) noexcept {
+    return deadline < now;
+}
+
 } // namespace detail
 
 } // namespace qb

@@ -20,10 +20,12 @@
  */
 
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
+#include <qb/system/time.h>
 
 #include "../../shared/coroutine_test_support.h"
 #include "../../shared/io_cadence_window.h"
@@ -109,15 +111,17 @@ TEST_F(ListenerTimerGate, ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline) 
     // the thread alone around the deadline -- 2 ms here, which a loaded host did not keep (3.3 ms
     // under ASan in a parallel ctest). What the estimate must never do is let a pass that began past
     // the deadline go by without the real reading that fires the timer -- nor run the loop on a pass
-    // that ended before it. The loop fires a timer whose deadline is strictly before its time, so a
-    // pass that reads the deadline exactly may run it and leave the firing to the next one: on a
-    // 100 ns clock (Windows) that pass is the rule, and neither count includes it.
-    RawTimer     soon(0.005); // 5 ms
-    const double deadline = ev_timer_next(loop());
-    const auto   t0       = qb::mono_now();
-    int          passes   = 0;
-    int          missed   = 0; // passes that began past the deadline and left the timer unfired
-    unsigned     early    = 0; // loop runs by passes that ended before the deadline
+    // that ended before it. And the gate runs the loop once per fired timer: it judges a deadline due
+    // exactly when the loop fires it, strictly before the reading it hands over (Huly QB-1016), so the
+    // pass that reads the deadline exactly -- on a 100 ns clock (Windows), the rule -- does not run
+    // the loop for nothing; it is in neither of the first two counts.
+    RawTimer       soon(0.005); // 5 ms
+    const double   deadline = ev_timer_next(loop());
+    const unsigned before   = iterations();
+    const auto     t0       = qb::mono_now();
+    int            passes   = 0;
+    int            missed   = 0; // passes that began past the deadline and left the timer unfired
+    unsigned       early    = 0; // loop runs by passes that ended before the deadline
     while (soon.hits == 0 && qb::mono_now() - t0 < 1s) {
         const double   began = ev_clock_now();
         const unsigned runs  = iterations();
@@ -135,6 +139,28 @@ TEST_F(ListenerTimerGate, ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline) 
     EXPECT_EQ(early, 0u) << "every pass that ended before the deadline skipped the loop: the driver spun through the wait on the cheap "
                             "kind ("
                          << passes << " passes)";
+    EXPECT_EQ(iterations() - before, 1u) << "one loop run for one fired timer: no pass ran the loop on a deadline it would not fire (" << passes
+                                         << " passes)";
+}
+
+TEST_F(ListenerTimerGate, ADeadlineExactlyAtThePassTimeIsDueNeitherForTheGateNorForTheLoop) {
+    // The gate and the loop agree on equality (Huly QB-1016), pinned on a supplied clock -- the
+    // `ev_now_set` hand-over the gate itself makes -- so on every platform, not only where the
+    // clock's steps make equality common: the loop does not fire a timer whose deadline IS the
+    // pass's time and fires it one representable instant later, and the gate's rule says the same
+    // of the same two values.
+    RawTimer     t(0.005); // 5 ms
+    const double deadline = ev_timer_next(loop());
+    const double after    = std::nextafter(deadline, 2. * deadline);
+    EXPECT_FALSE(qb::detail::ev_deadline_passed(deadline, deadline)) << "the gate: a deadline exactly at the reading is not due";
+    EXPECT_TRUE(qb::detail::ev_deadline_passed(deadline, after)) << "the gate: one instant later it is";
+    EXPECT_FALSE(qb::detail::ev_deadline_passed(deadline, std::nextafter(deadline, 0.)));
+    ev_now_set(loop(), deadline);
+    ev_run(loop(), EVRUN_NOWAIT);
+    EXPECT_EQ(t.hits, 0) << "the loop: a pass whose time is the deadline does not fire it";
+    ev_now_set(loop(), after);
+    ev_run(loop(), EVRUN_NOWAIT);
+    EXPECT_EQ(t.hits, 1) << "the loop: one instant later it does";
 }
 
 TEST_F(ListenerTimerGate, ThePassBeforeTheDeadlineHandsItsReadingToTheLoop) {

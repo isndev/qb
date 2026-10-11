@@ -335,7 +335,7 @@ private:
         _have_anchor     = true;
         _supply_loop_s   = now;
         _supply          = true;
-        return next <= now;
+        return qb::detail::ev_deadline_passed(next, now); // strictly past: the loop's own rule (Huly QB-1016)
     }
 
     /// The gate of a non-blocking pass: whether it runs the loop at all, and with which flags (the

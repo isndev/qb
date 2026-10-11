@@ -1023,6 +1023,19 @@ policy.
   `TscRate.ADelayBetweenAnyTwoReadsLeavesTheRateWhereItWas` (`tests/core/unit/system/time.cpp`: a 1 ms delay swept
   over every read of the measurement on a virtual clock and counter). `listener::_io_poll_due()`, which nothing
   called, is removed.
+- **The listener's timer gate runs the loop only on a pass that will fire the timer (Huly QB-1016).** The gate of a
+  non-blocking pass judged the earliest deadline due when it was AT or before its clock reading (`next <= now`) and
+  ran the loop with that reading (`ev_now_set`); qev's `timers_reify` fires only a deadline STRICTLY before the
+  loop's time. A pass that read the deadline exactly therefore ran `ev_run` for nothing and left the firing to the
+  next pass -- on a clock that moves in 100 ns steps, Windows', the first pass past a deadline reads it exactly, and
+  every pass in that 100 ns did the same. The gate now judges with the loop's own rule (`qb::detail::ev_deadline_passed`,
+  `qb/system/time.h`) on the very reading it hands over, so it runs the loop exactly when the loop fires; the timer
+  fires on the same pass as before. The comparison is one instruction either way: `setae` became `seta` in
+  `listener::_nowait_gate`, and every other function of qb-io and qb-core compiles identically (g++-14 -O3 objects,
+  MSVC /FAs listings). Pinned by
+  `ListenerTimerGate.ADeadlineExactlyAtThePassTimeIsDueNeitherForTheGateNorForTheLoop` (on a supplied clock, every
+  platform) and by one loop run per fired timer in `ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline` (red on
+  MSVC before the change).
 
 ### Documentation
 
