@@ -214,3 +214,16 @@ qb_add_test(MODULE qb-core TIER system NAME service-registration SOURCES actor/s
 # that has inbound work of its own -- here a self-addressed chain -- tries the head event once per pass and runs
 # that work, so `sends_blocked` never exceeds `loop_passes` (513 per blocked pass before); the flood arrives whole.
 qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES concurrency/flush-yields-to-inbound.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+# engine-restart-faults and engine-restart-mailboxes pin that an engine started after another one in the same process
+# builds its per-core buffers in memory its predecessor left faulted (Huly QB-1012): the router's tables, the actor
+# registry, the kill queues and the broadcast snapshot of a 40 000-actor core in the first, re-faulted by every engine
+# after the first when they lived in malloc; the 16 x 16 mailbox rings of the second engine of a fresh process in the
+# second, a binary of its own because only a fresh process decides their fate the same way every time. Both count page
+# faults, never time. A sanitizer replaces the allocator whose behaviour they count, so neither exists in a sanitizer
+# build -- a capability gate, like actor-arena-poison's; the per-thread count of the second is Linux's.
+if(NOT QB_SANITIZE AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
+    qb_add_test(MODULE qb-core TIER system NAME engine-restart-faults SOURCES engine/engine-restart-faults.cpp DEPENDS ${PROJECT_NAME})
+endif()
+if(NOT QB_SANITIZE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    qb_add_test(MODULE qb-core TIER system NAME engine-restart-mailboxes SOURCES engine/engine-restart-mailboxes.cpp DEPENDS ${PROJECT_NAME})
+endif()
