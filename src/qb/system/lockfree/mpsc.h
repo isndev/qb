@@ -81,12 +81,12 @@ public:
      * @brief Enqueue multiple items into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
      * @tparam _Index The compile-time index of the producer
-     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
+     * @tparam _All A `bool`, never an integer: true, all items or none; false, as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <size_t _Index, bool _All = true>
+    template <size_t _Index, std::same_as<bool> auto _All = true>
     size_t
     enqueue_at(T const *t, size_t const size) {
         return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
@@ -107,13 +107,13 @@ public:
     /**
      * @brief Enqueue multiple items using a runtime producer index
      *
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All A `bool`, never an integer (`enqueue<0>(index, t, size)` does not compile): true, all items or none; false, as many as fit
      * @param index The runtime index of the producer
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t
     enqueue(size_t const index, T const *t, size_t const size) {
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);
@@ -356,12 +356,12 @@ public:
      * @brief Enqueue multiple items into the ring of the producer chosen at compile time (no lock: one thread per index)
      *
      * @tparam _Index The compile-time index of the producer
-     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
+     * @tparam _All A `bool`, never an integer: true, all items or none; false, as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <size_t _Index, bool _All = true>
+    template <size_t _Index, std::same_as<bool> auto _All = true>
     size_t
     enqueue_at(T const *t, size_t const size) {
         return _producers[_Index]._ringbuffer.template enqueue<_All>(t, size);
@@ -382,13 +382,13 @@ public:
     /**
      * @brief Enqueue multiple items using a runtime producer index
      *
-     * @tparam _All If true, requires all items to be enqueued or none
+     * @tparam _All A `bool`, never an integer (`enqueue<0>(index, t, size)` does not compile): true, all items or none; false, as many as fit
      * @param index The runtime index of the producer
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t
     enqueue(size_t const index, T const *t, size_t const size) {
         return _producers[index]._ringbuffer.template enqueue<_All>(t, size);

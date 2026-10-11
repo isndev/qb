@@ -1218,14 +1218,14 @@ TTAS spinlock. Non-copyable/non-movable. Satisfies `BasicLockable` (works with `
 #### `qb::lockfree::spsc::ringbuffer<T,_MaxSize>` / `<T,0>` (`spsc.h`)
 Single-producer single-consumer ring. Fixed (`std::array`) or dynamic (`explicit ringbuffer(size_t max_size)`).
 *   `bool enqueue(const T&) noexcept`, `bool dequeue(T*) noexcept`
-*   `[T<_All=true>] size_t enqueue(const T*, size_t) noexcept`, `size_t dequeue(T*, size_t) noexcept`
+*   `[T<std::same_as<bool> auto _All=true>] size_t enqueue(const T*, size_t) noexcept`, `size_t dequeue(T*, size_t) noexcept`. `_All` is a `bool`, never an integer: `enqueue<0>(t, n)` does not compile (3.3, Huly QB-980).
 *   `[T<Func>] size_t dequeue(const Func&, T*, size_t)` — conditionally `noexcept` when the callback is nonthrowing; callback exceptions propagate. `[T<Func>] size_t consume_all(const Func&) noexcept`.
 *   `[[nodiscard]] bool empty() const noexcept` — consumer thread only (it reads the consumer's private read index).
 
 #### `qb::lockfree::mpsc::ringbuffer<T,max_size,nb_producer>` / `<T,max_size,0>` (`mpsc.h`)
 Multi-producer single-consumer. Fixed producers (compile-time) or runtime (`explicit ringbuffer(size_t nb_producer)`, asserts `> 0`).
-*   `[T<_Index>] bool enqueue_at(const T&)` — by compile-time producer index (no lock; one producer per index); `[T<_Index,_All=true>] size_t enqueue_at(const T*, size_t)` its bulk form; both variants. Spelled `enqueue<_Index>` before 3.3; renamed, with no alias (Huly QB-980), because `enqueue<false>(t, n)` was ambiguous with it (`false` converts to `_Index`).
-*   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index); `[T<_All=true>] size_t enqueue(size_t index, const T*, size_t)` its bulk form. Every bulk overload forwards `_All`: `true` enqueues all or none, `false` as many as fit (3.3, Huly QB-280).
+*   `[T<_Index>] bool enqueue_at(const T&)` — by compile-time producer index (no lock; one producer per index); `[T<_Index, std::same_as<bool> auto _All=true>] size_t enqueue_at(const T*, size_t)` its bulk form; both variants. Spelled `enqueue<_Index>` before 3.3; renamed, with no alias (Huly QB-980), because `enqueue<false>(t, n)` was ambiguous with it (`false` converts to `_Index`).
+*   `bool enqueue(size_t index, const T&)` — by runtime index (no lock; one producer per index); `[T<std::same_as<bool> auto _All=true>] size_t enqueue(size_t index, const T*, size_t)` its bulk form. Every bulk overload forwards `_All`: `true` enqueues all or none, `false` as many as fit (3.3, Huly QB-280). Every `_All` here and in `spsc` is `std::same_as<bool> auto`: an integer never binds it, so `enqueue<0>(index, t, n)` — which compiled before 3.3 as a partial enqueue into `index` — does not compile (Huly QB-980).
 *   `size_t enqueue(const T&)` — round-robin under that producer's SpinLock. The producer comes from a per-thread counter that is **per overload instance** — this form, `enqueue<true>(t, n)` and `enqueue<false>(t, n)` each rotate on their own — and shared by every ring of the same type on that thread; one thread's items are FIFO within a producer ring, not across rings.
 *   `[T<std::same_as<bool> auto _All=true>] size_t enqueue(const T*, size_t)` — round-robin bulk; an explicit `enqueue<false>(t, n)` takes as many as fit (callable since 3.3). `_All` is a `bool`, never an integer: `enqueue<0>(t, n)` does not compile (Huly QB-980).
 *   `size_t dequeue(T*, size_t)` — `ret` is the OUTPUT, producers append, `size` is a **total** budget, return ≤ `size`.

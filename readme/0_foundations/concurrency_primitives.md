@@ -101,7 +101,7 @@ class ringbuffer {
 public:
     // --- producer side (one thread only) ---
     bool   enqueue(T const &t) noexcept;                       // one item; false if full
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t enqueue(T const *t, size_t size) noexcept;          // bulk; returns count enqueued
 
     // --- consumer side (one thread only) ---
@@ -118,7 +118,7 @@ public:
 }
 ```
 
-- **Bulk enqueue is all-or-nothing by default.** The `_All` template parameter defaults to `true`: `enqueue<true>(t, size)` enqueues every element or none, returning `0` when there is insufficient room (`src/qb/system/lockfree/spsc.h:309-311`). Set `_All = false` for a partial enqueue that takes as many elements as fit.
+- **Bulk enqueue is all-or-nothing by default.** The `_All` template parameter defaults to `true`: `enqueue<true>(t, size)` enqueues every element or none, returning `0` when there is insufficient room (`src/qb/system/lockfree/spsc.h:309-311`). Set `_All = false` for a partial enqueue that takes as many elements as fit. `_All` is a `bool`, never an integer — it is `std::same_as<bool> auto` in every bulk overload of both rings since 3.3, so `enqueue<0>(t, size)` does not compile (Huly QB-980).
 - **`consume_all` avoids the intermediate copy** — and that is exactly why it is the dangerous overload. It invokes `func` directly over the buffer's internal storage, passing a `T *` to the start of one contiguous segment and that segment's element count. Because the ring wraps, a full traversal can call the `functor` **twice**, once per segment (`src/qb/system/lockfree/spsc.h:419-420`).
 
 > **`consume_all` is only safe when one ring slot is one independent item.** The producer's bulk `enqueue` deliberately writes across the wrap with a two-section `memcpy`, so a logical item spanning several slots — a multi-bucket `qb::Event` is the obvious one — is split by that second call. A consumer that parses variable-length items by an embedded size field then reads a header whose item runs past the end of the segment. When items can span more than one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it reassembles the batch contiguously before calling the functor. This is not a hypothetical distinction — it is why the engine drains its mailbox through the copy-out overload (`mpsc::consume_all(func, scratch, chunk)`, which forwards to this one) rather than the in-place `consume_all(func)` (`src/qb/system/lockfree/spsc.h:391-399`).
@@ -176,10 +176,10 @@ class ringbuffer {
 public:
     // --- indexed enqueue: NO lock; one thread per index ---
     template <size_t _Index>             bool   enqueue_at(T const &t);
-    template <size_t _Index, bool _All = true>
+    template <size_t _Index, std::same_as<bool> auto _All = true>
                                          size_t enqueue_at(T const *t, size_t size);
     bool   enqueue(size_t index, T const &t);
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t enqueue(size_t index, T const *t, size_t size);
 
     // --- round-robin enqueue: per-producer SpinLock; any thread ---

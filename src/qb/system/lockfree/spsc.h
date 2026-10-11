@@ -2,10 +2,9 @@
  * @file qb/system/lockfree/spsc.h
  * @brief Single-Producer Single-Consumer lockfree data structures
  *
- * This file provides lockfree data structures optimized for scenarios where
- * exactly one thread produces data and exactly one thread consumes it.
- * The implementation focuses on performance through cache-friendly design
- * and minimal synchronization overhead.
+ * This file provides lockfree data structures optimized for scenarios where exactly one thread
+ * produces data and exactly one thread consumes it. The implementation focuses on performance
+ * through cache-friendly design and minimal synchronization overhead.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -28,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <concepts>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -293,14 +293,14 @@ protected:
     /**
      * @brief Enqueue multiple elements into the buffer
      *
-     * @tparam _All If true, either all elements are enqueued or none
+     * @tparam _All If true, either all elements are enqueued or none; a `bool`, never an integer (Huly QB-980)
      * @param input_buffer Pointer to source elements
      * @param input_count Number of elements to enqueue
      * @param internal_buffer Pointer to the internal buffer
      * @param max_size Maximum size of the buffer
      * @return Number of elements successfully enqueued
      */
-    template <bool _All>
+    template <std::same_as<bool> auto _All>
     size_t
     enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
         const size_t write_index = write_index_local_; // the producer's own copy: never the published line
@@ -524,12 +524,12 @@ public:
     /**
      * @brief Enqueue multiple elements into the buffer
      *
-     * @tparam _All If true, either all elements are enqueued or none
+     * @tparam _All If true, either all elements are enqueued or none; a `bool`, never an integer: `enqueue<0>(t, size)` does not compile
      * @param t Pointer to source elements
      * @param size Number of elements to enqueue
      * @return Number of elements successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
         return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(), max_size);
@@ -642,12 +642,12 @@ public:
     /**
      * @brief Enqueue multiple elements into the buffer
      *
-     * @tparam _All If true, either all elements are enqueued or none
+     * @tparam _All If true, either all elements are enqueued or none; a `bool`, never an integer: `enqueue<0>(t, size)` does not compile
      * @param t Pointer to source elements
      * @param size Number of elements to enqueue
      * @return Number of elements successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
         return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.get(), max_size_);

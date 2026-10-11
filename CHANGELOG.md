@@ -339,11 +339,18 @@ policy.
   `std::same_as<bool> auto`, a `bool` and never an integer: with a plain `bool`, the old index spelling
   `enqueue<0>(items, n)` / `enqueue<1>(items, n)` -- ambiguous until the rename -- compiled after it as the round-robin
   form with `All = false` / `true` on g++-14, clang-19 and MSVC (which took `enqueue<2>` too); it does not compile.
-  Code that called `enqueue<Index>(...)` no longer compiles: write `enqueue_at<Index>(...)`. The runtime-index
-  forms, `enqueue(index, ...)`, and the round-robin ones keep their names. Nothing in qb, its modules, the examples
-  or qb-vs-others called the compile-time-index forms outside the test that pins them, `mpsc-dequeue-parity`
-  (`EveryBulkEnqueueOverloadForwardsAll`, now in both polarities on the round-robin form, and
-  `CompileTimeIndexFormsAreEnqueueAt`).
+  The same holds for every other bulk overload, which is a behaviour change for a caller who spelled `_All` as an
+  integer: the runtime-index `mpsc::ringbuffer::enqueue<All>(index, items, n)`, the compile-time-index
+  `enqueue_at<Index, All>(items, n)` and `spsc::ringbuffer::enqueue<All>(items, n)` (both variants of each) take
+  `std::same_as<bool> auto` too, so `enqueue<0>(index, items, n)` -- which read as "producer 0" and compiled as a
+  partial enqueue into `index` (g++-14 and clang-19 took 0 and 1, MSVC any integer) -- and `spsc`'s
+  `enqueue<0>(items, n)` no longer compile; write `false` / `true`. `false`, `true` and the default are unchanged, and
+  so is the code they produce. Code that called `enqueue<Index>(...)` no longer compiles: write
+  `enqueue_at<Index>(...)`. The runtime-index forms, `enqueue(index, ...)`, and the round-robin ones keep their
+  names. Nothing in qb, its modules, the examples or qb-vs-others called the compile-time-index forms outside the
+  test that pins them, nor spelled an `_All` as an integer: `mpsc-dequeue-parity` (`EveryBulkEnqueueOverloadForwardsAll`,
+  now in both polarities on the round-robin form, `CompileTimeIndexFormsAreEnqueueAt` and
+  `EveryAllPolicyIsABoolNeverAnInteger`).
 
 ### Removed
 

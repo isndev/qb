@@ -462,4 +462,39 @@ TEST(MpscDequeueParity, CompileTimeIndexFormsAreEnqueueAt) {
     check(dynamic, "runtime-count");
 }
 
+// ---------------------------------------------------------------------------
+// Every `_All` is a `bool`, never an integer (Huly QB-980) -- across both layers
+// ---------------------------------------------------------------------------
+
+/// The other bulk overloads, each with `K` given where its `_All` goes: the runtime index (`enqueue<K>(index, t, n)`), the
+/// compile-time index (`enqueue_at<0, K>(t, n)`) and the spsc ring underneath (`enqueue<K>(t, n)`). With a plain `bool _All`
+/// an integer bound every one of them -- measured 2026-10-11, base and branch before this constraint: g++-14 and clang-19
+/// took 0 and 1 (refusing 2, a narrowing), MSVC 19.51 took 0, 1 and 2 -- so `enqueue<0>(index, t, n)`, written for "producer
+/// 0", compiled as a partial enqueue into whatever `index` said. Each is `std::same_as<bool> auto` now.
+template <typename R, auto K>
+concept runtime_index_bulk_takes = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue<K>(std::size_t{0}, items, n); };
+template <typename R, auto K>
+concept enqueue_at_bulk_takes = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue_at<0, K>(items, n); };
+template <typename R, auto K>
+concept spsc_bulk_takes = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue<K>(items, n); };
+
+template <typename R>
+constexpr bool mpsc_all_is_bool_only =
+    runtime_index_bulk_takes<R, false> && runtime_index_bulk_takes<R, true> && !runtime_index_bulk_takes<R, 0>
+    && !runtime_index_bulk_takes<R, 1> && !runtime_index_bulk_takes<R, 2> && enqueue_at_bulk_takes<R, false> && enqueue_at_bulk_takes<R, true>
+    && !enqueue_at_bulk_takes<R, 0> && !enqueue_at_bulk_takes<R, 1> && !enqueue_at_bulk_takes<R, 2>;
+template <typename S>
+constexpr bool spsc_all_is_bool_only =
+    spsc_bulk_takes<S, false> && spsc_bulk_takes<S, true> && !spsc_bulk_takes<S, 0> && !spsc_bulk_takes<S, 1> && !spsc_bulk_takes<S, 2>;
+
+TEST(MpscDequeueParity, EveryAllPolicyIsABoolNeverAnInteger) {
+    static_assert(mpsc_all_is_bool_only<Ring>, "fixed mpsc: `_All` takes `false` / `true`, never 0, 1 or 2");
+    static_assert(mpsc_all_is_bool_only<qb::lockfree::mpsc::ringbuffer<int, kCapacity, 0>>,
+                  "runtime-count mpsc: `_All` takes `false` / `true`, never 0, 1 or 2");
+    static_assert(spsc_all_is_bool_only<qb::lockfree::spsc::ringbuffer<int, kCapacity>>, "fixed spsc: `_All` takes `false` / `true` only");
+    static_assert(spsc_all_is_bool_only<qb::lockfree::spsc::ringbuffer<int, 0>>, "dynamic spsc: `_All` takes `false` / `true` only");
+    // What each `bool` does is EveryBulkEnqueueOverloadForwardsAll's (mpsc) and spsc-cached-index's (spsc): this case owns
+    // only which arguments may be spelled there, which is a compile-time property, so it has nothing to run.
+}
+
 } // namespace mpsc_dequeue_parity_test
