@@ -436,9 +436,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
   and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
   dangling pointer. Check `handle.valid()` before sending to its id; gate direct calls on `handle.ready()`.
-  `addRefHandle<Child>()` is a **pure alias** of `addRefActor` returning the same handle type — not a
-  stronger or separately liveness-checked one — and `RefActorHandle<T>` is a `using` alias of
-  `ActorHandle<T>`, not a distinct class. Both are retained only for source compatibility.
+  `addRefHandle<Child>()` is `addRefActor` marked `[[nodiscard]]` — same handle type, not a stronger or
+  separately liveness-checked one: spell it so when you keep the handle, `addRefActor` for a fire-and-forget
+  child. `RefActorHandle<T>` is a `using` alias of `ActorHandle<T>` (not a distinct class), kept for source compatibility.
 - **Request/response with timeout** — prefer the native `co_await qb::ask(ctx, target, req, timeout)`
   (`qb::AskEvent`/`qb::Request<Resp>`, responder `qb::answer`, asker `resolve_ask`) over hand-rolled
   pending-state. `qb::ask` is a **free function** and its first parameter is a `qb::ScopedCoroContext` —

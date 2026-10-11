@@ -31,7 +31,7 @@ The system-wide identity of an actor. It is a compound 32-bit value built from a
 <a id="addrefactort-addrefhandlet"></a>
 #### `addRefActor<T>()` / `addRefHandle<T>()`
 
-Create a [referenced actor](#referenced-actor) on the caller's own core. Both return a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle) (`addRefHandle` is an alias of `addRefActor`); the handle is empty (`!valid()`) if creation failed. The caller does not own the child. The handle never dangles: `id()` is valid immediately (events to a still-Activating child are stashed and replayed FIFO), and `get()` / `operator->` resolve the live actor only once it is **active**, returning `nullptr` while Activating, after a failed init, or once it died. Use `ready()` / `co_await ready_async(ctx)` to wait for an async-init child. Declared in `src/qb/core/Actor.h`. See [Actor](../4_qb_core/actor.md).
+Create a [referenced actor](#referenced-actor) on the caller's own core. Both return a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle) (`addRefHandle` is `addRefActor` marked `[[nodiscard]]`); the handle is empty (`!valid()`) if creation failed. The caller does not own the child. The handle never dangles: `id()` is valid immediately (events to a still-Activating child are stashed and replayed FIFO), and `get()` / `operator->` resolve the live actor only once it is **active**, returning `nullptr` while Activating, after a failed init, or once it died. Use `ready()` / `co_await ready_async(ctx)` to wait for an async-init child. Declared in `src/qb/core/Actor.h`. See [Actor](../4_qb_core/actor.md).
 
 #### Affinity (CPU affinity)
 

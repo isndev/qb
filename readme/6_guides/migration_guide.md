@@ -357,7 +357,7 @@ relied only on `is_alive()`.
 
 ### `addRefActor<T>()` returns `ActorHandle<T>`, not `T*`
 
-`addRefActor<T>()` (and the alias `addRefHandle<T>()`) now return a phase-aware
+`addRefActor<T>()` (and `addRefHandle<T>()`, the same call marked `[[nodiscard]]`) now return a phase-aware
 `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) instead of a raw `T*`:
 
 ```cpp

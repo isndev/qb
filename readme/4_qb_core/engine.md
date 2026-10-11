@@ -65,7 +65,7 @@ if (_is_running)
 ```
 <!-- src: qb/src/qb/core/Main.cpp:660-661 -->
 
-To create an actor after startup, do it from inside a running actor with `addRefActor<T>()` (or its alias `addRefHandle<T>()`), which lands on the *same* core — see [Writing actors](./actor.md#children-addrefactor-and-actorhandlet).
+To create an actor after startup, do it from inside a running actor with `addRefActor<T>()` (or `addRefHandle<T>()`, the same call marked `[[nodiscard]]`), which lands on the *same* core — see [Writing actors](./actor.md#children-addrefactor-and-actorhandlet).
 
 ## Latency: what a core does when it has nothing to do
 

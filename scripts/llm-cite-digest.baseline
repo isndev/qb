@@ -12,7 +12,7 @@
 # excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>
 # digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so
 # re-flowing a paragraph does not re-key the file.
-llm/qb.llm.api.md	Actor.h:1369-1379	d756f709669a	* @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb:...
+llm/qb.llm.api.md	Actor.h:1369-1379	84fc8982e239	* @brief `addRefActor<T>()` marked `[[nodiscard]]` — same call, same ...
 llm/qb.llm.api.md	Actor.h:1388-1446	348256583ed8	/**
 llm/qb.llm.api.md	Actor.h:1448-1483	ebacec412d5d	/**
 llm/qb.llm.api.md	Actor.h:1493-1493	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;

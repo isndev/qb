@@ -936,6 +936,11 @@ policy.
 
 ### Documentation
 
+- **`addRefHandle<T>()` is `addRefActor<T>()` marked `[[nodiscard]]`, not a compatibility alias (Huly QB-982).**
+  Its doc, the `llm/` pair and five book pages called it an alias "retained for source compatibility" -- against the
+  rule that no deprecated alias exists since 3.0, and against `addRefActor`'s own doc, which sends a caller who wants
+  the handle to `addRefHandle`. They now say what it is: the same call, flagged by the compiler when the handle is
+  dropped; `addRefActor` stays the spelling for a fire-and-forget child.
 - **`3_qb_io/coroutines.md`: `async_stream::reduce` takes the seed first.** The book's prose still said
   `reduce(f, initial)`, the 3.0 order reversed, under an example that already called `reduce(0, f)`.
 - **`6_guides/error_handling.md`'s supervision section rewritten with death watch (Huly QB-51).** It said qb-core

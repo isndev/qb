@@ -39,7 +39,7 @@ Actor creation entry points:
 | `qb::Main::addActor<A>(core_id, args...)` | [Engine](./engine.md) | Add one actor to a specific core before `start()`; returns its `qb::ActorId`. |
 | `main.core(id).builder().addActor<A>(args...)` | [Engine](./engine.md) | Fluent `ActorBuilder` for adding several actors to one core and collecting their IDs. |
 | `Actor::addRefActor<A>(args...)` | [Actor](./actor.md) | Create a child actor on the **same core**; returns a phase-aware `qb::ActorHandle<A>` (empty handle if creation failed). |
-| `Actor::addRefHandle<A>(args...)` | [Actor](./actor.md) | Alias of `addRefActor` — both return `qb::ActorHandle<A>` (`RefActorHandle<A>` is an alias of `ActorHandle<A>`). |
+| `Actor::addRefHandle<A>(args...)` | [Actor](./actor.md) | `addRefActor` marked `[[nodiscard]]` — same call, both return `qb::ActorHandle<A>` (`RefActorHandle<A>` is an alias of `ActorHandle<A>`). |
 
 ---
 

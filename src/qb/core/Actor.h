@@ -1366,12 +1366,12 @@ public:
     ActorHandle<_Actor> addRefActor(_Args &&...args) const;
 
     /**
-     * @brief Alias of `addRefActor<T>()` — both return a phase-aware `qb::ActorHandle<T>`.
+     * @brief `addRefActor<T>()` marked `[[nodiscard]]` — same call, same phase-aware `qb::ActorHandle<T>`.
      * @tparam _Actor Actor type to create.
      * @tparam _Args  Constructor argument types.
      * @param args Constructor arguments.
      * @return `ActorHandle<_Actor>` — empty if creation failed.
-     * @details Retained for source compatibility; new code can just call `addRefActor`.
+     * @details Spell it this way when the handle is the point: the compiler then flags a dropped one.
      */
     template <typename _Actor, typename... _Args>
     [[nodiscard]] ActorHandle<_Actor>

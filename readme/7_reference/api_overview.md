@@ -153,7 +153,7 @@ not be touched after either call. See [Messaging](../4_qb_core/messaging.md).
 | Member | Signature | Notes |
 |---|---|---|
 | `addRefActor` | `template<class _Actor, class... _Args> ActorHandle<_Actor> addRefActor(_Args&&... args) const` | Creates a child actor on the same core; returns a phase-aware `qb::ActorHandle<_Actor>` (empty if creation failed). `id()` is valid at once (events to a still-Activating child are stashed); `ready()` / `co_await ready_async(ctx)` / `get()` resolve the live actor only once it is active and never dangle. |
-| `addRefHandle` | `template<class _Actor, class... _Args> ActorHandle<_Actor> addRefHandle(_Args&&... args) const` | Alias of `addRefActor` (both return `ActorHandle`); retained for source compatibility. |
+| `addRefHandle` | `template<class _Actor, class... _Args> ActorHandle<_Actor> addRefHandle(_Args&&... args) const` | `addRefActor` marked `[[nodiscard]]` (same call, same `ActorHandle`): use it when the handle is the point. |
 | `getService` | `template<class _ServiceActor> _ServiceActor* getService() const noexcept` | The `ServiceActor` instance on this core, or `nullptr`. |
 | `getServiceId` | `template<class T> static ActorId getServiceId(CoreId index) noexcept` | The `ActorId` of service `T` on core `index`. |
 
