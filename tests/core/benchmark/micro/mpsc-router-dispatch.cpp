@@ -29,9 +29,11 @@
  * layout.
  *
  * Benchmark methodology (perf harness, never a ctest gate — no `EXPECT_LT(duration,…)`):
- *   - the timed region is `run_router_mailbox()`; thread spin-up is absorbed by the start gate;
+ *   - the timed region is `run_router_mailbox()`, including queue allocation, thread creation
+ *     and joins; the start gate synchronizes workers but does not remove these costs;
  *   - each timed run verifies its drained total, the same number of handler calls, zero route
- *     misses and a nonzero checksum after pausing timing; descriptor counters follow a valid loop;
+ *     misses and a nonzero checksum after pausing timing; a single producer also has an exact
+ *     FIFO checksum oracle computed outside timing; descriptor counters follow a valid loop;
  *   - a one-shot, out-of-loop probe runs the smallest fan-in, `DoNotOptimize`s the consumer checksum,
  *     and asserts the dispatch actually happened (`checksum != 0`) — so a router that silently routed
  *     nothing (every message mis-routed) is caught before any timing, not turned into a timing gate.
@@ -274,6 +276,31 @@ make_routed_bucket(std::size_t const pid, std::uint64_t const sent) noexcept {
     }
 }
 
+// With one producer, FIFO fixes the complete dispatch order. Derive the expected payload fold
+// without constructing buckets, routing them or invoking handlers. Keep uint64_t throughout:
+// the JSON descriptor below is a double and cannot carry this oracle without rounding.
+[[nodiscard]] std::uint64_t
+single_producer_checksum(std::uint64_t const total) noexcept {
+    std::uint64_t checksum = 0;
+    for (std::uint64_t sent = 0; sent < total; ++sent) {
+        const auto    salt = static_cast<std::uint32_t>(sent);
+        std::uint64_t payload;
+        switch (sent % 3u) {
+            case 0u:
+                payload = static_cast<std::uint64_t>(salt) * 0x9E3779B97F4A7C15ULL;
+                break;
+            case 1u:
+                payload = static_cast<std::uint64_t>(salt & 0xFFu) << 8;
+                break;
+            default:
+                payload = static_cast<std::uint64_t>(salt & 0xFFFFu) * 3u;
+                break;
+        }
+        checksum ^= payload + 0x9E3779B97F4A7C15ULL + (checksum << 6) + (checksum >> 2);
+    }
+    return checksum;
+}
+
 struct RouterRunResult {
     std::uint64_t enqueue_failures = 0;
     std::uint64_t checksum         = 0;
@@ -331,6 +358,7 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
         state.SkipWithError("invalid range: producers or total is zero");
         return;
     }
+    const auto expected_checksum = nb_producers == 1u ? single_producer_checksum(total) : 0ull;
 
     // One-shot out-of-loop correctness probe: all buckets must reach a subscribed handler,
     // and a nonzero checksum confirms handler work. A drain that cannot finish is reported rather
@@ -355,6 +383,10 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
             state.SkipWithError("router dispatched zero messages (no handler fired)");
             return;
         }
+        if (nb_producers == 1u && probe.checksum != expected_checksum) {
+            state.SkipWithError("router single-producer payload checksum mismatch");
+            return;
+        }
     }
 
     RouterRunResult result{};
@@ -376,6 +408,10 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
         }
         if (result.checksum == 0ull) {
             state.SkipWithError("router dispatched zero messages (no handler fired)");
+            return;
+        }
+        if (nb_producers == 1u && result.checksum != expected_checksum) {
+            state.SkipWithError("router single-producer payload checksum mismatch");
             return;
         }
         state.ResumeTiming();
