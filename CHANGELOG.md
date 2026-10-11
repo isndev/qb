@@ -997,7 +997,9 @@ policy.
   The blocking-pass case's 40 ms bound is replaced by the same judgement. The rest of the class, the same way:
   `listener-timer-gate`'s `ASocketKeepsItsCadence` (identical; both files now share
   `tests/io/shared/io_cadence_window.h`); its 2 ms bound on how late a 5 ms timer fires, now "no pass that began past
-  the deadline leaves the timer unfired, and only the firing pass ran the loop", read on the loop's own clock; its
+  the deadline leaves the timer unfired, and no pass that ended before it ran the loop", read on the loop's own clock
+  (a pass that reads the deadline exactly may run the loop and leave the firing to the next one, the loop firing only
+  a deadline strictly past -- on Windows' 100 ns clock that pass is the rule); its
   12 ms bound on the raw-arm negative control, now "the first pass after the arm fires it", counted only when that
   pass came within the timer's 20 ms and replayed otherwise -- so the binary needs no `serial` slot any more;
   `timer-timeout`'s `UpdateTimeoutDefersTheDeadline`, which reads each refresh-to-pass gap on the loop's clock and
