@@ -34,7 +34,9 @@
  */
 
 #include <atomic>
+#include <coroutine>
 #include <cstdint>
+#include <functional>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -925,6 +927,147 @@ TEST(KillActor, BroadcastKillLeavesNoSurvivors) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_kill_targets_built.load(), kTargets) << "all 1024 broadcast targets must have been created";
     EXPECT_EQ(g_kill_targets_alive.load(), 0) << "every broadcast-killed actor must be destroyed — zero survivors after join";
+}
+
+// ===========================================================================
+// A core whose id pool is spent (Huly QB-1014).
+//
+// An actor draws its id in `Actor::Actor()`; once every id of its core is taken it gets NotFound. Until 3.3
+// `appendActor` drove that actor's `onInit()` before noticing the id, so the coroutine of an actor the core then
+// destroyed ran -- and when it suspended, its frame was parked in the core's activations under NotFound, alive
+// until the core's teardown, while its actor was gone. Now `addRefActor` refuses a spent core before constructing
+// anything, and `appendActor` refuses an id-less actor before its `onInit()`. Both paths are driven: the plain one
+// (the pool is spent before the add), and the one only `appendActor` can catch -- a first base, built before
+// `qb::Actor`, that takes the last ids itself. The fillers that spend the pool are ~65 000 actors on one core.
+// ===========================================================================
+
+std::atomic<int>      g_spent_fillers{0};      // fillers admitted
+std::atomic<int>      g_spent_filler_inits{0}; // filler onInit() runs
+std::atomic<int>      g_late_drawn_ctors{0};
+std::atomic<int>      g_late_drawn_inits{0};
+std::atomic<bool>     g_late_drawn_refused{false};
+std::atomic<int>      g_parked_ctors{0};
+std::atomic<int>      g_parked_dtors{0};
+std::atomic<int>      g_parked_inits{0};
+std::atomic<int>      g_parked_frames{0};  // live onInit() frames of ParkedChild
+std::atomic<int>      g_parked_orphans{0}; // such frames alive right after their actor was destroyed
+std::atomic<bool>     g_parked_refused{false};
+std::atomic<bool>     g_spent_driver_ran{false};
+std::function<void()> g_spent_drain; // set by the driver: admits fillers until the core refuses one
+
+class SpentFiller : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_spent_filler_inits.fetch_add(1);
+        co_return true;
+    }
+};
+
+// Built BEFORE the qb::Actor base of the class below: the pool is spent when Actor::Actor() draws its id.
+struct SpendsTheCoreFirst {
+    SpendsTheCoreFirst() {
+        if (g_spent_drain)
+            g_spent_drain();
+    }
+};
+
+class LateDrawn
+    : public SpendsTheCoreFirst
+    , public qb::Actor {
+public:
+    LateDrawn() {
+        g_late_drawn_ctors.fetch_add(1);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        g_late_drawn_inits.fetch_add(1);
+        co_return true;
+    }
+};
+
+struct ParkedFrameProbe {
+    ParkedFrameProbe() {
+        g_parked_frames.fetch_add(1);
+    }
+    ~ParkedFrameProbe() {
+        g_parked_frames.fetch_sub(1);
+    }
+    ParkedFrameProbe(ParkedFrameProbe const &)            = delete;
+    ParkedFrameProbe &operator=(ParkedFrameProbe const &) = delete;
+};
+
+class ParkedChild : public qb::Actor {
+public:
+    ParkedChild() {
+        g_parked_ctors.fetch_add(1);
+    }
+    ~ParkedChild() override {
+        g_parked_dtors.fetch_add(1);
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        g_parked_inits.fetch_add(1);
+        ParkedFrameProbe const probe;
+        co_await std::suspend_always{}; // parks for good: only a core's teardown destroys this frame
+        co_return true;
+    }
+};
+
+class SpentDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        g_spent_drain = [this] {
+            while (addRefActor<SpentFiller>().valid())
+                g_spent_fillers.fetch_add(1);
+        };
+        g_late_drawn_refused.store(!addRefActor<LateDrawn>().valid());
+        g_spent_drain = nullptr;
+        g_parked_refused.store(!addRefActor<ParkedChild>().valid());
+        if (g_parked_dtors.load() != 0)
+            g_parked_orphans.store(g_parked_frames.load());
+        g_spent_driver_ran.store(true);
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, ASpentIdPoolRefusesTheActorBeforeItsOnInitRuns) {
+    g_spent_fillers.store(0);
+    g_spent_filler_inits.store(0);
+    g_late_drawn_ctors.store(0);
+    g_late_drawn_inits.store(0);
+    g_late_drawn_refused.store(false);
+    g_parked_ctors.store(0);
+    g_parked_dtors.store(0);
+    g_parked_inits.store(0);
+    g_parked_frames.store(0);
+    g_parked_orphans.store(0);
+    g_parked_refused.store(false);
+    g_spent_driver_ran.store(false);
+
+    qb::Main main;
+    main.addActor<SpentDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    ASSERT_TRUE(g_spent_driver_ran.load()) << "the driver's onInit never ran";
+    EXPECT_GT(g_spent_fillers.load(), 60000) << "the fillers did not spend the core's id pool";
+    EXPECT_EQ(g_spent_filler_inits.load(), g_spent_fillers.load()) << "onInit() ran for a filler the core refused";
+    // The path only appendActor sees: constructed (its first base spent the pool), refused before its onInit().
+    EXPECT_TRUE(g_late_drawn_refused.load());
+    EXPECT_EQ(g_late_drawn_ctors.load(), 1);
+    EXPECT_EQ(g_late_drawn_inits.load(), 0) << "onInit() ran for an actor that has no id";
+    // The plain path: nothing is left, so nothing is constructed and no frame can outlive anything.
+    EXPECT_TRUE(g_parked_refused.load());
+    EXPECT_EQ(g_parked_ctors.load(), 0) << "an actor was constructed on a core that had no id left";
+    EXPECT_EQ(g_parked_inits.load(), 0) << "onInit() ran for an actor that has no id";
+    EXPECT_EQ(g_parked_orphans.load(), 0) << "an onInit() frame stayed parked in the core after its actor was destroyed";
+    EXPECT_EQ(g_parked_frames.load(), 0);
 }
 
 } // namespace

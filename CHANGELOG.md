@@ -401,6 +401,13 @@ policy.
   the way `crypto_jwt.h` already did: on a host with the OpenSSL headers an SSL-off TU that included one of them
   used to compile against TLS code qb never built. Every other includer is already guarded: qbm-http, qbm-pgsql
   and qbm-redis include them under `QB_HAS_SSL`, and the two TLS examples are `REQUIRES ssl`.
+- **An actor built on a core with no id left is refused before its `onInit()` runs (Huly QB-1014).** Once every id
+  of a core was taken, `Actor::Actor()` drew `NotFound` and `appendActor` still drove the actor's `onInit()` before
+  refusing it: the coroutine of an actor the core then destroyed ran, and when it suspended its frame stayed parked in
+  the core's activations under `NotFound` until the core's teardown. `addRefActor` now returns an invalid handle
+  without constructing the actor when the pool is spent, and `appendActor` refuses an id-less actor before its
+  `onInit()` (the case of a base class, constructed before `qb::Actor`, that takes the last ids). Pinned by
+  `AddReferencedActor.ASpentIdPoolRefusesTheActorBeforeItsOnInitRuns`.
 - **A service reserved from another global's initialiser gets its id: no reader of a service id loads
   `ServiceIndex` any more (Huly QB-1007).** `ServiceActor<Tag>::ServiceIndex` is 0 until its dynamic initialiser has
   run, and C++ leaves that initialiser unordered against every other static. `CoreInitializer::addActor`,

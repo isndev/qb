@@ -1220,10 +1220,10 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
         return ActorId::NotFound;
     Actor        &actor = *actor_ptr;
     const ActorId id    = actor.id();
-    // Reject duplicates *before* driving `onInit()`: a suspended (async) init must never
-    // coexist with an append failure, otherwise its still-live frame would be orphaned.
-    if (unlikely(__actor_slot__(id) != nullptr)) {
-        QB_LOG_CRIT("Error Cannot add Service Actor multiple times" << actor);
+    // Reject an actor built without an id (its core's pool was spent: Huly QB-1014) or a duplicate *before* driving
+    // `onInit()`: a suspended (async) init must never coexist with an append failure, or its live frame is orphaned.
+    if (unlikely(!id.is_valid() || __actor_slot__(id) != nullptr)) {
+        QB_LOG_CRIT("Error Cannot add " << actor << (id.is_valid() ? ": its id is taken" : ": no id was left on its core"));
         return ActorId::NotFound;
     }
     if (initActor(actor, doInit).is_valid()) {

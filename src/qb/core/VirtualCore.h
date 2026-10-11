@@ -1116,19 +1116,16 @@ VirtualCore::unregisterEvent(_Actor &actor) noexcept {
 template <typename _Actor, typename... _Init>
 _Actor *
 VirtualCore::addReferencedActor(_Init &&...init) {
-    // Cancellation/frame/payload destructors can call back into an actor while
-    // this core is being destroyed. Refuse admission before allocating or
-    // invoking a user constructor; no new frame may enter a dying scheduler.
+    // Cancellation/frame/payload destructors can call back into an actor while this core is being destroyed. Refuse
+    // admission before allocating or invoking a user constructor; no new frame may enter a dying scheduler.
     if (unlikely(_tearing_down))
         return nullptr;
     auto construct = [&]() -> _Actor * {
-        // Route through the same allocation customization point used by TActorFactory so
-        // users who override qb::allocate_actor<_Actor> get consistent behaviour for
-        // both engine-created and dynamically-added actors (PMR/pool support, 2.13).
+        // The allocation customization point TActorFactory uses, so a user's qb::allocate_actor<_Actor> serves
+        // engine-created and dynamically-added actors alike (PMR/pool support, 2.13).
         auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
         std::unique_ptr<_Actor> actor_ptr(raw_actor);
-        // Use the ActorProxy customization point so dynamically created actors get the
-        // same demangled name and typed id_type as factory-created ones.
+        // The ActorProxy customization point: the same demangled name and typed id_type as factory-created actors.
         ActorProxy::setTypeInfo<_Actor>(*raw_actor);
         if (appendActor(std::move(actor_ptr), true).is_valid())
             return raw_actor;
@@ -1170,16 +1167,19 @@ VirtualCore::addReferencedActor(_Init &&...init) {
         guard.admitted       = actor != nullptr;
         return actor;
     } else {
-        // A failed ordinary constructor has no pointer to return, but Actor::Actor()
-        // already reserved an ID. Nested adds temporarily replace this output slot.
+        // Every id of this core is taken: refuse before constructing, not after its constructor ran (Huly QB-1014).
+        if (unlikely(_ids.empty())) {
+            QB_LOG_CRIT("Error Cannot add Actor " << typeid(_Actor).name() << ": every id of " << *this << " is taken");
+            return nullptr;
+        }
+        // A failed ordinary constructor returns no pointer, but Actor::Actor() reserved an ID; nested adds replace this slot.
         ActorId        admission_id    = ActorId::NotFound;
         ActorId *const previous_id_out = _constructing_actor_id_out;
         _constructing_actor_id_out     = &admission_id;
         AdmissionGuard guard{*this, admission_id, previous_id_out, false};
         auto *const    actor = construct();
         guard.admitted       = actor != nullptr;
-        // Do not recycle a failed constructor's ID here: an event published from
-        // its body may still be queued and must not reach the next actor.
+        // A failed constructor's ID is not recycled: an event its body published may still be queued for that ID.
         return actor;
     }
 }
