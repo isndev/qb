@@ -2,11 +2,10 @@
  * @file qb/system/lockfree/mpsc.h
  * @brief Multiple-Producer Single-Consumer lockfree queue
  *
- * This file provides lockfree queue implementations that allow multiple producer
- * threads to safely enqueue items while a single consumer thread dequeues them,
- * all without using locks. These data structures are optimized for high-throughput
- * concurrent systems where multiple threads need to communicate with a single
- * processing thread.
+ * This file provides lockfree queue implementations that allow multiple producer threads
+ * to safely enqueue items while a single consumer thread dequeues them, all without using
+ * locks. These data structures are optimized for high-throughput concurrent systems where
+ * multiple threads need to communicate with a single processing thread.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -27,6 +26,7 @@
 #ifndef QB_LOCKFREE_MPSC_H
 #define QB_LOCKFREE_MPSC_H
 #include <cassert>
+#include <concepts>
 #include <mutex>
 #include "spinlock.h"
 #include "spsc.h"
@@ -139,15 +139,15 @@ public:
     /**
      * @brief Enqueue multiple items using a round-robin producer index
      *
-     * Selects a producer with a per-thread round-robin counter, for even load across producers, and takes its lock.
-     * `enqueue<false>(t, size)` names this form: the compile-time-index form is `enqueue_at` (Huly QB-980).
+     * Picks a producer by a per-thread round-robin counter (one per overload instance, shared by every ring of this type), locks it.
+     * `enqueue<false>(t, size)` names this form, the compile-time index being `enqueue_at` (Huly QB-980).
      *
-     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit
+     * @tparam _All A `bool`, never an integer (`enqueue<0>(t, size)` does not compile): true, all items or none; false, as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
         static thread_local size_t tl_index = 0;
@@ -414,15 +414,15 @@ public:
     /**
      * @brief Enqueue multiple items using a round-robin producer index
      *
-     * This method automatically selects a producer using a per-thread
+     * The producer is picked, then locked, by a counter per overload instance and shared by every ring of this type: a per-thread
      * round-robin counter, providing even load balancing across producers.
      *
-     * @tparam _All If true, requires all items to be enqueued or none; if false, takes as many as fit -- `enqueue<false>(t, size)`
+     * @tparam _All A `bool`, never an integer (`enqueue<0>(t, size)` does not compile): true, all items or none; false, as many as fit
      * @param t Array of items to enqueue
      * @param size Number of items to enqueue
      * @return The number of items successfully enqueued
      */
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t
     enqueue(T const *t, size_t const size) {
         static thread_local size_t tl_index = 0;

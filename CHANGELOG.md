@@ -335,11 +335,15 @@ policy.
   `enqueue<false>(items, n)` was ambiguous with `enqueue<Index>(items, n)` on every compiler, `false` converting to
   an index and the two templates having the same parameters, so the round-robin form could only be called with its
   default `All = true`. Under the new name `enqueue<false>(items, n)` and `enqueue<true>(items, n)` name the
-  round-robin form alone, and `false` takes as many items as fit. Code that called `enqueue<Index>(...)` no longer
-  compiles: write `enqueue_at<Index>(...)`. The runtime-index forms, `enqueue(index, ...)`, and the round-robin
-  ones keep their names. Nothing in qb, its modules, the examples or qb-vs-others called the compile-time-index
-  forms outside the test that pins them, `mpsc-dequeue-parity` (`EveryBulkEnqueueOverloadForwardsAll`, now in both
-  polarities on the round-robin form, and `CompileTimeIndexFormsAreEnqueueAt`).
+  round-robin form alone, and `false` takes as many items as fit. The round-robin bulk form's `_All` is now
+  `std::same_as<bool> auto`, a `bool` and never an integer: with a plain `bool`, the old index spelling
+  `enqueue<0>(items, n)` / `enqueue<1>(items, n)` -- ambiguous until the rename -- compiled after it as the round-robin
+  form with `All = false` / `true` on g++-14, clang-19 and MSVC (which took `enqueue<2>` too); it does not compile.
+  Code that called `enqueue<Index>(...)` no longer compiles: write `enqueue_at<Index>(...)`. The runtime-index
+  forms, `enqueue(index, ...)`, and the round-robin ones keep their names. Nothing in qb, its modules, the examples
+  or qb-vs-others called the compile-time-index forms outside the test that pins them, `mpsc-dequeue-parity`
+  (`EveryBulkEnqueueOverloadForwardsAll`, now in both polarities on the round-robin form, and
+  `CompileTimeIndexFormsAreEnqueueAt`).
 
 ### Removed
 
@@ -705,7 +709,8 @@ policy.
   first and the queue committed after; the item stays at the head, still counted, and the next `pop` returns it.
 - **The fixed-producer `mpsc::ringbuffer::enqueue<Index, false>(items, n)` takes as many items as fit (Huly
   QB-280).** That one bulk overload dropped its `_All` argument and always enqueued all-or-nothing, returning 0 where
-  a partial enqueue was asked for; it now forwards `_All` like its three siblings. The engine's mailbox is the
+  a partial enqueue was asked for; it now forwards `_All` like its five siblings (a compile-time-index, a
+  runtime-index and a round-robin bulk overload on each of the two variants). The engine's mailbox is the
   runtime-count variant and never reached it. The overload is spelled `enqueue_at<Index, false>(items, n)` since
   the rename under Changed (Huly QB-980).
 - **`coroutine_scope::join_any()` on a scope with no task returns the `total_count()` sentinel (Huly QB-283).** It

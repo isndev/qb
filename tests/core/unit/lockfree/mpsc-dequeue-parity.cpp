@@ -420,6 +420,14 @@ concept old_single_index_spelling_compiles = requires(R &ring, int const &item) 
 template <typename R>
 concept old_bulk_index_spelling_compiles = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue<1, true>(items, n); };
 
+/// The third old shape, an index alone before the items, must not land on the round-robin form either: its `_All` takes a
+/// `bool`, never an integer. With a plain `bool _All` it did, once the index form was renamed -- measured 2026-10-11 on the
+/// branch before the constraint: g++-14 and clang-19 bound `enqueue<0>(t, n)` and `enqueue<1>(t, n)` to the round-robin
+/// form as `_All = false` / `true` (and refused 2, a narrowing), MSVC 19.51 bound 0, 1 AND 2. On the base those calls were
+/// ambiguous with the index form (on MSVC for every index), so no caller compiled; the constraint keeps it that way.
+template <typename R, auto K>
+concept old_index_spelling_reaches_round_robin = requires(R &ring, int const *items, std::size_t n) { ring.template enqueue<K>(items, n); };
+
 TEST(MpscDequeueParity, CompileTimeIndexFormsAreEnqueueAt) {
     using Dynamic = qb::lockfree::mpsc::ringbuffer<int, kCapacity, 0>;
     static_assert(producer_chosen_at_compile_time_is_enqueue_at<Ring>);
@@ -428,6 +436,12 @@ TEST(MpscDequeueParity, CompileTimeIndexFormsAreEnqueueAt) {
                   "fixed: the compile-time index is `enqueue_at<Index>`, with no alias under the old name");
     static_assert(!old_single_index_spelling_compiles<Dynamic> && !old_bulk_index_spelling_compiles<Dynamic>,
                   "runtime-count: the compile-time index is `enqueue_at<Index>`, with no alias under the old name");
+    static_assert(!old_index_spelling_reaches_round_robin<Ring, 0> && !old_index_spelling_reaches_round_robin<Ring, 1>
+                      && !old_index_spelling_reaches_round_robin<Ring, 2>,
+                  "fixed: an integer must not bind the round-robin form's `_All`");
+    static_assert(!old_index_spelling_reaches_round_robin<Dynamic, 0> && !old_index_spelling_reaches_round_robin<Dynamic, 1>
+                      && !old_index_spelling_reaches_round_robin<Dynamic, 2>,
+                  "runtime-count: an integer must not bind the round-robin form's `_All`");
 
     // Each lands in the ring of the producer it names, and in no other one.
     auto check = [](auto &ring, char const *variant) {

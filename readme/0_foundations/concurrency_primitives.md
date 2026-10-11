@@ -164,7 +164,7 @@ The enqueue API splits into two families with very different safety properties. 
 
 **Indexed enqueue — no lock, caller-bound producers.** The compile-time `enqueue_at<_Index>(...)` and runtime `enqueue(index, ...)` overloads take **no lock**. They write straight into the SPSC ring at that index, which is correct only if at most one thread ever uses a given index (`src/qb/system/lockfree/mpsc.h:74-77`, `:102-105`). The compile-time form was spelled `enqueue<_Index>` until 3.3 and was renamed with no alias, because an explicit `enqueue<false>(t, n)` was ambiguous with it — `false` converts to an index (Huly QB-980). This is the fast path: when each producer thread is permanently bound to its own ring — as in the engine, where the producer index is the sender core's id — no synchronization is needed at all.
 
-**Round-robin enqueue — `SpinLock`-guarded, any thread.** The `enqueue(T const&)` and `enqueue(T const*, size)` overloads pick a producer ring via a `static thread_local` counter modulo the producer count, then take that producer's `SpinLock` under a `std::lock_guard` before writing (`src/qb/system/lockfree/mpsc.h:133-136`). These overloads are safe to call concurrently from arbitrarily many threads, at the cost of the spinlock; the modulo also balances load across rings. Like every other bulk overload, the round-robin one accepts an explicit `_All`: `enqueue<false>(t, size)` enqueues as many items as fit (callable since 3.3).
+**Round-robin enqueue — `SpinLock`-guarded, any thread.** The `enqueue(T const&)` and `enqueue(T const*, size)` overloads pick a producer ring via a `static thread_local` counter modulo the producer count, then take that producer's `SpinLock` under a `std::lock_guard` before writing (`src/qb/system/lockfree/mpsc.h:133-136`). These overloads are safe to call concurrently from arbitrarily many threads, at the cost of the spinlock; the modulo also balances load across rings. That counter is one per overload instance — the single-item form, `enqueue<true>(t, size)` and `enqueue<false>(t, size)` each rotate on their own — and every ring of the same type shares it on a given thread; a thread's items stay in order within a producer ring, not across rings. Like every other bulk overload, the round-robin one accepts an explicit `_All`: `enqueue<false>(t, size)` enqueues as many items as fit (callable since 3.3). That `_All` is a `bool`, never an integer — `std::same_as<bool> auto` — so the old index spelling `enqueue<0>(t, size)` does not compile rather than landing here.
 
 > **Where the framework's only `SpinLock` lives, precisely.** All four `std::lock_guard<SpinLock>` sites in the tree are inside these round-robin overloads — `src/qb/system/lockfree/mpsc.h:135` and `:155` in the fixed-producer specialisation, `:410` and `:430` in the runtime one. **The engine calls none of them.** `SharedCoreCommunication::send` passes its own resolved core id to the *indexed* overload (`src/qb/core/Main.cpp:258`), so the answer to "is there a lock on the message path?" is no — not a fast one, not an uncontended one: none is taken.
 
@@ -184,7 +184,7 @@ public:
 
     // --- round-robin enqueue: per-producer SpinLock; any thread ---
     size_t enqueue(T const &t);
-    template <bool _All = true>
+    template <std::same_as<bool> auto _All = true>
     size_t enqueue(T const *t, size_t size);
 
     // --- consumer side (one thread only) ---
