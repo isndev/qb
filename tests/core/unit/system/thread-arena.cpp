@@ -179,21 +179,23 @@ TEST(ThreadArena, AThreadThatFreedEverythingLeavesItsFirstChunkForTheNextThread)
     // asking ::operator new -- so a thread's exit never frees a 64 KiB block into malloc (the
     // note at the end of thread_arena: that free let glibc trim the arena's top, which the next
     // engine re-faulted inside its measured window).
-    const std::size_t spare_before = thread_arena::spare();
-    void             *first_block  = nullptr;
+    // Earlier threads of this process may have left spares of their own, and the first thread
+    // below takes one if so: the count that pins the hand-over is the one seen after it exits.
+    void *first_block = nullptr;
     std::thread([&] {
-        first_block = thread_arena::allocate(64); // the first block of a fresh chunk
+        first_block = thread_arena::allocate(64); // the first block of its chunk
         thread_arena::deallocate(first_block, 64);
     }).join();
-    EXPECT_EQ(thread_arena::spare(), spare_before + 1);
+    const std::size_t spare_after_first = thread_arena::spare();
+    ASSERT_GE(spare_after_first, 1u); // its chunk is on the list, not in the global allocator
     void       *next_block   = nullptr;
     std::size_t spare_inside = 0;
     std::thread([&] {
-        next_block   = thread_arena::allocate(64); // the same chunk, taken from the spare list
+        next_block   = thread_arena::allocate(64); // the chunk given back last: the same block
         spare_inside = thread_arena::spare();
         thread_arena::deallocate(next_block, 64);
     }).join();
     EXPECT_EQ(next_block, first_block);
-    EXPECT_EQ(spare_inside, spare_before);
-    EXPECT_EQ(thread_arena::spare(), spare_before + 1); // given back again at its exit
+    EXPECT_EQ(spare_inside, spare_after_first - 1);
+    EXPECT_EQ(thread_arena::spare(), spare_after_first); // given back again at its exit
 }
