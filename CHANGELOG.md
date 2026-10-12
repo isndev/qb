@@ -558,7 +558,7 @@ policy.
   -- at rest a 64-core engine commits the 18 MiB of headers and reserves 271 MB of address space (1.1 GB at 128); a
   refused commit terminates the process, as an allocation failure on the `noexcept` send path does. A full mesh still
   writes every ring it uses, as events land. `start()` writes a page where it wrote a ring: the restart witness counts
-  318 page faults in a 16-core engine's first `start()` against 4 177 for the value-initialised mailbox
+  322 page faults in a 16-core engine's first `start()` against 4 177 for the value-initialised mailbox
   (`qb-core-test-system-engine-restart-mailboxes`). The blocks are `region_cache` regions (QB-1012, below), so an
   engine started after another builds its mailboxes in pages the first left mapped -- on Windows with what the first
   committed in them -- each core's mailbox in its own block again: the mailboxes go back to the cache in the exact
