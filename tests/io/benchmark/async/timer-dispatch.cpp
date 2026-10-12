@@ -9,6 +9,18 @@
  * benchmarks isolate the create→fire round-trip and the rearm cost from any
  * socket I/O, driving a real (socket-free) libev loop via `listener::current`.
  *
+ * Four kinds of case, each under its own name (Huly QB-300):
+ *   - INLINE: `callback(fn, d <= 0)` calls `fn` before it returns and never
+ *     reaches the loop (`qb/io/async/io.h`); `BM_Callback_ZeroDelayInline` and
+ *     the zero-delay `scoped_callback` measure that call -- the controls;
+ *   - TIMER DISPATCH: `callback(fn, d > 0)` arms a `Timeout` that the loop fires
+ *     on a later pass; `BM_Callback_TimerDispatch` measures arm -> pass -> fire;
+ *   - BULK: `BM_Callback_BulkTimerDispatch` arms a batch, then drains it;
+ *   - REARM ONLY: `BM_WithTimeout_Rearm`, a deadline pushed forward, never fired.
+ * Each case asserts, outside its measurement, the path it claims: a dispatch
+ * case counts the loop passes between arm and fire and refuses a fire that
+ * needed none; an inline case refuses a callback that registered a watcher.
+ *
  * Seeded from the demoted perf smoke tests in the former test-async-io
  * (IntensiveAsyncOperations / ManyConcurrentTimers, ~4000 timers) — now
  * relocated to system/async/timer-stress.cpp as correctness cases. Throughput
@@ -30,7 +42,6 @@
  * @ingroup IO
  */
 
-#include <atomic>
 #include <benchmark/benchmark.h>
 #include <chrono>
 #include <cstddef>
@@ -46,16 +57,30 @@ using namespace std::chrono_literals;
 
 namespace {
 
+// The smallest positive delay. It takes `callback`'s timer path -- a `Timeout` armed on the
+// loop, fired by the first pass whose clock reading lies strictly past its deadline -- where
+// any non-positive delay calls the function inline, before `callback` returns, and never
+// reaches the loop at all (`qb/io/async/io.h`). The counters below are plain: every callback
+// runs on this thread, from inside `listener::run()`, an opaque call for the optimiser.
+constexpr qb::duration kSmallestDelay{1};
+
 // ---------------------------------------------------------------------------
 // Pump the libev loop with EVRUN_NOWAIT until `pred()` holds or `max_passes`
-// passes are exhausted (deadline guard so a broken bench never wedges the run).
+// passes are exhausted (deadline guard so a broken bench never wedges the run),
+// and return the number of passes that ran: 0 when `pred()` already held. That
+// count is the dispatch cases' witness -- a callback the loop fired needed at
+// least one pass; one that fired inline, before the drain, needed none.
 // ---------------------------------------------------------------------------
 template <typename Predicate>
-void
+std::size_t
 drain_until(Predicate &&pred, std::size_t max_passes = 1'000'000u) {
-    auto &listener = qb::io::async::listener::current;
-    for (std::size_t pass = 0; pass < max_passes && !pred(); ++pass)
+    auto       &listener = qb::io::async::listener::current;
+    std::size_t passes   = 0;
+    while (passes < max_passes && !pred()) {
         listener.run(EVRUN_NOWAIT);
+        ++passes;
+    }
+    return passes;
 }
 
 // A with_timeout handler whose deadline we keep rearming via updateTimeout().
@@ -75,62 +100,115 @@ public:
 };
 
 // ---------------------------------------------------------------------------
-// async::callback(fn, 0) fast path: schedule a zero-delay one-shot Timeout and
-// let the loop dispatch it. Measures the per-callback create→fire round-trip.
-// Each iteration is one full dispatch so timers/sec == items/sec.
+// async::callback(fn, 0): the CONTROL of the zero-delay path. A non-positive
+// delay calls `fn` inline, before `callback` returns -- no `Timeout`, no
+// watcher, no pass -- so this measures a function call, never a dispatch. The
+// loop is not run here at all: every fire counted is an inline one, and a
+// callback that registered a watcher would leave the listener's count moved.
 // ---------------------------------------------------------------------------
 void
-BM_Callback_ImmediateDispatch(benchmark::State &state) {
+BM_Callback_ZeroDelayInline(benchmark::State &state) {
     qb::io::async::init();
-    std::atomic<std::size_t> fired{0};
+    auto             &listener   = qb::io::async::listener::current;
+    const std::size_t registered = listener.size();
+    std::size_t       fired      = 0;
 
     for (auto _ : state) {
-        qb::io::async::callback([&fired] { fired.fetch_add(1, std::memory_order_relaxed); }, qb::duration::zero());
-        drain_until([&fired, n = fired.load(std::memory_order_relaxed)] { return fired.load(std::memory_order_relaxed) > n; });
+        qb::io::async::callback([&fired] { ++fired; }, qb::duration::zero());
+        benchmark::DoNotOptimize(fired);
     }
 
-    const auto total = fired.load(std::memory_order_relaxed);
-    qb::io::async::listener::current.clear();
+    const bool armed_a_watcher = listener.size() != registered;
+    listener.clear();
 
-    // One out-of-loop correctness assert: a broken bench (callback never fires)
-    // is caught here rather than silently reporting bogus throughput.
-    if (total != static_cast<std::size_t>(state.iterations()))
-        state.SkipWithError("async::callback dispatch count mismatch");
+    // Out of the measurement: each iteration fired once, with no pass run and no watcher left.
+    if (fired != static_cast<std::size_t>(state.iterations()))
+        state.SkipWithError("a zero-delay callback did not fire inline, before callback() returned");
+    else if (armed_a_watcher)
+        state.SkipWithError("a zero-delay callback registered a watcher: it no longer runs inline");
 
     state.SetItemsProcessed(state.iterations());
 }
 
 // ---------------------------------------------------------------------------
-// Bulk dispatch: arm `count` zero-delay callbacks, then drain the whole batch.
-// Amortizes the per-pass loop overhead across many timers — the IntensiveAsync
-// shape (thousands of timers armed at once). Reports timers/sec.
+// async::callback(fn, d > 0): one timer armed, then the loop pumped until it
+// fires. Measures the real create -> pass -> fire round-trip (the `Timeout`
+// from its freelist, its watcher started on a refreshed clock, the pass that
+// fires it, the self-delete). Each iteration is one dispatch, so timers/sec ==
+// items/sec, and `passes_per_fire` says how many passes the loop took.
 // ---------------------------------------------------------------------------
 void
-BM_Callback_BulkDispatch(benchmark::State &state) {
-    const auto count = static_cast<std::size_t>(state.range(0));
+BM_Callback_TimerDispatch(benchmark::State &state) {
     qb::io::async::init();
-    std::atomic<std::size_t> fired{0};
+    std::size_t fired  = 0;
+    std::size_t passes = 0;
 
     for (auto _ : state) {
-        const auto base = fired.load(std::memory_order_relaxed);
-        for (std::size_t i = 0; i < count; ++i)
-            qb::io::async::callback([&fired] { fired.fetch_add(1, std::memory_order_relaxed); }, qb::duration::zero());
-        drain_until([&] { return fired.load(std::memory_order_relaxed) >= base + count; });
+        const std::size_t before = fired; // captured BEFORE arming: the fire must come later
+        qb::io::async::callback([&fired] { ++fired; }, kSmallestDelay);
+        const std::size_t ran = drain_until([&fired, before] { return fired != before; });
+        passes += ran;
+        if (ran == 0 || fired == before) [[unlikely]] {
+            state.SkipWithError(ran == 0 ? "a positive-delay callback fired inline, before any loop pass"
+                                         : "a positive-delay callback never fired within the pass budget");
+            break;
+        }
     }
 
-    const auto total = fired.load(std::memory_order_relaxed);
+    const auto total = fired;
     qb::io::async::listener::current.clear();
 
-    if (total != static_cast<std::size_t>(state.iterations()) * count)
-        state.SkipWithError("bulk callback dispatch count mismatch");
+    // Out of the measurement: one fire per iteration, every one of them through at least one pass.
+    if (total != static_cast<std::size_t>(state.iterations()) || passes < total)
+        state.SkipWithError("timer dispatch count mismatch");
 
+    state.counters["passes_per_fire"] = benchmark::Counter(static_cast<double>(passes), benchmark::Counter::kAvgIterations);
+    state.SetItemsProcessed(state.iterations());
+}
+
+// ---------------------------------------------------------------------------
+// Bulk dispatch: arm `count` positive-delay callbacks, then drain the whole
+// batch. Amortizes the per-pass loop overhead across many timers — the
+// IntensiveAsync shape (thousands of timers armed at once). Nothing may fire
+// while the batch is armed; `passes_per_batch` says how many passes fired it.
+// Reports timers/sec.
+// ---------------------------------------------------------------------------
+void
+BM_Callback_BulkTimerDispatch(benchmark::State &state) {
+    const auto count = static_cast<std::size_t>(state.range(0));
+    qb::io::async::init();
+    std::size_t fired  = 0;
+    std::size_t passes = 0;
+
+    for (auto _ : state) {
+        const std::size_t base = fired;
+        for (std::size_t i = 0; i < count; ++i)
+            qb::io::async::callback([&fired] { ++fired; }, kSmallestDelay);
+        const bool none_inline = fired == base;
+        passes += drain_until([&] { return fired - base >= count; });
+        if (!none_inline || fired - base != count) [[unlikely]] {
+            state.SkipWithError(!none_inline ? "a positive-delay callback fired while its batch was being armed"
+                                             : "the batch did not fire exactly once per callback within the pass budget");
+            break;
+        }
+    }
+
+    const auto total = fired;
+    qb::io::async::listener::current.clear();
+
+    if (total != static_cast<std::size_t>(state.iterations()) * count || passes < static_cast<std::size_t>(state.iterations()))
+        state.SkipWithError("bulk timer dispatch count mismatch");
+
+    state.counters["passes_per_batch"] = benchmark::Counter(static_cast<double>(passes), benchmark::Counter::kAvgIterations);
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
 }
 
 // ---------------------------------------------------------------------------
 // scoped_callback: owned one-shot timer construct + immediate-fire (0 delay) +
 // destroy. The caller holds the unique_ptr, so there is no self-delete dance —
-// this measures the RAII-owned timer hot path (per-connection deadlines).
+// this measures the RAII-owned timer hot path (per-connection deadlines). An
+// INLINE case like BM_Callback_ZeroDelayInline: the watcher is registered and
+// unregistered, never started, and the call happens inside the constructor.
 // ---------------------------------------------------------------------------
 void
 BM_ScopedCallback_ConstructFireDestroy(benchmark::State &state) {
@@ -179,8 +257,9 @@ BM_WithTimeout_Rearm(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK(BM_Callback_ImmediateDispatch)->Unit(benchmark::kNanosecond)->UseRealTime();
-BENCHMARK(BM_Callback_BulkDispatch)->Arg(64)->Arg(1024)->Arg(4096)->ArgName("timers")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Callback_ZeroDelayInline)->Unit(benchmark::kNanosecond)->UseRealTime();
+BENCHMARK(BM_Callback_TimerDispatch)->Unit(benchmark::kNanosecond)->UseRealTime();
+BENCHMARK(BM_Callback_BulkTimerDispatch)->Arg(64)->Arg(1024)->Arg(4096)->ArgName("timers")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_ScopedCallback_ConstructFireDestroy)->Unit(benchmark::kNanosecond)->UseRealTime();
 BENCHMARK(BM_WithTimeout_Rearm)->Unit(benchmark::kNanosecond)->UseRealTime();
 

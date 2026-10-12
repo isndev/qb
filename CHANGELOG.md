@@ -1185,6 +1185,19 @@ policy.
   `ListenerTimerGate.ADeadlineExactlyAtThePassTimeIsDueNeitherForTheGateNorForTheLoop` (on a supplied clock, every
   platform) and by one loop run per fired timer in `ATimerWithinReachFiresOnTheFirstPassAfterItsDeadline` (red on
   MSVC before the change).
+- **`qb-io-bench-timer-dispatch`: the two "dispatch" cells measured inline calls (Huly QB-300).**
+  `async::callback(fn, d)` with `d <= 0` calls `fn` before it returns and never reaches the loop, and both cells armed
+  that way. `BM_Callback_ImmediateDispatch` read its baseline AFTER the inline fire, so its predicate could never
+  hold and every iteration burned the drain's whole budget -- 1 000 000 empty `EVRUN_NOWAIT` passes, 3.13 ms an
+  iteration on MSVC in the 3.3 wave-1 A/B -- while its final count still matched, each inline call counting one fire;
+  `BM_Callback_BulkDispatch` fired its batch while arming it and measured `count` direct calls. The file now keeps
+  four kinds of case apart, each asserting its path outside the measurement: `BM_Callback_ZeroDelayInline` (the
+  inline control: no pass is ever run, no watcher may be registered), `BM_Callback_TimerDispatch` and
+  `BM_Callback_BulkTimerDispatch/timers:N` (a 1 ns delay, the timer path: the baseline taken before arming, nothing
+  may fire before the first pass, the passes between arm and fire counted -- `passes_per_fire`,
+  `passes_per_batch` -- and a fire that needed none refused), the zero-delay `scoped_callback` and the rearm-only
+  case unchanged. A figure quoted for the two retired names, the QB-1016 A/B above among them, measured empty passes
+  and inline calls, not a dispatch. Benchmark and docs only; `callback`'s semantics are unchanged.
 
 ### Documentation
 
