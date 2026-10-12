@@ -68,6 +68,10 @@ constexpr std::size_t   kPublishers = 8;
 constexpr std::size_t   kWriters    = 8;
 constexpr std::uint64_t kItemsEach  = 4 * kCap;
 constexpr int           kRounds     = 32;
+/// How long the consumer of a concurrent case waits with nothing to take before it calls the round lost: a protocol that
+/// refuses a ring's producer for good -- a ring never opened, a consumer's index over the closed mark -- fails the case
+/// in that time instead of hanging the binary.
+constexpr auto kStall = std::chrono::seconds(10);
 
 /// An item that says in which round, from which producer and in what order it was sent.
 [[nodiscard]] constexpr std::uint64_t
@@ -180,14 +184,15 @@ TEST(MpscBlockRing, ProducersOpeningTheirRingsWhileTheConsumerWalksDeliverEveryI
         Block                    block(kPublishers, true);
         std::latch               go(1);
         std::atomic<std::size_t> finished{0};
+        std::atomic<bool>        give_up{false};
         auto const               tag = static_cast<std::uint64_t>(round);
 
         std::vector<std::thread> producers;
         producers.reserve(kPublishers);
         for (std::size_t p = 0; p < kPublishers; ++p)
-            producers.emplace_back([&block, &go, &finished, p, tag] {
+            producers.emplace_back([&block, &go, &finished, &give_up, p, tag] {
                 go.wait();
-                for (std::uint64_t seq = 0; seq < kItemsEach;) {
+                for (std::uint64_t seq = 0; seq < kItemsEach && !give_up.load(std::memory_order_relaxed);) {
                     if (block.enqueue(p, item(p, seq, tag)))
                         ++seq;
                     else
@@ -222,13 +227,18 @@ TEST(MpscBlockRing, ProducersOpeningTheirRingsWhileTheConsumerWalksDeliverEveryI
 
         EXPECT_EQ(walk(), 0u) << "round " << round << ": a closed ring delivered";
         go.count_down(); // the consumer is walking; the producers open their rings now
-        for (;;) {
+        for (auto last = std::chrono::steady_clock::now();;) {
             const bool        all_done = finished.load(std::memory_order_acquire) == kPublishers; // BEFORE the walk
             const std::size_t drained  = walk();
             received += drained;
             if (received >= kPublishers * kItemsEach || (all_done && drained == 0))
                 break;
+            if (drained)
+                last = std::chrono::steady_clock::now();
+            else if (std::chrono::steady_clock::now() - last > kStall)
+                break; // a producer refused for good: the round is lost, and says so below
         }
+        give_up.store(true, std::memory_order_relaxed);
         for (auto &producer : producers)
             producer.join();
 
@@ -248,12 +258,13 @@ TEST(MpscBlockRing, RoundRobinWritersOpenAClosedRingOnceUnderItsLock) {
         Block                    block(1, true);
         std::latch               go(kWriters);
         std::atomic<std::size_t> finished{0};
+        std::atomic<bool>        give_up{false};
         std::vector<std::thread> writers;
         writers.reserve(kWriters);
         for (std::size_t w = 0; w < kWriters; ++w)
-            writers.emplace_back([&block, &go, &finished, w] {
+            writers.emplace_back([&block, &go, &finished, &give_up, w] {
                 go.arrive_and_wait();
-                for (std::uint64_t seq = 0; seq < kItemsEach;) {
+                for (std::uint64_t seq = 0; seq < kItemsEach && !give_up.load(std::memory_order_relaxed);) {
                     if (block.enqueue(item(w, seq)))
                         ++seq;
                     else
@@ -266,7 +277,7 @@ TEST(MpscBlockRing, RoundRobinWritersOpenAClosedRingOnceUnderItsLock) {
         std::size_t                out_of_order = 0;
         std::size_t                received     = 0;
         std::vector<std::uint64_t> scratch(kCap);
-        for (;;) {
+        for (auto last = std::chrono::steady_clock::now();;) {
             const bool        all_done = finished.load(std::memory_order_acquire) == kWriters;
             const std::size_t drained  = block.consume_all(
                 [&](std::uint64_t *items, std::size_t const count) {
@@ -283,7 +294,12 @@ TEST(MpscBlockRing, RoundRobinWritersOpenAClosedRingOnceUnderItsLock) {
             received += drained;
             if (received >= kWriters * kItemsEach || (all_done && drained == 0))
                 break;
+            if (drained)
+                last = std::chrono::steady_clock::now();
+            else if (std::chrono::steady_clock::now() - last > kStall)
+                break; // the ring refused its writers for good: the round is lost, and says so below
         }
+        give_up.store(true, std::memory_order_relaxed);
         for (auto &writer : writers)
             writer.join();
         ASSERT_EQ(received, kWriters * kItemsEach) << "round " << round;
