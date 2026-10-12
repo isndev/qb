@@ -177,5 +177,6 @@ unset(_qb_multi_config)
 # was lent and unmaps the oldest first; trim() unmaps every cached region and never a lent one; the allocator sends a
 # request there from 64 KiB and no smaller, and a region_vector lends exactly the buffer it holds. Its size lists
 # (Huly QB-203): a size found under hundreds of newer regions of another, newest first per size, the bound cutting the
-# oldest region of a size, a table of 200 sizes.
+# oldest region of a size, a table of 200 sizes. A reserved region (QB-203) is lent again as one with what was committed
+# in it, and on Windows never for a committed request nor a committed region for a reserved one.
 qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.cpp DEPENDS ${PROJECT_NAME})

@@ -12,19 +12,18 @@
  * @brief The runtime-producer `mpsc::ringbuffer` allocates a producer's ring on that producer's first enqueue, and
  *        on nothing else (Huly QB-203).
  *
- * `mpsc::ringbuffer<T, max_size, 0>` is what every core's mailbox is, with one producer index per core of the engine.
- * It used to value-initialise a vector of all its producers' rings at construction -- the engine's N mailboxes of N
- * rings each, every byte written at `Main::start()`. It now holds one slot per producer and constructs a ring the first
- * time its producer enqueues -- on POSIX in its place in one block the buffer takes at construction, untouched until
- * then; on Windows in a region of its own. The engine's `Mailbox` constructs every ring at once on POSIX (a page each,
- * its slot array untouched) and none on Windows; what an engine holds before its first event is
+ * `mpsc::ringbuffer<T, max_size, 0>` used to value-initialise a vector of all its producers' rings at construction --
+ * what the engine's mailboxes were until 3.3, N of them of N rings each, every byte written at `Main::start()`. It now
+ * holds one slot per producer and constructs a ring the first time its producer enqueues -- on POSIX in its place in
+ * one block the buffer takes at construction, untouched until then; on Windows in a region of its own. The engine's
+ * `Mailbox` is no longer this type but `mpsc::block_ringbuffer`, every ring built at once
+ * (`qb-core-test-unit-mpsc-block-ring`); what an engine holds before its first event is
  * `qb-core-test-system-mailbox-footprint`.
  *
  * What this file pins:
  *   - construction allocates no ring, and neither do the consumer's walks (`has_data`, both `consume_all`, `dequeue`);
  *   - each producing form -- `enqueue(index, ...)` single and bulk, `enqueue_at<Index>`, the producer-side `ringOf` --
- *     allocates that producer's ring and no other, once; the engine's `Mailbox` starts with every ring on POSIX, with
- *     none on Windows;
+ *     allocates that producer's ring and no other, once;
  *   - rings published while the consumer is already walking deliver every item, once and in order per producer: the
  *     slot's compare-exchange against the consumer's acquire load, which ThreadSanitizer checks;
  *   - engine-sized rings (66 176 bytes) live in `region_cache` regions (Huly QB-1012) -- on POSIX one per buffer, taken
@@ -35,7 +34,6 @@
  */
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <latch>
@@ -49,8 +47,6 @@
 #include <qb/system/lockfree/mpsc.h>
 
 namespace mpsc_ring_allocation_test {
-
-using namespace std::chrono_literals;
 
 constexpr std::size_t kCap = 63; // a 64-slot ring: the publication case's producers find theirs full and retry
 using Ring                 = qb::lockfree::mpsc::ringbuffer<std::uint64_t, kCap, 0>;
@@ -107,16 +103,6 @@ TEST(MpscRingAllocation, ARingIsAllocatedByItsProducersFirstEnqueueAndByNothingE
     ASSERT_EQ(ring.dequeue(out.data(), out.size()), 4u);
     out.resize(4);
     EXPECT_EQ(out, (std::vector<std::uint64_t>{item(3, 0), item(5, 0), item(9, 0), item(9, 1)})) << "producers drain in index order";
-
-    // The engine's mailbox is this buffer, every producer of which produces: on POSIX it constructs every ring at once, in
-    // its block (a page each), so a consumer's walk never finds an empty slot; on Windows it starts with none, as this
-    // buffer does -- a ring constructed there is a region committed.
-    qb::SharedCoreCommunication::Mailbox mailbox(qb::MaxCores, 0ns, 0us);
-#if defined(_WIN32)
-    EXPECT_EQ(mailbox.rings(), 0u);
-#else
-    EXPECT_EQ(mailbox.rings(), qb::MaxCores);
-#endif
 }
 
 TEST(MpscRingAllocation, RingsPublishedWhileTheConsumerWalksDeliverEveryItemInOrder) {
@@ -191,7 +177,7 @@ TEST(MpscRingAllocation, RingsPublishedWhileTheConsumerWalksDeliverEveryItemInOr
 
 namespace region = qb::allocator::detail;
 
-/// The engine's mailbox ring type: 66 176-byte producers, in one `region_cache` region per buffer (POSIX) or per ring.
+/// Engine-sized rings: 66 176-byte producers, in one `region_cache` region per buffer (POSIX) or per ring.
 using EngineRing                   = qb::lockfree::mpsc::ringbuffer<EventBucket, qb::detail::max_deliverable_buckets, 0>;
 constexpr std::size_t kEngineRings = 8; // fewer than the stagger's 28 slots: one buffer's rings all differ
 constexpr std::size_t kRacers      = 8;

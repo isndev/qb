@@ -11,7 +11,7 @@
  * @file benchmark/micro/mpsc-mailbox-fanin.cpp
  * @brief Lock-free MPSC mailbox fan-in sweep (pseudo-framework primitive, no `qb::Main`).
  *
- * Drains `qb::lockfree::mpsc::ringbuffer<EventBucket, Cap, 0>` — the exact element type and
+ * Drains `qb::lockfree::mpsc::block_ringbuffer<EventBucket, Cap>` — the exact type and
  * per-producer-slice routing model the engine uses for actor mailboxes — under sustained N→1
  * fan-in. The Google Benchmark template parameter `MailboxCap` is the compile-time per-producer
  * ring capacity (mirrors `Main.h`'s `MaxRingEvents`); registering several values lets you compare

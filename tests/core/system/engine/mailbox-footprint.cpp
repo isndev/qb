@@ -12,13 +12,14 @@
  * @brief What an engine holds before its first event: memory in proportion to its cores, and at most a page of a
  *        mailbox ring per pair of cores (Huly QB-203).
  *
- * Every core's mailbox is a `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` with one producer index
- * per core of the engine, and behind each index sits an SPSC ring of 1 024 event buckets -- 66 KB with the default
- * 64-byte bucket. Until 3.3 the mailbox built all of its rings at once and value-initialised them, so `Main::start()`
- * wrote N x N rings: 1 GiB at 128 cores, resident before the first event, almost all of it for pairs of cores that
- * never talk. On POSIX the rings now share one block per mailbox and are constructed at `Main::start()` -- each ring's
- * lock and index lines written, one page, its slot array untouched until its producer writes it; on Windows a ring
- * is allocated by its producer's first enqueue, a region of its own.
+ * Every core's mailbox is a `qb::lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>` with one producer
+ * index per core of the engine, and behind each index sits an SPSC ring of 1 024 event buckets -- 66 KB with the
+ * default 64-byte bucket. Until 3.3 the mailbox built all of its rings at once and value-initialised them, so
+ * `Main::start()` wrote N x N rings: 1 GiB at 128 cores, resident before the first event, almost all of it for pairs of
+ * cores that never talk. The rings now share one block per mailbox and are constructed at `Main::start()` -- each
+ * ring's lock and index lines written, one page, its slot array untouched until its producer writes it; on Windows the
+ * block is reserved, each ring's header pages committed and the ring built closed, its slots committed by its
+ * producer's first write.
  *
  * The witness reads the process's own memory -- the resident set on Linux (`/proc/self/statm`) and macOS
  * (`task_info`), the working set and the private commit on Windows (`GetProcessMemoryInfo`) -- across the start of an
@@ -41,10 +42,10 @@
  * measured engine writes whatever rings it builds into pages the process does not hold, as a process's first engine
  * does.
  *
- * The mechanism -- no ring before a producer enqueues for the plain buffer, every ring constructed at once for the
- * engine's mailbox on POSIX, a ring published while the consumer walks -- is pinned on the primitive itself,
- * `qb-core-test-unit-mpsc-ring-allocation`. This file uses nothing the eager mailbox did not have, so it builds, and
- * fails, on the code before the fix.
+ * The mechanism -- every ring of the engine's mailbox constructed at once without its slots, on Windows closed with
+ * only its header committed and opened by its first write -- is pinned on the primitive itself,
+ * `qb-core-test-unit-mpsc-block-ring`. This file uses nothing the eager mailbox did not have, so it builds, and fails,
+ * on the code before the fix.
  */
 
 #include <chrono>

@@ -23,7 +23,7 @@
  * to itself through its mailbox -- so a block that passes to ANOTHER core's mailbox brings it a ring whose slot pages were
  * never written, and that core's laps fault them: 16 pages a mailbox. The cache lends the region of a size it took back
  * last, first, so the mailboxes are given back in the exact reverse of the order they were built in (Main) for each
- * core's mailbox to find its own block, and a block lays its rings out with no colour, for them to sit where they sat.
+ * core's mailbox to find its own block, whose rings sit at fixed offsets (`mpsc::block_ringbuffer`), where they sat.
  * Given back in the order they were built, a second 16-core engine faulted 248 pages here, 220 of them in the cores; in
  * the reverse order, 25 (24 + 1).
  *

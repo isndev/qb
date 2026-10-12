@@ -3,7 +3,7 @@
  * @brief Lock-free MPSC fan-in scaffold for the pseudo-framework mailbox benches
  *
  * bm-mpsc-mailbox-sweep and bm-mpsc-router-mailbox both model a single consumer core draining
- * \c qb::lockfree::mpsc::ringbuffer<EventBucket, Cap, 0> (the same shape as engine mailboxes,
+ * \c qb::lockfree::mpsc::block_ringbuffer<EventBucket, Cap> (the type of the engine's mailboxes,
  * one dedicated SPSC slice per producer) under sustained fan-in. They share, verbatim:
  *
  *   - \c quota_for()              — even split of \c total across producers (remainder to the
@@ -118,7 +118,7 @@ template <std::size_t MailboxCap, typename MakeBucket, typename Consume>
 [[nodiscard]] fan_in_result
 run_mpsc_fan_in(std::size_t const nb_producers, std::uint64_t const total, std::size_t const dequeue_batch, MakeBucket make_bucket,
                 Consume consume) {
-    qb::lockfree::mpsc::ringbuffer<EventBucket, MailboxCap, 0> queue(nb_producers);
+    qb::lockfree::mpsc::block_ringbuffer<EventBucket, MailboxCap> queue(nb_producers);
 
     const std::size_t batch_cap = std::max<std::size_t>(1u, dequeue_batch);
     auto              batch_buf = std::make_unique<EventBucket[]>(batch_cap);
