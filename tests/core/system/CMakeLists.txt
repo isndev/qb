@@ -219,11 +219,11 @@ qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES conc
 # builds its per-core buffers in memory its predecessor left faulted (Huly QB-1012): the router's tables, the actor
 # registry, the kill queues and the broadcast snapshot of a 40 000-actor core in the first, re-faulted by every engine
 # after the first when they lived in malloc; in the second, the mailbox rings of a 16-core engine whose pairs all talk
-# -- a lap of every ring, allocated by its sender's first event (Huly QB-203) -- counted on the threads that write
-# them, the second engine of a fresh process judged, a binary of its own because only a fresh process decided the
-# eager rings' fate the same way every time. Both count page faults, never time. A sanitizer replaces the allocator
-# whose behaviour they count, so neither exists in a sanitizer build -- a capability gate, like actor-arena-poison's;
-# the per-thread count of the second is Linux's.
+# -- a lap of every ring, each core's mailbox finding its own block again (Huly QB-203), three pages a core at most --
+# counted on the threads that write them, the second engine of a fresh process judged, a binary of its own because
+# only a fresh process decided the eager rings' fate the same way every time. Both count page faults, never time. A
+# sanitizer replaces the allocator whose behaviour they count, so neither exists in a sanitizer build -- a capability
+# gate, like actor-arena-poison's; the per-thread count of the second is Linux's.
 if(NOT QB_SANITIZE AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
     qb_add_test(MODULE qb-core TIER system NAME engine-restart-faults SOURCES engine/engine-restart-faults.cpp DEPENDS ${PROJECT_NAME})
 endif()

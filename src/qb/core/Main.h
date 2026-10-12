@@ -512,8 +512,9 @@ public:
         io::async::listener    *_loop = nullptr; ///< The consumer's io loop; written under `_mtx`.
 
     public:
-        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin)
-            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer, true) // every ring now (POSIX)
+        /// @p ordinal: the core's resolved index, its rings' colour -- the same in every engine of this shape (mpsc.h).
+        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin, std::size_t const ordinal = 0)
+            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer, true, ordinal) // every ring now (POSIX)
             , _latency(latency)
             , _idle_spin(idle_spin) {}
 

@@ -321,9 +321,11 @@ public:
  *   which the store buffer cannot tell apart until a store commits (4K aliasing -- what `segmented_pipe` staggers its
  *   segments against). The vector of rings this replaced spread them by its 66 176-byte stride, 640 bytes in a page, and
  *   the block keeps that stride. A ring therefore starts `((5 * index + s) % slots) * alignof(Producer)` bytes into its
- *   region, `s` taken per buffer from a counter, in the bytes the region's page rounding leaves anyway -- 28 slots for
- *   the engine's rings in their 17-page regions; the block starts `s` slots in, and its stride moves each ring five slots
- *   on. The two rings of a pair of cores never share a page offset.
+ *   region, `s` the buffer's colour -- its core's resolved index for an engine's mailbox, the next value of a counter
+ *   for any other buffer -- in the bytes the region's page rounding leaves anyway: 28 slots for the engine's rings in
+ *   their 17-page regions; the block starts `s` slots in, and its stride moves each ring five slots on. The two rings of
+ *   a pair of cores share a page offset only when the cores' indices differ by a multiple of eight (seven in per-ring
+ *   regions), and a core's mailbox is laid out the same in every engine of the same shape.
  * - **Publication.** A slot is CLAIMED -- a compare-exchange from null to a value no ring has -- before its ring is
  *   constructed, by default-initialisation (placement `new Producer`, never `Producer()`): the lock and the ring's four
  *   index blocks are written, the slot array is left untouched, pages the process does not hold yet. The ring is then
@@ -397,10 +399,11 @@ class ringbuffer<T, max_size, 0> : public nocopy {
 
     std::unique_ptr<SlotLine[]> _slots;       ///< One slot per producer, `slots_per_line` to a line
     const std::size_t           _nb_producer; ///< Number of producers
-    const std::size_t           _stagger;     ///< This buffer's first stagger slot: see `stagger_of`
+    const std::size_t           _stagger;     ///< This buffer's colour, its first stagger slot: see `stagger_of`
     Producer *const             _block;       ///< CONTIGUOUS: room for `_nb_producer + 1` rings (the stagger's slack); else null
 
-    /// Consecutive buffers -- an engine's mailboxes, built in core order -- take consecutive first slots.
+    /// The colour of a buffer built by the public constructor: consecutive buffers take consecutive first slots. The
+    /// engine's mailboxes pass their core's resolved index instead (the protected constructor).
     [[nodiscard]] static size_t
     next_stagger() noexcept {
         static constinit std::atomic<size_t> built{0};
@@ -408,7 +411,8 @@ class ringbuffer<T, max_size, 0> : public nocopy {
     }
 
     /// Where producer @p index's ring starts in its region (PER RING): five slots further for each producer and one
-    /// for each buffer, so the two rings of a pair of cores never share a page offset. CONTIGUOUS lays the rings out
+    /// for each buffer's colour, so the two rings of a pair of cores share a page offset only when their cores' colours
+    /// differ by a multiple of seven (eight for CONTIGUOUS, whose offsets wrap at a page). CONTIGUOUS lays the rings out
     /// at the same page offsets: the block starts one slot further for each buffer, and each ring starts five slots
     /// (66 176 bytes, sixteen pages and 640 bytes) past the one before it.
     [[nodiscard]] size_t
@@ -514,7 +518,7 @@ public:
      *          and, CONTIGUOUS, the block the rings will be constructed in, untouched.
      */
     explicit ringbuffer(std::size_t const nb_producer)
-        : ringbuffer(nb_producer, false) {}
+        : ringbuffer(nb_producer, false, next_stagger()) {}
 
 protected:
     /**
@@ -525,6 +529,10 @@ protected:
      *        a producer's slot is never empty and a consumer's walk reads every ring's published index, as the vector
      *        of rings made it do. PER RING (Windows): ignored, a ring is still allocated by its producer's first
      *        enqueue -- a region per ring now would commit every ring of the buffer.
+     * @param ordinal The buffer's colour, its rings' first stagger slot (modulo the slots there are). The engine passes
+     *        its core's resolved index, so a core's mailbox is laid out the same in every engine of that shape and,
+     *        built in the block its predecessor left (the region cache hands it back), writes its rings where that one
+     *        did: a different colour would move every ring of the block by up to 3.5 KiB across pages never written.
      * @details Why: on Linux an engine whose rings were constructed by their first enqueues ran a chain of eight
      *          cores passing one event 9 % slower than with its rings constructed here, its consumers polling their
      *          live rings faster over walks that skipped the empty slots (the class note; Huly QB-203). The cost of
@@ -533,10 +541,10 @@ protected:
      *          1 GiB. On a kernel whose transparent huge pages are `always`, a page written every 66 176 bytes of one
      *          block may be backed by a 2 MiB page each time: the block, then, is resident nearly whole, as in 3.2.
      */
-    ringbuffer(std::size_t const nb_producer, [[maybe_unused]] bool const construct_now)
+    ringbuffer(std::size_t const nb_producer, [[maybe_unused]] bool const construct_now, std::size_t const ordinal)
         : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
         , _nb_producer(nb_producer)
-        , _stagger(next_stagger())
+        , _stagger(ordinal % stagger_slots)
         , _block(contiguous ? qb::allocator::region_allocator<Producer>{}.allocate(nb_producer + 1) : nullptr) {
         // At least one producer is required: the round-robin enqueue paths
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)

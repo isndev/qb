@@ -11,27 +11,37 @@
  * @brief The second engine of a process writes its mailbox rings into pages the first left faulted (Huly QB-1012,
  *        QB-203), counted in the page faults of the threads that write them.
  *
- * A mailbox ring exists for a pair of cores once one has sent to the other: the sender's first event allocates it
- * (QB-203), in a `region_cache` region (QB-1012), so the rings of an engine that stops stay mapped and the next
- * engine builds its own in them. Until 3.3 the rings were all built and value-initialised by `Main::start()` on the
- * calling thread, in `malloc`: glibc mapped each 1 MiB mailbox block of a 16-core engine for itself, unmapped it at
- * the first engine's end and raised its thresholds, so the second engine's rings came from fresh heap that `start()`
- * faulted page by page -- 16.8 MB, 4 100 faults of 4 KiB, before the first event.
+ * Every core's mailbox is one `region_cache` block (QB-1012) holding a ring per core, each constructed by `Main::start()`
+ * without its slot array (QB-203): a ring's slot pages are written by the laps of the core that sends into it. When an
+ * engine stops, its mailboxes give their blocks back to the cache, still mapped, and the next engine builds its own in
+ * them. Until 3.3 the rings were all built and value-initialised by `Main::start()` on the calling thread, in
+ * `malloc`: glibc mapped each 1 MiB mailbox block of a 16-core engine for itself, unmapped it at the first engine's end
+ * and raised its thresholds, so the second engine's rings came from fresh heap that `start()` faulted page by page --
+ * 16.8 MB, 4 100 faults of 4 KiB, before the first event.
+ *
+ * Mapped is not enough. A mailbox never writes the slots of the ring that is its own core's index -- a core does not send
+ * to itself through its mailbox -- so a block that passes to ANOTHER core's mailbox brings it a ring whose slot pages were
+ * never written, and that core's laps fault them: 16 pages a mailbox. The cache lends the region of a size it took back
+ * last, first; the mailboxes are built in core order, so they must be given back in the reverse order for each core's
+ * mailbox to find its own block, and coloured by their core's index for its rings to sit where they sat. Given back in
+ * the order they were built, a second 16-core engine faulted 248 pages here, 220 of them in the cores.
  *
  * The engine: 16 cores, one actor each, every actor sending every other core a lap of its ring -- 1 024 buckets, the
- * ring's every slot -- so every one of the 16 x 15 rings is allocated and every one of its pages written, in every
- * engine. An actor acks each peer whose lap it has received whole, and is done once it has acked every peer and every
- * peer has acked it: by then everything it enqueued has been received.
+ * ring's every slot -- so every one of the 16 x 15 rings that carries events has every one of its pages written, in
+ * every engine. An actor acks each peer whose lap it has received whole, and is done once it has acked every peer and
+ * every peer has acked it: by then everything it enqueued has been received.
  *
- * The count is taken where a ring is written. On the calling thread, over `Main::start()`: where the eager mailbox
- * built and wrote its rings. On each core's thread, from before its first send to the moment it is done: where a
- * ring is allocated and written now, by the sender's flush. Every count is the thread's own (`RUSAGE_THREAD`), so the
- * threads' own starts and exits stay out of it. A second engine whose rings are faulted again takes at least one fault
- * per page of 240 rings of 17 pages, 4 080; a warm one faults what a core touches for the first time in a pass, a few
- * pages each. The bound, 2 MiB of pages, sits a factor of eight from the first and an order of magnitude from the
- * second. Only the second engine is judged: the first is cold by definition, and the second is the one whose fate
- * the eager mailbox's `malloc` decided the same way in every fresh process, which is also why this case is a binary
- * of its own.
+ * The count is taken where a ring is written. On the calling thread, over `Main::start()`: where the mailboxes are built
+ * and their rings' lock and index lines written. On each core's thread, from before its first send to the moment it is
+ * done: where a ring's slots are written, by the sender's flush. Every count is the thread's own (`RUSAGE_THREAD`), so
+ * the threads' own starts and exits stay out of it. A second engine whose rings are faulted again takes at least one
+ * fault per page of 240 rings of 16 pages, 3 840; one whose blocks changed cores, 16 per mailbox. A warm one faults what
+ * an engine start faults however its rings are kept -- 24 to 28 pages measured on Linux with g++-14, a region per ring
+ * and a block per mailbox alike -- plus what a core touches for the first time in a pass, a page or two at most. The
+ * bound is three pages a core, 48 at 16 cores: above the warm count by half again, and crossed by two mailboxes that
+ * swapped blocks (16 pages each) as by all of them. Only the second engine is judged: the first is cold by definition,
+ * and the second is the one whose fate the eager mailbox's `malloc` decided the same way in every fresh process, which
+ * is also why this case is a binary of its own.
  *
  * Registered on Linux outside the sanitizer builds (CMakeLists.txt): the per-thread count is Linux's, and a sanitizer
  * replaces the allocator whose behaviour the eager mailbox's count depended on.
@@ -54,7 +64,9 @@ namespace engine_restart_mailboxes_test {
 
 using namespace std::chrono_literals;
 
-constexpr qb::CoreId kCores = 16; ///< 16 x 15 rings, 16.7 MB of regions once every pair has talked
+constexpr qb::CoreId kCores = 16; ///< 16 x 15 rings carry events, 16.7 MB of blocks once every pair has talked
+/// What a warm second engine may fault, in pages: three a core (the file note derives it).
+constexpr long long kWarmPagesPerCore = 3;
 
 /// A lap's worth of one event: 32 buckets of 64 bytes.
 struct Lap : qb::Event {
@@ -160,9 +172,11 @@ TEST(EngineRestartMailboxes, ASecondEngineWritesItsMailboxRingsInPagesTheFirstLe
     RecordProperty("faults_first_engine", static_cast<int>(cold.start + cold.windows));
     RecordProperty("faults_second_engine", static_cast<int>(warm.start + warm.windows));
 
-    long long const bound = static_cast<long long>((std::size_t{2} << 20) / qb::test::page_bytes());
-    EXPECT_LT(warm.start + warm.windows, bound)
+    long long const bound = kWarmPagesPerCore * kCores;
+    EXPECT_LE(warm.start + warm.windows, bound)
         << "the second engine faulted " << warm.start << " pages in Main::start() and " << warm.windows
-        << " in its cores' exchange: its mailbox rings were written into memory the OS had taken back, not into the "
-           "regions the first engine's rings left mapped (Huly QB-1012, QB-203)";
+        << " in its cores' exchange, against a bound of " << bound
+        << ": its mailbox rings were written into memory the OS "
+           "had taken back, or into blocks another core's mailbox had left, not into the block its own core's mailbox "
+           "left mapped (Huly QB-1012, QB-203)";
 }

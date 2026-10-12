@@ -167,13 +167,27 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
     , _core_stopped(_core_set.getSize()) {
     for (auto &flag : _core_stopped)
         flag.store(false, std::memory_order_relaxed); // no core has stopped yet
-    for (const auto &[index, initializer] : core_initializers) {
-        const auto nb_producers               = _core_set.getNbCore();
-        _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency(), initializer.getIdleSpin());
+    // In resolved order, each mailbox coloured with its resolved index: a core's mailbox is built, and laid out, the
+    // same in every engine of this shape. The destructor gives them back in the reverse order (see there).
+    for (const auto id : _core_set.raw()) {
+        const CoreId resolved    = _core_set.resolve(id);
+        const auto  &initializer = core_initializers.find(id)->second;
+        _mail_boxes[resolved] = std::make_unique<Mailbox>(_core_set.getNbCore(), initializer.getLatency(), initializer.getIdleSpin(), resolved);
     }
 }
 
-SharedCoreCommunication::~SharedCoreCommunication() noexcept = default;
+SharedCoreCommunication::~SharedCoreCommunication() noexcept {
+    // The mailboxes go back to the region cache in the REVERSE of the order they were built in (Huly QB-203). The cache
+    // lends the region of a size it took back last, first: released last, mailbox 0's block is the first the next
+    // engine of this shape takes -- for its mailbox 0, built first -- and so on, each core's mailbox in the block its
+    // predecessor wrote, at the same offsets (the colour above). Released first to last, as the vector's destructor
+    // happened to, the first mailbox the next engine built took the last core's block, whose ring for that mailbox's
+    // core had been the last core's own index and never written: the next engine faulted a ring per mailbox on its
+    // first lap (248 pages for a second 16-core engine whose pairs all lap their rings; a region per ring, 25 to 27).
+    // Explicit, since a vector's destructor does not specify the order in which it destroys its elements.
+    for (auto mailbox = _mail_boxes.rbegin(); mailbox != _mail_boxes.rend(); ++mailbox)
+        mailbox->reset();
+}
 
 #ifndef NDEBUG
 namespace {
@@ -577,6 +591,7 @@ Main::start(bool async) noexcept {
         slot.store(0, std::memory_order_relaxed);
     _signal_generation.store(0, std::memory_order_relaxed); // fresh cores start at generation 0
 
+    _shared_com.reset(); // a failed start's mailboxes first: their blocks go back to the region cache for these
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
     _cores.resize(_core_initializers.size());
 
