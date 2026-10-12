@@ -39,6 +39,7 @@
 #include <new>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 
 #include <gtest/gtest.h>
 #include <qb/system/event/router.h>
@@ -429,6 +430,14 @@ std::size_t LateDisposeEvent::_count = 0;
 } // namespace
 
 TEST(EventRouting, MemhDisposerMemoDoesNotCacheAMiss) {
+    // The disposer registry is process-wide and has no removal: once this case has registered
+    // LateDisposeEvent's disposer, a later repetition in the same process (--gtest_repeat) cannot
+    // see the type unregistered again, and says so instead of failing its precondition. No other
+    // case names LateDisposeEvent, so a shuffled order does not matter -- only a second pass does.
+    static bool registered = false;
+    if (std::exchange(registered, true))
+        GTEST_SKIP() << "LateDisposeEvent's disposer was registered in an earlier repetition of this process: its first "
+                        "registration happens once";
     qb::router::memh<RawEvent, true, void> router;
     const auto                             noop = [](auto &) {
     };
