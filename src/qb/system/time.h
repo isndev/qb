@@ -721,14 +721,15 @@ tsc_ticks() noexcept {
 #endif
 }
 
-/// The same counter, read ORDERED: after every earlier load of this thread has completed, and before any
-/// later one issues. `lfence; rdtsc` on x86-64 -- the instructions the Linux vDSO gives `clock_gettime`,
-/// here on both compilers, where Windows' `QueryPerformanceCounter` is a call whose ordering is the
-/// kernel's choice -- and `isb; mrs cntvct_el0` on arm64; the portable fallback is `tsc_ticks()` itself,
-/// a nanosecond clock. Same ticks and rate as `tsc_ticks()`, so one calibration serves both. What a
-/// spinning `VirtualCore` paces its idle poll of the peer rings with (Huly QB-251): the next poll's
-/// load cannot issue before this read, so polls are spaced by at least its cost and never speculated
-/// into the gap; `tsc_ticks()` alone orders nothing and would not pace.
+namespace detail {
+
+/// INTERNAL (Huly QB-251): the same counter as `tsc_ticks()`, read ORDERED -- after every earlier load of this thread
+/// has completed, and before any later one issues. `lfence; rdtsc` on x86-64 (the instructions the Linux vDSO gives
+/// `clock_gettime`, here on both compilers, where Windows' `QueryPerformanceCounter` is a call whose ordering is the
+/// kernel's choice), `isb; mrs cntvct_el0` on arm64, `tsc_ticks()` itself elsewhere (a nanosecond clock). Same ticks
+/// and rate as `tsc_ticks()`, so one calibration serves both. What a spinning `VirtualCore` paces its idle poll of the
+/// peer rings with: the next poll's load cannot issue before this read, so polls are spaced by at least its cost and
+/// never speculated into the gap; `tsc_ticks()` alone orders nothing and would not pace. Not part of the public API.
 [[nodiscard]] inline std::uint64_t
 tsc_ticks_ordered() noexcept {
 #if defined(_MSC_VER) && defined(_M_X64)
@@ -749,6 +750,8 @@ tsc_ticks_ordered() noexcept {
     return tsc_ticks();
 #endif
 }
+
+} // namespace detail
 
 // ---------------------------------------------------------------------------
 // Scoped measurement helpers

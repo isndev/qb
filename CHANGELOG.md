@@ -257,26 +257,37 @@ policy.
   `region_cache` region: destroyed, they stay mapped for the next ring set of the same size instead of going back to
   `malloc`, until `region_cache::trim()` returns them to the OS. The compile-time form is unchanged, and so is every
   access: the vector's element type and layout are the same.
-- **A spinning core's idle poll is paced by an ordered read of the CPU counter, the same instructions on both
-  compilers, with an explicit floor (Huly QB-251); the pass holds less live state, and the tick phase and the reap run
-  out of its loop (Huly QB-257).** An idle pass of a spinning core is a poll of its peer rings, and what sits between
-  two polls decides the cross-core exchange: 3.2's loop-clock pass measured the 2c-spin cells +25 % with no serialized
-  work there, and the pacing it kept was the park policy's clock read -- `lfence; rdtsc` under the Linux vDSO, a
-  `QueryPerformanceCounter` call on Windows, ordered as the kernel chooses -- plus whatever the pass happened to do,
-  so an unrelated change that made the pass one load lighter moved the Windows 2c-spin cells +2.5-3 % (QB-65). An idle
-  pass now makes one ordered counter read (`qb::tsc_ticks_ordered`, new in `<qb/system/time.h>`: `lfence; rdtsc` on
-  x86-64 under MSVC, clang-cl, g++ and clang alike, `isb; mrs cntvct_el0` on arm64, `tsc_ticks()` elsewhere) and holds
-  a floor between two of them by re-reading the counter -- the built-in floor is zero, one read; `QB_CORE_IDLE_POLL_NS`
-  overrides it at thread start, for measurement -- and the idle stamp and the idle-spin floor are kept in the same
-  ticks, converted once from the listener's calibration, so an idle pass reads no clock until it parks (the clock then
-  caps the park by a pending request deadline; the deadline list keeps its coarse pre-check on every pass, the idle
-  pass no longer hands it a precise reading). Inside the loop: a pass judges idleness by what its phases returned --
-  the io turn's count, the flush's and the receive's result -- instead of summing three cumulative counters and
-  keeping the previous sum live across the loop; the `qb::ICallback` tick phase and the reap are out-of-line members,
-  so a core without callbacks carries none of their code, stack slots or thread-local guard in its loop body;
-  `listener::run()` writes its two counters once per turn and its pending-count test is branchless; the mailbox's
-  copy-out `consume_all` tests each ring's published index inline before the per-ring dequeue call. `CoreStats` and
-  every documented behaviour of the park policy are unchanged; the figures are on the two tickets.
+- **A spinning core's idle poll is paced by one ordered read of the CPU counter, the same instructions on both
+  compilers (Huly QB-251); the pass holds less live state, and the tick phase and the reap run out of its loop (Huly
+  QB-257).** An idle pass of a spinning core is a poll of its peer rings, and what sits between two polls decides the
+  cross-core exchange: 3.2's loop-clock pass measured the 2c-spin cells +25 % with no serialized work there, and the
+  pacing it kept was the park policy's clock read -- `lfence; rdtsc` under the Linux vDSO, a `QueryPerformanceCounter`
+  call on Windows, ordered as the kernel chooses -- plus whatever the pass happened to do, so an unrelated change that
+  made the pass one load lighter moved the Windows 2c-spin cells +2.5-3 % (QB-65). An idle pass now makes one ordered
+  counter read -- `lfence; rdtsc` on x86-64 under MSVC, clang-cl, g++ and clang alike, `isb; mrs cntvct_el0` on arm64,
+  an internal helper of `<qb/system/time.h>` -- with an explicit floor between two of them, `kIdlePollFloorNs` in
+  `VirtualCore.cpp`, a constant 0 (one read, the value measured); the idle stamp and the idle-spin floor are kept in
+  the counter's ticks, converted once from the listener's calibration, so an idle pass reads no clock until it parks
+  (the clock then caps the park by a pending request deadline; the deadline list keeps its coarse pre-check on every
+  pass, the idle pass no longer hands it a precise reading). Inside the loop: a pass judges idleness by what its
+  phases returned -- the io turn's count, the flush's and the receive's result -- instead of summing three cumulative
+  counters and keeping the previous sum live across the loop; the `qb::ICallback` tick phase and the reap are
+  out-of-line members, so a core without callbacks carries none of their code, stack slots or thread-local guard in
+  its loop body; `listener::run()` writes its two counters once per turn and its pending-count test is branchless; the
+  mailbox's copy-out `consume_all` tests each ring's published index inline before the per-ring dequeue call. On MSVC
+  the pass's signal generation now stays in a register (it was reloaded from the stack at every back edge) and the
+  loop body lost 53 of its 306 instructions. `CoreStats` and every documented behaviour of the park policy are
+  unchanged. Measured against develop before it, same quiet session, 3 physical copies a side, 4 seeded rounds: on
+  WSL2 / g++-14, savina ping-pong 1c -2.5 %, thread-ring 1c -5.0 %, ping-pong 2c -4.0 % spin / -4.5 % park, fork-join
+  2c -1.9 / -1.6 %, the pass-cost probe -2.8 %, ask -2.1 %, the cross-core send hop -12.1 %, dev/bench's multi-core
+  ping-pong latency -6.3 % and one-core pipeline -4.8 %; on Windows / MSVC, ping-pong 1c -6.9 %, thread-ring 1c
+  -1.7 %, fork-join 2c park -3.4 %, pass-cost -4.5 %, ask -7.6 %, the cross-core hop -15.0 % send / -12.8 % push, the
+  2c cells within their copy spread. The residual, not paid back: on WSL2, savina thread-ring 2c reads +6.1 % spin /
+  +7.0 % park -- a phase-locked cell whose fast regime the control drew in 75-94 % of 16 launches and this change in
+  6 %, the same attractor every change to the loop's shape loses, and the jittered cross-core push probe sits +2.7 %
+  inside the control's range; and dev/bench's `BM_PINGPONG` 8c reads +9.0 % (the gate's threshold for it is 10.7 %),
+  its ungated 1c case +5.7 % (the case's spread is 12.4 %). Making the idle poll's phase de-correlated, judged by mode
+  share, is a follow-up.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays

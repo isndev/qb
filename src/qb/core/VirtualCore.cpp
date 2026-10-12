@@ -26,7 +26,6 @@
 #include <atomic>
 #include <climits>
 #include <cstddef>
-#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <new>
@@ -458,19 +457,11 @@ constexpr std::size_t kFlushRunBuckets = 256;
 // milliseconds in one handler (savina/barber's factory) costs this core once per such episode.
 constexpr std::uint8_t kFlushStallRefusals = 2;
 // The idle poll's pacing floor (Huly QB-251): the least interval, in nanoseconds, between two ordered
-// counter reads of a spinning core's idle passes (`VirtualCore::__pace__`). 0 is one ordered read per
-// idle pass and no re-read, ~11 ns on an i9-12900K P-core: the bare serialized gap the raw-ring probe
-// measured as the shape that reaches the low regime of a cross-core hop (qb-vs-others TUNING.md
-// section 16.2), and the value the 2c-spin sweep of QB-251 judges the others against.
-// `QB_CORE_IDLE_POLL_NS` overrides it at thread start, for that sweep: a knob of the measurement,
-// read once per core, never on a pass.
+// counter reads of a spinning core's idle passes (`VirtualCore::__pace__`). 0, the value QB-251 measured on
+// both hosts, is one ordered read per idle pass and no re-read, ~11 ns on an i9-12900K P-core: the bare
+// serialized gap the raw-ring probe measured as the shape that reaches the low regime of a cross-core hop
+// (qb-vs-others TUNING.md section 16.2). A constant of this file, not a setting.
 constexpr std::uint64_t kIdlePollFloorNs = 0;
-std::uint64_t
-idle_poll_floor_ns() noexcept {
-    if (const char *const env = std::getenv("QB_CORE_IDLE_POLL_NS"))
-        return static_cast<std::uint64_t>(std::strtoull(env, nullptr, 10));
-    return kIdlePollFloorNs;
-}
 } // namespace
 
 // Widest event a destination mailbox ring can EVER accept — `kMaxDeliverableBuckets`,
@@ -912,16 +903,16 @@ VirtualCore::__pump_activations__() {
 // (`QueryPerformanceCounter`, ordered as the kernel chooses), and a pass made lighter by an
 // unrelated change (one load less, Huly QB-65) moved the Windows 2c-spin cells +2.5-3 %
 // (Huly QB-251). The read is now the counter itself, ordered the same way on both compilers and
-// on arm64 (`qb::tsc_ticks_ordered`), and the interval between two of them has an explicit floor,
+// on arm64 (`qb::detail::tsc_ticks_ordered`), and the interval between two of them has an explicit floor,
 // `_poll_floor_ticks` (`kIdlePollFloorNs` in the listener's calibration), held by re-reading the
 // counter: the cadence is a number this file states, not the sum of what the pass happens to do,
 // and a pass that gets lighter leaves it where it is. The park policy keeps its stamp in the same
 // unit, so an idle pass reads no clock at all until it parks.
 std::uint64_t
 VirtualCore::__pace__() noexcept {
-    std::uint64_t t = qb::tsc_ticks_ordered();
+    std::uint64_t t = qb::detail::tsc_ticks_ordered();
     while (t - _poll_mark < _poll_floor_ticks)
-        t = qb::tsc_ticks_ordered();
+        t = qb::detail::tsc_ticks_ordered();
     _poll_mark = t;
     return t;
 }
@@ -940,10 +931,10 @@ VirtualCore::__workflow_loop__() {
     // -- the floors are bounds, never a clock. A core that never parks keeps `_idle_spin_ticks` at
     // all ones, so its idle pass never loads the mailbox's latency to learn that.
     {
-        double rate = loop.tsc_per_ns();
+        double rate = io::async::detail::tsc_per_ns(loop);
         if (rate <= 0.)
             rate = 1.;
-        _poll_floor_ticks = static_cast<std::uint64_t>(rate * static_cast<double>(idle_poll_floor_ns()));
+        _poll_floor_ticks = static_cast<std::uint64_t>(rate * static_cast<double>(kIdlePollFloorNs));
         if (_mail_box.getLatency() > qb::duration::zero())
             _idle_spin_ticks = static_cast<std::uint64_t>(rate * static_cast<double>(_mail_box.getIdleSpin().count()));
     }

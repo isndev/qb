@@ -55,6 +55,12 @@
 
 namespace qb::io::async {
 
+class listener;
+namespace detail {
+/// INTERNAL (Huly QB-251): the counter rate `loop` calibrated at construction; defined after the class.
+[[nodiscard]] inline double tsc_per_ns(listener const &loop) noexcept;
+} // namespace detail
+
 /**
  * @class listener
  * @ingroup Async
@@ -1136,13 +1142,8 @@ public:
         return _poll_every_tsc;
     }
 
-    /// The counter's rate this listener calibrated at construction (`qb::detail::calibrate_tsc_per_ns`):
-    /// ticks of `qb::tsc_ticks()` per nanosecond, 0 when the counter does not move. A `VirtualCore`
-    /// converts its idle floors into ticks with it (Huly QB-251), so a thread calibrates once.
-    [[nodiscard]] inline double
-    tsc_per_ns() const noexcept {
-        return _tsc_per_ns;
-    }
+    /// The calibration's one reader outside the listener: a `VirtualCore`'s idle floors (Huly QB-251). Internal.
+    friend double detail::tsc_per_ns(listener const &loop) noexcept;
 
     /**
      * @brief Get the total number of events processed since listener creation.
@@ -1560,6 +1561,16 @@ inline void
 break_parent() noexcept {
     listener::current.break_one();
 }
+
+namespace detail {
+/// INTERNAL (Huly QB-251): ticks of `qb::tsc_ticks()` per nanosecond as `loop` calibrated them at construction
+/// (`qb::detail::calibrate_tsc_per_ns`), 0 when the counter does not move. A `VirtualCore` converts its idle floors
+/// into ticks with it, so a thread calibrates once. Not part of the public API.
+inline double
+tsc_per_ns(listener const &loop) noexcept {
+    return loop._tsc_per_ns;
+}
+} // namespace detail
 
 } // namespace qb::io::async
 

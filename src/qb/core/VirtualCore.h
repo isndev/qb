@@ -637,14 +637,14 @@ private:
     } _metrics;
     // --- the idle clock, in the CPU counter's ticks (Huly QB-251): when this core last found nothing
     // to do, 0 while busy. Stamped on the first idle pass after activity by the ORDERED counter read
-    // that ends every idle pass (`__pace__`, `qb::tsc_ticks_ordered`): a core with a non-zero latency
+    // that ends every idle pass (`__pace__`, `qb::detail::tsc_ticks_ordered`): a core with a non-zero latency
     // parks (`Mailbox::wait()`) once a reading is `_idle_spin_ticks` past the stamp, and stays
     // parked-or-parking (no re-spin) until something arrives. A latency-0 core never parks
     // (`_idle_spin_ticks` stays all ones) and never uses the stamp, but takes the same read on each
     // idle pass: that read, and the floor `_poll_floor_ticks` holds between two of them, is what paces
     // its idle poll of the peer rings, measured in `__workflow_loop__` (an unpaced idle pass costs the
     // cross-core spin cells +25 %). Both floors are set once at loop entry, from the listener's
-    // calibration of the counter. A busy pass reads neither the counter nor a clock, in any mode.
+    // calibration of the counter (`kIdlePollFloorNs` is 0: one read). A busy pass reads neither the counter nor a clock.
     std::uint64_t _idle_since       = 0;
     std::uint64_t _poll_mark        = 0;                 ///< the ordered counter reading that ended the last idle pass
     std::uint64_t _poll_floor_ticks = 0;                 ///< the least interval between two such readings (the pacing floor)
@@ -1610,7 +1610,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:726-736`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:717-727`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

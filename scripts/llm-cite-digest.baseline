@@ -46,13 +46,13 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:855-856	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:864-865	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.cpp:1282-1296	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.api.md	VirtualCore.cpp:1552-1557	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1572-1587	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1631-1650	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1652-1661	c027cf31c3fe	void
-llm/qb.llm.api.md	VirtualCore.cpp:1746-1781	6255f8b6dda5	ServiceId
-llm/qb.llm.api.md	VirtualCore.cpp:1783-1808	3c42a027ac9f	bool
+llm/qb.llm.api.md	VirtualCore.cpp:1273-1287	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.api.md	VirtualCore.cpp:1543-1548	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
+llm/qb.llm.api.md	VirtualCore.cpp:1563-1578	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1622-1641	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1643-1652	c027cf31c3fe	void
+llm/qb.llm.api.md	VirtualCore.cpp:1737-1772	6255f8b6dda5	ServiceId
+llm/qb.llm.api.md	VirtualCore.cpp:1774-1799	3c42a027ac9f	bool
 llm/qb.llm.api.md	VirtualCore.h:1225-1248	f5f18dc56a93	template <typename _ServiceActor>
 llm/qb.llm.api.md	VirtualCore.h:1519-1528	a57c15ec1d9a	template <typename Tag>
 llm/qb.llm.api.md	VirtualCore.h:1543-1557	5337a095ca99	template <typename Tag>
@@ -72,7 +72,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1454-1467	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1455-1468	31584ba4b550	inline void
 llm/qb.llm.api.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.api.md	offload.h:124-124	f009c11da3b1	bool set_offload_threads(std::size_t n) noexcept;
 llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : public awaiter_base {
@@ -141,15 +141,15 @@ llm/qb.llm.md	Main.h:305-305	5130406e8b76	CoreInitializer &setLatency(qb::durati
 llm/qb.llm.md	Main.h:322-322	1bf8f0dd34f5	CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpi...
 llm/qb.llm.md	Main.h:405-407	8e039460f53f	/// Default `setIdleSpin()`: measured to hold a two-core ping-pong on...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1180-1201	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1282-1296	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.md	VirtualCore.cpp:1404-1411	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1572-1587	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1631-1661	904dffe89372	void
-llm/qb.llm.md	VirtualCore.cpp:1697-1724	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:1746-1781	6255f8b6dda5	ServiceId
-llm/qb.llm.md	VirtualCore.cpp:717-723	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
-llm/qb.llm.md	VirtualCore.cpp:854-866	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.cpp:1171-1192	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1273-1287	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.md	VirtualCore.cpp:1395-1402	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1563-1578	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1622-1652	904dffe89372	void
+llm/qb.llm.md	VirtualCore.cpp:1688-1715	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:1737-1772	6255f8b6dda5	ServiceId
+llm/qb.llm.md	VirtualCore.cpp:708-714	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
+llm/qb.llm.md	VirtualCore.cpp:845-857	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
 llm/qb.llm.md	VirtualCore.h:1048-1060	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	VirtualCore.h:1225-1248	f5f18dc56a93	template <typename _ServiceActor>
 llm/qb.llm.md	VirtualCore.h:1543-1557	5337a095ca99	template <typename Tag>
@@ -158,7 +158,7 @@ llm/qb.llm.md	VirtualCore.h:1712-1712	4112605310a9	Actor::spawn(std::string_view
 llm/qb.llm.md	async/io.h:106-110	4ab46a163948	~base() {
 llm/qb.llm.md	async/io.h:77-82	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:97-98	bc5b8adc7b00	base()
-llm/qb.llm.md	async/listener.h:67-79	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
+llm/qb.llm.md	async/listener.h:73-85	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
 llm/qb.llm.md	channel.h:1148-1148	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
 llm/qb.llm.md	combinators.h:191-191	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
@@ -184,9 +184,9 @@ llm/qb.llm.md	io.h:2722-2729	ceb8704b7ca9	disconnect_now(int reason = static_cas
 llm/qb.llm.md	io.h:3136-3140	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:373-413	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:624-627	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1439-1451	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1454-1467	31584ba4b550	inline void
-llm/qb.llm.md	listener.h:1506-1506	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1440-1452	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1455-1468	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1507-1507	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.md	offload.h:202-213	2f7b9e7ef6cd	run() noexcept override {
 llm/qb.llm.md	offload.h:24-40	d6f92fe8755f	* THE CONTRACT, IN FOUR RULES
