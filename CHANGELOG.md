@@ -242,14 +242,13 @@ policy.
   Both serve the fixes below.
 - **`qb::allocator::region_cache` and `region_allocator<T>` (`qb/system/allocator/region.h`, Huly QB-1012).** A
   process-wide cache of page-granular regions mapped by the platform (`mmap`, `VirtualAlloc`), the home of the
-  engine's per-core buffers that grow with it (under Fixed). `acquire(bytes)` takes the region of the same size,
-  rounded up to 4 KiB, that was released most recently, or maps one; `release()` keeps it mapped, the cache holding
-  at most twice the most bytes ever lent at once (`peak_bytes()`) and unmapping the regions released longest ago
-  first; `trim()` unmaps every cached region -- never a lent one -- and resets the high water; `cached()`,
-  `cached_bytes()`, `lent_bytes()` and `mappings()` count. `region_allocator<T>` is the stateless standard
-  allocator over it: a request of at least `region_cache::min_bytes` (64 KiB) is a region, a smaller one the global
-  allocator's. `region_vector<T>` and `region_ptr<T>` (built by `make_region<T>()`) are its two shapes. Cold path
-  only: a container reaches it when it grows or dies, never per event. Pinned by `qb-io-test-unit-region-cache`.
+  engine's per-core buffers that grow with it (under Fixed). Its one public operation, `region_cache::trim()`, unmaps
+  every cached region -- never a lent one -- for a process that lives on after its engines and wants its footprint
+  back; nothing in qb calls it. `region_allocator<T>` is the stateless standard allocator over it: a request of at
+  least 64 KiB is a region, a smaller one the global allocator's; `region_vector<T>` and `region_ptr<T>` (built by
+  `make_region<T>()`) are its two shapes. The cache's acquire and release, its growth helpers and its counters are
+  `detail`. Cold path only: a container reaches it when it grows or dies, never per event. Pinned by
+  `qb-io-test-unit-region-cache`.
 
 ### Changed
 
@@ -511,14 +510,16 @@ policy.
   `madvise(MADV_DONTNEED)` once a free merges it past the trim threshold. The fix above kept one 64 KiB chunk from
   pushing a 4 MB top over its threshold, 38 KB under it; a second event type or a larger population pushes it over
   again, and every engine after the first re-faulted its tables page by page inside its first window. They are
-  `region_cache` regions now (under Added), kept mapped and reused by size from one engine to the next, within the
-  cache's bound, until `region_cache::trim()`. qb sets none of glibc's thresholds (`mallopt` is process-wide, turns
-  the dynamic adjustment off for every allocation and overrides the program's own choice), and the engine's
-  buffers no longer move them. Pinned by `qb-core-test-system-engine-restart-faults` (one core, 40 000 actors on eight event
-  types: the page faults of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16
-  cores: the faults `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
-  `ActorArena.ASecondEngineBuildsItsPerCoreBuffersInTheRegionsTheFirstReleased` (no fresh mapping from the second
-  engine on). The io loop's and the coroutines' per-thread storage still goes back to `malloc` at thread exit.
+  `region_cache` regions now (under Added), with one policy: a buffer a container outgrows is unmapped at once, so a
+  running engine holds no doubling ladder; the final buffers of an engine that stops stay mapped; the next engine's
+  containers grow straight into them -- each takes the largest cached region it can use -- until
+  `region_cache::trim()`. qb sets none of glibc's thresholds (`mallopt` is process-wide, turns the dynamic adjustment
+  off for every allocation and overrides the program's own choice), and the engine's buffers no longer move them.
+  Pinned by `qb-core-test-system-engine-restart-faults` (one core, 40 000 actors on eight event types: the page faults
+  of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores: the faults
+  `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
+  `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and the coroutines' per-thread
+  storage still goes back to `malloc` at thread exit.
 
 - **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
   retained iterators into the source cache's list. Looking up or replacing a key in the copy

@@ -15,8 +15,9 @@
  *        actor falls through to the global allocator, and a derived class that declares its own
  *        `operator new` / `operator delete` keeps them (the arena never sees its objects). The
  *        core's other buffers that grow with its population -- the router's tables, the actor
- *        registry, the broadcast snapshot -- come from `region_cache`, and the second engine of
- *        a process builds them in the regions the first gave back (Huly QB-1012).
+ *        registry, the kill queue, the broadcast snapshot -- come from `region_cache`: nothing a
+ *        running engine outgrows is cached, and the second engine of a process grows straight into
+ *        the regions the first left when it stopped (Huly QB-1012).
  */
 
 #include <gtest/gtest.h>
@@ -330,8 +331,12 @@ public:
     on(RegionTag<1> const &) {}
 };
 
-// 10 000 subscribers, then one broadcast KillEvent: both tables (16 384 slots), the registry and the
-// broadcast snapshot pass 64 KiB, so each is a region.
+// What the cache held while the engine ran: read on the core's thread, once the population is built
+// (every table, the registry, has climbed its ladder by then), before the broadcast that ends it.
+inline std::atomic<std::size_t> g_cached_while_running{~std::size_t{0}};
+
+// 10 000 subscribers, then one broadcast KillEvent: both tables (16 384 slots), the registry, the
+// kill queue and the broadcast snapshot pass 64 KiB, so each is a region.
 class Populator final : public qb::Actor {
 public:
     qb::io::async::task<bool>
@@ -339,6 +344,7 @@ public:
         for (int i = 0; i < 10000; ++i)
             if (!addRefActor<Subscriber>().valid())
                 co_return false;
+        g_cached_while_running.store(qb::allocator::detail::region_stats().cached_bytes);
         broadcast<qb::KillEvent>();
         co_return true;
     }
@@ -355,17 +361,24 @@ run_populated_engine() {
 
 } // namespace actor_arena_test
 
-TEST(ActorArena, ASecondEngineBuildsItsPerCoreBuffersInTheRegionsTheFirstReleased) {
-    using qb::allocator::region_cache;
-    region_cache::trim(); // what an earlier test or repetition left cached: the first engine must map its own
-    std::size_t const lent_before = region_cache::lent_bytes();
-    std::size_t const maps_before = region_cache::mappings();
+TEST(ActorArena, AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing) {
+    namespace detail = qb::allocator::detail;
+    qb::allocator::region_cache::trim(); // what an earlier test or repetition left: the first engine maps its own
+    std::size_t const lent_before = detail::region_stats().lent_bytes;
+    std::size_t const maps_before = detail::region_stats().mappings;
+
     run_populated_engine();
-    std::size_t const maps_after_first = region_cache::mappings();
-    EXPECT_GT(maps_after_first, maps_before);           // the first engine's tables were regions
-    EXPECT_EQ(region_cache::lent_bytes(), lent_before); // and all of them came back when it went
+    // Every rung a table, the registry or the kill queue outgrew while the engine ran went back to
+    // the OS at once: the cache held nothing while it ran -- counts, so no host load moves them.
+    EXPECT_EQ(g_cached_while_running.load(), 0u);
+    std::size_t const maps_after_first = detail::region_stats().mappings;
+    EXPECT_GT(maps_after_first, maps_before);                  // the first engine's buffers were regions
+    EXPECT_EQ(detail::region_stats().lent_bytes, lent_before); // all of them came back when it went
+    EXPECT_GT(detail::region_stats().cached_bytes, 0u);        // and its final buffers stay cached
+
     run_populated_engine();
-    EXPECT_EQ(region_cache::mappings(), maps_after_first); // the second mapped nothing: every buffer was a cached region
-    EXPECT_EQ(region_cache::lent_bytes(), lent_before);
-    EXPECT_LE(region_cache::cached_bytes(), 2 * region_cache::peak_bytes());
+    // The second engine grew straight into the first one's final buffers: not one fresh mapping.
+    EXPECT_EQ(detail::region_stats().mappings, maps_after_first);
+    EXPECT_EQ(detail::region_stats().lent_bytes, lent_before);
+    EXPECT_LE(detail::region_stats().cached_bytes, 2 * detail::region_stats().peak_bytes);
 }

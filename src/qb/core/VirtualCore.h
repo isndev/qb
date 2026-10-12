@@ -196,7 +196,7 @@ private:
      * walks the batch, so a `kill()` issued from a destructor lands in a fresh queue and
      * never in the vector being walked (see `_actor_remove_batch`).
      */
-    using RemoveActorList = allocator::region_vector<ActorId>;
+    using RemoveActorList = allocator::detail::region_stack<ActorId>;
     using DyingActorSet   = qb::unordered_set<ActorId>;
 
     /**
@@ -379,8 +379,8 @@ private:
         route_event(_Event &event) const {
             const auto dest = event.getDestination();
             if (dest.is_broadcast()) {
-                static thread_local allocator::region_vector<Actor *> snapshot;
-                const std::size_t                                     base = snapshot.size();
+                static thread_local allocator::detail::region_stack<Actor *> snapshot;
+                const std::size_t                                            base = snapshot.size();
                 struct RestoreSnapshot {
                     allocator::region_vector<Actor *> &entries;
                     std::size_t                        base;
@@ -499,8 +499,8 @@ private:
         Actor const *actor;
         ActorId      id;
     };
-    allocator::region_vector<CallbackEntry> _callback_list;
-    RemoveActorList                         _actor_to_remove;
+    allocator::detail::region_stack<CallbackEntry> _callback_list;
+    RemoveActorList                                _actor_to_remove;
     /**
      * @brief Scratch buffer the reap loop drains `_actor_to_remove` into.
      * @details

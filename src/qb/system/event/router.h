@@ -179,7 +179,7 @@ public:
                 // dead in one window, seven subscriptions each) measured 43 s where CAF
                 // measures 86 ms; with this branch it is the pool's O(1) again.
                 if (idx >= _table.capacity())
-                    _table.reserve(std::max<std::size_t>(idx + 1, _table.capacity() * 2));
+                    qb::allocator::detail::region_reserve(_table, idx + 1, dense_index<Key>::max_index + 1);
                 _table.resize(idx + 1);
                 _dense_size = _table.size();
             }
@@ -422,8 +422,8 @@ private:
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
                 // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
-                static thread_local qb::allocator::region_vector<_Handler *> bcast_snapshot;
-                const std::size_t                                            base = bcast_snapshot.size();
+                static thread_local qb::allocator::detail::region_stack<_Handler *> bcast_snapshot;
+                const std::size_t                                                   base = bcast_snapshot.size();
                 struct RestoreSnapshot {
                     qb::allocator::region_vector<_Handler *> &entries;
                     std::size_t                               base;
@@ -593,8 +593,8 @@ public:
      */
     QB_NOINLINE QB_COLD void
     route_broadcast(_RawEvent &event) const {
-        static thread_local qb::allocator::region_vector<Entry> bcast_snapshot;
-        const std::size_t                                       base = bcast_snapshot.size();
+        static thread_local qb::allocator::detail::region_stack<Entry> bcast_snapshot;
+        const std::size_t                                              base = bcast_snapshot.size();
         struct RestoreSnapshot {
             qb::allocator::region_vector<Entry> &entries;
             std::size_t                          base;

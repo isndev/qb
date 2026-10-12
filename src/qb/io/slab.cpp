@@ -208,8 +208,8 @@ unmap_region(void *const region, std::size_t const bytes) noexcept {
 #endif
 
 // A CACHED region carries its link in its first bytes; a lent one carries nothing. The list runs
-// from the most recently released region, which `acquire()` looks at first, to the one released
-// longest ago, which the bound unmaps first. Its own lock: a region request never waits on a slab.
+// from the most recently released region, which `region_acquire()` looks at first, to the one
+// released longest ago, which the bound unmaps first. Its own lock: a region never waits on a slab.
 struct region_link {
     region_link *newer;
     region_link *older;
@@ -224,6 +224,10 @@ std::size_t  r_cached_bytes = 0;
 std::size_t  r_lent_bytes   = 0;
 std::size_t  r_peak_bytes   = 0; ///< the high water of r_lent_bytes since the last trim()
 std::size_t  r_mappings     = 0;
+
+// Inside a growth (detail::region_outgrow): what this thread releases is unmapped, not cached.
+// Constant-initialised and trivially destructible, so it costs no TLS guard and outlives nothing.
+constinit thread_local bool t_outgrowing = false;
 
 // Under r_lock.
 void
@@ -321,11 +325,36 @@ slab_cache::prefaulted() noexcept {
     return g_prefaulted.load(std::memory_order_relaxed);
 }
 
+std::size_t
+region_cache::trim() noexcept {
+    // Detach the whole list under the lock, unmap it outside, as slab_cache::trim() does.
+    region_link *list;
+    std::size_t  count;
+    {
+        scoped_lock const guard(r_lock);
+        list           = r_newest;
+        count          = r_cached;
+        r_newest       = nullptr;
+        r_oldest       = nullptr;
+        r_cached       = 0;
+        r_cached_bytes = 0;
+        r_peak_bytes   = r_lent_bytes;
+    }
+    while (list) {
+        region_link *const next = list->older;
+        unmap_region(list, list->bytes);
+        list = next;
+    }
+    return count;
+}
+
+namespace detail {
+
 void *
-region_cache::acquire(std::size_t const bytes) {
-    if (bytes > (std::numeric_limits<std::size_t>::max)() - page_bytes)
+region_acquire(std::size_t const bytes) {
+    if (bytes > (std::numeric_limits<std::size_t>::max)() - region_page_bytes)
         throw std::bad_alloc();
-    std::size_t const size = rounded(bytes);
+    std::size_t const size = region_rounded(bytes);
     {
         scoped_lock const guard(r_lock);
         for (region_link *link = r_newest; link; link = link->older) {
@@ -349,12 +378,21 @@ region_cache::acquire(std::size_t const bytes) {
 }
 
 void
-region_cache::release(void *const region, std::size_t const bytes) noexcept {
+region_release(void *const region, std::size_t const bytes) noexcept {
     if (!region)
         return;
-    std::size_t const size    = rounded(bytes);
-    auto *const       link    = static_cast<region_link *>(region);
-    region_link      *evicted = nullptr; // past the bound, unmapped outside the lock, chained through `older`
+    std::size_t const size = region_rounded(bytes);
+    if (t_outgrowing) {
+        // A rung a growing container left behind: back to the OS now, never into the cache.
+        {
+            scoped_lock const guard(r_lock);
+            r_lent_bytes -= size;
+        }
+        unmap_region(region, size);
+        return;
+    }
+    auto *const  link    = static_cast<region_link *>(region);
+    region_link *evicted = nullptr; // past the bound, unmapped outside the lock, chained through `older`
     {
         scoped_lock const guard(r_lock);
         r_lent_bytes -= size;
@@ -387,56 +425,30 @@ region_cache::release(void *const region, std::size_t const bytes) noexcept {
 }
 
 std::size_t
-region_cache::trim() noexcept {
-    // Detach the whole list under the lock, unmap it outside, as slab_cache::trim() does.
-    region_link *list;
-    std::size_t  count;
-    {
-        scoped_lock const guard(r_lock);
-        list           = r_newest;
-        count          = r_cached;
-        r_newest       = nullptr;
-        r_oldest       = nullptr;
-        r_cached       = 0;
-        r_cached_bytes = 0;
-        r_peak_bytes   = r_lent_bytes;
-    }
-    while (list) {
-        region_link *const next = list->older;
-        unmap_region(list, list->bytes);
-        list = next;
-    }
-    return count;
+region_largest_cached(std::size_t const at_least, std::size_t const at_most) noexcept {
+    std::size_t       best = 0;
+    scoped_lock const guard(r_lock);
+    for (region_link const *link = r_newest; link; link = link->older)
+        if (link->bytes >= at_least && link->bytes <= at_most && link->bytes > best)
+            best = link->bytes;
+    return best;
 }
 
-std::size_t
-region_cache::cached() noexcept {
-    scoped_lock const guard(r_lock);
-    return r_cached;
+region_outgrow::region_outgrow() noexcept
+    : _previous(t_outgrowing) {
+    t_outgrowing = true;
 }
 
-std::size_t
-region_cache::cached_bytes() noexcept {
-    scoped_lock const guard(r_lock);
-    return r_cached_bytes;
+region_outgrow::~region_outgrow() noexcept {
+    t_outgrowing = _previous;
 }
 
-std::size_t
-region_cache::lent_bytes() noexcept {
+region_stats_t
+region_stats() noexcept {
     scoped_lock const guard(r_lock);
-    return r_lent_bytes;
+    return {r_cached, r_cached_bytes, r_lent_bytes, r_peak_bytes, r_mappings};
 }
 
-std::size_t
-region_cache::peak_bytes() noexcept {
-    scoped_lock const guard(r_lock);
-    return r_peak_bytes;
-}
-
-std::size_t
-region_cache::mappings() noexcept {
-    scoped_lock const guard(r_lock);
-    return r_mappings;
-}
+} // namespace detail
 
 } // namespace qb::allocator

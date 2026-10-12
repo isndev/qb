@@ -509,10 +509,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the arena had taken away. _(Actor.h:561-582, thread_arena.h:125-170)_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
-  registry, the kill queues, the broadcast snapshots, the receive buffer -- and the mailbox rings are
-  `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks: when the engine stops they stay mapped,
-  and an engine of the same shape started next rebuilds in them without a page fault (the cache holds at most
-  twice the most ever lent at once). A process that wants that memory back between engines calls
+  registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
+  rings are `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks. A buffer a container outgrows
+  is unmapped at once, so a running engine holds no doubling ladder; the final buffers of an engine that stops
+  stay mapped; the next engine's containers grow straight into them (the largest cached region each can use), so
+  a restarted engine builds without page faults. A process that wants that memory back between engines calls
   `qb::allocator::region_cache::trim()`, with `slab_cache::trim()` for the pipes' and the arena's slabs; nothing
   calls them for you. qb never calls `mallopt`: glibc's trim and `mmap` thresholds are the program's, and since
   3.3 the engine's buffers no longer move them. The io loop's and the coroutines' per-thread storage still goes back to

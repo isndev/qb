@@ -1215,7 +1215,7 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
         // space) so a burst of fresh ids costs O(1) amortised, not one reallocation each.
         const std::size_t sid = id._service_id;
         if (sid >= _actors.size())
-            _actors.resize(std::min<std::size_t>(std::max<std::size_t>(sid + 1, _actors.size() * 2), ServiceIdPool::kBits + 1));
+            allocator::detail::region_resize(_actors, std::max<std::size_t>(sid + 1, _actors.size() * 2), ServiceIdPool::kBits + 1);
         _actors[sid] = std::move(actor_ptr);
         ++_actor_count;
         QB_LOG_VERB("New " << actor);
