@@ -153,6 +153,7 @@ TEST(RegionCache, TrimUnmapsEveryCachedRegionNeverALentOneAndForgetsTheHighWater
 }
 
 TEST(RegionCache, ARegionAContainerOutgrowsIsUnmappedNotCached) {
+    region_cache::trim(); // what earlier cases left: past the bound, the last release would push one of them out
     std::size_t const bytes  = size_of(6);
     void *const       region = detail::region_acquire(bytes);
     std::size_t const before = detail::region_stats().cached_bytes;
