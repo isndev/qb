@@ -34,14 +34,28 @@ Given a version `MAJOR.MINOR.PATCH`:
 
 ## Source compatibility
 
-Guaranteed within a major version, as described above. Code that compiles against `3.0` keeps
-compiling against every later `3.x`; anything that would require a source edit waits for `4.0`.
+Guaranteed within a major version, except for the explicitly approved Redis correction below.
+Otherwise, code that compiles against `3.0` keeps compiling against every later `3.x`; changes
+requiring a source edit wait for `4.0`.
 
 The installed CMake package version file is generated with `COMPATIBILITY SameMajorVersion`, so
 `find_package(qb 3.0)` accepts any installed `3.x` and rejects a different major. That check is
 about *source*: it answers "is this qb new enough to compile my code?". It is not, and cannot be,
 a statement about binaries — see the next section, and note in particular that a `find_package`
 that succeeds can still be followed by a link failure.
+
+### Approved 3.3 exception: Redis result-function addresses
+
+The maintainer approved one limited source exception for the Redis C++20/C++23 result correction
+(Huly QB-286). Its extraction helpers and result-dependent parser members became caller-side templates
+so one translation unit cannot interpret another mode's `expected` result or select its inline body.
+Ordinary calls retain their spelling. Taking an untyped address can require an explicit specialization:
+`auto p = &qb::redis::extract_integer<>` instead of `&qb::redis::extract_integer`, and
+`&qb::redis::parser::RespParser::parse<>` for the corresponding parser member.
+
+This exception does not relax the source-compatibility policy for unrelated APIs. Consumers rebuild as
+required below. Huly QB-1019 tracks restoring the previous address syntax while preserving the real
+C++20/C++23 ABI separation and ordinary-path performance; it does not block this accepted correction.
 
 ## Binary compatibility
 
