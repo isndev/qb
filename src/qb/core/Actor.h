@@ -1314,22 +1314,22 @@ public:
      * @code
      * // void on(Request &request) {                   // non-const reference
      * //   push<Prepare>(request.getSource(), ...);    // first...
-     * //   reply_ordered(request);                      // ... then the answer, in that order at the destination
+     * //   push_reply(request);                      // ... then the answer, in that order at the destination
      * // }
      * @endcode
-     * @attention After `reply_ordered(event)` the `event` object is consumed: no further use or modification.
+     * @attention After `push_reply(event)` the `event` object is consumed: no further use or modification.
      */
-    void reply_ordered(Event &event) const noexcept;
+    void push_reply(Event &event) const noexcept;
 
     /**
      * @brief Forward a received event to a new destination with `push`'s ordering, reusing the event object.
      * @param dest The new destination; the original `source` is preserved, exactly as `forward()`.
      * @param event The received event, consumed.
      * @details The ordered sibling of `forward()`: the event keeps its place behind everything this actor
-     * `push`ed to `dest` and travels with them at the end of the pass. See `reply_ordered()`.
-     * @attention After `forward_ordered(dest, event)` the `event` object is consumed: no further use or modification.
+     * `push`ed to `dest` and travels with them at the end of the pass. See `push_reply()`.
+     * @attention After `push_forward(dest, event)` the `event` object is consumed: no further use or modification.
      */
-    void forward_ordered(ActorId dest, Event &event) const noexcept;
+    void push_forward(ActorId dest, Event &event) const noexcept;
 
     // OpenApi : used for module
     /** @private */

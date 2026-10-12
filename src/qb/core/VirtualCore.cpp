@@ -1916,14 +1916,14 @@ VirtualCore::__refused__(Event &event, std::size_t const pipe_idx) noexcept {
 // no existing path changes -- the ordering was measured as a filter on reply() itself (the ticket's A/B:
 // the hub shapes paid it, chameneos +9 %, big +6 % on g++-14) and is offered as a spelling instead.
 void
-VirtualCore::reply_ordered(Event &event) noexcept {
+VirtualCore::push_reply(Event &event) noexcept {
     detail::event_wire::swap_dest_source(event); // one 16-byte store the copy loads whole, alive 0
     push(event);
     event.state.bits.alive = 1; // AFTER the copy, which carries 0
 }
 
 void
-VirtualCore::forward_ordered(ActorId const dest, Event &event) noexcept {
+VirtualCore::push_forward(ActorId const dest, Event &event) noexcept {
     detail::event_wire::set_dest(event, dest);
     push(event);
     event.state.bits.alive = 1;

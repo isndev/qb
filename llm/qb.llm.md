@@ -33,7 +33,7 @@ Five rules decide whether generated qb code is correct; everything else is detai
    member may point into its own storage: a by-value `std::string` is never a valid event
    member — use `qb::string<N>` or box it behind a smart pointer. `send<T>()` additionally
    requires a trivially destructible event and is unordered; `push<T>()` is ordered. `reply()` and
-   `forward()` are eager and unordered like `send`; `reply_ordered()` / `forward_ordered()` are the
+   `forward()` are eager and unordered like `send`; `push_reply()` / `push_forward()` are the
    same answers with `push`'s FIFO.
 4. **A coroutine captures by value before its first `co_await`.** The actor can be destroyed
    while the coroutine is suspended, so after any suspension the only legal channel back is
@@ -485,7 +485,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `reply(e)` swaps dest↔source; `forward(dest, e)` keeps the original source. Neither works on
   broadcast events (dropped). After the call the event is consumed — do not touch it. Both are
   eager and unordered (cross-core they are published at once, ahead of the handler's earlier
-  pushes); `reply_ordered(e)` / `forward_ordered(dest, e)` are the same answers taking the pipe,
+  pushes); `push_reply(e)` / `push_forward(dest, e)` are the same answers taking the pipe,
   FIFO with everything the actor pushed to that destination — use them when an answer must
   follow what you pushed.
 - **Blocking work** — wrap synchronous file/DB calls in `qb::io::async::callback` (blocks one callback
@@ -564,8 +564,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   _(VirtualCore.cpp `__flush_all__`; Event.h `detail::event_wire::copy`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
   replied/forwarded. _(Actor.cpp:577-595)_ They are `send`-family: unordered relative to the handler's
-  pushes. `reply_ordered`/`forward_ordered` are the `push`-family twins (same reuse, same guard, FIFO with
-  your pushes to that destination). _(VirtualCore.cpp `reply_ordered`, `forward_ordered`)_
+  pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with
+  your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   check `valid()` before sending, because terminal core teardown returns an empty handle without constructing
   a child. `get()` resolves on demand and returns `nullptr` while Activating, after failed init or after death;

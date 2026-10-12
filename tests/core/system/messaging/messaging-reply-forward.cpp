@@ -34,8 +34,8 @@
  *
  * The third part pins the ORDER contracts (Huly QB-976): `reply()`/`forward()` are eager and
  * unordered -- cross-core the answer precedes the handler's earlier pushes to the same actor
- * (UnorderedAnswer*) -- and `reply_ordered()`/`forward_ordered()` are the push-family answers,
- * FIFO with those pushes, same core and cross-core (OrderedAnswer*).
+ * (ReplyIsImmediate*) -- and `push_reply()`/`push_forward()` are the push-family answers,
+ * FIFO with those pushes, same core and cross-core (PushReply*).
  */
 
 #include <atomic>
@@ -469,13 +469,13 @@ TEST(RelayChain, CrossCoreReplyThenForwardFanOutDestroysBothCopies) {
 // answer straight into the peer's ring, ahead of everything the outbound pipe to that core still
 // holds for the pass-end flush -- an answer can reach its destination BEFORE an event the same
 // handler pushed to it earlier. That is the documented, unordered contract (send-family), and the
-// property a peer waiting on nothing else is served by. `reply_ordered()` and `forward_ordered()`
+// property a peer waiting on nothing else is served by. `push_reply()` and `push_forward()`
 // are the push-family answers: the copy goes into the pipe behind everything this actor pushed to
 // the destination, and the flush delivers them in order.
 //
 // Witnesses, none of which depends on timing:
 //  * ORDERED: the responder pushes `markers` events to the recorder, then hands the probe on with
-//    the ordered spelling (`reply_ordered()`, or `forward_ordered()` to the recorder as the sink);
+//    the ordered spelling (`push_reply()`, or `push_forward()` to the recorder as the sink);
 //    the recorder must see 1..markers, then the probe -- same core and cross-core, and through a
 //    flood wider than one flush run (300 events, runs of at most 256 buckets).
 //  * UNORDERED, BY CONTRACT: the same shape with `reply()` cross-core: the probe arrives FIRST,
@@ -486,7 +486,7 @@ TEST(RelayChain, CrossCoreReplyThenForwardFanOutDestroysBothCopies) {
 
 namespace messaging_reply_forward_test {
 
-enum class Answer : int { reply = 0, forward = 1, reply_ordered = 2, forward_ordered = 3 };
+enum class Answer : int { reply = 0, forward = 1, push_reply = 2, push_forward = 3 };
 
 struct OrderProbe : qb::Event {
     int         seq;     ///< the probe's rank in the sequence the recorder expects
@@ -529,11 +529,11 @@ public:
             case Answer::forward:
                 forward(event.sink, event); // the sink is the probe's source: a forward() back to it
                 break;
-            case Answer::reply_ordered:
-                reply_ordered(event);
+            case Answer::push_reply:
+                push_reply(event);
                 break;
-            case Answer::forward_ordered:
-                forward_ordered(event.sink, event);
+            case Answer::push_forward:
+                push_forward(event.sink, event);
                 break;
         }
     }
@@ -706,47 +706,47 @@ using messaging_reply_forward_test::in_order;
 using messaging_reply_forward_test::probe_first;
 using messaging_reply_forward_test::run_order;
 
-TEST(OrderedAnswer, SameCoreReplyOrderedFollowsEarlierPushes) {
-    run_order(qb::CoreId{0}, Answer::reply_ordered, 2, in_order(2));
+TEST(PushReply, SameCorePushReplyFollowsEarlierPushes) {
+    run_order(qb::CoreId{0}, Answer::push_reply, 2, in_order(2));
 }
 
-TEST(OrderedAnswer, SameCoreForwardOrderedFollowsEarlierPushes) {
-    run_order(qb::CoreId{0}, Answer::forward_ordered, 2, in_order(2));
+TEST(PushReply, SameCorePushForwardFollowsEarlierPushes) {
+    run_order(qb::CoreId{0}, Answer::push_forward, 2, in_order(2));
 }
 
-TEST(OrderedAnswer, CrossCoreReplyOrderedFollowsEarlierPushesToTheSameActor) {
+TEST(PushReply, CrossCorePushReplyFollowsEarlierPushesToTheSameActor) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
-    run_order(qb::CoreId{1}, Answer::reply_ordered, 2, in_order(2));
+    run_order(qb::CoreId{1}, Answer::push_reply, 2, in_order(2));
 }
 
-TEST(OrderedAnswer, CrossCoreForwardOrderedFollowsEarlierPushesToTheSameActor) {
+TEST(PushReply, CrossCorePushForwardFollowsEarlierPushesToTheSameActor) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
-    run_order(qb::CoreId{1}, Answer::forward_ordered, 2, in_order(2));
+    run_order(qb::CoreId{1}, Answer::push_forward, 2, in_order(2));
 }
 
 // Wider than one flush run (256 buckets): the order holds across runs too.
-TEST(OrderedAnswer, CrossCoreReplyOrderedBehindAFloodKeepsItsPlace) {
+TEST(PushReply, CrossCorePushReplyBehindAFloodKeepsItsPlace) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
-    run_order(qb::CoreId{1}, Answer::reply_ordered, 300, in_order(300));
+    run_order(qb::CoreId{1}, Answer::push_reply, 300, in_order(300));
 }
 
 // The documented contract of reply(): eager, so cross-core it precedes the pushes made before it.
-TEST(UnorderedAnswer, CrossCoreReplyPrecedesEarlierPushesByContract) {
+TEST(ReplyIsImmediate, CrossCoreReplyPrecedesEarlierPushesByContract) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox to precede the pushes";
     run_order(qb::CoreId{1}, Answer::reply, 2, probe_first(2));
 }
 
-TEST(UnorderedAnswer, CrossCoreForwardPrecedesEarlierPushesByContract) {
+TEST(ReplyIsImmediate, CrossCoreForwardPrecedesEarlierPushesByContract) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox to precede the pushes";
     run_order(qb::CoreId{1}, Answer::forward, 2, probe_first(2));
 }
 
-TEST(UnorderedAnswer, CrossCoreReplyIsPublishedBeforeTheHandlerReturns) {
+TEST(ReplyIsImmediate, CrossCoreReplyIsPublishedBeforeTheHandlerReturns) {
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox while its sender's core is busy";
     using namespace messaging_reply_forward_test;

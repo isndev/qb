@@ -80,7 +80,7 @@ The common unparked enqueue path uses SPSC atomics and fences without a mutex. W
 - `reply(event)` returns a received event to its source by swapping `dest` and `source` (`src/qb/core/Actor.cpp:577-584`). `forward(dest, event)` re-routes it to a new destination while **preserving the original source** (`src/qb/core/Actor.cpp:586-595`).
 - Both reuse the received event object, so the `on()` handler must take the event by non-const reference. After the call the event is consumed and must not be touched again.
 - Broadcast events cannot be replied to or forwarded; the attempt is logged and dropped (`src/qb/core/Actor.cpp:579-582`, `src/qb/core/Actor.cpp:590-593`).
-- Both are `send`-family, eager and unordered: cross-core the answer is published at once and precedes the handler's earlier pushes to the same actor. `reply_ordered(event)` / `forward_ordered(dest, event)` are the same answers through `push` — FIFO with everything this actor pushed to that destination, delivered at the end of the pass — with the same reuse, guard and consumption rules.
+- Both are `send`-family, eager and unordered: cross-core the answer is published at once and precedes the handler's earlier pushes to the same actor. `push_reply(event)` / `push_forward(dest, event)` are the same answers through `push` — FIFO with everything this actor pushed to that destination, delivered at the end of the pass — with the same reuse, guard and consumption rules.
 
 ### Events must be trivially relocatable
 

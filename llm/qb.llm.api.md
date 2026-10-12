@@ -156,8 +156,8 @@ Event sending:
 *   `[T<_Event,_Args...>] void broadcast(_Args&&... args) const noexcept` — to every actor on all cores. Single-core: `push<E>(qb::BroadcastId(core), ...)`.
 *   `void reply(Event& event) const noexcept` — reply to source (swaps dest↔source); handler must take event by non-const ref; broadcasts cannot be replied to. Eager and **unordered** (`send`-family): cross-core it is published at once, ahead of the handler's earlier pushes.
 *   `void forward(ActorId dest, Event& event) const noexcept` — forward preserving source; same constraints and the same unordered contract as reply.
-*   `void reply_ordered(Event& event) const noexcept` — `reply()` with `push`'s **ordering**: the same reuse and guard, the pipe instead of the ring, FIFO with everything this actor pushed to the source; delivered at the end of the pass.
-*   `void forward_ordered(ActorId dest, Event& event) const noexcept` — `forward()` with `push`'s ordering; same constraints as reply_ordered.
+*   `void push_reply(Event& event) const noexcept` — `reply()` with `push`'s **ordering**: the same reuse and guard, the pipe instead of the ring, FIFO with everything this actor pushed to the source; delivered at the end of the pass.
+*   `void push_forward(ActorId dest, Event& event) const noexcept` — `forward()` with `push`'s ordering; same constraints as push_reply.
 *   `[[nodiscard]] Pipe getPipe(ActorId dest) const noexcept` — low-level pipe for `allocated_push`.
 *   `[T<..._Actors>] bool require() const noexcept` — actor discovery: broadcast a `PingEvent` per type; live actors reply via `RequireEvent` (handle with `registerEvent<RequireEvent>`).
 

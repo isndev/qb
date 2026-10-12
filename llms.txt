@@ -24,7 +24,7 @@ Five rules decide whether generated qb code is correct; everything else is detai
    member may point into its own storage: a by-value `std::string` is never a valid event
    member — use `qb::string<N>` or box it behind a smart pointer. `send<T>()` additionally
    requires a trivially destructible event and is unordered; `push<T>()` is ordered. `reply()` and
-   `forward()` are eager and unordered like `send`; `reply_ordered()` / `forward_ordered()` are the
+   `forward()` are eager and unordered like `send`; `push_reply()` / `push_forward()` are the
    same answers with `push`'s FIFO.
 4. **A coroutine captures by value before its first `co_await`.** The actor can be destroyed
    while the coroutine is suspended, so after any suspension the only legal channel back is

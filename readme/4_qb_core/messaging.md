@@ -124,8 +124,8 @@ Every one of these is a member of `qb::Actor`, `const` and `noexcept`, and calla
 | `broadcast<E>(…)` | **none** (one `send` per core) | one per core | same as `send`, on every remote core | — | every actor on every core |
 | `reply(event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
 | `forward(dest, event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
-| `reply_ordered(event)` | FIFO with this actor's pushes to the source (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
-| `forward_ordered(dest, event)` | FIFO with this actor's pushes to `dest` (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
+| `push_reply(event)` | FIFO with this actor's pushes to the source (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
+| `push_forward(dest, event)` | FIFO with this actor's pushes to `dest` (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
 
 **When `send` wins over `push`, measured.** `send` hands the event to the peer's ring at once instead
 of leaving it in the outbound pipe for the pass's flush. That is a win for ONE event with nothing
@@ -374,7 +374,7 @@ What it does **not** cover:
 - **No cross-source ordering.** If A and B both push to C, each source's own subsequence is preserved; the merge is unspecified.
 - **No cross-destination ordering.** Two pushes from A to different actors have no relationship — even when both destinations are on the same core, because the flush and the drain interleave with the peers' own work.
 - **`send` is unordered, period** — see the retraction above.
-- **`reply` and `forward` are `send`**, so they are unordered relative to your pushes: cross-core the answer is published at once and reaches its destination *before* an event the same handler pushed to it earlier (pinned by `UnorderedAnswer.*` in `qb/tests/core/system/messaging/messaging-reply-forward.cpp`). When an answer must follow your pushes, `reply_ordered` / `forward_ordered` are the same answers through `push`: FIFO with everything you pushed to that destination, delivered at the end of the pass (`OrderedAnswer.*`). Choose by what the peer is waiting for — the answer alone: `reply`; the answer after what you pushed: `reply_ordered`. Ordering `reply` itself was measured and refused: a per-answer check of the pipe costs the hub shapes 6–10 % (QB-976).
+- **`reply` and `forward` are `send`**, so they are unordered relative to your pushes: cross-core the answer is published at once and reaches its destination *before* an event the same handler pushed to it earlier (pinned by `ReplyIsImmediate.*` in `qb/tests/core/system/messaging/messaging-reply-forward.cpp`). When an answer must follow your pushes, `push_reply` / `push_forward` are the same answers through `push`: FIFO with everything you pushed to that destination, delivered at the end of the pass (`PushReply.*`). `reply` / `forward` stay the immediate, unordered answer; `push_reply` / `push_forward` are the FIFO one — the verb names the family, as `push<E>` against `send<E>`. Choose by what the peer is waiting for: the answer alone, `reply`; the answer after what you pushed, `push_reply`. Ordering `reply` itself was measured and refused: a per-answer check of the pipe costs the hub shapes 6–10 % (QB-976).
 - **`broadcast` fans out as independent sends.** Per-recipient there is no ordering at all; across recipients there is no global order.
 
 ## The event header
@@ -419,7 +419,7 @@ This is a design position, not an oversight: events are expected to be small, al
 - **Sizing `allocated_push` to the payload.** The argument is the trailing bytes after the event; `sizeof(E)` is added for you. An oversized event is dropped cross-core with a `LOG_CRIT` and nothing at the call site fails.
 - **Replying to or forwarding a broadcast.** Logged and dropped. Build a fresh unicast event instead.
 - **Taking the event by `const&` and then calling `reply`/`forward`.** Both mutate in place; declare `void on(E &event)`.
-- **Assuming `reply` keeps its place in the `push` order.** It goes through `send`. If a response must follow earlier pushes in order, `reply_ordered` it (or `forward_ordered`): the same reuse of the event, through `push`.
+- **Assuming `reply` keeps its place in the `push` order.** It goes through `send`. If a response must follow earlier pushes in order, `push_reply` it (or `push_forward`): the same reuse of the event, through `push`.
 - **Allocating inside an event constructor under memory pressure.** The `noexcept` path terminates the process.
 
 ## See also

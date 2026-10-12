@@ -186,7 +186,7 @@ void on(WorkForward &event) {    // non-const reference is required
 Three constraints follow from the implementation:
 
 1. **Broadcast events cannot be replied to or forwarded.** If `event.getDestination()` is a broadcast id, `reply`/`forward` log a warning and drop the call (`qb/src/qb/core/Actor.cpp`).
-2. **Both route through the unordered `send` path,** not `push`. A replied or forwarded event therefore carries no ordering guarantee relative to events you `push` to the same destination — cross-core it arrives *before* them. `reply_ordered(event)` and `forward_ordered(dest, event)` are the same answers through `push`: FIFO with everything you pushed to that destination, delivered at the end of the pass.
+2. **Both route through the unordered `send` path,** not `push`. A replied or forwarded event therefore carries no ordering guarantee relative to events you `push` to the same destination — cross-core it arrives *before* them. `push_reply(event)` and `push_forward(dest, event)` are the same answers through `push`: FIFO with everything you pushed to that destination, delivered at the end of the pass.
 3. **Both byte-copy the existing event** (`qb::VirtualCore::send(Event const&)` relocates it with `qb::detail::event_wire::copy` into a pipe, or raw into the peer core's mailbox — on the same core as much as across cores), so they carry the same trivially-destructible expectation as `send`, and the relocation rule applies to them unconditionally. Reply or forward events whose members are plain data or `qb::string<N>`; copy a heap-backed payload out and `push` a fresh event instead.
 
 ### How the five primitives compare
@@ -198,7 +198,7 @@ Three constraints follow from the implementation:
 | `send<E>(dest, …)` | none | trivially destructible | one actor | `void` |
 | `broadcast<E>(…)` | none | trivially destructible (uses `send` path) | all actors, all cores | `void` |
 | `reply(event)` / `forward(dest, event)` | none (uses `send` path) | non-broadcast received event; trivially destructible | source / `dest` | `void` |
-| `reply_ordered(event)` / `forward_ordered(dest, event)` | FIFO with this actor's pushes to the destination (uses `push` path) | non-broadcast received event | source / `dest` | `void` |
+| `push_reply(event)` / `push_forward(dest, event)` | FIFO with this actor's pushes to the destination (uses `push` path) | non-broadcast received event | source / `dest` | `void` |
 
 The "trivially destructible" rows are a usage contract, not a statement about delivery: an event that *is* delivered has its destructor run exactly once by the receiving core, whichever primitive queued it. What the contract protects is the **drop** path — a `qb::EventQOS0` event discarded on a full peer mailbox is never disposed, and a heap-owning member then leaks. It is compiler-enforced only for events deriving from `qb::EventQOS0`; for a plain `qb::Event` subclass the requirement is yours to honor. Reach for `push` for heap-backed payloads such as a `std::vector`. Independently of all this, a by-value `std::string` is invalid in *any* event on *any* path — see the relocation rule under [Defining your own events](#defining-your-own-events).
 
@@ -280,7 +280,7 @@ sequenceDiagram
 
 - **Using `send` with a non-trivially-destructible event.** Delivery itself is safe: the receiving core destroys the event exactly once, on every placement path. The contract exists for the **drop** path — a `qb::EventQOS0` event discarded on a full peer mailbox is never disposed, so a `std::vector` or smart-pointer member leaks there. For a plain `qb::Event` subclass this is a documented contract, not a compile error, so the mistake is silent — use `push` for those events.
 - **Relying on cross-source ordering.** `push` orders events only per source→destination pipe. Events from two different senders to one actor have no defined relative order; do not assume one.
-- **Assuming `reply`/`forward` preserve order with `push`.** They route through the unordered `send` path. If a response must follow earlier pushed events in order, use `reply_ordered` / `forward_ordered` — the same answers through `push`.
+- **Assuming `reply`/`forward` preserve order with `push`.** They route through the unordered `send` path. If a response must follow earlier pushed events in order, use `push_reply` / `push_forward` — the same answers through `push`.
 - **Replying to or forwarding a broadcast event.** The call is logged and dropped. Construct and send a fresh event to a concrete destination instead.
 - **Forgetting `registerEvent`.** An actor receives only the types it has registered for; an unregistered event type is never dispatched to that actor.
 - **Taking the event by `const&` and then calling `reply`/`forward`.** Both require a non-const reference. Declare the handler `void on(E &event)`.
