@@ -541,14 +541,14 @@ policy.
   cache lending the region of a size it took back last first, and a mailbox colours its rings with its core's index
   rather than a counter's next value, so they sit where they sat. A block that changed cores brought a ring that had
   been its first owner's own index, never written, 16 pages a mailbox: given back in build order, the witness's second
-  16-core engine faulted 248 pages, and the witness now bounds it at three a core. A stop no longer tells the cores that
-  did not ask: once one watch had crossed cores, every core that stopped sent a notice to every core still running -- on
-  Windows a ring allocated for every pair that never talked -- and a stopping core now tells only the cores that watched
-  one of its actors (`qb-core-test-system-death-watch`, which counts what a core that never talked takes in). The
-  footprint witness reads the process's own resident set (and, on Windows, its private commit) across the start of a
-  64-core engine -- after a warm-up engine, whose cached regions `region_cache::trim()` hands back first -- and bounds
-  the growth by a page per ring and eight rings per core, against the sixty-four whole rings per core the eager mailbox
-  wrote.
+  16-core engine faulted 248 pages; given back in reverse, 25, as with a region per ring (24 to 27), and the witness now
+  bounds it at three a core. A stop no longer tells the cores that did not ask: once one watch had crossed cores, every
+  core that stopped sent a notice to every core still running -- on Windows a ring allocated for every pair that never
+  talked -- and a stopping core now tells only the cores that watched one of its actors
+  (`qb-core-test-system-death-watch`, which counts what a core that never talked takes in). The footprint witness reads
+  the process's own resident set (and, on Windows, its private commit) across the start of a 64-core engine -- after a
+  warm-up engine, whose cached regions `region_cache::trim()` hands back first -- and bounds the growth by a page per
+  ring and eight rings per core, against the sixty-four whole rings per core the eager mailbox wrote.
 - **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
   build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
   `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a

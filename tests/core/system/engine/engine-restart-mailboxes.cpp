@@ -24,7 +24,8 @@
  * never written, and that core's laps fault them: 16 pages a mailbox. The cache lends the region of a size it took back
  * last, first; the mailboxes are built in core order, so they must be given back in the reverse order for each core's
  * mailbox to find its own block, and coloured by their core's index for its rings to sit where they sat. Given back in
- * the order they were built, a second 16-core engine faulted 248 pages here, 220 of them in the cores.
+ * the order they were built, a second 16-core engine faulted 248 pages here, 220 of them in the cores; in the reverse
+ * order, 25 (24 + 1) -- with the colour of a process-wide counter instead of the core's index, 41 (29 + 12).
  *
  * The engine: 16 cores, one actor each, every actor sending every other core a lap of its ring -- 1 024 buckets, the
  * ring's every slot -- so every one of the 16 x 15 rings that carries events has every one of its pages written, in

@@ -23,8 +23,9 @@
  * The witness reads the process's own memory -- the resident set on Linux (`/proc/self/statm`) and macOS
  * (`task_info`), the working set and the private commit on Windows (`GetProcessMemoryInfo`) -- across the start of an
  * engine of 64 idle cores that exchange no event, and bounds its growth by a budget PER CORE: one page per ring of its
- * mailbox -- the header pages, 64 of them -- plus eight rings' worth (sixteen under a sanitizer, whose shadow memory is
- * counted too), several times what a core holds besides -- its 64 KiB receive buffer, its `VirtualCore` on its stack,
+ * mailbox -- the header pages, 64 of them -- plus eight rings' worth (thirty-two under a sanitizer, whose shadow memory
+ * and allocator quarantine are counted too: under ASan the reading moves between 55 and 85 MiB from one repetition of
+ * the case to the next in one process), several times what a core holds besides -- its 64 KiB receive buffer, its `VirtualCore` on its stack,
  * its io loop. It counts bytes, never time, so a loaded host cannot move it. The eager mailbox wrote 64 x 64 rings,
  * 258 MiB, against a bound of 64 x (64 pages + 8 rings), 49 MiB with 4 KiB pages. On a Linux kernel whose transparent
  * huge pages are `always`, a header page written every 66 176 bytes of a block may be backed by a 2 MiB page each
@@ -89,10 +90,10 @@ using namespace std::chrono_literals;
 constexpr std::int64_t kRingBytes =
     static_cast<std::int64_t>(sizeof(qb::lockfree::spsc::ringbuffer<EventBucket, qb::detail::max_deliverable_buckets>));
 constexpr std::int64_t kCores = 64;
-/// What a core may hold before its first event besides one page per ring of its mailbox, in rings: eight, sixteen under
-/// a sanitizer. Either way far below the sixty-four whole rings a core held when every pair had one written, so the case
+/// What a core may hold before its first event besides one page per ring of its mailbox, in rings: eight, thirty-two under
+/// a sanitizer. Either way well below the sixty-four whole rings a core held when every pair had one written, so the case
 /// is red on the eager mailbox in every build.
-constexpr std::int64_t kBudgetRings = QB_FOOTPRINT_UNDER_SANITIZER ? 16 : 8;
+constexpr std::int64_t kBudgetRings = QB_FOOTPRINT_UNDER_SANITIZER ? 32 : 8;
 
 /// The page size the header pages are counted in.
 [[nodiscard]] std::int64_t
