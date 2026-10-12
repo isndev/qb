@@ -48,6 +48,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include <string>
 
@@ -207,6 +208,8 @@ TEST(MailboxFootprint, AnEngineHoldsMemoryInProportionToItsCoresBeforeItsFirstEv
     const std::int64_t     bound = kCores * (kCores * page_bytes() + kBudgetRings * kRingBytes);
     constexpr std::int64_t eager = kCores * kCores * kRingBytes;
     const std::int64_t     grew  = running.resident - before.resident;
+    std::printf("[ footprint ] %lld idle cores: resident +%.2f MiB, bound %.2f MiB, transparent huge pages: %s\n",
+                static_cast<long long>(kCores), mib(grew), mib(bound), hugepages().c_str());
     EXPECT_LE(grew, bound) << "an engine of " << kCores << " idle cores grew the process's resident memory by " << mib(grew)
                            << " MiB before its first event; the bound is a page per ring and " << kBudgetRings << " rings per core, "
                            << mib(bound) << " MiB -- a ring for every pair of cores would be " << mib(eager)
