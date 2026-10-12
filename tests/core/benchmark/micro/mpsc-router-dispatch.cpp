@@ -365,7 +365,10 @@ BM_MpscRouterMailbox_FanIn(benchmark::State &state) {
     // than hanging the run (see qb::bench::fan_in_result).
     {
         auto probe = run_router_mailbox<MailboxCap>(nb_producers, total, dequeue_batch);
-        benchmark::DoNotOptimize(probe.checksum);
+        // Observe the complete returned record. With a mutable subfield barrier,
+        // GCC 14 x86 can read an uninitialized temporary instead of the SRET
+        // checksum; the aggregate barrier stays bound to the returned storage.
+        benchmark::DoNotOptimize(probe);
         if (probe.stalled || probe.drained != total) {
             state.SkipWithError(
                 ("fan-in drain stalled: consumer took " + std::to_string(probe.drained) + " of " + std::to_string(total) + " buckets").c_str());

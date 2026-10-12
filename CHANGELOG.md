@@ -454,6 +454,12 @@ policy.
 
 ### Fixed
 
+- **The router benchmark observes its complete probe result (Huly QB-431).**
+  On GCC 14 x86, a mutable scalar-subfield `DoNotOptimize` barrier could make the
+  checksum guard read an uninitialized temporary after the result was returned.
+  The aggregate barrier preserves the exact FIFO checksum and count checks;
+  event production, mailbox work, handlers and the timed observation are unchanged.
+
 - **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
   build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
   `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a
