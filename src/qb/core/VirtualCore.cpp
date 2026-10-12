@@ -26,6 +26,7 @@
 #include <atomic>
 #include <climits>
 #include <cstddef>
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <new>
@@ -361,7 +362,7 @@ VirtualCore::__make_pipes__(VirtualPipe::pool_type &pool, std::size_t const nb_c
     return pipes;
 }
 
-void
+bool
 VirtualCore::__receive__() {
     // from same core. The self pipe is walked IN PLACE, a segment at a time, up to a fence taken
     // here: a handler that pushes to this same core appends behind the fence, and those events
@@ -374,8 +375,10 @@ VirtualCore::__receive__() {
     // the handler it is routed to, which is the contract Actor::push documents. `front(fence)`
     // is empty exactly when the walk is over, so it is the loop's only test; the walk itself
     // is gated on the pipe holding anything, two pointer compares on every pass of a core whose
-    // events all come from other cores -- or from nowhere, which is every idle pass.
-    if (!_self_pipe.empty()) {
+    // events all come from other cores -- or from nowhere, which is every idle pass. That test
+    // and the mailbox's count are the pass's evidence that it received (Huly QB-257).
+    const bool self = !_self_pipe.empty();
+    if (self) {
         auto fence = _self_pipe.mark();
         for (auto run = _self_pipe.front(fence); !run.empty(); run = _self_pipe.front(fence)) {
             __receive_events__(run);
@@ -385,13 +388,14 @@ VirtualCore::__receive__() {
     // global_core_events. `consume_all(func, scratch, chunk)`, not `dequeue(T*, n)`: the third
     // argument is a PER-PRODUCER batch limit, so every peer core's ring is drained on every
     // turn. A shared budget would let one saturated producer consume it and starve the rest.
-    _mail_box.consume_all(
+    const std::size_t consumed = _mail_box.consume_all(
         [this](EventBucket *buffer, std::size_t const nb_events) {
             _rx_len = nb_events; // ~VirtualCore's walk if a handler throws mid-batch
             __receive_events__(std::span<EventBucket>{buffer, nb_events});
             _rx_len = 0;
         },
         _event_buffer->data(), MaxRingEvents);
+    return self | (consumed != 0);
 }
 
 //    void VirtualCore::__receive_from__(CoreId const index) noexcept {
@@ -453,6 +457,20 @@ constexpr std::size_t kFlushRunBuckets = 256;
 // own core's workers between two drains -- is given to show it is alive, and what a peer held for
 // milliseconds in one handler (savina/barber's factory) costs this core once per such episode.
 constexpr std::uint8_t kFlushStallRefusals = 2;
+// The idle poll's pacing floor (Huly QB-251): the least interval, in nanoseconds, between two ordered
+// counter reads of a spinning core's idle passes (`VirtualCore::__pace__`). 0 is one ordered read per
+// idle pass and no re-read, ~11 ns on an i9-12900K P-core: the bare serialized gap the raw-ring probe
+// measured as the shape that reaches the low regime of a cross-core hop (qb-vs-others TUNING.md
+// section 16.2), and the value the 2c-spin sweep of QB-251 judges the others against.
+// `QB_CORE_IDLE_POLL_NS` overrides it at thread start, for that sweep: a knob of the measurement,
+// read once per core, never on a pass.
+constexpr std::uint64_t kIdlePollFloorNs = 0;
+std::uint64_t
+idle_poll_floor_ns() noexcept {
+    if (const char *const env = std::getenv("QB_CORE_IDLE_POLL_NS"))
+        return static_cast<std::uint64_t>(std::strtoull(env, nullptr, 10));
+    return kIdlePollFloorNs;
+}
 } // namespace
 
 // Widest event a destination mailbox ring can EVER accept — `kMaxDeliverableBuckets`,
@@ -506,7 +524,6 @@ VirtualCore::__flush_pipes__() noexcept {
                     if (likely(run)) {
                         const auto sent = _engine.send_run(_resolved_index, static_cast<CoreId>(pipe_idx), cur, run, run_events);
                         if (likely(sent.buckets)) {
-                            _metrics._nb_event_sent_try += sent.events;
                             _metrics._nb_event_sent += sent.events;
                             _metrics._nb_bucket_sent += sent.buckets;
                             cur += sent.buckets;
@@ -519,7 +536,6 @@ VirtualCore::__flush_pipes__() noexcept {
                 // Non-const: an undeliverable event is disposed here (its payload must be freed
                 // exactly like every other terminal path), so we need a mutable reference.
                 auto &event = *reinterpret_cast<Event *>(cur);
-                ++_metrics._nb_event_sent_try;
 
                 if (try_send(event)) {
                     ++_metrics._nb_event_sent;
@@ -879,6 +895,37 @@ VirtualCore::__pump_activations__() {
     }
 }
 
+// The idle pass's pacing read (Huly QB-251). An idle pass of a SPINNING core is a poll of the peer
+// rings: `__receive__` read each ring's published index and found it where this consumer left it.
+// What sits between two of those reads decides the cross-core exchange -- measured, not reasoned
+// (i9-12900K / WSL2 g++-14, ten interleaved launches a variant, Huly QB-180): ~20 ns of ordinary
+// code, the pass with no clock read left in it, cost the 2c-spin cells of savina/ping-pong and
+// thread-ring +25 %; a bounded tight `has_data()` poll was worse (+30 %); `lfence` alone (3 ns)
+// left +7 / +14 %, `spin_loop_pause()` (33 ns on Golden Cove) +9 / +20 %; an ORDERED counter read
+// (`lfence; rdtsc`, 11 ns) and the monotonic clock (13 ns: the same instructions under the vDSO)
+// put both cells back on the control's figure. The raw-ring probe says why (qb-vs-others
+// TUNING.md section 16.2): with ordinary work between two polls the next poll's load issues
+// speculatively at the top of the gap and keeps the producer's line snooped while it publishes;
+// a read that waits for the earlier loads to complete issues the next poll late, and once.
+// Until 3.3 that read was the clock read the park policy needed anyway, and the poll's cadence was
+// whatever the pass's content plus that clock came to: on Windows the clock is a call
+// (`QueryPerformanceCounter`, ordered as the kernel chooses), and a pass made lighter by an
+// unrelated change (one load less, Huly QB-65) moved the Windows 2c-spin cells +2.5-3 %
+// (Huly QB-251). The read is now the counter itself, ordered the same way on both compilers and
+// on arm64 (`qb::tsc_ticks_ordered`), and the interval between two of them has an explicit floor,
+// `_poll_floor_ticks` (`kIdlePollFloorNs` in the listener's calibration), held by re-reading the
+// counter: the cadence is a number this file states, not the sum of what the pass happens to do,
+// and a pass that gets lighter leaves it where it is. The park policy keeps its stamp in the same
+// unit, so an idle pass reads no clock at all until it parks.
+std::uint64_t
+VirtualCore::__pace__() noexcept {
+    std::uint64_t t = qb::tsc_ticks_ordered();
+    while (t - _poll_mark < _poll_floor_ticks)
+        t = qb::tsc_ticks_ordered();
+    _poll_mark = t;
+    return t;
+}
+
 template <bool _Timed>
 void
 VirtualCore::__workflow_loop__() {
@@ -888,14 +935,22 @@ VirtualCore::__workflow_loop__() {
     // `__tls_init`) -- 2.2 % of savina/ping-pong 1c for the three accesses a pass made (Huly
     // QB-199). The object lives for the thread, and this loop is the thread.
     auto &loop = io::async::listener::current;
+    // The idle floors, in the counter's ticks (Huly QB-251): the listener calibrated the rate once,
+    // for its io cadence; a counter that does not move (rate 0) is taken at one tick a nanosecond
+    // -- the floors are bounds, never a clock. A core that never parks keeps `_idle_spin_ticks` at
+    // all ones, so its idle pass never loads the mailbox's latency to learn that.
+    {
+        double rate = loop.tsc_per_ns();
+        if (rate <= 0.)
+            rate = 1.;
+        _poll_floor_ticks = static_cast<std::uint64_t>(rate * static_cast<double>(idle_poll_floor_ns()));
+        if (_mail_box.getLatency() > qb::duration::zero())
+            _idle_spin_ticks = static_cast<std::uint64_t>(rate * static_cast<double>(_mail_box.getIdleSpin().count()));
+    }
     // The signal generation this core last scanned, as a LOCAL: the pass compares it against the
     // global one in a register. Compared with the member, the check paid a memory operand on every
     // pass (+0.25 ns on the qb-vs-others pass-cost probe at k = 1, WSL2 g++-14, Huly QB-65).
     unsigned int scanned_generation = _last_signal_generation;
-    // `_metrics.activity()` at the end of the previous pass, a LOCAL for the same reason: the
-    // counters accumulate (Huly QB-162), and a pass is idle when their sum did not move. What it
-    // replaced cleared six per-pass counters at the end of every pass.
-    std::uint64_t activity_mark = _metrics.activity(loop.total_events_processed());
     while (likely(true)) {
         ++_loop_count; // 1-based loop-pass index surfaced to callbacks via qb::LoopEvent; also keys the `time()` sample
         // A timed core (Huly QB-165) stamps its pass here and closes it before the park policy: the
@@ -929,11 +984,17 @@ VirtualCore::__workflow_loop__() {
         if (_deadlines.armed())
             detail::deadlines_check(_deadlines, 0);
 
+        // The pass's evidence of work, one flag from each phase (Huly QB-257): the io turn's count,
+        // the flush's result, the receive's. What it replaced summed three cumulative counters at
+        // the end of every pass and kept the previous sum live across the loop -- one more register
+        // the pass could not spare on MSVC, where the signal generation had gone to the stack for it.
+        bool active = false;
         if (loop.has_work()) {
-            // Hot path: call `listener::run` directly — no `async::run` wrapper
-            // (avoids redundant checks). It counts the callbacks it runs; the park policy
-            // reads that count at the end of the pass (`total_events_processed()`).
+            // Hot path: call `listener::run` directly -- no `async::run` wrapper
+            // (avoids redundant checks). It counts the callbacks it runs: this turn's count is
+            // the io phase's evidence.
             loop.run(EVRUN_NOWAIT);
+            active = loop.nb_invoked_event() != 0;
         }
 
         // Complete any async `onInit()` resumed above (replay stashes / enforce
@@ -944,145 +1005,87 @@ VirtualCore::__workflow_loop__() {
                 break; // the last actor was an activating-then-dying one
         }
 
-        // send core events
-        __flush_all__();
+        // send core events: a flush attempted is work, published or refused (a refused event is
+        // retried by the next pass, which must not be a park)
+        active |= __flush_all__();
         // receive core events
-        __receive__();
-        // check if reception killed actors
-        if (unlikely(!_actor_to_remove.empty()))
-            goto removeActors;
-        // Dispatch callbacks from a flat, cache-friendly snapshot (2.6). The
-        // master list `_callback_list` is kept in sync with the hashmap on
-        // register / unregister, so building the per-iteration snapshot is now a
-        // single contiguous copy instead of an `unordered_map` walk. A local
-        // snapshot is still required because the tick handler `on(LoopEvent&)` may
-        // register or unregister actors during dispatch (e.g. via `addRefActor`).
-        // The `empty()` guard is what makes the per-pass clock lazy IN PRACTICE: the
-        // `LoopEvent` below is built from `time()`, and until the guard that was the
-        // one unconditional clock read left in a pass — `985cbb3a` moved the read from
-        // the top of the loop into this block and wrote that a pass nobody asks costs
-        // nothing, but a `LoopEvent` built for zero callbacks still asked. A core with
-        // no registered callback — every benchmark, every server that drives itself
-        // from io and events — paid one `clock_gettime` per pass for an event nobody
-        // received: 39.6 % of a one-core `ping-pong` profile (`perf record -e cpu-clock`,
-        // WSL2 / g++-14), ~13 ns of a ~33 ns pass. The snapshot copy sits inside the
-        // guard for the same reason. No branch hint: the predicate is a per-core
-        // constant on every pass but the one that registers or unregisters the
-        // first / last callback.
-        if (!_callback_list.empty()) {
-            // One LoopEvent for the whole pass — same `now`/`iteration` for every callback,
-            // consistent with `Actor::time()` (the same per-pass sample; a pass with no
-            // registered callback and no caller never reads the clock). Delivered by a direct
-            // virtual call (not routed).
-            const qb::LoopEvent                                  loop_ev{time(), _loop_count};
-            thread_local allocator::region_vector<CallbackEntry> cb_snapshot;
-            cb_snapshot = _callback_list;
-            for (auto const &entry : cb_snapshot) {
-                // Skip the callback of an actor killed earlier in this same
-                // dispatch pass (e.g. by an earlier actor's tick). The
-                // object is still alive — destruction is deferred to the
-                // removeActors phase below — so this is purely a semantics fix:
-                // a killed actor must not get another tick, matching the
-                // event-kill path which skips the whole callback phase. The
-                // empty() fast-path keeps the common (nothing killed) case free;
-                // `is_alive()` is the kill flag itself (`Actor::kill()` is its only
-                // writer), read off an object the reap below has not reached yet.
-                if (likely(_actor_to_remove.empty()) || entry.actor->is_alive())
-                    entry.cb->on(loop_ev);
-            }
+        active |= __receive__();
+        // The tick phase and the reap, out of the loop (Huly QB-257): a core with no registered
+        // callback -- every benchmark, every server driven by io and events -- carried the tick
+        // phase's `LoopEvent`, snapshot assignment and thread-local guard in its loop body, and the
+        // reap's vector swaps after them: code the hot pass jumped over, stack slots in its frame,
+        // and MSVC, which lays blocks out in source order, had spilled the signal generation around
+        // them. Kills during the drain skip the tick phase: a killed actor must not get another tick,
+        // and its whole callback phase is skipped, as it always was (`__tick__` skips the ones a tick
+        // kills). The `empty()` guard is what keeps the per-pass clock lazy IN PRACTICE: the
+        // `LoopEvent` is built from `time()`, and until the guard that was the one unconditional
+        // clock read left in a pass -- `985cbb3a` moved the read from the top of the loop into the
+        // tick phase and wrote that a pass nobody asks costs nothing, but a `LoopEvent` built for
+        // zero callbacks still asked: one `clock_gettime` per pass, 39.6 % of a one-core `ping-pong`
+        // profile (`perf record -e cpu-clock`, WSL2 / g++-14), ~13 ns of a ~33 ns pass. No branch
+        // hint on it: the predicate is a per-core constant on every pass but the one that registers
+        // or unregisters the first / last callback.
+        bool killed = !_actor_to_remove.empty();
+        if (!killed && !_callback_list.empty())
+            killed = __tick__();
+        if (killed) [[unlikely]] {
+            if (__reap__())
+                break; // the last actor is gone
         }
-        // check if callbacks killed actors
-        if (unlikely(!_actor_to_remove.empty())) {
-        removeActors:
-            // Reap dead actors. `removeActor()` destroys the actor, running user code that may `kill()`
-            // ANOTHER actor and so re-enter `killActor()` → `_actor_to_remove.push_back()`. The scratch
-            // buffer keeps that re-entrant push off the container being iterated (a growth
-            // reallocation of the vector moves its elements and invalidates a live iterator) and keeps
-            // late kills from being discarded by the clear (which stranded a `!is_alive()` actor in
-            // `_actors`, so the live count never reached zero and the core never terminated). Terminates:
-            // only that user code refills the queue and it runs at most once per actor — once an id has
-            // left `_actors`, `removeActor()` destroys nothing — so a pass that destroys nothing ends it.
-            // Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped`.
-            while (!_actor_to_remove.empty()) {
-                _actor_remove_batch.clear();
-                _actor_remove_batch.swap(_actor_to_remove);
-                for (auto const actor : _actor_remove_batch)
-                    removeActor(actor);
-            }
-            _actor_remove_batch.clear(); // drop the last batch's ids (capacity is kept for reuse)
-            if (_actor_count == 0) {
-                break;
-            }
-        }
-        // Park policy — a TIME floor, not an event-count credit. A pass is idle when it
-        // moved no event (received, io, a flush attempt: the `activity()` sum stood still)
-        // and left nothing for the next pass in the self-core pipe (an actor's callback may
-        // push to itself with no counted activity; parking over that would delay a local
-        // event by up to `latency`). The first idle
-        // pass stamps `_idle_since`; the core keeps polling until the mailbox's idle-spin
-        // floor has elapsed, then parks — which returns on data, on a producer's notify, or
-        // after `latency`. A wait that returns with nothing to do keeps the old stamp and
-        // parks again on the next pass, so an idle core does not re-spin a whole floor
-        // between two timeouts. The clock is read on idle passes only — a busy pass pays one
-        // store — and it is read in EVERY latency mode, a latency-0 core included, which
-        // never parks and so never uses the stamp. That read is not waste: it is what
-        // paces the idle poll. With the tick phase above no longer reading the wall clock,
-        // a spinning core's idle pass had become ~20 ns of unserialized code, and its
-        // cross-core exchange got SLOWER for it — savina/ping-pong and thread-ring 2c-spin
-        // +25 % on i9-12900K / WSL2 g++-14, ten interleaved launches each, fully separated
-        // distributions — while the one-core cells took the full gain. The idle poll needs
-        // ~10–15 ns of serialized work between two reads of the peer's ring index: an
-        // `lfence` alone (3 ns) left +7 / +14 %, `spin_loop_pause()` (33 ns here) +9 / +20 %,
-        // a bounded tight `has_data()` poll was worse than no pacing at all (+30 %), and the
-        // monotonic clock read (13 ns, `lfence; rdtsc` under the vDSO) put both cells back
-        // on the control's figure while the one-core cells stayed at −56 %. Measured, not
-        // reasoned; the census is `qb-vs-others` results `qb-branch-perf-loop-clock-on-demand/`.
+        // Park policy -- a TIME floor, not an event-count credit. A pass is idle when it moved no
+        // event (no io callback, no flush attempt, nothing received: the flags above) and left
+        // nothing for the next pass in the self-core pipe (an actor's callback may push to itself
+        // with no counted activity; parking over that would delay a local event by up to `latency`).
+        // The first idle pass stamps `_idle_since`; the core keeps polling until the mailbox's
+        // idle-spin floor has elapsed, then parks -- which returns on data, on a producer's notify,
+        // or after `latency`. A wait that returns with nothing to do keeps the old stamp and parks
+        // again on the next pass, so an idle core does not re-spin a whole floor between two
+        // timeouts. The stamp and the floor are in the ordered counter's ticks: the counter is read
+        // on idle passes only -- a busy pass pays one store -- and it is read in EVERY latency
+        // mode, a latency-0 core included, which never parks and so never uses the stamp. That read
+        // is not waste: it is what paces the idle poll, with its floor, as `__pace__` says. The
+        // clock is read only to cap a park by a pending request deadline (Huly QB-189), a
+        // microsecond-scale event; until 3.3 every idle pass read it and handed the reading to the
+        // deadline list -- a precise fire the coarse pre-check at the top of the pass gives within
+        // a scheduler tick anyway (Huly QB-251).
         //
         // WHERE it parks depends on whether the io loop has anything to deliver. With io
         // watchers active the park is taken INSIDE the loop (`Mailbox::wait(listener &)`:
         // `ev_run(EVRUN_ONCE)` capped at `latency`, ended by the producer through the
         // loop's async watcher), so a socket that becomes readable wakes the core at poll
-        // latency instead of at the timeout — a cv-parked core answered io only when
-        // `latency` expired (p50 0.9–1.2 ms at 100 µs, 15.6 ms at 10 ms, against 19 µs polling;
+        // latency instead of at the timeout -- a cv-parked core answered io only when
+        // `latency` expired (p50 0.9-1.2 ms at 100 us, 15.6 ms at 10 ms, against 19 us polling;
         // qb-vs-others audit, axis N). Io delivered by that park counts as activity: the
         // stamp is cleared so the reply, and the request after it, are met at polling
         // latency. A core with no io work keeps the condition-variable park, whose cost
         // and handshake are the measured ones.
-        [[maybe_unused]] qb::mono_time pass_end{};
-        if constexpr (_Timed) {
-            pass_end = qb::mono_now();
-            _pass_recorder.record(pass_start, pass_end);
-        }
-        const std::uint64_t activity = _metrics.activity(loop.total_events_processed());
-        if (likely(activity != activity_mark) || !_self_pipe.empty()) {
-            _idle_since = qb::mono_time{};
+        if constexpr (_Timed)
+            _pass_recorder.record(pass_start, qb::mono_now()); // the pass is timed, never the park
+        if (likely(active) || !_self_pipe.empty()) {
+            _idle_since = 0;
         } else {
-            const auto now = _Timed ? pass_end : qb::mono_now(); // a timed pass has just read it
-            // The idle pass's reading, handed to the deadline list for free: an idle core with a
-            // pending request fires its deadline on the precise clock, no coarse pre-check.
-            if (_deadlines.armed())
-                detail::deadlines_check(_deadlines, static_cast<std::uint64_t>(now.time_since_epoch().count()));
-            if (_idle_since == qb::mono_time{}) {
-                _idle_since = now;
-            } else if (_mail_box.getLatency() > qb::duration::zero() && now - _idle_since >= _mail_box.getIdleSpin()) {
+            const std::uint64_t t = __pace__();
+            if (_idle_since == 0) {
+                _idle_since = t;
+            } else if (t - _idle_since >= _idle_spin_ticks) {
                 // A pending request deadline bounds the park (Huly QB-189): the loop holds no
                 // timer for it any more, so neither park may outlast it -- the cap is the smaller
-                // of `latency` and the time to the earliest deadline, on the reading made above.
+                // of `latency` and the time to the earliest deadline, on a clock reading made here.
                 auto cap = _mail_box.getLatency();
                 if (_deadlines.armed()) {
-                    const auto left = detail::deadlines_next_in(_deadlines, static_cast<std::uint64_t>(now.time_since_epoch().count()));
+                    const auto now  = static_cast<std::uint64_t>(qb::mono_now().time_since_epoch().count());
+                    const auto left = detail::deadlines_next_in(_deadlines, now);
                     if (left < static_cast<std::uint64_t>(cap.count()))
                         cap = qb::duration{static_cast<qb::duration::rep>(left)};
                 }
                 if (loop.has_work()) {
                     if (_mail_box.wait(loop, cap))
-                        _idle_since = qb::mono_time{};
+                        _idle_since = 0;
                 } else {
                     _mail_box.wait(cap);
                 }
             }
         }
-        activity_mark = activity;
     }
     // Receive and flush residual events, guaranteed to terminate without dropping anything
     // a live peer can still accept.
@@ -1883,7 +1886,6 @@ VirtualCore::__refused__(Event &event, std::size_t const pipe_idx) noexcept {
 
     // Bounded backoff.
     for (std::uint32_t attempt = 1; attempt <= kFlushYieldAttempts; ++attempt) {
-        ++_metrics._nb_event_sent_try;
         if (try_send(event)) {
             ++_metrics._nb_event_sent;
             _metrics._nb_bucket_sent += event.bucket_size;
@@ -1929,6 +1931,52 @@ VirtualCore::push_forward(ActorId const dest, Event &event) noexcept {
     event.state.bits.alive = 1;
 }
 
+// The tick phase (Huly QB-257): out of the pass's loop, and after it in the file for the layout reason
+// above -- a ticking core calls it every pass, every other core never, and the call costs the ticking
+// core less than the snapshot assignment it makes anyway. Not inlined, which is the point: inlined,
+// the `LoopEvent` and the snapshot's thread-local guard were a stack frame and a TLS derivation in
+// the hot loop's body. The `empty()` guard is at the call site.
+bool
+VirtualCore::__tick__() {
+    // One LoopEvent for the whole pass -- same `now`/`iteration` for every callback, consistent with
+    // `Actor::time()` (the same per-pass sample; a pass with no registered callback and no caller
+    // never reads the clock). Delivered by a direct virtual call (not routed), from a snapshot: a
+    // tick handler may register or unregister actors during the dispatch (e.g. via `addRefActor`).
+    const qb::LoopEvent loop_ev{time(), _loop_count};
+    _callback_snapshot = _callback_list;
+    for (auto const &entry : _callback_snapshot) {
+        // Skip the callback of an actor killed earlier in this same dispatch pass (e.g. by an
+        // earlier actor's tick). The object is still alive -- destruction is deferred to the reap
+        // -- so this is purely a semantics fix: a killed actor must not get another tick, matching
+        // the event-kill path which skips the whole callback phase. The empty() fast-path keeps the
+        // common (nothing killed) case free; `is_alive()` is the kill flag itself (`Actor::kill()`
+        // is its only writer), read off an object the reap has not reached yet.
+        if (likely(_actor_to_remove.empty()) || entry.actor->is_alive())
+            entry.cb->on(loop_ev);
+    }
+    return !_actor_to_remove.empty();
+}
+
+// The reap (Huly QB-257): out of the pass's loop, cold, at the end of the file for the same layout
+// reason. `removeActor()` destroys the actor, running user code that may `kill()` ANOTHER actor and
+// so re-enter `killActor()` -> `_actor_to_remove.push_back()`. The scratch buffer keeps that
+// re-entrant push off the container being iterated (a growth reallocation of the vector moves its
+// elements and invalidates a live iterator) and keeps late kills from being discarded by the clear
+// (which stranded a `!is_alive()` actor in `_actors`, so the live count never reached zero and the
+// core never terminated). Terminates: only that user code refills the queue and it runs at most
+// once per actor -- once an id has left `_actors`, `removeActor()` destroys nothing -- so a pass that
+// destroys nothing ends it. Pinned by `KillDuringReap.ActorKilledFromAnotherDestructorIsStillReaped`.
+bool
+VirtualCore::__reap__() noexcept {
+    while (!_actor_to_remove.empty()) {
+        _actor_remove_batch.clear();
+        _actor_remove_batch.swap(_actor_to_remove);
+        for (auto const actor : _actor_remove_batch)
+            removeActor(actor);
+    }
+    _actor_remove_batch.clear(); // drop the last batch's ids (capacity is kept for reuse)
+    return _actor_count == 0;
+}
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

@@ -412,12 +412,16 @@ private:
     }
 
     /// Any pending event at any priority — non-zero exactly when `ev_pending_count()` would be.
+    /// Branchless on purpose (Huly QB-257): the counts are OR-ed and tested once. The early-exit loop
+    /// it replaced was five compares and five branches on exactly the passes that found nothing --
+    /// every idle pass of every core, and twice on a pass that ran the loop (`has_work()`, then
+    /// `run()`), both inlined into the core's pass.
     [[nodiscard]] bool
     _loop_has_pending() const noexcept {
+        int pending = 0;
         for (int pri = 0; pri < EV_NUMPRI; ++pri)
-            if (_pending_count[pri] != 0)
-                return true;
-        return false;
+            pending |= _pending_count[pri];
+        return pending != 0;
     }
 
     // ---- Registered events (QB_IO_PLAN 2.20) --------------------------------
@@ -961,7 +965,8 @@ public:
      *
      * Executes the event loop with the specified libev run flag.
      * This call blocks or returns based on the flag and event activity.
-     * It also resets the `_nb_invoked_events` counter before running.
+     * `nb_invoked_event()` reports this turn's count afterwards: the watchers the loop's pass invoked, the
+     * deferred callbacks and the coroutine resumes, written once at the end of the turn.
      *
      * After processing libev events, any ready coroutines are also executed -- unless this pass
      * is nested inside a coroutine drain (library code draining the loop from a coroutine body,
@@ -973,7 +978,13 @@ public:
      */
     inline void
     run(int flag = 0) {
-        _nb_invoked_events = 0;
+        // This turn's count, in a local until the end of the turn (Huly QB-257): the watchers the
+        // loop's pass invokes count into `_nb_invoked_events` (`on()`, the in-loop defer drain), so
+        // that member is zeroed only when the loop runs; the deferred and coroutine counts are added
+        // in a register, and the two members are written ONCE at the end. This body is inlined into
+        // every core's pass, and the zeroing store plus two read-modify-writes per count it used to
+        // make were stores to the listener's line on every io pass.
+        std::size_t invoked = 0;
         // The libev pass is gated on the loop's OWN liveness rule — `ev_run` keeps
         // looping while `activecnt` (referenced active watchers) is non-zero, and a
         // `NOWAIT` pass with nothing active and nothing pending would still cost a
@@ -984,7 +995,8 @@ public:
         // watcher are all judged exactly as `ev_run` itself judges them.
         const bool pending = _loop_has_pending(); // walked once here, for the liveness rule and the gate
         if (*_active_count > 0 || pending) {
-            int f = flag;
+            _nb_invoked_events = 0;
+            int f              = flag;
             // A non-blocking pass asks the gate (out of line, see `_nowait_gate`) whether the loop
             // has anything to do and with which flags; a blocking pass always runs it.
             if (!(flag & EVRUN_NOWAIT) || _nowait_gate(f, pending)) {
@@ -999,14 +1011,13 @@ public:
                 _io_fed_seen = *_io_fed;
             }
             _supply = false;
+            invoked = _nb_invoked_events;
         }
 
         // Deferred callbacks: continuations of the dispatch that just unwound.
         // Drained before coroutines so a `defer()` that wakes a coroutine is
         // picked up by `run_ready()` in the same turn.
-        const std::size_t deferred_count = _drain_deferred();
-        _nb_invoked_events += deferred_count;
-        _total_events_processed += deferred_count;
+        invoked += _drain_deferred();
 
         // Process ready coroutines.
         //
@@ -1036,11 +1047,10 @@ public:
         // body is inlined into the core's loop (`VirtualCore::__workflow_loop__`), and a condition
         // added to it reshaped that whole hot loop. The watchers and deferred callbacks above have
         // run either way.
-        if (_coro_scheduler) {
-            std::size_t coro_count = _coro_scheduler->run_ready(kMaxCoroutineResumesPerTurn);
-            _nb_invoked_events += coro_count;
-            _total_events_processed += coro_count;
-        }
+        if (_coro_scheduler)
+            invoked += _coro_scheduler->run_ready(kMaxCoroutineResumesPerTurn);
+        _nb_invoked_events = invoked;
+        _total_events_processed += invoked;
     }
 
     /// Upper bound on coroutine resumes per `run()` turn — see the `run_ready()` call site in
@@ -1124,6 +1134,14 @@ public:
     [[nodiscard]] inline std::uint64_t
     io_poll_interval_ticks() const noexcept {
         return _poll_every_tsc;
+    }
+
+    /// The counter's rate this listener calibrated at construction (`qb::detail::calibrate_tsc_per_ns`):
+    /// ticks of `qb::tsc_ticks()` per nanosecond, 0 when the counter does not move. A `VirtualCore`
+    /// converts its idle floors into ticks with it (Huly QB-251), so a thread calibrates once.
+    [[nodiscard]] inline double
+    tsc_per_ns() const noexcept {
+        return _tsc_per_ns;
     }
 
     /**

@@ -26,7 +26,7 @@ Include the whole library through one umbrella header:
 
 using namespace qb::time_literals;   // needed for the 500ms / 2s / 10s literals used below
 ```
-<!-- src: qb/src/qb/patterns.h:18-21; qb/src/qb/system/time.h:112-114 (inline namespace qb::time_literals) -->
+<!-- src: qb/src/qb/patterns.h:18-21; qb/src/qb/system/time.h:115-117 (inline namespace qb::time_literals) -->
 
 > **Every timeout in this page's snippets is a chrono literal** (`500ms`, `2s`, `10s`). Those suffixes
 > are not available by default — `qb::time_literals` is an inline namespace inside `qb` that re-exports

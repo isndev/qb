@@ -533,6 +533,15 @@ public:
     consume_all(Func const &func, T *scratch, size_t const chunk) {
         size_t nb_consume = 0;
         for (std::size_t i = 0; i < _nb_producer; ++i) {
+            // The poll, inline (Huly QB-257): a ring whose published write index is where this
+            // consumer's read index stands has nothing to copy out, and the copy-out below is a call
+            // per ring on MSVC -- on every pass of every core, for rings that are empty on every
+            // idle pass. `empty()` reads the published line `dequeue` reads first; a producer's
+            // store this relaxed load does not see yet is seen by the next pass, exactly as the
+            // acquire load inside `dequeue` would have seen it then (read-read coherence: the
+            // acquire load never reads an older value than this one).
+            if (_producers[i]._ringbuffer.empty())
+                continue;
             // `chunk` is deliberately NOT decremented across producers — see the note above.
             // `scratch` is rewritten from index 0 by each producer's copy-out.
             nb_consume += _producers[i]._ringbuffer.dequeue(func, scratch, chunk);

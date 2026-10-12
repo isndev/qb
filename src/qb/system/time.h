@@ -72,6 +72,9 @@
 #if defined(__APPLE__)
 #include <mach/mach_time.h>
 #endif
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86) || defined(_M_ARM64))
+#include <intrin.h> // __rdtsc / _mm_lfence, __isb / _ReadStatusReg: the counter reads below
+#endif
 
 namespace qb {
 
@@ -715,6 +718,35 @@ tsc_ticks() noexcept {
 #else
     return static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count());
+#endif
+}
+
+/// The same counter, read ORDERED: after every earlier load of this thread has completed, and before any
+/// later one issues. `lfence; rdtsc` on x86-64 -- the instructions the Linux vDSO gives `clock_gettime`,
+/// here on both compilers, where Windows' `QueryPerformanceCounter` is a call whose ordering is the
+/// kernel's choice -- and `isb; mrs cntvct_el0` on arm64; the portable fallback is `tsc_ticks()` itself,
+/// a nanosecond clock. Same ticks and rate as `tsc_ticks()`, so one calibration serves both. What a
+/// spinning `VirtualCore` paces its idle poll of the peer rings with (Huly QB-251): the next poll's
+/// load cannot issue before this read, so polls are spaced by at least its cost and never speculated
+/// into the gap; `tsc_ticks()` alone orders nothing and would not pace.
+[[nodiscard]] inline std::uint64_t
+tsc_ticks_ordered() noexcept {
+#if defined(_MSC_VER) && defined(_M_X64)
+    _mm_lfence();
+    return __rdtsc();
+#elif defined(__x86_64__)
+    unsigned hi, lo;
+    __asm__ __volatile__("lfence\n\trdtsc" : "=a"(lo), "=d"(hi) : : "memory");
+    return (static_cast<std::uint64_t>(lo)) | (static_cast<std::uint64_t>(hi) << 32ULL);
+#elif defined(__aarch64__)
+    std::uint64_t val;
+    __asm__ __volatile__("isb\n\tmrs %0, cntvct_el0" : "=r"(val) : : "memory");
+    return val;
+#elif defined(_MSC_VER) && defined(_M_ARM64)
+    __isb(_ARM64_BARRIER_SY);
+    return static_cast<std::uint64_t>(_ReadStatusReg(ARM64_SYSREG(3, 3, 14, 0, 2))); // CNTVCT_EL0
+#else
+    return tsc_ticks();
 #endif
 }
 

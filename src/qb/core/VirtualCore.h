@@ -511,10 +511,9 @@ private:
      * vector moves every element and invalidates every live iterator, and even where the
      * iterator survives, an id landing behind the cursor is silently dropped by the
      * subsequent `clear()`, leaving a `!is_alive()` actor in `_actors` forever so the core
-     * never terminates. Neither half depends on the build mode. The loop swaps into this buffer
-     * instead and repeats until no new kill appears. Member (not `thread_local`) because the
-     * reap block is a `goto` target — jumping across a block-scope thread_local's
-     * initialization is best avoided.
+     * never terminates. Neither half depends on the build mode. The reap (`__reap__`) swaps into
+     * this buffer instead and repeats until no new kill appears. A member, so its capacity is kept
+     * from one reap to the next.
      */
     RemoveActorList _actor_remove_batch;
 
@@ -616,15 +615,15 @@ private:
      * @struct Metrics
      * @brief The core's event counters, cumulative since it started.
      * @details
-     * Events received and sent and their sizes, counted where they happen and never cleared.
-     * Two readers: the park policy in `__workflow__`, which compares `activity()` with the value
-     * it read at the end of the previous pass (a pass is idle when the sum did not move), and
-     * `Actor::getCoreStats()`, which copies them out (Huly QB-162). Until 3.3 they were per-pass
-     * counts that a `reset()` zeroed at the end of every pass -- six counters a pass, and nothing
+     * Events received and sent and their sizes, counted where they happen and never cleared;
+     * `Actor::getCoreStats()` copies them out (Huly QB-162). Until 3.3 they were per-pass counts
+     * that a `reset()` zeroed at the end of every pass -- six counters a pass, and nothing
      * cumulative left to read -- and the io count among them was stored after every io pump. The
-     * loop counts its own callbacks (`listener::total_events_processed()`) and the pass reads that
-     * instead: the store, kept as a cumulative `+=`, cost the coroutine round trip of the
-     * qb-vs-others ask probe 2.5 ns on MSVC (+5 %, beyond what moving the code alone moves it).
+     * loop counts its own callbacks (`listener::total_events_processed()`). The park policy read
+     * these too, as a sum compared with the previous pass's (a pass was idle when it stood still),
+     * until Huly QB-257: the pass now judges idleness by what its phases returned -- the io turn's
+     * count, the flush's and the receive's result -- which keeps the previous sum out of a register
+     * the loop could not spare on MSVC, and the flush's attempt counter out of the event path.
      * The policy itself is keyed on TIME (`_idle_since` against the mailbox's idle-spin floor),
      * not on these counts: the 2.15–3.0 "spin credit" refilled from the previous pass's event
      * count parked a one-event-per-pass workload after two or three empty passes, so every hop
@@ -633,36 +632,23 @@ private:
     struct Metrics {
         std::uint64_t _nb_event_received  = 0;
         std::uint64_t _nb_bucket_received = 0;
-        std::uint64_t _nb_event_sent_try  = 0; ///< flush attempts, published or not: read by `activity()` only
         std::uint64_t _nb_event_sent      = 0; ///< published into a peer's mailbox, by the flush or directly by `send`
         std::uint64_t _nb_bucket_sent     = 0;
-
-        /**
-         * @brief The evidence of work: a sum that moves on every pass that received an event,
-         *        attempted a flush or ran an io callback.
-         * @param io The loop's own cumulative count of the callbacks it ran.
-         * @details `_nb_event_sent` is not in it, and need not be: every flush path counts its
-         *          attempt in `_nb_event_sent_try` as well, and a direct `send` -- counted in
-         *          `_nb_event_sent` only -- runs inside a handler or an io callback, which count,
-         *          or inside a tick, which never did. One difference from the per-pass test it
-         *          replaced: io that a park delivered moves the sum on the NEXT pass. The park
-         *          that delivered it has already cleared `_idle_since`, so a quiet core takes its
-         *          idle stamp one pass later -- nanoseconds, against a 50 µs floor.
-         */
-        [[nodiscard]] std::uint64_t
-        activity(std::uint64_t const io) const noexcept {
-            return _nb_event_received + _nb_event_sent_try + io;
-        }
     } _metrics;
-    // --- the idle clock: when this core last found nothing to do, `mono_time{}` while busy.
-    // Stamped on the first idle pass after activity and the clock re-read on every later one;
-    // a core with a non-zero latency parks (`Mailbox::wait()`) once `mono_now() - _idle_since`
-    // reaches the mailbox's idle-spin floor, and stays parked-or-parking (no re-spin) until
-    // something arrives. A latency-0 core never parks and never uses the stamp, but it takes
-    // the same read on each idle pass: that ~13 ns of serialized work is what paces its
-    // idle poll of the peer rings, measured in `__workflow__` (an unpaced idle pass costs the
-    // cross-core spin cells +25 %). A busy pass reads no clock in any mode.
-    qb::mono_time _idle_since{};
+    // --- the idle clock, in the CPU counter's ticks (Huly QB-251): when this core last found nothing
+    // to do, 0 while busy. Stamped on the first idle pass after activity by the ORDERED counter read
+    // that ends every idle pass (`__pace__`, `qb::tsc_ticks_ordered`): a core with a non-zero latency
+    // parks (`Mailbox::wait()`) once a reading is `_idle_spin_ticks` past the stamp, and stays
+    // parked-or-parking (no re-spin) until something arrives. A latency-0 core never parks
+    // (`_idle_spin_ticks` stays all ones) and never uses the stamp, but takes the same read on each
+    // idle pass: that read, and the floor `_poll_floor_ticks` holds between two of them, is what paces
+    // its idle poll of the peer rings, measured in `__workflow_loop__` (an unpaced idle pass costs the
+    // cross-core spin cells +25 %). Both floors are set once at loop entry, from the listener's
+    // calibration of the counter. A busy pass reads neither the counter nor a clock, in any mode.
+    std::uint64_t _idle_since       = 0;
+    std::uint64_t _poll_mark        = 0;                 ///< the ordered counter reading that ended the last idle pass
+    std::uint64_t _poll_floor_ticks = 0;                 ///< the least interval between two such readings (the pacing floor)
+    std::uint64_t _idle_spin_ticks  = ~std::uint64_t{0}; ///< the mailbox's idle-spin floor in ticks; all ones: never parks
     // --- the pass clock: `time()` is sampled at most ONCE per loop pass, and only when asked.
     // The loop used to read `qb::wall_now()` at the top of every pass, whether or not any
     // actor would call `time()` in it — one clock read (~20–30 ns, a vDSO/`QueryPerformance`
@@ -732,6 +718,11 @@ private:
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
     std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
     bool                                                _tearing_down  = false; ///< terminal teardown refuses new actors
+    /// The tick phase's snapshot of `_callback_list` (Huly QB-257): a tick handler may register or
+    /// unregister actors during the dispatch (`addRefActor`), so the dispatch walks a copy. A member rather
+    /// than the `thread_local` it was in the loop, whose guard and destructor registration were a TLS derivation
+    /// in the pass's loop body; a region vector as that was (QB-1012). Touched by ticking cores only.
+    allocator::region_vector<CallbackEntry> _callback_snapshot;
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;
@@ -774,7 +765,9 @@ private:
      *          construction and aggregate iteration without any runtime cost.
      */
     void __receive_events__(std::span<EventBucket> events);
-    void __receive__();
+    //! The pass's receive: the same-core pipe up to its fence, then every peer ring. True when it routed
+    //! anything -- the pass's evidence of work, with the flush's and the io turn's (Huly QB-257).
+    bool __receive__();
     bool __flush_all__() noexcept;
     //! The drain behind `__flush_all__`: every non-empty outbound pipe published run by run,
     //! with the backoff and the two undeliverable shapes. Out of line and only entered when
@@ -804,6 +797,14 @@ private:
     /// QB-165): the untimed one is the loop every core ran before; the timing exists only in the other.
     template <bool _Timed>
     void __workflow_loop__();
+    /// The idle pass's pacing read (Huly QB-251): the ordered CPU counter, re-read until `_poll_floor_ticks`
+    /// have passed since the reading that ended the previous idle pass. Returns the reading, the idle stamp's unit.
+    [[nodiscard]] std::uint64_t __pace__() noexcept;
+    /// The tick phase (`qb::ICallback`), out of the pass's loop (Huly QB-257): one `LoopEvent`, the snapshot,
+    /// the dispatch. True when a tick killed an actor. Not inlined: that is the point.
+    [[nodiscard]] QB_NOINLINE bool __tick__();
+    /// The reap of `_actor_to_remove`, out of the pass's loop: true once the last actor is gone.
+    [[nodiscard]] QB_NOINLINE QB_COLD bool __reap__() noexcept;
     //! Workflow
 
     // Actor Management
@@ -1609,7 +1610,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:710-720`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:726-736`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

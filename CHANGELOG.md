@@ -257,6 +257,26 @@ policy.
   `region_cache` region: destroyed, they stay mapped for the next ring set of the same size instead of going back to
   `malloc`, until `region_cache::trim()` returns them to the OS. The compile-time form is unchanged, and so is every
   access: the vector's element type and layout are the same.
+- **A spinning core's idle poll is paced by an ordered read of the CPU counter, the same instructions on both
+  compilers, with an explicit floor (Huly QB-251); the pass holds less live state, and the tick phase and the reap run
+  out of its loop (Huly QB-257).** An idle pass of a spinning core is a poll of its peer rings, and what sits between
+  two polls decides the cross-core exchange: 3.2's loop-clock pass measured the 2c-spin cells +25 % with no serialized
+  work there, and the pacing it kept was the park policy's clock read -- `lfence; rdtsc` under the Linux vDSO, a
+  `QueryPerformanceCounter` call on Windows, ordered as the kernel chooses -- plus whatever the pass happened to do,
+  so an unrelated change that made the pass one load lighter moved the Windows 2c-spin cells +2.5-3 % (QB-65). An idle
+  pass now makes one ordered counter read (`qb::tsc_ticks_ordered`, new in `<qb/system/time.h>`: `lfence; rdtsc` on
+  x86-64 under MSVC, clang-cl, g++ and clang alike, `isb; mrs cntvct_el0` on arm64, `tsc_ticks()` elsewhere) and holds
+  a floor between two of them by re-reading the counter -- the built-in floor is zero, one read; `QB_CORE_IDLE_POLL_NS`
+  overrides it at thread start, for measurement -- and the idle stamp and the idle-spin floor are kept in the same
+  ticks, converted once from the listener's calibration, so an idle pass reads no clock until it parks (the clock then
+  caps the park by a pending request deadline; the deadline list keeps its coarse pre-check on every pass, the idle
+  pass no longer hands it a precise reading). Inside the loop: a pass judges idleness by what its phases returned --
+  the io turn's count, the flush's and the receive's result -- instead of summing three cumulative counters and
+  keeping the previous sum live across the loop; the `qb::ICallback` tick phase and the reap are out-of-line members,
+  so a core without callbacks carries none of their code, stack slots or thread-local guard in its loop body;
+  `listener::run()` writes its two counters once per turn and its pending-count test is branchless; the mailbox's
+  copy-out `consume_all` tests each ring's published index inline before the per-ring dequeue call. `CoreStats` and
+  every documented behaviour of the park policy are unchanged; the figures are on the two tickets.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
