@@ -70,8 +70,9 @@ qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buf
 # reverses its representation, and the to/from conversions swap on the opposite-order host only.
 qb_add_test(MODULE qb-core TIER unit NAME endian SOURCES system/endian.cpp DEPENDS ${PROJECT_NAME})
 # mpsc-ring-allocation pins the runtime-producer mpsc::ringbuffer's rings (Huly QB-203): none at construction and none from
-# a consumer's walk, a producer's own on its first enqueue (each producing form, ringOf too) and no other, and rings
-# published while the consumer walks deliver every item once and in order; an engine-sized ring is a region_cache region
-# (QB-1012) at its own offset in its page, the next buffer's rings reuse the regions without mapping any, and the losers
-# of a race for one ring give theirs back. The engine side is mailbox-footprint and engine-restart-mailboxes.
+# a consumer's walk, a producer's own on its first enqueue (each producing form, ringOf too) and no other, the engine's
+# Mailbox with every ring at once (POSIX) or none (Windows), and rings published while the consumer walks deliver every
+# item once and in order; engine-sized rings start at their own offsets in their pages, in one region_cache region per
+# buffer (POSIX) or one per ring (Windows, QB-1012), the next buffer reuses them without mapping any, and a race for one
+# ring constructs it once. The engine side is mailbox-footprint and engine-restart-mailboxes.
 qb_add_test(MODULE qb-core TIER unit NAME mpsc-ring-allocation SOURCES lockfree/mpsc-ring-allocation.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)

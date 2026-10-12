@@ -296,41 +296,49 @@ public:
  * This specialization provides a MPSC ring buffer with a runtime-determined number of producers specified during construction.
  * Same three ways in as the fixed-producer form: `enqueue_at<Index>(...)`, `enqueue(index, ...)`, and the round-robin `enqueue(...)`.
  *
- * **A producer's ring exists once that producer has used it** (Huly QB-203). Construction allocates one pointer per
- * producer and nothing else; the first enqueue on an index -- or `ringOf(index)` -- allocates that producer's ring and
- * publishes it, and the consumer's walks skip an index whose ring was never published. Memory is therefore proportional to
- * the producers that have produced, not to the producers that might. Until 3.3 the rings were a `std::vector<Producer>` of
- * `nb_producer` elements, value-initialised: every byte of every ring -- a `max_size + 1` slot array each -- was written
- * at construction. The engine builds one of these per core with one producer per core, so an engine of N cores held
- * N² rings before its first event: 66 176 bytes each with the engine's event buckets, 1 GiB at 128 cores, almost all
- * of it for pairs of cores that never talk.
+ * **A producer's ring costs nothing until it is constructed** (Huly QB-203). Construction allocates one pointer per
+ * producer -- and on POSIX one block with room for every producer's ring, untouched -- and the first enqueue on an index,
+ * or `ringOf(index)`, constructs that producer's ring and publishes it; the consumer's walks skip an index whose ring was
+ * never published. A buffer whose producers all produce -- the engine's mailbox -- constructs every ring at once instead
+ * (the protected constructor, POSIX only): a page per ring. Memory is therefore proportional to the producers that have
+ * produced, not to the producers that might. Until 3.3 the rings were a `std::vector<Producer>` of `nb_producer`
+ * elements, value-initialised: every byte of every ring -- a `max_size + 1` slot array each -- was written at
+ * construction. The engine builds one of these per core with one producer per core, so an engine of N cores held N²
+ * rings before its first event: 66 176 bytes each with the engine's event buckets, 1 GiB at 128 cores, almost all of it
+ * for pairs of cores that never talk.
  *
- * - **Storage.** A ring comes from `qb::allocator::region_allocator` (`region.h`, Huly QB-1012): from 64 KiB -- the
- *   engine's rings are 66 176 bytes -- a `region_cache` region, below it the global allocator. Destroyed, a region-backed
- *   ring stays mapped in that cache, so the next ring of its size -- the next engine's, in a process that restarts its
- *   engine -- is built in pages already faulted, until `region_cache::trim()` gives them back to the OS.
+ * - **Storage.** CONTIGUOUS (POSIX): one block per buffer from `qb::allocator::region_allocator` (`region.h`, Huly
+ *   QB-1012) -- from 64 KiB, which the engine's buffers are, a `region_cache` region -- with room for `nb_producer + 1`
+ *   rings, taken by the constructor and left as the allocator hands it: a page no ring was written into is not the
+ *   process's. Each ring is constructed in its place in the block. PER RING (Windows): each ring is a region of its own,
+ *   allocated when the ring is constructed, because a committed mapping commits every page of a block, written or not.
+ *   Destroyed, a region stays mapped in that cache, so the next buffer of its size -- the next engine's, in a process
+ *   that restarts its engine -- is built in pages already faulted, until `region_cache::trim()` gives them back.
  * - **Placement.** A region is page-aligned, so rings placed at the start of theirs would put the same line of every ring
  *   -- the consumer's read index, the producer's write index -- at the same offset in a page: one L1 set for all of them,
  *   which a consumer walking more rings than the set has ways misses on every walk, and the same low twelve address bits,
  *   which the store buffer cannot tell apart until a store commits (4K aliasing -- what `segmented_pipe` staggers its
- *   segments against). The vector of rings this replaced spread them by its 66 176-byte stride, 640 bytes in a page. So
- *   a ring starts `((index + s) % slots) * alignof(Producer)` bytes into its region, `s` taken per buffer from a counter,
- *   in the bytes the region's page rounding leaves anyway: 28 slots for the engine's rings in their 17-page regions; the
- *   producers of one buffer, and one producer across consecutive buffers -- an engine's mailboxes, built in core order --
- *   one slot apart. Every ring of a type takes the same size of region, whatever its slot, so the cache reuses any.
- * - **Publication.** The allocation is default-initialisation (placement `new Producer`, never `Producer()`): the lock
- *   and the ring's four index blocks are constructed, the slot array is left as the allocator hands it -- the pages of
- *   a fresh region the producer has not written yet are pages the process does not hold yet. The ring is published by a
- *   compare-exchange (release) of its slot from null; every reader of a slot loads it with acquire, so the indices the
- *   constructor wrote happen-before any use of the ring on another thread. One thread per index never loses the
- *   exchange; the round-robin forms and `ringOf` may race the index's owner, and the loser gives its unpublished ring
- *   back and uses the winner's.
+ *   segments against). The vector of rings this replaced spread them by its 66 176-byte stride, 640 bytes in a page, and
+ *   the block keeps that stride. A ring therefore starts `((5 * index + s) % slots) * alignof(Producer)` bytes into its
+ *   region, `s` taken per buffer from a counter, in the bytes the region's page rounding leaves anyway -- 28 slots for
+ *   the engine's rings in their 17-page regions; the block starts `s` slots in, and its stride moves each ring five slots
+ *   on. The two rings of a pair of cores never share a page offset.
+ * - **Publication.** A slot is CLAIMED -- a compare-exchange from null to a value no ring has -- before its ring is
+ *   constructed, by default-initialisation (placement `new Producer`, never `Producer()`): the lock and the ring's four
+ *   index blocks are written, the slot array is left untouched, pages the process does not hold yet. The ring is then
+ *   published by a release store; every reader of a slot loads it with acquire, so what the constructor wrote
+ *   happens-before any use of the ring on another thread, and a claimed slot reads as empty -- one unsigned comparison.
+ *   One thread per index never contends; the round-robin forms and `ringOf` may race the index's owner, and the thread
+ *   that finds the slot claimed waits the few stores the winner has left, then uses its ring. The mailbox's constructor
+ *   publishes its rings before any other thread sees the buffer.
  * - **What each path pays.** A producer: one load of its slot and a branch it predicts after the first enqueue, where it
- *   used to compute an address in the vector; the allocation itself is out of line. The consumer: one load per producer
- *   per walk -- a cache line holds eight slots with 64-byte lines, and the slot array is whole lines so nothing else
- *   shares them -- and an index with no ring costs that load and nothing more, where it used to cost the two lines of a
- *   ring's header.
- * - **Failure.** The first enqueue on an index allocates, so it can throw `std::bad_alloc`; every later one cannot.
+ *   used to compute an address in the vector; the construction itself is out of line. The consumer: one load per
+ *   producer per walk -- a cache line holds eight slots with 64-byte lines, and the slot array is whole lines so nothing
+ *   else shares them -- and an index with no ring costs that load and nothing more, where it used to cost the two lines
+ *   of a ring's header. An engine's mailbox has no such index on POSIX: with its rings constructed by their first
+ *   enqueues, a cross-core chain of eight cores measured +10 % (Huly QB-203 phase B).
+ * - **Failure.** On Windows the first enqueue on an index allocates, so it can throw `std::bad_alloc`; every later one
+ *   cannot. On POSIX the constructor took the block, and no enqueue allocates.
  *
  * @tparam T The type of elements stored in the buffer
  * @tparam max_size The maximum capacity per producer buffer
@@ -503,6 +511,24 @@ public:
      *          and, CONTIGUOUS, the block the rings will be constructed in, untouched.
      */
     explicit ringbuffer(std::size_t const nb_producer)
+        : ringbuffer(nb_producer, false) {}
+
+protected:
+    /**
+     * @brief Constructor for a buffer whose producers all produce, sooner or later: the engine's mailboxes.
+     * @param nb_producer The number of producers to create
+     * @param construct_now CONTIGUOUS (POSIX): construct and publish every producer's ring now, in its place in the
+     *        block -- each ring's lock and index lines written, one page per ring, its slot array left untouched -- so
+     *        a producer's slot is never empty and a consumer's walk reads every ring's published index, as the vector
+     *        of rings made it do. PER RING (Windows): ignored, a ring is still allocated by its producer's first
+     *        enqueue -- a region per ring now would commit every ring of the buffer.
+     * @details Why: on Linux an engine whose rings are constructed lazily measured +10 % on a cross-core chain of
+     *          eight cores (qb-core-bench-pipeline-chain-latency, Huly QB-203 phase B) against its rings constructed
+     *          here. The cost of constructing them here is one page per ring at rest -- 16 MiB at 64 cores, 64 MiB
+     *          at 128 -- and on a kernel whose transparent huge pages are `always`, a page written every 66 176
+     *          bytes of one block may be backed by a 2 MiB page each time: the block, then, nearly whole.
+     */
+    ringbuffer(std::size_t const nb_producer, [[maybe_unused]] bool const construct_now)
         : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
         , _nb_producer(nb_producer)
         , _stagger(next_stagger())
@@ -511,8 +537,14 @@ public:
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
         // when constructed with zero producers.
         assert(nb_producer > 0 && "mpsc::ringbuffer requires at least one producer");
+        if constexpr (contiguous) {
+            if (construct_now)
+                for (size_t i = 0; i < _nb_producer; ++i) // no other thread sees the buffer yet: relaxed
+                    slot(i).store(::new (ring_storage_for(i)) Producer, std::memory_order_relaxed);
+        }
     }
 
+public:
     /**
      * @brief Destroys every ring a producer constructed, and gives the storage back. No producer or consumer may still
      *        be using the buffer.

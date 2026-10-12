@@ -513,7 +513,7 @@ public:
 
     public:
         explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin)
-            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer)
+            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer, true) // every ring now (POSIX)
             , _latency(latency)
             , _idle_spin(idle_spin) {}
 

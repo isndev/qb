@@ -9,22 +9,27 @@
 
 /**
  * @file system/engine/mailbox-footprint.cpp
- * @brief What an engine holds before its first event: memory in proportion to its cores, and a mailbox ring only
- *        for a pair of cores that has talked (Huly QB-203).
+ * @brief What an engine holds before its first event: memory in proportion to its cores, and at most a page of a
+ *        mailbox ring per pair of cores (Huly QB-203).
  *
  * Every core's mailbox is a `qb::lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>` with one producer index
  * per core of the engine, and behind each index sits an SPSC ring of 1 024 event buckets -- 66 KB with the default
  * 64-byte bucket. Until 3.3 the mailbox built all of its rings at once and value-initialised them, so `Main::start()`
  * wrote N x N rings: 1 GiB at 128 cores, resident before the first event, almost all of it for pairs of cores that
- * never talk. A ring is now allocated by its producer's first enqueue.
+ * never talk. On POSIX the rings now share one block per mailbox and are constructed at `Main::start()` -- each ring's
+ * lock and index lines written, one page, its slot array untouched until its producer writes it; on Windows a ring
+ * is allocated by its producer's first enqueue, a region of its own.
  *
  * The witness reads the process's own memory -- the resident set on Linux (`/proc/self/statm`) and macOS
  * (`task_info`), the working set and the private commit on Windows (`GetProcessMemoryInfo`) -- across the start of an
- * engine of 64 idle cores that exchange no event, and bounds its growth by a budget PER CORE: sixteen rings' worth
- * (thirty-two under a sanitizer, whose shadow memory is counted too), several times what a core does hold before its
- * first event -- its 64 KiB receive buffer, its `VirtualCore` on its stack, its io loop. It counts bytes, never time,
- * so a loaded host cannot move it. The eager mailbox wrote 64 x 64 rings, 258 MiB, against a bound of 64 x 16 rings,
- * 64 MiB. A platform that gives a process no such reading skips the case and says so.
+ * engine of 64 idle cores that exchange no event, and bounds its growth by a budget PER CORE: one page per ring of its
+ * mailbox -- the header pages, 64 of them -- plus eight rings' worth (sixteen under a sanitizer, whose shadow memory is
+ * counted too), several times what a core holds besides -- its 64 KiB receive buffer, its `VirtualCore` on its stack,
+ * its io loop. It counts bytes, never time, so a loaded host cannot move it. The eager mailbox wrote 64 x 64 rings,
+ * 258 MiB, against a bound of 64 x (64 pages + 8 rings), 49 MiB with 4 KiB pages. On a Linux kernel whose transparent
+ * huge pages are `always`, a header page written every 66 176 bytes of a block may be backed by a 2 MiB page each
+ * time, and the case reads that as a ring for every pair: it prints the setting with its verdict. A platform that
+ * gives a process no reading of its own memory skips the case and says so.
  *
  * An engine of the same shape is started and stopped first, so what the measured one finds already in place -- the
  * code an engine runs, the allocator arenas and thread stacks its cores leave behind, the process's one-time
@@ -35,14 +40,16 @@
  * measured engine writes whatever rings it builds into pages the process does not hold, as a process's first engine
  * does.
  *
- * The mechanism -- no ring before a producer enqueues, that producer's ring and no other after it, a ring published
- * while the consumer walks -- is pinned on the primitive itself, `qb-core-test-unit-mpsc-ring-allocation`. This file
- * uses nothing the eager mailbox did not have, so it builds, and fails, on the code before the fix.
+ * The mechanism -- no ring before a producer enqueues for the plain buffer, every ring constructed at once for the
+ * engine's mailbox on POSIX, a ring published while the consumer walks -- is pinned on the primitive itself,
+ * `qb-core-test-unit-mpsc-ring-allocation`. This file uses nothing the eager mailbox did not have, so it builds, and
+ * fails, on the code before the fix.
  */
 
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <qb/main.h>
@@ -53,6 +60,7 @@
 #include <unistd.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
+#include <unistd.h>
 #elif defined(_WIN32)
 #include <windows.h>
 #include <psapi.h>
@@ -80,9 +88,38 @@ using namespace std::chrono_literals;
 constexpr std::int64_t kRingBytes =
     static_cast<std::int64_t>(sizeof(qb::lockfree::spsc::ringbuffer<EventBucket, qb::detail::max_deliverable_buckets>));
 constexpr std::int64_t kCores = 64;
-/// What a core may hold before its first event, in rings: sixteen, thirty-two under a sanitizer. Either way below the
-/// sixty-four a core held when every pair had a ring, so the case is red on the eager mailbox in every build.
-constexpr std::int64_t kRingsPerCore = QB_FOOTPRINT_UNDER_SANITIZER ? 32 : 16;
+/// What a core may hold before its first event besides one page per ring of its mailbox, in rings: eight, sixteen under
+/// a sanitizer. Either way far below the sixty-four whole rings a core held when every pair had one written, so the case
+/// is red on the eager mailbox in every build.
+constexpr std::int64_t kBudgetRings = QB_FOOTPRINT_UNDER_SANITIZER ? 16 : 8;
+
+/// The page size the header pages are counted in.
+[[nodiscard]] std::int64_t
+page_bytes() {
+#if defined(_WIN32)
+    SYSTEM_INFO info{};
+    GetSystemInfo(&info);
+    return static_cast<std::int64_t>(info.dwPageSize);
+#elif defined(__linux__) || defined(__APPLE__)
+    long const page = ::sysconf(_SC_PAGESIZE);
+    return page > 0 ? page : 4096;
+#else
+    return 4096;
+#endif
+}
+
+/// Linux's transparent-huge-page setting, printed with the verdict (see the file note).
+[[nodiscard]] std::string
+hugepages() {
+#if defined(__linux__)
+    std::ifstream in("/sys/kernel/mm/transparent_hugepage/enabled");
+    std::string   mode;
+    std::getline(in, mode);
+    return mode.empty() ? std::string("unknown") : mode;
+#else
+    return "n/a";
+#endif
+}
 
 /// The process's own memory as the platform counts it; `committed` is Windows' private commit, 0 elsewhere.
 struct Footprint {
@@ -167,17 +204,18 @@ TEST(MailboxFootprint, AnEngineHoldsMemoryInProportionToItsCoresBeforeItsFirstEv
     with_idle_engine([&running] { running = read_footprint().value(); });
     ASSERT_FALSE(HasFatalFailure());
 
-    constexpr std::int64_t bound = kCores * kRingsPerCore * kRingBytes;
+    const std::int64_t     bound = kCores * (kCores * page_bytes() + kBudgetRings * kRingBytes);
     constexpr std::int64_t eager = kCores * kCores * kRingBytes;
     const std::int64_t     grew  = running.resident - before.resident;
     EXPECT_LE(grew, bound) << "an engine of " << kCores << " idle cores grew the process's resident memory by " << mib(grew)
-                           << " MiB before its first event; the bound is " << kRingsPerCore << " rings per core, " << mib(bound)
-                           << " MiB -- a ring for every pair of cores would be " << mib(eager) << " MiB";
+                           << " MiB before its first event; the bound is a page per ring and " << kBudgetRings << " rings per core, "
+                           << mib(bound) << " MiB -- a ring for every pair of cores would be " << mib(eager)
+                           << " MiB (transparent huge pages: " << hugepages() << ")";
 #if defined(_WIN32)
     const std::int64_t committed = running.committed - before.committed;
     EXPECT_LE(committed, bound) << "an engine of " << kCores << " idle cores grew the process's private commit by " << mib(committed)
-                                << " MiB before its first event; the bound is " << kRingsPerCore << " rings per core, " << mib(bound)
-                                << " MiB -- a ring for every pair of cores would be " << mib(eager) << " MiB";
+                                << " MiB before its first event; the bound is a page per ring and " << kBudgetRings << " rings per core, "
+                                << mib(bound) << " MiB -- a ring for every pair of cores would be " << mib(eager) << " MiB";
 #endif
 }
 
