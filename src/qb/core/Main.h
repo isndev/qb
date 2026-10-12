@@ -498,7 +498,7 @@ public:
      *          `_mtx` on its way out, so a producer that takes the mutex either sees a live
      *          listener or none.
      */
-    class Mailbox : public lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0> {
+    class Mailbox : public lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents> {
     public:
         /// Which park the consumer is in, if any. See the class note.
         enum class Park : std::uint8_t { None = 0, Cv, Loop };
@@ -514,9 +514,8 @@ public:
         io::async::listener    *_loop = nullptr; ///< The consumer's io loop; written under `_mtx`.
 
     public:
-        /// @p ordinal: the core's resolved index, its rings' colour PER RING (Windows); POSIX builds every ring and takes none.
-        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin, std::size_t const ordinal = 0)
-            : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer, true, ordinal) // every ring now (POSIX)
+        explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin)
+            : lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>(nb_producer) // every ring, in one block
             , _latency(latency)
             , _idle_spin(idle_spin) {}
 
@@ -898,7 +897,7 @@ class Main {
     /// The same ring ceiling as `SharedCoreCommunication::MaxRingEvents`: one constant (Huly QB-61).
     constexpr static const uint64_t MaxRingEvents = qb::detail::max_deliverable_buckets;
     //////// Types
-    using Mailbox = lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>;
+    using Mailbox = lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>;
 
 #if defined(NSIG)
     /// One slot per signal number the platform defines (`NSIG`: 65 on Linux, 32 on macOS, 23 on Windows).

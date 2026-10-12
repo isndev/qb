@@ -168,11 +168,11 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
     for (auto &flag : _core_stopped)
         flag.store(false, std::memory_order_relaxed); // no core has stopped yet
     // In the initializer map's order, as until 3.3 -- the heap's placement of the mailboxes is the one the engine measured
-    // with -- each given its resolved index as its colour (a ring region's offset, PER RING; mpsc.h). They go back to the
-    // region cache in the exact reverse (`release_mailboxes`, from `Main::release_shared_com`).
+    // with. Their blocks go back to the region cache in the exact reverse (`release_mailboxes`, from
+    // `Main::release_shared_com`).
     for (const auto &[index, initializer] : core_initializers) {
-        const CoreId resolved = _core_set.resolve(index);
-        _mail_boxes[resolved] = std::make_unique<Mailbox>(_core_set.getNbCore(), initializer.getLatency(), initializer.getIdleSpin(), resolved);
+        const auto nb_producers               = _core_set.getNbCore();
+        _mail_boxes[_core_set.resolve(index)] = std::make_unique<Mailbox>(nb_producers, initializer.getLatency(), initializer.getIdleSpin());
     }
     // The death watch's bits, zeroed, after the mailboxes (see the member). Made before any core thread exists and freed
     // after every one has joined, never moved: the Dekker pair in `__watch__` / `__announce_stop__` reads the same
@@ -188,7 +188,7 @@ SharedCoreCommunication::release_mailboxes(std::span<CoreId const> const built_o
     // mailbox in the block its predecessor wrote, its rings where they were (mpsc.h). Released in the order they were
     // built, as the vector's destructor happened to, each next mailbox took another core's block, whose ring for its
     // own core had been that core's own index and never written: the next engine faulted a ring per mailbox on its
-    // first lap (248 pages for a second 16-core engine whose pairs all lap their rings; a region per ring, 25 to 27).
+    // first lap (248 pages for a second 16-core engine whose pairs all lap their rings, 25 given back in reverse).
     for (auto index = built_order.rbegin(); index != built_order.rend(); ++index)
         _mail_boxes[_core_set.resolve(*index)].reset();
 }

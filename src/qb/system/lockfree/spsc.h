@@ -30,13 +30,20 @@
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <memory>
+#include <qb/system/allocator/region.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
 #include <thread>
 #include <type_traits>
 #include <utility>
+
+namespace qb::lockfree::mpsc {
+template <typename T, std::size_t max_size>
+class block_ringbuffer;
+} // namespace qb::lockfree::mpsc
 
 namespace qb::lockfree::spsc {
 namespace internal {
@@ -83,6 +90,15 @@ namespace internal {
  * The derived buffer storage begins on the block AFTER the four index blocks: the ring's
  * first slots used to share a line with `read_index_`, which the producer writes on
  * every wrap while the consumer writes its index.
+ *
+ * A ring can be built CLOSED (`close()`, Huly QB-203): full to its producer -- its snapshot
+ * one past its write index -- and empty to its consumer, with `closed_index` in the
+ * consumer's published line. The producer's first write finds no room on its snapshot,
+ * reloads the published index as every refused snapshot does, and on `closed_index` opens
+ * the ring (`open()`): commits the slots and stores the consumer's true index, 0 -- the one
+ * store a producer ever makes to the consumer's line, before the consumer can have taken
+ * anything. A write that fits tests nothing new. `mpsc::block_ringbuffer` builds the
+ * engine's rings closed on Windows, where their slots are reserved pages not yet committed.
  *
  * @tparam T Type of elements stored in the ringbuffer
  */
@@ -184,6 +200,8 @@ protected:
     read_available(size_t const max_size) const {
         size_t       write_index = write_index_.load(std::memory_order_acquire);
         const size_t read_index  = read_index_.load(std::memory_order_relaxed);
+        if (read_index == closed_index)
+            return 0; // a ring built closed holds nothing
         return read_available(write_index, read_index, max_size);
     }
 
@@ -199,6 +217,8 @@ protected:
     write_available(size_t const max_size) const {
         size_t       write_index = write_index_.load(std::memory_order_relaxed);
         const size_t read_index  = read_index_.load(std::memory_order_acquire);
+        if (read_index == closed_index)
+            return 0; // a ring built closed takes nothing until its producer's first write opens it
         return write_available(write_index, read_index, max_size);
     }
 
@@ -212,13 +232,50 @@ protected:
      * @return Number of slots available for writing (a safe under-estimate unless refreshed)
      */
     size_t
-    producer_available(size_t const write_index, size_t const wanted, size_t const max_size) {
+    producer_available(size_t const write_index, size_t const wanted, T *const buffer, size_t const max_size) {
         size_t avail = write_available(write_index, cached_read_index_, max_size);
         if (avail < wanted) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
-            avail              = write_available(write_index, cached_read_index_, max_size);
+            if (unlikely(cached_read_index_ == closed_index))
+                open(buffer, max_size);
+            avail = write_available(write_index, cached_read_index_, max_size);
         }
         return avail;
+    }
+
+    /// `read_index_`'s value in a ring built closed (`close()`): never an index.
+    static constexpr size_t closed_index = ~size_t{0};
+
+    /**
+     * @brief Builds the ring CLOSED: full to its producer, empty to its consumer, until the producer's first write
+     *        opens it (Huly QB-203).
+     * @details A fresh ring only (no write yet). The producer's snapshot of the consumer's index is set where a full
+     *          ring would have it, so its first write -- any of the producing forms, or `write_room` -- takes the slow
+     *          path every producer takes when its snapshot cannot prove room; there the published read index, which
+     *          holds `closed_index`, sends it to `open()`. The consumer reads the published write index, still 0: an
+     *          empty ring. Nothing on the path of a write that fits tests anything new.
+     */
+    void
+    close(size_t const max_size) noexcept {
+        cached_read_index_ = next_index(write_index_local_, max_size);
+        read_index_.store(closed_index, std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Opens a closed ring: commits its slots (`region_commit`: Windows commits the pages a reserved block left
+     *        uncommitted, POSIX has nothing to do), then gives the producer its true snapshot. The producer's own
+     *        thread, once.
+     * @details The producer writes the consumer's published line here, the one time it ever does: the consumer
+     *          publishes its read index only after taking an item, and there is none before this write. A refused
+     *          commit cannot be reported from a send path that is `noexcept`: it terminates, as a failed allocation
+     *          there does.
+     */
+    QB_NOINLINE QB_COLD void
+    open(T *const buffer, size_t const max_size) noexcept {
+        if (!qb::allocator::detail::region_commit(buffer, max_size * sizeof(T)))
+            std::terminate();
+        cached_read_index_ = 0;
+        read_index_.store(0, std::memory_order_relaxed);
     }
 
     /**
@@ -233,12 +290,13 @@ protected:
      * paid itself.
      *
      * @param wanted Number of slots the caller needs the answer to be at least
+     * @param buffer The slots: what a closed ring's first write commits (`open()`)
      * @param max_size Maximum size of the buffer
      * @return Number of slots available for writing (a safe under-estimate unless refreshed)
      */
     [[nodiscard]] size_t
-    write_room(size_t const wanted, size_t const max_size) noexcept {
-        return producer_available(write_index_local_, wanted, max_size);
+    write_room(size_t const wanted, T *const buffer, size_t const max_size) noexcept {
+        return producer_available(write_index_local_, wanted, buffer, max_size);
     }
 
     /**
@@ -278,6 +336,8 @@ protected:
 
         if (next == cached_read_index_) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire);
+            if (unlikely(cached_read_index_ == closed_index))
+                open(buffer, max_size); // a ring built closed (`close()`): its first write
             if (next == cached_read_index_)
                 return false; /* ringbuffer is full */
         }
@@ -304,7 +364,7 @@ protected:
     size_t
     enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
         const size_t write_index = write_index_local_; // the producer's own copy: never the published line
-        const size_t avail       = producer_available(write_index, input_count, max_size);
+        const size_t avail       = producer_available(write_index, input_count, internal_buffer, max_size);
 
         if constexpr (_All) {
             if (avail < input_count)
@@ -509,9 +569,25 @@ public:
      */
     [[nodiscard]] size_t
     write_room(size_t const wanted) noexcept {
-        return internal::ringbuffer<T>::write_room(wanted, max_size);
+        return internal::ringbuffer<T>::write_room(wanted, array_.data(), max_size);
     }
 
+private:
+    // The engine's mailbox builds its rings in place and, on Windows, closed (Huly QB-203).
+    template <typename, std::size_t>
+    friend class qb::lockfree::mpsc::block_ringbuffer;
+
+    /// Builds this fresh ring CLOSED until its producer's first write -- see `internal::ringbuffer::close`.
+    void
+    close() noexcept {
+        internal::ringbuffer<T>::close(max_size);
+    }
+
+    /// The bytes before the slots: the four index blocks, all a constructor writes. The slots follow.
+    static constexpr size_t slots_offset = (sizeof(internal::ringbuffer<T>) + alignof(std::array<T, max_size>) - 1)
+                                           / alignof(std::array<T, max_size>) * alignof(std::array<T, max_size>);
+
+public:
     /**
      * @brief Enqueue a single element into the buffer
      *
@@ -627,7 +703,7 @@ public:
      */
     [[nodiscard]] size_t
     write_room(size_t const wanted) noexcept {
-        return internal::ringbuffer<T>::write_room(wanted, max_size_);
+        return internal::ringbuffer<T>::write_room(wanted, array_.get(), max_size_);
     }
 
     /**

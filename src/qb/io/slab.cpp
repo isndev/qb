@@ -184,10 +184,34 @@ map_region(std::size_t const bytes) noexcept {
     return ::VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
+// A reserved region (region.h): the range reserved, its first page committed -- where the cache keeps its links once
+// the region is released.
+void *
+reserve_region(std::size_t const bytes) noexcept {
+    void *const region = ::VirtualAlloc(nullptr, bytes, MEM_RESERVE, PAGE_READWRITE);
+    if (region && !::VirtualAlloc(region, detail::region_page_bytes, MEM_COMMIT, PAGE_READWRITE)) {
+        ::VirtualFree(region, 0, MEM_RELEASE);
+        return nullptr;
+    }
+    return region;
+}
+
+bool
+commit_pages(void *const at, std::size_t const bytes) noexcept {
+    auto const first = reinterpret_cast<std::uintptr_t>(at) / detail::region_page_bytes * detail::region_page_bytes;
+    auto const last =
+        (reinterpret_cast<std::uintptr_t>(at) + bytes + detail::region_page_bytes - 1) / detail::region_page_bytes * detail::region_page_bytes;
+    return ::VirtualAlloc(reinterpret_cast<void *>(first), last - first, MEM_COMMIT, PAGE_READWRITE) != nullptr;
+}
+
 void
 unmap_region(void *const region, [[maybe_unused]] std::size_t const bytes) noexcept {
-    ::VirtualFree(region, 0, MEM_RELEASE);
+    ::VirtualFree(region, 0, MEM_RELEASE); // committed or reserved alike
 }
+
+// The cache files a reserved region under its size with this bit set: region sizes are whole pages, so the bit is
+// free, and a lookup for one kind never finds the other (region.h).
+constexpr std::size_t reserved_kind = 1;
 
 #else // POSIX
 
@@ -207,6 +231,9 @@ unmap_region(void *const region, std::size_t const bytes) noexcept {
     ::munmap(region, bytes);
 }
 
+// POSIX has one kind of region: a mapping's pages are the process's once written (region.h).
+constexpr std::size_t reserved_kind = 0;
+
 #endif
 
 // A CACHED region carries its links in its first bytes; a lent one carries nothing. Two lists run
@@ -219,8 +246,14 @@ struct region_link {
     region_link *older;      ///< by age: the next region released before it
     region_link *same_newer; ///< the next region of its size released after it
     region_link *same_older; ///< the next region of its size released before it
-    std::size_t  bytes;      ///< the rounded size
+    std::size_t  bytes;      ///< the rounded size, its `reserved_kind` bit set for a reserved region: the class's key
 };
+
+// A class key's bytes: the rounded size, the kind bit cleared.
+[[nodiscard]] constexpr std::size_t
+key_bytes(std::size_t const key) noexcept {
+    return key & ~reserved_kind;
+}
 
 // One entry per size that has a region cached, by ascending size: the two ends of that size's list.
 // A lookup bisects it -- O(log sizes) under the lock, however many regions are cached. Walking the
@@ -313,7 +346,7 @@ r_forget(region_link *const link) noexcept {
         --r_class_count;
     }
     --r_cached;
-    r_cached_bytes -= link->bytes;
+    r_cached_bytes -= key_bytes(link->bytes);
 }
 
 // Under r_lock.
@@ -430,7 +463,7 @@ region_cache::trim() noexcept {
     }
     while (list) {
         region_link *const next = list->older;
-        unmap_region(list, list->bytes);
+        unmap_region(list, key_bytes(list->bytes));
         list = next;
     }
     if (table)
@@ -440,22 +473,28 @@ region_cache::trim() noexcept {
 
 namespace detail {
 
+namespace {
+
+// The cached region of class `key` released last, or a fresh one from `map`: what region_acquire and region_acquire_reserved
+// share, the key telling the kinds apart.
+template <typename Map>
 void *
-region_acquire(std::size_t const bytes) {
+r_take(std::size_t const bytes, std::size_t const kind, Map const &map) {
     if (bytes > (std::numeric_limits<std::size_t>::max)() - region_page_bytes)
         throw std::bad_alloc();
     std::size_t const size = region_rounded(bytes);
+    std::size_t const key  = size | kind;
     {
         scoped_lock const guard(r_lock);
-        if (std::size_t const at = r_class_from(size); at < r_class_count && r_classes[at].bytes == size) {
-            region_link *const link = r_classes[at].newest; // the region of that size released last
+        if (std::size_t const at = r_class_from(key); at < r_class_count && r_classes[at].bytes == key) {
+            region_link *const link = r_classes[at].newest; // the region of that size and kind released last
             r_forget(link);
             r_lend(size);
             return link;
         }
     }
     // Miss: map outside the lock, account inside it -- slab_cache::acquire()'s reason.
-    void *const region = map_region(size);
+    void *const region = map(size);
     if (!region)
         throw std::bad_alloc();
     scoped_lock const guard(r_lock);
@@ -464,8 +503,47 @@ region_acquire(std::size_t const bytes) {
     return region;
 }
 
+void r_give(void *region, std::size_t bytes, std::size_t kind) noexcept;
+
+} // namespace
+
+void *
+region_acquire(std::size_t const bytes) {
+    return r_take(bytes, 0, [](std::size_t const size) { return map_region(size); });
+}
+
+void *
+region_acquire_reserved(std::size_t const bytes) {
+#if defined(_WIN32) || defined(_WIN64)
+    return r_take(bytes, reserved_kind, [](std::size_t const size) { return reserve_region(size); });
+#else
+    return region_acquire(bytes);
+#endif
+}
+
+bool
+region_commit([[maybe_unused]] void *const at, [[maybe_unused]] std::size_t const bytes) noexcept {
+#if defined(_WIN32) || defined(_WIN64)
+    return commit_pages(at, bytes);
+#else
+    return true;
+#endif
+}
+
 void
 region_release(void *const region, std::size_t const bytes) noexcept {
+    r_give(region, bytes, 0);
+}
+
+void
+region_release_reserved(void *const region, std::size_t const bytes) noexcept {
+    r_give(region, bytes, reserved_kind);
+}
+
+namespace {
+
+void
+r_give(void *const region, std::size_t const bytes, std::size_t const kind) noexcept {
     if (!region)
         return;
     std::size_t const size = region_rounded(bytes);
@@ -478,15 +556,16 @@ region_release(void *const region, std::size_t const bytes) noexcept {
         unmap_region(region, size);
         return;
     }
-    auto *const   link          = static_cast<region_link *>(region);
-    region_link  *evicted       = nullptr; // past the bound, unmapped outside the lock, chained through `older`
-    region_class *retired       = nullptr; // the size table a doubling replaced, unmapped outside the lock
-    std::size_t   retired_bytes = 0;
-    link->bytes                 = size;
+    auto *const       link          = static_cast<region_link *>(region); // its first page is committed, whatever its kind
+    region_link      *evicted       = nullptr;                            // past the bound, unmapped outside the lock, chained through `older`
+    region_class     *retired       = nullptr;                            // the size table a doubling replaced, unmapped outside the lock
+    std::size_t       retired_bytes = 0;
+    std::size_t const key           = size | kind;
+    link->bytes                     = key;
     {
         scoped_lock const guard(r_lock);
         r_lent_bytes -= size;
-        region_class *const cls = r_class_for(size, r_class_from(size), retired, retired_bytes);
+        region_class *const cls = r_class_for(key, r_class_from(key), retired, retired_bytes);
         if (!cls) {
             // No page for a size table (the platform refused one): a region that cannot be filed is
             // not cached -- back to the OS, like one past the bound.
@@ -523,19 +602,28 @@ region_release(void *const region, std::size_t const bytes) noexcept {
     }
     while (evicted) {
         region_link *const next = evicted->older;
-        unmap_region(evicted, evicted->bytes);
+        unmap_region(evicted, key_bytes(evicted->bytes));
         evicted = next;
     }
     if (retired)
         unmap_region(retired, retired_bytes);
 }
 
+} // namespace
+
 std::size_t
 region_largest_cached(std::size_t const at_least, std::size_t const at_most) noexcept {
     scoped_lock const guard(r_lock);
-    // The largest cached size not above `at_most` -- every class holds a region -- if it reaches `at_least`.
-    std::size_t const above = r_class_after(at_most);
-    return above > 0 && r_classes[above - 1].bytes >= at_least ? r_classes[above - 1].bytes : 0;
+    // The largest cached committed size not above `at_most` -- every class holds a region -- if it reaches `at_least`.
+    // A reserved class (its kind bit set) is passed over: a growing container writes its whole buffer.
+    for (std::size_t above = r_class_after(at_most); above > 0; --above) {
+        std::size_t const key = r_classes[above - 1].bytes;
+        if (key < at_least)
+            break;
+        if (!(key & reserved_kind))
+            return key;
+    }
+    return 0;
 }
 
 region_outgrow::region_outgrow() noexcept

@@ -6,7 +6,7 @@
  * `region_cache` is where the buffers an engine builds per core, and whose size grows with the
  * engine, take their memory: the router's handler tables (one per event type, indexed by actor
  * id), the actor registry, the kill queues, the callback list, the broadcast snapshots, the receive
- * buffer and the mailbox rings. It exists because of one regression and the margin its fix relied
+ * buffer and the mailboxes' blocks. It exists because of one regression and the margin its fix relied
  * on (Huly QB-1009, QB-1012). On glibc those buffers lived in `malloc`, and `malloc` decides on its
  * own whether a freed block goes back to the OS:
  *
@@ -40,16 +40,24 @@
  *    and its own ceiling, `detail::region_capacity`) and reserves that region's whole capacity,
  *    so the next engine's tables, registry and queues grow straight into the previous engine's
  *    final buffers in one step instead of climbing the ladder again. A plain request -- the
- *    receive buffer, a mailbox ring -- takes the most recently released region of its exact size;
+ *    receive buffer, a mailbox's block -- takes the most recently released region of its exact size;
  *  - **the retention is bounded**: the cache never holds more than twice the most bytes the
  *    process ever had lent at once, and past that bound the regions released longest ago are
  *    unmapped first; in practice it holds the final buffers of the engines that stopped.
  *    Every lookup -- an exact size, the largest within a range -- bisects a table of the sizes
- *    it holds, so its cost does not grow with the number of regions cached (an engine whose
- *    cores all talked leaves one mailbox ring per pair of them there, Huly QB-203).
+ *    it holds, so its cost does not grow with the number of regions cached (on Windows the
+ *    runtime-producer `mpsc::ringbuffer` leaves a region per ring there, Huly QB-203).
  *    `region_cache::trim()` unmaps everything cached: the call for a process that lives on after
  *    its engines and wants its footprint back, which nothing makes for it (the same contract as
- *    `slab_cache::trim()`, `slab.h`).
+ *    `slab_cache::trim()`, `slab.h`);
+ *  - **a region can be RESERVED** (`detail::region_acquire_reserved`, Huly QB-203) for a block
+ *    most of which its owner may never write -- an engine's mailbox, a ring per core of which
+ *    only the header is written until that core sends. On Windows, where a committed mapping
+ *    commits every page of it, it is `VirtualAlloc(MEM_RESERVE)` with its first page committed,
+ *    its owner committing the rest as it needs it (`detail::region_commit`); it is cached with
+ *    what was committed in it, apart from the committed regions of its size, and neither kind is
+ *    ever lent for the other. On POSIX a mapping's pages are the process's once written, and a
+ *    reserved region is a region like any other.
  *
  * `region_allocator<T>` is the standard-library face of it: a request of at least 64 KiB is a
  * region, a smaller one goes to the global allocator -- below 64 KiB a block neither reaches
@@ -112,8 +120,23 @@ region_rounded(std::size_t const bytes) noexcept {
 /// Give a region back: cached, unless the calling thread is inside a growth (`region_outgrow`),
 /// which unmaps it. Null is ignored.
 void region_release(void *region, std::size_t bytes) noexcept;
-/// The size of the largest cached region within [`at_least`, `at_most`] bytes, 0 when none.
+/// The size of the largest cached region within [`at_least`, `at_most`] bytes, 0 when none. A reserved region
+/// (`region_acquire_reserved`) is never one.
 [[nodiscard]] std::size_t region_largest_cached(std::size_t at_least, std::size_t at_most) noexcept;
+
+/// A RESERVED region of at least `bytes` bytes (Huly QB-203): its address range is the caller's, its pages are not
+/// -- only the first is committed, the rest is committed by `region_commit` as the caller needs it. The most recently
+/// released reserved region of the same rounded size, whose pages keep what was committed in it, else a fresh
+/// reservation. Windows: `VirtualAlloc(MEM_RESERVE)`; a committed region of the same size is never lent for it, nor it
+/// for one. POSIX: a mapping's pages already are the process's only when written, so this is `region_acquire`.
+/// Page-aligned; content unspecified. Throws `std::bad_alloc`.
+[[nodiscard]] void *region_acquire_reserved(std::size_t bytes);
+/// Commits the pages of [`at`, `at + bytes`) inside a reserved region, rounded out to whole pages; committed pages
+/// are left as they are. False when the platform refuses (Windows: the commit limit). POSIX: true, nothing to do.
+[[nodiscard]] bool region_commit(void *at, std::size_t bytes) noexcept;
+/// Gives a reserved region back, with whatever is committed in it: cached among the reserved regions, unless the
+/// calling thread is inside a growth (`region_outgrow`). Null is ignored. POSIX: `region_release`.
+void region_release_reserved(void *region, std::size_t bytes) noexcept;
 
 /// While one lives on a thread, a region that thread releases is unmapped instead of cached: the
 /// growth helpers below hold one around the reallocation, so a rung a container outgrew never
