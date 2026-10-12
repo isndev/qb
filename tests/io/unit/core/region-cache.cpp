@@ -172,9 +172,14 @@ TEST(RegionCache, ARegionAContainerOutgrowsIsUnmappedNotCached) {
 TEST(RegionCache, AGrowingContainerTakesTheLargestCachedRegionItCanUse) {
     region_cache::trim();
     std::size_t const small = size_of(7), large = size_of(7, 5), too_large = size_of(7, 9);
-    detail::region_release(detail::region_acquire(small), small);
-    detail::region_release(detail::region_acquire(large), large);
-    detail::region_release(detail::region_acquire(too_large), too_large);
+    // All three lent at once, then released: the high water is their sum, so the cache's bound keeps
+    // every one of them (released one by one, the third would have pushed the first out).
+    void *const s = detail::region_acquire(small);
+    void *const l = detail::region_acquire(large);
+    void *const t = detail::region_acquire(too_large);
+    detail::region_release(s, small);
+    detail::region_release(l, large);
+    detail::region_release(t, too_large);
     EXPECT_EQ(detail::region_largest_cached(kPage, large), large);
     EXPECT_EQ(detail::region_largest_cached(small, too_large), too_large);
     EXPECT_EQ(detail::region_largest_cached(too_large + kPage, too_large * 2), 0u);
