@@ -231,12 +231,12 @@ protected:
      * @param max_size Maximum size of the buffer
      * @return Number of slots available for writing (a safe under-estimate unless refreshed)
      */
-    size_t
+    QB_MSVC_FORCEINLINE size_t
     producer_available(size_t const write_index, size_t const wanted, T *const buffer, size_t const max_size) {
         size_t avail = write_available(write_index, cached_read_index_, max_size);
         if (avail < wanted) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
-            if (unlikely(cached_read_index_ == closed_index))
+            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
                 open(buffer, max_size);
             avail = write_available(write_index, cached_read_index_, max_size);
         }
@@ -336,7 +336,7 @@ protected:
 
         if (next == cached_read_index_) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire);
-            if (unlikely(cached_read_index_ == closed_index))
+            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
                 open(buffer, max_size); // a ring built closed (`close()`): its first write
             if (next == cached_read_index_)
                 return false; /* ringbuffer is full */
