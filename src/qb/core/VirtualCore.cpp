@@ -1568,7 +1568,7 @@ VirtualCore::__watch__(ActorId const watcher, ActorId const target) noexcept {
     // core stopped, or that core finds this core's bit among its watchers and tells it of its stop, which
     // answers the watch (`__on_core_stopping__`) -- never neither. One bit per pair of cores, set once;
     // release/acquire orders the store before this fence. Only a watcher hears of a stop (Huly QB-203).
-    auto &mine = _engine._watched_by[_engine._core_set.resolve(core)][_resolved_index / 64]; // this core's word in its set
+    auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_resolved_index / 64]; // this core's word in its set
     if (std::uint64_t const bit = std::uint64_t{1} << (_resolved_index % 64); !(mine.load(std::memory_order_acquire) & bit))
         mine.fetch_or(bit, std::memory_order_release);
     SharedCoreCommunication::seq_cst_fence();
@@ -1659,7 +1659,7 @@ VirtualCore::__announce_stop__(SharedCoreCommunication &engine, CoreId const ind
     // load sees its bit and the notice goes out -- to the cores that watched this one, and no other.
     SharedCoreCommunication::seq_cst_fence();
     const CoreId resolved = engine._core_set.resolve(index);
-    auto const  &watchers = engine._watched_by[resolved];
+    auto const   watchers = engine.watchers_of(resolved);
     if (likely(std::ranges::all_of(watchers, [](auto const &bits) { return bits.load(std::memory_order_relaxed) == 0; })))
         return;
     constexpr std::size_t                   bytes = allocator::getItemSize<detail::CoreStopping, EventBucket>() * sizeof(EventBucket);

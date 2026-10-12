@@ -167,24 +167,35 @@ SharedCoreCommunication::SharedCoreCommunication(CoreInitializerMap const &core_
     , _core_stopped(_core_set.getSize()) {
     for (auto &flag : _core_stopped)
         flag.store(false, std::memory_order_relaxed); // no core has stopped yet
-    // In resolved order, each mailbox coloured with its resolved index: a core's mailbox is built, and laid out, the
-    // same in every engine of this shape. The destructor gives them back in the reverse order (see there).
-    for (const auto id : _core_set.raw()) {
-        const CoreId resolved    = _core_set.resolve(id);
-        const auto  &initializer = core_initializers.find(id)->second;
+    // In the initializer map's order, as until 3.3 -- the heap's placement of the mailboxes is the one the engine measured
+    // with -- each given its resolved index as its colour (a ring region's offset, PER RING; mpsc.h). They go back to the
+    // region cache in the exact reverse (`release_mailboxes`, from `Main::release_shared_com`).
+    for (const auto &[index, initializer] : core_initializers) {
+        const CoreId resolved = _core_set.resolve(index);
         _mail_boxes[resolved] = std::make_unique<Mailbox>(_core_set.getNbCore(), initializer.getLatency(), initializer.getIdleSpin(), resolved);
     }
+    // The death watch's bits, zeroed, after the mailboxes (see the member). Made before any core thread exists and freed
+    // after every one has joined, never moved: the Dekker pair in `__watch__` / `__announce_stop__` reads the same
+    // atomics it always did, only from another address.
+    _watched_by = std::make_unique<std::atomic<std::uint64_t>[]>(_core_set.getNbCore() * ((_core_set.getNbCore() + 63) / 64));
+}
+
+void
+SharedCoreCommunication::release_mailboxes(std::span<CoreId const> const built_order) noexcept {
+    // The mailboxes go back to the region cache in the REVERSE of the order they were built in (Huly QB-203). The cache
+    // lends the region of a size it took back last, first: released last, the first mailbox built has its block back
+    // first in the next engine of this shape, which builds the same core's mailbox first, and so on -- each core's
+    // mailbox in the block its predecessor wrote, its rings where they were (mpsc.h). Released in the order they were
+    // built, as the vector's destructor happened to, each next mailbox took another core's block, whose ring for its
+    // own core had been that core's own index and never written: the next engine faulted a ring per mailbox on its
+    // first lap (248 pages for a second 16-core engine whose pairs all lap their rings; a region per ring, 25 to 27).
+    for (auto index = built_order.rbegin(); index != built_order.rend(); ++index)
+        _mail_boxes[_core_set.resolve(*index)].reset();
 }
 
 SharedCoreCommunication::~SharedCoreCommunication() noexcept {
-    // The mailboxes go back to the region cache in the REVERSE of the order they were built in (Huly QB-203). The cache
-    // lends the region of a size it took back last, first: released last, mailbox 0's block is the first the next
-    // engine of this shape takes -- for its mailbox 0, built first -- and so on, each core's mailbox in the block its
-    // predecessor wrote, at the same offsets (the colour above). Released first to last, as the vector's destructor
-    // happened to, the first mailbox the next engine built took the last core's block, whose ring for that mailbox's
-    // core had been the last core's own index and never written: the next engine faulted a ring per mailbox on its
-    // first lap (248 pages for a second 16-core engine whose pairs all lap their rings; a region per ring, 25 to 27).
-    // Explicit, since a vector's destructor does not specify the order in which it destroys its elements.
+    // Those `release_mailboxes` has not given back, in reverse resolved order: explicit, since a vector's destructor
+    // does not specify the order in which it destroys its elements.
     for (auto mailbox = _mail_boxes.rbegin(); mailbox != _mail_boxes.rend(); ++mailbox)
         mailbox->reset();
 }
@@ -422,6 +433,19 @@ Main::~Main() noexcept {
         _signal_generation.fetch_add(1u, std::memory_order_release);
         join();
     }
+    release_shared_com(); // every core has joined, here or in a failed start
+}
+
+void
+Main::release_shared_com() noexcept {
+    if (!_shared_com)
+        return;
+    std::array<CoreId, MaxCores> built_order{}; // the order SharedCoreCommunication's constructor walked this map in
+    std::size_t                  built = 0;
+    for (const auto &index : _core_initializers | std::views::keys)
+        built_order[built++] = index;
+    _shared_com->release_mailboxes({built_order.data(), built});
+    _shared_com.reset();
 }
 
 void
@@ -591,7 +615,7 @@ Main::start(bool async) noexcept {
         slot.store(0, std::memory_order_relaxed);
     _signal_generation.store(0, std::memory_order_relaxed); // fresh cores start at generation 0
 
-    _shared_com.reset(); // a failed start's mailboxes first: their blocks go back to the region cache for these
+    release_shared_com(); // a failed start's mailboxes first: their blocks go back to the region cache for these
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
     _cores.resize(_core_initializers.size());
 

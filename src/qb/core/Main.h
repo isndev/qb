@@ -35,8 +35,10 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <qb/system/container/unordered_map.h>
+#include <span>
 #include <thread>
 #include <vector>
 // include from qb
@@ -512,7 +514,7 @@ public:
         io::async::listener    *_loop = nullptr; ///< The consumer's io loop; written under `_mtx`.
 
     public:
-        /// @p ordinal: the core's resolved index, its rings' colour -- the same in every engine of this shape (mpsc.h).
+        /// @p ordinal: the core's resolved index, its rings' colour PER RING (Windows); POSIX builds every ring and takes none.
         explicit Mailbox(std::size_t const nb_producer, qb::duration const latency, qb::duration const idle_spin, std::size_t const ordinal = 0)
             : lockfree::mpsc::ringbuffer<EventBucket, MaxRingEvents, 0>(nb_producer, true, ordinal) // every ring now (POSIX)
             , _latency(latency)
@@ -718,16 +720,31 @@ private:
     // backpressured LIVE core (keep retrying — its __receive__ frees space) from one that has
     // GONE (dispose the residue that can never be delivered).
     std::vector<std::atomic<bool>> _core_stopped;
-    // Death watch (Huly QB-51, QB-203): by RESOLVED index, the cores that watched an actor of each core, a bit per watcher.
-    // A core that stops tells those still running (`detail::CoreStopping`), so a watch that reached it too late is answered
-    // by the watcher's own core; a core that never watched it gets no notice (nor, on Windows, a mailbox ring for one).
-    std::array<std::array<std::atomic<std::uint64_t>, MaxCores / 64>, MaxCores> _watched_by{};
+    // Death watch (Huly QB-51, QB-203): by RESOLVED index, the cores that watched an actor of each core, a bit per watcher
+    // (`watchers_of`). A core that stops tells those still running (`detail::CoreStopping`), so a watch that reached it too
+    // late is answered by the watcher's own core; a core that never watched it gets no notice (nor, on Windows, a mailbox
+    // ring for one). An allocation of its own, made by the constructor after the mailboxes: cold -- `__watch__` and
+    // `__announce_stop__` read it, no pass does -- and kept out of this object, which every cross-core send reads, so the
+    // object keeps its size and its allocation's place (Huly QB-203: 8 KiB of bits inside it moved where the heap put it
+    // and the mailboxes after it, and the cells that read them moved with that).
+    std::unique_ptr<std::atomic<std::uint64_t>[]> _watched_by;
 
 public:
     SharedCoreCommunication() = delete;
     explicit SharedCoreCommunication(CoreInitializerMap const &core_initializers) noexcept;
 
     ~SharedCoreCommunication() noexcept;
+
+    /// Destroys the mailboxes in the reverse of @p built_order, the order the constructor built them in -- the
+    /// initializer map's. See the constructor and `Main::release_shared_com`. The destructor destroys any left.
+    void release_mailboxes(std::span<CoreId const> built_order) noexcept;
+
+    /// The watcher bits of core @p resolved: one word per 64 cores of the engine, a bit per RESOLVED watcher index.
+    [[nodiscard]] std::span<std::atomic<std::uint64_t>>
+    watchers_of(CoreId const resolved) const noexcept {
+        std::size_t const words = (_core_set.getNbCore() + 63) / 64;
+        return {_watched_by.get() + resolved * words, words};
+    }
 
     /**
      * @brief Mark a core as having left its workflow (shutdown bookkeeping).
@@ -913,6 +930,9 @@ class Main {
     /// still delivers SIGBREAK untranslated.
     static void install_default_signals() noexcept;
     static bool __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
+    /// Destroys the engine's SharedCoreCommunication, its mailboxes in the reverse of the order it built them in -- this
+    /// map's (Huly QB-203). Every core thread has joined.
+    void release_shared_com() noexcept;
 
 private:
     /**
