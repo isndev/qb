@@ -999,6 +999,10 @@ private:
     Event &push(Event const &event) noexcept;
     void   reply(Event &event) noexcept;
     void   forward(ActorId dest, Event &event) noexcept;
+    //! The push-family answers (Huly QB-976): reply()/forward() with push's ordering -- the copy goes into
+    //! the outbound pipe behind everything this core queued to the destination, same core and cross-core alike.
+    void reply_ordered(Event &event) noexcept;
+    void forward_ordered(ActorId dest, Event &event) noexcept;
 
     template <typename T>
     static inline void fill_event(T &data, ActorId dest, ActorId source) noexcept;

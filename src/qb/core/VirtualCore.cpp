@@ -1907,6 +1907,28 @@ VirtualCore::__refused__(Event &event, std::size_t const pipe_idx) noexcept {
     return true;
 }
 
+// The push-family answers (Huly QB-976). reply() and forward() publish straight into another core's ring
+// -- the eager path, send's, unordered -- so an answer can reach its destination before an event the same
+// handler pushed to it earlier. These two take the pipe instead: the copy is the one push(Event const&)
+// makes, at the tail behind everything this core queued, delivered by the pass-end flush in order (same
+// core through the self pipe, cross-core through the outbound pipe). The header rewrite and the `alive`
+// raise after the copy are reply()'s and forward()'s. At the end of the file: nothing the pass drives, and
+// no existing path changes -- the ordering was measured as a filter on reply() itself (the ticket's A/B:
+// the hub shapes paid it, chameneos +9 %, big +6 % on g++-14) and is offered as a spelling instead.
+void
+VirtualCore::reply_ordered(Event &event) noexcept {
+    detail::event_wire::swap_dest_source(event); // one 16-byte store the copy loads whole, alive 0
+    push(event);
+    event.state.bits.alive = 1; // AFTER the copy, which carries 0
+}
+
+void
+VirtualCore::forward_ordered(ActorId const dest, Event &event) noexcept {
+    detail::event_wire::set_dest(event, dest);
+    push(event);
+    event.state.bits.alive = 1;
+}
+
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

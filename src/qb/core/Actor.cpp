@@ -594,6 +594,25 @@ Actor::forward(ActorId const dest, Event &event) const noexcept {
     VirtualCore::_handler->forward(dest, event);
 }
 
+// The push-family answers (Huly QB-976): the same guard as reply()/forward(), the pipe instead of the ring.
+void
+Actor::reply_ordered(Event &event) const noexcept {
+    if (unlikely(event.dest.is_broadcast())) {
+        QB_LOG_WARN(*this << " failed to reply broadcast event");
+        return;
+    }
+    VirtualCore::_handler->reply_ordered(event);
+}
+
+void
+Actor::forward_ordered(ActorId const dest, Event &event) const noexcept {
+    if (unlikely(event.dest.is_broadcast())) {
+        QB_LOG_WARN(*this << " failed to forward broadcast event");
+        return;
+    }
+    VirtualCore::_handler->forward_ordered(dest, event);
+}
+
 // OpenApi : internal future use
 void
 Actor::send(Event const &event) const noexcept {

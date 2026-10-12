@@ -31,14 +31,23 @@
  * original that already says alive: two copies, two destructions, on both transports. That
  * last shape is the one the receive-side `alive = 0` store used to cover before 3.2, and the
  * reason the header rewrites clear the bit themselves (the cross-core mailbox is a raw memcpy).
+ *
+ * The third part pins the ORDER contracts (Huly QB-976): `reply()`/`forward()` are eager and
+ * unordered -- cross-core the answer precedes the handler's earlier pushes to the same actor
+ * (UnorderedAnswer*) -- and `reply_ordered()`/`forward_ordered()` are the push-family answers,
+ * FIFO with those pushes, same core and cross-core (OrderedAnswer*).
  */
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <gtest/gtest.h>
+#include <numeric>
 #include <thread>
+#include <vector>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <qb/system/time.h>
 #include "../../shared/ChecksumEvent.h"
 
 using qb::test::TestEvent;
@@ -450,4 +459,307 @@ TEST(RelayChain, CrossCoreReplyThenForwardFanOutDestroysBothCopies) {
     const auto t = run_relay(main, 3 * events);
     EXPECT_EQ(t.constructed, events);
     EXPECT_EQ(t.destroyed, 2 * events);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The ORDER contracts of the four answers (Huly QB-976).
+// ---------------------------------------------------------------------------------------------
+//
+// `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the
+// answer straight into the peer's ring, ahead of everything the outbound pipe to that core still
+// holds for the pass-end flush -- an answer can reach its destination BEFORE an event the same
+// handler pushed to it earlier. That is the documented, unordered contract (send-family), and the
+// property a peer waiting on nothing else is served by. `reply_ordered()` and `forward_ordered()`
+// are the push-family answers: the copy goes into the pipe behind everything this actor pushed to
+// the destination, and the flush delivers them in order.
+//
+// Witnesses, none of which depends on timing:
+//  * ORDERED: the responder pushes `markers` events to the recorder, then hands the probe on with
+//    the ordered spelling (`reply_ordered()`, or `forward_ordered()` to the recorder as the sink);
+//    the recorder must see 1..markers, then the probe -- same core and cross-core, and through a
+//    flood wider than one flush run (300 events, runs of at most 256 buckets).
+//  * UNORDERED, BY CONTRACT: the same shape with `reply()` cross-core: the probe arrives FIRST,
+//    deterministically -- it is in the recorder's ring before the responder's handler returns, the
+//    markers enter that ring only at the flush, behind it (one producer, one FIFO ring).
+//  * EAGER: the responder pushes two markers to one actor, `reply()`s the probe to another and spins
+//    in its handler until the prober acknowledges -- which only a direct publish allows.
+
+namespace messaging_reply_forward_test {
+
+enum class Answer : int { reply = 0, forward = 1, reply_ordered = 2, forward_ordered = 3 };
+
+struct OrderProbe : qb::Event {
+    int         seq;     ///< the probe's rank in the sequence the recorder expects
+    int         markers; ///< how many markers the responder pushes before the probe
+    qb::ActorId sink;    ///< the recorder: where the markers go, and the forward's destination
+    Answer      answer;  ///< the spelling the responder hands the probe on with
+
+    OrderProbe(int const s, int const m, qb::ActorId const k, Answer const a) noexcept
+        : seq(s)
+        , markers(m)
+        , sink(k)
+        , answer(a) {}
+};
+
+struct OrderMarker : qb::Event {
+    int seq;
+
+    explicit OrderMarker(int const s) noexcept
+        : seq(s) {}
+};
+
+// Pushes the markers to the probe's sink, then hands the probe on: what the sink sees first is the
+// contract under test.
+class OrderResponder final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<OrderProbe>(*this);
+        co_return true;
+    }
+
+    void
+    on(OrderProbe &event) {
+        for (int i = 1; i <= event.markers; ++i)
+            push<OrderMarker>(event.sink, i);
+        switch (event.answer) {
+            case Answer::reply:
+                reply(event);
+                break;
+            case Answer::forward:
+                forward(event.sink, event); // the sink is the probe's source: a forward() back to it
+                break;
+            case Answer::reply_ordered:
+                reply_ordered(event);
+                break;
+            case Answer::forward_ordered:
+                forward_ordered(event.sink, event);
+                break;
+        }
+    }
+};
+
+// Sends the probe, records the order everything arrives in, tears down once all is home.
+class OrderRecorder final : public qb::Actor {
+    const qb::ActorId      _responder;
+    const qb::CoreId       _responder_core;
+    const int              _markers;
+    const Answer           _answer;
+    const std::vector<int> _expected;
+    std::vector<int>       _order;
+
+    void
+    note(int const seq) {
+        _order.push_back(seq);
+        if (_order.size() < _expected.size())
+            return;
+        EXPECT_EQ(_order, _expected);
+        if (_responder_core != id().index())
+            push<qb::KillEvent>(qb::BroadcastId(_responder_core));
+        push<qb::KillEvent>(qb::BroadcastId(id().index()));
+    }
+
+public:
+    OrderRecorder(qb::ActorId const responder, qb::CoreId const responder_core, int const markers, Answer const answer,
+                  std::vector<int> expected)
+        : _responder(responder)
+        , _responder_core(responder_core)
+        , _markers(markers)
+        , _answer(answer)
+        , _expected(std::move(expected)) {}
+
+    ~OrderRecorder() final {
+        EXPECT_EQ(_order.size(), _expected.size()) << "an event never arrived";
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<OrderMarker>(*this);
+        registerEvent<OrderProbe>(*this);
+        push<OrderProbe>(_responder, _markers + 1, _markers, id(), _answer);
+        co_return true;
+    }
+
+    void
+    on(OrderMarker &event) {
+        note(event.seq);
+    }
+    void
+    on(OrderProbe &event) {
+        note(event.seq);
+    }
+};
+
+// 1..markers then the probe (`in_order`), or the probe first then 1..markers (`probe_first`).
+std::vector<int>
+in_order(int const markers) {
+    std::vector<int> v(static_cast<std::size_t>(markers) + 1u);
+    std::iota(v.begin(), v.end(), 1);
+    return v;
+}
+std::vector<int>
+probe_first(int const markers) {
+    std::vector<int> v{markers + 1};
+    for (int i = 1; i <= markers; ++i)
+        v.push_back(i);
+    return v;
+}
+
+void
+run_order(qb::CoreId const responder_core, Answer const answer, int const markers, std::vector<int> expected) {
+    qb::Main   main;
+    const auto responder = main.addActor<OrderResponder>(responder_core);
+    main.addActor<OrderRecorder>(0, responder, responder_core, markers, answer, std::move(expected));
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+}
+
+// The eagerness witness. `g_eager_answered` is set by the prober's handler the moment the answer
+// arrives; `g_eager_direct` records whether the responder saw that while its own handler still ran.
+static std::atomic<bool> g_eager_answered{false};
+static std::atomic<bool> g_eager_direct{false};
+static std::atomic<int>  g_eager_markers{0};
+
+struct EagerProbe : qb::Event {
+    qb::ActorId other; ///< the actor the markers go to, on the prober's core
+
+    explicit EagerProbe(qb::ActorId const o) noexcept
+        : other(o) {}
+};
+
+struct EagerMarker : qb::Event {};
+
+// Pushes two markers to `other`, reply()s, then spins until the prober acknowledges the answer.
+class EagerResponder final : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<EagerProbe>(*this);
+        co_return true;
+    }
+
+    void
+    on(EagerProbe &event) {
+        push<EagerMarker>(event.other);
+        push<EagerMarker>(event.other);
+        reply(event);
+        // The answer was published directly if, and only if, the prober sees it while this
+        // handler still runs: the markers above leave at the next pass's flush, after it returns,
+        // and so would an answer that took the pipe. The bound only ends a failing run.
+        const auto deadline = qb::mono_now() + std::chrono::seconds{5};
+        while (!g_eager_answered.load(std::memory_order_acquire) && qb::mono_now() < deadline)
+            std::this_thread::yield();
+        g_eager_direct.store(g_eager_answered.load(std::memory_order_acquire), std::memory_order_release);
+    }
+};
+
+// The markers' destination: both arrive after the responder's handler returned; it tears down.
+class EagerOther final : public qb::Actor {
+    const qb::CoreId _responder_core;
+
+public:
+    explicit EagerOther(qb::CoreId const responder_core)
+        : _responder_core(responder_core) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<EagerMarker>(*this);
+        co_return true;
+    }
+
+    void
+    on(EagerMarker &) {
+        if (g_eager_markers.fetch_add(1, std::memory_order_acq_rel) + 1 != 2)
+            return;
+        push<qb::KillEvent>(qb::BroadcastId(_responder_core));
+        push<qb::KillEvent>(qb::BroadcastId(id().index()));
+    }
+};
+
+class EagerProber final : public qb::Actor {
+    const qb::ActorId _responder;
+    const qb::ActorId _other;
+
+public:
+    EagerProber(qb::ActorId const responder, qb::ActorId const other)
+        : _responder(responder)
+        , _other(other) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<EagerProbe>(*this);
+        push<EagerProbe>(_responder, _other);
+        co_return true;
+    }
+
+    void
+    on(EagerProbe &) {
+        g_eager_answered.store(true, std::memory_order_release);
+    }
+};
+
+} // namespace messaging_reply_forward_test
+
+using messaging_reply_forward_test::Answer;
+using messaging_reply_forward_test::in_order;
+using messaging_reply_forward_test::probe_first;
+using messaging_reply_forward_test::run_order;
+
+TEST(OrderedAnswer, SameCoreReplyOrderedFollowsEarlierPushes) {
+    run_order(qb::CoreId{0}, Answer::reply_ordered, 2, in_order(2));
+}
+
+TEST(OrderedAnswer, SameCoreForwardOrderedFollowsEarlierPushes) {
+    run_order(qb::CoreId{0}, Answer::forward_ordered, 2, in_order(2));
+}
+
+TEST(OrderedAnswer, CrossCoreReplyOrderedFollowsEarlierPushesToTheSameActor) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
+    run_order(qb::CoreId{1}, Answer::reply_ordered, 2, in_order(2));
+}
+
+TEST(OrderedAnswer, CrossCoreForwardOrderedFollowsEarlierPushesToTheSameActor) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
+    run_order(qb::CoreId{1}, Answer::forward_ordered, 2, in_order(2));
+}
+
+// Wider than one flush run (256 buckets): the order holds across runs too.
+TEST(OrderedAnswer, CrossCoreReplyOrderedBehindAFloodKeepsItsPlace) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer and the pushes must cross a mailbox";
+    run_order(qb::CoreId{1}, Answer::reply_ordered, 300, in_order(300));
+}
+
+// The documented contract of reply(): eager, so cross-core it precedes the pushes made before it.
+TEST(UnorderedAnswer, CrossCoreReplyPrecedesEarlierPushesByContract) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox to precede the pushes";
+    run_order(qb::CoreId{1}, Answer::reply, 2, probe_first(2));
+}
+
+TEST(UnorderedAnswer, CrossCoreForwardPrecedesEarlierPushesByContract) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox to precede the pushes";
+    run_order(qb::CoreId{1}, Answer::forward, 2, probe_first(2));
+}
+
+TEST(UnorderedAnswer, CrossCoreReplyIsPublishedBeforeTheHandlerReturns) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the answer must cross a mailbox while its sender's core is busy";
+    using namespace messaging_reply_forward_test;
+    g_eager_answered = false;
+    g_eager_direct   = false;
+    g_eager_markers  = 0;
+    qb::Main   main;
+    const auto other     = main.addActor<EagerOther>(0, qb::CoreId{1});
+    const auto responder = main.addActor<EagerResponder>(1);
+    main.addActor<EagerProber>(0, responder, other);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_eager_direct.load()) << "reply() waited for the pass-end flush";
+    EXPECT_EQ(g_eager_markers.load(), 2);
 }

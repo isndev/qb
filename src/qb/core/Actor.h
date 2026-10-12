@@ -1301,6 +1301,36 @@ public:
      */
     void forward(ActorId dest, Event &event) const noexcept;
 
+    /**
+     * @brief Reply to the source of a received event with `push`'s ordering, reusing the event object.
+     * @param event The received event: `dest` and `source` are swapped and it is consumed, exactly as `reply()`.
+     * @details
+     * `reply()` is eager: across cores it is published straight into the peer's mailbox, ahead of whatever
+     * this actor pushed to that peer earlier in the handler -- it is `send`-family, unordered. This spelling
+     * takes the pipe instead: the answer keeps its place behind everything this actor `push`ed to the same
+     * destination, the FIFO `push` promises, and travels with them at the end of the pass; on the same core
+     * the two behave alike. Use it when an answer must follow what you pushed; keep `reply()` when the answer
+     * is the only thing the peer is waiting for. It costs the pipe copy a `push` costs, nothing else changes.
+     * @code
+     * // void on(Request &request) {                   // non-const reference
+     * //   push<Prepare>(request.getSource(), ...);    // first...
+     * //   reply_ordered(request);                      // ... then the answer, in that order at the destination
+     * // }
+     * @endcode
+     * @attention After `reply_ordered(event)` the `event` object is consumed: no further use or modification.
+     */
+    void reply_ordered(Event &event) const noexcept;
+
+    /**
+     * @brief Forward a received event to a new destination with `push`'s ordering, reusing the event object.
+     * @param dest The new destination; the original `source` is preserved, exactly as `forward()`.
+     * @param event The received event, consumed.
+     * @details The ordered sibling of `forward()`: the event keeps its place behind everything this actor
+     * `push`ed to `dest` and travels with them at the end of the pass. See `reply_ordered()`.
+     * @attention After `forward_ordered(dest, event)` the `event` object is consumed: no further use or modification.
+     */
+    void forward_ordered(ActorId dest, Event &event) const noexcept;
+
     // OpenApi : used for module
     /** @private */
     void send(Event const &event) const noexcept;
