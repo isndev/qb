@@ -1153,6 +1153,7 @@ public:
     on(qb::DownEvent const &e) {
         g_seen.push_back({e.watched, e.reason, false});
         ++g_downs;
+        g_downs.notify_all();
     }
 };
 
@@ -1191,8 +1192,11 @@ TEST(DeathWatch, AStoppingCoreTellsTheCoresThatWatchedItAndAllocatesNoRingForAny
         for (qb::CoreId core = 2; core < kCores; ++core)
             engine.addActor<Bystander>(core);
         engine.start();
-        // Core 1 has stopped and told whom it tells; every other core still runs until the stop below, so each was
+        // The watcher has its answer -- stopped before it, it could be killed with the answer still on its way -- and
+        // core 1 has stopped and told whom it tells; every other core still runs until the stop below, so each was
         // there to be told.
+        for (int downs = g_downs.load(); downs == 0; downs = g_downs.load())
+            g_downs.wait(downs);
         g_target_core_exited.wait(false);
         engine.stop();
         engine.join();
