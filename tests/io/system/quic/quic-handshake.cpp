@@ -124,6 +124,49 @@ TEST(QuicHandshakeAvailability, EndpointUsesNativeBackendWhenAvailable) {
 using qb::io::test::deliver_quic_packets;
 using qb::io::test::quic_payload;
 
+namespace quic_handshake_pending_writer_test {
+
+// A direct driver drains when ready, then captures the fresh SDK expiry.
+// Receive counters are immediate; encoded TX counters belong to the writer phase.
+struct DrainObservation {
+    qb::io::quic::stats                   before;
+    qb::io::quic::stats                   after;
+    std::chrono::steady_clock::time_point expiry_before;
+    std::chrono::steady_clock::time_point expiry_after;
+    bool                                  drained        = false;
+    bool                                  writable_after = false;
+};
+
+DrainObservation
+deliver_ready_quic_packets(qb::io::quic::backend &from, qb::io::quic::backend &to) {
+    // Readiness takes precedence over the existing SDK timer. A deadline sampled
+    // before a writer is an observation only; it is never armed for a ready source.
+    if (!from.wants_write()) {
+        const auto expiry = from.next_timeout();
+        const auto now    = std::chrono::steady_clock::now();
+        if (expiry <= now)
+            from.on_timeout(now);
+    }
+    DrainObservation observation;
+    observation.before        = from.current_stats();
+    observation.expiry_before = from.next_timeout();
+    observation.drained       = from.wants_write();
+    if (observation.drained)
+        qb::io::test::deliver_quic_packets(from, to);
+    observation.after          = from.current_stats();
+    observation.expiry_after   = from.next_timeout();
+    observation.writable_after = from.wants_write();
+    EXPECT_EQ(observation.after.packets_received, observation.before.packets_received);
+    EXPECT_EQ(observation.after.bytes_received, observation.before.bytes_received);
+    EXPECT_GE(observation.after.packets_sent, observation.before.packets_sent);
+    EXPECT_GE(observation.after.bytes_sent, observation.before.bytes_sent);
+    return observation;
+}
+
+} // namespace quic_handshake_pending_writer_test
+
+using quic_handshake_pending_writer_test::deliver_ready_quic_packets;
+
 // =============================================================================
 // NATIVE BACKEND INPUT VALIDATION
 // =============================================================================
@@ -392,8 +435,8 @@ TEST(QuicHandshakeNativeBackend, DirectBackendsRouteServerChildOperations) {
     std::uint64_t server_connection_id = 0;
     const auto    deadline             = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while ((!client_connected || server_connection_id == 0) && std::chrono::steady_clock::now() < deadline) {
-        deliver_quic_packets(*client, *server);
-        deliver_quic_packets(*server, *client);
+        deliver_ready_quic_packets(*client, *server);
+        deliver_ready_quic_packets(*server, *client);
 
         for (auto const &event : client->drain_events())
             if (event.type == qb::io::quic::backend_event::kind::connected)
@@ -441,8 +484,8 @@ drive_two_backend_handshake(qb::io::quic::backend &client, qb::io::quic::backend
                             std::uint64_t &server_connection_id) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while ((!client_connected || server_connection_id == 0) && std::chrono::steady_clock::now() < deadline) {
-        deliver_quic_packets(server, client);
-        deliver_quic_packets(client, server);
+        deliver_ready_quic_packets(server, client);
+        deliver_ready_quic_packets(client, server);
         for (auto const &event : client.drain_events())
             if (event.type == qb::io::quic::backend_event::kind::connected)
                 client_connected = true;
@@ -476,9 +519,19 @@ TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnect
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     // First (untokened) Initial reaches the server: it answers with a Retry and allocates nothing.
-    deliver_quic_packets(*client, *server);
+    ASSERT_TRUE(client->wants_write());
+    const auto initial = deliver_ready_quic_packets(*client, *server);
+    EXPECT_TRUE(initial.drained);
     EXPECT_EQ(server->current_stats().active_connections, 0u)
         << "a Retry-enabled server must not allocate a connection for an unvalidated (untokened) Initial";
+
+    // Retry is parent-owned encoded control output: no child is needed for readiness.
+    ASSERT_TRUE(server->wants_write());
+    const auto retry = deliver_ready_quic_packets(*server, *client);
+    EXPECT_TRUE(retry.drained);
+    EXPECT_FALSE(retry.writable_after) << "consumed control output must not stay writable";
+    EXPECT_EQ(retry.expiry_after, server->next_timeout());
+    EXPECT_EQ(retry.expiry_after, std::chrono::steady_clock::time_point::max());
 
     bool          client_connected     = false;
     std::uint64_t server_connection_id = 0;
@@ -511,9 +564,30 @@ TEST(QuicHandshakeNativeBackend, DisabledStatelessRetryAcceptsInitialWithoutChal
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     // Retry disabled: the first Initial is accepted directly — a connection exists immediately.
-    deliver_quic_packets(*client, *server);
+    const auto before_read = server->current_stats();
+    ASSERT_TRUE(client->wants_write());
+    const auto initial = deliver_ready_quic_packets(*client, *server);
+    EXPECT_TRUE(initial.drained);
+    const auto after_read = server->current_stats();
+    EXPECT_GT(after_read.packets_received, before_read.packets_received);
+    EXPECT_GT(after_read.bytes_received, before_read.bytes_received);
     EXPECT_EQ(server->current_stats().active_connections, 1u)
         << "with Retry disabled the server accepts the first Initial without a challenge round-trip";
+
+    // One inbound Initial must expose a control-only writer opportunity.
+    // Observe the encoded TX counters again after packet drainage.
+    ASSERT_TRUE(server->wants_write()) << "Initial control output is invisible to a readiness-gated driver";
+    const auto control = deliver_ready_quic_packets(*server, *client);
+    EXPECT_TRUE(control.drained);
+    EXPECT_FALSE(control.writable_after) << "one consumed read must not leave an always-writable source";
+    EXPECT_GT(control.after.packets_sent, 0u) << "encoded TX at read/drain=" << std::to_string(after_read.packets_sent) << "/"
+                                              << std::to_string(control.after.packets_sent);
+    EXPECT_EQ(control.after.packets_received, after_read.packets_received);
+    EXPECT_EQ(control.after.bytes_received, after_read.bytes_received);
+    EXPECT_EQ(control.expiry_after, server->next_timeout())
+        << "expiry before/after ticks=" << std::to_string(control.expiry_before.time_since_epoch().count()) << "/"
+        << std::to_string(control.expiry_after.time_since_epoch().count());
+    EXPECT_NE(control.expiry_after, std::chrono::steady_clock::time_point::max());
 
     bool          client_connected     = false;
     std::uint64_t server_connection_id = 0;
@@ -894,8 +968,8 @@ direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, b
     std::uint64_t server_connection_id = 0;
     const auto    deadline             = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while ((!client_connected || server_connection_id == 0) && std::chrono::steady_clock::now() < deadline) {
-        deliver_quic_packets(client, server);
-        deliver_quic_packets(server, client);
+        deliver_ready_quic_packets(client, server);
+        deliver_ready_quic_packets(server, client);
         for (auto const &event : client.drain_events())
             if (event.type == qb::io::quic::backend_event::kind::connected)
                 client_connected = true;
@@ -908,20 +982,36 @@ direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, b
 
 void
 deliver_quota_packets(qb::io::quic::backend &client, qb::io::quic::backend &server) {
-    deliver_quic_packets(client, server);
-    deliver_quic_packets(server, client);
+    deliver_ready_quic_packets(client, server);
+    deliver_ready_quic_packets(server, client);
 }
 
 bool
 wait_for_quota_event(qb::io::quic::backend &client, qb::io::quic::backend &server, qb::io::quic::backend_event::kind kind,
-                     std::uint64_t stream_id) {
+                     std::uint64_t stream_id, bool require_close_control = false) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     while (std::chrono::steady_clock::now() < deadline) {
-        deliver_quota_packets(client, server);
+        deliver_ready_quic_packets(client, server);
+        bool found = false;
         for (auto const &event : server.drain_events())
             if (event.type == kind && event.stream_id == stream_id)
-                return true;
+                found = true;
+        // Only the full-close quota owner requests this witness; reset/stop
+        // notifications in neighbouring cases are not treated as quota credit.
+        if (found && require_close_control)
+            EXPECT_TRUE(server.wants_write()) << "full close credit is hidden before its existing final drain";
+        const auto control = deliver_ready_quic_packets(server, client);
         (void) client.drain_events();
+        if (found) {
+            if (require_close_control) {
+                EXPECT_TRUE(control.drained);
+                EXPECT_FALSE(control.writable_after) << "MAX_STREAMS/control consumption left readiness sticky";
+                EXPECT_EQ(control.expiry_after, server.next_timeout())
+                    << "expiry before/after ticks=" << std::to_string(control.expiry_before.time_since_epoch().count()) << "/"
+                    << std::to_string(control.expiry_after.time_since_epoch().count());
+            }
+            return true;
+        }
     }
     return false;
 }
@@ -967,12 +1057,14 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSl
                 }
             }
             ASSERT_TRUE(opened) << "remote stream quota was not renewed at slot " << i;
+            EXPECT_THROW((void) client->open_stream(0, direction), std::runtime_error)
+                << "the single advertised slot must be exhausted before its full close";
             client->send_stream_data(0, stream_id, std::span<const std::byte>{}, true);
             if (direction == qb::io::quic::stream_direction::bidirectional) {
                 ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, stream_id));
                 server->send_stream_data(server_connection_id, stream_id, std::span<const std::byte>{}, true);
             }
-            ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, stream_id));
+            ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, stream_id, true));
         }
     }
 }
@@ -1054,6 +1146,8 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
     client->send_stream_data(0, first, payload, false);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, first));
     client->reset_stream(0, first, 0x123);
+    // Native mutations require the explicit packet drain used by endpoint wrappers.
+    deliver_quic_packets(*client, *server);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
     for (int i = 0; i < 4; ++i)
         deliver_quota_packets(*client, *server);
@@ -1061,6 +1155,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
     client->send_stream_data(0, second, payload, false);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, second));
     server->stop_stream(server_connection_id, second, 0x456);
+    deliver_quic_packets(*server, *client);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
     for (int i = 0; i < 4; ++i)
         deliver_quota_packets(*client, *server);
@@ -1072,7 +1167,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
  * @brief After a direct handshake the server sends a bidirectional stream payload; pumping in both
  *        directions delivers the bytes to the client (recv_stream_data_cb -> stream_data event) and
  *        carries the client's ACK back so the server fires acked_stream_data_offset_cb, emitting a
- *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1158-1184.
+ *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1163-1192.
  */
 TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1133,7 +1228,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  * @brief With DATAGRAM enabled on both ends, the server sends a datagram after the handshake; pumping
  *        delivers it to the client (recv_datagram_cb increments datagrams_received) and carries the
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
- *        incrementing datagrams_acked. Covers quic.cpp:1128-1140 (acked branch) + 1253-1258.
+ *        incrementing datagrams_acked. Covers quic.cpp:1133-1145 (acked branch) + 1253-1258.
  */
 TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1189,7 +1284,7 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
  * @test The peer observes a RESET_STREAM frame, driving stream_reset_cb
  * @brief The server opens a stream, sends data, then resets it; pumping carries the RESET_STREAM frame
  *        to the client whose stream_reset_cb fires and queues a stream_closed event with
- *        stream_close_reason::reset and the application error code. Covers quic.cpp:1222-1230.
+ *        stream_close_reason::reset and the application error code. Covers quic.cpp:1230-1238.
  */
 TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1263,7 +1358,7 @@ TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
  * @brief A non-QUIC payload delivered to a freshly started server parent fails ngtcp2_accept inside
  *        accept_server_connection, which queues a handshake_failed close event rather than spinning up
  *        a child connection; the parent fans that child event up with no connection added. The parent
- *        stays open with zero active connections. Covers quic.cpp:864-868 (the accept-rejection arm).
+ *        stays open with zero active connections. Covers quic.cpp:868-872 (the accept-rejection arm).
  */
 TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1307,8 +1402,8 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
 /**
  * @test The server observes its own STOP_SENDING when it stops reading a stream (stream_stop_sending_cb).
  * @brief The client opens a bidi stream and writes; the server stops reading it via stop_stream()
- *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:472-481 (the synchronous stop_sending
- *        event queued by stop_stream) AND quic.cpp:1232-1239 (stream_stop_sending_cb, fired by
+ *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:476-485 (the synchronous stop_sending
+ *        event queued by stop_stream) AND quic.cpp:1240-1247 (stream_stop_sending_cb, fired by
  *        ngtcp2 when the local endpoint drains its transport after shutting down the read side).
  *
  * QUIC/ngtcp2 SEMANTICS — important correction over the prior version of this test, which expected
@@ -1368,8 +1463,8 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     constexpr std::uint64_t app_error = 0x9;
     server->stop_stream(server_connection_id, server_stream_id, app_error);
 
-    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:480) and arms
-    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1233)
+    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:484) and arms
+    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1241)
     // for the SAME stream/reason. Pump a bounded number of times and collect every stop_sending event
     // the server observes.
     int                               server_stop_sending_count = 0;
@@ -1401,7 +1496,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
  * @brief The parent server is configured with max_connections == 1. A first client completes the
  *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
  *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
- *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:640-652) which DROPS the
+ *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:644-656) which DROPS the
  *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
  *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
  *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
@@ -1483,9 +1578,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
  *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1206-1213) and emits a trailing stream_data carrying error_code == 1
+ *        SYNTHESIS arm (quic.cpp:1214-1221) and emits a trailing stream_data carrying error_code == 1
  *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1214-1216), then queues stream_closed(finished).
+ *        (quic.cpp:1222-1224), then queues stream_closed(finished).
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -1550,7 +1645,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
     // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1206-1216) and emits a trailing
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1214-1224) and emits a trailing
     // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL

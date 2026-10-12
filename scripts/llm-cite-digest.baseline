@@ -87,13 +87,17 @@ llm/qb.llm.api.md	scheduler.h:637-637	8cd772062a6b	suspension_tracking() noexcep
 llm/qb.llm.api.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.api.md	scheduler.h:651-651	1acc0272cc17	void dump(std::ostream &os) const;
 llm/qb.llm.api.md	scheduler.h:826-829	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:204-218	f29a8ff2a377	drain_backend_packets() {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:359-363	220a20fe9435	void
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:376-398	b17271a5fe0b	bool
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:425-455	a328c72b2a01	bool
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:526-543	03a719e94fbb	reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, st...
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:578-593	cb98e519f56b	void
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:84-119	d3df2aec453e	void
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1015-1016	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1456-1483	abe6342ced08	static int
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1020-1021	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1465-1492	abe6342ced08	static int
+llm/qb.llm.api.md	src/qb/io/quic/backend.h:62-81	ec2d3314ea37	virtual void on_udp_datagram(packet_view datagram)                 = 0;
+llm/qb.llm.api.md	src/qb/io/quic/types.h:75-91	a8fbf3a1d458	struct stats {
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
 llm/qb.llm.api.md	task.h:749-764	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
@@ -201,8 +205,8 @@ llm/qb.llm.md	scheduler.h:574-603	2673fad18211	* @brief Spawn a callable (lambda
 llm/qb.llm.md	scheduler.h:611-611	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
 llm/qb.llm.md	scheduler.h:633-633	d4378b7b6e55	bool set_suspension_tracking(bool on);
 llm/qb.llm.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.md	src/qb/io/quic.cpp:1015-1016	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.md	src/qb/io/quic.cpp:1456-1483	abe6342ced08	static int
+llm/qb.llm.md	src/qb/io/quic.cpp:1020-1021	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.md	src/qb/io/quic.cpp:1465-1492	abe6342ced08	static int
 llm/qb.llm.md	ssl/context.cpp:463-463	6a5ed66e2196	if (SSL_CTX_use_certificate_chain_file(_ctx.get(), cert_s.c_str()) != 1)
 llm/qb.llm.md	ssl/context.h:157-157	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw C function pointer, no void* arg) ---

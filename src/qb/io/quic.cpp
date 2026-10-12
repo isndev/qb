@@ -249,6 +249,8 @@ class native_backend final : public backend {
     bool                                  _started            = false;
     bool                                  _closing            = false;
     bool                                  _close_event_queued = false;
+    // A read-triggered writer attempt is due; this does not promise positive output.
+    bool _transport_pending = false;
 
     [[nodiscard]] std::string
     negotiated_alpn() const {
@@ -297,6 +299,7 @@ public:
         validate_server_tls_config(tls);
         _closing            = false;
         _close_event_queued = false;
+        _transport_pending  = false;
         _started            = true;
     }
 
@@ -313,6 +316,7 @@ public:
         ngtcp2_conn_set_tls_native_handle(_conn, _crypto_ctx);
         _closing                  = false;
         _close_event_queued       = false;
+        _transport_pending        = false;
         _started                  = true;
         _stats.active_connections = 1;
         drain_transport();
@@ -351,7 +355,7 @@ public:
             write_connection_close(rv, "QUIC packet read failed: " + std::to_string(rv));
         }
         update_stats();
-        drain_transport();
+        _transport_pending = _conn && _started && !_closing;
     }
 
     void
@@ -397,7 +401,7 @@ public:
             }
             return false;
         }
-        return !_packets.empty() || !_pending_streams.empty() || !_pending_datagrams.empty();
+        return _transport_pending || !_packets.empty() || !_pending_streams.empty() || !_pending_datagrams.empty();
     }
 
     std::vector<packet>
@@ -916,6 +920,7 @@ private:
         make_ssl_context(tls, true);
         _closing            = false;
         _close_event_queued = false;
+        _transport_pending  = false;
         _started            = true;
     }
 
@@ -1174,6 +1179,9 @@ private:
 
     void
     drain_transport() {
+        // Consume the due attempt even when the connection has stopped or the
+        // SDK emits zero. Keeping it until positive output would spin EV_WRITE.
+        _transport_pending = false;
         if (!_conn || !_started)
             return;
         for (;;) {
@@ -1330,6 +1338,7 @@ private:
 
     void
     queue_close_event(disconnect_reason why, std::uint64_t code, std::string_view reason) {
+        _transport_pending = false;
         if (_close_event_queued)
             return;
         _close_event_queued       = true;

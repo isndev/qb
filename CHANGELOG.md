@@ -454,6 +454,13 @@ policy.
 
 ### Fixed
 
+- **Native QUIC batches read-triggered packet generation (Huly QB-988).**
+  The endpoint's existing packet drain generates pending transport output after its UDP receive batch,
+  avoiding an additional writer pass after every received datagram. `wants_write()` keeps handshake
+  and control work visible to direct drivers, and a consumed attempt clears its pending flag even
+  when the SDK produces no packet. Receive callbacks and stream-count credit updates remain immediate;
+  sent-byte and sent-packet counters advance when packets are generated.
+
 - **The router benchmark observes its complete probe result (Huly QB-431).**
   On GCC 14 x86, a mutable scalar-subfield `DoNotOptimize` barrier could make the
   checksum guard read an uninitialized temporary after the result was returned.
