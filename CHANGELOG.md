@@ -522,8 +522,9 @@ policy.
   `start()` used to fault them all. A ring is a `region_cache` region (QB-1012, below), so the rings of an engine
   started after another are built in the regions the previous engine's rings left mapped: that lap faults only where
   no cached ring is left to reuse. The witness, `qb-core-test-system-mailbox-footprint`, reads the process's own
-  resident set (and, on Windows, its private commit) across the start of a 64-core engine and bounds the growth by
-  sixteen rings per core, against the sixty-four per core the eager mailbox wrote.
+  resident set (and, on Windows, its private commit) across the start of a 64-core engine -- after a warm-up engine,
+  whose cached regions `region_cache::trim()` hands back first -- and bounds the growth by sixteen rings per core,
+  against the sixty-four per core the eager mailbox wrote.
 - **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
   build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
   `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a
@@ -592,15 +593,16 @@ policy.
   `region_cache::trim()`. qb sets none of glibc's thresholds (`mallopt` is process-wide, turns the dynamic adjustment
   off for every allocation and overrides the program's own choice), and the engine's buffers no longer move them.
   Pinned by `qb-core-test-system-engine-restart-faults` (one core, 40 000 actors on eight event types: the page faults
-  of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores: the faults
-  `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
-  `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and the coroutines' per-thread
-  storage still goes back to `malloc` at thread exit. Measured on 2026-10-12 (one core, 40 000 actors on eight event
-  types, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds (23.5 against 23.7 MiB; 20.8
-  against 20.9); an engine started after another takes 90 page faults instead of 3 455 and 4.4 instead of 8.0 ms (200
-  instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its final buffers until
-  `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 % (1c) and -5.0 % (2c)
-  on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a side.
+  of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores whose pairs all talk:
+  the faults a second engine's rings cost on the threads that write them, `Main::start()`'s and the senders'), counts
+  rather than times, and by `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and
+  the coroutines' per-thread storage still goes back to `malloc` at thread exit. Measured on 2026-10-12 (one core,
+  40 000 actors on eight event types, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds (23.5
+  against 23.7 MiB; 20.8 against 20.9); an engine started after another takes 90 page faults instead of 3 455 and 4.4
+  instead of 8.0 ms (200 instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its
+  final buffers until `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 %
+  (1c) and -5.0 % (2c) on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a
+  side.
 
 - **ABI documentation distinguishes the C++20/23 `expected` implementations (Huly QB-286).** A successful
   fingerprint probe does not establish identical layouts. The `expected` selector is not fingerprinted;

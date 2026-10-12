@@ -28,9 +28,12 @@
  *
  * An engine of the same shape is started and stopped first, so what the measured one finds already in place -- the
  * code an engine runs, the allocator arenas and thread stacks its cores leave behind, the process's one-time
- * initialisations -- is not counted against it. The eager rings could not hide that way: each mailbox's were one 4 MiB
- * allocation, a mapping of its own for glibc and for the Windows heap (above both thresholds), unmapped when the
- * warm-up's engine freed it -- so the measured engine wrote its rings into pages the process did not hold.
+ * initialisations -- is not counted against it. What the warm-up leaves in `region_cache` is handed back to the OS
+ * before the reading (`region_cache::trim()`): the per-core buffers that grow with an engine are regions the cache
+ * keeps mapped for the next engine (Huly QB-1012), and so were the eager mailbox's rings, one 4 MiB region per mailbox
+ * -- left in place, they would come back already written and the growth would not show them. After the trim the
+ * measured engine writes whatever rings it builds into pages the process does not hold, as a process's first engine
+ * does.
  *
  * The mechanism -- no ring before a producer enqueues, that producer's ring and no other after it, a ring published
  * while the consumer walks -- is pinned on the primitive itself, `qb-core-test-unit-mpsc-ring-allocation`. This file
@@ -43,6 +46,7 @@
 
 #include <gtest/gtest.h>
 #include <qb/main.h>
+#include <qb/system/allocator/region.h>
 
 #if defined(__linux__)
 #include <fstream>
@@ -156,6 +160,7 @@ TEST(MailboxFootprint, AnEngineHoldsMemoryInProportionToItsCoresBeforeItsFirstEv
                         "macOS task_info, Windows GetProcessMemoryInfo)";
     with_idle_engine([] {}); // the warm-up -- see the file note
     ASSERT_FALSE(HasFatalFailure());
+    qb::allocator::region_cache::trim(); // what the warm-up left cached is not the measured engine's to find
 
     const Footprint before = read_footprint().value();
     Footprint       running{};

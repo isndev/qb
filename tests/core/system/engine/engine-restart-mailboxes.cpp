@@ -8,30 +8,42 @@
  */
 /**
  * @file tests/core/system/engine/engine-restart-mailboxes.cpp
- * @brief The second engine of a process builds its mailboxes in memory the first left faulted
- *        (Huly QB-1012), counted in the page faults `Main::start()` takes on the calling thread.
+ * @brief The second engine of a process writes its mailbox rings into pages the first left faulted (Huly QB-1012,
+ *        QB-203), counted in the page faults of the threads that write them.
  *
- * The mailboxes are the engine's largest resting buffer: one inbound ring per core and per
- * sender, `N x N` rings of 65 728 bytes (readme/0_foundations/buffers.md), built and
- * value-initialised by `Main::start()` on the thread that calls it, freed when the engine goes.
- * At 16 cores a mailbox's rings are one 1 MiB block. In a fresh process glibc maps each such
- * block for itself (it is above the default `mmap` threshold), unmaps it at the first engine's
- * end and raises the threshold to its size, so the second engine's blocks come from fresh heap
- * the start then faults page by page: 16.8 MB, 4 100 faults of 4 KiB, before the first event.
+ * A mailbox ring exists for a pair of cores once one has sent to the other: the sender's first event allocates it
+ * (QB-203), in a `region_cache` region (QB-1012), so the rings of an engine that stops stay mapped and the next
+ * engine builds its own in them. Until 3.3 the rings were all built and value-initialised by `Main::start()` on the
+ * calling thread, in `malloc`: glibc mapped each 1 MiB mailbox block of a 16-core engine for itself, unmapped it at
+ * the first engine's end and raised its thresholds, so the second engine's rings came from fresh heap that `start()`
+ * faulted page by page -- 16.8 MB, 4 100 faults of 4 KiB, before the first event.
  *
- * The count is the calling thread's own (`RUSAGE_THREAD`), so the cores' thread starts stay out
- * of it; what `start()` faults there besides the rings is each new thread's descriptor and TLS
- * block, a couple of pages per core. The bound, 2 MiB of pages, sits an order of magnitude from
- * both. Only the second engine is judged: it is the one whose fate glibc decides the same way in
- * every fresh process, which is also why this case is a binary of its own.
+ * The engine: 16 cores, one actor each, every actor sending every other core a lap of its ring -- 1 024 buckets, the
+ * ring's every slot -- so every one of the 16 x 15 rings is allocated and every one of its pages written, in every
+ * engine. An actor acks each peer whose lap it has received whole, and is done once it has acked every peer and every
+ * peer has acked it: by then everything it enqueued has been received.
  *
- * Registered on Linux outside the sanitizer builds (CMakeLists.txt): the per-thread count is
- * Linux's, and a sanitizer replaces the allocator whose behaviour this counts.
+ * The count is taken where a ring is written. On the calling thread, over `Main::start()`: where the eager mailbox
+ * built and wrote its rings. On each core's thread, from before its first send to the moment it is done: where a
+ * ring is allocated and written now, by the sender's flush. Every count is the thread's own (`RUSAGE_THREAD`), so the
+ * threads' own starts and exits stay out of it. A second engine whose rings are faulted again takes at least one fault
+ * per page of 240 rings of 17 pages, 4 080; a warm one faults what a core touches for the first time in a pass, a few
+ * pages each. The bound, 2 MiB of pages, sits a factor of eight from the first and an order of magnitude from the
+ * second. Only the second engine is judged: the first is cold by definition, and the second is the one whose fate
+ * the eager mailbox's `malloc` decided the same way in every fresh process, which is also why this case is a binary
+ * of its own.
+ *
+ * Registered on Linux outside the sanitizer builds (CMakeLists.txt): the per-thread count is Linux's, and a sanitizer
+ * replaces the allocator whose behaviour the eager mailbox's count depended on.
  */
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <qb/system/allocator/pipe.h>
+#include <array>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include "../../shared/PageFaults.h"
@@ -40,47 +52,117 @@
 // (qb/scripts/check-coro-fixture-linkage.py).
 namespace engine_restart_mailboxes_test {
 
-constexpr qb::CoreId kCores = 16; ///< 16 x 16 rings: 16.8 MB of mailboxes
+using namespace std::chrono_literals;
 
-// One per core, gone after the first pass: the engine lives just long enough to be built.
-class Quitter final : public qb::Actor {
+constexpr qb::CoreId kCores = 16; ///< 16 x 15 rings, 16.7 MB of regions once every pair has talked
+
+/// A lap's worth of one event: 32 buckets of 64 bytes.
+struct Lap : qb::Event {
+    std::array<std::byte, 1984> fill{};
+};
+/// Buckets in a ring (`max_deliverable_buckets + 1` slots): a sender that writes this many has written every one.
+constexpr std::size_t kLapBuckets      = qb::detail::max_deliverable_buckets + 1;
+constexpr std::size_t kLapEventBuckets = qb::allocator::getItemSize<Lap, EventBucket>();
+constexpr std::size_t kLapEvents       = (kLapBuckets + kLapEventBuckets - 1) / kLapEventBuckets;
+
+/// A lap received whole.
+struct Ack : qb::Event {};
+
+std::atomic<long long> g_window_faults{0}; ///< the cores' windows, summed
+std::atomic<int>       g_windows{0};       ///< windows closed with a count
+
+// One per core: a lap to every other core, an ack for every lap received whole, done once both are complete.
+class Peer final : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() final {
-        kill();
+        registerEvent<Lap>(*this);
+        registerEvent<Ack>(*this);
+        _faults_before = qb::test::thread_page_faults(); // the window opens before this core sends anything
+        for (qb::CoreId core = 0; core < kCores; ++core)
+            if (core != getIndex())
+                for (std::size_t i = 0; i < kLapEvents; ++i)
+                    push<Lap>(qb::BroadcastId(core));
         co_return true;
     }
+
+    void
+    on(Lap const &event) {
+        if (++_laps[event.getSource().index()] == kLapEvents) {
+            push<Ack>(event.getSource());
+            ++_laps_whole;
+            done_if_complete();
+        }
+    }
+
+    void
+    on(Ack const &) {
+        ++_acks;
+        done_if_complete();
+    }
+
+private:
+    void
+    done_if_complete() {
+        if (_laps_whole != kCores - 1 || _acks != kCores - 1)
+            return;
+        long long const after = qb::test::thread_page_faults();
+        if (_faults_before >= 0 && after >= 0) {
+            g_window_faults.fetch_add(after - _faults_before, std::memory_order_relaxed);
+            g_windows.fetch_add(1, std::memory_order_relaxed);
+        }
+        kill();
+    }
+
+    long long                       _faults_before = -1;
+    std::array<std::size_t, kCores> _laps{};
+    std::size_t                     _laps_whole = 0;
+    std::size_t                     _acks       = 0;
 };
 
-/// The calling thread's page faults over `Main::start()`: where the mailboxes are built.
-[[nodiscard]] long long
-faults_of_one_start() {
+struct Faults {
+    long long start;   ///< the calling thread's, over `Main::start()`
+    long long windows; ///< the cores' threads', from before their first send to their last ack
+};
+
+/// One engine whose pairs all talk, counted where its rings are written.
+[[nodiscard]] Faults
+faults_of_one_engine() {
+    g_window_faults = 0;
+    g_windows       = 0;
     qb::Main main;
     for (qb::CoreId core = 0; core < kCores; ++core)
-        main.core(core).addActor<Quitter>();
+        main.core(core)
+            .setAffinity(qb::CoreIdSet{qb::NoAffinity}) // 16 cores on any host: the OS places them
+            .setLatency(1ms)                            // and an idle core parks instead of spinning
+            .addActor<Peer>();
     long long const before = qb::test::thread_page_faults();
     main.start();
     long long const after = qb::test::thread_page_faults();
     main.join();
     EXPECT_FALSE(main.hasError());
-    return after - before;
+    EXPECT_EQ(g_windows.load(), static_cast<int>(kCores)) << "a core ended without closing its window";
+    return {after - before, g_window_faults.load()};
 }
 
 } // namespace engine_restart_mailboxes_test
 
 using namespace engine_restart_mailboxes_test;
 
-TEST(EngineRestartMailboxes, ASecondEngineBuildsItsMailboxesInPagesTheFirstLeftFaulted) {
+TEST(EngineRestartMailboxes, ASecondEngineWritesItsMailboxRingsInPagesTheFirstLeftFaulted) {
     ASSERT_GE(qb::test::thread_page_faults(), 0) << "the platform has no per-thread fault counter";
-    long long const cold = faults_of_one_start();
-    long long const warm = faults_of_one_start();
-    std::printf("[ faults ] Main::start() on the calling thread, %u cores: first %lld, second %lld (page %zu B, hugepages %s)\n",
-                static_cast<unsigned>(kCores), cold, warm, qb::test::page_bytes(), qb::test::hugepage_mode().c_str());
-    RecordProperty("faults_first_start", static_cast<int>(cold));
-    RecordProperty("faults_second_start", static_cast<int>(warm));
+    Faults const cold = faults_of_one_engine();
+    Faults const warm = faults_of_one_engine();
+    std::printf("[ faults ] %u cores, every pair a lap of its ring: first engine %lld at start() + %lld in the cores, "
+                "second %lld + %lld (page %zu B, hugepages %s)\n",
+                static_cast<unsigned>(kCores), cold.start, cold.windows, warm.start, warm.windows, qb::test::page_bytes(),
+                qb::test::hugepage_mode().c_str());
+    RecordProperty("faults_first_engine", static_cast<int>(cold.start + cold.windows));
+    RecordProperty("faults_second_engine", static_cast<int>(warm.start + warm.windows));
 
     long long const bound = static_cast<long long>((std::size_t{2} << 20) / qb::test::page_bytes());
-    EXPECT_LT(warm, bound) << "the second start faulted " << warm
-                           << " pages on the calling thread: the first engine's mailboxes were given back to the OS "
-                              "and the second built its own in fresh memory (Huly QB-1012)";
+    EXPECT_LT(warm.start + warm.windows, bound)
+        << "the second engine faulted " << warm.start << " pages in Main::start() and " << warm.windows
+        << " in its cores' exchange: its mailbox rings were written into memory the OS had taken back, not into the "
+           "regions the first engine's rings left mapped (Huly QB-1012, QB-203)";
 }

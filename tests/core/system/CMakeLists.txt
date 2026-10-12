@@ -217,17 +217,20 @@ qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES conc
 # engine-restart-faults and engine-restart-mailboxes pin that an engine started after another one in the same process
 # builds its per-core buffers in memory its predecessor left faulted (Huly QB-1012): the router's tables, the actor
 # registry, the kill queues and the broadcast snapshot of a 40 000-actor core in the first, re-faulted by every engine
-# after the first when they lived in malloc; the 16 x 16 mailbox rings of the second engine of a fresh process in the
-# second, a binary of its own because only a fresh process decides their fate the same way every time. Both count page
-# faults, never time. A sanitizer replaces the allocator whose behaviour they count, so neither exists in a sanitizer
-# build -- a capability gate, like actor-arena-poison's; the per-thread count of the second is Linux's.
+# after the first when they lived in malloc; in the second, the mailbox rings of a 16-core engine whose pairs all talk
+# -- a lap of every ring, allocated by its sender's first event (Huly QB-203) -- counted on the threads that write
+# them, the second engine of a fresh process judged, a binary of its own because only a fresh process decided the
+# eager rings' fate the same way every time. Both count page faults, never time. A sanitizer replaces the allocator
+# whose behaviour they count, so neither exists in a sanitizer build -- a capability gate, like actor-arena-poison's;
+# the per-thread count of the second is Linux's.
 if(NOT QB_SANITIZE AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
     qb_add_test(MODULE qb-core TIER system NAME engine-restart-faults SOURCES engine/engine-restart-faults.cpp DEPENDS ${PROJECT_NAME})
 endif()
 if(NOT QB_SANITIZE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    qb_add_test(MODULE qb-core TIER system NAME engine-restart-mailboxes SOURCES engine/engine-restart-mailboxes.cpp DEPENDS ${PROJECT_NAME})
+    qb_add_test(MODULE qb-core TIER system NAME engine-restart-mailboxes SOURCES engine/engine-restart-mailboxes.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 endif()
 # mailbox-footprint pins what an engine holds before its first event (Huly QB-203): an engine of 64 idle cores grows the
 # process's resident memory (Windows: also its private commit) by a budget per core, not by a mailbox ring per pair of
-# cores. Counts bytes, never time; a platform with no reading skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
+# cores, measured after a warm-up engine and a region_cache::trim(). Counts bytes, never time; a platform with no reading
+# skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
 qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mailbox-footprint.cpp DEPENDS ${PROJECT_NAME})
