@@ -276,18 +276,18 @@ policy.
   its loop body; `listener::run()` writes its two counters once per turn and its pending-count test is branchless; the
   mailbox's copy-out `consume_all` tests each ring's published index inline before the per-ring dequeue call. On MSVC
   the pass's signal generation now stays in a register (it was reloaded from the stack at every back edge) and the
-  loop body lost 53 of its 306 instructions. `CoreStats` and every documented behaviour of the park policy are
-  unchanged. Measured against develop before it, same quiet session, 3 physical copies a side, 4 seeded rounds: on
-  WSL2 / g++-14, savina ping-pong 1c -2.5 %, thread-ring 1c -5.0 %, ping-pong 2c -4.0 % spin / -4.5 % park, fork-join
-  2c -1.9 / -1.6 %, the pass-cost probe -2.8 %, ask -2.1 %, the cross-core send hop -12.1 %, dev/bench's multi-core
-  ping-pong latency -6.3 % and one-core pipeline -4.8 %; on Windows / MSVC, ping-pong 1c -6.9 %, thread-ring 1c
-  -1.7 %, fork-join 2c park -3.4 %, pass-cost -4.5 %, ask -7.6 %, the cross-core hop -15.0 % send / -12.8 % push, the
-  2c cells within their copy spread. The residual, not paid back: on WSL2, savina thread-ring 2c reads +6.1 % spin /
-  +7.0 % park -- a phase-locked cell whose fast regime the control drew in 75-94 % of 16 launches and this change in
-  6 %, the same attractor every change to the loop's shape loses, and the jittered cross-core push probe sits +2.7 %
-  inside the control's range; and dev/bench's `BM_PINGPONG` 8c reads +9.0 % (the gate's threshold for it is 10.7 %),
-  its ungated 1c case +5.7 % (the case's spread is 12.4 %). Making the idle poll's phase de-correlated, judged by mode
-  share, is a follow-up.
+  loop body lost 84 of its 306 instructions. `CoreStats` and every documented behaviour of the park policy are
+  unchanged. Measured -- on this change with a since-dropped prototype compiled in and switched off -- against develop
+  before it, same quiet session, 3 physical copies a side, 4 seeded rounds: on WSL2 / g++-14, savina ping-pong 1c
+  -2.5 %, thread-ring 1c -5.0 %, ping-pong 2c -4.0 % spin / -4.5 % park, fork-join 2c -1.9 / -1.6 %, the pass-cost
+  probe -2.8 %, ask -2.1 %, the cross-core send hop -12.1 %, dev/bench's multi-core ping-pong latency -6.3 % and
+  one-core pipeline -4.8 %; on Windows / MSVC, ping-pong 1c -6.9 %, thread-ring 1c -1.7 %, fork-join 2c park -3.4 %,
+  pass-cost -4.5 %, ask -7.6 %, the cross-core hop -15.0 % send / -12.8 % push, the 2c cells within their copy spread.
+  The residual, not paid back: on WSL2, savina thread-ring 2c reads +6.1 % spin / +7.0 % park -- a phase-locked cell
+  whose fast regime the control drew in 75-94 % of 16 launches and this change in 6 %, the same attractor every change
+  to the loop's shape loses, and the jittered cross-core push probe sits +2.7 % inside the control's range; and
+  dev/bench's `BM_PINGPONG` 8c reads +9.0 % (the gate's threshold for it is 10.7 %), its ungated 1c case +5.7 % (the
+  case's spread is 12.4 %). Making the idle poll's phase de-correlated, judged by mode share, is a follow-up.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
