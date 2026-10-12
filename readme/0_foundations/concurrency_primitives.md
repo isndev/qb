@@ -25,7 +25,7 @@ These primitives are correct only under tightly scoped threading contracts. Each
 | `mpsc::ringbuffer` / `block_ringbuffer`, round-robin enqueue | many | exactly one | per-producer `SpinLock` |
 | `mpsc_unbounded_queue` | many | exactly one | lock-free (Michael-Scott) |
 
-"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:351`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:185-189`).
+"Exactly one consumer" is not advisory. In the SPSC buffer, `write_index_` is written only from the enqueue side and `read_index_` only from the dequeue side; a second producer or a second consumer races those stores and the result is undefined (`src/qb/system/lockfree/spsc.h:382`). The MPSC `dequeue` and `consume_all` overloads are likewise single-consumer only (`src/qb/system/lockfree/mpsc.h:185-189`).
 
 These types live in `qb` — the foundation shared by `qb-io` and `qb-core` — not in either library exclusively. They depend on [the time vocabulary](./time.md) (`qb::duration`, `qb::mono_time`) and on the cache-line constants from [`qb/utility/prefix.h`](./abi_and_build_fingerprint.md).
 
@@ -86,8 +86,8 @@ A bounded, wait-free single-producer/single-consumer FIFO. The producer advances
 ### Type requirements and capacity
 
 - **`T` must be trivially copyable.** A `static_assert` enforces this, because the bulk enqueue/dequeue paths move elements with `std::memcpy` (`src/qb/system/lockfree/spsc.h:107-108`). The single-element `enqueue(T const&)` placement-news a copy, but for the trivially-copyable `T` the type allows, that is byte-equivalent to the bulk `memcpy`; no per-element constructor or destructor runs on the bulk path.
-- **One slot is reserved.** A buffer of requested capacity *N* allocates *N + 1* slots: the extra slot disambiguates full from empty (the buffer is full when advancing the write index would collide with the read index). Usable capacity equals the requested `_MaxSize` (fixed variant) or the constructor argument (runtime variant) (`src/qb/system/lockfree/spsc.h:564`).
-- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:698-700`).
+- **One slot is reserved.** A buffer of requested capacity *N* allocates *N + 1* slots: the extra slot disambiguates full from empty (the buffer is full when advancing the write index would collide with the read index). Usable capacity equals the requested `_MaxSize` (fixed variant) or the constructor argument (runtime variant) (`src/qb/system/lockfree/spsc.h:601`).
+- **Fixed vs. runtime size.** `ringbuffer<T, _MaxSize>` embeds a `std::array<T, _MaxSize + 1>` sized at compile time. `ringbuffer<T, 0>` takes the size as a constructor argument and allocates `new T[size + 1]` (`src/qb/system/lockfree/spsc.h:735-737`).
 
 ### Interface
 
@@ -118,10 +118,10 @@ public:
 }
 ```
 
-- **Bulk enqueue is all-or-nothing by default.** The `_All` template parameter defaults to `true`: `enqueue<true>(t, size)` enqueues every element or none, returning `0` when there is insufficient room (`src/qb/system/lockfree/spsc.h:372-374`). Set `_All = false` for a partial enqueue that takes as many elements as fit. `_All` is a `bool`, never an integer — it is `std::same_as<bool> auto` in every bulk overload of both rings since 3.3, so `enqueue<0>(t, size)` does not compile (Huly QB-980).
-- **`consume_all` avoids the intermediate copy** — and that is exactly why it is the dangerous overload. It invokes `func` directly over the buffer's internal storage, passing a `T *` to the start of one contiguous segment and that segment's element count. Because the ring wraps, a full traversal can call the `functor` **twice**, once per segment (`src/qb/system/lockfree/spsc.h:482-483`).
+- **Bulk enqueue is all-or-nothing by default.** The `_All` template parameter defaults to `true`: `enqueue<true>(t, size)` enqueues every element or none, returning `0` when there is insufficient room (`src/qb/system/lockfree/spsc.h:409-411`). Set `_All = false` for a partial enqueue that takes as many elements as fit. `_All` is a `bool`, never an integer — it is `std::same_as<bool> auto` in every bulk overload of both rings since 3.3, so `enqueue<0>(t, size)` does not compile (Huly QB-980).
+- **`consume_all` avoids the intermediate copy** — and that is exactly why it is the dangerous overload. It invokes `func` directly over the buffer's internal storage, passing a `T *` to the start of one contiguous segment and that segment's element count. Because the ring wraps, a full traversal can call the `functor` **twice**, once per segment (`src/qb/system/lockfree/spsc.h:519-520`).
 
-> **`consume_all` is only safe when one ring slot is one independent item.** The producer's bulk `enqueue` deliberately writes across the wrap with a two-section `memcpy`, so a logical item spanning several slots — a multi-bucket `qb::Event` is the obvious one — is split by that second call. A consumer that parses variable-length items by an embedded size field then reads a header whose item runs past the end of the segment. When items can span more than one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it reassembles the batch contiguously before calling the functor. This is not a hypothetical distinction — it is why the engine drains its mailbox through the copy-out overload (`mpsc::consume_all(func, scratch, chunk)`, which forwards to this one) rather than the in-place `consume_all(func)` (`src/qb/system/lockfree/spsc.h:454-462`).
+> **`consume_all` is only safe when one ring slot is one independent item.** The producer's bulk `enqueue` deliberately writes across the wrap with a two-section `memcpy`, so a logical item spanning several slots — a multi-bucket `qb::Event` is the obvious one — is split by that second call. A consumer that parses variable-length items by an embedded size field then reads a header whose item runs past the end of the segment. When items can span more than one slot, use the copy-out `dequeue(func, scratch, n)` overload instead: it reassembles the batch contiguously before calling the functor. This is not a hypothetical distinction — it is why the engine drains its mailbox through the copy-out overload (`mpsc::consume_all(func, scratch, chunk)`, which forwards to this one) rather than the in-place `consume_all(func)` (`src/qb/system/lockfree/spsc.h:491-499`).
 
 ### Where the engine uses it
 
@@ -292,7 +292,7 @@ Two RAII helpers also live in this header, for no reason other than that this is
 ## Pitfalls
 
 - **Adding a second producer or consumer to an SPSC ring is undefined behavior, not a slowdown.** The indices are not CAS-protected; they assume one writer each. If you need many producers, use `mpsc::ringbuffer` (bounded) or `mpsc_unbounded_queue` (unbounded).
-- **`consume_all` splits an item that spans the wrap.** Use the copy-out `dequeue(func, scratch, n)` overload whenever one logical item can occupy more than one slot (`src/qb/system/lockfree/spsc.h:454-462`).
+- **`consume_all` splits an item that spans the wrap.** Use the copy-out `dequeue(func, scratch, n)` overload whenever one logical item can occupy more than one slot (`src/qb/system/lockfree/spsc.h:491-499`).
 - **The MPSC indexed enqueue overloads take no lock.** `enqueue_at<_Index>` and `enqueue(index, …)` are safe only when one thread owns that index. If multiple unbound threads must push, use the round-robin `enqueue(T const&)` overloads, which take the per-producer `SpinLock`. The runtime-index and round-robin overloads still share the name `enqueue` — a leading index argument is what selects the lock-free one; confirm which one you are calling.
 - **A non-trivially-copyable `T` will not compile in an SPSC/MPSC ring.** The `static_assert` is deliberate: the bulk paths `memcpy` (`src/qb/system/lockfree/spsc.h:107-108`). Store handles, pointers, or trivially-copyable structs; for arbitrary movable types use `mpsc_unbounded_queue`.
 - **A spinlock under real contention wastes a core.** `SpinLock::lock()` never sleeps. Use it only for sections of a few instructions with rare contention; otherwise prefer `std::mutex`.

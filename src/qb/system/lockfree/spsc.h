@@ -281,20 +281,35 @@ protected:
         return write_available(write_index_local_, 0, max_size);
     }
 
-    /// A closed ring's first write: opens it, then writes as an open ring would. The write's own fast path calls this
-    /// last, keeping nothing live across the call (on MSVC, which does not shrink-wrap: no callee-saved register more).
+    /// A closed ring's first write: opens it, then writes into the fresh ring, from slot 0. The write's own fast path
+    /// calls this last, keeping nothing live across the call (on MSVC, which does not shrink-wrap: no callee-saved
+    /// register more), and it calls no producing form back, so nothing recurses into the fast path's inliner.
     QB_NOINLINE QB_COLD bool
     open_and_enqueue(T const &t, T *const buffer, size_t const max_size) noexcept {
-        (void) open(buffer, max_size);
-        return enqueue(t, buffer, max_size);
+        (void) open(buffer, max_size); // a fresh ring: its producer's index is 0, and a single item always fits
+        new (buffer) T(t);
+        write_index_local_ = 1;
+        write_index_.store(1, std::memory_order_release);
+        return true;
     }
 
-    /// The bulk form of the above.
+    /// The bulk form of the above: at most the fresh ring's room, `max_size - 1` items, all or none per `_All`.
     template <std::same_as<bool> auto _All>
     QB_NOINLINE QB_COLD size_t
-    open_and_enqueue(const T *input_buffer, size_t const input_count, T *const internal_buffer, size_t const max_size) noexcept {
-        (void) open(internal_buffer, max_size);
-        return enqueue<_All>(input_buffer, input_count, internal_buffer, max_size);
+    open_and_enqueue(const T *input_buffer, size_t input_count, T *const internal_buffer, size_t const max_size) noexcept {
+        size_t const room = open(internal_buffer, max_size); // a fresh ring: its producer's index is 0, no wrap
+        if constexpr (_All) {
+            if (room < input_count)
+                return 0;
+        } else {
+            input_count = (std::min) (input_count, room);
+            if (!input_count)
+                return 0;
+        }
+        std::memcpy(internal_buffer, input_buffer, input_count * sizeof(T));
+        write_index_local_ = input_count;
+        write_index_.store(input_count, std::memory_order_release);
+        return input_count;
     }
 
     /**
