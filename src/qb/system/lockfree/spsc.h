@@ -237,7 +237,7 @@ protected:
         if (avail < wanted) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
             if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
-                open(buffer, max_size);
+                return open(buffer, max_size); // nothing the caller holds lives across the call
             avail = write_available(write_index, cached_read_index_, max_size);
         }
         return avail;
@@ -269,13 +269,16 @@ protected:
      *          publishes its read index only after taking an item, and there is none before this write. A refused
      *          commit cannot be reported from a send path that is `noexcept`: it terminates, as a failed allocation
      *          there does.
+     * @return The room the ring now has, every slot: a closed ring was never written. A caller that returns it keeps
+     *         nothing live across the call -- on MSVC, which does not shrink-wrap, no callee-saved register more.
      */
-    QB_NOINLINE QB_COLD void
+    QB_NOINLINE QB_COLD size_t
     open(T *const buffer, size_t const max_size) noexcept {
         if (!qb::allocator::detail::region_commit(buffer, max_size * sizeof(T)))
             std::terminate();
         cached_read_index_ = 0;
         read_index_.store(0, std::memory_order_relaxed);
+        return write_available(write_index_local_, 0, max_size);
     }
 
     /**
@@ -337,7 +340,7 @@ protected:
         if (next == cached_read_index_) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire);
             if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
-                open(buffer, max_size); // a ring built closed (`close()`): its first write
+                (void) open(buffer, max_size); // a ring built closed (`close()`): its first write
             if (next == cached_read_index_)
                 return false; /* ringbuffer is full */
         }
