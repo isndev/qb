@@ -719,7 +719,7 @@ private:
     std::vector<std::atomic<bool>> _core_stopped;
     // Death watch (Huly QB-51, QB-203): by RESOLVED index, the cores that watched an actor of each core, a bit per watcher.
     // A core that stops tells those still running (`detail::CoreStopping`), so a watch that reached it too late is answered
-    // by the watcher's own core; a core that never watched it gets no notice -- nor a mailbox ring allocated for one.
+    // by the watcher's own core; a core that never watched it gets no notice (nor, on Windows, a mailbox ring for one).
     std::array<std::array<std::atomic<std::uint64_t>, MaxCores / 64>, MaxCores> _watched_by{};
 
 public:

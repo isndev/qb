@@ -1669,7 +1669,7 @@ VirtualCore::__announce_stop__(SharedCoreCommunication &engine, CoreId const ind
     for (const auto core : engine._core_set.raw()) {
         const CoreId watcher = engine._core_set.resolve(core);
         if (core == index || !((watchers[watcher / 64].load(std::memory_order_relaxed) >> (watcher % 64)) & 1u))
-            continue; // a core with no watch here: nothing to answer, and no mailbox ring to allocate for it (QB-203)
+            continue; // a core with no watch here: nothing to answer, nor, on Windows, a ring to allocate (QB-203)
         fill_event(notice, BroadcastId(core), BroadcastId(index));
         // Straight into its mailbox, behind all this core sent it: after a normal stop its pipes to running cores are
         // empty, after an exception what they held is not sent and this answers its watches; a full ring empties.

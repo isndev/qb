@@ -300,7 +300,8 @@ public:
  * producer -- and on POSIX one block with room for every producer's ring, untouched -- and the first enqueue on an index,
  * or `ringOf(index)`, constructs that producer's ring and publishes it; the consumer's walks skip an index whose ring was
  * never published. A buffer whose producers all produce -- the engine's mailbox -- constructs every ring at once instead
- * (the protected constructor, POSIX only): a page per ring. Memory is therefore proportional to the producers that have
+ * (the protected constructor, POSIX only): its lock and index lines, a page per ring -- two for the one ring in eight
+ * whose 640-byte header straddles a page boundary. Memory is therefore proportional to the producers that have
  * produced, not to the producers that might. Until 3.3 the rings were a `std::vector<Producer>` of `nb_producer`
  * elements, value-initialised: every byte of every ring -- a `max_size + 1` slot array each -- was written at
  * construction. The engine builds one of these per core with one producer per core, so an engine of N cores held N²
@@ -335,8 +336,10 @@ public:
  *   used to compute an address in the vector; the construction itself is out of line. The consumer: one load per
  *   producer per walk -- a cache line holds eight slots with 64-byte lines, and the slot array is whole lines so nothing
  *   else shares them -- and an index with no ring costs that load and nothing more, where it used to cost the two lines
- *   of a ring's header. An engine's mailbox has no such index on POSIX: with its rings constructed by their first
- *   enqueues, a cross-core chain of eight cores measured +10 % (Huly QB-203 phase B).
+ *   of a ring's header. That saving is why the engine's mailbox builds every ring on POSIX: a consumer whose walks
+ *   skip the empty indices returns to its live rings sooner and polls their published indices harder -- on a chain of
+ *   eight cores passing one event, 46 to 47 passes per round trip where every ring built runs 35 to 36 -- and the
+ *   chain ran 9 % slower for it (g++-14, Linux; Huly QB-203).
  * - **Failure.** On Windows the first enqueue on an index allocates, so it can throw `std::bad_alloc`; every later one
  *   cannot. On POSIX the constructor took the block, and no enqueue allocates.
  *
@@ -382,10 +385,10 @@ class ringbuffer<T, max_size, 0> : public nocopy {
 
     /// Where the rings live. CONTIGUOUS (POSIX): one block holds every producer's ring, taken by the constructor -- the
     /// storage shape of the vector of rings this replaced, from 64 KiB a region of the cache -- and a producer's ring is
-    /// constructed in place by its first enqueue: the pages of the block no ring was written into are not the
-    /// process's. PER RING (Windows): each ring is a region of its own, allocated by its first enqueue, because a
-    /// committed mapping commits every ring of a block, written or not, which is what an engine's mailboxes are not
-    /// to cost before their first event (Huly QB-203).
+    /// constructed in place by its first enqueue, or by the mailbox's constructor: the pages of the block no ring was
+    /// written into are not the process's. PER RING (Windows): each ring is a region of its own, allocated by its first
+    /// enqueue, because a committed mapping commits every ring of a block, written or not, which is what an engine's
+    /// mailboxes are not to cost before their first event (Huly QB-203).
 #if defined(_WIN32) || defined(_WIN64)
     static constexpr bool contiguous = false;
 #else
@@ -522,11 +525,13 @@ protected:
      *        a producer's slot is never empty and a consumer's walk reads every ring's published index, as the vector
      *        of rings made it do. PER RING (Windows): ignored, a ring is still allocated by its producer's first
      *        enqueue -- a region per ring now would commit every ring of the buffer.
-     * @details Why: on Linux an engine whose rings are constructed lazily measured +10 % on a cross-core chain of
-     *          eight cores (qb-core-bench-pipeline-chain-latency, Huly QB-203 phase B) against its rings constructed
-     *          here. The cost of constructing them here is one page per ring at rest -- 16 MiB at 64 cores, 64 MiB
-     *          at 128 -- and on a kernel whose transparent huge pages are `always`, a page written every 66 176
-     *          bytes of one block may be backed by a 2 MiB page each time: the block, then, nearly whole.
+     * @details Why: on Linux an engine whose rings were constructed by their first enqueues ran a chain of eight
+     *          cores passing one event 9 % slower than with its rings constructed here, its consumers polling their
+     *          live rings faster over walks that skipped the empty slots (the class note; Huly QB-203). The cost of
+     *          constructing them here is a page per ring at rest, an eighth more for the headers that straddle two --
+     *          about 18 MiB at 64 cores, 72 MiB at 128, where the value-initialised rings of 3.2 held 258 MiB and
+     *          1 GiB. On a kernel whose transparent huge pages are `always`, a page written every 66 176 bytes of one
+     *          block may be backed by a 2 MiB page each time: the block, then, is resident nearly whole, as in 3.2.
      */
     ringbuffer(std::size_t const nb_producer, [[maybe_unused]] bool const construct_now)
         : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
@@ -780,8 +785,8 @@ public:
      * @brief Get direct access to a specific producer's ring buffer
      *
      * @param index The index of the producer
-     * @return Reference to the producer's ring buffer -- allocated by this call when its producer has
-     *         not enqueued yet, exactly as that first enqueue would (and with the same `std::bad_alloc`)
+     * @return Reference to the producer's ring buffer -- constructed by this call when its producer has
+     *         not enqueued yet, exactly as that first enqueue would (and, on Windows, with its `std::bad_alloc`)
      */
     auto &
     ringOf(size_t const index) {
@@ -789,9 +794,10 @@ public:
     }
 
     /**
-     * @brief Producer rings allocated so far: one per index that has enqueued, or that `ringOf` handed out.
-     * @details Any thread, no lock. A ring being allocated concurrently may or may not be counted yet: a reading of
-     *          what the buffer holds, never a synchronisation point. Construction leaves it at 0.
+     * @brief Producer rings constructed so far: one per index that has enqueued, or that `ringOf` handed out.
+     * @details Any thread, no lock. A ring being constructed concurrently may or may not be counted yet: a reading of
+     *          what the buffer holds, never a synchronisation point. Construction leaves it at 0 (the engine's mailbox:
+     *          at its producer count on POSIX, where it constructs every ring at once).
      */
     [[nodiscard]] size_t
     rings() const noexcept {

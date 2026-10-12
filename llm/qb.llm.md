@@ -174,13 +174,17 @@ it at poll latency and a callback armed on it fires at its delay — `latency` o
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
-**An engine's memory follows its traffic.** Each core's mailbox has one 8-byte slot per core of the engine; the
-64 KiB ring behind a slot is allocated by the first event that core sends there (3.3, Huly QB-203), and a core's
-outbound pipe allocates nothing before its first push. Before its first event an engine holds memory linear in its
-cores — a 64 KiB receive buffer each, its slots, its loops — where through 3.2 every mailbox held a written ring per
-core from `start()` (1 GiB at 128 cores). A full mesh is still quadratic: a ring per pair that talked, `N × (N − 1)`.
-The first send between two cores allocates; like a pipe growth under `push`, an allocation failure there terminates the
-process (the cross-core send path is `noexcept`). `qb/system/lockfree/mpsc.h` has the mechanism.
+**An engine's memory follows its traffic.** Each core's mailbox has one 8-byte slot per core of the engine and a 64
+KiB ring behind each, constructed without its slot array (3.3, Huly QB-203): on POSIX every ring in `start()` — its
+lock and index lines, a page — on Windows by the first event that core sends there; a ring's slot pages are written as
+events land, and a core's outbound pipe allocates nothing before its first push. Before its first event an engine
+holds a 64 KiB receive buffer per core, its slots and loops, and on POSIX a page per pair of cores (an idle 64-core
+engine: 22 MiB in all; a kernel whose transparent huge pages are `always` may back each page with a 2 MiB one) — where
+through 3.2 every mailbox held a written ring per core from `start()` (1 GiB at 128 cores). POSIX builds every ring
+because a consumer that skips empty slots polls its live rings harder (a chain of eight cores ran 9 % slower). A full
+mesh is still quadratic: the pages of a ring per pair that talked, `N × (N − 1)`. On Windows the first send between
+two cores allocates; like a pipe growth under `push`, an allocation failure there terminates the process (the
+cross-core send path is `noexcept`). `qb/system/lockfree/mpsc.h` has the mechanism.
 
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
