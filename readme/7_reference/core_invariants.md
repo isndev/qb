@@ -14,12 +14,12 @@ This page consolidates the invariants you must respect (the contract you owe the
 
 ## Thread model: one VirtualCore, one worker thread
 
-- With default `start(true)`, each `qb::VirtualCore` runs on a `qb::jthread`; `start(false)` runs the last core on the calling thread. `qb::jthread` aliases `std::jthread` when available and falls back to qb's C++20 implementation otherwise. `qb::Main::start(bool async = true)` spawns one worker per registered core in async mode (`src/qb/core/Main.cpp:600-617`); the threads are joined by `Main::join()` or by `~Main()`, whose `qb::jthread` members auto-join (`src/qb/core/Main.cpp:412-425,656-671`).
-- The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`src/qb/core/Main.cpp:457`).
+- With default `start(true)`, each `qb::VirtualCore` runs on a `qb::jthread`; `start(false)` runs the last core on the calling thread. `qb::jthread` aliases `std::jthread` when available and falls back to qb's C++20 implementation otherwise. `qb::Main::start(bool async = true)` spawns one worker per registered core in async mode (`src/qb/core/Main.cpp:624-641`); the threads are joined by `Main::join()` or by `~Main()`, whose `qb::jthread` members auto-join (`src/qb/core/Main.cpp:423-437,680-695`).
+- The active worker is identified by a `thread_local` pointer, `VirtualCore::_handler`, installed by `Main::start_thread` before any actor is instantiated on that worker and never reassigned for the worker's lifetime (`src/qb/core/Main.cpp:481`).
 - **Actors never migrate between cores.** An actor created on core *N* lives, receives events, and is destroyed on core *N*. Its `this` pointer is only dereferenceable on that one thread. A `VirtualCore` owns its actors exclusively; the actor maps and the service-id pool perform no synchronization (`src/qb/core/VirtualCore.h:481-483`, `src/qb/core/VirtualCore.h:216-217`).
 - Cross-actor APIs (`to()`, `push<>()`, `send<>()`, `broadcast<>()`, `qb::Pipe`) never touch the destination actor directly. They enqueue an event into the destination core's mailbox; that core's worker dequeues and dispatches it **on its own thread**.
 
-The common unparked enqueue path uses SPSC atomics and fences without a mutex. When the consumer is parked, mailbox `notify()` takes its mutex to coordinate the wake; `_parked` and the ring cursors are atomic (`src/qb/core/Main.h:499-512`, `:653-686`). Service-id registration and the engine-wide `qb::stop_source` add separate synchronization. See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
+The common unparked enqueue path uses SPSC atomics and fences without a mutex. When the consumer is parked, mailbox `notify()` takes its mutex to coordinate the wake; `_parked` and the ring cursors are atomic (`src/qb/core/Main.h:501-514`, `:655-688`). Service-id registration and the engine-wide `qb::stop_source` add separate synchronization. See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
 
 ## Actor lifecycle
 
@@ -93,7 +93,7 @@ The requirement is **not** scoped to cross-core delivery. Two independent reloca
 
 (Until 3.2 there was a third — the contiguous pipe `memcpy`d what it held on growth and `memmove`d it on compaction, on the sending core's own events too. The segmented pipe never moves an event, but the two above keep the requirement exactly as it was.)
 
-The debug-only scan in `SharedCoreCommunication::send` (`src/qb/core/Main.cpp:230-261`) catches the common case but is not a proof of absence: it runs **only** on the cross-core hop, and it searches for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and is outside the scanned range. It is compiled out under `NDEBUG`.
+The debug-only scan in `SharedCoreCommunication::send` (`src/qb/core/Main.cpp:241-272`) catches the common case but is not a proof of absence: it runs **only** on the cross-core hop, and it searches for a word addressing the event's *current* bytes, so a self-pointer that an earlier pipe growth already left dangling now points at the old buffer and is outside the scanned range. It is compiled out under `NDEBUG`.
 
 ### noexcept on the message path
 
@@ -125,7 +125,7 @@ Termination is guaranteed in bounded time: after a partial flush the workflow dr
 ## CPU affinity and shutdown
 
 - `qb::CoreInitializer::setAffinity(CoreIdSet)` pins a worker's thread, best-effort. A logical `CoreId` need not map to a physical CPU, so a failed `pthread_setaffinity_np` / `SetThreadAffinityMask` only warns and never fails `VirtualCore` init (`src/qb/core/VirtualCore.cpp:641-642`). Core ids `>= qb::MaxCores`, including the `qb::NoAffinity` sentinel, are filtered out before pinning — pass a set containing only `qb::NoAffinity` to opt out of pinning explicitly.
-- Shutdown has three triggers wired to the same plumbing (`src/qb/core/VirtualCore.cpp:961-962`, `:1435-1468`; `Main::stop()` at `src/qb/core/Main.cpp:630-637`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` raising SIGINT's generation (one `std::atomic<unsigned int>` per signal number, plus the global generation the workflow polls), and the C++20 `qb::stop_source` (`request_stop()` on `~Main`, which then advances the same generation -- the pass reads that one value and never polls the token). A worker that observes any of them broadcasts one `SignalEvent` per changed signum in each scan -- repeated raises of that signum coalesce, and cooperative stop adds a virtual `SIGINT` -- so a later different signal never hides an earlier one, and existing shutdown handlers keep working on platforms with or without POSIX signals.
+- Shutdown has three triggers wired to the same plumbing (`src/qb/core/VirtualCore.cpp:961-962`, `:1435-1468`; `Main::stop()` at `src/qb/core/Main.cpp:669-676`): a POSIX signal (`SIGINT` / `SIGTERM` via `sigaction`), `Main::stop()` raising SIGINT's generation (one `std::atomic<unsigned int>` per signal number, plus the global generation the workflow polls), and the C++20 `qb::stop_source` (`request_stop()` on `~Main`, which then advances the same generation -- the pass reads that one value and never polls the token). A worker that observes any of them broadcasts one `SignalEvent` per changed signum in each scan -- repeated raises of that signum coalesce, and cooperative stop adds a virtual `SIGINT` -- so a later different signal never hides an earlier one, and existing shutdown handlers keep working on platforms with or without POSIX signals.
 
 ## Memory ordering cheat-sheet
 
