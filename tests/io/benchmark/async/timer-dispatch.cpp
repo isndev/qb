@@ -12,7 +12,7 @@
  * Four kinds of case, each under its own name (Huly QB-300):
  *   - INLINE: `callback(fn, d <= 0)` calls `fn` before it returns and never
  *     reaches the loop (`qb/io/async/io.h`); `BM_Callback_ZeroDelayInline` and
- *     the zero-delay `scoped_callback` measure that call -- the controls;
+ *     the zero-delay `scoped_callback` time that path -- controls, not costs;
  *   - TIMER DISPATCH: `callback(fn, d > 0)` arms a `Timeout` that the loop fires
  *     on a later pass; `BM_Callback_TimerDispatch` measures arm -> pass -> fire;
  *   - BULK: `BM_Callback_BulkTimerDispatch` arms a batch, then drains it;
@@ -102,7 +102,8 @@ public:
 // ---------------------------------------------------------------------------
 // async::callback(fn, 0): the CONTROL of the zero-delay path. A non-positive
 // delay calls `fn` inline, before `callback` returns -- no `Timeout`, no
-// watcher, no pass -- so this measures a function call, never a dispatch. The
+// watcher, no pass -- so it times the inline path (g++ -O3 folds the call into
+// the counter: a path control, not a cost figure), never a dispatch. The
 // loop is not run here at all: every fire counted is an inline one, and a
 // callback that registered a watcher would leave the listener's count moved.
 // ---------------------------------------------------------------------------
