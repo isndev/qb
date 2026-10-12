@@ -998,8 +998,9 @@ wait_for_quota_event(qb::io::quic::backend &client, qb::io::quic::backend &serve
                 found = true;
         // Only the full-close quota owner requests this witness; reset/stop
         // notifications in neighbouring cases are not treated as quota credit.
-        if (found && require_close_control)
+        if (found && require_close_control) {
             EXPECT_TRUE(server.wants_write()) << "full close credit is hidden before its existing final drain";
+        }
         const auto control = deliver_ready_quic_packets(server, client);
         (void) client.drain_events();
         if (found) {
