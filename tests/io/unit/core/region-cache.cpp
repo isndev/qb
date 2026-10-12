@@ -16,7 +16,10 @@
  * container gives back when it dies stays mapped for the next request of its rounded size, a
  * region a container outgrows is unmapped at once, a container that grows takes the largest
  * cached region it can use, the cache holds at most twice the high water of what was lent and
- * unmaps the oldest first past it, and `trim()` unmaps every cached region. The allocator makes a
+ * unmaps the oldest first past it, and `trim()` unmaps every cached region. A lookup files and finds
+ * regions by size (Huly QB-203): a size is found under any number of newer regions of others, the
+ * regions of one size are lent newest first, the bound cuts the oldest region of a size and keeps
+ * its newer ones, and the table of sizes grows past a page. The allocator makes a
  * request of at least 64 KiB a region and gives a smaller one to the global allocator. No engine
  * here; the engine-level half is `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`
  * (tests/core/system/engine/actor-arena.cpp) and the cost it removes is counted by
@@ -32,6 +35,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -265,4 +269,87 @@ TEST(RegionCache, ThreadsShareTheCache) {
     for (auto &thread : threads)
         thread.join();
     EXPECT_EQ(detail::region_stats().lent_bytes, lent0);
+}
+
+// ---- the size lists: a lookup finds its size however many regions of others are cached (Huly QB-203) -------------------
+
+TEST(RegionCache, ASizeIsFoundUnderManyNewerRegionsOfAnotherAndEachSizeLendsItsNewestFirst) {
+    region_cache::trim();
+    constexpr std::size_t kMany = 256; // more than the 240 rings a 16-core engine whose pairs all talked leaves cached
+    std::size_t const     ring = 21 * kPage, other = 22 * kPage;
+    // All lent at once, so the bound keeps every one; `other` is released first, under all of them.
+    void *const         lone = detail::region_acquire(other);
+    std::vector<void *> rings(kMany);
+    for (auto &r : rings)
+        r = detail::region_acquire(ring);
+    detail::region_release(lone, other);
+    for (void *const r : rings)
+        detail::region_release(r, ring);
+    ASSERT_EQ(detail::region_stats().cached, kMany + 1);
+
+    std::size_t const maps = mappings();
+    EXPECT_EQ(detail::region_acquire(other), lone) << "a size cached under newer regions of another is still found";
+    for (std::size_t i = kMany; i-- > 0;)
+        ASSERT_EQ(detail::region_acquire(ring), rings[i]) << "the regions of one size are lent newest first";
+    EXPECT_EQ(mappings(), maps);
+    EXPECT_EQ(detail::region_stats().cached, 0u);
+
+    detail::region_release(lone, other);
+    for (void *const r : rings)
+        detail::region_release(r, ring);
+    region_cache::trim();
+}
+
+TEST(RegionCache, TheBoundUnmapsTheOldestRegionOfASizeAndKeepsItsNewerOnes) {
+    region_cache::trim(); // nothing cached, and the high water is what is lent now
+    ASSERT_EQ(detail::region_stats().lent_bytes, 0u) << "a case left a region lent";
+    std::size_t const a = 31 * kPage, c = 60 * kPage, d = 5 * kPage; // sizes no other case uses
+    void *const       a1 = detail::region_acquire(a);
+    void *const       a2 = detail::region_acquire(a); // high water 2a
+    detail::region_release(a1, a);                    // the oldest
+    detail::region_release(a2, a);
+    detail::region_release(detail::region_acquire(c), c); // 2a + c <= 4a: everything stays
+    EXPECT_EQ(detail::region_stats().cached, 3u);
+    detail::region_release(detail::region_acquire(d), d); // 2a + c + d > 4a: a1, the oldest, goes
+    EXPECT_EQ(detail::region_stats().cached, 3u);
+    EXPECT_EQ(detail::region_stats().cached_bytes, a + c + d);
+
+    std::size_t const maps = mappings();
+    EXPECT_EQ(detail::region_acquire(a), a2) << "the newer region of the size the bound cut into is still cached";
+    EXPECT_EQ(mappings(), maps);
+    void *const again = detail::region_acquire(a); // a1 was unmapped: a fresh mapping
+    EXPECT_EQ(mappings(), maps + 1);
+    detail::region_release(again, a);
+    detail::region_release(a2, a);
+    region_cache::trim();
+}
+
+TEST(RegionCache, TheSizeTableGrowsPastAPageAndTheLargestFitIsFoundAmongEverySize) {
+    region_cache::trim();
+    constexpr std::size_t kSizes = 200; // a page of the size table holds 170
+    std::vector<void *>   regions(kSizes + 1, nullptr);
+    for (std::size_t pages = 1; pages <= kSizes; ++pages) // all lent at once: the bound keeps them all
+        regions[pages] = detail::region_acquire(pages * kPage);
+    for (std::size_t i = 0; i < kSizes; ++i) { // released out of order, so sizes are filed between others
+        std::size_t const pages = 1 + (i * 7) % kSizes;
+        detail::region_release(regions[pages], pages * kPage);
+    }
+    ASSERT_EQ(detail::region_stats().cached, kSizes);
+
+    EXPECT_EQ(detail::region_largest_cached(50 * kPage, 120 * kPage), 120 * kPage);
+    EXPECT_EQ(detail::region_largest_cached(50 * kPage, 120 * kPage + kPage - 1), 120 * kPage);
+    EXPECT_EQ(detail::region_largest_cached(0, (std::numeric_limits<std::size_t>::max)()), kSizes * kPage);
+    EXPECT_EQ(detail::region_largest_cached(120 * kPage + 1, 121 * kPage - 1), 0u);
+    EXPECT_EQ(detail::region_largest_cached((kSizes + 1) * kPage, (std::numeric_limits<std::size_t>::max)()), 0u);
+
+    std::size_t const maps = mappings();
+    for (std::size_t pages = kSizes; pages >= 1; --pages)
+        ASSERT_EQ(detail::region_acquire(pages * kPage), regions[pages]) << pages << " pages";
+    EXPECT_EQ(mappings(), maps);
+    EXPECT_EQ(detail::region_stats().cached, 0u);
+    EXPECT_EQ(detail::region_largest_cached(0, (std::numeric_limits<std::size_t>::max)()), 0u) << "an empty cache fits nothing";
+
+    for (std::size_t pages = 1; pages <= kSizes; ++pages)
+        detail::region_release(regions[pages], pages * kPage);
+    EXPECT_EQ(region_cache::trim(), kSizes);
 }

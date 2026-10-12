@@ -175,5 +175,7 @@ unset(_qb_multi_config)
 # region-cache pins qb::allocator::region_cache and region_allocator (Huly QB-1012): a released region is the next acquire
 # of its rounded size, still mapped; another size is a fresh mapping; the cache holds at most twice the high water of what
 # was lent and unmaps the oldest first; trim() unmaps every cached region and never a lent one; the allocator sends a
-# request there from 64 KiB and no smaller, and a region_vector lends exactly the buffer it holds.
+# request there from 64 KiB and no smaller, and a region_vector lends exactly the buffer it holds. Its size lists
+# (Huly QB-203): a size found under hundreds of newer regions of another, newest first per size, the bound cutting the
+# oldest region of a size, a table of 200 sizes.
 qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.cpp DEPENDS ${PROJECT_NAME})

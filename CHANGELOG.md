@@ -247,8 +247,10 @@ policy.
   back; nothing in qb calls it. `region_allocator<T>` is the stateless standard allocator over it: a request of at
   least 64 KiB is a region, a smaller one the global allocator's; `region_vector<T>` and `region_ptr<T>` (built by
   `make_region<T>()`) are its two shapes. The cache's acquire and release, its growth helpers and its counters are
-  `detail`. Cold path only: a container reaches it when it grows or dies, never per event. Pinned by
-  `qb-io-test-unit-region-cache`.
+  `detail`. Cold path only: a container reaches it when it grows or dies, never per event. A lookup -- an exact size,
+  the largest within a range -- bisects a table of the sizes cached, so its cost under the lock does not grow with the
+  number of regions held: an engine whose cores all talked leaves a mailbox ring per pair of cores there (Huly
+  QB-203), 4 032 at 64 cores, which a lookup walking the cached regions visited one by one, a page each. Pinned by `qb-io-test-unit-region-cache`.
 
 ### Changed
 

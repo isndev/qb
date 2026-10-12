@@ -44,6 +44,9 @@
  *  - **the retention is bounded**: the cache never holds more than twice the most bytes the
  *    process ever had lent at once, and past that bound the regions released longest ago are
  *    unmapped first; in practice it holds the final buffers of the engines that stopped.
+ *    Every lookup -- an exact size, the largest within a range -- bisects a table of the sizes
+ *    it holds, so its cost does not grow with the number of regions cached (an engine whose
+ *    cores all talked leaves one mailbox ring per pair of them there, Huly QB-203).
  *    `region_cache::trim()` unmaps everything cached: the call for a process that lives on after
  *    its engines and wants its footprint back, which nothing makes for it (the same contract as
  *    `slab_cache::trim()`, `slab.h`).
