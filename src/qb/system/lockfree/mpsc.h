@@ -370,10 +370,24 @@ class ringbuffer<T, max_size, 0> : public nocopy {
     static constexpr size_t stagger_slots = (ring_storage - sizeof(Producer)) / alignof(Producer) + 1;
     static_assert(ring_storage - sizeof(Producer) < qb::allocator::detail::region_page_bytes,
                   "a stagger lives in what the page rounding leaves: it never costs a page");
+    static_assert(stagger_slots * alignof(Producer) <= sizeof(Producer), "a block's stagger fits in its spare ring");
+
+    /// Where the rings live. CONTIGUOUS (POSIX): one block holds every producer's ring, taken by the constructor -- the
+    /// storage shape of the vector of rings this replaced, from 64 KiB a region of the cache -- and a producer's ring is
+    /// constructed in place by its first enqueue: the pages of the block no ring was written into are not the
+    /// process's. PER RING (Windows): each ring is a region of its own, allocated by its first enqueue, because a
+    /// committed mapping commits every ring of a block, written or not, which is what an engine's mailboxes are not
+    /// to cost before their first event (Huly QB-203).
+#if defined(_WIN32) || defined(_WIN64)
+    static constexpr bool contiguous = false;
+#else
+    static constexpr bool contiguous = true;
+#endif
 
     std::unique_ptr<SlotLine[]> _slots;       ///< One slot per producer, `slots_per_line` to a line
     const std::size_t           _nb_producer; ///< Number of producers
     const std::size_t           _stagger;     ///< This buffer's first stagger slot: see `stagger_of`
+    Producer *const             _block;       ///< CONTIGUOUS: room for `_nb_producer + 1` rings (the stagger's slack); else null
 
     /// Consecutive buffers -- an engine's mailboxes, built in core order -- take consecutive first slots.
     [[nodiscard]] static size_t
@@ -382,10 +396,24 @@ class ringbuffer<T, max_size, 0> : public nocopy {
         return built.fetch_add(1, std::memory_order_relaxed) % stagger_slots;
     }
 
-    /// Where producer @p index's ring starts in its storage: one slot further for each producer, and for each buffer.
+    /// Where producer @p index's ring starts in its region (PER RING): five slots further for each producer and one
+    /// for each buffer, so the two rings of a pair of cores never share a page offset. CONTIGUOUS lays the rings out
+    /// at the same page offsets: the block starts one slot further for each buffer, and each ring starts five slots
+    /// (66 176 bytes, sixteen pages and 640 bytes) past the one before it.
     [[nodiscard]] size_t
     stagger_of(size_t const index) const noexcept {
-        return (index + _stagger) % stagger_slots * alignof(Producer);
+        return (index * 5 + _stagger) % stagger_slots * alignof(Producer);
+    }
+
+    /// The bytes producer @p index's ring is constructed in: its place in the block, or a region allocated now.
+    [[nodiscard]] void *
+    ring_storage_for(size_t const index) const {
+        if constexpr (contiguous)
+            return reinterpret_cast<unsigned char *>(_block) + _stagger * alignof(Producer) + index * sizeof(Producer);
+        else if constexpr (ring_in_region)
+            return qb::allocator::region_allocator<unsigned char>{}.allocate(ring_storage) + stagger_of(index);
+        else
+            return qb::allocator::region_allocator<Producer>{}.allocate(1);
     }
 
     [[nodiscard]] Slot &
@@ -393,43 +421,68 @@ class ringbuffer<T, max_size, 0> : public nocopy {
         return _slots[index / slots_per_line].entry[index % slots_per_line];
     }
 
+    /// A slot's value while the thread that claimed it constructs its ring: never a ring's address.
+    [[nodiscard]] static Producer *
+    claimed() noexcept {
+        return reinterpret_cast<Producer *>(std::uintptr_t{1});
+    }
+
+    /// A ring, as opposed to null (no ring yet) or `claimed()` (one being constructed): one unsigned comparison.
+    [[nodiscard]] static bool
+    usable(Producer const *const ring) noexcept {
+        return reinterpret_cast<std::uintptr_t>(ring) > std::uintptr_t{1};
+    }
+
     /// The ring producer @p index has published, or null: what every consumer walk reads.
     [[nodiscard]] Producer *
     published(size_t const index) const noexcept {
-        return slot(index).load(std::memory_order_acquire);
+        Producer *const ring = slot(index).load(std::memory_order_acquire);
+        return usable(ring) ? ring : nullptr;
     }
 
-    /// The ring of producer @p index, allocated by the first call that needs it.
+    /// The ring of producer @p index, constructed by the first call that needs it.
     [[nodiscard]] Producer &
     producer(size_t const index) {
-        if (Producer *const ring = published(index); likely(ring != nullptr)) [[likely]]
+        if (Producer *const ring = slot(index).load(std::memory_order_acquire); likely(usable(ring))) [[likely]]
             return *ring;
         return allocate_producer(index);
     }
 
-    // The cold half of `producer()`, out of line so that an enqueue path inlining the hot half keeps its registers.
+    // The cold half of `producer()`, out of line so that an enqueue path inlining the hot half keeps its registers. The
+    // slot is CLAIMED before the ring is constructed -- in the block, two threads would otherwise construct one ring at
+    // one address -- and published once it is; a thread that finds it claimed waits the few stores that takes.
     [[nodiscard]] QB_NOINLINE QB_COLD Producer &
     allocate_producer(size_t const index) {
-        void *storage;
-        if constexpr (ring_in_region)
-            storage = qb::allocator::region_allocator<unsigned char>{}.allocate(ring_storage) + stagger_of(index);
-        else
-            storage = qb::allocator::region_allocator<Producer>{}.allocate(1);
-        // Default-initialisation -- placement `new Producer`, never `Producer()` and never `make_region`, both of which
-        // value-initialise: the slot array stays untouched. See the class note.
-        Producer *const fresh  = ::new (storage) Producer;
-        Producer       *winner = nullptr;
-        if (slot(index).compare_exchange_strong(winner, fresh, std::memory_order_acq_rel, std::memory_order_acquire))
-            return *fresh;
-        release(index, fresh); // another thread published this index's ring first; it was never seen by anyone
-        return *winner;
+        Slot &s = slot(index);
+        for (;;) {
+            Producer *seen = s.load(std::memory_order_acquire);
+            if (usable(seen))
+                return *seen;
+            if (seen == nullptr && s.compare_exchange_strong(seen, claimed(), std::memory_order_acquire, std::memory_order_acquire)) {
+                void *storage;
+                try {
+                    storage = ring_storage_for(index);
+                } catch (...) {
+                    s.store(nullptr, std::memory_order_release); // unclaimed: the next caller tries again
+                    throw;
+                }
+                // Default-initialisation -- placement `new Producer`, never `Producer()` and never `make_region`, both
+                // of which value-initialise: the slot array stays untouched. See the class note.
+                Producer *const fresh = ::new (storage) Producer;
+                s.store(fresh, std::memory_order_release);
+                return *fresh;
+            }
+            spin_loop_pause(); // claimed by another thread: its ring is a few stores away
+        }
     }
 
-    /// Destroys the ring `allocate_producer(index)` made and gives its storage back: a region to the region cache.
+    /// Destroys the ring `allocate_producer(index)` made and gives its storage back (PER RING: a region to the cache).
     void
     release([[maybe_unused]] size_t const index, Producer *const ring) const noexcept {
         ring->~Producer();
-        if constexpr (ring_in_region)
+        if constexpr (contiguous)
+            return; // the block goes with the buffer
+        else if constexpr (ring_in_region)
             qb::allocator::region_allocator<unsigned char>{}.deallocate(reinterpret_cast<unsigned char *>(ring) - stagger_of(index),
                                                                         ring_storage);
         else
@@ -446,12 +499,14 @@ public:
      * @brief Constructor with runtime number of producers
      *
      * @param nb_producer The number of producers to create
-     * @details Allocates one slot per producer and no ring: a producer's ring is allocated by its first enqueue.
+     * @details Allocates one slot per producer and no ring -- a producer's ring is constructed by its first enqueue --
+     *          and, CONTIGUOUS, the block the rings will be constructed in, untouched.
      */
     explicit ringbuffer(std::size_t const nb_producer)
         : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
         , _nb_producer(nb_producer)
-        , _stagger(next_stagger()) {
+        , _stagger(next_stagger())
+        , _block(contiguous ? qb::allocator::region_allocator<Producer>{}.allocate(nb_producer + 1) : nullptr) {
         // At least one producer is required: the round-robin enqueue paths
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
         // when constructed with zero producers.
@@ -459,12 +514,15 @@ public:
     }
 
     /**
-     * @brief Frees every ring a producer allocated. No producer or consumer may still be using the buffer.
+     * @brief Destroys every ring a producer constructed, and gives the storage back. No producer or consumer may still
+     *        be using the buffer.
      */
     ~ringbuffer() noexcept {
         for (size_t i = 0; i < _nb_producer; ++i)
-            if (Producer *const ring = slot(i).load(std::memory_order_relaxed))
+            if (Producer *const ring = slot(i).load(std::memory_order_relaxed); usable(ring))
                 release(i, ring);
+        if constexpr (contiguous)
+            qb::allocator::region_allocator<Producer>{}.deallocate(_block, _nb_producer + 1);
     }
 
     /**
@@ -707,7 +765,7 @@ public:
     rings() const noexcept {
         size_t allocated = 0;
         for (size_t i = 0; i < _nb_producer; ++i)
-            if (slot(i).load(std::memory_order_relaxed) != nullptr)
+            if (usable(slot(i).load(std::memory_order_relaxed)))
                 ++allocated;
         return allocated;
     }
