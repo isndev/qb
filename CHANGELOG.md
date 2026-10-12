@@ -250,9 +250,29 @@ policy.
   `make_region<T>()`) are its two shapes. The cache's acquire and release, its growth helpers and its counters are
   `detail`. Cold path only: a container reaches it when it grows or dies, never per event. A lookup -- an exact size,
   the largest within a range -- bisects a table of the sizes cached, so its cost under the lock does not grow with the
-  number of regions held: on Windows an engine whose cores all talked leaves a mailbox ring per pair of cores there
-  (Huly QB-203), 4 032 at 64 cores, which a lookup walking the cached regions visited one by one, a page each. Pinned
-  by `qb-io-test-unit-region-cache`.
+  number of regions held: on Windows the runtime-producer `mpsc::ringbuffer` keeps a region per ring there (Huly
+  QB-203), 4 032 for 64 buffers of 64 producers that all wrote, which a lookup walking the cached regions visited one
+  by one, a page each. A region can also be RESERVED (`detail::region_acquire_reserved`, Huly QB-203): on Windows a
+  range `VirtualAlloc(MEM_RESERVE)` holds for its owner, who commits its pages as it needs them
+  (`detail::region_commit`), cached with what was committed in it and apart from the committed regions of its size --
+  neither kind is ever lent for the other; on POSIX, where a mapping's pages are the process's once written, it is a
+  region like any other. The engine's mailbox blocks are reserved regions (under Fixed). Pinned by
+  `qb-io-test-unit-region-cache`.
+- **`qb::lockfree::mpsc::block_ringbuffer<T, max_size>`: an MPSC ring buffer whose every producer ring its constructor
+  builds, in one block -- the engine's mailbox (`qb/system/lockfree/mpsc.h`, Huly QB-203).** The runtime-producer
+  `ringbuffer<T, max_size, 0>`'s forms -- `enqueue_at<Index>`, `enqueue(index, ...)`, the round-robin `enqueue(...)`
+  under a producer's lock, `dequeue`, `has_data`, both `consume_all`, `ringOf` -- over one block of `nb_producer`
+  rings at their natural stride, each constructed by default-initialisation: its lock and index lines written, its
+  slot array left to its producer's writes. Its walks read a ring where the block holds it, as the vector of rings did
+  -- no slot loaded, no test. `rings()` is its producer count, `closed()` says whether its rings were built closed,
+  `block()` and `block_bytes()` where they are. On POSIX the block is a `region_cache` region. On Windows it is a
+  reserved one: the constructor commits each ring's header pages and builds the ring CLOSED -- full to its producer,
+  empty to its consumer -- and the producer's first write commits the ring's slots and opens it, on the slow path a
+  producer takes when its snapshot of the consumer's index cannot prove room, so a write that fits tests nothing new;
+  a refused commit terminates, the send path being `noexcept`. A ring has one producer by construction -- one thread
+  per index -- so two threads never race its first write, and the round-robin forms open a ring under its producer's
+  lock. Built closed on request on POSIX (`block_ringbuffer(nb_producer, true)`), the rings commit nothing there and
+  run the protocol where ThreadSanitizer sees it. Pinned by `qb-core-test-unit-mpsc-block-ring`.
 
 ### Changed
 
@@ -287,30 +307,30 @@ policy.
   to the loop's shape loses, and the jittered cross-core push probe sits +2.7 % inside the control's range; and
   dev/bench's `BM_PINGPONG` 8c reads +9.0 % (the gate's threshold for it is 10.7 %), its ungated 1c case +5.7 % (the
   case's spread is 12.4 %). Making the idle poll's phase de-correlated, judged by mode share, is a follow-up.
-- **`qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` constructs a producer's ring on that producer's first enqueue, and
-  says how many it holds (Huly QB-203).** The runtime-producer form value-initialised a `std::vector` of all its
+- **`qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` constructs a producer's ring on that producer's first enqueue,
+  and says how many it holds (Huly QB-203).** The runtime-producer form value-initialised a `std::vector` of all its
   producers' rings at construction -- every byte of every slot array written, used or not. It now holds one slot per
   producer (eight to a 64-byte line, in whole lines) and constructs a ring when its producer first enqueues, by any
   producing form or `ringOf(index)`: default-initialised, so the slot array's pages become the process's only as the
   producer writes them, and published by a release store its readers load with acquire, after a compare-exchange that
   claims the slot so that two threads never construct one ring. Where a ring lives is the platform's. On POSIX it is
-  built in its place in one block the buffer takes at construction from `region_allocator` -- from 64 KiB, as the
-  engine's buffers are, a `region_cache` region (Huly QB-1012) whose pages no ring was written into are not the
-  process's, and whose last bytes hold the slots, so a buffer holds nothing on the heap but its own object. On Windows
-  it is a region of its own, allocated by that first enqueue: a committed mapping would commit every page of a block.
-  Either way a destroyed buffer's regions stay mapped for the next of their size -- a restarted engine's -- until
-  `region_cache::trim()`. A ring starts at its own offset in its pages, in the bytes the page rounding leaves (28 slots
-  of 128 bytes for the engine's rings, five further per producer and one per step of the buffer's colour; a block whose
-  constructor built every ring -- the engine's mailbox on POSIX -- takes none and lays its rings out as the vector did):
-  page-aligned rings would put every ring's index lines in one L1 set and one 4K-aliasing class, the hazard
-  `segmented_pipe` staggers its segments against, where the vector's 66 176-byte stride spread them -- the stride the
-  block keeps. Construction and the consumer's walks (`has_data`, both `consume_all`, `dequeue`) construct nothing; a
-  walk reads one slot per producer and skips an empty one, where an unused ring cost the two lines of its header, except
-  in a buffer whose constructor built every ring, whose producers and consumer read a ring where the block holds it, as
-  the vector's did, and never load a slot. On Windows the first enqueue on an index can therefore throw `std::bad_alloc`
-  and no later one can; on POSIX none can, the constructor having taken the block. `rings()` (runtime form only) counts
-  the rings constructed so far. The fixed-producer form is unchanged. Pinned by
-  `qb-core-test-unit-mpsc-ring-allocation`.
+  built in its place in one block the buffer takes at construction from `region_allocator` -- from 64 KiB a
+  `region_cache` region (Huly QB-1012) whose pages no ring was written into are not the process's, and whose last
+  bytes hold the slots, so a buffer holds nothing on the heap but its own object. On Windows it is a region of its
+  own, allocated by that first enqueue: a committed mapping would commit every page of a block. Either way a destroyed
+  buffer's regions stay mapped for the next of their size until `region_cache::trim()`. A ring starts at its own
+  offset in its pages, in the bytes the page rounding leaves (28 slots of 128 bytes for engine-sized rings, five
+  further per producer and one per step of the buffer's colour): page-aligned rings would put every ring's index lines
+  in one L1 set and one 4K-aliasing class, the hazard `segmented_pipe` staggers its segments against, where the
+  vector's 66 176-byte stride spread them -- the stride the block keeps. Construction and the consumer's walks
+  (`has_data`, both `consume_all`, `dequeue`) construct nothing; a walk reads one slot per producer and skips an empty
+  one, where an unused ring cost the two lines of its header. The engine's mailbox is no longer this type but
+  `block_ringbuffer` (under Added): its producers all produce, and a consumer that skips empty slots polls its live
+  rings harder -- with the engine's rings constructed by their first events, a chain of eight cores passing one event
+  ran 46 to 47 loop passes per round trip against 35 to 36, and took 9 % longer per round trip. On Windows the first
+  enqueue on an index can throw `std::bad_alloc` and no later one can; on POSIX none can, the constructor having taken
+  the block. `rings()` (runtime form only) counts the rings constructed so far. The fixed-producer form is unchanged.
+  Pinned by `qb-core-test-unit-mpsc-ring-allocation`.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
@@ -522,41 +542,42 @@ policy.
   event production, mailbox work, handlers and the timed observation are unchanged.
 
 - **An engine no longer writes a mailbox ring for every pair of cores before its first event (Huly QB-203).** Every
-  core's mailbox is a runtime-producer `mpsc::ringbuffer` with one producer per core, and it value-initialised all of
-  them in `Main::start()`: N x N rings of 66 176 bytes, every page written -- 4.1 MiB resident on 8 cores, 263 MiB on
-  64, 1.02 GiB on 128 (qb-vs-others' `pipe-footprint` probe on 3.2, Linux and Windows alike), committed and resident
-  before any event, almost all of it for pairs of cores that never talk. A ring is now constructed without its slot
-  array (under Changed), whose pages become the process's as events land. On POSIX the mailbox constructs every ring in
-  `start()` -- its lock and index lines, a page per ring (two for the one ring in eight whose header straddles a page),
-  which comes to 18 MiB at 64 cores and 72 MiB at 128. An idle 64-core engine now grows the process by 22 MiB where it
-  grew by 262 MiB (`qb-core-test-system-mailbox-footprint`, Linux, g++-14). It builds every ring because a consumer that
-  skips empty slots polls its live rings harder: with the rings constructed by their first events instead, a chain of
-  eight cores passing one event ran 46 to 47 loop passes per round trip against 35 to 36, and took 9 % longer per round
-  trip. On a kernel whose transparent huge pages are `always`, the pages written every 66 176 bytes of a mailbox's block
-  may each be backed by a 2 MiB page, and the block is then resident nearly whole, as in 3.2; `madvise` and `never` keep
-  the page per ring. On Windows a ring is allocated by the first event its core sends to that mailbox, so an engine at
-  rest holds a 64 KiB receive buffer and a few slots per core; the first cross-core send of a pair allocates there, and
-  like a pipe growth under `push` an allocation failure terminates the process, the send path being `noexcept`. A full
-  mesh still writes every ring it uses, as events land. `start()` writes a page where it wrote a ring: the restart
-  witness counts 318 page faults in a 16-core engine's first `start()` against 4 177 for the value-initialised mailbox
-  (`qb-core-test-system-engine-restart-mailboxes`). The rings live in `region_cache` regions (QB-1012, below) -- a block
-  per mailbox on POSIX -- so an engine started after another builds them in pages the first left mapped, each core's
-  mailbox in its own block again: the mailboxes go back to the cache in the exact reverse of the order they were built
-  in, the cache lending the region of a size it took back last first, and a mailbox's block lays its rings out with no
-  colour, as the vector did, so they sit where they sat. A block that changed cores brought a ring that had been its
-  first owner's own index, never written, 16 pages a mailbox: given back in build order, the witness's second 16-core
-  engine faulted 248 pages; given back in reverse, 25, as with a region per ring (24 to 27), and the witness now bounds
-  it at three a core. The engine's shared objects also sit where 3.2's did: the death watch's watcher bits are an
-  allocation of their own rather than 8 KiB inside `SharedCoreCommunication` -- whose growth, with a heap allocation of
-  slot lines per mailbox, had moved the mailboxes on the heap, where qvo ping-pong 1c read 2-3 % past its spread on WSL2
-  with its instructions unchanged (callgrind: 580 per round trip on both sides). A stop no longer tells the cores that
-  did not ask: once one watch had crossed cores, every core that stopped sent a notice to every core still running -- on
-  Windows a ring allocated for every pair that never talked -- and a stopping core now tells only the cores that watched
-  one of its actors (`qb-core-test-system-death-watch`, which counts what a core that never talked takes in). The
-  footprint witness reads the process's own resident set (and, on Windows, its private commit) across the start of a
-  64-core engine -- after a warm-up engine, whose cached regions `region_cache::trim()` hands back first -- and bounds
-  the growth by a page per ring and eight rings per core, against the sixty-four whole rings per core the eager mailbox
-  wrote.
+  core's mailbox held a ring per core and value-initialised all of them in `Main::start()`: N x N rings of 66 176
+  bytes, every page written -- 4.1 MiB resident on 8 cores, 263 MiB on 64, 1.02 GiB on 128 (qb-vs-others'
+  `pipe-footprint` probe on 3.2, Linux and Windows alike), committed and resident before any event, almost all of it
+  for pairs of cores that never talk. The mailbox is now an `mpsc::block_ringbuffer` (under Added): it still builds
+  every ring in `start()`, in one block per mailbox at the stride the vector had, but without its slot array -- its
+  lock and index lines, a page per ring (two for the one ring in eight whose header straddles a page), 18 MiB at 64
+  cores and 72 MiB at 128 -- and its producers and consumer read the rings as they did. A ring's slot pages become the
+  process's as events land. An idle 64-core engine now grows the process by 22 MiB where it grew by 262 MiB
+  (`qb-core-test-system-mailbox-footprint`, Linux, g++-14). On a kernel whose transparent huge pages are `always`, the
+  pages written every 66 176 bytes of a mailbox's block may each be backed by a 2 MiB page, and the block is then
+  resident nearly whole, as in 3.2; `madvise` and `never` keep the page per ring. On Windows, where a committed
+  mapping commits every page of it, written or not, a mailbox's block is reserved: its rings' header pages are
+  committed and each ring is built closed, and the first event a core sends to that mailbox commits that ring's slots
+  -- at rest a 64-core engine commits the 18 MiB of headers and reserves 271 MB of address space (1.1 GB at 128); a
+  refused commit terminates the process, as an allocation failure on the `noexcept` send path does. A full mesh still
+  writes every ring it uses, as events land. `start()` writes a page where it wrote a ring: the restart witness counts
+  318 page faults in a 16-core engine's first `start()` against 4 177 for the value-initialised mailbox
+  (`qb-core-test-system-engine-restart-mailboxes`). The blocks are `region_cache` regions (QB-1012, below), so an
+  engine started after another builds its mailboxes in pages the first left mapped -- on Windows with what the first
+  committed in them -- each core's mailbox in its own block again: the mailboxes go back to the cache in the exact
+  reverse of the order they were built in, the cache lending the region of a size it took back last first, and a block
+  holds its rings at fixed offsets, so they sit where they sat. A block that changed cores brought a ring that had
+  been its first owner's own index, never written, 16 pages a mailbox: given back in build order, the witness's second
+  16-core engine faulted 248 pages; given back in reverse, 25, and the witness now bounds it at three a core. The
+  engine's shared objects also sit where 3.2's did: the death watch's watcher bits are an allocation of their own
+  rather than 8 KiB inside `SharedCoreCommunication`, whose growth had moved the mailboxes on the heap, where qvo
+  ping-pong 1c read 2-3 % past its spread on WSL2 with its instructions unchanged (callgrind: 580 per round trip on
+  both sides). A stop no longer tells the cores that did not ask: once one watch had crossed cores, every core that
+  stopped sent a notice to every core still running -- on Windows committing a ring's slots for every pair that never
+  talked -- and a stopping core now tells only the cores that watched one of its actors
+  (`qb-core-test-system-death-watch`, which counts what a core that never talked takes in). The footprint witness
+  reads the process's own resident set (and, on Windows, its private commit) across the start of a 64-core engine --
+  after a warm-up engine, whose cached regions `region_cache::trim()` hands back first -- and bounds the growth by a
+  page per ring and eight rings per core, against the sixty-four whole rings per core the eager mailbox wrote;
+  `qb-core-test-unit-mpsc-block-ring` reads, on Windows, the pages a mailbox's block has committed: its rings' headers
+  at rest, and a ring's slots more once its producer writes.
 - **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
   build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
   `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a

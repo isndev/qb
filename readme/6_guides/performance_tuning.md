@@ -219,7 +219,7 @@ Each source-to-destination channel is a `qb::VirtualPipe` (an alias of `qb::allo
 
 The cross-core path is built from lock-free primitives, not mutexes:
 
-- Each core's inbound **mailbox is a multi-producer / single-consumer (MPSC) lock-free ring buffer** (`qb::lockfree::mpsc::ringbuffer`). Every other core is a producer; the owning core is the sole consumer. The optional `std::condition_variable` is used only when `latency > 0` — for parking, not for mutual exclusion.
+- Each core's inbound **mailbox is a multi-producer / single-consumer (MPSC) lock-free ring buffer** (`qb::lockfree::mpsc::block_ringbuffer`). Every other core is a producer; the owning core is the sole consumer. The optional `std::condition_variable` is used only when `latency > 0` — for parking, not for mutual exclusion.
 - Concurrently written fields are padded to a cache line (`QB_LOCKFREE_CACHELINE_BYTES`) to avoid false sharing.
 
 You generally do not touch these types directly — the engine routes events through them — but two facts inform tuning. First, cross-core delivery is genuinely lock-free on the fast path, which is why a zero-latency core can poll without contending. Second, the standalone lock-free building blocks (`qb::lockfree::spsc::ringbuffer`, `qb::lockfree::mpsc_unbounded_queue`, `qb::lockfree::SpinLock`) are available if you need a wait-free hand-off *inside* a single actor's owned state. Note that `SpinLock` is a busy-wait TTAS lock for very short critical sections, not a general-purpose mutex.

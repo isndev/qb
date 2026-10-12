@@ -174,17 +174,18 @@ it at poll latency and a callback armed on it fires at its delay — `latency` o
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
-**An engine's memory follows its traffic.** Each core's mailbox has one 8-byte slot per core of the engine and a 64
-KiB ring behind each, constructed without its slot array (3.3, Huly QB-203): on POSIX every ring in `start()` — its
-lock and index lines, a page — on Windows by the first event that core sends there; a ring's slot pages are written as
-events land, and a core's outbound pipe allocates nothing before its first push. Before its first event an engine
-holds a 64 KiB receive buffer per core, its slots and loops, and on POSIX a page per pair of cores (an idle 64-core
-engine: 22 MiB in all; a kernel whose transparent huge pages are `always` may back each page with a 2 MiB one) — where
-through 3.2 every mailbox held a written ring per core from `start()` (1 GiB at 128 cores). POSIX builds every ring
-because a consumer that skips empty slots polls its live rings harder (a chain of eight cores ran 9 % slower). A full
-mesh is still quadratic: the pages of a ring per pair that talked, `N × (N − 1)`. On Windows the first send between
-two cores allocates; like a pipe growth under `push`, an allocation failure there terminates the process (the
-cross-core send path is `noexcept`). `qb/system/lockfree/mpsc.h` has the mechanism.
+**An engine's memory follows its traffic.** Each core's mailbox (`qb::lockfree::mpsc::block_ringbuffer`) has one 64
+KiB ring per core of the engine, every one constructed in `start()` without its slot array (3.3, Huly QB-203) — its
+lock and index lines, a page — and a ring's slot pages are written as events land, while a core's outbound pipe
+allocates nothing before its first push. Before its first event an engine holds a 64 KiB receive buffer per core, its
+loops, and a page per pair of cores (an idle 64-core engine: 22 MiB in all; a kernel whose transparent huge pages are
+`always` may back each page with a 2 MiB one) — where through 3.2 every mailbox held a written ring per core from
+`start()` (1 GiB at 128 cores). The mailbox builds every ring because a consumer that skips empty slots polls its live
+rings harder (a chain of eight cores ran 9 % slower). On Windows a mailbox's block is reserved: the ring headers are
+what is committed at rest (18 MiB at 64 cores, with 271 MB of address space reserved), and the first send between two
+cores commits that ring's slots; a refused commit terminates the process, the cross-core send path being `noexcept`. A
+full mesh is still quadratic: the pages of a ring per pair that talked, `N × (N − 1)`. `qb/system/lockfree/mpsc.h` has
+the mechanism.
 
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
@@ -522,7 +523,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
   registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
-  rings are `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks. A buffer a container outgrows
+  blocks are `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks. A buffer a container outgrows
   is unmapped at once, so a running engine holds no doubling ladder; the final buffers of an engine that stops
   stay mapped; the next engine's containers grow straight into them (the largest cached region each can use), so
   a restarted engine builds without page faults. A process that wants that memory back between engines calls

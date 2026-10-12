@@ -61,7 +61,7 @@ The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (
 
 | Source | Executable suffix | Measures |
 |---|---|---|
-| `micro/mpsc-mailbox-fanin.cpp` | `mpsc-mailbox-fanin` | Lock-free MPSC mailbox fan-in sweep over `qb::lockfree::mpsc::ringbuffer`, mirroring the engine's per-producer SPSC routing — without `qb::Main`. |
+| `micro/mpsc-mailbox-fanin.cpp` | `mpsc-mailbox-fanin` | Lock-free MPSC mailbox fan-in sweep over `qb::lockfree::mpsc::block_ringbuffer`, the engine's mailbox type, mirroring its per-producer SPSC routing — without `qb::Main`. |
 | `micro/mpsc-router-dispatch.cpp` | `mpsc-router-dispatch` | MPSC mailbox ingress plus `qb::router::memh` typed dispatch, modeling a single consumer core draining mailboxes. |
 | `micro/spinlock-contention.cpp` | `spinlock-contention` | `qb::lockfree::SpinLock` uncontended acquire/release latency and N-thread contended throughput. |
 | `micro/jsonb-dump.cpp` | `jsonb-dump` | `qb::json` / `qb::jsonb` serialize (`dump()`) and parse throughput on an HTTP-shaped payload. |

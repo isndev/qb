@@ -19,7 +19,7 @@ This page consolidates the invariants you must respect (the contract you owe the
 - **Actors never migrate between cores.** An actor created on core *N* lives, receives events, and is destroyed on core *N*. Its `this` pointer is only dereferenceable on that one thread. A `VirtualCore` owns its actors exclusively; the actor maps and the service-id pool perform no synchronization (`src/qb/core/VirtualCore.h:481-483`, `src/qb/core/VirtualCore.h:216-217`).
 - Cross-actor APIs (`to()`, `push<>()`, `send<>()`, `broadcast<>()`, `qb::Pipe`) never touch the destination actor directly. They enqueue an event into the destination core's mailbox; that core's worker dequeues and dispatches it **on its own thread**.
 
-The common unparked enqueue path uses SPSC atomics and fences without a mutex. When the consumer is parked, mailbox `notify()` takes its mutex to coordinate the wake; `_parked` and the ring cursors are atomic (`src/qb/core/Main.h:501-514`, `:655-688`). Service-id registration and the engine-wide `qb::stop_source` add separate synchronization. See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
+The common unparked enqueue path uses SPSC atomics and fences without a mutex. When the consumer is parked, mailbox `notify()` takes its mutex to coordinate the wake; `_parked` and the ring cursors are atomic (`src/qb/core/Main.h:501-514`, `:654-687`). Service-id registration and the engine-wide `qb::stop_source` add separate synchronization. See [Memory ordering](#memory-ordering-cheat-sheet) for the full accounting.
 
 ## Actor lifecycle
 

@@ -322,7 +322,7 @@ Describes data structures that allow concurrent access from multiple threads wit
 
 #### MPSC queue (multiple-producer, single-consumer)
 
-A queue allowing many producer threads but exactly one consumer thread, used for the inter-core [mailbox](#mailbox) (`qb::lockfree::mpsc::ringbuffer`). See [Concurrency primitives](../0_foundations/concurrency_primitives.md).
+A queue allowing many producer threads but exactly one consumer thread, used for the inter-core [mailbox](#mailbox) (`qb::lockfree::mpsc::block_ringbuffer`). See [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 
 #### SPSC queue (single-producer, single-consumer)
 
