@@ -519,7 +519,12 @@ policy.
   of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores: the faults
   `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
   `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and the coroutines' per-thread
-  storage still goes back to `malloc` at thread exit.
+  storage still goes back to `malloc` at thread exit. Measured on 2026-10-12 (one core, 40 000 actors on eight event
+  types, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds (23.5 against 23.7 MiB; 20.8
+  against 20.9); an engine started after another takes 90 page faults instead of 3 455 and 4.4 instead of 8.0 ms (200
+  instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its final buffers until
+  `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 % (1c) and -5.0 % (2c)
+  on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a side.
 
 - **Copies of `dedup_map` own their LRU index (Huly QB-296).** A copied cache previously
   retained iterators into the source cache's list. Looking up or replacing a key in the copy

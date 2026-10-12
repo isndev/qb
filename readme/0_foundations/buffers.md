@@ -249,6 +249,8 @@ Since 3.3 those buffers are `qb::allocator::region_cache` regions (`src/qb/syste
 3. **A container that grows takes the largest cached region it can use** — at least what it needs, at most its own ceiling (65 536 slots for a table, one core's id space) — and reserves that region's whole capacity. The next engine's tables, registry and queues grow straight into the previous engine's final buffers in one step instead of climbing the ladder again; a fixed-size request — the receive buffer, a mailbox ring — takes the cached region of its exact size.
 4. **`region_cache::trim()` gives everything cached back to the OS**, for a process that lives on after its engines; nothing calls it for you.
 
+Measured on 2026-10-12 against the control (develop before QB-1012), one core building 40 000 actors on eight event types (the `qb1012-mempolicy` probe, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds — 23.5 against 23.7 MiB resident on WSL2, 20.8 against 20.9 on Windows, the cache holding nothing while it runs; an engine started after another one takes 90 page faults instead of 3 455 and runs in 4.4 instead of 8.0 ms (200 faults instead of 5 455, 6.6 instead of 10.1 ms on Windows); a process whose only engine stopped holds that engine's final buffers, 26.3 against 16.6 MiB (21.4 against 10.0 on Windows), until `trim()` brings it to 9.3 MiB (6.3), at or under the control's floor. The qb-vs-others cells that build one engine per repetition read, with three physical copies a side in seeded order: `fork-join-create` −4.7 % at one core and −5.0 % at two on WSL2, −20.0 % and −23.1 % on Windows; `fib` −21.8 % and −17.8 %.
+
 Where a core's memory goes when the engine stops:
 
 | Buffer | Kept by | Back to the OS through |
