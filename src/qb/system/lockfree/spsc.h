@@ -281,6 +281,22 @@ protected:
         return write_available(write_index_local_, 0, max_size);
     }
 
+    /// A closed ring's first write: opens it, then writes as an open ring would. The write's own fast path calls this
+    /// last, keeping nothing live across the call (on MSVC, which does not shrink-wrap: no callee-saved register more).
+    QB_NOINLINE QB_COLD bool
+    open_and_enqueue(T const &t, T *const buffer, size_t const max_size) noexcept {
+        (void) open(buffer, max_size);
+        return enqueue(t, buffer, max_size);
+    }
+
+    /// The bulk form of the above.
+    template <std::same_as<bool> auto _All>
+    QB_NOINLINE QB_COLD size_t
+    open_and_enqueue(const T *input_buffer, size_t const input_count, T *const internal_buffer, size_t const max_size) noexcept {
+        (void) open(internal_buffer, max_size);
+        return enqueue<_All>(input_buffer, input_count, internal_buffer, max_size);
+    }
+
     /**
      * @brief Producer side: slots writable RIGHT NOW, refreshing the read-index snapshot only
      *        when the snapshot cannot prove @p wanted
@@ -340,7 +356,7 @@ protected:
         if (next == cached_read_index_) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire);
             if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
-                (void) open(buffer, max_size); // a ring built closed (`close()`): its first write
+                return open_and_enqueue(t, buffer, max_size); // a ring built closed (`close()`): its first write
             if (next == cached_read_index_)
                 return false; /* ringbuffer is full */
         }
@@ -367,7 +383,13 @@ protected:
     size_t
     enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
         const size_t write_index = write_index_local_; // the producer's own copy: never the published line
-        const size_t avail       = producer_available(write_index, input_count, internal_buffer, max_size);
+        size_t       avail       = write_available(write_index, cached_read_index_, max_size);
+        if (avail < input_count) { // `producer_available`, with a closed ring's first write handed off whole
+            cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
+            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
+                return open_and_enqueue<_All>(input_buffer, input_count, internal_buffer, max_size);
+            avail = write_available(write_index, cached_read_index_, max_size);
+        }
 
         if constexpr (_All) {
             if (avail < input_count)
