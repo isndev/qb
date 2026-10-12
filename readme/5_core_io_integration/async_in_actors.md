@@ -135,7 +135,7 @@ namespace qb::io::async {
     void defer(_Func &&func);          // tail of this loop turn — never re-entrant
 }
 ```
-<!-- src: qb/src/qb/io/async/listener.h:1505 (async::defer); qb/src/qb/io/async/listener.h:1084 (listener::defer) -->
+<!-- src: qb/src/qb/io/async/listener.h:1506 (async::defer); qb/src/qb/io/async/listener.h:1085 (listener::defer) -->
 
 Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive — the liveness guard below applies to it exactly as it does to a delayed `callback`.
 

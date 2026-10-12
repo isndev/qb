@@ -181,15 +181,15 @@ struct awaiter_base {
      * directly and never `spawn()`s it, so no scheduler was bound yet, `CoroutineScheduler::current()`
      * built a thread-local FALLBACK and we cached that -- and then `__begin_activation__` called
      * `listener::current.coro_scheduler()`, whose first call `set_current()`s the LISTENER's
-     * scheduler (listener.h:1305). `listener::run()` pumps only `_coro_scheduler`
-     * (listener.h:1049-1050), so a resume queued into the orphaned fallback was never drained: the
+     * scheduler (listener.h:1306). `listener::run()` pumps only `_coro_scheduler`
+     * (listener.h:1050-1051), so a resume queued into the orphaned fallback was never drained: the
      * awaited operation succeeded and the coroutine never woke. `current()` now binds the
      * listener's scheduler on that cold path (scheduler.h:850-854), so the two are one object there
      * too; resolving at resume time stays the rule.
      *
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
-     * of qb-io already does — see listener.h:1025, "every waker in qb-io defers through
+     * of qb-io already does — see listener.h:1026, "every waker in qb-io defers through
      * `schedule_via_current`". This one and the tcp connector's were the exceptions.
      *
      * The cached pointer stays as the FALLBACK (and `unregister_suspended` still uses it, since
