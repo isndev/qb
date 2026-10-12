@@ -9,6 +9,20 @@ policy.
 
 ### Added
 
+- **`Actor::reply_ordered(event)` and `Actor::forward_ordered(dest, event)`: the push-family answers (Huly QB-976).**
+  `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the answer straight
+  into the peer's mailbox, ahead of whatever the handler pushed to that peer earlier -- the documented `send`-family,
+  unordered contract, and the property a peer waiting on nothing else is served by. The two new spellings reuse the
+  received event exactly as their siblings (`dest`/`source` swapped, or `dest` replaced with `source` kept; the
+  non-const `on(E&)`; consumed after the call; a broadcast refused) and take the pipe instead, so the answer keeps
+  its place behind everything the actor `push`ed to the same destination and travels with them at the end of the
+  pass -- the FIFO `push` promises, same core and cross-core alike. Nothing on the existing paths changes; the
+  ordered answer costs the pipe copy a `push` costs. The alternative -- ordering `reply()` itself behind the pipe's
+  pending events for the same destination -- was prototyped and measured (WSL2 g++-14, 3 physical copies a side,
+  seeded order, A/A): every hub shape paid the per-answer filter (savina/chameneos +8.8/+9.6 %, big +5.8/+7.1 %,
+  the two-core ping-pong +1.9 %) for a contract no shipped program needs, so the eager default stays and the order
+  is a choice at the call. Pinned by `OrderedAnswer.*` and `UnorderedAnswer.*` in
+  `tests/core/system/messaging/messaging-reply-forward.cpp`.
 - **`CoroutineScheduler::recycle()` and `listener::recycle_coro_scheduler()`.** Return the scheduler to a
   freshly constructed state -- every tracked frame destroyed, as `reset_coro_scheduler()` does -- while keeping
   the scheduler bound and its storage allocated. A `VirtualCore` uses it at teardown so the next engine on the

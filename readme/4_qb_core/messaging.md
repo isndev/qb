@@ -28,7 +28,7 @@ flowchart LR
     D -->|no| F["__flush_all__ → SharedCoreCommunication::send<br/>MPSC ring enqueue into the peer's Mailbox"]
     F --> G["peer's __receive__ copies the buckets out<br/>and routes them to on(E&amp;)"]
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1324 (dest._core_id selects the pipe), qb/src/qb/core/VirtualCore.h:1355-1360 (__getPipe__), qb/src/qb/core/Main.cpp:256-261 (the ring enqueue) -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1328 (dest._core_id selects the pipe), qb/src/qb/core/VirtualCore.h:1359-1364 (__getPipe__), qb/src/qb/core/Main.cpp:256-261 (the ring enqueue) -->
 
 Nothing in that path looks an actor up by identity across a thread boundary. The sender resolves a **core**, appends bytes to a buffer it owns exclusively, and the destination core turns those bytes back into an event on its own thread. The one cross-thread structure is the mailbox ring, and it is reached only from the flush.
 
@@ -43,9 +43,9 @@ Actor::push(ActorId const &dest, _Args &&...args) const noexcept {
     return VirtualCore::_handler->template push<_Event>(dest, id(), std::forward<_Args>(args)...);
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1475-1479 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1479-1483 -->
 
-`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1481-1485`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1508-1512`). So are the non-template members: `getPipe` (`src/qb/core/Actor.cpp:487-490`), `reply` and `forward` (`src/qb/core/Actor.cpp:577-595`), `time` (`src/qb/core/Actor.cpp:469-472`). No lock, no atomic, no fence appears anywhere on that path.
+`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1485-1489`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1512-1516`). So are the non-template members: `getPipe` (`src/qb/core/Actor.cpp:487-490`), `reply` and `forward` (`src/qb/core/Actor.cpp:577-595`), `time` (`src/qb/core/Actor.cpp:469-472`). No lock, no atomic, no fence appears anywhere on that path.
 
 ### A `Pipe` is per destination **core**, not per destination actor
 
@@ -68,11 +68,11 @@ The journey of a single `push` across a core boundary, in the order it happens.
 **On the sending core, inside the handler.**
 
 1. `Actor::push<E>(dest, args...)` forwards to `VirtualCore::push<E>(dest, id(), args...)`.
-2. `router::ensure_disposer<Event, E>()` registers a type-erased destructor for `E` if it is not trivially destructible. This runs at the *enqueue* funnel because that is the one place which statically knows the type; without it every drop path later would free bytes without running `~E()` (`src/qb/core/VirtualCore.h:1323`; `src/qb/system/event/router.h:1336-1343`).
+2. `router::ensure_disposer<Event, E>()` registers a type-erased destructor for `E` if it is not trivially destructible. This runs at the *enqueue* funnel because that is the one place which statically knows the type; without it every drop path later would free bytes without running `~E()` (`src/qb/core/VirtualCore.h:1327`; `src/qb/system/event/router.h:1336-1343`).
 3. `__getPipe__(dest._core_id)` selects the outbound buffer for the destination core.
 4. `pipe.allocate_back(BUCKET_SIZE)` reserves `ceil(sizeof(E) / 64)` buckets at the tail. `BUCKET_SIZE` is `allocator::getItemSize<E, EventBucket>()` (`src/qb/system/allocator/pipe.h:42-44`).
 5. `detail::prepare_event_storage` zeroes that whole bucket range **in debug builds only** — the relocation guard in step 9 scans it, and an event's range is never fully written by its payload (`src/qb/core/Event.h:294-299`).
-6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1329-1333`, `:1263-1279`).
+6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1333-1337`, `:1267-1283`).
 7. `push` returns a reference into the pipe. It stays valid until the handler that obtained it returns — see [below](#the-reference-push-returns-lives-until-your-handler-returns).
 
 **Later in the same loop pass, in `__flush_all__`.**
@@ -120,10 +120,12 @@ Every one of these is a member of `qb::Actor`, `const` and `noexcept`, and calla
 | `push<E>(dest, …)` | FIFO per source → dest | new, at the pipe **tail** | no — the receiver runs `~E()` | — | one `ActorId`, or `BroadcastId(core)` |
 | `to(dest).push<E>(…)` | same as `push` | same | no | — | one `ActorId` |
 | `getPipe(dest).allocated_push<E>(n, …)` | same as `push` | same, plus an `n`-byte tail | no | — | one `ActorId` |
-| `send<E>(dest, …)` | **none** | new, at the pipe tail like `push`, handed to the peer's ring at once and retracted from the pipe when that succeeds (`src/qb/core/VirtualCore.h:1283-1304`) | **enforced for `EventQOS0`** — those may be dropped without disposal | — | one `ActorId` |
+| `send<E>(dest, …)` | **none** | new, at the pipe tail like `push`, handed to the peer's ring at once and retracted from the pipe when that succeeds (`src/qb/core/VirtualCore.h:1287-1308`) | **enforced for `EventQOS0`** — those may be dropped without disposal | — | one `ActorId` |
 | `broadcast<E>(…)` | **none** (one `send` per core) | one per core | same as `send`, on every remote core | — | every actor on every core |
 | `reply(event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
 | `forward(dest, event)` | none (goes through `send`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
+| `reply_ordered(event)` | FIFO with this actor's pushes to the source (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | back to `event.source` |
+| `forward_ordered(dest, event)` | FIFO with this actor's pushes to `dest` (goes through `push`) | **reuses** the received event | n/a | `on(E&)` non-const | new `ActorId`, `source` preserved |
 
 **When `send` wins over `push`, measured.** `send` hands the event to the peer's ring at once instead
 of leaving it in the outbound pipe for the pass's flush. That is a win for ONE event with nothing
@@ -137,7 +139,7 @@ When in doubt the answer is `push`.
 
 ### `to(dest)` — chaining over one pipe
 
-`to(dest)` returns an `Actor::EventBuilder`, which holds a `qb::Pipe` and whose `push` forwards to `Pipe::push` and returns the builder for chaining (`src/qb/core/Actor.h:705-743`; `src/qb/core/VirtualCore.h:1531-1536`):
+`to(dest)` returns an `Actor::EventBuilder`, which holds a `qb::Pipe` and whose `push` forwards to `Pipe::push` and returns the builder for chaining (`src/qb/core/Actor.h:705-743`; `src/qb/core/VirtualCore.h:1535-1540`):
 
 ```cpp
 // src: derived from qb/tests/core/system/messaging/messaging-api.cpp (EventBuilderPushActor)
@@ -156,7 +158,7 @@ The two primitives make the same tail reservation; they differ in what happens n
 // push
 auto *const raw = pipe.allocate_back(BUCKET_SIZE);
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1329 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1333 -->
 
 ```cpp
 // send
@@ -167,7 +169,7 @@ if (dest._core_id != _index && try_send(data)) {
     // … and count it as sent: no flush will ever see it
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1283-1304 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1287-1308 -->
 
 `allocate_back` reserves at the tail of the head-most segment with room, or of a fresh one from the core's pool: the event joins the FIFO stream and is delivered by the next flush, in order with everything already queued to that core ([what the segmented pipe does on each push](../0_foundations/buffers.md#events)).
 
@@ -184,7 +186,7 @@ if constexpr (event_qos0_type<T>) {
     static_assert(std::is_trivially_destructible_v<T>, "EventQOS < 2 require to be trivially destructible");
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1269-1271 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1273-1275 -->
 
 It fires only for types deriving from `qb::EventQOS0`. A plain `qb::Event` subclass holding a `std::vector` compiles through `send` — and, on every path where it is actually *delivered*, is destroyed exactly once by the receiver, which `SendNonTrivialPayload.{SameCore,CrossCore}DestroysEveryPayloadExactlyOnce` pins to a zero live-object balance (`qb/tests/core/system/messaging/send-nontrivial-payload.cpp`). What the requirement protects is the **drop** path, and only `EventQOS0` events have one: a best-effort event that fails its single `try_send` during the flush is skipped without being disposed, on the strength of one `qos` test (`src/qb/core/VirtualCore.cpp:1827-1834`). Derive fire-and-forget events from `qb::EventQOS0` so the compiler holds you to it.
 
@@ -299,9 +301,9 @@ A broadcast event can be neither replied to nor forwarded: `Actor::reply` and `A
 for (const auto it : _engine._core_set.raw())
     send<T>(BroadcastId(it), source, init...);
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1314-1315 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1318-1319 -->
 
-One `send` per registered core, addressed to `BroadcastId(core)`. Note `init...` rather than `std::forward<_Init>(init)...`: forwarding an rvalue would move it into the first core's event and leave every later core constructing from moved-from arguments — an empty string on every core but one (`src/qb/core/VirtualCore.h:1309-1313`).
+One `send` per registered core, addressed to `BroadcastId(core)`. Note `init...` rather than `std::forward<_Init>(init)...`: forwarding an rvalue would move it into the first core's event and leave every later core constructing from moved-from arguments — an empty string on every core but one (`src/qb/core/VirtualCore.h:1313-1317`).
 
 On the receiving side, a broadcast destination makes the router snapshot every subscribed handler for that type into a `thread_local` buffer and then dispatch from the snapshot, because a handler may subscribe or unsubscribe during the walk — spawning an actor registers `KillEvent`, and that insert can rehash and reallocate the entry array under a live iterator (`src/qb/system/event/router.h:594-614`).
 
@@ -372,7 +374,7 @@ What it does **not** cover:
 - **No cross-source ordering.** If A and B both push to C, each source's own subsequence is preserved; the merge is unspecified.
 - **No cross-destination ordering.** Two pushes from A to different actors have no relationship — even when both destinations are on the same core, because the flush and the drain interleave with the peers' own work.
 - **`send` is unordered, period** — see the retraction above.
-- **`reply` and `forward` are `send`**, so they are unordered relative to your pushes.
+- **`reply` and `forward` are `send`**, so they are unordered relative to your pushes: cross-core the answer is published at once and reaches its destination *before* an event the same handler pushed to it earlier (pinned by `UnorderedAnswer.*` in `qb/tests/core/system/messaging/messaging-reply-forward.cpp`). When an answer must follow your pushes, `reply_ordered` / `forward_ordered` are the same answers through `push`: FIFO with everything you pushed to that destination, delivered at the end of the pass (`OrderedAnswer.*`). Choose by what the peer is waiting for — the answer alone: `reply`; the answer after what you pushed: `reply_ordered`. Ordering `reply` itself was measured and refused: a per-answer check of the pipe costs the hub shapes 6–10 % (QB-976).
 - **`broadcast` fans out as independent sends.** Per-recipient there is no ordering at all; across recipients there is no global order.
 
 ## The event header
@@ -417,7 +419,7 @@ This is a design position, not an oversight: events are expected to be small, al
 - **Sizing `allocated_push` to the payload.** The argument is the trailing bytes after the event; `sizeof(E)` is added for you. An oversized event is dropped cross-core with a `LOG_CRIT` and nothing at the call site fails.
 - **Replying to or forwarding a broadcast.** Logged and dropped. Build a fresh unicast event instead.
 - **Taking the event by `const&` and then calling `reply`/`forward`.** Both mutate in place; declare `void on(E &event)`.
-- **Assuming `reply` keeps its place in the `push` order.** It goes through `send`. If a response must follow earlier pushes in order, `push` a new event.
+- **Assuming `reply` keeps its place in the `push` order.** It goes through `send`. If a response must follow earlier pushes in order, `reply_ordered` it (or `forward_ordered`): the same reuse of the event, through `push`.
 - **Allocating inside an event constructor under memory pressure.** The `noexcept` path terminates the process.
 
 ## See also
