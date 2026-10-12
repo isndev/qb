@@ -309,6 +309,15 @@ public:
  *   engine's rings are 66 176 bytes -- a `region_cache` region, below it the global allocator. Destroyed, a region-backed
  *   ring stays mapped in that cache, so the next ring of its size -- the next engine's, in a process that restarts its
  *   engine -- is built in pages already faulted, until `region_cache::trim()` gives them back to the OS.
+ * - **Placement.** A region is page-aligned, so rings placed at the start of theirs would put the same line of every ring
+ *   -- the consumer's read index, the producer's write index -- at the same offset in a page: one L1 set for all of them,
+ *   which a consumer walking more rings than the set has ways misses on every walk, and the same low twelve address bits,
+ *   which the store buffer cannot tell apart until a store commits (4K aliasing -- what `segmented_pipe` staggers its
+ *   segments against). The vector of rings this replaced spread them by its 66 176-byte stride, 640 bytes in a page. So
+ *   a ring starts `((index + s) % slots) * alignof(Producer)` bytes into its region, `s` taken per buffer from a counter,
+ *   in the bytes the region's page rounding leaves anyway: 28 slots for the engine's rings in their 17-page regions; the
+ *   producers of one buffer, and one producer across consecutive buffers -- an engine's mailboxes, built in core order --
+ *   one slot apart. Every ring of a type takes the same size of region, whatever its slot, so the cache reuses any.
  * - **Publication.** The allocation is default-initialisation (placement `new Producer`, never `Producer()`): the lock
  *   and the ring's four index blocks are constructed, the slot array is left as the allocator hands it -- the pages of
  *   a fresh region the producer has not written yet are pages the process does not hold yet. The ring is published by a
@@ -353,8 +362,31 @@ class ringbuffer<T, max_size, 0> : public nocopy {
     };
     static_assert(sizeof(SlotLine) == QB_LOCKFREE_CACHELINE_BYTES, "a line of slots is one cache line, no padding");
 
+    /// From 64 KiB a ring's storage is a region, rounded up to whole pages, and the ring starts at a staggered offset in it
+    /// (the class note says why); below, it is a heap block and the ring starts at its beginning.
+    static constexpr bool   ring_in_region = sizeof(Producer) >= qb::allocator::detail::region_min_bytes;
+    static constexpr size_t ring_storage   = ring_in_region ? qb::allocator::detail::region_rounded(sizeof(Producer)) : sizeof(Producer);
+    /// The offsets a ring can start at, `alignof(Producer)` apart, in the bytes the page rounding leaves (28 for the engine's).
+    static constexpr size_t stagger_slots = (ring_storage - sizeof(Producer)) / alignof(Producer) + 1;
+    static_assert(ring_storage - sizeof(Producer) < qb::allocator::detail::region_page_bytes,
+                  "a stagger lives in what the page rounding leaves: it never costs a page");
+
     std::unique_ptr<SlotLine[]> _slots;       ///< One slot per producer, `slots_per_line` to a line
     const std::size_t           _nb_producer; ///< Number of producers
+    const std::size_t           _stagger;     ///< This buffer's first stagger slot: see `stagger_of`
+
+    /// Consecutive buffers -- an engine's mailboxes, built in core order -- take consecutive first slots.
+    [[nodiscard]] static size_t
+    next_stagger() noexcept {
+        static constinit std::atomic<size_t> built{0};
+        return built.fetch_add(1, std::memory_order_relaxed) % stagger_slots;
+    }
+
+    /// Where producer @p index's ring starts in its storage: one slot further for each producer, and for each buffer.
+    [[nodiscard]] size_t
+    stagger_of(size_t const index) const noexcept {
+        return (index + _stagger) % stagger_slots * alignof(Producer);
+    }
 
     [[nodiscard]] Slot &
     slot(size_t const index) const noexcept {
@@ -378,21 +410,30 @@ class ringbuffer<T, max_size, 0> : public nocopy {
     // The cold half of `producer()`, out of line so that an enqueue path inlining the hot half keeps its registers.
     [[nodiscard]] QB_NOINLINE QB_COLD Producer &
     allocate_producer(size_t const index) {
+        void *storage;
+        if constexpr (ring_in_region)
+            storage = qb::allocator::region_allocator<unsigned char>{}.allocate(ring_storage) + stagger_of(index);
+        else
+            storage = qb::allocator::region_allocator<Producer>{}.allocate(1);
         // Default-initialisation -- placement `new Producer`, never `Producer()` and never `make_region`, both of which
         // value-initialise: the slot array stays untouched. See the class note.
-        Producer *const fresh  = ::new (static_cast<void *>(qb::allocator::region_allocator<Producer>{}.allocate(1))) Producer;
+        Producer *const fresh  = ::new (storage) Producer;
         Producer       *winner = nullptr;
         if (slot(index).compare_exchange_strong(winner, fresh, std::memory_order_acq_rel, std::memory_order_acquire))
             return *fresh;
-        release(fresh); // another thread published this index's ring first; it was never seen by anyone
+        release(index, fresh); // another thread published this index's ring first; it was never seen by anyone
         return *winner;
     }
 
-    /// Destroys a ring `allocate_producer` made and gives its storage back: to the region cache from 64 KiB.
-    static void
-    release(Producer *const ring) noexcept {
+    /// Destroys the ring `allocate_producer(index)` made and gives its storage back: a region to the region cache.
+    void
+    release([[maybe_unused]] size_t const index, Producer *const ring) const noexcept {
         ring->~Producer();
-        qb::allocator::region_allocator<Producer>{}.deallocate(ring, 1);
+        if constexpr (ring_in_region)
+            qb::allocator::region_allocator<unsigned char>{}.deallocate(reinterpret_cast<unsigned char *>(ring) - stagger_of(index),
+                                                                        ring_storage);
+        else
+            qb::allocator::region_allocator<Producer>{}.deallocate(ring, 1);
     }
 
 public:
@@ -409,7 +450,8 @@ public:
      */
     explicit ringbuffer(std::size_t const nb_producer)
         : _slots(std::make_unique<SlotLine[]>((nb_producer + slots_per_line - 1) / slots_per_line))
-        , _nb_producer(nb_producer) {
+        , _nb_producer(nb_producer)
+        , _stagger(next_stagger()) {
         // At least one producer is required: the round-robin enqueue paths
         // compute `tl_index % _nb_producer`, which is division-by-zero (UB)
         // when constructed with zero producers.
@@ -422,7 +464,7 @@ public:
     ~ringbuffer() noexcept {
         for (size_t i = 0; i < _nb_producer; ++i)
             if (Producer *const ring = slot(i).load(std::memory_order_relaxed))
-                release(ring);
+                release(i, ring);
     }
 
     /**

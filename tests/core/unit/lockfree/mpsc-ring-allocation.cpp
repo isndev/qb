@@ -22,7 +22,10 @@
  *   - each producing form -- `enqueue(index, ...)` single and bulk, `enqueue_at<Index>`, the producer-side `ringOf` --
  *     allocates that producer's ring and no other, once; the engine's `Mailbox` starts the same way;
  *   - rings published while the consumer is already walking deliver every item, once and in order per producer: the
- *     slot's compare-exchange against the consumer's acquire load, which ThreadSanitizer checks.
+ *     slot's compare-exchange against the consumer's acquire load, which ThreadSanitizer checks;
+ *   - an engine-sized ring (66 176 bytes) is a `region_cache` region (Huly QB-1012): the rings of one buffer start at
+ *     distinct offsets in their pages, the next buffer's rings are built in the regions the previous one left, mapping
+ *     nothing, and threads racing for one producer's ring share the winner's while the losers give theirs back.
  */
 
 #include <atomic>
@@ -30,11 +33,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <latch>
+#include <set>
 #include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/main.h>
+#include <qb/system/allocator/region.h>
 #include <qb/system/lockfree/mpsc.h>
 
 namespace mpsc_ring_allocation_test {
@@ -168,6 +173,70 @@ TEST(MpscRingAllocation, RingsPublishedWhileTheConsumerWalksDeliverEveryItemInOr
         ASSERT_EQ(ring.rings(), kPublishers) << "round " << round;
         ASSERT_FALSE(ring.has_data()) << "round " << round;
     }
+}
+
+// ---- the engine's ring: a region of the region cache ------------------------------------------------------------------
+
+namespace region = qb::allocator::detail;
+
+/// The engine's mailbox ring type: 66 176-byte producers, each ring a `region_cache` region.
+using EngineRing                   = qb::lockfree::mpsc::ringbuffer<EventBucket, qb::detail::max_deliverable_buckets, 0>;
+constexpr std::size_t kEngineRings = 8; // fewer than the stagger's 28 slots: one buffer's rings all differ
+constexpr std::size_t kRacers      = 8;
+
+/// Where producer @p index's ring lies within its page: what the stagger moves.
+[[nodiscard]] std::size_t
+page_offset(EngineRing &ring, std::size_t const index) {
+    return reinterpret_cast<std::uintptr_t>(&ring.ringOf(index)) % region::region_page_bytes;
+}
+
+TEST(MpscRingAllocation, AnEngineRingIsARegionAtItsOwnPageOffsetAndTheNextBufferBuildsInTheRegionsTheLastOneLeft) {
+    std::size_t const lent_before = region::region_stats().lent_bytes;
+    {
+        EngineRing            ring(qb::MaxCores);
+        std::set<std::size_t> offsets;
+        for (std::size_t i = 0; i < kEngineRings; ++i)
+            offsets.insert(page_offset(ring, i));
+        ASSERT_EQ(ring.rings(), kEngineRings);
+        EXPECT_EQ(offsets.size(), kEngineRings) << "the rings of one buffer start at the same offset in their pages: every ring's "
+                                                   "index lines in one L1 set and one 4K-aliasing class (the stagger is gone)";
+        std::size_t const lent = region::region_stats().lent_bytes - lent_before;
+        EXPECT_EQ(lent % kEngineRings, 0u);
+        EXPECT_GE(lent / kEngineRings, region::region_min_bytes) << "an engine-sized ring is not a region_cache region";
+    }
+    EXPECT_EQ(region::region_stats().lent_bytes, lent_before) << "a destroyed buffer gave its regions back";
+
+    // The next buffer -- its stagger base is the next one -- builds its rings in the regions the first one left.
+    std::size_t const mappings_before = region::region_stats().mappings;
+    EngineRing        next(qb::MaxCores);
+    for (std::size_t i = 0; i < kEngineRings; ++i)
+        (void) next.ringOf(i);
+    EXPECT_EQ(region::region_stats().mappings, mappings_before) << "a ring of the next buffer was mapped afresh instead of built in "
+                                                                   "the region a destroyed one left in the cache";
+}
+
+TEST(MpscRingAllocation, ThreadsRacingForOneEngineRingShareTheWinnersAndTheLosersGiveTheirsBack) {
+    EngineRing                  ring(4);
+    std::size_t const           lent_before = region::region_stats().lent_bytes;
+    std::latch                  go(kRacers);
+    std::vector<std::uintptr_t> seen(kRacers, 0);
+    std::vector<std::thread>    racers;
+    racers.reserve(kRacers);
+    for (std::size_t t = 0; t < kRacers; ++t)
+        racers.emplace_back([&ring, &go, &seen, t] {
+            go.arrive_and_wait(); // all at once: the losers of the slot's compare-exchange release what they built
+            seen[t] = reinterpret_cast<std::uintptr_t>(&ring.ringOf(2));
+        });
+    for (auto &racer : racers)
+        racer.join();
+
+    ASSERT_EQ(ring.rings(), 1u);
+    for (std::size_t t = 0; t < kRacers; ++t)
+        EXPECT_EQ(seen[t], seen[0]) << "racer " << t << " was handed a ring that is not the published one";
+    std::size_t const one_ring = region::region_stats().lent_bytes - lent_before;
+    (void) ring.ringOf(3); // uncontended: exactly one region more
+    EXPECT_EQ(region::region_stats().lent_bytes - lent_before, 2 * one_ring)
+        << "the race left more than the winner's region lent: a loser kept the ring it built";
 }
 
 } // namespace mpsc_ring_allocation_test

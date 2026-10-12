@@ -291,11 +291,14 @@ policy.
   producer writes them, and published by a compare-exchange its readers load with acquire. A ring is a
   `region_allocator` allocation -- from 64 KiB, as the engine's 66 176-byte rings are, a `region_cache` region (Huly
   QB-1012): destroyed, it stays mapped for the next ring of its size -- a restarted engine's -- until
-  `region_cache::trim()`. Construction and the consumer's walks (`has_data`, both `consume_all`, `dequeue`) allocate
-  nothing; a walk reads one slot per producer and skips an empty one, where an unused ring cost the two lines of its
-  header. The first enqueue on an index can therefore throw `std::bad_alloc`; no later one can. `rings()` (runtime form
-  only) counts the rings allocated so far. The fixed-producer form is unchanged. Pinned by
-  `qb-core-test-unit-mpsc-ring-allocation`.
+  `region_cache::trim()`. A region is page-aligned, so a ring starts at its own offset in what the page rounding
+  leaves (28 slots of 128 bytes for the engine's rings, one further per producer and per buffer): page-aligned rings
+  would put every ring's index lines in one L1 set and one 4K-aliasing class, the hazard `segmented_pipe` staggers its
+  segments against, where the vector's 66 176-byte stride spread them. Construction and the consumer's walks
+  (`has_data`, both `consume_all`, `dequeue`) allocate nothing; a walk reads one slot per producer and skips an empty
+  one, where an unused ring cost the two lines of its header. The first enqueue on an index can therefore throw
+  `std::bad_alloc`; no later one can. `rings()` (runtime form only) counts the rings allocated so far. The
+  fixed-producer form is unchanged. Pinned by `qb-core-test-unit-mpsc-ring-allocation`.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays

@@ -71,5 +71,7 @@ qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buf
 qb_add_test(MODULE qb-core TIER unit NAME endian SOURCES system/endian.cpp DEPENDS ${PROJECT_NAME})
 # mpsc-ring-allocation pins the runtime-producer mpsc::ringbuffer's rings (Huly QB-203): none at construction and none from
 # a consumer's walk, a producer's own on its first enqueue (each producing form, ringOf too) and no other, and rings
-# published while the consumer walks deliver every item once and in order. The engine side is mailbox-footprint.
+# published while the consumer walks deliver every item once and in order; an engine-sized ring is a region_cache region
+# (QB-1012) at its own offset in its page, the next buffer's rings reuse the regions without mapping any, and the losers
+# of a race for one ring give theirs back. The engine side is mailbox-footprint and engine-restart-mailboxes.
 qb_add_test(MODULE qb-core TIER unit NAME mpsc-ring-allocation SOURCES lockfree/mpsc-ring-allocation.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
