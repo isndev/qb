@@ -413,8 +413,8 @@ Main::~Main() noexcept {
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto &initializer = params.initializer;
-    // Death watch (Huly QB-51): after this core is destroyed with its actors,
-    // mark it stopped and tell the cores still running -- if a watch ever crossed cores.
+    // Death watch (Huly QB-51): after this core is destroyed with its actors, mark it
+    // stopped and tell the cores still running that watched one of its actors (QB-203).
     // Declared first, so it runs last.
     struct StopNotice {
         SharedCoreCommunication &com;

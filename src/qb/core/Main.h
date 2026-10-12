@@ -440,7 +440,7 @@ class SharedCoreCommunication : nocopy {
     // -Wtsan at every use. That blindness costs nothing here: TSan reports data races on
     // non-atomic memory through happens-before, and every object the handshakes touch — `_parked`,
     // the ring indices, the slots they publish with release/acquire, the stopped flags and the
-    // watch flag — is either atomic or ordered by one, so a fence TSan cannot see produces neither
+    // watcher bits — is either atomic or ordered by one, so a fence TSan cannot see produces neither
     // a false report nor a lost one. A store-load reordering, the bug class the fence exists for,
     // is outside what TSan can observe with or without it. clang's TSan models seq_cst fences and
     // warns about nothing.
@@ -717,10 +717,10 @@ private:
     // backpressured LIVE core (keep retrying — its __receive__ frees space) from one that has
     // GONE (dispose the residue that can never be delivered).
     std::vector<std::atomic<bool>> _core_stopped;
-    // Death watch (Huly QB-51): set once a watch has crossed cores. From then on a core that stops
-    // tells every core still running (`detail::CoreStopping`), so a watch that reached it too late
-    // is answered by the watcher's own core; an engine that never watched across cores sends nothing.
-    std::atomic<bool> _cross_core_watch{false};
+    // Death watch (Huly QB-51, QB-203): by RESOLVED index, the cores that watched an actor of each core, a bit per watcher.
+    // A core that stops tells those still running (`detail::CoreStopping`), so a watch that reached it too late is answered
+    // by the watcher's own core; a core that never watched it gets no notice -- nor a mailbox ring allocated for one.
+    std::array<std::array<std::atomic<std::uint64_t>, MaxCores / 64>, MaxCores> _watched_by{};
 
 public:
     SharedCoreCommunication() = delete;

@@ -195,7 +195,8 @@ qb_add_test(MODULE qb-core TIER system NAME dead-letters SOURCES engine/dead-let
 qb_add_test(MODULE qb-core TIER system NAME pass-timing SOURCES engine/pass-timing.cpp DEPENDS ${PROJECT_NAME} LABELS serial)
 # death-watch pins Actor::watch (Huly QB-51): one DownEvent after the destructor, same core and across cores; an id
 # with no actor answers unknown, a stopped core core_stopped; init failures say why; unwatch and a watcher that dies
-# first deliver nothing (no dead letter anywhere); a recycled id can be watched again; shutdown with watches in place.
+# first deliver nothing (no dead letter anywhere); a recycled id can be watched again; shutdown with watches in place; a
+# stopping core tells only the cores that watched it, allocating no mailbox ring for a pair that never talked (QB-203).
 qb_add_test(MODULE qb-core TIER system NAME death-watch SOURCES engine/death-watch.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 # coroutine-offload pins ScopedCoroContext::offload (Huly QB-69): a kill ends the WAIT, not the call -- the killed
 # actor's coroutine unwinds with cancelled_error while its call still runs, nothing after its co_await runs, and the

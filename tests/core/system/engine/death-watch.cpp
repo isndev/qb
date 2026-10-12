@@ -33,7 +33,9 @@
  *     exception, after its actors' destructors; a watch opened during a blocked exceptional
  *     destructor gets no early answer; every watch is answered while its target's core stops,
  *     whichever side of the stop it lands on;
- *   - the engine shuts down cleanly, without a dead letter, with watches in place across cores.
+ *   - the engine shuts down cleanly, without a dead letter, with watches in place across cores;
+ *   - a core that stops tells the cores that watched one of its actors and no other: after one cross-core watch, an
+ *     engine holds the two mailbox rings of that pair and none for a core that never talked (Huly QB-203).
  *
  * Results are written on the cores' threads and read after `join()`, which orders them.
  */
@@ -42,6 +44,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <mutex>
@@ -52,6 +55,7 @@
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/main.h>
+#include <qb/system/allocator/region.h>
 
 namespace death_watch_test {
 
@@ -1099,6 +1103,110 @@ TEST(DeathWatch, TheEngineShutsDownCleanlyWithWatchesInPlace) {
     EXPECT_FALSE(engine.hasError());
     EXPECT_EQ(g_mutual_up.load(), 8);
     EXPECT_EQ(letters.load(), 0) << "the death watch's own traffic is never a letter, and every DownEvent is handled";
+}
+
+// --- a stop is told to the cores that watched, and to no other (Huly QB-203) ---------------------------------------------
+
+// Up once the target's core thread has returned from its work: a thread_local's destructor runs after the thread's
+// function, so after `Main::start_thread` sent that core's stop notices -- whatever they allocated is in place.
+std::atomic<bool> g_target_core_exited{false};
+
+struct CoreExitSentinel {
+    ~CoreExitSentinel() {
+        g_target_core_exited = true;
+        g_target_core_exited.notify_all();
+    }
+};
+
+// Called on the target's core thread: one sentinel per thread, destroyed when that thread exits.
+void
+arm_core_exit_sentinel() {
+    static thread_local CoreExitSentinel sentinel;
+    (void) sentinel;
+}
+
+// The watched actor, alone on its core: the core stops when it dies.
+class SentinelTarget : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        arm_core_exit_sentinel();
+        co_return true;
+    }
+};
+
+// Watches `target` across cores and kills it; stays up until the engine stops.
+class QuietWatcher : public qb::Actor {
+    const qb::ActorId _target;
+
+public:
+    explicit QuietWatcher(qb::ActorId target)
+        : _target(target) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::DownEvent>(*this);
+        watch(_target);
+        push<qb::KillEvent>(_target);
+        co_return true;
+    }
+    void
+    on(qb::DownEvent const &e) {
+        g_seen.push_back({e.watched, e.reason, false});
+        ++g_downs;
+    }
+};
+
+// Neither watches nor is watched, and never sends: no mailbox ring has any business between its core and another.
+class Bystander : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        co_return true;
+    }
+};
+
+TEST(DeathWatch, AStoppingCoreTellsTheCoresThatWatchedItAndAllocatesNoRingForAnyOther) {
+    namespace region = qb::allocator::detail;
+    reset();
+    g_target_core_exited = false;
+    // What one mailbox ring takes from the region cache (QB-1012): a ring is allocated by its pair's first event.
+    std::size_t ring_bytes = 0;
+    {
+        qb::SharedCoreCommunication::Mailbox probe(2, 0ns, 0us);
+        std::size_t const                    before = region::region_stats().lent_bytes;
+        (void) probe.ringOf(0);
+        ring_bytes = region::region_stats().lent_bytes - before;
+    }
+    ASSERT_GT(ring_bytes, 0u) << "a mailbox ring is not allocated by its first use, in a region of the cache";
+
+    constexpr qb::CoreId kCores     = 6; // core 0 watches core 1; cores 2 to 5 never talk to anyone
+    std::size_t const    lent_start = region::region_stats().lent_bytes;
+    std::size_t          rings      = 0;
+    {
+        qb::Main engine;
+        for (qb::CoreId core = 0; core < kCores; ++core)
+            engine.core(core).setAffinity(qb::CoreIdSet{qb::NoAffinity}).setLatency(1ms);
+        const auto target = engine.addActor<SentinelTarget>(1);
+        engine.addActor<QuietWatcher>(0, target);
+        for (qb::CoreId core = 2; core < kCores; ++core)
+            engine.addActor<Bystander>(core);
+        engine.start();
+        // Core 1 has stopped and told whom it tells; every other core still runs until the stop below, so each was
+        // there to be told.
+        g_target_core_exited.wait(false);
+        engine.stop();
+        engine.join();
+        ASSERT_FALSE(engine.hasError());
+        // The mailboxes live until the engine does: every ring any pair of cores allocated is still lent.
+        std::size_t const lent = region::region_stats().lent_bytes - lent_start;
+        ASSERT_EQ(lent % ring_bytes, 0u);
+        rings = lent / ring_bytes;
+    }
+    ASSERT_EQ(g_seen.size(), 1u);
+    EXPECT_EQ(g_seen[0].reason, qb::DownReason::killed);
+    EXPECT_EQ(rings, 2u) << "the watch and its answer are two rings, 0 -> 1 and 1 -> 0; " << rings
+                         << " were allocated: a stopping core told cores that never watched it, through rings their pair never "
+                            "needed (Huly QB-203)";
 }
 
 } // namespace death_watch_test

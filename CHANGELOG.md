@@ -94,9 +94,10 @@ policy.
   removal; every answer carries the watch's ticket and becomes the `DownEvent` only where it closes that record, so
   two answers deliver one and an answer about an id's previous holder never closes a later watch of the reused id. A
   request travels to the target's CORE, not to the actor, so an actor still in its `onInit()` cannot stash it and
-  lose it with a failed init. Once a watch has crossed cores, a core that stops tells every core still running, as
-  the last thing its thread does -- after it was marked stopped and destroyed with its actors, on a normal stop, a
-  failed start or an exception -- and a store-load fence on each side guarantees that a watch reaching it too late is
+  lose it with a failed init. A core that stops tells the cores still running that watched one of its actors (each
+  watcher core sets its bit in the watched core's set, Huly QB-203), as the last thing its thread does -- after it
+  was marked stopped and destroyed with its actors, on a normal stop, a failed start or an exception -- and a
+  store-load fence on each side guarantees that a watch reaching it too late is
   answered (`core_stopped`) by the watcher's own core. The death watch's own events are never dead letters. Nobody
   pays for it who does not use it: no pass reads anything, and removing an actor tests two empty tables -- measured
   level on both hosts (MSVC 19.51, g++-14): the Savina one- and two-core cells, `fib` among them (it creates and
@@ -519,7 +520,11 @@ policy.
   its core sends to that mailbox (under Changed), so an engine at rest holds memory linear in its cores -- a 64 KiB
   receive buffer and a few slots each -- and a ring costs its memory when a pair of cores starts to talk, its pages as
   events land. A full mesh still allocates a ring per pair. The first cross-core send of a pair allocates: like a pipe
-  growth under `push`, an allocation failure there terminates the process, the send path being `noexcept`. The other
+  growth under `push`, an allocation failure there terminates the process, the send path being `noexcept`. A stop
+  allocates no ring for a pair that never talked either: once one watch had crossed cores, every core that stopped
+  sent its stop notice to every core still running, which with lazy rings would have allocated up to N(N-1)/2 rings
+  at shutdown -- each a whole committed region on Windows, kept by the cache; a stopping core now tells only the
+  cores that watched one of its actors (`qb-core-test-system-death-watch`). The other
   side of the trade is the first lap of a new ring: its pages are faulted by the producer as it writes them, where
   `start()` used to fault them all. A ring is a `region_cache` region (QB-1012, below), so the rings of an engine
   started after another are built in the regions the previous engine's rings left mapped: that lap faults only where

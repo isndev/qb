@@ -1564,13 +1564,13 @@ VirtualCore::__watch__(ActorId const watcher, ActorId const target) noexcept {
         push<detail::WatchDown>(watcher, target, DownReason::unknown, ticket); // no such core: no actor holds the id
         return;
     }
-    // Pairs with the fence of a core that has stopped (`__announce_stop__`): either this load sees
-    // that core stopped, or that core sees the flag and announces its stop to this one, which
-    // answers the watch (`__on_core_stopping__`) -- never neither. The flag is stored once:
-    // its line holds the engine's mailbox table, read by every cross-core send. Release/acquire
-    // makes the store that set it happen before this fence either way.
-    if (!_engine._cross_core_watch.load(std::memory_order_acquire))
-        _engine._cross_core_watch.store(true, std::memory_order_release);
+    // Pairs with the fence of a core that has stopped (`__announce_stop__`): either this load sees that
+    // core stopped, or that core finds this core's bit among its watchers and tells it of its stop, which
+    // answers the watch (`__on_core_stopping__`) -- never neither. One bit per pair of cores, set once;
+    // release/acquire orders the store before this fence. Only a watcher hears of a stop (Huly QB-203).
+    auto &mine = _engine._watched_by[_engine._core_set.resolve(core)][_resolved_index / 64]; // this core's word in its set
+    if (std::uint64_t const bit = std::uint64_t{1} << (_resolved_index % 64); !(mine.load(std::memory_order_acquire) & bit))
+        mine.fetch_or(bit, std::memory_order_release);
     SharedCoreCommunication::seq_cst_fence();
     if (_engine.is_core_stopped(_engine._core_set.resolve(core)))
         push<detail::WatchDown>(watcher, target, DownReason::core_stopped, ticket); // nobody there to ask
@@ -1655,25 +1655,25 @@ VirtualCore::__on_core_stopping__(CoreId const core) noexcept {
 void
 VirtualCore::__announce_stop__(SharedCoreCommunication &engine, CoreId const index) noexcept {
     // A watch that reaches this core from now on is never answered here. The fence pairs with the
-    // one in `__watch__`: a watcher's core either sees this core stopped and answers at once, or
-    // this load sees its flag and the notice goes out -- never neither.
+    // one in `__watch__`: a watcher's core either sees this core stopped and answers at once, or this
+    // load sees its bit and the notice goes out -- to the cores that watched this one, and no other.
     SharedCoreCommunication::seq_cst_fence();
-    if (likely(!engine._cross_core_watch.load(std::memory_order_relaxed)))
+    const CoreId resolved = engine._core_set.resolve(index);
+    auto const  &watchers = engine._watched_by[resolved];
+    if (likely(std::ranges::all_of(watchers, [](auto const &bits) { return bits.load(std::memory_order_relaxed) == 0; })))
         return;
-    const CoreId                            resolved = engine._core_set.resolve(index);
-    constexpr std::size_t                   bytes    = allocator::getItemSize<detail::CoreStopping, EventBucket>() * sizeof(EventBucket);
+    constexpr std::size_t                   bytes = allocator::getItemSize<detail::CoreStopping, EventBucket>() * sizeof(EventBucket);
     alignas(detail::CoreStopping) std::byte storage[bytes];
     detail::prepare_event_storage(storage, bytes);
     auto &notice = *new (storage) detail::CoreStopping();
     for (const auto core : engine._core_set.raw()) {
-        if (core == index)
-            continue;
+        const CoreId watcher = engine._core_set.resolve(core);
+        if (core == index || !((watchers[watcher / 64].load(std::memory_order_relaxed) >> (watcher % 64)) & 1u))
+            continue; // a core with no watch here: nothing to answer, and no mailbox ring to allocate for it (QB-203)
         fill_event(notice, BroadcastId(core), BroadcastId(index));
-        // Straight into that core's mailbox, behind all this core sent it before: after a normal
-        // stop its pipes to running cores are empty; after an exception, what they held was never
-        // sent and is not sent now -- the watches it would have answered are answered by this.
-        // A full ring empties as its core receives; a core that stops meanwhile needs no notice.
-        while (!engine.is_core_stopped(engine._core_set.resolve(core)) && !engine.send(resolved, notice))
+        // Straight into its mailbox, behind all this core sent it: after a normal stop its pipes to running cores are
+        // empty, after an exception what they held is not sent and this answers its watches; a full ring empties.
+        while (!engine.is_core_stopped(watcher) && !engine.send(resolved, notice))
             std::this_thread::yield();
     }
 }
