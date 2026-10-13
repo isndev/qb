@@ -100,7 +100,7 @@ llm/qb.llm.api.md	src/qb/io/quic/backend.h:62-81	ec2d3314ea37	virtual void on_ud
 llm/qb.llm.api.md	src/qb/io/quic/types.h:75-91	a8fbf3a1d458	struct stats {
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
 llm/qb.llm.api.md	task.h:749-764	f2192a619a48	await_resume() {
-llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
+llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:308-390	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:164-164	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1055-1094	a16655e99a31	if (port_begin) {
@@ -228,7 +228,7 @@ llm/qb.llm.md	tcp/connector.h:954-954	e6381c56922f	connect_awaiter(const connect
 llm/qb.llm.md	tcp/listener.h:32-46	d52de035dbc3	/**
 llm/qb.llm.md	tcp/socket.cpp:100-107	2829bae2b61d	connect_attempt_budget(qb::duration const remaining, std::size_t cons...
 llm/qb.llm.md	teardown.h:54-54	12cffac47308	run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexc...
-llm/qb.llm.md	thread_arena.h:125-170	1e7eb599b710	allocate(std::size_t const size) {
+llm/qb.llm.md	thread_arena.h:126-171	1e7eb599b710	allocate(std::size_t const size) {
 llm/qb.llm.md	time.h:8-25	980581677f9f	*  - `qb::duration`  — a span. Signed, nanosecond resolution (`int64`...
 llm/qb.llm.md	time.h:93-93	5ca19947bbc8	using duration = std::chrono::nanoseconds;
 llm/qb.llm.md	time.h:96-96	93d026d68ec7	using mono_time = std::chrono::steady_clock::time_point;

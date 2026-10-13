@@ -630,6 +630,16 @@ policy.
   1 000, +7 200 minor faults per 11 engines, instruction count and simulated cache misses unchanged; the first
   bad commit by bisection is the one whose removal of a 16-byte thread-local moved that chunk next to the top,
   and v3.2.1 sat 7.9 KB under the threshold. With the spare list the cell and the fault count return to v3.2.1's.
+- **A stopping engine's core threads no longer stall on the spare list's lock under ThreadSanitizer (Huly QB-1009
+  follow-up).** The list above is taken at every core thread's start and given back at its exit, so an engine that
+  stops brings all its core threads to one lock at once, and the lock was a bare `test_and_set` loop: each waiter held
+  the line exclusive, and under ThreadSanitizer, whose atomic read-modify-writes go through a sync object of their
+  own, the holder's `clear()` queued behind them. `qb-core-test-system-mailbox-footprint` (sanitize-thread, 64 cores)
+  stalled once for 18 minutes in a gate run on a loaded host; under gdb, which slows every thread's start and exit, 4
+  of 5 runs of 40 repetitions stalled (98 of 200 repetitions done, 150 s a run), 50 of the 64 threads in the loop. The
+  lock is now test-and-test-and-set with the pause hint, the shape of `qb::lockfree::SpinLock`: a waiter spins on a
+  relaxed read and retries the exchange only once the flag reads clear -- 0 of 5 runs stalled under gdb and 200 of 200
+  repetitions passed with and without it. Cold path only, once per thread start and exit.
 - **An engine started after another one in the same process builds its per-core buffers in memory the first left
   mapped (Huly QB-1012).** What a core builds that grows with the engine -- the router's handler table of each event
   type (65 536 slots of 32 bytes once the actor ids pass 32 768), the actor registry, the kill queues, the callback

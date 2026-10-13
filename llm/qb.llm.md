@@ -519,7 +519,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   built it destroys it, on its own thread, in the reap phase. Under AddressSanitizer the arena poisons a
   block it holds, so a read through a dead actor's pointer (a `this` captured by a loop-owned callback, a
   handle read without its gate) is reported as `use-after-poison` -- the report `malloc` used to give and
-  the arena had taken away. _(Actor.h:561-582, thread_arena.h:125-170)_
+  the arena had taken away. _(Actor.h:561-582, thread_arena.h:126-171)_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
   registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
