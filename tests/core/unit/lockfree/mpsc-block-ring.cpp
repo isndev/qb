@@ -160,9 +160,11 @@ TEST(MpscBlockRing, AClosedRingIsEmptyToItsConsumerAndItsProducersFirstWriteOpen
     EXPECT_EQ(block.ringOf(4).write_room(kCap), kCap) << "write_room through ringOf -- send_run's path -- opens the ring and finds it empty";
     std::uint64_t const run[2] = {item(4, 0), item(4, 1)};
     ASSERT_EQ(block.ringOf(4).enqueue<true>(run, 2), 2u);
-    for (std::size_t i = 0; i < kProducers; ++i)
-        if (i == 0 || i > 4)
+    for (std::size_t i = 0; i < kProducers; ++i) {
+        if (i == 0 || i > 4) {
             EXPECT_EQ(seen_read_index(block, i), 1u) << "ring " << i << " opened by another producer's write";
+        }
+    }
 
     EXPECT_EQ(drain(block), (std::vector<std::uint64_t>{item(1, 0), item(2, 0), item(3, 0), item(3, 1), item(4, 0), item(4, 1)}))
         << "the consumer drains the opened rings in index order, and nothing from a closed one";
