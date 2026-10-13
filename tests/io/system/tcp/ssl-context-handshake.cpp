@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cerrno>
 #include <string>
 #include <thread>
 
@@ -339,9 +340,16 @@ TEST(SslContextHandshake, SessionResumeBeforeConnectIsDeferredNotDropped) {
     // Second connection: set_session()/resume() BEFORE connect on a Context socket (SSL not minted yet).
     {
         qb::io::tcp::ssl::socket c2{Context::client()};
-        EXPECT_TRUE(c2.set_session(session)) << "set_session/resume before connect must be DEFERRED (true), not dropped (false)";
+        ASSERT_TRUE(c2.set_session(session)) << "set_session/resume before connect must be DEFERRED (true), not dropped (false)";
+        auto *expected_session = session._session_handle;
+        qb::io::ssl::free_session(session); // only the pending socket reference keeps it alive
         c2.insecure();
-        ASSERT_EQ(c2.connect_v4("127.0.0.1", port), 0);
+        const int result = c2.n_connect(qb::io::endpoint("127.0.0.1", port), "localhost");
+        const int error  = qb::io::socket::get_last_errno();
+        ASSERT_TRUE(result == 0 || error == EINPROGRESS || qb::io::socket::not_send_error(error));
+        ASSERT_NE(c2.ssl_handle(), nullptr);
+        EXPECT_EQ(SSL_get_session(c2.ssl_handle()), expected_session) << "the retained session must be installed when SSL is minted";
+        drive_server_handshake(c2);
         EXPECT_TRUE(c2.handshake_complete()) << "the deferred session must be applied without breaking the handshake";
     }
 

@@ -66,6 +66,7 @@
 
 #include <gtest/gtest.h>
 #include <qb/io/system/file.h>
+#include "../../shared/file_descriptor_probe.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -140,8 +141,10 @@ TEST_F(FileErrorPaths, OpenByPathClosesThePreviousDescriptorFirst) {
     qb::io::sys::file f(first, O_RDONLY);
     ASSERT_TRUE(f.is_open());
 
+    const qb::io::test::file_descriptor_probe previous(f.native_handle());
     // Re-open() must drop the old fd and adopt the new file's content.
     ASSERT_GE(f.open(second, O_RDONLY), 0);
+    EXPECT_TRUE(previous.closed_or_reused_by(f.native_handle())) << "the previous file descriptor survived replacement";
     char      buf[32] = {0};
     const int n       = f.read(buf, sizeof(buf) - 1);
     ASSERT_GT(n, 0);

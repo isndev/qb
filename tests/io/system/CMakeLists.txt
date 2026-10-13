@@ -87,7 +87,7 @@ qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES sessio
 
 # --- io (blocking + async file ops) / quic (native + loopback handshake) ---
 qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-blocking-io.cpp DEPENDS ${PROJECT_NAME})
-qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
+qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-loop SOURCES quic/quic-endpoint-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
 if (TARGET qb-io-test-system-quic-handshake AND NOT QB_INSTALL)
     target_compile_definitions(qb-io-test-system-quic-handshake PRIVATE QB_IO_QUIC_TEST_HOOKS=1)

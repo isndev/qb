@@ -75,6 +75,7 @@
 #ifndef QB_IO_TESTS_SHARED_LOOPBACK_FIXTURE_H
 #define QB_IO_TESTS_SHARED_LOOPBACK_FIXTURE_H
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <utility>
@@ -129,6 +130,20 @@ public:
     ~thread_joiner() {
         if (_t.joinable())
             _t.join();
+    }
+};
+
+// Stop cooperative workers before the joining member runs during destruction.
+class stopping_thread_joiner {
+    std::atomic<bool> &_stop;
+    thread_joiner      _joiner;
+
+public:
+    stopping_thread_joiner(std::thread &thread, std::atomic<bool> &stop)
+        : _stop(stop)
+        , _joiner(thread) {}
+    ~stopping_thread_joiner() {
+        _stop.store(true);
     }
 };
 

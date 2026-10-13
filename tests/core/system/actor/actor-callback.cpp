@@ -125,6 +125,7 @@ class UnregisterActor final
     std::uint64_t                  _ticks        = 0;
 
     struct StopProbe : public qb::Event {};
+    unsigned _settle = 0;
 
 public:
     qb::io::async::task<bool>
@@ -150,6 +151,10 @@ public:
         // By now the UnregisterCallbackEvent has been processed (it preceded us in the mailbox and
         // mailbox events are drained before the callback dispatch), so the callback is gone.
         g_unreg_stop_seen.store(true);
+        if (++_settle < 3) {
+            push<StopProbe>(id());
+            return; // remain alive across later callback phases
+        }
         kill();
     }
 };

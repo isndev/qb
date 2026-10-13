@@ -429,7 +429,7 @@ TEST(SSLSocketLoopback, SecureByDefaultHandshakeRejectsSelfSignedServer) {
     std::thread       acceptor([&] {
         for (int i = 0; i < 2 && !stop.load(); ++i) {
             qb::io::tcp::ssl::socket server_socket;
-            if (listener.accept(server_socket) != 0) {
+            if (!qb::io::test::accept_within(listener, server_socket)) {
                 continue;
             }
             const auto deadline = std::chrono::steady_clock::now() + 2s;
@@ -1454,7 +1454,7 @@ TEST(SSLSocketLoopback, LiteralIpVerificationBranchRejectsCertWithoutIpSan) {
     std::thread       acceptor([&] {
         for (int i = 0; i < 2 && !stop.load(); ++i) {
             qb::io::tcp::ssl::socket server_socket;
-            if (listener.accept(server_socket) != 0) {
+            if (!qb::io::test::accept_within(listener, server_socket)) {
                 continue;
             }
             const auto deadline = std::chrono::steady_clock::now() + 2s;
@@ -1767,7 +1767,7 @@ TEST(SSLSocketLoopback, GetLastSslErrorStringReportsQueuedHandshakeError) {
     std::atomic<bool> stop{false};
     std::thread       acceptor([&] {
         qb::io::tcp::ssl::socket server_socket;
-        if (listener.accept(server_socket) == 0) {
+        if (qb::io::test::accept_within(listener, server_socket)) {
             const auto deadline = std::chrono::steady_clock::now() + 2s;
             while (!server_socket.handshake_complete() && !stop.load() && std::chrono::steady_clock::now() < deadline) {
                 if (server_socket.handshake_status() < 0) {
@@ -2127,7 +2127,7 @@ TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHo
     std::thread       acceptor([&] {
         for (int i = 0; i < 3 && !stop.load(); ++i) {
             qb::io::tcp::ssl::socket server_socket;
-            if (listener.accept(server_socket) != 0)
+            if (!qb::io::test::accept_within(listener, server_socket))
                 continue;
             const auto deadline = std::chrono::steady_clock::now() + 2s;
             while (!server_socket.handshake_complete() && std::chrono::steady_clock::now() < deadline) {

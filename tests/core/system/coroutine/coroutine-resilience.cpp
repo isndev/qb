@@ -276,7 +276,8 @@ TEST(ActorAskRetry, BackoffScheduleGrowsAndClamps) {
 }
 
 namespace {
-std::atomic<bool> g_grow_ran{false};
+std::atomic<bool>         g_grow_ran{false};
+std::atomic<std::int64_t> g_grow_elapsed_ns{0};
 } // namespace
 
 // Asker that exhausts a multi-attempt retry against a flaky target, then stops once the loop is done.
@@ -294,11 +295,13 @@ public:
         auto t        = _target;
         auto attempts = _attempts;
         spawn([t, attempts](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto started = qb::mono_now();
             try {
                 co_await qb::ask_retry(ctx, t, Ping{1}, kAskTimeout, make_policy(attempts));
             } catch (const qb::io::async::timeout_error &) {
                 // expected: the target never answers within the budget
             }
+            g_grow_elapsed_ns.store((qb::mono_now() - started).count());
             g_grow_ran.store(true);
             qb::Main::stop();
         });
@@ -325,27 +328,16 @@ TEST(ActorAskRetry, BackoffGrowsBetweenAttempts) {
     EXPECT_TRUE(g_grow_ran.load());
     EXPECT_EQ(log.count(), 4u) << "ask_retry must send exactly max_attempts requests";
 
-    const auto gaps = log.gaps();
-    ASSERT_EQ(gaps.size(), 3u) << "4 attempts -> 3 inter-arrival gaps";
-    // Each gap is `ask_timeout + backoff_n` — the ask's timeout timer, then `ctx.sleep(backoff_n)`,
-    // then the next send — and neither timer ever fires EARLY, so the engine applying the schedule
-    // is exactly "every gap reaches its own bound": 60/80/120ms nominal here. A loaded runner can
-    // only stretch a gap, never shorten one, so this cannot go red under load the way a comparison
-    // between two gaps did twice (see the note above). It still rejects every wrong engine: no
-    // backoff at all arrives every 40ms and fails the first bound, a backoff that never grows
-    // arrives every 60ms and fails the third. The exact per-step ratio is not this test's job:
-    // BackoffScheduleGrowsAndClamps pins it without a clock.
-    static_assert(kGapSlack < kBackoff, "a slack of kBackoff or more admits an engine whose backoff never grew");
-    auto backoff = qb::duration{kBackoff};
-    for (std::size_t k = 0; k < gaps.size(); ++k) {
-        const auto bound = std::chrono::duration_cast<std::chrono::nanoseconds>(kAskTimeout + backoff - kGapSlack);
-        EXPECT_GE(gaps[k], static_cast<std::uint64_t>(bound.count()))
-            << "gap " << k << " (attempt " << (k + 1) << " -> " << (k + 2) << ") must reach ask timeout + backoff_" << k << " = "
-            << std::chrono::duration_cast<std::chrono::milliseconds>(kAskTimeout + backoff).count() << "ms (minus "
-            << std::chrono::duration_cast<std::chrono::milliseconds>(kGapSlack).count() << "ms slack); gaps ms = " << (gaps[0] / 1000000.0)
-            << ", " << (gaps[1] / 1000000.0) << ", " << (gaps[2] / 1000000.0);
+    // Measure the entire operation from before its first arm to the final timeout.
+    // Arrival-to-arrival gaps can shrink when a request's delivery is delayed.
+    // The pure schedule test above independently pins each growth/clamp step.
+    qb::duration minimum = 4 * kAskTimeout;
+    auto         backoff = qb::duration{kBackoff};
+    for (int attempt = 1; attempt < 4; ++attempt) {
+        minimum += backoff;
         backoff = qb::detail::grow_backoff(backoff, kMultiplier, qb::duration{kMaxBackoff});
     }
+    EXPECT_GE(g_grow_elapsed_ns.load(), (minimum - kGapSlack).count());
 }
 
 // --- A kill aborts the retry loop with cancelled_error -------------------------------------------

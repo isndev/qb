@@ -130,9 +130,9 @@ public:
         for (std::size_t i = 0; i < counters.size(); ++i) {
             if (i == kMidKill) // its own event first, then the kill, then one more for it
                 push<Ping>(counters[i], seq++);
-            push<Ping>(counters[i], seq++); // the victim's lands on an EMPTY slot
             if (i == kMidKill)
                 push<qb::KillEvent>(counters[i]);
+            push<Ping>(counters[i], seq++); // follows Kill for kMidKill; the victim's lands on an EMPTY slot
             if (i == kCounters / 2)
                 broadcast<Pulse>(); // dest = BroadcastId: sid out of the actor table's range
             if (i == kCounters / 3)

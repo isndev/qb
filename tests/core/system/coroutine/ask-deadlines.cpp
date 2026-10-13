@@ -31,6 +31,9 @@
 #include <thread>
 #include <vector>
 
+#include <algorithm>
+#include <array>
+#include <utility>
 #include <gtest/gtest.h>
 #include <qb/actor.h>
 #include <qb/core/patterns.h>
@@ -60,6 +63,7 @@ std::atomic<std::uint64_t> g_deadline_at_ns{0};       ///< the busy ask's deadli
 std::atomic<int>           g_ticks_after_deadline{0}; ///< busy passes that ran after the deadline and before the timeout
 std::atomic<int>           g_order[3]{{0}, {0}, {0}};
 std::atomic<int>           g_order_n{0};
+std::array<int, 3>         g_expected_order{};
 
 void
 reset() {
@@ -220,37 +224,47 @@ TEST(AskDeadlines, AThousandRepliedAsksArmAndDisarmWithoutTheLoop) {
 // 3. Deadlines fire in deadline order, not in arming order.
 // ---------------------------------------------------------------------------
 class OutOfOrder : public qb::Actor {
-    qb::ActorId _market;
+    struct Pending {
+        qb::detail::request_deadline deadline;
+        OutOfOrder                  *owner;
+        int                          tag;
+    };
+    qb::ActorId            _market;
+    std::array<Pending, 3> _pending{};
+
+    static void
+    fired(void *arg) noexcept {
+        auto     &pending = *static_cast<Pending *>(arg);
+        const int n       = g_order_n.fetch_add(1);
+        if (n < 3)
+            g_order[n] = pending.tag;
+        if (n == 2)
+            pending.owner->push<Done>(pending.owner->id());
+    }
 
 public:
-    explicit OutOfOrder(qb::ActorId m)
-        : _market(m) {}
+    explicit OutOfOrder(qb::ActorId market)
+        : _market(market) {}
+    ~OutOfOrder() override {
+        for (auto &pending : _pending)
+            qb::detail::deadline_disarm(pending.deadline);
+    }
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<Ping>(*this);
         registerEvent<Done>(*this);
-        auto mkt = _market;
-        // Armed 30, 10, 20 ms -- the list must sort them, and a shorter deadline armed after a
-        // longer one must fire first.
-        auto one = [mkt](qb::ScopedCoroContext ctx, int tag, qb::duration t) -> qb::io::async::task<void> {
-            try {
-                co_await qb::ask(ctx, mkt, Ping{tag}, t);
-            } catch (const qb::io::async::timeout_error &) {
-                const int n = g_order_n.fetch_add(1);
-                if (n < 3)
-                    g_order[n] = tag;
-                if (n == 2)
-                    ctx.push<Done>();
-            }
-        };
-        spawn([one](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await one(ctx, 30, 30ms); });
-        spawn([one](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await one(ctx, 10, 10ms); });
-        spawn([one](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await one(ctx, 20, 20ms); });
+        const std::array<int, 3>                     tags{30, 10, 20};
+        std::array<std::pair<std::uint64_t, int>, 3> expected;
+        for (std::size_t i = 0; i < tags.size(); ++i) {
+            auto &pending = _pending[i];
+            pending.owner = this;
+            pending.tag   = tags[i];
+            qb::detail::deadline_arm(pending.deadline, std::chrono::milliseconds(tags[i]), &fired, &pending);
+            expected[i] = {pending.deadline.at, pending.tag};
+        }
+        std::stable_sort(expected.begin(), expected.end(), [](auto a, auto b) { return a.first < b.first; });
+        for (std::size_t i = 0; i < expected.size(); ++i)
+            g_expected_order[i] = expected[i].second;
         co_return true;
-    }
-    void
-    on(Ping &e) {
-        resolve_ask(e);
     }
     void
     on(const Done &) {
@@ -269,9 +283,8 @@ TEST(AskDeadlines, FireInDeadlineOrderNotArmingOrder) {
     main.join();
     EXPECT_FALSE(main.hasError());
     ASSERT_EQ(g_order_n.load(), 3);
-    EXPECT_EQ(g_order[0].load(), 10);
-    EXPECT_EQ(g_order[1].load(), 20);
-    EXPECT_EQ(g_order[2].load(), 30);
+    for (std::size_t i = 0; i < g_expected_order.size(); ++i)
+        EXPECT_EQ(g_order[i].load(), g_expected_order[i]);
 }
 
 // ---------------------------------------------------------------------------

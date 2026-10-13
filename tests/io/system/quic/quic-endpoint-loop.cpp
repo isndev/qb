@@ -49,7 +49,9 @@
  * @ingroup Tests
  */
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -222,29 +224,54 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
  */
 TEST(QuicEndpointLoop, IdleTimeoutClosesConnectionViaTimerPath) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
-
     qb::io::async::init();
 
-    qb::io::quic::settings client_settings;
-    client_settings.idle_timeout = std::chrono::milliseconds(300); // short, so the idle timer fires quickly
+    std::atomic<unsigned short> port{0};
+    std::atomic<bool>           server_failed{false};
+    std::atomic<bool>           stop{false};
+    std::thread                 worker([&] {
+        qb::io::async::init();
+        CallbackQuicServer server;
+        if (!server.listen(qb::io::uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"), {"h3"})) {
+            server_failed.store(true);
+            return;
+        }
+        port.store(server.local_endpoint().port());
+        while (!stop.load() && server.connected == 0)
+            qb::io::async::listener::current.run(EVRUN_NOWAIT);
+        // Keep the UDP socket and backend alive, but stop all server progress.
+        // No CONNECTION_CLOSE can reach the client before its idle verdict.
+        while (!stop.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        server.close();
+        qb::io::async::listener::current.clear();
+    });
+    struct worker_cleanup {
+        std::atomic<bool> &stop;
+        std::thread       &worker;
+        ~worker_cleanup() {
+            stop.store(true);
+            if (worker.joinable())
+                worker.join();
+        }
+    } cleanup{stop, worker};
 
-    CallbackQuicServer server;
+    ASSERT_TRUE(pump_until([&] { return port.load() != 0 || server_failed.load(); }));
+    ASSERT_FALSE(server_failed.load());
+    qb::io::quic::settings settings;
+    settings.idle_timeout = std::chrono::milliseconds(300);
     CallbackQuicClient client;
-    client.set_settings(client_settings);
-
-    establish_loopback(server, client);
-    EXPECT_EQ(client.current_state(), State::connected);
-
-    // Stop the server so no further packets reach the client. From here the client can only learn it is
-    // dead through its OWN idle timer (arm_timer -> on(timer&) -> backend::on_timeout), which must drive
-    // it to closed. The deadline is comfortably above idle_timeout but still bounded.
-    server.close();
-
+    client.set_settings(settings);
+    qb::io::quic::tls_config tls;
+    tls.server_name = "localhost";
+    tls.verify_peer = false;
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:" + std::to_string(port.load())}, tls, {"h3"}));
+    ASSERT_TRUE(pump_until([&] { return client.current_state() == State::connected; }));
     EXPECT_TRUE(pump_until([&] { return client.current_state() == State::closed; }, std::chrono::seconds(8)))
         << "the idle client was never closed by its timer path";
     EXPECT_EQ(client.current_state(), State::closed);
-    EXPECT_GE(client.closed, 1) << "the timer-driven teardown must dispatch a connection_closed";
-
+    EXPECT_GE(client.closed, 1);
+    EXPECT_EQ(client.last_close_reason, qb::io::quic::disconnect_reason::idle_timeout);
     client.close();
     qb::io::async::listener::current.clear();
 }

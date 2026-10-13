@@ -237,14 +237,16 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue)
         timed_out_empty = !a.has_value();
 
         // The value the slow path could not accept is still deliverable.
-        EXPECT_TRUE(messages.try_send(std::make_unique<int>(42)));
         auto b = co_await messages.recv();
         if (b && *b)
             recovered = **b;
         done.store(true);
     });
 
+    coro_scheduler().run_ready();
+    ASSERT_TRUE(messages.has_live_select_waiter()) << "receiver must be parked before sending";
+    EXPECT_TRUE(messages.try_send(std::make_unique<int>(42)));
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only recv_for slow-path coroutine never completed";
     EXPECT_TRUE(timed_out_empty) << "documented contract: a move-only recv_for slow path resolves as a timeout";
-    EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a subsequently sent value";
+    EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a value sent while the receiver was parked";
 }

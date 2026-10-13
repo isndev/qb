@@ -536,7 +536,7 @@ TEST(SupervisorKillPropagation, KillingSupervisorKillsChildren) {
 // 6. Supervision × async onInit: a child whose async init FAILS emits no ChildDown → no restart.
 // ===========================================================================
 namespace {
-// Acks BEFORE failing so the coordinator can count the spawn attempt and settle deterministically.
+// Ack only after the awaited phase, immediately before reporting failed initialization.
 class FailingAsyncWorker : public qb::SupervisedActor {
     qb::ActorId _coord;
     std::size_t _slot;
@@ -549,8 +549,8 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         g_spawns.fetch_add(1);
-        push<SpawnAck>(_coord, _slot, id(), supervisor());
         co_await context().sleep(1ms);
+        push<SpawnAck>(_coord, _slot, id(), supervisor());
         co_return false; // async init fails → removed WITHOUT stop() → no ChildDown → no restart
     }
 };

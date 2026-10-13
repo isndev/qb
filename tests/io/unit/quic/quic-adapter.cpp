@@ -783,12 +783,17 @@ TEST(QuicAdapterEndpoint, CloseConnectionDelegatesWithoutClosingEndpoint) {
  *        open across both polls without losing the second packet.
  */
 TEST(QuicAdapterEndpoint, UdpTxBudgetKeepsPendingPacketsForNextPoll) {
+    qb::io::udp::socket receiver;
+    ASSERT_EQ(receiver.bind_v4(0, "127.0.0.1"), 0);
+    const auto             remote = "quic://127.0.0.1:" + std::to_string(receiver.local_endpoint().port());
+    qb::io::endpoint       peer;
+    char                   packet[8]{};
     FakeQuicBackend       *raw = nullptr;
     qb::io::quic::settings settings;
     settings.udp_tx_batch_size = 1;
     qb::io::async::quic::endpoint endpoint{make_fake(raw), settings};
 
-    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{remote}));
     ASSERT_TRUE(endpoint.is_open());
 
     qb::io::quic::packet first;
@@ -801,10 +806,16 @@ TEST(QuicAdapterEndpoint, UdpTxBudgetKeepsPendingPacketsForNextPoll) {
     raw->queued_packets.push_back(std::move(second));
 
     endpoint.poll();
+    ASSERT_EQ(receiver.read_timeout(packet, sizeof(packet), peer, std::chrono::seconds(1)), 1);
+    EXPECT_EQ(packet[0], 'a');
+    EXPECT_LT(receiver.read_timeout(packet, sizeof(packet), peer, std::chrono::milliseconds(20)), 0)
+        << "one poll must honor the one-packet budget";
     EXPECT_TRUE(endpoint.is_open());
     EXPECT_EQ(endpoint.current_state(), State::connecting);
 
     endpoint.poll();
+    ASSERT_EQ(receiver.read_timeout(packet, sizeof(packet), peer, std::chrono::seconds(1)), 1);
+    EXPECT_EQ(packet[0], 'b');
     EXPECT_TRUE(endpoint.is_open());
 }
 
@@ -1322,10 +1333,15 @@ TEST(QuicAdapterEndpoint, SendStreamDataSpanOverloadTargetsConnectionZero) {
  *        adapter test (which only ever queues addressed packets) leaves uncovered.
  */
 TEST(QuicAdapterEndpoint, FlushUdpPacketsSkipsPacketWithoutRemoteAddress) {
+    qb::io::udp::socket receiver;
+    ASSERT_EQ(receiver.bind_v4(0, "127.0.0.1"), 0);
+    const auto                    remote = "quic://127.0.0.1:" + std::to_string(receiver.local_endpoint().port());
+    qb::io::endpoint              peer;
+    char                          packet[8]{};
     FakeQuicBackend              *raw = nullptr;
     qb::io::async::quic::endpoint endpoint{make_fake(raw)};
 
-    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{remote}));
     ASSERT_TRUE(endpoint.is_open());
 
     // First packet: no remote endpoint set -> must be skipped (popped, not sent).
@@ -1343,6 +1359,9 @@ TEST(QuicAdapterEndpoint, FlushUdpPacketsSkipsPacketWithoutRemoteAddress) {
     raw->queued_packets.push_back(std::move(addressed));
 
     endpoint.poll();
+    ASSERT_EQ(receiver.read_timeout(packet, sizeof(packet), peer, std::chrono::seconds(1)), 3);
+    EXPECT_EQ(std::string(packet, 3), "yyy");
+    EXPECT_LT(receiver.read_timeout(packet, sizeof(packet), peer, std::chrono::milliseconds(20)), 0);
 
     // The skip is a continue, not a break: both packets left the pending queue and the endpoint is
     // untouched (still open, still connecting — the addressless packet caused no failure path).

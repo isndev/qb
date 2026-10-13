@@ -102,6 +102,8 @@ struct ControlProbe : public qb::Event {};
 // Discoverer that requires a type (`AbsentActor`) for which NO live actor exists. It must receive
 // zero RequireEvent replies, yet its self-sent ControlProbe must land — proving liveness.
 class AbsentDependencyActor : public qb::Actor {
+    unsigned _settle = 0;
+
 public:
     AbsentDependencyActor() {
         registerEvent<qb::RequireEvent>(*this);
@@ -119,6 +121,10 @@ public:
     void
     on(ControlProbe const &) {
         g_control_seen.store(true); // discoverer reached its own control event → alive, mailbox drained
+        if (++_settle < 3) {
+            push<ControlProbe>(id());
+            return; // leave the requester alive for replies behind the receive fence
+        }
         kill();
     }
 };

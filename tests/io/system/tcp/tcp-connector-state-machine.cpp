@@ -512,16 +512,20 @@ TEST_F(TcpConnectorStateMachineTest, DeadlineCompletesPendingHandshakeOnce) {
     std::atomic<int> completions{0};
     bool             connected = true;
 
+    const auto started = std::chrono::steady_clock::now();
     qb::io::async::tcp::connect<FakeConnectorSocket>(
         FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:3"},
         [&](FakeConnectorSocket &&socket) {
             connected = socket.is_open();
             ++completions;
         },
-        1ms);
+        20ms);
 
+    EXPECT_EQ(completions.load(), 0);
+    EXPECT_GE(shared->fd, 0);
     EXPECT_TRUE(pump_until([&] { return completions.load() > 0; })) << "deadline never fired";
 
+    EXPECT_GE(std::chrono::steady_clock::now() - started, 20ms);
     EXPECT_EQ(completions.load(), 1);
     EXPECT_FALSE(connected);
     EXPECT_EQ(shared->n_connect_calls, 1);

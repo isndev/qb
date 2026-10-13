@@ -290,8 +290,8 @@ public:
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
                 for (;;) {
-                    co_await ctx.cancellation_point(); // throws once the scope is cancelled
-                    co_await ctx.sleep(2ms);
+                    co_await ctx.cancellation_point(); // the sole operation that can throw cancellation
+                    co_await qb::io::async::sleep(2ms);
                     g_loop_iterations.fetch_add(1, std::memory_order_relaxed);
                 }
             } catch (const qb::io::async::cancelled_error &) {

@@ -162,10 +162,11 @@ TEST_F(CallbackDispatchTest, DeferRunsAfterTheDispatchingHandlerUnwinds) {
         [&] {
             order.push_back(1);
             async::defer([&] { order.push_back(2); });
+            order.push_back(3); // enclosing handler is still executing
         },
         1ms);
-    EXPECT_TRUE(pump_until([&] { return order.size() == 2; }));
-    EXPECT_EQ(order, (std::vector<int>{1, 2})) << "deferred work must run after the handler that queued it";
+    EXPECT_TRUE(pump_until([&] { return order.size() == 3; }));
+    EXPECT_EQ(order, (std::vector<int>{1, 3, 2})) << "deferred work must run after the handler that queued it";
 }
 
 TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {

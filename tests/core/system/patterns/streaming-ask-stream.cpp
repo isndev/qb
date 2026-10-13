@@ -258,7 +258,8 @@ std::atomic<bool> g_reclaim_ran{false};
 // Witness that the chunk actually LANDED while nobody was parked — i.e. that `stream_state::wake()`
 // really ran against the reclaimed waiter, which is the entire subject of the case. Left at -1 the
 // chunk never arrived and the run proved nothing (see the drain below).
-std::atomic<int> g_reclaim_chunk{-1};
+std::atomic<int>  g_reclaim_chunk{-1};
+std::atomic<bool> g_reclaim_delivered{false};
 } // namespace
 
 struct TriggerYield : qb::Event {};
@@ -306,21 +307,21 @@ public:
                 auto chunk = co_await st.next();
                 co_return chunk ? chunk->chunk : -1;
             };
-            (void) co_await qb::io::async::when_any(one(s), [c]() -> qb::io::async::task<int> {
+            auto winner = [c]() -> qb::io::async::task<int> {
                 co_await c.sleep(5ms);
                 co_return 99;
-            }());
-            c.template push_to<TriggerYield>(prod); // now make a chunk arrive (would wake the freed frame)
-            // KEEP this sleep: it is load-bearing, not padding. The chunk has to arrive while NOBODY
-            // is parked on next() — that is what makes st->waiter the reclaimed frame's handle
-            // instead of a fresh one. Draining with next() straight away would park a new waiter and
-            // exercise the ordinary path, deleting the coverage.
-            co_await c.sleep(80ms);
-            // …and then witness that it landed. The sleep alone asserted nothing: on the timing
-            // inversion (chunk still in flight at 80 ms) the case passed having never reached
-            // stream_state::wake(). This drain is bounded by the stream's own 5 s timeout, and the
-            // value pins WHICH chunk arrived. `s` still owns the registry slot, so the chunk is
-            // buffered in the state and next() returns it without suspending.
+            };
+            (void) co_await qb::io::async::when_any(one(s), winner());
+            c.template push_to<TriggerYield>(prod);
+            // Wait for the consumer's handler to confirm that the chunk was resolved.
+            // Do not install another next() waiter before that receive phase ran.
+            const auto deadline = qb::mono_now() + 2s;
+            while (!g_reclaim_delivered.load() && qb::mono_now() < deadline)
+                co_await c.sleep(1ms);
+            if (!g_reclaim_delivered.load()) {
+                qb::Main::stop();
+                co_return;
+            }
             try {
                 if (auto chunk = co_await s.next())
                     g_reclaim_chunk.store(chunk->chunk);
@@ -335,11 +336,13 @@ public:
     void
     on(Feed &e) {
         (void) resolve_ask(e);
+        g_reclaim_delivered.store(true);
     }
 };
 
 TEST(AskStream, ReclaimedWhileParkedNoUAF) {
     g_reclaim_ran.store(false);
+    g_reclaim_delivered.store(false);
     g_reclaim_chunk.store(-1);
     qb::Main   main;
     const auto prod = main.addActor<DeferredProducer>(0);

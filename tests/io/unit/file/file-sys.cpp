@@ -59,6 +59,7 @@
 
 #include <gtest/gtest.h>
 #include <qb/io/system/file.h>
+#include "../../shared/file_descriptor_probe.h"
 
 namespace {
 
@@ -221,10 +222,12 @@ TEST_F(FileSysTest, MoveAssignClosesPreviousDescriptor) {
     ASSERT_TRUE(src.is_open());
     const int src_handle = src.native_handle();
 
+    const qb::io::test::file_descriptor_probe previous(dst.native_handle());
     dst = std::move(src); // dst's original fd is closed here; src is emptied
     EXPECT_FALSE(src.is_open());
     EXPECT_TRUE(dst.is_open());
     EXPECT_EQ(dst.native_handle(), src_handle);
+    EXPECT_TRUE(previous.closed_or_reused_by(dst.native_handle())) << "the previous file descriptor survived replacement";
 
     char      buffer[32] = {0};
     const int n          = dst.read(buffer, sizeof(buffer) - 1);
