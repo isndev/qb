@@ -173,13 +173,16 @@ if (QB_IO_EV_TEST_BACKENDS)
         if (TARGET ${_qb_tgt})
             set(_qb_lock "evmx_${_qb_tgt}")
             set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
+            get_test_property(${_qb_tgt} LABELS _qb_base_labels)
+            get_test_property(${_qb_tgt} TIMEOUT _qb_base_timeout)
             foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
                 add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
                 set_tests_properties(${_qb_tgt}-ev-${_qb_be} PROPERTIES
                         ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
                         WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
                         RESOURCE_LOCK "${_qb_lock}"
-                        LABELS "module:qb-io;ev-backend;ev-backend-${_qb_be}")
+                        LABELS "${_qb_base_labels};ev-backend;ev-backend-${_qb_be}"
+                        TIMEOUT "${_qb_base_timeout}")
             endforeach ()
         endif ()
     endforeach ()

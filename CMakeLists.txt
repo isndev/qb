@@ -422,10 +422,10 @@ if (QB_INSTALL)
     # this tree already has. If the archive does not contain the string, that is itself the
     # finding, and the file says so instead of quietly emitting a plausible-looking line.
     install(CODE "set(_qb_abi_archive [[$<TARGET_FILE:qb-io>]])")
-    # BUILD_SHARED_LIBS is routinely UNDEFINED rather than OFF, and an empty `shared_libs=` reads
+    # QB_BUILD_SHARED_LIBS is the resolved library choice; an empty `shared_libs=` reads
     # as "the field is broken" rather than "static". Normalise it, so every field on the line
     # always carries a value a packager can compare.
-    if (BUILD_SHARED_LIBS)
+    if (QB_BUILD_SHARED_LIBS)
         set(_qb_abi_shared ON)
     else ()
         set(_qb_abi_shared OFF)
@@ -460,7 +460,7 @@ unordered_map=${QB_ABI_UNORDERED_MAP} nlohmann=${nlohmann_json_VERSION}]])")
                 "The qb_abi_fingerprint symbol should be present in every qb build; if it is "
                 "genuinely absent, the link-time ABI check is not armed in this package.")
         endif()
-        file(WRITE "${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt"
+        file(WRITE "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt"
 "# qb ABI + configuration fingerprint of THIS installed prefix.
 # The qb-abi line is read out of the installed archive itself, not re-derived. The five axes it
 # names are enforced AT LINK TIME: a consumer compiled with a different value references a symbol
@@ -469,7 +469,7 @@ unordered_map=${QB_ABI_UNORDERED_MAP} nlohmann=${nlohmann_json_VERSION}]])")
 ${_qb_abi_line}
 ${_qb_abi_cfg}
 ")
-        message(STATUS "[qb] wrote ${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt")
+        message(STATUS "[qb] wrote $ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/share/qb/abi-fingerprint.txt")
     ]])
 
     qb_status_message("Installation configured:")
