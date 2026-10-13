@@ -131,7 +131,9 @@ sequenceDiagram
 thread, and `onInit()` runs once. If that coroutine suspends, the actor is *Activating*: unicast events
 for it are stashed and replayed in order when it activates, broadcasts and kills still reach it, and an
 init that returns `false`, throws or outlives its deadline (5 s by default) removes the actor before it
-processes a message — reported by `Main::hasError()`, never thrown. `kill()`, or a `KillEvent` from
+processes a message. A synchronous startup failure is reported by `Main::hasError()`; a failure after
+`onInit()` suspended is observed through actor lifecycle signals, deathwatch or logs rather than that
+engine-wide flag. `kill()`, or a `KillEvent` from
 anyone, ends it: the handler calls already queued for it are skipped, its coroutine scope is cancelled,
 and the destructor runs on the same thread. `Main::join()` returns when every actor has stopped.
 

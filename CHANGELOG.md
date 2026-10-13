@@ -9,6 +9,12 @@ policy.
 
 ### Fixed
 
+- **Actor lifecycle and ownership recipes no longer promise observations or transfers the runtime does not provide
+  (Huly QB-421, QB-445, QB-446, QB-466, QB-467, QB-468, QB-475).** The overview distinguishes synchronous startup errors
+  from later activation failure, delayed callbacks no longer dereference a possibly destroyed actor as a guard,
+  `kill()` stops subsequent handler dispatch while deferring destruction, event fanout constructs independent owning
+  events, graceful-drain examples register their `KillEvent`, timeout
+  arbitration clears success state exactly once, and transport shutdown distinguishes abort from drain completion.
 - **Coroutine documentation now matches scheduling, detached-result and channel-close contracts (Huly QB-307,
   QB-424, QB-447, QB-885).** The scatter/gather example starts lazy tasks with `when_all`, the Doxygen quick start
   consumes a `task<int>` inside a spawned `task<void>` wrapper, `shared_task` is described as scheduled by its

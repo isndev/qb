@@ -265,6 +265,11 @@ public:
     }
 
     void on(const TaskComplete &ev) {
+        // A successful external completion wins only once and clears the same
+        // record the deadline handler arbitrates. The timeout path cleared it
+        // before enqueueing its own TaskComplete.
+        if (!ev.timed_out && _pending.erase(ev.task_id) == 0)
+            return;
         qb::io::cout() << "task " << ev.task_id
                        << (ev.timed_out ? " timed out\n" : " completed\n");
     }
@@ -281,7 +286,7 @@ Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is 
 
 Each of these is a *delay owned by an actor*, so each is a `spawn` + `co_await ctx.sleep(...)` that comes back through a self-addressed event — the form shown above.
 
-- **Operation timeouts.** Arm the deadline when you start something; the handler that receives the elapsed event drops it if a pending flag was already cleared by the real result, as above.
+- **Operation timeouts.** Arm the deadline when you start something; success and expiry erase the same pending record, so only the first outcome is accepted, as above.
 - **Retry with backoff.** On a failed attempt, sleep for a growing delay and then push yourself a retry event.
 - **Yielding between steps.** Split a long computation into chunks and sleep between them so the loop can service other actors. Use a strictly positive delay — a zero delay yields nothing. (`co_await ctx.cancellation_point()` is the cheaper way to yield inside one coroutine's loop.)
 - **Periodic work.** The tick handler re-arms the next sleep. For strictly every-iteration work, prefer `qb::ICallback`.
