@@ -23,12 +23,12 @@
  *
  * Counter semantics (topology-aware so rows stay comparable despite different internal message
  * counts): `deliveries_per_s` is the generic inter-actor throughput; `completed_paths_per_s` counts
- * end-to-end terminal paths (diamond = 2 branch paths/event, pipeline = 1, multicast = 3);
+ * end-to-end terminal paths (one per completed branch message for every topology);
  * `topology_hops_per_event` and `fanout_factor` describe the shape; `mean_rtt_ns` is the end-to-end
  * latency when the shared `ProducerActor` publishes samples.
  *
  * Measured delivery tally (NOT a `EXPECT_LT(duration,…)` ctest gate — this is a perf harness): the
- * producer completes one round-trip (one latency sample) per source event, so after `join()` the
+ * producer completes one round-trip (one latency sample) per completed branch event, so after `join()` the
  * recorded `latency_samples` MUST equal `NB_EVENTS`. A one-shot, out-of-loop probe run asserts that
  * equality, catching a topology that drops a path before any timing.
  *
@@ -59,19 +59,20 @@ struct TopologyMetrics {
 };
 
 constexpr TopologyMetrics kPipelineMetrics{3, 1, 3, 1};  // p -> c1 -> c2 -> c3
-constexpr TopologyMetrics kMulticastMetrics{3, 3, 1, 3}; // producer -> {c1,c2,c3}
-constexpr TopologyMetrics kDiamondMetrics{4, 2, 2, 2};   // producer -> {left,right} -> end
+constexpr TopologyMetrics kMulticastMetrics{1, 1, 1, 3}; // producer -> {c1,c2,c3}
+constexpr TopologyMetrics kDiamondMetrics{2, 1, 2, 2};   // producer -> {left,right} -> end
 
 template <typename Event, typename Setup>
 void
 run_topology_benchmark(benchmark::State &state, TopologyMetrics const &metrics, Setup &&setup) {
-    const auto nb_events = static_cast<std::uint64_t>(state.range(0));
+    const auto requested = static_cast<std::uint64_t>(state.range(0));
+    const auto nb_events = requested - requested % metrics.fanout_factor;
 
     const double source_events_total   = static_cast<double>(nb_events);
     const double deliveries_total      = static_cast<double>(nb_events) * static_cast<double>(metrics.deliveries_per_source_event);
     const double completed_paths_total = static_cast<double>(nb_events) * static_cast<double>(metrics.completed_paths_per_source_event);
 
-    // One-shot out-of-loop measured delivery tally: one completed round-trip per source event.
+    // One-shot out-of-loop measured delivery tally: one completed round-trip per completed branch event.
     {
         qb::bench::reset_last_latency_stats();
         qb::Main probe;

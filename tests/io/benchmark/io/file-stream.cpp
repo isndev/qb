@@ -79,6 +79,7 @@ BM_FileToPipe_ReadAll(benchmark::State &state) {
     const auto input   = dir / "input.dat";
     write_payload(input, payload);
 
+    std::int64_t completed_bytes = 0;
     for (auto _ : state) {
         // Per-iteration setup (pipe alloc + file open) is NOT the hot path under
         // test here — the read loop is. Pause around it so the throughput number
@@ -100,12 +101,17 @@ BM_FileToPipe_ReadAll(benchmark::State &state) {
             }
         }
 
+        if (state.error_occurred() || pipe.size() != size) {
+            state.SkipWithError("file_to_pipe did not read the complete payload");
+            break;
+        }
+        completed_bytes += static_cast<std::int64_t>(size);
         benchmark::DoNotOptimize(pipe.begin());
         benchmark::DoNotOptimize(pipe.size());
     }
 
     std::filesystem::remove_all(dir);
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+    state.SetBytesProcessed(completed_bytes);
 }
 
 void
@@ -115,6 +121,7 @@ BM_PipeToFile_WriteAll(benchmark::State &state) {
     const auto dir     = benchmark_directory();
     int        index   = 0;
 
+    std::int64_t completed_bytes = 0;
     for (auto _ : state) {
         state.PauseTiming();
         qb::allocator::pipe<char> pipe;
@@ -131,6 +138,11 @@ BM_PipeToFile_WriteAll(benchmark::State &state) {
         int result = writer.write_all();
         benchmark::DoNotOptimize(result);
         benchmark::DoNotOptimize(writer.written_bytes());
+        if (result < 0 || writer.written_bytes() != size) {
+            state.SkipWithError("pipe_to_file did not write the complete payload");
+            break;
+        }
+        completed_bytes += static_cast<std::int64_t>(size);
 
         state.PauseTiming();
         std::filesystem::remove(output);
@@ -138,7 +150,7 @@ BM_PipeToFile_WriteAll(benchmark::State &state) {
     }
 
     std::filesystem::remove_all(dir);
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+    state.SetBytesProcessed(completed_bytes);
 }
 
 void
@@ -149,6 +161,7 @@ BM_FileIStream_ReadAll(benchmark::State &state) {
     const auto input   = dir / "stream-input.dat";
     write_payload(input, payload);
 
+    std::int64_t completed_bytes = 0;
     for (auto _ : state) {
         // Pause around the per-iteration open() + transport handoff so the timed
         // region is the read/flush loop, not the open()/close() syscalls.
@@ -172,12 +185,17 @@ BM_FileIStream_ReadAll(benchmark::State &state) {
             stream.flush(stream.in().size());
         }
 
+        if (total != size) {
+            state.SkipWithError("file istream did not read the complete payload");
+            break;
+        }
+        completed_bytes += static_cast<std::int64_t>(size);
         benchmark::DoNotOptimize(total);
         stream.close();
     }
 
     std::filesystem::remove_all(dir);
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+    state.SetBytesProcessed(completed_bytes);
 }
 
 void
@@ -187,6 +205,7 @@ BM_FileOStream_WriteAll(benchmark::State &state) {
     const auto dir     = benchmark_directory();
     int        index   = 0;
 
+    std::int64_t completed_bytes = 0;
     for (auto _ : state) {
         state.PauseTiming();
         const auto output = dir / ("stream-output-" + std::to_string(index++) + ".dat");
@@ -200,7 +219,10 @@ BM_FileOStream_WriteAll(benchmark::State &state) {
 
         qb::io::ostream<qb::io::sys::file> stream;
         stream.transport() = std::move(file);
-        std::ignore        = stream.publish(payload.data(), payload.size());
+        if (!stream.publish(payload.data(), payload.size())) {
+            state.SkipWithError("file ostream rejected the payload");
+            break;
+        }
 
         while (stream.pendingWrite() > 0u) {
             const int bytes = stream.write();
@@ -208,6 +230,11 @@ BM_FileOStream_WriteAll(benchmark::State &state) {
                 break;
         }
 
+        if (stream.pendingWrite() != 0u) {
+            state.SkipWithError("file ostream did not write the complete payload");
+            break;
+        }
+        completed_bytes += static_cast<std::int64_t>(size);
         benchmark::DoNotOptimize(stream.pendingWrite());
         stream.close();
 
@@ -217,7 +244,7 @@ BM_FileOStream_WriteAll(benchmark::State &state) {
     }
 
     std::filesystem::remove_all(dir);
-    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(size));
+    state.SetBytesProcessed(completed_bytes);
 }
 
 } // namespace

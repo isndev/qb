@@ -126,68 +126,83 @@ run_mpsc_fan_in(std::size_t const nb_producers, std::uint64_t const total, std::
     std::atomic<std::uint64_t> fail_sum{0};
     std::atomic<bool>          give_up{false}; // set by the consumer; read by the producers on their retry path
     std::uint64_t              drained = 0;    // written by the consumer thread, read after its join
-    std::barrier               start_gate(static_cast<std::ptrdiff_t>(nb_producers + 1u));
+    std::barrier               start_gate(static_cast<std::ptrdiff_t>(nb_producers + 2u));
 
     std::vector<qb::jthread> producers;
     producers.reserve(nb_producers);
-    for (std::size_t pid = 0; pid < nb_producers; ++pid) {
-        const std::uint64_t q = quota_for(pid, total, nb_producers);
-        producers.emplace_back([&, pid, q] {
+    qb::jthread consumer;
+    try {
+        for (std::size_t pid = 0; pid < nb_producers; ++pid) {
+            const std::uint64_t q = quota_for(pid, total, nb_producers);
+            producers.emplace_back([&, pid, q] {
+                start_gate.arrive_and_wait();
+                if (give_up.load(std::memory_order_acquire))
+                    return;
+                std::uint64_t local_fails = 0;
+                std::uint64_t sent        = 0;
+                while (sent < q) {
+                    EventBucket bucket = make_bucket(pid, sent);
+                    if (queue.enqueue(pid, bucket)) {
+                        ++sent;
+                        continue;
+                    }
+                    // Ring full: busy-retry — this count IS the measured pressure signal. The abort
+                    // check lives only on this path, and only every kFanInIdleProbe failures, so a
+                    // producer that is keeping up pays nothing for it.
+                    if ((++local_fails & (kFanInIdleProbe - 1u)) == 0u && give_up.load(std::memory_order_acquire))
+                        break;
+                }
+                fail_sum.fetch_add(local_fails, std::memory_order_relaxed);
+            });
+        }
+
+        consumer = qb::jthread([&] {
             start_gate.arrive_and_wait();
-            std::uint64_t local_fails = 0;
-            std::uint64_t sent        = 0;
-            while (sent < q) {
-                EventBucket bucket = make_bucket(pid, sent);
-                if (queue.enqueue(pid, bucket)) {
-                    ++sent;
+            if (give_up.load(std::memory_order_acquire))
+                return;
+            std::uint64_t                         popped     = 0;
+            std::uint64_t                         idle_turns = 0;
+            bool                                  idle_timed = false;
+            std::chrono::steady_clock::time_point idle_since{};
+            while (popped < total) {
+                // Match engine: mpsc::consume_all(Func, scratch, chunk) — each producer ring
+                // delivers up to `batch_cap` contiguous items into `scratch` and invokes the
+                // functor (see VirtualCore::__receive__). Not mpsc::dequeue(T*, n), whose budget
+                // is a total across every ring rather than a per-ring batch.
+                const std::size_t n = queue.consume_all(consume, batch_buf.get(), batch_cap);
+                if (n != 0u) {
+                    popped += static_cast<std::uint64_t>(n);
+                    idle_turns = 0;
+                    idle_timed = false;
                     continue;
                 }
-                // Ring full: busy-retry — this count IS the measured pressure signal. The abort
-                // check lives only on this path, and only every kFanInIdleProbe failures, so a
-                // producer that is keeping up pays nothing for it.
-                if ((++local_fails & (kFanInIdleProbe - 1u)) == 0u && give_up.load(std::memory_order_acquire))
+                // Empty turn. Spin cheaply; consult the clock only once every kFanInIdleProbe
+                // CONSECUTIVE empty turns, so the guard cannot perturb a healthy run's timing.
+                if (++idle_turns < kFanInIdleProbe)
+                    continue;
+                idle_turns     = 0;
+                const auto now = std::chrono::steady_clock::now();
+                if (!idle_timed) {
+                    idle_timed = true;
+                    idle_since = now;
+                    continue;
+                }
+                if (now - idle_since >= kFanInStallBudget) {
+                    give_up.store(true, std::memory_order_release);
                     break;
+                }
             }
-            fail_sum.fetch_add(local_fails, std::memory_order_relaxed);
+            drained = popped;
         });
-    }
 
-    qb::jthread consumer([&] {
-        start_gate.arrive_and_wait();
-        std::uint64_t                         popped     = 0;
-        std::uint64_t                         idle_turns = 0;
-        bool                                  idle_timed = false;
-        std::chrono::steady_clock::time_point idle_since{};
-        while (popped < total) {
-            // Match engine: mpsc::consume_all(Func, scratch, chunk) — each producer ring
-            // delivers up to `batch_cap` contiguous items into `scratch` and invokes the
-            // functor (see VirtualCore::__receive__). Not mpsc::dequeue(T*, n), whose budget
-            // is a total across every ring rather than a per-ring batch.
-            const std::size_t n = queue.consume_all(consume, batch_buf.get(), batch_cap);
-            if (n != 0u) {
-                popped += static_cast<std::uint64_t>(n);
-                idle_turns = 0;
-                idle_timed = false;
-                continue;
-            }
-            // Empty turn. Spin cheaply; consult the clock only once every kFanInIdleProbe
-            // CONSECUTIVE empty turns, so the guard cannot perturb a healthy run's timing.
-            if (++idle_turns < kFanInIdleProbe)
-                continue;
-            idle_turns     = 0;
-            const auto now = std::chrono::steady_clock::now();
-            if (!idle_timed) {
-                idle_timed = true;
-                idle_since = now;
-                continue;
-            }
-            if (now - idle_since >= kFanInStallBudget) {
-                give_up.store(true, std::memory_order_release);
-                break;
-            }
-        }
-        drained = popped;
-    });
+    } catch (...) {
+        give_up.store(true, std::memory_order_release);
+        const auto missing = nb_producers + 2u - producers.size() - (consumer.joinable() ? 1u : 0u);
+        for (std::size_t i = 0; i < missing; ++i)
+            start_gate.arrive_and_drop();
+        throw;
+    }
+    start_gate.arrive_and_wait();
 
     producers.clear(); // join producers
     consumer.join();
