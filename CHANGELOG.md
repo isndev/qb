@@ -9,6 +9,10 @@ policy.
 
 ### Fixed
 
+- **Transport and integration examples now carry the state their APIs require (Huly QB-332, QB-469, QB-470,
+  QB-474).** QUIC routing uses a numeric address while preserving the TLS hostname, the file-pipeline alternative
+  stores requester correlation explicitly, the TCP server declares its retained URI and registers its kill handler,
+  and raw TLS adoption distinguishes ownership, connect-time verification mode and callback retention.
 - **Reference contracts now distinguish ABI axes, relocation guarantees, raw key types, callback categories,
   TLS-pool teardown and TCP EOF (Huly QB-422, QB-428, QB-429, QB-476, QB-477, QB-889).** The fingerprint no longer
   claims feature gates it does not encode; `growable_ring` documents its basic guarantee for throwing move-only

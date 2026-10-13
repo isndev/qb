@@ -305,7 +305,7 @@ int rc = c.connect_v4("127.0.0.1", 64388);
 ```
 <!-- src: qb/tests/io/system/tls/tls-peer-verification.cpp:200-205 -->
 
-**Supplying your own `SSL` handle through `init(SSL*)` does not opt you out of that policy** — and this is the one place on the page where getting it wrong is a security bug rather than a compile error. `setup_client_ssl()` calls `apply_client_verification_()` unconditionally, and that function branches on whether an `ssl::Context` was supplied, not on whether *you* built the handle. An `init(SSL*)` socket has no `Context`, so it takes the auto-context branch: `SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr)` plus hostname checking. A `SSL_VERIFY_NONE` you set on your own context is overridden to `SSL_VERIFY_PEER`, and a verify callback you installed on the handle is replaced with `nullptr`. `SSL_set_quiet_shutdown` and `SSL_set_connect_state` are applied to your handle too.
+**Supplying your own `SSL` handle through `init(SSL*)` does not opt you out of that policy** — and this is the one place on the page where getting it wrong is a security bug rather than a compile error. `setup_client_ssl()` calls `apply_client_verification_()` unconditionally, and that function branches on whether an `ssl::Context` was supplied, not on whether *you* built the handle. An `init(SSL*)` socket has no `Context`, so it takes the auto-context branch: `SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr)` plus hostname checking. A `SSL_VERIFY_NONE` mode you set is therefore changed to `SSL_VERIFY_PEER`; OpenSSL keeps an already-installed verification callback when the callback argument is null. `SSL_set_quiet_shutdown` and `SSL_set_connect_state` are applied to your handle too.
 
 To keep an `init(SSL*)` handle unverified — the shape every SSL test in the suite uses for a self-signed fixture — call `set_insecure()` before connecting. To keep *your own* verification policy, build a `qb::io::ssl::Context` and pass that instead: the `Context` path is honoured as written.
 
@@ -681,8 +681,8 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
   `QB_HAS_SSL` in the build configuration before depending on any of this.
 - **Verification is on by default — including for an `SSL` handle you built yourself.**
   `init(SSL*)` does not exempt you: the socket applies `SSL_VERIFY_PEER` and hostname checking
-  to your handle, replacing a `SSL_VERIFY_NONE` and any verify callback you installed. To keep
-  a handle unverified, call `set_insecure()`; to keep your own policy, pass an `ssl::Context`
+  to your handle, replacing a `SSL_VERIFY_NONE` mode while retaining an already-installed callback.
+  To keep a handle unverified, call `set_insecure()`; to keep your own policy branch, pass an `ssl::Context`
   instead of a raw `SSL*`.
 - **`read()` returns `-1`, not `0`, when the peer shuts the TLS session down cleanly** — and
   `0` when OpenSSL merely wants more socket readiness. Do not carry `tcp::socket::read`'s

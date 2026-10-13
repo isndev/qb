@@ -166,10 +166,13 @@ For a single-actor server, inherit from `use<Self>::tcp::server<Session>`. This 
 
 class MyServer : public qb::Actor,
                  public qb::io::use<MyServer>::tcp::server<MyClientSession> {
+    const qb::io::uri _listen_at;
+
 public:
     explicit MyServer(qb::io::uri listen_at) : _listen_at(std::move(listen_at)) {}
 
     qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::KillEvent>(*this);
         // transport().listen(uri) returns 0 on success (non-zero is an error).
         if (this->transport().listen(_listen_at) != 0) {
             qb::io::cerr() << "listen failed on " << _listen_at.source() << "\n";
