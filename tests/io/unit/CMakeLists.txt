@@ -56,6 +56,11 @@ qb_add_test(MODULE qb-io TIER unit NAME stream-drain-cost SOURCES stream/stream-
 qb_add_test(MODULE qb-io TIER unit NAME file-sys           SOURCES file/file-sys.cpp           DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME file-error-paths   SOURCES file/file-error-paths.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME file-pipe-transfer SOURCES file/file-pipe-transfer.cpp DEPENDS ${PROJECT_NAME})
+# Isolated file.cpp copy with a test-local short-write syscall, like the logger
+# and crypto refill witnesses. Do not link the qb-io amalgamation into this target.
+qb_add_test(MODULE qb-io TIER unit NAME file-short-writes
+            SOURCES file/file-short-writes.cpp ${QB_SOURCE_DIR}/io/abi.cpp
+            INCLUDES ${QB_INCLUDE_DIR})
 qb_add_test(MODULE qb-io TIER unit NAME self-locate        SOURCES file/self-locate.cpp        DEPENDS ${PROJECT_NAME})
 
 # --- crypto ---
@@ -72,6 +77,11 @@ qb_add_test(MODULE qb-io TIER unit NAME kdf-and-tokens    SOURCES crypto/kdf-and
 qb_add_test(MODULE qb-io TIER unit NAME asymmetric-keys   SOURCES crypto/asymmetric-keys.cpp   DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-jwt        SOURCES crypto/crypto-jwt.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-reachable-edges SOURCES crypto/crypto-reachable-edges.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl)
+# Compile crypto.cpp privately with the test-owned secure_random_fill definition.
+# Linking qb-io here would bring its amalgamated sampler and entropy source too.
+qb_add_test(MODULE qb-io TIER unit NAME crypto-random-refill
+            SOURCES crypto/crypto-random-refill.cpp ${QB_SOURCE_DIR}/io/abi.cpp
+            INCLUDES ${QB_INCLUDE_DIR} DEPENDS OpenSSL::Crypto REQUIRES ssl)
 
 # --- compression (zlib gzip/deflate, link-gated on QB_HAS_COMPRESSION) ---
 qb_add_test(MODULE qb-io TIER unit NAME compression-codec SOURCES compression/compression-codec.cpp DEPENDS ${PROJECT_NAME} REQUIRES compression)

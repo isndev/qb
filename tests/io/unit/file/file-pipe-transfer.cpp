@@ -22,7 +22,8 @@
  *
  * The non-size-varying contracts (directory rejection, no-op reads/writes on a closed handle,
  * single vs. read_all, EOF idempotence, the gap-pipe and binary-with-NUL write, and `pipe_to_file`
- * partial-write resumption) are kept as their own focused cases.
+ * whole-file write progression) are kept as their own focused cases. Deterministic short writes
+ * and the remaining-length oracle live in the separate file-short-writes executable.
  *
  * Restructured from the dissolved system/test-file-operations.cpp
  * (FileToPipe, FileToPipeRejectsDirectoriesAndClosedReadsAreNoops, PipeToFile,
@@ -325,12 +326,11 @@ TEST_F(FilePipeTest, WritesBinaryDataWithEmbeddedNuls) {
 }
 
 /**
- * @test write() resumes a partially-written pipe across repeated calls.
- * @brief New coverage requested by the dossier: the `while(!eos()) write()` loop is asserted at
- *        each step, proving write() advances `written_bytes()` monotonically and `eos()` flips
- *        exactly when every pipe byte has been committed.
+ * @test Native writes advance to EOS and preserve a large binary payload.
+ * @brief A regular file may accept the whole payload at once. The separate file-short-writes
+ *        executable deterministically forces resumption from a nonzero offset.
  */
-TEST_F(FilePipeTest, WriteResumesPartialPipeUntilEos) {
+TEST_F(FilePipeTest, NativeWritesAdvanceUntilEos) {
     const std::string payload = make_payload(256 * 1024);
 
     qb::allocator::pipe<char> pipe;
