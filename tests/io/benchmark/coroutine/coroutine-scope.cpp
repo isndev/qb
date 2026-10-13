@@ -45,7 +45,7 @@ using namespace std::chrono_literals;
 
 void
 reset_async_context() {
-    reset_coro_scheduler();
+    qb::io::async::listener::current.reset_coro_scheduler();
     qb::io::async::listener::current.clear();
     qb::io::async::init();
 }
@@ -167,7 +167,7 @@ BM_SharedTask_FanOut(benchmark::State &state) {
 
         coro_scheduler().run_ready();
         if (enrolled != waiters || done.load(std::memory_order_relaxed) != 0 || release.waiters_count() != 1) {
-            reset_coro_scheduler();
+            qb::io::async::listener::current.reset_coro_scheduler();
             state.SkipWithError("shared_task fan-out did not park every waiter");
             break;
         }
