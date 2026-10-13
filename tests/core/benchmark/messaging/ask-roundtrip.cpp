@@ -112,6 +112,7 @@ public:
         auto lat   = _latency;
         auto check = _check;
         spawn([mkt, lat, check](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            static_cast<void>(check);
             for (std::uint32_t i = 0; i < kBenchAsks; ++i) {
                 const auto t0 = std::chrono::steady_clock::now();
                 auto       r  = co_await qb::ask(ctx, mkt, Ping{static_cast<int>(i)}, 500ms);
