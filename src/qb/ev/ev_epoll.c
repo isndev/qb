@@ -51,7 +51,7 @@
 
 /*
  * qb-io / VirtualCore execution model (this tree vendors libev for qb):
- * - One struct ev_loop per OS thread; all qev_* calls and watcher callbacks for
+ * - One struct ev_loop per OS thread; all ev_* calls and watcher callbacks for
  *   that loop run on that thread only (see qb::io::async::listener::current).
  * - On Windows, wepoll is therefore used in the intended single-threaded mode:
  *   no concurrent epoll_wait vs epoll_close on the same handle from different

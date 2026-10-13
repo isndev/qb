@@ -34,11 +34,15 @@
  *     `Main::stop()` — without the cap timer the poll would sleep to the far deadline;
  *   - the configuration surface: default, per-core override, `Main`-wide fan-out, chaining.
  *
+ * The CPU/wall ratio is a diagnostic on a quiet, unconstrained host. A runnable core descheduled
+ * by the OS can consume little CPU without ever parking; the ratio alone cannot prove the park.
+ *
  * Every case runs the engine on the calling thread (`start(false)`) with process-global atoms and
  * ends through `kill()`, never through `Main::stop()`.
  */
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <thread>
@@ -58,15 +62,18 @@ namespace core_park_policy_test {
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-/// CPU time consumed by this process so far, every thread summed. The instrument that tells a
-/// parked core from a polling one: both reach the same deadline at the same wall-clock time,
-/// only one of them burns the interval. `std::clock()` cannot be it — MSVC's returns wall time.
+/// CPU time consumed by this process so far, every thread summed. Useful beside elapsed time
+/// on a quiet host; descheduling can make a polling core look idle. `std::clock()` cannot be
+/// used here because MSVC's returns wall time. A failed clock read also fails the test.
 std::chrono::nanoseconds
 process_cpu_time() {
 #ifdef _WIN32
     FILETIME creation{}, exit{}, kernel{}, user{};
-    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user)) {
+        const auto error = GetLastError();
+        ADD_FAILURE() << "GetProcessTimes failed: " << error;
         return {};
+    }
     auto to_ns = [](FILETIME const &ft) {
         const auto ticks = (static_cast<std::uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
         return std::chrono::nanoseconds{static_cast<std::int64_t>(ticks) * 100}; // 100 ns units
@@ -74,8 +81,11 @@ process_cpu_time() {
     return to_ns(kernel) + to_ns(user);
 #else
     timespec ts{};
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0)
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0) {
+        const int error = errno;
+        ADD_FAILURE() << "clock_gettime(CLOCK_PROCESS_CPUTIME_ID) failed: " << error;
         return {};
+    }
     return std::chrono::seconds{ts.tv_sec} + std::chrono::nanoseconds{ts.tv_nsec};
 #endif
 }
@@ -196,12 +206,10 @@ TEST(CoreParkPolicy, InsideTheIdleSpinFloorTheCoreKeepsPolling) {
 TEST(CoreParkPolicy, PastTheFloorTheCoreParksInsideItsLoopAndAnIoTimerFiresAtItsDelay) {
     // The core owns a timer, so past the floor it parks in `ev_run(EVRUN_ONCE)` rather than on
     // its condition variable, and the timer fires at 100 ms under a 700 ms latency. Two things are
-    // asserted, because either alone passes vacuously: the deadline was honoured (a cv park would
-    // have slept to `latency`) AND the core was asleep while it waited (a floor that never parks
-    // would also fire on time). The second is CPU time: this process IS the core (`start(false)`),
-    // so across a 100 ms wait a polling core charges ~100 ms and a parked one a few hundred µs.
-    // Loose bound — a sanitizer, a loaded host and a coarse Windows tick all inflate it — but a
-    // core that polled to the deadline lands at 100%, and no amount of noise turns that into 50.
+    // checked together: the deadline was honoured (a cv park would have slept to `latency`),
+    // while low process CPU is evidence of a park on a quiet, unconstrained host. The ratio is
+    // not an unconditional oracle: an OS-descheduled polling core can also consume under half
+    // the elapsed interval. A failed CPU clock read is reported separately by the helper.
     reset_atoms();
     constexpr auto kLatency = 700ms;
     constexpr auto kTimer   = 100ms;

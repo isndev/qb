@@ -217,6 +217,14 @@ target_link_libraries(my_app PRIVATE qb::core qb::io)
 ```
 
 The two supported integration modes — embed via `add_subdirectory(qb)` or consume an installed copy via `find_package(qb)` — both expose `qb::core` and `qb::io` (`CMakeLists.txt:24-28`). The embed mode is covered in [INSTALL.md](../../INSTALL.md#embed-the-source-tree).
+For an embedded consumer, qb also exports the **resolved** `QB_HAS_ZSTD` and
+`QB_HAS_BROTLI` flags to the parent (`CMakeLists.txt:526-530`). Thus a parent
+`qb_add_executable(... REQUIRES zstd)` or `REQUIRES brotli` is registered when
+the corresponding codec was built, and omitted when it was not
+(`cmake/qbFunctions.cmake:410-420`).
+The installed `qbConfig.cmake`, generated from the
+[feature template](../../cmake/qbConfig.cmake.in) (`CMakeLists.txt:403-407`),
+supplies the same feature answers to `find_package(qb)` consumers.
 
 ### Link-time configuration fingerprint
 

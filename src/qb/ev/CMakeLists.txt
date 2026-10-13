@@ -86,20 +86,10 @@ option(QB_EV_USE_TIMERFD "Enable qev timerfd (time-jump detection; affects idle 
 # ev_recommended_backends(), and the mere presence of <linux/aio_abi.h> used to compile it in.
 option(QB_EV_USE_LINUXAIO "Compile the Linux aio backend in (opt-in, as in libev)" OFF)
 option(QB_EV_STRICT_WARNINGS "Build bundled qev with strict compiler warnings" ON)
-# Default OFF, and that default is a fix, not a taste. event.c is libev's *libevent
-# compatibility* layer, and it exports 24 upstream libevent C symbols under their real,
-# unprefixed names -- event_base_new, event_add, event_del, event_dispatch, event_set, ... The
-# ev->qev rename covered libev's own API (58 qev_*, 0 ev_*) and stopped there, so those 24 were
-# still in the installed libqev.a, which sits on EVERY consumer's link line (qb::io names
-# qb::ev in its INTERFACE_LINK_LIBRARIES). A consumer that also links the real libevent then
-# got whichever implementation the archive order happened to pick, with two unrelated
-# `struct event_base` layouts and no diagnostic from anyone. Measured, against a stand-in for
-# libevent:
-#     ORDER 1  -lfakeevent then libqev.a  -> real libevent ran
-#     ORDER 2  libqev.a then -lfakeevent  -> qb's fork ran,  rc=0, silently
-# Nothing in qb calls any of them (`nm -u libqb-io.a | grep -c '^ *_event_'` -> 0), so OFF costs
-# qb nothing and makes the collision impossible rather than merely unlikely. The layer is kept,
-# not deleted: turn this ON to build and install it, and own the 24 names deliberately.
+# Default OFF. event.c is libev's libevent compatibility layer, and it exports libevent's
+# unprefixed event_* API. The native qev library separately preserves libev's ev_* API, so qev
+# cannot be linked with libev; enabling this layer additionally means it cannot be linked with
+# a real libevent. The compatibility source and headers are retained for explicit opt-in use.
 option(QB_EV_LIBEVENT_COMPAT
        "Build and install libev's libevent compatibility layer (exports 24 unprefixed libevent C symbols)"
        OFF)
@@ -332,8 +322,8 @@ message(STATUS "[qev] watcher families: ${QB_EV_WATCHERS_FULL} (full=all fourtee
 # Generated under a dedicated `include/` root mirroring the header namespace, so the ONE directory
 # this project puts on its consumers' include path contains nothing but ${QB_EV_HEADER_DIR}/.
 #
-# ev.h and ev.c look for this file in three ways (ev.h:24-32, ev.c:23-30):
-#     -DEV_CONFIG_H=<path>  >  HAVE_CONFIG_H + "config.h"  >  __has_include("ev_config.h")
+# ev.h and ev.c look for this file in three ways:
+#     -DQB_EV_CONFIG_H=<path>  >  HAVE_CONFIG_H + "config.h"  >  __has_include("ev_config.h")
 # The last one is quote-relative to ev.h: it only works when ev_config.h sits NEXT TO ev.h --
 # true in an installed tree, never true in a build tree (generated file, source-tree header). And
 # because it is guarded by __has_include, a miss is SILENT: ev.h falls back to its own defaults and

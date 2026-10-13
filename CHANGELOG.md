@@ -536,6 +536,11 @@ policy.
 
 ### Fixed
 
+- **Embedded codec gates see the features qb actually built (Huly QB-875).**
+  `add_subdirectory(qb)` now exports resolved `QB_HAS_ZSTD` and `QB_HAS_BROTLI`
+  beside the other `QB_HAS_*` flags. A parent calling `qb_add_executable`,
+  `qb_add_test`, or `qb_add_benchmark` with `REQUIRES zstd` or `brotli` no longer
+  omits a target when that codec is enabled; disabled codecs still omit it.
 - **Shipped API documentation guard ignores C++ comments and literals (Huly QB-561, QB-562).**
   A retired name left only in a comment cannot satisfy a public API claim, and every
   citation on a line is checked even when an earlier one matches.

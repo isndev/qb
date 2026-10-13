@@ -116,6 +116,11 @@ add_subdirectory(qb)
 target_link_libraries(my_app PRIVATE qb::core qb::io)
 ```
 
+After embedding, `QB_HAS_ZSTD` and `QB_HAS_BROTLI` in the parent scope report
+the codecs qb actually built. Parent calls to `qb_add_executable`, `qb_add_test`,
+or `qb_add_benchmark` with `REQUIRES zstd` or `REQUIRES brotli` use those resolved
+flags to decide whether to create their targets.
+
 Vendor qb as a submodule first:
 
 ```bash

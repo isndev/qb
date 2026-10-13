@@ -33,6 +33,13 @@ jobs:
       - name: Install dependencies
         run: ./scripts/ci-install-linux-dependencies.sh --profile build
 
+      - name: Embedded qb exports zstd and brotli gates
+        run: |
+          cmake -S tests/cmake/embedded-codec-export -B build-embedded-codecs-on -G Ninja \
+            -DQB_EMBED_SOURCE="$PWD" -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON
+          cmake -S tests/cmake/embedded-codec-export -B build-embedded-codecs-off -G Ninja \
+            -DQB_EMBED_SOURCE="$PWD" -DQB_WITH_ZSTD=OFF -DQB_WITH_BROTLI=OFF
+
       - name: Check static ngtcp2 link order
         run: bash scripts/check-ngtcp2-static-link.sh
 
