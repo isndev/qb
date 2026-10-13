@@ -170,14 +170,24 @@ TEST_F(CallbackDispatchTest, DeferRunsAfterTheDispatchingHandlerUnwinds) {
 }
 
 TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
-    // A deferred callback that itself defers is left for the NEXT turn (snapshot-count
-    // drain), never resumed in the same drain pass — no same-pass starvation.
+    // Start inside a timer dispatch, so the first defer drain belongs to an
+    // actual loop iteration (not the pending queue drained before ev_run starts).
+    // Drive the public raw loop to avoid listener::run's additional outer drain.
     std::atomic<int> stage{0};
-    async::defer([&] {
-        stage.store(1);
-        async::defer([&] { stage.store(2); });
-    });
-    EXPECT_TRUE(pump_until([&] { return stage.load() == 2; }));
+    async::callback(
+        [&] {
+            async::defer([&] {
+                stage.store(1);
+                async::defer([&] { stage.store(2); });
+            });
+        },
+        1ms);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (stage.load() == 0 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.loop().run(EVRUN_NOWAIT);
+    ASSERT_EQ(stage.load(), 1) << "a nested defer must not execute in the same loop drain";
+    while (stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.loop().run(EVRUN_NOWAIT);
     EXPECT_EQ(stage.load(), 2);
 }
 
