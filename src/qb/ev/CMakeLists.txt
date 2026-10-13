@@ -683,7 +683,7 @@ endif()
             install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev-debug.pc
                     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
                     CONFIGURATIONS Debug COMPONENT qev_Development)
-        elseif (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        elseif (CMAKE_BUILD_TYPE MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
             install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev-debug.pc
                     DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
                     COMPONENT qev_Development)
