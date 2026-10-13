@@ -37,6 +37,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -81,14 +82,18 @@ reset_atoms() {
     g_port.store(0, std::memory_order_release);
 }
 
-/// CPU time consumed by this process so far, every thread summed — the instrument that tells a
-/// parked core from a polling one. `std::clock()` cannot be it: MSVC's returns wall time.
+/// CPU time consumed by this process so far, every thread summed — a park diagnostic only
+/// on a quiet, unconstrained host. Descheduling can make a spinner look idle; MSVC's
+/// `std::clock()` returns wall time. A failed clock read also fails the test.
 std::chrono::nanoseconds
 process_cpu_time() {
 #ifdef _WIN32
     FILETIME creation{}, exit{}, kernel{}, user{};
-    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user))
+    if (!GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user)) {
+        const auto error = GetLastError();
+        ADD_FAILURE() << "GetProcessTimes failed: " << error;
         return {};
+    }
     auto to_ns = [](FILETIME const &ft) {
         const auto ticks = (static_cast<std::uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
         return std::chrono::nanoseconds{static_cast<std::int64_t>(ticks) * 100}; // 100 ns units
@@ -96,8 +101,11 @@ process_cpu_time() {
     return to_ns(kernel) + to_ns(user);
 #else
     timespec ts{};
-    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0)
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts) != 0) {
+        const int error = errno;
+        ADD_FAILURE() << "clock_gettime(CLOCK_PROCESS_CPUTIME_ID) failed: " << error;
         return {};
+    }
     return std::chrono::seconds{ts.tv_sec} + std::chrono::nanoseconds{ts.tv_nsec};
 #endif
 }
