@@ -29,9 +29,10 @@
  * the case to the next in one process), several times what a core holds besides -- its 64 KiB receive buffer, its `VirtualCore` on its stack,
  * its io loop. It counts bytes, never time, so a loaded host cannot move it. The eager mailbox wrote 64 x 64 rings,
  * 258 MiB, against a bound of 64 x (64 pages + 8 rings), 49 MiB with 4 KiB pages. On a Linux kernel whose transparent
- * huge pages are `always`, a header page written every 66 176 bytes of a block may be backed by a 2 MiB page each
- * time, and the case reads that as a ring for every pair: it prints the setting with its verdict. A platform that
- * gives a process no reading of its own memory skips the case and says so.
+ * huge pages are `always` (GitHub's runners), a header page written every 66 176 bytes of a block is backed by a 2 MiB
+ * page each time -- 146 MiB read there -- a policy of the OS over every sparsely written mapping, not a page qb touches:
+ * the case takes its own process out of it (`prctl(PR_SET_THP_DISABLE)`) and prints the setting with its verdict. A
+ * platform that gives a process no reading of its own memory skips the case and says so.
  *
  * An engine of the same shape is started and stopped first, so what the measured one finds already in place -- the
  * code an engine runs, the allocator arenas and thread stacks its cores leave behind, the process's one-time
@@ -60,6 +61,7 @@
 
 #if defined(__linux__)
 #include <fstream>
+#include <sys/prctl.h>
 #include <unistd.h>
 #elif defined(__APPLE__)
 #include <mach/mach.h>
@@ -198,6 +200,11 @@ TEST(MailboxFootprint, AnEngineHoldsMemoryInProportionToItsCoresBeforeItsFirstEv
     if (!read_footprint())
         GTEST_SKIP() << "this platform gives a process no reading of its own memory (read here: Linux /proc/self/statm, "
                         "macOS task_info, Windows GetProcessMemoryInfo)";
+#if defined(__linux__)
+    // The pages qb touches, not the kernel's huge-page policy: under THP `always` each written header page would map
+    // 2 MiB (see the file note). The flag holds for the whole process from here on, the warm-up included.
+    ::prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
+#endif
     with_idle_engine([] {}); // the warm-up -- see the file note
     ASSERT_FALSE(HasFatalFailure());
     qb::allocator::region_cache::trim(); // what the warm-up left cached is not the measured engine's to find

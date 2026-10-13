@@ -223,8 +223,10 @@ qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES conc
 # counted on the threads that write them, the second engine of a fresh process judged, a binary of its own because
 # only a fresh process decided the eager rings' fate the same way every time. Both count page faults, never time. A
 # sanitizer replaces the allocator whose behaviour they count, so neither exists in a sanitizer build -- a capability
-# gate, like actor-arena-poison's; the per-thread count of the second is Linux's.
-if(NOT QB_SANITIZE AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
+# gate, like actor-arena-poison's; the per-thread count of the second is Linux's. MSVC's Debug runtime replaces it
+# too (the CRT debug heap and iterator debugging: 37 500 faults a warm engine against 200 in Release), so the first
+# is not registered there either.
+if(NOT QB_SANITIZE AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (WIN32 AND NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))))
     qb_add_test(MODULE qb-core TIER system NAME engine-restart-faults SOURCES engine/engine-restart-faults.cpp DEPENDS ${PROJECT_NAME})
 endif()
 if(NOT QB_SANITIZE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
