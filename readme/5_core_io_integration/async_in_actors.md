@@ -291,7 +291,10 @@ Each of these is a *delay owned by an actor*, so each is a `spawn` + `co_await c
 - **Yielding between steps.** Split a long computation into chunks and sleep between them so the loop can service other actors. Use a strictly positive delay — a zero delay yields nothing. (`co_await ctx.cancellation_point()` is the cheaper way to yield inside one coroutine's loop.)
 - **Periodic work.** The tick handler re-arms the next sleep. For strictly every-iteration work, prefer `qb::ICallback`.
 
-Reach for a bare `qb::io::async::callback(func, delay)` only for work that must deliberately outlive the actor that scheduled it — that is the one job the loop-owned timer is right for.
+Use a bare `qb::io::async::callback(func, delay)` only with a **positive** delay and a fast,
+non-blocking closure that captures nothing the actor owns. The timer is not cancelled when the
+actor dies, but it can fire afterwards only while another actor keeps the **same core** running;
+it does not keep that core alive itself. <!-- src: qb/src/qb/io/async/io.h:392-404; qb/src/qb/core/VirtualCore.cpp:1022-1024 -->
 
 ## `scoped_callback` — when you need the handle back
 
