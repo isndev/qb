@@ -101,37 +101,41 @@ struct Message {
 
 ### Parsing: `ChatProtocol<IO_>`
 
-`ChatProtocol` derives from `qb::io::async::AProtocol<IO_>` and implements the three pure-virtual members the framework calls (`getMessageSize`, `onMessage`, `reset`), plus the `using message = Message;` alias the I/O layer expects.
+`ChatProtocol` derives from `qb::io::async::AProtocol<IO_>` and implements the three pure-virtual members the framework calls (`getMessageSize`, `onMessage`, `reset`), plus the `using message = Message;` alias the I/O layer expects. The framer keeps no partial state: each inspection copies the header into a local value.
 
 The framework drives parsing in two phases. After each read it calls `getMessageSize()`; the protocol inspects the input buffer (`this->_io.in()`) and returns either `0` ("need more bytes") or the total size of one complete message. When a non-zero size is returned and that many bytes are buffered, the framework calls `onMessage(size)`, which reconstructs the `Message` and dispatches it to the owning I/O object via `this->_io.on(msg)`.
 
 ```cpp
 // src: examples/05-services/01-tcp-chat/shared/Protocol.h
+static constexpr std::size_t MAX_PAYLOAD_SIZE = 64 * 1024;
+
 std::size_t getMessageSize() noexcept override {
     auto& buffer = this->_io.in();
-    if (buffer.empty()) return 0;
+    if (buffer.size() < HEADER_SIZE)
+        return qb::io::async::IProtocol::kNoMessage;
 
-    if (_reading_header) {
-        if (buffer.size() < HEADER_SIZE) return 0;           // header not complete
-
-        std::memcpy(&_header, buffer.cbegin(), HEADER_SIZE);
-        if (_header.magic != PROTOCOL_MAGIC ||
-            _header.version != PROTOCOL_VERSION) {
-            reset();                                          // bad frame: resynchronize
-            return 0;
-        }
-
-        _reading_header = false;
-        _payload.resize(_header.length);
-        return HEADER_SIZE + _header.length;
+    MessageHeader header{};
+    std::memcpy(&header, buffer.cbegin(), HEADER_SIZE);
+    if (header.magic != PROTOCOL_MAGIC || header.version != PROTOCOL_VERSION) {
+        this->not_ok();
+        return qb::io::async::IProtocol::kNoMessage;
     }
-    return HEADER_SIZE + _header.length;
+
+    const auto max_message_size = this->_io.max_message_size();
+    if (header.length > MAX_PAYLOAD_SIZE || max_message_size < HEADER_SIZE ||
+        header.length > max_message_size - HEADER_SIZE) {
+        this->not_ok();
+        return qb::io::async::IProtocol::kNoMessage;
+    }
+
+    const auto total_size = HEADER_SIZE + static_cast<std::size_t>(header.length);
+    return buffer.size() < total_size ? qb::io::async::IProtocol::kNoMessage : total_size;
 }
 ```
 
-Returning `0` is the framework's sentinel for "incomplete"; it leaves the buffered bytes untouched and retries on the next read. `onMessage()` copies the payload out, builds a `Message`, hands it to `this->_io.on(msg)`, and sets `_reading_header = true` for the next frame.
+`IProtocol::kNoMessage` (`0`) means that no complete frame is available yet. A partial header and a valid header whose body is still fragmented both leave the input bytes untouched. The parser admits a length only when it fits both the 64 KiB application ceiling and the I/O object's `max_message_size()`; subtraction after the `max_message_size < HEADER_SIZE` check avoids unsigned underflow. Invalid headers and oversized frames call `not_ok()`, making the framing error terminal. Once the full frame is present, `onMessage()` rereads the header, constructs the payload directly from the admitted buffer range, and dispatches the `Message`; `reset()` is a no-op because there is no cached parse state.
 
-> **Resynchronization caveat.** On a bad magic or version, `reset()` clears the parse state but does not discard bytes from the input buffer. Because `getMessageSize()` then returns `0`, the same malformed bytes are re-examined on the next read and the connection cannot recover. This is acceptable for an example over a trusted protocol; a production parser should consume or close the stream on a framing error. See [Custom protocols](../../3_qb_io/protocols.md) for the framing contract.
+The ceiling prevents an allocation from the advertised length during `getMessageSize()`. `onMessage() noexcept` still constructs a `std::string` and dispatches to the handler; memory exhaustion or a throwing handler can terminate the process.
 
 ### Serialization: a `pipe<char>::put<chat::Message>` specialization
 
@@ -178,7 +182,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > <!-- src: qb/src/qb/core/Actor.h:1074-1083 -->
 > It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
 > (`examples/05-services/01-tcp-chat/server/main.cpp:63`, `:69`), and `ChatRoomActor::sendToSession()` does
-> `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:153`) — so
+> `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:161`) — so
 > every targeted delivery is a cross-core hop, and short payloads such as `"Welcome Bob"` are the
 > common case. Replayed on both standard libraries, the by-value shape reads `self-referential: YES`
 > and aborts with `munmap_chunk(): invalid pointer` on libstdc++ while surviving untouched on
@@ -573,7 +577,7 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 - **No `Protocol::end` here.** Length-prefixed framing means `*this << msg;` sends a complete message. A trailing `<< Protocol::end` belongs to delimiter-based protocols, not this one.
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
 - **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
-- **Bad-frame handling is minimal.** `ChatProtocol::reset()` does not drain the buffer, so a malformed header wedges the parser. Harden framing before reuse.
+- **Bad frames are terminal.** `ChatProtocol` calls `not_ok()` for a bad magic/version or a payload beyond either the 64 KiB application ceiling or the I/O limit. It never allocates from an untrusted announced length while the body is incomplete.
 - **A `this`-capturing `qb::io::async::callback(f, delay)` is a dangling timer, and an `is_alive()` guard does not save it.** The timer is owned by the listener, not by the actor, so it fires after `~Actor()`; the guard is a member read, which makes the guard itself the use-after-free. This example's reconnect path used to have that shape and no longer does — it waits with `spawn(...)` + `co_await ctx.sleep(d)` and wakes the actor with a `ReconnectTickEvent`. Where you want a handle rather than a coroutine, hold a `qb::io::async::scoped_callback` as a member. See [Reconnection](#client-walkthrough).
 - **Never put a bare `std::string` in an event.** Events are relocated with `memcpy` and the source destructor never runs, so a payload member may hold no pointer into its own storage — which a short `std::string` does on libstdc++. `SendMessageEvent` used to carry its `chat::Message` (and therefore that string) by value, across a core boundary, on every delivered line; it now carries a `std::shared_ptr<const chat::Message>`. Use `qb::string<N>` for bounded text or put the data on the heap behind a `std::shared_ptr`, as every other event on both sides of this example does. And note the second half of the rule: boxing makes the *event* relocatable, not the *pointee* owned — do not mutate a payload after publishing it to another core.
 - **Timeouts are `qb::duration` now, not `double`.** `qb::io::async::tcp::connect()` takes a `qb::duration`; `qb::io::async::callback()` and `ctx.sleep()` take any `std::chrono::duration`. The checked-in client uses chrono constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `std::chrono::seconds(5)`), passing a `std::chrono::duration_cast<qb::duration>` of each. New code should likewise pass a chrono literal such as `std::chrono::seconds(5)`; a bare `double` does not convert to `qb::duration`. See [Async I/O inside actors](../async_in_actors.md). <!-- src: qb/src/qb/system/time.h:93 -->

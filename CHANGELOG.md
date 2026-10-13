@@ -536,6 +536,10 @@ policy.
 
 ### Fixed
 
+- **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
+  Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
+  before allocating, and close on protocol errors. Their guide snippets match that behavior
+  and state that the bounded `onMessage() noexcept` can still terminate on memory exhaustion.
 - **`qb-docs` now generates its published HTML without an incomplete LaTeX side output (Huly QB-1022).**
   The unused PDF path required `mmdc` and `epstopdf`, emitted Mermaid errors, and still returned success;
   the obsolete `DOT_MULTI_TARGETS` setting is removed.

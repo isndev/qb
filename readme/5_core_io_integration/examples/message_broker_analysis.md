@@ -93,10 +93,8 @@ struct Message {
 // src: examples/05-services/02-pubsub-broker/shared/Protocol.h
 template <typename IO_>
 class BrokerProtocol : public qb::io::async::AProtocol<IO_> {
-    static constexpr size_t HEADER_SIZE = sizeof(MessageHeader);
-    bool            _reading_header = true;
-    MessageHeader   _header{};
-    std::vector<char> _payload;
+    static constexpr std::size_t HEADER_SIZE      = sizeof(MessageHeader);
+    static constexpr std::size_t MAX_PAYLOAD_SIZE = 64 * 1024;
 
 public:
     using message = Message;  // required by the framework
@@ -106,45 +104,46 @@ public:
 
     std::size_t getMessageSize() noexcept override {
         auto &buffer = this->_io.in();
-        if (buffer.empty()) return 0;
+        if (buffer.size() < HEADER_SIZE)
+            return qb::io::async::IProtocol::kNoMessage;
 
-        if (_reading_header) {
-            if (buffer.size() < HEADER_SIZE) return 0;           // wait for the header
-            std::memcpy(&_header, buffer.cbegin(), HEADER_SIZE);
-
-            if (_header.magic != PROTOCOL_MAGIC ||
-                _header.version != PROTOCOL_VERSION) {
-                reset();                                          // resynchronize on bad header
-                return 0;
-            }
-            _reading_header = false;
-            _payload.resize(_header.length);
-            return HEADER_SIZE + _header.length;
+        MessageHeader header{};
+        std::memcpy(&header, buffer.cbegin(), HEADER_SIZE);
+        if (header.magic != PROTOCOL_MAGIC || header.version != PROTOCOL_VERSION) {
+            this->not_ok();
+            return qb::io::async::IProtocol::kNoMessage;
         }
-        return HEADER_SIZE + _header.length;
+
+        const auto max_message_size = this->_io.max_message_size();
+        if (header.length > MAX_PAYLOAD_SIZE || max_message_size < HEADER_SIZE ||
+            header.length > max_message_size - HEADER_SIZE) {
+            this->not_ok();
+            return qb::io::async::IProtocol::kNoMessage;
+        }
+
+        const auto total_size = HEADER_SIZE + static_cast<std::size_t>(header.length);
+        return buffer.size() < total_size ? qb::io::async::IProtocol::kNoMessage : total_size;
     }
 
-    void onMessage(std::size_t /*size*/) noexcept override {
+    void onMessage(std::size_t size) noexcept override {
         auto &buffer = this->_io.in();
-        Message msg;
-        msg.type = static_cast<MessageType>(_header.type);
-        if (_header.length > 0)
-            msg.payload.assign(buffer.cbegin() + HEADER_SIZE, _header.length);
+        MessageHeader header{};
+        std::memcpy(&header, buffer.cbegin(), HEADER_SIZE);
+        Message msg{static_cast<MessageType>(header.type),
+                    std::string(buffer.cbegin() + HEADER_SIZE, buffer.cbegin() + size)};
 
         this->_io.on(std::move(msg));   // dispatch to the owning I/O component
-        _reading_header = true;         // ready for the next frame
     }
 
-    void reset() noexcept override {
-        _reading_header = true;
-        _payload.clear();
-    }
+    void reset() noexcept override {}
 };
 ```
 
-`onMessage()` constructs a `broker::Message` and hands it to the owning component with `this->_io.on(std::move(msg))`. The `IO_` type — `BrokerSession` on the server, `ClientActor` on the client — supplies a matching `on(broker::Message)` overload.
+The stateless inspection accepts a frame only after its complete body is buffered and its declared payload fits both the 64 KiB application ceiling and `IO_::max_message_size()`. Invalid or oversized headers call `not_ok()` and terminate the protocol; `reset()` therefore has no partial state to clear. Only after admission does `onMessage()` construct a `broker::Message` directly from the buffered payload and hand it to the owning component with `this->_io.on(std::move(msg))`. The `IO_` type — `BrokerSession` on the server, `ClientActor` on the client — supplies a matching `on(broker::Message)` overload.
 
-> **Pitfall — `getMessageSize()` must be a pure query.** The base-protocol contract expects `getMessageSize()` to return the next complete message size (or `0`) without side effects, because the framework may call it more than once before a message completes. `BrokerProtocol` satisfies this: it only mutates `_reading_header`/`_payload` once the full header is present, and returns the cached total on subsequent calls. Performing I/O or consuming the buffer here would corrupt framing.
+The ceiling removes early allocation from `getMessageSize()`. `onMessage() noexcept` still allocates the payload string and calls the handler; memory exhaustion or a throwing handler can terminate the process.
+
+> **Pitfall — `getMessageSize()` is an inspection.** The framework may call it repeatedly while a frame is fragmented. `BrokerProtocol` does not consume bytes or cache partial parse state; the only mutation is the terminal `not_ok()` on invalid input. Construct the payload in `onMessage()` after the complete frame has passed both size limits.
 
 ### Serialization
 
@@ -621,7 +620,7 @@ Subscribe two clients to `news`, publish from a third, and both subscribers rece
 - **The fan-out shares payloads, not socket writes.** Sharing the `MessageContainer` removes per-subscriber heap churn inside the broker. Each subscriber still incurs one serialization and one socket write in `ServerActor`. Do not expect the optimization to reduce per-client network work.
 - **The timeout is 600 s, not 120 s.** The source comment is wrong; `setTimeout(std::chrono::seconds(600))` arms a 600-second inactivity window. Tune it for your traffic; idle subscribers that never publish will otherwise be disconnected.
 - **Prefer chrono literals over `double` deadlines.** The checked-in client stores `static constexpr double` constants (`CONNECT_TIMEOUT`, `RECONNECT_DELAY`, both `5.0`) and adapts them at the call site — a `duration_cast<qb::duration>` of a `std::chrono::duration<double>(...)`, for both `qb::io::async::tcp::connect()` and the reconnect coroutine's `ctx.sleep()`. That compiles, but a bare `double` does *not* convert to `qb::duration` on its own. For new code, pass a chrono literal such as `std::chrono::seconds(5)` directly and skip the wrappers. See [Async I/O inside actors](../async_in_actors.md).
-- **`getMessageSize()` stays side-effect-free.** When you adapt this protocol, keep `getMessageSize()` a pure query and confine consumption to `onMessage()`; the framework calls the former repeatedly while a frame is still arriving. See [Custom protocols](../../3_qb_io/protocols.md).
+- **`getMessageSize()` stays stateless on valid input.** When you adapt this protocol, keep inspection repeatable while a frame is fragmented, reject invalid lengths before allocating, and confine payload construction to `onMessage()`. See [Custom protocols](../../3_qb_io/protocols.md).
 
 ## See also
 

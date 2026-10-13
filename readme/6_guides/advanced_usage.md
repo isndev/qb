@@ -32,7 +32,6 @@ The example below frames an 8-byte header (magic, version, type, payload length)
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <vector>
 
 namespace chat {
 
@@ -56,10 +55,8 @@ struct Message {              // the application-level type
 // Inbound framing: subclass AProtocol<IO_>.
 template <typename IO_>
 class ChatProtocol : public qb::io::async::AProtocol<IO_> {
-    static constexpr std::size_t HEADER_SIZE = sizeof(MessageHeader);
-    bool              _reading_header = true;
-    MessageHeader     _header{};
-    std::vector<char> _payload;
+    static constexpr std::size_t HEADER_SIZE      = sizeof(MessageHeader);
+    static constexpr std::size_t MAX_PAYLOAD_SIZE = 64 * 1024;
 
 public:
     using message = Message;  // type alias the I/O component reads back
@@ -70,42 +67,44 @@ public:
     // Return the size of the next complete message, or 0 if more data is needed.
     std::size_t getMessageSize() noexcept override {
         auto &buffer = this->_io.in();
-        if (buffer.empty())
-            return 0;
+        if (buffer.size() < HEADER_SIZE)
+            return qb::io::async::IProtocol::kNoMessage;
 
-        if (_reading_header) {
-            if (buffer.size() < HEADER_SIZE)
-                return 0;                       // header not fully buffered yet
-            std::memcpy(&_header, buffer.cbegin(), HEADER_SIZE);
-            if (_header.magic != PROTOCOL_MAGIC || _header.version != PROTOCOL_VERSION) {
-                reset();                        // unrecognized stream; resynchronize
-                return 0;
-            }
-            _reading_header = false;
-            _payload.resize(_header.length);
+        MessageHeader header{};
+        std::memcpy(&header, buffer.cbegin(), HEADER_SIZE);
+        if (header.magic != PROTOCOL_MAGIC || header.version != PROTOCOL_VERSION) {
+            this->not_ok();
+            return qb::io::async::IProtocol::kNoMessage;
         }
-        return HEADER_SIZE + _header.length;    // wait until header + payload buffered
+
+        const auto max_message_size = this->_io.max_message_size();
+        if (header.length > MAX_PAYLOAD_SIZE || max_message_size < HEADER_SIZE ||
+            header.length > max_message_size - HEADER_SIZE) {
+            this->not_ok();
+            return qb::io::async::IProtocol::kNoMessage;
+        }
+
+        const auto total_size = HEADER_SIZE + static_cast<std::size_t>(header.length);
+        return buffer.size() < total_size ? qb::io::async::IProtocol::kNoMessage : total_size;
     }
 
     // Called once a full message is buffered; reconstruct and dispatch it.
-    void onMessage(std::size_t) noexcept override {
+    void onMessage(std::size_t size) noexcept override {
         auto &buffer = this->_io.in();
-        Message msg;
-        msg.type = static_cast<MessageType>(_header.type);
-        if (_header.length > 0)
-            msg.payload.assign(buffer.cbegin() + HEADER_SIZE, _header.length);
+        MessageHeader header{};
+        std::memcpy(&header, buffer.cbegin(), HEADER_SIZE);
+        Message msg{static_cast<MessageType>(header.type),
+                    std::string(buffer.cbegin() + HEADER_SIZE, buffer.cbegin() + size)};
         this->_io.on(msg);                      // hand the message to the I/O component
-        _reading_header = true;                 // ready for the next frame
     }
 
-    void reset() noexcept override {
-        _reading_header = true;
-        _payload.clear();
-    }
+    void reset() noexcept override {}           // no cached partial state
 };
 
 } // namespace chat
 ```
+
+This bounds the length before allocation and waits for the complete frame, but it does not make `onMessage() noexcept` resilient to memory exhaustion or a throwing handler: constructing the payload string and dispatching can still terminate the process.
 
 The outbound half is a single specialization in a `.cpp`:
 
@@ -154,7 +153,7 @@ Once attached, the parsed `chat::Message` arrives at `on(const chat::Message&)`,
 
 **Pitfalls.**
 
-- `getMessageSize()` must be a pure query that returns the size *including* any delimiter (or `0`); the base text protocols keep a resumable scan offset so re-invocation does not rescan from the start. The terminator-based templates in `qb/io/protocol/base.h` provide `shiftSize()` to convert that total back to the payload length.
+- `getMessageSize()` must leave valid fragmented input untouched and return the full frame size only when all bytes are buffered. Validate the header and both the application and I/O size ceilings before payload construction. On an invalid header or length, call `not_ok()`; do not try to resynchronize by returning `0` over the same bytes.
 - `onMessage()` may call `switch_protocol()` or `clear_protocols()` (for example, an HTTP-to-WebSocket upgrade). The I/O component snapshots the old protocol's `should_flush()` policy *before* invoking `onMessage()`, because the old protocol may be deleted during the call. If you switch protocols inside `onMessage()`, do not touch `this->_io.in()` afterward through the old protocol's state.
 - On an unrecoverable framing error, signal `this->not_ok()` (inherited from `AProtocol`) so the I/O component closes the connection; returning `0` forever silently stalls the stream instead.
 
