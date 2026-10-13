@@ -203,8 +203,12 @@
  *
  * int main() {
  *     qb::io::async::init();
- *     qb::io::async::coro_scheduler().spawn(fetch_data());
+ *     int answer = 0;
+ *     qb::io::async::coro_scheduler().spawn([&answer]() -> qb::io::async::task<void> {
+ *         answer = co_await fetch_data();
+ *     });
  *     qb::io::async::run();
+ *     return answer == 42 ? 0 : 1;
  * }
  * @endcode
  *

@@ -121,7 +121,7 @@ task<void> caller() {
 
 ### `shared_task<T>` — one computation, many awaiters
 
-`shared_task<T>` (`coroutine/shared_task.h`) is a copyable handle to a single coroutine result. The first `co_await` runs the computation; later awaits — from any number of coroutines — observe the same result without re-running it.
+`shared_task<T>` (`coroutine/shared_task.h`) is a copyable handle to a single coroutine result. `make_shared_task` immediately schedules a runner on the current coroutine scheduler; execution begins when that ready queue is drained, even if nobody awaits the handle. Any number of later awaits observe the same result without re-running it. Keep a plain `task<T>` when work must remain lazy until it is awaited.
 
 ```cpp
 // src: derived from qb/src/qb/io/async/coroutine/shared_task.h
@@ -133,7 +133,7 @@ task<int> compute_value() { co_await sleep(50ms); co_return 42; }
 
 task<void> fan_out() {
     shared_task<int> shared = make_shared_task(compute_value());
-    int a = co_await shared;        // triggers execution
+    int a = co_await shared;        // observes the scheduled computation
     int b = co_await shared;        // reuses the cached result, no extra work
     // a == b == 42
 }
@@ -549,8 +549,9 @@ What `close()` does to each parked party is worth a table of its own, because th
 
 ```cpp
 auto res = co_await select(ch_int, ch_string);   // select_result
-if (res.index == 0)      use(res.get<int>());
-else if (!res.closed)    use(res.get<std::string>());
+if (res.closed)          handle_closed_channel(res.index);
+else if (res.index == 0) use(res.get<int>());
+else                     use(res.get<std::string>());
 ```
 
 `select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1100-1124`).

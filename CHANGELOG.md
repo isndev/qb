@@ -7,6 +7,13 @@ policy.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Coroutine documentation now matches scheduling, detached-result and channel-close contracts (Huly QB-307,
+  QB-424, QB-447, QB-885).** The scatter/gather example starts lazy tasks with `when_all`, the Doxygen quick start
+  consumes a `task<int>` inside a spawned `task<void>` wrapper, `shared_task` is described as scheduled by its
+  factory, and the `select` example checks `closed` before casting its empty value.
+
 ### Added
 
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
