@@ -400,6 +400,62 @@ def strong_shaped(tok: str) -> bool:
 class Index:
     """Identifier + file index for THIS project's own tree."""
 
+    @staticmethod
+    def code_only(source: str) -> str:
+        """Blank C/C++ comments and literals before collecting public API names.
+
+        Keep offsets irrelevant to the identifier census; raw strings and escaped
+        quotes matter because a retired API name inside either is not a declaration.
+        """
+        out = []
+        i = 0
+        n = len(source)
+        while i < n:
+            if source.startswith("//", i):
+                end = source.find("\n", i + 2)
+                end = n if end < 0 else end
+                out.append(" " * (end - i))
+                i = end
+            elif source.startswith("/*", i):
+                end = source.find("*/", i + 2)
+                end = n if end < 0 else end + 2
+                out.append(" " * (end - i))
+                i = end
+            elif source.startswith('R"', i):
+                opening = source.find("(", i + 2)
+                delimiter = source[i + 2:opening] if opening >= 0 else ""
+                if opening >= 0 and len(delimiter) <= 16 and not re.search(r'[\s\\()]', delimiter):
+                    closing = ")" + delimiter + '"'
+                    end = source.find(closing, opening + 1)
+                    if end >= 0:
+                        end += len(closing)
+                        out.append(" " * (end - i))
+                        i = end
+                        continue
+                out.append(source[i])
+                i += 1
+            elif source[i] in ('"', "'") and not (
+                source[i] == "'" and i > 0 and i + 1 < n
+                and source[i - 1].isdigit() and source[i + 1].isalnum()
+            ):
+                quote = source[i]
+                end = i + 1
+                while end < n:
+                    if source[end] == "\\":
+                        end += 2
+                    elif source[end] == quote:
+                        end += 1
+                        break
+                    else:
+                        end += 1
+                end = min(end, n)
+                out.append(" " * (end - i))
+                i = end
+            else:
+                out.append(source[i])
+                i += 1
+        return "".join(out)
+
     def __init__(self):
         self.idents = set()
         self.by_base = {}
@@ -416,7 +472,10 @@ class Index:
                     continue
                 try:
                     with open(p, errors="ignore", encoding="utf-8") as fh:
-                        self.idents.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", fh.read()))
+                        source = fh.read()
+                        if fn.endswith((".h", ".hpp", ".hh", ".c", ".cpp", ".cc", ".cxx")):
+                            source = self.code_only(source)
+                        self.idents.update(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", source))
                 except OSError:
                     pass
         self._lines = {}
@@ -758,8 +817,8 @@ def check_doc(path, idx, tol, max_occ, want_ver, ver_src,
                     line_confirmed = True
                 else:
                     misses.append((msg, f"{rel}\t{spec}:{lo}-{hi}"))
-            if line_confirmed:
-                break
+            # Continue: a later citation may be out of bounds even when this one
+            # confirms the line's subject.
 
         if not line_checked:
             stats["cite_skip_no_anchor"] += 1

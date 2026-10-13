@@ -527,6 +527,9 @@ policy.
 
 ### Fixed
 
+- **Shipped API documentation guard ignores C++ comments and literals (Huly QB-561, QB-562).**
+  A retired name left only in a comment cannot satisfy a public API claim, and every
+  citation on a line is checked even when an earlier one matches.
 - **Native QUIC batches read-triggered packet generation (Huly QB-988).**
   The endpoint's existing packet drain generates pending transport output after its UDP receive batch,
   avoiding an additional writer pass after every received datagram. `wants_write()` keeps handshake
