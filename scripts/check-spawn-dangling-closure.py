@@ -107,9 +107,9 @@ def find_sites(path: str):
                     "overload owns the closure.",
                 ))
 
-    if "task<" in raw:
+    if re.search(r"\btask\s*<", raw):
         for m in re.finditer(
-            r"\[([^\]]+)\]\s*\([^)]*\)\s*(?:mutable\s*)?->\s*task\s*<[^>]+>\s*\{",
+            r"\[([^\]]+)\]\s*\([^)]*\)\s*(?:mutable\s*)?->\s*(?:::)?(?:[A-Za-z_]\w*\s*::\s*)*task\s*<[^>]+>\s*\{",
             src,
         ):
             depth, i = 1, m.end()

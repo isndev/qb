@@ -383,6 +383,10 @@ def analyse(path: str):
                         pass                       # explicit INSTANTIATION -- COMDAT/weak, measured
                     elif TEMPLATE_ANGLE.match(h) and not EMPTY_TEMPLATE.match(h):
                         pass                       # template declaration/definition
+                    elif (re.search(r"\bextern\b", spec)
+                          and (saw_braced_init or re.search(r"^[^(]*=", hop))
+                          and not re.search(r"\b(inline|constexpr)\b", spec)):
+                        kind = "VAR-DEF"           # initialized extern is a definition, even when const
                     elif SAFE_VAR.search(spec):
                         pass                       # inline / const / constexpr / static / extern / typedef / using
                     elif saw_class_body and not saw_braced_init and not re.search(r"\w", h.rsplit("}", 1)[-1]):

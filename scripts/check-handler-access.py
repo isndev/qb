@@ -95,7 +95,7 @@ FRIEND_ALL_RE = re.compile(r"template\s*<[^<>;{}]*>\s*friend\s+struct\s+(?:::)?h
 HEAD_RE = re.compile(r"\b(class|struct)\s+(?:alignas\s*\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:final\s*)?(?::[^{;()]*)?\{")
 ACCESS_RE = re.compile(r"(public|private|protected)\s*:(?!:)")
 HANDLER_RE = re.compile(r"\bon\s*\(")
-ANNOTATION_RE = re.compile(r"handler-access:\s*(\S.*)")
+ANNOTATION_RE = re.compile(r"//[^\n]*?handler-access:[ \t]*(\S[^\n]*)")
 # Words that end a type spelling without naming a parameter: `const Evt` has no parameter name.
 TYPE_WORDS = {"const", "volatile", "typename", "struct", "class", "unsigned", "signed", "long", "short"}
 
@@ -256,9 +256,18 @@ def walk(root: str):
                 yield os.path.join(dirpath, fn)
 
 
-def derive_gates(framework_roots: list[str]) -> dict[str, set[str]]:
-    """event name -> the probe categories its gates use, over every framework gate."""
-    gates: dict[str, set[str]] = {}
+def canonical_type(spelling: str) -> str:
+    """Keep namespace and reference identity; normalize spacing and top-level cv."""
+    spelling = re.sub(r"\btypename\b", "", spelling).strip()
+    match = re.fullmatch(r"(const\s+)?([\w:]+)(\s+const)?\s*(&&|&)?", spelling)
+    if match:
+        return ("const " if match[1] or match[3] else "") + match[2].removeprefix("::") + (match[4] or "")
+    return re.sub(r"\s+", "", spelling).removeprefix("::")
+
+
+def derive_gates(framework_roots: list[str]) -> dict[str, set[tuple[str, str]]]:
+    """event name -> exact event spellings and categories used by framework gates."""
+    gates: dict[str, set[tuple[str, str]]] = {}
     for root in framework_roots:
         for path in walk(root):
             if os.path.basename(path) == "type_traits.h":
@@ -279,11 +288,11 @@ def derive_gates(framework_roots: list[str]) -> dict[str, set[str]]:
                     continue
                 name, cat = event_key(args[first_event])
                 if name:
-                    gates.setdefault(name, set()).add(cat)
+                    gates.setdefault(name, set()).add((canonical_type(args[first_event]), cat))
     return gates
 
 
-def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
+def scan_file(path: str, gates: dict[str, set[tuple[str, str]]]) -> tuple[list[str], int]:
     try:
         raw = open(path, encoding="utf-8", errors="replace").read()
     except OSError:
@@ -326,8 +335,9 @@ def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
                     close = match_angle(src, fe.end() - 1)
                     if close > 0:
                         args = split_top_level(src[fe.end() : close - 1])
-                        if len(args) >= 3:
-                            friends.add(event_key(args[2])[0])
+                        if (len(args) == 3 and canonical_type(args[0]) == cls
+                                and canonical_type(args[1]) == "void"):
+                            friends.add(canonical_type(args[2]))
                         i = close
                         continue
                 hm = HANDLER_RE.match(src, i)
@@ -348,21 +358,22 @@ def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
             if name not in gates:
                 continue
             line = src.count("\n", 0, off) + 1
-            note = " ".join(raw_lines[max(0, line - 3) : line])
-            ann = ANNOTATION_RE.search(note)
-            if ann and ann.group(1).strip():
+            notes = raw_lines[max(0, line - 3) : line]
+            if any(ANNOTATION_RE.search(note) for note in notes):
                 continue
-            if acc != "public" and not befriends_all and name not in friends:
+            gate_types = {spelling for spelling, _ in gates[name]}
+            gate_categories = {category for _, category in gates[name]}
+            if acc != "public" and not befriends_all and not gate_types.issubset(friends):
                 findings.append(
                     f"{path}:{line}: [R1] {cls}::on({first.strip()}) is {acc} and {cls} does not befriend "
                     f"the detector, so the gate on `{name}` cannot see it and skips it silently. Add "
                     f"`friend struct has_method_on<{cls}, void, <the event type>>;` (befriending the base "
                     f"that dispatches is not enough), or `// handler-access: <reason>` if no gate reaches it."
                 )
-            if cat == "lvalue" and "lvalue" not in gates[name]:
+            if cat == "lvalue" and "lvalue" not in gate_categories:
                 findings.append(
                     f"{path}:{line}: [R2] {cls}::on({first.strip()}) takes a non-const lvalue reference; "
-                    f"the gates on `{name}` probe {', '.join(sorted(gates[name]))}, which it cannot bind, "
+                    f"the gates on `{name}` probe {', '.join(sorted(gate_categories))}, which it cannot bind, "
                     f"so it is never called. Take `&&` or `const &`."
                 )
     return findings, handlers
