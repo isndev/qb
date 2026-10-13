@@ -175,7 +175,8 @@ Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level
 *   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1529-1545`, `:2343-2346`)_
 *   `[T<E>] bool resolve_ask(E& e) const noexcept` — call from `on(E&)`; returns `true` if `e` matched a pending `qb::ask` of this actor and was delivered to the waiting coroutine, `false` if unsolicited.
 *   `[[nodiscard]] bool resolve_require(RequireEvent& e) const noexcept` — the discovery counterpart of `resolve_ask`. The auto-registered `void on(RequireEvent&) noexcept` already calls it, so `co_await qb::ping` / `qb::require` need no boilerplate; an override of that handler must call it first or those coroutines never resolve. Returns `false` for a legacy `correlation_id == 0` reply or one that is not ours.
-*   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1698-1700` vs `:1712-1715`).
+*   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1698-1700`).
+    The scoped `spawn()` path allocates its scope in `VirtualCore.h:1712-1715`.
 *   use: `registerEvent<MyEvent>(*this);` in `onInit`, then `void on(const MyEvent& e) { reply(...); }`.
 
 Tag: `struct no_default_events_t{}; inline constexpr no_default_events_t no_default_events{};` — pass to the protected ctor to opt out of default handlers.
@@ -727,7 +728,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 
 #### JSON (`namespace qb::protocol`)
 *   `[T] class json<IO_> : public base::byte_terminated<IO_, '\0'>` — NUL-terminated JSON (depth cap 512); delivers `message{size, data, nlohmann::json json}`.
-*   `[T] class json_packed<IO_> : public io::async::AProtocol<IO_>` — one MessagePack value then a NUL (`to_msgpack(v)` then `'\0'`); framed by the value's own lengths (`detail::msgpack_value_scanner`), so zero bytes inside the value are data; a byte other than the NUL right after the value, `0xc1`, or nesting past 512 → `not_ok()`. Keeps `delimiter_size`, `end`, `shiftSize()`; delivers `message{size, data, nlohmann::json json}` (`size` without the NUL).
+*   `[T] class json_packed<IO_> : public io::async::AProtocol<IO_>` — one MessagePack value then a NUL (for example, bytes from `nlohmann::json::to_msgpack` followed by `'\0'`); framed by the value's own lengths (`detail::msgpack_value_scanner`), so zero bytes inside the value are data; a byte other than the NUL right after the value, `0xc1`, or nesting past 512 → `not_ok()`. Keeps `delimiter_size`, `end`, `shiftSize()`; delivers `message{size, data, nlohmann::json json}` (`size` without the NUL).
 
 #### Connection protocols (`namespace qb::io::protocol`)
 *   `[T] class accept<_IO_, _Socket> : public async::AProtocol<_IO_>` — stateless; `message = _Socket`; moves the accepted socket into `_io.on()`.

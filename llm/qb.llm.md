@@ -568,7 +568,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
   core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
   wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
-  the other way; `setLatency(0)` never sleeps at all. _(Main.h:307, :324, :407-409; measured in the
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:307-324; measured in the
   qb-vs-others benchmark, TUNING guide §8.2)_
 - **A `setLatency` under a millisecond sleeps a millisecond and a half on Windows, and what it says
   on Linux.** Both parks — the condition variable of a core that owns no io watcher (MSVC's `wait_for`
@@ -694,7 +694,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:487, :921, :84, :96)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
+  `socket::set_insecure()` is declared at `ssl/socket.h:921`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -749,13 +750,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   per-member.** Including `crypto.h` in a no-SSL build compiles: `qb::crypto` still declares everything that
   needs no OpenSSL (the hex codec the pgsql `bytea` wire format depends on), and the OpenSSL-only members are
   removed from the class, so misuse fails at the **call site** (`no member named 'md5' in 'qb::crypto'`) rather
-  than at the `#include`. These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
+  than at the `#include`. _(crypto.h:33-44; compression.h:39-41)_ These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
   CMake options, when enabled, define the `QB_HAS_SSL`/`QB_HAS_COMPRESSION` macros. AEAD `decrypt`/`verify_token`
   return empty on auth failure — treat empty as rejection, never as "decrypted to nothing"; `decrypt_with_metadata`
   is the one that tells them apart (`nullopt` = rejected, an engaged empty vector = an empty plaintext). No length
   is handed to OpenSSL's `int` parameters unchecked: buffers past INT_MAX are processed in chunks (crypto.h:105-116),
-  an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973). _(crypto.h:33-44;
-  compression.h:39-41; crypto.h:666-668, :908-914)_
+  an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973).
+  The AEAD declarations above are in `crypto.h:666-668` and `crypto.h:908-914`.
 
 ## Build / integration
 
