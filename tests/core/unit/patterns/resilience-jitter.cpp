@@ -48,8 +48,14 @@ TEST(RetryJitter, ZeroJitterIsExactForEveryDraw) {
 TEST(RetryJitter, HalfJitterStaysInLowerHalfBandAndVaries) {
     const qb::duration d              = 100ms;
     bool               saw_below_full = false;
+    qb::duration       first{};
+    bool               varied = false;
     for (int i = 0; i < kDraws; ++i) {
         const auto r = qb::detail::apply_retry_jitter(d, 0.5);
+        if (i == 0)
+            first = r;
+        else if (r != first)
+            varied = true;
         ASSERT_GE(r.count(), d.count() / 2) << "draw below the [d*(1-0.5)] floor";
         ASSERT_LE(r.count(), d.count()) << "draw above the backoff ceiling d";
         if (r.count() < d.count())
@@ -57,19 +63,27 @@ TEST(RetryJitter, HalfJitterStaysInLowerHalfBandAndVaries) {
     }
     // Teeth: a "always returns d" stub would pass the band checks but never vary — this fails it.
     EXPECT_TRUE(saw_below_full) << "jitter must actually spread the value below d, not be constant";
+    EXPECT_TRUE(varied) << "positive jitter must not return one fixed interior value for every draw";
 }
 
 TEST(RetryJitter, FullJitterSpansZeroToDAndClampsAboveOne) {
     const qb::duration d              = 200ms;
     bool               saw_below_full = false;
+    qb::duration       first{};
+    bool               varied = false;
     for (int i = 0; i < kDraws; ++i) {
         const auto r = qb::detail::apply_retry_jitter(d, 1.0);
+        if (i == 0)
+            first = r;
+        else if (r != first)
+            varied = true;
         ASSERT_GE(r.count(), 0) << "full jitter must never produce a negative wait";
         ASSERT_LE(r.count(), d.count()) << "full jitter must never exceed d";
         if (r.count() < d.count())
             saw_below_full = true;
     }
     EXPECT_TRUE(saw_below_full) << "full jitter must reach below d (the whole band is reachable)";
+    EXPECT_TRUE(varied) << "positive jitter must not return one fixed interior value for every draw";
 
     // jitter > 1 is clamped to 1: the result stays in [0, d] — no negative, no out-of-band blow-up.
     for (int i = 0; i < kDraws; ++i) {
