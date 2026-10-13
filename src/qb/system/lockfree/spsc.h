@@ -648,7 +648,7 @@ static_assert(sizeof(ringbuffer<int>) == 8 * QB_LOCKFREE_CACHELINE_BYTES,
 static_assert(alignof(ringbuffer<int>) == 2 * QB_LOCKFREE_CACHELINE_BYTES,
               "spsc::internal::ringbuffer starts on a two-line block so the derived storage does too");
 
-template <typename T, std::size_t _MaxSize>
+template <typename T, std::size_t Slots>
 class closable_ringbuffer;
 
 } // namespace internal
@@ -889,9 +889,9 @@ namespace internal {
  *          how -- and is otherwise the fixed ring's; the consuming members are the fixed ring's. No other type tests
  *          the closed mark: a ring that cannot be closed carries none of this.
  */
-template <typename T, std::size_t _MaxSize>
-class closable_ringbuffer : public spsc::ringbuffer<T, _MaxSize> {
-    using base   = spsc::ringbuffer<T, _MaxSize>;
+template <typename T, std::size_t Slots>
+class closable_ringbuffer : public spsc::ringbuffer<T, Slots> {
+    using base   = spsc::ringbuffer<T, Slots>;
     using size_t = std::size_t;
 
 public:
