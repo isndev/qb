@@ -14,14 +14,13 @@
  * `drain_until` pumping the ready-queue + libev loop to completion. No actor engine.
  *
  * Correctness: each worker bumps a shared counter inside its critical section and a completion
- * atomic on exit; a one-shot out-of-loop probe asserts `counter == N` (every critical section ran —
+ * atomic on exit; every iteration checks `counter == N` outside timing (every critical section ran —
  * a wedged park/wake would leave a worker parked and the count short). The counter is also the
  * anti-elision sink. NB: the scheduler is cooperative and the critical sections contain no
  * `co_await`, so this is a completion guard, not a mutual-exclusion proof -- and, for the same reason,
- * every worker finds the primitive FREE: a free semaphore permit, mutex or rw-lock is taken without
- * suspending (the mutex and the rw-lock since 3.3, Huly QB-287), so the semaphore, mutex and rw-lock
- * cells price the uncontended path; only the latch cell parks. A contended cell has to hold the
- * primitive across a suspension.
+ * the ordinary workers find the primitive FREE. The contended semaphore cell instead holds its
+ * permit across an event suspension, observes all other workers parked, then times the release
+ * and handoffs. The uncontended semaphore, mutex and rw-lock cells retain their fast-path policy.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -54,6 +53,7 @@ using namespace std::chrono_literals;
 
 void
 reset_async_context() {
+    qb::io::async::listener::current.reset_coro_scheduler();
     qb::io::async::listener::current.clear();
     qb::io::async::init();
 }
@@ -81,6 +81,24 @@ semaphore_worker(semaphore *sem, std::uint64_t *counter, std::atomic<int> *done)
     sem->release();
     done->fetch_add(1, std::memory_order_relaxed);
     co_return;
+}
+
+task<void>
+semaphore_contender(semaphore *sem, std::uint64_t *counter, std::atomic<int> *done, std::size_t *enrolled) {
+    ++*enrolled;
+    co_await sem->acquire();
+    ++*counter;
+    sem->release();
+    done->fetch_add(1, std::memory_order_relaxed);
+}
+
+task<void>
+semaphore_holder(semaphore *sem, async_event *release, std::uint64_t *counter, std::atomic<int> *done) {
+    co_await sem->acquire();
+    co_await release->wait();
+    ++*counter;
+    sem->release();
+    done->fetch_add(1, std::memory_order_relaxed);
 }
 
 task<void>
@@ -155,8 +173,8 @@ BM_Sync_Semaphore_Uncontended(benchmark::State &state) {
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * static_cast<std::uint64_t>(n)));
 }
 
-// Semaphore, permits == 1: despite the name, NOT a park/wake path -- each worker runs to completion
-// before the next starts and finds the permit free (see the file header). Kept as the one-permit control.
+// One holder retains the permit until every other worker is parked. Staging is untimed;
+// the measured interval covers releasing that holder and the subsequent waiter handoffs.
 void
 BM_Sync_Semaphore_Contended(benchmark::State &state) {
     const auto n = static_cast<int>(state.range(0));
@@ -166,10 +184,20 @@ BM_Sync_Semaphore_Contended(benchmark::State &state) {
         semaphore        sem{1};
         std::uint64_t    counter = 0;
         std::atomic<int> done{0};
+        async_event      release;
+        std::size_t      enrolled = 0;
+        coro_scheduler().spawn(semaphore_holder(&sem, &release, &counter, &done));
+        for (int i = 1; i < n; ++i)
+            coro_scheduler().spawn(semaphore_contender(&sem, &counter, &done, &enrolled));
+        coro_scheduler().run_ready();
+        if (enrolled != static_cast<std::size_t>(n - 1) || coro_scheduler().has_ready() || sem.available_permits() != 0 || done.load() != 0
+            || release.waiters_count() != 1) {
+            state.SkipWithError("semaphore(contended): workers did not park behind the holder");
+            reset_async_context();
+            return;
+        }
         state.ResumeTiming();
-
-        for (int i = 0; i < n; ++i)
-            coro_scheduler().spawn(semaphore_worker(&sem, &counter, &done));
+        release.set();
         drain_until([&done, n] { return done.load(std::memory_order_relaxed) == n; });
 
         benchmark::DoNotOptimize(counter);

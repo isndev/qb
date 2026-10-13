@@ -132,9 +132,8 @@ def find_sites(path: str):
 
 
 def main() -> int:
-    roots = sys.argv[1:] or [
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ]
+    checkout = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    roots = sys.argv[1:] or [os.path.join(checkout, "src"), os.path.join(checkout, "tests")]
     failed = False
     for root in roots:
         files = []

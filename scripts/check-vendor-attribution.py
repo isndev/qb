@@ -125,17 +125,18 @@ def sources_of(unit: Path) -> list[Path]:
     return out
 
 
-def discover_units(root: Path) -> set[str]:
+def discover_units(root: Path, qb_only: bool = False) -> set[str]:
     """Vendor-shaped directories on disk, by convention."""
     seen: set[str] = set()
-    conventions = list((root / "qb/src/qb/vendor").glob("*"))
-    conventions += list((root / "qb/modules").glob("*"))
+    qb_root = root if qb_only else root / "qb"
+    conventions = list((qb_root / "src/qb/vendor").glob("*"))
+    conventions += list((qb_root / "modules").glob("*"))
     # The event loop lives outside vendor/ but is still a derived work. Without this line the
     # discovery half -- the half that caught Catch2 hiding inside stduuid -- would stop looking at
     # it entirely, and a second upstream dropped in beside it would be invisible. The MANIFEST
     # entry alone is not enough: that only proves what is DECLARED, never what APPEARED.
-    conventions.append(root / "qb/src/qb/ev")
-    for mod in sorted((root / "qbm").glob("*")):
+    conventions.append(qb_root / "src/qb/ev")
+    for mod in ([] if qb_only else sorted((root / "qbm").glob("*"))):
         conventions += list((mod / "not-qb").glob("*"))
     for d in conventions:
         if d.is_dir():
@@ -153,15 +154,22 @@ def discover_units(root: Path) -> set[str]:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[2]
-    if not (root / "qb").is_dir() or not (root / "qbm").is_dir():
-        print(f"error: expected the superproject root, got {root}", file=sys.stderr)
+    checkout = Path(__file__).resolve().parents[1]
+    parent = checkout.parent
+    default_root = parent if checkout.name == "qb" and (parent / "qb/src/qb").is_dir() and (parent / "qbm").is_dir() else checkout
+    root = Path(sys.argv[1]).resolve() if len(sys.argv) == 2 else default_root
+    qb_only = (root / "src/qb").is_dir()
+    if len(sys.argv) > 2 or (not qb_only and (not (root / "qb").is_dir() or not (root / "qbm").is_dir())):
+        print(f"error: expected a qb checkout or superproject root, got {root}", file=sys.stderr)
         return 2
+    manifest = ([dict(entry, path=entry["path"].removeprefix("qb/"), notices_in=".")
+                 for entry in MANIFEST if entry["path"].startswith("qb/")] if qb_only else MANIFEST)
+    detached_headers = [] if qb_only else DETACHED_PUBLIC_HEADERS
 
     errors: list[str] = []
     checked = 0
 
-    for entry in MANIFEST:
+    for entry in manifest:
         unit = root / entry["path"]
         rel = entry["path"]
         if not unit.is_dir():
@@ -217,7 +225,7 @@ def main() -> int:
                     f"(expected the string {entry['record_as']!r})")
 
     # detached public headers must carry the notice in-file
-    for rel in DETACHED_PUBLIC_HEADERS:
+    for rel in detached_headers:
         p = root / rel
         if not p.is_file():
             errors.append(f"{rel}: listed as a detached public header but not on disk")
@@ -229,8 +237,8 @@ def main() -> int:
                           f"copyright notice in the file itself")
 
     # 4 -- nothing vendored may go unrecorded
-    known = {m["path"] for m in MANIFEST}
-    for found in sorted(discover_units(root)):
+    known = {m["path"] for m in manifest}
+    for found in sorted(discover_units(root, qb_only)):
         if found not in known:
             errors.append(f"{found}: vendor-shaped directory not in MANIFEST "
                           f"(add it to {Path(__file__).name} and to THIRD-PARTY-NOTICES)")
