@@ -156,7 +156,8 @@
  *
  *     // when_all owns and starts every lazy task before waiting for the results.
  *     auto [a, b, c] = co_await when_all(worker(1), worker(2), worker(3));
- *     use(a, b, c);
+ *     if (a + b + c != 60)
+ *         throw std::runtime_error("unexpected aggregate");
  * }
  * @endcode
  *

@@ -149,6 +149,7 @@ registry, or as a member — never relocate them.
   A later delete observes that flag and falls back to global aligned delete, so it
   never touches a destroyed TLS freelist. `ScopedTimeout` itself has no separate
   object pool; its registered watcher uses the watcher pool.
+  (`src/qb/io/async/io.h:240-277,300-314`; `src/qb/io/async/listener.h:175-216,238-251`)
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /

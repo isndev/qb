@@ -94,9 +94,9 @@ The production hazard is the opt-out. `set_insecure()` clears verification (it i
 grep -rn "set_insecure" your_service/ qbm/
 ```
 
-Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. Supplying `nullptr` as the OpenSSL verification callback changes the mode while retaining any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
+Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. qb passes a null callback while setting that mode; by the OpenSSL `SSL_set_verify` contract, this retains any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:521-528 (init(SSL*)); qb/src/qb/io/tcp/ssl/socket.cpp:563,636,704 (client verification policy) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:638-646 (adoption), :705-723 (policy branches), :932-936 (connect-time application), :572-575 (null callback) -->
 
 ### Server contexts
 
