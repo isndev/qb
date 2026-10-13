@@ -389,6 +389,13 @@ def default_args() -> list[str]:
     ]
 
 
+def format_gates(gates: dict[str, set[tuple[str, str]]]) -> str:
+    """Render exact spelling and category without assuming gate entries are strings."""
+    return ", ".join(
+        f"{name}[{'/'.join(f'{spelling}:{category}' for spelling, category in sorted(entries))}]"
+        for name, entries in sorted(gates.items()))
+
+
 def main() -> int:
     argv = sys.argv[1:] or default_args()
     framework_roots: list[str] = []
@@ -433,7 +440,7 @@ def main() -> int:
         )
         return 2
     print(f"gated events ({len(gates)}, derived from the framework's has_on / has_method_on / has_own_on uses):")
-    print("  " + ", ".join(f"{k}[{'/'.join(sorted(v))}]" for k, v in sorted(gates.items())))
+    print("  " + format_gates(gates))
 
     findings: list[str] = []
     total_visited = 0

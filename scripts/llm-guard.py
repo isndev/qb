@@ -401,6 +401,23 @@ class Index:
     """Identifier + file index for THIS project's own tree."""
 
     @staticmethod
+    def digit_separator(source: str, offset: int) -> bool:
+        """Distinguish a C++ numeric separator from a character literal."""
+        if offset + 1 >= len(source):
+            return False
+        start = offset - 1
+        while start >= 0 and (source[start].isalnum() or source[start] == "'"):
+            start -= 1
+        token = source[start + 1:offset].replace("'", "")
+        next_char = source[offset + 1]
+        if token.startswith(("0x", "0X")):
+            hexdigits = "0123456789abcdefABCDEF"
+            return len(token) > 2 and all(ch in hexdigits for ch in token[2:]) and next_char in hexdigits
+        if token.startswith(("0b", "0B")):
+            return len(token) > 2 and all(ch in "01" for ch in token[2:]) and next_char in "01"
+        return bool(token) and token.isdecimal() and next_char.isdecimal()
+
+    @staticmethod
     def code_only(source: str) -> str:
         """Blank C/C++ comments and literals before collecting public API names.
 
@@ -434,10 +451,7 @@ class Index:
                         continue
                 out.append(source[i])
                 i += 1
-            elif source[i] in ('"', "'") and not (
-                source[i] == "'" and i > 0 and i + 1 < n
-                and source[i - 1].isdigit() and source[i + 1].isalnum()
-            ):
+            elif source[i] in ('"', "'") and not (source[i] == "'" and Index.digit_separator(source, i)):
                 quote = source[i]
                 end = i + 1
                 while end < n:
