@@ -196,15 +196,42 @@ struct FakeActor {
     on(TestDestroyEvent const &event) const {}
 };
 
+// The router ends the lifetime of disposable events. Keep storage, reconstruct
+// before the next route, and only destroy a lifetime still owned by the caller.
+template <typename Event, bool Clean>
+class routed_event_storage {
+    using value_type = std::remove_const_t<Event>;
+    alignas(value_type) unsigned char bytes[sizeof(value_type)];
+    value_type *value = new (bytes) value_type{};
+
+public:
+    ~routed_event_storage() {
+        if (value)
+            std::destroy_at(value);
+    }
+    template <typename Route>
+    void
+    route(Route &&route, ActorId destination = ActorId{}) {
+        if (!value)
+            value = new (bytes) value_type{};
+        value->dest   = destination;
+        auto *current = value;
+        if constexpr (Clean)
+            if (!current->is_alive())
+                value = nullptr;
+        route(*current);
+    }
+};
+
 template <typename _Event, bool _CleanEvent = true>
 void
 Test_SESH(std::size_t expected_count) {
-    _Event    event;
-    FakeActor actor(1);
+    routed_event_storage<_Event, _CleanEvent> event;
+    FakeActor                                 actor(1);
 
     _Event::_count = 0;
     for (std::size_t i = 0; i < 1024u; ++i) {
-        qb::router::sesh<_Event, FakeActor>(actor).template route<_CleanEvent>(event);
+        event.route([&](auto &current) { qb::router::sesh<_Event, FakeActor>(actor).template route<_CleanEvent>(current); });
     }
     EXPECT_EQ(_Event::_count, expected_count);
 }
@@ -219,10 +246,10 @@ TEST(EventRouting, SESH) {
 template <typename _Event, typename _Handler = void, bool _CleanEvent = true>
 void
 Test_SEMH(std::size_t expected_count) {
-    std::remove_const_t<_Event> event;
-    FakeActor                   actor1(1);
-    FakeActor                   actor2(2);
-    FakeActor                   actor3(3);
+    routed_event_storage<_Event, _CleanEvent> event;
+    FakeActor                                 actor1(1);
+    FakeActor                                 actor2(2);
+    FakeActor                                 actor3(3);
 
     qb::router::semh<_Event, _Handler> semhRouter;
 
@@ -234,11 +261,9 @@ Test_SEMH(std::size_t expected_count) {
     _Event::_count = 0;
     for (std::size_t i = 0; i < 1024u; ++i) {
         for (std::size_t j = 1; j < 4u; ++j) {
-            event.dest = ActorId(j);
-            semhRouter.template route<_CleanEvent>(event);
+            event.route([&](auto &current) { semhRouter.template route<_CleanEvent>(current); }, ActorId(j));
         }
-        event.dest = ActorId::broadcastId;
-        semhRouter.template route<_CleanEvent>(event);
+        event.route([&](auto &current) { semhRouter.template route<_CleanEvent>(current); }, ActorId::broadcastId);
     }
     EXPECT_EQ(_Event::_count, expected_count);
 }
@@ -257,8 +282,8 @@ TEST(EventRouting, SEMH) {
 template <typename _Event, bool _CleanEvent = true>
 void
 Test_MESH(std::size_t expected_count) {
-    std::remove_const_t<_Event> event;
-    FakeActor                   actor1(1);
+    routed_event_storage<_Event, _CleanEvent> event;
+    FakeActor                                 actor1(1);
 
     qb::router::mesh<RawEvent, FakeActor, _CleanEvent> meshRouter(actor1);
 
@@ -266,7 +291,7 @@ Test_MESH(std::size_t expected_count) {
 
     _Event::_count = 0;
     for (std::size_t i = 0; i < 1024u; ++i) {
-        meshRouter.route(event);
+        event.route([&](auto &current) { meshRouter.route(current); });
     }
     EXPECT_EQ(_Event::_count, expected_count);
 }
@@ -281,7 +306,7 @@ TEST(EventRouting, MESH) {
 template <typename _Event, bool _CleanEvent = true, typename _Handler = void>
 void
 Test_MEMH(std::size_t expected_count) {
-    std::remove_const_t<_Event>                       event;
+    routed_event_storage<_Event, _CleanEvent>         event;
     FakeActor                                         actor1(1);
     FakeActor                                         actor2(2);
     FakeActor                                         actor3(3);
@@ -303,11 +328,9 @@ Test_MEMH(std::size_t expected_count) {
     };
     for (std::size_t i = 0; i < 1024u; ++i) {
         for (std::size_t j = 1; j < 6u; ++j) {
-            event.dest = ActorId(j);
-            memhRouter.route(event, onError);
+            event.route([&](auto &current) { memhRouter.route(current, onError); }, ActorId(j));
         }
-        event.dest = ActorId::broadcastId;
-        memhRouter.route(event, onError);
+        event.route([&](auto &current) { memhRouter.route(current, onError); }, ActorId::broadcastId);
     }
     EXPECT_EQ(_Event::_count, expected_count);
 }
@@ -458,13 +481,14 @@ TEST(EventRouting, MemhDisposerMemoDoesNotCacheAMiss) {
 
     LateDisposeEvent::_count = 0;
     {
-        LateDisposeEvent late;
-        router.route(late, noop);
+        alignas(LateDisposeEvent) unsigned char storage[sizeof(LateDisposeEvent)];
+        auto                                   *late = new (storage) LateDisposeEvent{};
+        router.route(*late, noop);
         EXPECT_EQ(LateDisposeEvent::_count, 1u) << "the router did not pick up a disposer registered after its first lookup missed: a "
                                                    "negative result was memoised, so every event of this type leaks its payload for the "
                                                    "life of the process";
     }
-    EXPECT_EQ(LateDisposeEvent::_count, 2u) << "route() disposed the payload, then the scope destroyed the object";
+    EXPECT_EQ(LateDisposeEvent::_count, 1u) << "route() must end exactly one payload lifetime";
 }
 
 TEST(EventRouting, MemhDisposerMemoStaysCorrectAcrossRepeatedRoutes) {

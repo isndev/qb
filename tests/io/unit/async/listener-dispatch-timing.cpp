@@ -86,7 +86,7 @@ TEST(ListenerDispatchTiming, OffAgainASlowCallbackLeavesTheStatsAlone) {
         run_one_slow_callback(2ms);
         const auto before = listener::current.dispatch_timing();
         ASSERT_GE(before.count, 1u);
-        ASSERT_LT(before.max, 30ms);
+        ASSERT_GE(before.max, 2ms);
 
         listener::current.set_dispatch_timing(false); // libev's own dispatch again
         run_one_slow_callback(30ms);

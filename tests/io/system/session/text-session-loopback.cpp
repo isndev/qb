@@ -627,7 +627,7 @@ TEST(TextSessionProtocolSwitch, TextToBinary) {
         const auto got = read_exact(sock, reply, sizeof(reply));
         ASSERT_EQ(got, sizeof(reply)) << "short read of the echoed binary frame";
         const std::uint16_t got_len = ntohs(*reinterpret_cast<std::uint16_t *>(reply));
-        EXPECT_EQ(got_len, payload_len);
+        ASSERT_EQ(got_len, payload_len);
         EXPECT_EQ(std::string_view(reply + 2, got_len), payload);
 
         sock.disconnect();

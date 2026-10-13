@@ -28,6 +28,8 @@
 #include <qb/system/allocator/pipe.h>
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <cstddef>
 #include <cstring>
@@ -532,8 +534,11 @@ TEST(Compression, EmptyInputUncompressTerminates) {
     const bool done = finished.load(std::memory_order_acquire);
     if (done)
         worker.join();
-    else
-        worker.detach(); // it is spinning; let the process reap it at exit
+    else {
+        ADD_FAILURE() << "uncompress(data, 0) did not terminate; stopping this test process";
+        std::fflush(nullptr);
+        std::_Exit(EXIT_FAILURE); // a spinning worker must not outlive its borrowed state
+    }
 
     ASSERT_TRUE(done) << "uncompress(data, 0) never returned — the size == 0 guard is missing";
     EXPECT_EQ(completed.load(), 4) << "every empty-input uncompress shape must yield empty output";

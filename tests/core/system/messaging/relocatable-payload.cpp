@@ -57,9 +57,10 @@
  */
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <future>
 #include <gtest/gtest.h>
@@ -137,7 +138,12 @@ run(qb::CoreId sender_core, qb::CoreId receiver_core, std::chrono::seconds budge
         main.join();
         done->set_value();
     }).detach();
-    return future.wait_for(budget) == std::future_status::ready;
+    if (future.wait_for(budget) != std::future_status::ready) {
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        std::fflush(nullptr);
+        std::_Exit(EXIT_FAILURE);
+    }
+    return true;
 }
 
 } // namespace
@@ -271,7 +277,12 @@ run_engine(void (*body)(), std::chrono::seconds budget) {
         body();
         done->set_value();
     }).detach();
-    return future.wait_for(budget) == std::future_status::ready;
+    if (future.wait_for(budget) != std::future_status::ready) {
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        std::fflush(nullptr);
+        std::_Exit(EXIT_FAILURE);
+    }
+    return true;
 }
 
 struct SelfRefEvent : public qb::Event {

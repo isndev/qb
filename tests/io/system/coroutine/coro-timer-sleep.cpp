@@ -133,15 +133,16 @@ TEST_F(CoroutineTimerSleep, DestroyedTaskTimerNeverFires) {
     std::atomic<bool> long_completed{false};
     std::atomic<bool> short_completed{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     {
-        // This task is created but NOT spawned — its frame is destroyed at block exit, so its timer
-        // must never fire.
+        // Start the owned task and arm its timer before destroying its frame.
         auto long_task = [&]() -> task<void> {
             co_await sleep(200ms);
             long_completed = true;
         };
         auto dropped = long_task();
-        (void) dropped; // destroyed here
+        dropped.handle().resume();
+        EXPECT_FALSE(dropped.handle().done()); // suspended on the armed timer
 
         coro_scheduler().spawn([&]() -> task<void> {
             co_await sleep(10ms);
@@ -151,8 +152,8 @@ TEST_F(CoroutineTimerSleep, DestroyedTaskTimerNeverFires) {
 
     EXPECT_TRUE(qb::io::test::pump_until([&] { return short_completed.load(); })) << "short timer never fired";
     // Give the dropped task's (would-be) 200ms timer ample time to (not) fire.
-    // Never-true predicate → the pump runs the full 60ms and returns false (consume it).
-    EXPECT_FALSE(qb::io::test::pump_until([] { return false; }, 60ms));
+    // Never-true predicate → the pump runs the full 250ms and returns false (consume it).
+    EXPECT_FALSE(qb::io::test::pump_until([] { return false; }, 250ms));
     EXPECT_FALSE(long_completed.load()) << "a destroyed task's timer must not fire";
 }
 

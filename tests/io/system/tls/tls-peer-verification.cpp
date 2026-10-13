@@ -83,7 +83,9 @@ namespace {
 class self_signed_acceptor {
 public:
     self_signed_acceptor(qb::io::tcp::ssl::listener &listener, std::atomic<bool> &ready, std::atomic<bool> &stop)
-        : _thread([&listener, &ready, &stop] {
+        : _stop(stop)
+        , _thread([&listener, &ready, &stop] {
+            listener.set_nonblocking(true);
             ready = true;
             while (!stop.load()) {
                 qb::io::tcp::ssl::socket server_socket;
@@ -112,11 +114,13 @@ public:
     }
 
     ~self_signed_acceptor() {
+        _stop.store(true);
         join();
     }
 
 private:
-    std::thread _thread;
+    std::atomic<bool> &_stop;
+    std::thread        _thread;
 };
 
 // A certificate chain file: the leaf's PEM, then its issuer's -- the order a server's certificate file holds

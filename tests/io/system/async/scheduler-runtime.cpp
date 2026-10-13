@@ -128,8 +128,11 @@ TEST_F(SchedulerRuntime, ActiveCountIncludesSuspendedFrames) {
     cancellation_token token;
     std::atomic<bool>  cancelled{false};
     std::atomic<bool>  done{false};
+    bool               started = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([&]() -> task<void> {
+        started = true;
         try {
             co_await cancellable_sleep(5000ms, token); // park on a real timer frame
         } catch (const cancelled_error &) {
@@ -138,7 +141,7 @@ TEST_F(SchedulerRuntime, ActiveCountIncludesSuspendedFrames) {
         done = true;
     });
 
-    ASSERT_TRUE(qb::io::test::pump_until([&] { return coro_scheduler().active_count() >= 1; }))
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return started && !coro_scheduler().has_ready(); }))
         << "worker never parked / active_count never saw the suspended timer frame";
 
     const std::size_t count_while_parked = coro_scheduler().active_count();

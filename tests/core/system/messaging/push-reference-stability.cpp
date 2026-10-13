@@ -33,6 +33,8 @@
  */
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -232,7 +234,12 @@ run(Build build, std::chrono::seconds budget) {
         main.join();
         done->set_value();
     }).detach();
-    return future.wait_for(budget) == std::future_status::ready;
+    if (future.wait_for(budget) != std::future_status::ready) {
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        std::fflush(nullptr);
+        std::_Exit(EXIT_FAILURE);
+    }
+    return true;
 }
 
 } // namespace
@@ -293,8 +300,8 @@ TEST(PushReferenceStability, JumboAllocatedPushIsStable) {
 
     if (std::thread::hardware_concurrency() < 2u)
         GTEST_SKIP() << "requires-multicore for the cross-core half";
-    // 1023 buckets: `SharedCoreCommunication::MaxRingEvents`, the ring's width.
-    static constexpr std::size_t ring_max = 1023 * QB_LOCKFREE_EVENT_BUCKET_BYTES - sizeof(JumboEvent);
+    // The ring width follows the configured event bucket size.
+    static constexpr std::size_t ring_max = qb::detail::max_deliverable_buckets * QB_LOCKFREE_EVENT_BUCKET_BYTES - sizeof(JumboEvent);
     ASSERT_TRUE(run(
         [](qb::Main &main) {
             auto rcv = main.addActor<Receiver>(1, kBurst);

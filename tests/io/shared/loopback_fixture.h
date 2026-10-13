@@ -166,8 +166,9 @@ wait_acceptable_within(::socket_type listener_fd, std::chrono::milliseconds budg
 // The accepted socket is unaffected: `qb::io::socket::accept_n` sets every accepted
 // descriptor non-blocking regardless of the listener's own mode.
 // ---------------------------------------------------------------------------
+template <typename Listener, typename Socket>
 [[nodiscard]] inline bool
-accept_within(qb::io::tcp::listener &listener, qb::io::tcp::socket &out, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
+accept_within(Listener &listener, Socket &out, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
     listener.set_nonblocking(true);
     const auto deadline = std::chrono::steady_clock::now() + budget;
     for (;;) {
@@ -264,6 +265,7 @@ with_tcp_pair(Server &&server, Client &&client) {
         server(std::move(accepted));
     });
 
+    const thread_joiner joiner{server_thread};
     client(port);
     server_thread.join();
 }

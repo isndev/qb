@@ -42,6 +42,8 @@
  */
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
@@ -146,7 +148,12 @@ run_engine(std::chrono::seconds budget) {
         main.join();
         done->set_value();
     }).detach();
-    return future.wait_for(budget) == std::future_status::ready;
+    if (future.wait_for(budget) != std::future_status::ready) {
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        std::fflush(nullptr);
+        std::_Exit(EXIT_FAILURE);
+    }
+    return true;
 }
 
 } // namespace

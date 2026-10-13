@@ -610,6 +610,7 @@ TEST_F(ChannelAsync, SelectSlowPathFirstSenderWins) {
     select_result     result;
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([&]() -> task<void> {
         result = co_await select(ch_a, ch_b);
         done.store(true);

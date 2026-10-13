@@ -61,20 +61,13 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// Deadline-bounded blocking-mode-agnostic datagram receive: poll `read()` until a
+// Deadline-bounded blocking-mode-agnostic datagram receive: wait until a
 // datagram arrives or the deadline elapses. Returns the byte count (>0) or -1 on
 // timeout, so callers get a precise failure instead of a slept-out empty read.
 int
 receive_datagram(qb::io::udp::socket &socket, char *buffer, std::size_t len, qb::io::endpoint &peer, std::chrono::milliseconds timeout = 1s) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    do {
-        const int got = socket.read(buffer, len, peer);
-        if (got > 0) {
-            return got;
-        }
-        std::this_thread::sleep_for(2ms);
-    } while (std::chrono::steady_clock::now() < deadline);
-    return -1;
+    const int got = socket.read_timeout(buffer, len, peer, timeout);
+    return got > 0 ? got : -1;
 }
 
 bool

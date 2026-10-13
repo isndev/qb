@@ -97,6 +97,7 @@ public:
             int  n = 0, sum = 0;
             try {
                 while (auto chunk = co_await s.next()) {
+                    EXPECT_EQ(chunk->chunk, n * 10) << "stream chunk order";
                     ++n;
                     sum += chunk->chunk;
                 }

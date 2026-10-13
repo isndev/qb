@@ -72,10 +72,10 @@ BM_Resilience_CircuitBreaker_OpenFastFail(benchmark::State &state) {
         bool ok = breaker.allow(now); // still cooling down (now stays < opened+cooldown)
         if (!ok)
             ++rejected;
-        now += 1000; // 1 µs/op — far below the 10 s cooldown, so it stays open
+        // Keep the injected clock inside the cooldown for every iteration.
         benchmark::DoNotOptimize(ok);
     }
-    if (rejected == 0)
+    if (rejected != static_cast<std::uint64_t>(state.iterations()) || breaker.state() != qb::CircuitBreaker::State::open)
         state.SkipWithError("open breaker admitted calls during cooldown (fast-fail path not exercised)");
     state.SetItemsProcessed(state.iterations());
 }

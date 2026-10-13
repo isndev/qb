@@ -115,6 +115,7 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
     }
     if (!socket.handshake_complete()) {
         ADD_FAILURE() << "server handshake did not complete within the deadline";
+        socket.disconnect();
     }
 }
 
@@ -333,7 +334,7 @@ TEST(SSLSocketLoopback, LoopbackHandshakeExposesNegotiatedState) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         EXPECT_FALSE(server_socket.get_negotiated_cipher_suite().empty());
         EXPECT_FALSE(server_socket.get_negotiated_tls_version().empty());
@@ -488,7 +489,7 @@ TEST(SSLSocketLoopback, BlockingUriAndEndpointTimeoutConnectVariantsReachLoopbac
         server_ready = true;
         for (int i = 0; i < expected_connections; ++i) {
             qb::io::tcp::ssl::socket server_socket;
-            ASSERT_EQ(listener.accept(server_socket), 0);
+            ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
             drive_server_handshake(server_socket);
 
             char marker = 0;
@@ -561,7 +562,7 @@ TEST(SSLSocketLoopback, IPv6AndUnixConnectVariantsCompleteHandshake) {
 
         std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
-            ASSERT_EQ(listener.accept(server_socket), 0);
+            ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
             drive_server_handshake(server_socket);
             char marker = 0;
             if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
@@ -600,7 +601,7 @@ TEST(SSLSocketLoopback, IPv6AndUnixConnectVariantsCompleteHandshake) {
 
         std::thread       server_thread([&] {
             qb::io::tcp::ssl::socket server_socket;
-            ASSERT_EQ(listener.accept(server_socket), 0);
+            ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
             drive_server_handshake(server_socket);
             char marker = 0;
             if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
@@ -724,7 +725,7 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
     qb::io::test::teardown_rendezvous rv;
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
@@ -936,7 +937,7 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         // Keep the connection alive until the client has inspected the cert.
         char marker = 0;
@@ -1013,7 +1014,7 @@ TEST(SSLSocketLoopback, PostHandshakeAccessorsAndChannelBinding) {
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         char marker = 0;
         record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
@@ -1156,7 +1157,7 @@ TEST(SSLSocketLoopback, ConnectedFinalizerDrivesNonBlockingHandshake) {
     qb::io::test::teardown_rendezvous rv;
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
@@ -1245,7 +1246,7 @@ TEST(SSLSocketLoopback, BlockingTimedUriUnixLegCompletesHandshake) {
 
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         char marker = 0;
         if (!record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)))) {
@@ -1289,7 +1290,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
     qb::io::test::teardown_rendezvous rv;
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         rv.server_done(); // handshake complete — only now may the client tear down
         // Hold the accepted socket open until the client has closed ITS end: on Windows
@@ -1376,7 +1377,7 @@ TEST(SSLSocketLoopback, PostHandshakeAuthRequestSucceedsWhenServerEnablesIt) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         server_is_tls13 = (server_socket.get_negotiated_tls_version() == "TLSv1.3") ? 1 : 0;
         // PHA is driven from the SERVER side: the server requests the client to authenticate.
@@ -1514,7 +1515,7 @@ TEST(SSLSocketLoopback, ReadReportsCleanCloseNotifyAsTermination) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         // Send a single byte the client first consumes, then perform a clean TLS
         // shutdown so the client observes close_notify on its following read.
@@ -1590,7 +1591,7 @@ TEST(SSLSocketLoopback, Tls12NegotiationRejectsServerPostHandshakeAuth) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         server_version_is_12 = (server_socket.get_negotiated_tls_version() == "TLSv1.2") ? 1 : 0;
         // Server-side PHA over a TLS 1.2 connection must fail at the version guard.
@@ -1811,7 +1812,7 @@ TEST(SSLSocketLoopback, ResumeChainableAcceptsCapturedSessionBeforeConnect) {
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         char marker = 0;
         record_thread_failure(read_exactly(server_socket, &marker, sizeof(marker)));
@@ -1870,7 +1871,7 @@ TEST(SSLSocketLoopback, NonBlockingReadWithoutDataYieldsWouldBlockAsZero) {
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         // The handshake is DONE on this side: say so, then hold the connection open
         // until the client has observed the would-block result. Without the signal the
@@ -1921,7 +1922,7 @@ TEST(SSLSocketLoopback, ReadAfterAbortiveCloseReportsTermination) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         abortive_close(server_socket);
         server_aborted = true;
@@ -1973,7 +1974,7 @@ TEST(SSLSocketLoopback, WriteAfterAbortiveCloseReportsTermination) {
     std::thread       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         abortive_close(server_socket);
         server_aborted = true;
@@ -2026,7 +2027,7 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
     std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        ASSERT_EQ(listener.accept(server_socket), 0);
+        ASSERT_TRUE(qb::io::test::accept_within(listener, server_socket));
         drive_server_handshake(server_socket);
         // Same ordered teardown as NonBlockingReadWithoutData above: handshake done,
         // then hold until the client is done with the shared connection.

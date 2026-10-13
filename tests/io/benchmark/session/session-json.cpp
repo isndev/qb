@@ -17,13 +17,14 @@
  * `run(EVRUN_NOWAIT)` pump advances both ends. BM_SessionJson_Tcp keeps that
  * single-loop shape.
  *
- * TLS CANNOT. `tcp::ssl::socket::connect_v4` performs a SYNCHRONOUS handshake
+ * The blocking `tcp::ssl::socket::connect_v4` performs a SYNCHRONOUS handshake
  * (it blocks inside `SSL_connect` until the server answers). If the server
  * shares the calling thread's loop, that loop is never pumped while connect
  * blocks, so the handshake deadlocks — the historical hang of this bench.
  * BM_SessionJson_Tls therefore puts the client (connect + send + receive-drain)
  * on its OWN thread with its OWN event loop, and the main thread pumps the
- * server loop concurrently. This is the proven pattern from
+ * server loop concurrently. Its connector is nonblocking and observes a deadline
+ * and the stop request during handshake. This is the pattern from
  * system/tls/tls-text-roundtrip.cpp and system/session/session-json.cpp.
  *
  * Every wait is BOUNDED: the single-loop pump caps its pass count and the
@@ -299,8 +300,22 @@ BM_SessionJson_Tls(benchmark::State &state) {
     std::thread worker([&] {
         qb::io::async::init(); // the client owns this thread's loop
         JsonSecureClient client;
-        client.transport().set_insecure(); // self-signed loopback cert
-        if (client.transport().connect_v4("127.0.0.1", port) != 0) {
+        bool             connected           = false;
+        bool             connection_finished = false;
+        qb::io::async::tcp::connect<qb::io::tcp::ssl::socket>(
+            qb::io::uri{"tcp://127.0.0.1:" + std::to_string(port)},
+            [&](qb::io::tcp::ssl::socket &&socket) {
+                connected = socket.is_open() && socket.handshake_complete();
+                if (connected)
+                    client.transport() = std::move(socket);
+                connection_finished = true;
+            },
+            5s, false);
+        const auto connect_deadline = std::chrono::steady_clock::now() + 5s;
+        while (!connection_finished && !g_worker_stop.load() && std::chrono::steady_clock::now() < connect_deadline)
+            qb::io::async::listener::current.run(EVRUN_NOWAIT);
+        if (!connected || g_worker_stop.load()) {
+            qb::io::async::listener::current.clear();
             g_worker_failed.store(true);
             g_worker_ready.store(true);
             return;

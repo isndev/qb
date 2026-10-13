@@ -515,12 +515,16 @@ TEST_F(CoroutineSchedulerTests, PendingCountReflectsReadyQueue) {
 TEST_F(CoroutineSchedulerTests, AwaitingCompletedTaskReturnsValue) {
     std::atomic<int> result{-1};
 
-    auto result_ptr = &result;
+    auto                                        result_ptr = &result;
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([result_ptr]() -> task<void> {
         auto inner_fn = []() -> task<int> {
             co_return 42;
         };
-        int val = co_await inner_fn();
+        auto inner = inner_fn();
+        inner.handle().resume();
+        EXPECT_TRUE(inner.handle().done());
+        int val = co_await inner;
         result_ptr->store(val);
         co_return;
     });

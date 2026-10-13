@@ -202,6 +202,32 @@ public:
         int              get_optval_result  = 0;
         int              handshake_calls    = 0;
         bool             wants_write        = false; ///< what DirectionalFakeSocket reports for a pending handshake
+
+        void
+        close_native() {
+#ifdef _WIN32
+            if (fd >= 0) {
+                ::QB_CLOSESOCKET(static_cast<SOCKET>(fd));
+                fd = -1;
+            }
+            if (peer_fd >= 0) {
+                ::QB_CLOSESOCKET(static_cast<SOCKET>(peer_fd));
+                peer_fd = -1;
+            }
+#else
+            if (fd >= 0) {
+                ::close(fd);
+                fd = -1;
+            }
+            if (peer_fd >= 0) {
+                ::close(peer_fd);
+                peer_fd = -1;
+            }
+#endif
+        }
+        ~state() {
+            close_native();
+        }
     };
 
 private:
@@ -300,25 +326,7 @@ public:
     void
     disconnect() {
         ++_state->disconnect_calls;
-#ifdef _WIN32
-        if (_state->fd >= 0) {
-            ::QB_CLOSESOCKET(static_cast<SOCKET>(_state->fd));
-            _state->fd = -1;
-        }
-        if (_state->peer_fd >= 0) {
-            ::QB_CLOSESOCKET(static_cast<SOCKET>(_state->peer_fd));
-            _state->peer_fd = -1;
-        }
-#else
-        if (_state->fd >= 0) {
-            ::close(_state->fd);
-            _state->fd = -1;
-        }
-        if (_state->peer_fd >= 0) {
-            ::close(_state->peer_fd);
-            _state->peer_fd = -1;
-        }
-#endif
+        _state->close_native();
     }
 };
 

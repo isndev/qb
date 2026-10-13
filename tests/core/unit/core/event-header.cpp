@@ -274,13 +274,17 @@ TEST(EventHeader, BucketSizeUint16TruncationCap) {
 // ---------------------------------------------------------------------------
 
 TEST(ServiceEventLogic, ReceivedSwapsDestinationWithForwardAndStaysAlive) {
-    qb::ServiceEvent se;
+    qb::ServiceEvent se{};
+    se.service_event_id = 37;
+    ASSERT_EQ(se.getID(), 0);
     // dest defaults to NotFound; set a distinct forward target.
     const ActorId forward_target(0x12345678u);
     se.forward = forward_target;
 
     const ActorId dest_before = se.getDestination(); // NotFound
     se.received();
+    EXPECT_EQ(se.getID(), 37);
+    EXPECT_EQ(se.service_event_id, 0);
 
     // dest and forward must have swapped.
     EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(forward_target))
@@ -295,15 +299,21 @@ TEST(ServiceEventLogic, ReceivedSwapsDestinationWithForwardAndStaysAlive) {
 TEST(ServiceEventLogic, ReceivedIsItsOwnInverseOnDestForward) {
     // Two received() calls swap dest<->forward back to the original arrangement (it is an involution
     // on the swapped fields), so a double-receive is observably a no-op on dest/forward.
-    qb::ServiceEvent se;
-    const ActorId    forward_target(0xABCDEF01u);
+    qb::ServiceEvent se{};
+    se.service_event_id = 37;
+    ASSERT_EQ(se.getID(), 0);
+    const ActorId forward_target(0xABCDEF01u);
     se.forward = forward_target;
 
     const ActorId dest0    = se.getDestination();
     const ActorId forward0 = se.forward;
 
     se.received();
+    EXPECT_EQ(se.getID(), 37);
+    EXPECT_EQ(se.service_event_id, 0);
     se.received();
+    EXPECT_EQ(se.getID(), 0);
+    EXPECT_EQ(se.service_event_id, 37);
 
     EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(dest0));
     EXPECT_EQ(static_cast<std::uint32_t>(se.forward), static_cast<std::uint32_t>(forward0));
