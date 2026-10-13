@@ -111,6 +111,13 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_INSTALL` | bool; `ON` **standalone**, `OFF` embedded | Generate installation rules (`cmake --install`) (`qbConfig.cmake:130-134`, `CMakeLists.txt:326`). Same standalone/embedded split, for a different reason: an embedded qb that added its own `install()` rules would inject qb's headers and CMake package files into the *parent* project's `cmake --install`. A superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
+With `QB_BUILD_DOCS=ON`, Doxygen describes the **configured build** rather than a
+superset of every optional feature. It receives the numeric qb compiler definitions
+from dependency detection (`docs/CMakeLists.txt:139-147`, `docs/Doxyfile.in:405`).
+For example, SSL-gated crypto declarations appear only when OpenSSL was found and
+`QB_HAS_SSL=1` is part of that build. Reconfigure with the desired features before
+generating the API reference.
+
 ### Optional features
 
 | Option | Type / default | Effect |
