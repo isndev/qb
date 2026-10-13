@@ -9,10 +9,14 @@ destroyed. Every capture access then goes through a dangling closure pointer
 into a reused stack slot, producing intermittent, ASan-invisible stack
 corruption (see qb-io coroutine docs in coroutine/scheduler.h).
 
-The same lifetime rule applies to any immediately-invoked task-returning lambda
-with captures, e.g. `with_timeout([cap]() -> task<int> { ... }(), 100ms)`.
+The same lifetime rule applies when an immediately-invoked task-returning lambda
+with captures escapes its full-expression, e.g. `auto pending = [cap]() -> task<int> { ... }();`.
 Store the lambda in a local variable that lives in the parent coroutine frame,
 or pass state as value parameters to a non-lambda coroutine helper.
+
+The guard conservatively rejects immediate invocation except as the direct argument
+of `qb::io::async::run_sync`: that bridge completes the task before the full-expression
+ends. This exception does not cover tasks created inside the coroutine body.
 
 The safe spelling drops the trailing `()` so the `spawn(Callable)` overload
 moves the closure into an owning wrapper coroutine frame:
@@ -121,6 +125,13 @@ def find_sites(path: str):
                     depth -= 1
                 i += 1
             if re.match(r"\s*\(\s*\)", src[i : i + 8]):
+                if re.search(
+                    r"(?<![\w:.])(?:::)?qb\s*::\s*io\s*::\s*async\s*::\s*run_sync\s*\(\s*$",
+                    src[: m.start()],
+                ) and re.match(r"\s*\(\s*\)\s*\)", src[i:]):
+                    # Only the direct argument is completed synchronously. An invoked
+                    # lambda inside its body can still escape its own full-expression.
+                    continue
                 sites.append((
                     src[: m.start()].count("\n") + 1,
                     "captured task lambda is immediately invoked — dangling "
