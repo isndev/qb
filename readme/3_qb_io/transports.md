@@ -167,7 +167,7 @@ Data transfer:
 
 | Method | Returns | Notes |
 |---|---|---|
-| `read(void* dest, std::size_t len)` | `int` | Bytes read; `0` means the peer closed gracefully; negative means error (including `EWOULDBLOCK`/`EAGAIN` on a non-blocking socket with no data). |
+| `read(void* dest, std::size_t len)` | `int` | Positive = bytes read. `-1` with system error 0 means graceful peer close; `-1` with a nonzero error also covers failure or `EWOULDBLOCK`/`EAGAIN`. |
 | `write(const void* data, std::size_t size)` | `int` | Bytes written; may be less than `size` if the send buffer is full; negative means error. |
 
 A return of `0` from `connect`-family calls is success; `qb::io::SocketStatus::Done` is the enumerator with value `0`, so comparing `connect_v4(...) == qb::io::SocketStatus::Done` is equivalent to comparing against `0`.
@@ -470,7 +470,7 @@ int main() {
 ## Pitfalls
 
 - **Sockets are move-only.** Copy construction and assignment are deleted; the destructor closes the handle. Move to transfer ownership (for example, an accepted socket from a listener into a session). Use `release_handle()` only when something else has taken responsibility for closing the fd.
-- **A `read()` of `0` on TCP means the peer closed.** It is not "no data." A non-blocking socket with no data available returns a negative value (`EWOULDBLOCK`/`EAGAIN`), distinct from a graceful close.
+- **TCP peer close is `read() == -1` with system error zero.** The wrapper converts native `recv() == 0` to that result. A non-blocking socket with no data also returns `-1`, but preserves `EWOULDBLOCK`/`EAGAIN`; inspect the system error to distinguish them.
 - **`connect`-family success is `0`, not `true`.** These return `int`; `0` is `SocketStatus::Done`. Comparing the result against `qb::io::SocketStatus::Done` works because that enumerator equals `0`. Do not treat a nonzero return as success.
 - **`udp::socket::init()` returns `bool`; `tcp::socket::init()` returns `int`.** For UDP, `true` means success; for TCP, `0` means success. Check the right sense.
 - **UDP is all-or-nothing.** A datagram larger than `MaxDatagramSize` (65507) is rejected with `EMSGSIZE`, not truncated or split. Fragment large payloads at the application layer; the transport will not do it for you.

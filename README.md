@@ -524,7 +524,9 @@ Semantic versioning on the public API. `main` is exactly the last release and `d
 one; the version has one source of truth, `QB_FRAMEWORK_VERSION` in
 [`cmake/qbConfig.cmake`](./cmake/qbConfig.cmake), from which every other version string is derived.
 The three modules and the examples ship in lockstep with qb; qev versions on its own. A link-time
-fingerprint refuses to combine a library and a consumer built with different feature gates
+fingerprint refuses five unsafe configuration mismatches: qb version, cache-line size, exception mode,
+coroutine-debug mode and the `jthread` implementation. Feature definitions such as SSL, QUIC and
+compression are propagated separately by CMake targets; they are not fingerprint axes
 ([VERSIONING.md](./VERSIONING.md)).
 
 ## License

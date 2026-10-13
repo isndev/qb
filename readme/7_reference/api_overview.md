@@ -330,10 +330,11 @@ public:
 
 - **Header:** `qb/io/async/event/all.h` (one struct per header in `qb/io/async/event/`)
 
-`qb::io::async::event::io`, `::timer`, `::signal`, `::file`, `::disconnected`, `::pending_read`,
-`::pending_write`, `::eos`, `::dispose`, `::extracted`, and `::handshake`. A component receives these
-through matching `on(event::T&)` handlers. The end-of-input event is `event::input_drained` (aliased
-`event::eof`).
+`qb::io::async::event::io`, `::timer`, `::signal`, and `::file` are kernel watcher events delivered as
+mutable lvalues to matching `on(event::T&)` handlers. Synthesized lifecycle notifications such as
+`::disconnected`, `::pending_read`, `::pending_write`, `::eos`, `::dispose`, `::extracted`, and
+`::handshake` are detected and dispatched as rvalues: handle them with `on(event::T&&)` or
+`on(const event::T&)`. The end-of-input event is `event::input_drained` (aliased `event::eof`).
 
 ### Sockets and addresses
 

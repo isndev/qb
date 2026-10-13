@@ -268,7 +268,7 @@ Key behaviors verified in the header:
   `SSL_ERROR_ZERO_RETURN` — the peer sent `close_notify`), so the framework's error path
   disposes the session; and **`0` when OpenSSL needs more socket readiness**
   (`WANT_READ` / `WANT_WRITE`) or the handshake is still in progress. That is the inverse of
-  `tcp::socket::read`, where `0` means the peer closed. The header's `@return` block says
+  `tcp::socket::read`, which also reports peer close as `-1` but leaves the system error at zero. The header's `@return` block says
   otherwise and is wrong.
   <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1048-1053 (orderly shutdown returns -1), :1058-1060 (WANT_* returns 0), :1065 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted

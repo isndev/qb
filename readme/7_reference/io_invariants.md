@@ -141,14 +141,14 @@ registry, or as a member — never relocate them.
   `ScopedTimeout<F>` (`src/qb/io/async/io.h:441,521`). These are caller-owned
   via `unique_ptr`; cancellation is destroying or reusing the object. They do
   not participate in the `delete this` dance.
-- `Timeout`, `ScopedTimeout`, and the `RegisteredKernelEvent` slab use
-  per-instantiation, thread-local LIFO freelists (custom `operator new` /
-  `operator delete`). A steady-state `callback()` performs **zero**
-  `malloc`/`free` once the pool is warm (`src/qb/io/async/io.h:218-219,233-236`). The
-  pools are intentionally **never drained** at thread exit — the OS reclaims the
-  thread's memory, and draining from a TLS destructor would race a late
-  `delete this` from an already-fired timer whose loop iteration outlives the
-  listener TLS. Do not add a drain step.
+- `Timeout` and `RegisteredKernelEvent` use per-instantiation, thread-local LIFO
+  freelists (custom `operator new` / `operator delete`). A steady-state
+  `callback()` performs **zero** `malloc`/`free` once the pool is warm
+  (`src/qb/io/async/io.h:218-219,233-236`). Each freelist is an RAII owner: its
+  destructor marks the pool unavailable and releases every parked aligned block.
+  A later delete observes that flag and falls back to global aligned delete, so it
+  never touches a destroyed TLS freelist. `ScopedTimeout` itself has no separate
+  object pool; its registered watcher uses the watcher pool.
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /

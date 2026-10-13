@@ -9,6 +9,11 @@ policy.
 
 ### Fixed
 
+- **Reference contracts now distinguish ABI axes, relocation guarantees, raw key types, callback categories,
+  TLS-pool teardown and TCP EOF (Huly QB-422, QB-428, QB-429, QB-476, QB-477, QB-889).** The fingerprint no longer
+  claims feature gates it does not encode; `growable_ring` documents its basic guarantee for throwing move-only
+  elements; byte-key factories have their vector return types; lifecycle callback signatures match rvalue
+  detection; TLS freelists document their RAII drain and late-delete fallback; and TCP close is `-1` with error zero.
 - **Actor lifecycle and ownership recipes no longer promise observations or transfers the runtime does not provide
   (Huly QB-421, QB-445, QB-446, QB-466, QB-467, QB-468, QB-475).** The overview distinguishes synchronous startup errors
   from later activation failure, delayed callbacks no longer dereference a possibly destroyed actor as a guard,
