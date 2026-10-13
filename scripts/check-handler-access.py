@@ -284,11 +284,15 @@ def event_parts(spelling: str) -> tuple[str, str]:
         cv.add(match[1])
         spelling = spelling[:match.start()].rstrip()
     qualifiers = " ".join(sorted(cv)) + ref
-    return canonical_type(spelling), qualifiers
+    absolute = "::" if spelling.startswith("::") else ""
+    return absolute + canonical_type(spelling), qualifiers
 
 
 def same_event(left: str, right: str) -> bool:
     """Permit relative namespace spellings without equating conflicting qualified names."""
+    if left.startswith("::") and right.startswith("::"):
+        return left == right
+    left, right = left.removeprefix("::"), right.removeprefix("::")
     return left == right or left.endswith("::" + right) or right.endswith("::" + left)
 
 
