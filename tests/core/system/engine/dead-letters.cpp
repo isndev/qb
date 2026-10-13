@@ -99,7 +99,7 @@ struct Loaded : qb::Event {
     Counted payload;
 };
 
-const qb::ActorId kNobody(9999u); // sid 9999 on core 0 (the uint32 form: sid low, core high) -- no actor ever has it
+const qb::ActorId kNobody = qb::ActorId::ordinary(9999, 0, 1); // no actor ever holds this instance
 
 // --- 1. the reason, whichever router path dropped it -------------------------------------------
 

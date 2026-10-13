@@ -61,10 +61,10 @@ namespace death_watch_test {
 
 using namespace std::chrono_literals;
 
-/// The `ActorId` of service id `sid` on core `core` (the bit layout `ActorId(uint32_t)` reads).
+/// A first-incarnation ordinary actor address, including for deliberate missing targets.
 qb::ActorId
 id_on(qb::CoreId const core, qb::ServiceId const sid) {
-    return qb::ActorId(static_cast<std::uint32_t>(core) << 16 | sid);
+    return qb::ActorId::ordinary(sid, core, 1);
 }
 
 struct Seen {
@@ -472,9 +472,11 @@ TEST(DeathWatch, UnwatchDropsAnAnswerAlreadyOnItsWayCrossCore) {
 }
 
 // Watches a child that tells it before dying; on that word -- the answer to its watch behind it --
-// unwatches it, spawns a successor, which gets the reused id, and watches that one. The answer about
+// unwatches it, spawns a successor in the reused slot with a new incarnation, and watches that one. The answer about
 // the first must not close the watch of the second: the only DownEvent comes once the second dies.
-std::atomic<bool> g_id_reused{false};
+std::atomic<bool> g_slot_reused{false};
+std::atomic<bool> g_incarnation_changed{false};
+qb::ActorId       g_successor_id{};
 
 class Successor : public qb::Actor {
     qb::ActorId _first{};
@@ -495,8 +497,10 @@ public:
     on(Go const &e) {
         if (!_second.is_valid() && e.getSource() == _first) {
             unwatch(_first);
-            _second     = addRefActor<Dier>().id();
-            g_id_reused = _second == _first;
+            _second               = addRefActor<Dier>().id();
+            g_slot_reused         = _second.slot() == _first.slot();
+            g_incarnation_changed = _second != _first && _second.generation() > _first.generation();
+            g_successor_id        = _second;
             watch(_second);
             push<Go>(id());
             return;
@@ -514,16 +518,20 @@ public:
     }
 };
 
-TEST(DeathWatch, AWatchOfAReusedIdWaitsForItsNewHolder) {
+TEST(DeathWatch, AWatchOfAReusedSlotWaitsForItsNewIncarnation) {
     reset();
-    g_id_reused = false;
+    g_slot_reused         = false;
+    g_incarnation_changed = false;
+    g_successor_id        = {};
     qb::Main engine;
     engine.addActor<Successor>(0);
     engine.start();
     engine.join();
     ASSERT_FALSE(engine.hasError());
-    ASSERT_TRUE(g_id_reused.load()) << "the case needs the successor to reuse the id";
+    ASSERT_TRUE(g_slot_reused.load()) << "the case needs the successor to reuse the slot";
+    ASSERT_TRUE(g_incarnation_changed.load()) << "a recycled slot must carry a different incarnation";
     ASSERT_EQ(g_seen.size(), 1u);
+    EXPECT_EQ(g_seen[0].watched, g_successor_id);
     EXPECT_TRUE(g_seen[0].target_destroyed_first) << "the answer is the second's, sent once it was told to die";
     EXPECT_EQ(g_seen[0].reason, qb::DownReason::killed);
 }

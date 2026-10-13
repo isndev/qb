@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:970,995`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until that core stops; call `join()` afterward if other cores may still run (`qb/src/qb/core/Main.h:970`, `qb/src/qb/core/Main.cpp:624-629`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:975,1000`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until that core stops; call `join()` afterward if other cores may still run (`qb/src/qb/core/Main.h:975`, `qb/src/qb/core/Main.cpp:636-641`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -217,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:254,1016`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:259,1021`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 

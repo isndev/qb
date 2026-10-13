@@ -281,7 +281,7 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
     // with a different NDEBUG than libqb-core must still find `dest` at the same offset. Before
     // 3.0 `id` was 8 bytes in Debug and 2 in Release, which moved dest/source from 8/12 to
     // 16/20 and silently routed cross-core events to a garbage ActorId. These are the Release
-    // numbers; they must now hold in Debug too.
+    // numbers. The 64-bit identity layout must likewise be identical in Debug and Release.
     EXPECT_EQ(sizeof(qb::Event::id_type), 2u);
     EXPECT_EQ(alignof(qb::Event), static_cast<std::size_t>(QB_LOCKFREE_CACHELINE_BYTES));
 
@@ -304,7 +304,12 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
 
     // Expected values are read back out of the same byte pattern rather than hard-coded, so the
     // assertion pins the OFFSET and not this machine's endianness. On little-endian these are
-    // dest=0x0B0A0908, source=0x0F0E0D0C, id=0x0706, payload=0x13121110.
+    // dest=0x0F0E0D0C0B0A0908, source=0x1716151413121110, id=0x0706.
+    const auto identity_at = [&wire](std::size_t off) {
+        std::uint64_t v{};
+        std::memcpy(&v, wire.data() + off, sizeof(v));
+        return v;
+    };
     const auto word_at = [&wire](std::size_t off) {
         std::uint32_t v{};
         std::memcpy(&v, wire.data() + off, sizeof(v));
@@ -317,15 +322,15 @@ TEST(TypeId, EventLayoutIsIndependentOfBuildMode) {
     };
 
     EXPECT_EQ(probe.getID(), static_cast<qb::Event::id_type>(half_at(6))) << "Event::id must live at bytes 6..7 of the wire image";
-    EXPECT_EQ(static_cast<std::uint32_t>(probe.getDestination()), word_at(8)) << "Event::dest must live at bytes 8..11 of the wire image";
-    EXPECT_EQ(static_cast<std::uint32_t>(probe.getSource()), word_at(12)) << "Event::source must live at bytes 12..15 of the wire image";
+    EXPECT_EQ(probe.getDestination().raw64(), identity_at(8)) << "Event::dest must live at bytes 8..15 of the wire image";
+    EXPECT_EQ(probe.getSource().raw64(), identity_at(16)) << "Event::source must live at bytes 16..23 of the wire image";
 
-    // And therefore a derived event's own payload starts at byte 16 — measured, not offsetof().
+    // And therefore a derived event's own payload starts at byte 24 — measured, not offsetof().
     const auto *const base   = reinterpret_cast<const unsigned char *>(static_cast<const qb::Event *>(&probe));
     const auto *const member = reinterpret_cast<const unsigned char *>(&probe.payload);
-    EXPECT_EQ(member - base, 16) << "Event header must occupy exactly 16 bytes "
-                                    "(state 4 + bucket_size 2 + id 2 + dest 4 + source 4)";
-    EXPECT_EQ(probe.payload, word_at(16)) << "first user word must start at byte 16";
+    EXPECT_EQ(member - base, 24) << "Event header must occupy exactly 24 bytes "
+                                    "(state 4 + bucket_size 2 + id 2 + dest 8 + source 8)";
+    EXPECT_EQ(probe.payload, word_at(24)) << "first user word must start at byte 24";
 }
 
 // -------------------------------------------------------------------------------------------

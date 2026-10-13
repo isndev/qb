@@ -52,21 +52,21 @@ this page only states what the patterns depend on.
   hold (quorum tallies, dedup caches, breaker state) needs no locking
   (`qb/src/qb/core/patterns/scatter.h:155-157`, `qb/src/qb/core/patterns/idempotency.h:60-62`).
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
-  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1489-1491`);
+  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1495-1497`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1545`, `:2343-2347`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1551`, `:2349-2353`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1687,1707,1719,1728,1735,1743`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2222-2223,2235-2237,2265-2267`). **Never capture `this` past a `co_await`** — capture by
-  value (`qb/src/qb/core/Actor.h:1493-1495`).
+  `qb/src/qb/core/Actor.h:1693,1713,1725,1734,1741,1749`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:2228-2229,2241-2243,2271-2273`). **Never capture `this` past a `co_await`** — capture by
+  value (`qb/src/qb/core/Actor.h:1499-1501`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
-  (`qb/src/qb/core/Event.h:782-783`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1757`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
-  discovery (`qb/src/qb/core/Event.h:805,824`). Because the id sits at a uniform offset, the
+  (`qb/src/qb/core/Event.h:724-725`); `qb::AskEvent` derives from it for the request/response API
+  (`qb/src/qb/core/Actor.h:1763`); `qb::PingEvent` / `qb::RequireEvent` derive from it for
+  discovery (`qb/src/qb/core/Event.h:747,766`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
-  (`qb/src/qb/core/Event.h:775-779`).
+  (`qb/src/qb/core/Event.h:717-721`).
 
 ### Cancellation, timeout and failure — the common contract
 
@@ -74,7 +74,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 
 - **Cancel-on-kill.** When an actor is killed/destroyed its scope token is cancelled; any pattern
   parked on a cancellation-aware wait wakes within the next loop iteration and throws
-  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1482-1486`).
+  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1488-1492`).
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:262-266`).
@@ -152,7 +152,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:369-374`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1565-1581`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1571-1587`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -225,7 +225,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1565-1581 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:274-278,414-421 and qb/src/qb/core/Actor.h:1571-1587 -->
 
 ---
 
@@ -563,10 +563,10 @@ spawn([prod, count, to](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
 | Symbol | Signature | Source |
 |---|---|---|
 | `qb::PubSub<Topic>` | `class PubSub : public qb::ServiceActor<PubSub<Topic>>` | `pubsub.h:61-62` |
-| `PubSub::subscribe` | `void subscribe(ActorId who)` (idempotent) | `pubsub.h:81-98` |
-| `PubSub::unsubscribe` | `void unsubscribe(ActorId who)` | `pubsub.h:99-103` |
-| `PubSub::publish` | `template <class... Args> void publish(Args const &...args)` | `pubsub.h:124-150` |
-| `PubSub::subscriber_count` | `std::size_t subscriber_count() const noexcept` | `pubsub.h:117-122` |
+| `PubSub::subscribe` | `void subscribe(ActorId who)` (idempotent) | `pubsub.h:81-97` |
+| `PubSub::unsubscribe` | `void unsubscribe(ActorId who)` | `pubsub.h:98-102` |
+| `PubSub::publish` | `template <class... Args> void publish(Args const &...args)` | `pubsub.h:123-149` |
+| `PubSub::subscriber_count` | `std::size_t subscriber_count() const noexcept` | `pubsub.h:116-121` |
 
 `PubSub<Topic>` is a `ServiceActor` (one instance per `VirtualCore`); add it with
 `main.addActor<qb::PubSub<Topic>>(coreId)`. Same-core actors reach it via
@@ -624,8 +624,9 @@ coroutine required.
 - `max_restarts` (0 = unlimited) caps restart intensity and calls `on_escalate()` past the cap —
   cumulative, or, with a non-zero `restart_window`, as a sliding-window "N restarts within T" rule
   (`supervisor.h:122-147`, `:313-335`). A slot given up on holds no child from then on (`child(slot)`
-  is invalid): its id is free for any new actor, and the supervisor's teardown must not kill one
-  that reused it (`supervisor.h:272-283`). `restarts()` counts every restart since the start;
+  is invalid): its allocation slot can be reused with a new instance ID. The supervisor clears
+  its child record, so its teardown does not retain a retired child (`supervisor.h:272-283`).
+  `restarts()` counts every restart since the start;
   `restarts_in_window()` counts those the window cap still sees, the number compared with
   `max_restarts`: how close the next failure is to escalating. It is 0 with no window, and 0 with no
   cap: an uncapped supervisor records no restart time, so its history cannot grow (3.3, Huly QB-299;
@@ -635,15 +636,15 @@ coroutine required.
   (`supervisor.h:203-218`).
 - **Cooperative by default:** a child that dies *without* calling `stop()` (e.g. a failed `onInit`) is
   not auto-detected — supervision keys off the `ChildDown` notification (`supervisor.h:136-146`). Its id
-  stays in its slot, and ids are reused: a sibling's restart or the supervisor's teardown can then kill
-  whatever actor reuses it. The watch mode closes that.
+  can remain recorded in that supervision slot. Its stale instance ID cannot target a replacement,
+  but the supervisor still needs watch mode to learn that the child is gone and restart it.
 - **Watch mode** (since 3.3): with `qb::supervision::watch` as the constructor's last argument the
   supervisor also watches every child it spawns (`qb::Actor::watch`, Huly QB-51) and restarts one gone
   for any reason on its `qb::DownEvent` — a `kill()` from elsewhere, a failed or throwing `onInit()`; a
   child whose `onInit()` fails synchronously (`spawn_child` returns an invalid id) is restarted on the
   next pass, never recursively. A child that calls `stop()` is still restarted once: the supervisor
   unwatches a child before it replaces it, so the death of the outgoing child is never taken for its
-  replacement's, which most likely reuses its id (`supervisor.h:188-201`, `:298-311`). Pair the mode
+  replacement's, even if the same actor slot is reused with a new generation (`supervisor.h:188-201`, `:298-311`). Pair the mode
   with `max_restarts`: a child that always fails would otherwise be restarted forever.
 
 ### Example
@@ -812,8 +813,8 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1529-1545`,
-`qb/src/qb/core/Event.h:775-779`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
+continuation registry (`qb/src/qb/core/Actor.h:1535-1551`,
+`qb/src/qb/core/Event.h:717-721`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
 
@@ -859,7 +860,7 @@ qb::io::async::task<bool> onInit() override {
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
   carry failure in the response payload (`request.h:406-413`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
-  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1493-1495`). The
+  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1499-1501`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
   `std::shared_ptr` and captured by value so they outlive the actor
   (`resilience.h:115-118`, `:268-271`, `:360-362`).

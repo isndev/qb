@@ -9,6 +9,17 @@ policy.
 
 ### Changed
 
+- **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
+  An identity contains a 24-bit slot, an 8-bit core and a 32-bit generation. Ordinary actors and
+  service tags occupy separate slot bands; logical service addresses resolve to the current instance,
+  while saved instance IDs and handles never follow a replacement. A spent generation retires its slot.
+  The ordinary per-core capacity is 16,711,679 live slots; identities are scoped to one engine run.
+  This changes the public codec and binary layout: use `raw64()` / `from_raw()` and rebuild all
+  consumers with the matching headers and libraries. The ABI fingerprint rejects mixed layouts.
+  The occupied event header grows from 16 to 24 bytes; the base event and allocator bucket remain
+  64 bytes. On the measured arm64 layout, a plain byte payload fits 40 bytes in one bucket instead
+  of 48; derived event layouts require their own size check. Performance acceptance is still pending.
+
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through

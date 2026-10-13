@@ -37,11 +37,7 @@ namespace qb {
 // CoreInitializer
 CoreInitializer::CoreInitializer(CoreId const index)
     : _index(index)
-    // 2.3: `_nb_service` is now a `std::atomic<ServiceId>`. A relaxed load is
-    // sufficient here — every writer (see `Actor::registerIndex<Tag>()`) has
-    // already published its value through the associated magic-static
-    // acquire edge before this constructor runs.
-    , _next_id(static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
+    , _ids(index)
     , _affinity{index}
     , _latency{}
     , _idle_spin{kDefaultIdleSpin}
@@ -53,7 +49,7 @@ CoreInitializer::~CoreInitializer() noexcept {
 
 void
 CoreInitializer::clear() noexcept {
-    _next_id = static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1);
+    _ids.clear_reservations();
     _affinity.clear();
     _actor_factories.clear();
     _registered_services.clear();
@@ -502,14 +498,30 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     try {
         // Init VirtualCore
         auto &core_factory = initializer._actor_factories;
+        core.__install_id_pool__(initializer._ids);
         if (!core.__predicted_ids_hold__(initializer) || !core.__init__(initializer.getAffinity())) { // the first: Huly QB-1007
             QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
         } else if (core_factory.empty()) {
             QB_LOG_CRIT(core << " Started with 0 Actor");
             params.sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
-        } else if (std::ranges::any_of(
-                       core_factory, [&core](auto const &it) { return !core.appendActor(std::unique_ptr<Actor>(it->create())).is_valid(); })) {
+        } else if (std::ranges::any_of(core_factory, [&core](auto const &it) {
+                       const ActorId previous = core._factory_actor_id;
+                       core._factory_actor_id = it->reserved_id();
+                       struct Restore {
+                           VirtualCore &core;
+                           ActorId      previous;
+                           ActorId      reserved;
+                           bool         admitted = false;
+                           ~Restore() {
+                               if (!admitted)
+                                   core.__rollback_failed_admission__(reserved);
+                               core._factory_actor_id = previous;
+                           }
+                       } restore{core, previous, it->reserved_id()};
+                       restore.admitted = core.appendActor(std::unique_ptr<Actor>(it->create())).is_valid();
+                       return !restore.admitted;
+                   })) {
             QB_LOG_CRIT("Actor at " << core << " failed to init");
             params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
         } else if (!core.__init__actors__()) {

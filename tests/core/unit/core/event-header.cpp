@@ -42,6 +42,8 @@
  */
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -114,8 +116,8 @@ TEST(EventHeader, DefaultDestinationAndSourceAreNotFound) {
     // Event default-constructs dest/source as default ActorId == NotFound. fill_event /
     // Pipe::push later overwrite them; before that they are the invalid id.
     Event e;
-    EXPECT_EQ(static_cast<std::uint32_t>(e.getDestination()), ActorId::NotFound);
-    EXPECT_EQ(static_cast<std::uint32_t>(e.getSource()), ActorId::NotFound);
+    EXPECT_EQ(e.getDestination().raw64(), ActorId::NotFound);
+    EXPECT_EQ(e.getSource().raw64(), ActorId::NotFound);
     EXPECT_FALSE(e.getDestination().is_valid());
     EXPECT_FALSE(e.getSource().is_valid());
 }
@@ -196,6 +198,11 @@ struct Eover : Event {
 struct EBig : Event {
     char pad[200];
 };
+
+template <typename Base, std::size_t Bytes>
+struct BytePayload : Base {
+    std::array<std::byte, Bytes> payload{};
+};
 } // namespace
 
 static_assert(sizeof(E1) == 64, "a 1-char member must fit Event's trailing padding (still 1 bucket)");
@@ -224,6 +231,20 @@ TEST(EventHeader, GetItemSizeRoundsUpNoOffByOne) {
     EXPECT_EQ(ceil_buckets(65), 2u);
     EXPECT_EQ(ceil_buckets(128), 2u);
     EXPECT_EQ(ceil_buckets(129), 3u);
+}
+
+TEST(EventHeader, ExactBytePayloadsPinTheOneBucketBoundary) {
+    EXPECT_EQ((sizeof(BytePayload<Event, 32>)), 64u);
+    EXPECT_EQ((sizeof(BytePayload<Event, 40>)), 64u);
+    EXPECT_EQ((sizeof(BytePayload<Event, 41>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<Event, 48>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<Event, 49>)), 128u);
+    EXPECT_EQ((getItemSize<BytePayload<Event, 40>, EventBucket>()), 1u);
+    EXPECT_EQ((getItemSize<BytePayload<Event, 41>, EventBucket>()), 2u);
+    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 32>)), 64u);
+    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 33>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 30>)), 64u);
+    EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 31>)), 128u);
 }
 
 // ---------------------------------------------------------------------------
@@ -278,8 +299,8 @@ TEST(ServiceEventLogic, ReceivedSwapsDestinationWithForwardAndStaysAlive) {
     se.service_event_id = 37;
     ASSERT_EQ(se.getID(), 0);
     // dest defaults to NotFound; set a distinct forward target.
-    const ActorId forward_target(0x12345678u);
-    se.forward = forward_target;
+    const auto forward_target = ActorId::ordinary(0x123456u, 7, 0x88776655u);
+    se.forward                = forward_target;
 
     const ActorId dest_before = se.getDestination(); // NotFound
     se.received();
@@ -287,10 +308,8 @@ TEST(ServiceEventLogic, ReceivedSwapsDestinationWithForwardAndStaysAlive) {
     EXPECT_EQ(se.service_event_id, 0);
 
     // dest and forward must have swapped.
-    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(forward_target))
-        << "received() must move the forward target into dest";
-    EXPECT_EQ(static_cast<std::uint32_t>(se.forward), static_cast<std::uint32_t>(dest_before))
-        << "received() must move the old dest into forward";
+    EXPECT_EQ(se.getDestination().raw64(), forward_target.raw64()) << "received() must move the forward target into dest";
+    EXPECT_EQ(se.forward.raw64(), dest_before.raw64()) << "received() must move the old dest into forward";
 
     // received() marks the event alive so it survives the router's dispose().
     EXPECT_TRUE(se.is_alive());
@@ -302,8 +321,8 @@ TEST(ServiceEventLogic, ReceivedIsItsOwnInverseOnDestForward) {
     qb::ServiceEvent se{};
     se.service_event_id = 37;
     ASSERT_EQ(se.getID(), 0);
-    const ActorId forward_target(0xABCDEF01u);
-    se.forward = forward_target;
+    const auto forward_target = ActorId::service_instance(0x1234u, 255, 0xaabbccddu);
+    se.forward                = forward_target;
 
     const ActorId dest0    = se.getDestination();
     const ActorId forward0 = se.forward;
@@ -315,8 +334,28 @@ TEST(ServiceEventLogic, ReceivedIsItsOwnInverseOnDestForward) {
     EXPECT_EQ(se.getID(), 0);
     EXPECT_EQ(se.service_event_id, 37);
 
-    EXPECT_EQ(static_cast<std::uint32_t>(se.getDestination()), static_cast<std::uint32_t>(dest0));
-    EXPECT_EQ(static_cast<std::uint32_t>(se.forward), static_cast<std::uint32_t>(forward0));
+    EXPECT_EQ(se.getDestination().raw64(), dest0.raw64());
+    EXPECT_EQ(se.forward.raw64(), forward0.raw64());
+    EXPECT_TRUE(se.is_alive());
+}
+
+TEST(ServiceEventLogic, ReceivedPreservesFullSourceAndPayloadAcrossTheSwap) {
+    BytePayload<qb::ServiceEvent, 31> se{};
+    const auto                        dest   = ActorId::ordinary(0x123456u, 3, 0x11223344u).raw64();
+    const auto                        source = ActorId::ordinary(0x654321u, 7, 0x88776655u).raw64();
+    // Literal offsets are independent of the event_wire implementation.
+    std::memcpy(reinterpret_cast<unsigned char *>(&se) + 8, &dest, sizeof dest);
+    std::memcpy(reinterpret_cast<unsigned char *>(&se) + 16, &source, sizeof source);
+    se.forward          = ActorId::service_instance(0x1234u, 255, 0xaabbccddu);
+    se.service_event_id = 37;
+    se.payload.fill(std::byte{0xa7});
+    const auto forward = se.forward;
+    se.received();
+    EXPECT_EQ(se.getDestination(), forward);
+    EXPECT_EQ(se.forward.raw64(), dest);
+    EXPECT_EQ(se.getSource().raw64(), source);
+    for (const auto value : se.payload)
+        EXPECT_EQ(value, std::byte{0xa7});
     EXPECT_TRUE(se.is_alive());
 }
 
@@ -411,7 +450,7 @@ TEST(EventHeader, ValueInitializedEventGetSizeIsZero) {
 }
 
 // ---------------------------------------------------------------------------
-// qb::detail::event_wire — the 16-byte framework header as one machine word.
+// qb::detail::event_wire — the 24 occupied header bytes, copied in 16-byte chunks.
 //
 // reply() writes `dest`/`source` exchanged, forward() writes `dest` replaced — both with
 // `alive` CLEARED in the same store — and every same-core copy (send/push/reply/forward into
@@ -439,24 +478,23 @@ constexpr std::size_t kOffState  = 0;
 constexpr std::size_t kOffBucket = 4;
 constexpr std::size_t kOffId     = 6;
 constexpr std::size_t kOffDest   = 8;
-constexpr std::size_t kOffSource = 12;
-constexpr std::size_t kHeader    = 16;
+constexpr std::size_t kOffSource = 16;
+constexpr std::size_t kHeader    = 24;
 constexpr std::size_t kBucket    = QB_LOCKFREE_EVENT_BUCKET_BYTES;
 
 static_assert(std::is_trivially_copyable_v<Event>, "the header is driven through its object representation");
 static_assert(std::is_standard_layout_v<Event>, "the wire offsets below assume standard layout");
 
-constexpr std::uint32_t
+constexpr std::uint64_t
 bits(ActorId const &a) noexcept {
-    return std::bit_cast<std::uint32_t>(a);
+    return a.raw64();
 }
 
-// ActorId's (ServiceId, CoreId) constructor is protected; its public u32 form is the wire word
-// itself — service id in the low half, core index in the high half (little-endian, `_service_id`
-// declared first). The oracle test below checks that reading through sid()/index().
+// Build an ordinary identity through the public codec; the hand-laid byte offsets and literal
+// numeric expectations below remain independent of event_wire's layout constants.
 inline ActorId
-actor(std::uint32_t const sid, std::uint32_t const core) noexcept {
-    return ActorId(sid | (core << 16));
+actor(std::uint32_t const slot, std::uint32_t const core, std::uint32_t const generation = 0x11223344u) noexcept {
+    return ActorId::ordinary(slot, static_cast<qb::CoreId>(core), generation);
 }
 
 template <typename T>
@@ -477,8 +515,8 @@ struct Image {
         new (bytes) Event(); // default header: alive=0, qos=2, dest/source NotFound
         poke(bytes, kOffBucket, static_cast<std::uint16_t>(Buckets));
         poke(bytes, kOffId, static_cast<std::uint16_t>(0xBEEF));
-        poke(bytes, kOffDest, std::bit_cast<std::uint32_t>(actor(0x1234, 2)));
-        poke(bytes, kOffSource, std::bit_cast<std::uint32_t>(actor(0x5678, 1)));
+        poke(bytes, kOffDest, std::bit_cast<std::uint64_t>(actor(0x123456, 2)));
+        poke(bytes, kOffSource, std::bit_cast<std::uint64_t>(actor(0x654321, 1, 0x88776655u)));
     }
     Event &
     event() noexcept {
@@ -513,11 +551,13 @@ TEST(EventWire, HandLaidHeaderReadsBackThroughTheGetters) {
     EXPECT_EQ(e.getQOS(), 2u);
     EXPECT_EQ(e.getSize(), kBucket);
     EXPECT_EQ(e.getID(), static_cast<qb::EventId>(0xBEEF));
-    EXPECT_EQ(bits(e.getDestination()), bits(actor(0x1234, 2)));
-    EXPECT_EQ(e.getDestination().sid(), 0x1234u);
+    EXPECT_EQ(bits(e.getDestination()), bits(actor(0x123456, 2)));
+    EXPECT_EQ(e.getDestination().raw64(), 0x1122334402123456ull);
+    EXPECT_EQ(e.getDestination().sid(), 0x123456u);
     EXPECT_EQ(e.getDestination().index(), 2u);
-    EXPECT_EQ(bits(e.getSource()), bits(actor(0x5678, 1)));
-    EXPECT_EQ(e.getSource().sid(), 0x5678u);
+    EXPECT_EQ(bits(e.getSource()), bits(actor(0x654321, 1, 0x88776655u)));
+    EXPECT_EQ(e.getSource().raw64(), 0x8877665501654321ull);
+    EXPECT_EQ(e.getSource().sid(), 0x654321u);
     EXPECT_EQ(e.getSource().index(), 1u);
     img.set_alive();
     EXPECT_TRUE(e.is_alive()) << "byte 3 bit 0 must be the liveness bit event_wire masks";
@@ -529,8 +569,8 @@ TEST(EventWire, SwapDestSourceExchangesExactlyTheTwoIds) {
     Image<1> const before = img;
     event_wire::swap_dest_source(img.event());
 
-    EXPECT_EQ(bits(img.event().getDestination()), bits(actor(0x5678, 1))) << "dest must take the old source";
-    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x1234, 2))) << "source must take the old dest";
+    EXPECT_EQ(bits(img.event().getDestination()), bits(actor(0x654321, 1, 0x88776655u))) << "dest must take the old source";
+    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x123456, 2))) << "source must take the old dest";
     EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, kOffDest)) << "state/bucket_size/id must not move";
     EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kHeader, sizeof img.bytes)) << "payload must not move";
 
@@ -561,7 +601,7 @@ TEST(EventWire, SetDestReplacesOnlyTheDestinationLane) {
     event_wire::set_dest(img.event(), target);
 
     EXPECT_EQ(bits(img.event().getDestination()), bits(target));
-    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x5678, 1))) << "forward() preserves the source";
+    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x654321, 1, 0x88776655u))) << "forward() preserves the source";
     EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffState, kOffDest)) << "state/bucket_size/id must not move";
     EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffSource, sizeof img.bytes)) << "source and payload must not move";
 }
@@ -582,18 +622,17 @@ TEST(EventWire, SetDestClearsTheLivenessBitAndNothingElseInTheStateWord) {
     EXPECT_TRUE(same_bytes(img.bytes, before.bytes, kOffSource, sizeof img.bytes));
 }
 
-TEST(EventWire, SetDestAcceptsEveryBitPatternIncludingNotFoundAndBroadcast) {
-    // The lane insert must be a full 32-bit replace: no bit of the previous dest may survive
-    // (an OR without the AND would keep 0x1234 in the low half of an all-zero id).
+TEST(EventWire, SetDestReplacesAllBitsForInstancesLogicalServicesAndBroadcast) {
     Image<1> img;
     event_wire::set_dest(img.event(), ActorId());
-    EXPECT_EQ(static_cast<std::uint32_t>(img.event().getDestination()), ActorId::NotFound);
+    EXPECT_EQ(img.event().getDestination().raw64(), 0u);
     event_wire::set_dest(img.event(), qb::BroadcastId(5));
-    EXPECT_TRUE(img.event().getDestination().is_broadcast());
-    EXPECT_EQ(img.event().getDestination().index(), 5u);
-    event_wire::set_dest(img.event(), actor(0xFFFF, 0xFFFF));
-    EXPECT_EQ(static_cast<std::uint32_t>(img.event().getDestination()), 0xFFFFFFFFu);
-    EXPECT_EQ(bits(img.event().getSource()), bits(actor(0x5678, 1)));
+    EXPECT_EQ(img.event().getDestination().raw64(), 0x0000000005ffffffull);
+    event_wire::set_dest(img.event(), ActorId::ordinary(0xfeffffu, 255, 0xffffffffu));
+    EXPECT_EQ(img.event().getDestination().raw64(), 0xfffffffffffeffffull);
+    event_wire::set_dest(img.event(), ActorId::service_address(0x1234u, 7));
+    EXPECT_EQ(img.event().getDestination().raw64(), 0x0000000007ff1234ull) << "a logical service must clear every old generation bit";
+    EXPECT_EQ(bits(img.event().getSource()), 0x8877665501654321ull);
 }
 
 TEST(EventWire, CopyOfALiveEventIsBornDeadAndOtherwiseByteIdentical) {
@@ -614,8 +653,8 @@ TEST(EventWire, CopyOfALiveEventIsBornDeadAndOtherwiseByteIdentical) {
     EXPECT_EQ(copied.getQOS(), 2u);
     EXPECT_EQ(copied.getSize(), kBucket);
     EXPECT_EQ(copied.getID(), static_cast<qb::EventId>(0xBEEF));
-    EXPECT_EQ(bits(copied.getDestination()), bits(actor(0x1234, 2)));
-    EXPECT_EQ(bits(copied.getSource()), bits(actor(0x5678, 1)));
+    EXPECT_EQ(bits(copied.getDestination()), bits(actor(0x123456, 2)));
+    EXPECT_EQ(bits(copied.getSource()), bits(actor(0x654321, 1, 0x88776655u)));
 }
 
 TEST(EventWire, CopyOfADeadEventIsByteIdentical) {
@@ -681,8 +720,8 @@ TEST(EventWire, ReplyShapeSwapThenCopyLeavesTheOriginalToBeRaised) {
 
     EXPECT_TRUE(original.event().is_alive());
     EXPECT_FALSE(in_pipe.is_alive());
-    EXPECT_EQ(bits(in_pipe.getDestination()), bits(actor(0x5678, 1))) << "the reply goes back to the source";
-    EXPECT_EQ(bits(in_pipe.getSource()), bits(actor(0x1234, 2)));
+    EXPECT_EQ(bits(in_pipe.getDestination()), bits(actor(0x654321, 1, 0x88776655u))) << "the reply goes back to the source";
+    EXPECT_EQ(bits(in_pipe.getSource()), bits(actor(0x123456, 2)));
     EXPECT_EQ(in_pipe.getID(), original.event().getID());
     EXPECT_EQ(in_pipe.getSize(), original.event().getSize());
     EXPECT_TRUE(same_bytes(pipe.bytes, original.bytes, kHeader, kBucket)) << "payload travels intact";

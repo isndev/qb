@@ -50,7 +50,7 @@ For the full model see [The actor model](../2_core_concepts/actor_model.md); for
 | Polling loop / `sleep_for` between iterations | `qb::ICallback::on(qb::LoopEvent const&)` or `qb::io::async::callback` | A per-loop tick or a one-shot non-blocking timer on the same core. |
 | Manual `errno` / return-code propagation across threads | An error event, or an unhandled exception caught by the core | See [Error handling](./error_handling.md). |
 
-`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered and fire-and-forget, and is conventionally reserved for trivially-destructible events — a rule the compiler holds you to only for `qb::EventQOS0`-derived ones. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:1065-1070,1119`; `send` `:1128-1132`, `:1142`.)_
+`push` and `send` differ: `push<_Event>(dest, …)` returns a reference to the queued event and guarantees ordered delivery from one source to one destination; `send<_Event>(dest, …)` is unordered and fire-and-forget, and is conventionally reserved for trivially-destructible events — a rule the compiler holds you to only for `qb::EventQOS0`-derived ones. Prefer `push`. _(`push` `qb/src/qb/core/Actor.h:1069-1074,1123`; `send` `:1132-1136`, `:1146`.)_
 
 ### Before: a hand-rolled worker
 
@@ -175,7 +175,7 @@ int main() {
 
 The manual `Job` may keep a field called `id`. A derived `qb::Event` may not: `Event::id`
 is a routing field, and the event-construction guard rejects an accessible shadow. The
-migrated payload uses `job_id` consistently. <!-- src: qb/src/qb/core/Event.h:1071-1078 -->
+migrated payload uses `job_id` consistently. <!-- src: qb/src/qb/core/Event.h:1013-1020 -->
 
 Notes on the translation:
 
@@ -200,9 +200,9 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 
 - **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core.
   The `callback` overloads invoke inline or schedule on the current thread's loop; neither offloads a blocking call. _(`qb/src/qb/io/async/io.h:368-404`)_
-  Use a non-blocking API, `co_await ctx.offload(fn, copied_values...)` from an actor coroutine, or a worker actor explicitly placed on another core that returns a result event. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/core/Actor.h:2304-2334`.)_
+  Use a non-blocking API, `co_await ctx.offload(fn, copied_values...)` from an actor coroutine, or a worker actor explicitly placed on another core that returns a result event. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/core/Actor.h:2310-2340`.)_
 - **Do not share an actor's state with other threads.** The no-lock guarantee holds only because one core touches the state. Reintroducing a raw pointer, a `std::shared_ptr` to mutable data, or a global shared with non-actor code reintroduces the data race. Communicate by sending events.
-- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false` — and, since 3.3, when its core's id pool is spent, without constructing the actor or running its `onInit()`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.h:1148-1173`, `qb/src/qb/core/Main.h:1186-1190`; `qb/src/qb/core/Main.cpp:511-517`; `qb/src/qb/core/VirtualCore.h:130`; `qb/src/qb/core/VirtualCore.cpp:1196-1219`; `qb/src/qb/core/VirtualCore.h:1457-1461`; `qb/src/qb/core/ActorId.h:413,470-471`; [Error handling](./error_handling.md).)_
+- **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false` — and, since 3.3, when its core's id pool is spent, without constructing the actor or running its `onInit()`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.h:1157-1176`, `qb/src/qb/core/Main.h:1185-1189`; `qb/src/qb/core/Main.cpp:501-523`; `qb/src/qb/core/VirtualCore.h:125`; `qb/src/qb/core/VirtualCore.cpp:1251-1275, src/qb/core/VirtualCore.h:1046-1091`; `qb/src/qb/core/VirtualCore.h:1345-1349`; `qb/src/qb/core/ActorId.h:416-422,508-510`; [Error handling](./error_handling.md).)_
 - **Add every actor before `start()`.** Actors are constructed on their worker thread when the engine starts; `addActor` must be called beforehand.
 - **A periodic task is not a `sleep` loop.** Replace a polling thread with `qb::ICallback` (`on(qb::LoopEvent const&)` runs once per loop iteration), or schedule a one-shot callback with a **positive** `qb::duration`. Both execute on the owning core; their bodies must return quickly and never block. `callback(fn)` without a delay calls `fn` inline instead of scheduling it. _(`qb/src/qb/core/ICallback.h:170` is the `on(qb::LoopEvent const&)` hook, `:94` says it runs on every loop iteration, `:16-19` is the non-blocking contract; `qb/src/qb/io/async/io.h:368-389,392-404` distinguishes the callback overloads.)_
 
@@ -302,7 +302,7 @@ std::int64_t  exp_s  = qb::unix_seconds(expiry);      // for a JWT exp claim, sa
 
 The migration matters because the framework's own surfaces take these types. A few you will meet immediately:
 
-- `CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` — the maximum the event loop waits when idle; the default `zero()` is the busy-spin, lowest-latency mode (100% CPU on the core), and a positive value lets the idle core park to trade latency for CPU. _(`qb/src/qb/core/Main.h:284-307`.)_
+- `CoreInitializer::setLatency(qb::duration latency = qb::duration::zero())` — the maximum the event loop waits when idle; the default `zero()` is the busy-spin, lowest-latency mode (100% CPU on the core), and a positive value lets the idle core park to trade latency for CPU. _(`qb/src/qb/core/Main.h:289-312`.)_
 - Socket and async timeouts take `qb::duration` (for example `tcp::socket::connect(qb::io::endpoint const &ep, qb::duration wtimeout)`); a non-positive value is clamped to a single poll, not "wait forever." _(`qb/src/qb/io/tcp/socket.h:158-161`; the clamp is `qb/src/qb/io/system/sys__socket.cpp:797`.)_
 - `qb::SpinLock::trylock_for(qb::duration)` and `trylock_until(qb::mono_time)`. _(`qb/src/qb/system/lockfree/spinlock.h:135-136,171-172`.)_
 
@@ -571,7 +571,7 @@ t_tpp.cpp:1:10: fatal error: 'qb/core/Actor.tpp' file not found
 ```
 
 Template bodies moved to the tail of the `.h` that declares them — except `qb::Actor`'s, which moved
-to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1425-1430`). Most of those bodies name
+to the tail of **`VirtualCore.h`** (`qb/src/qb/core/VirtualCore.h:1313-1318`). Most of those bodies name
 `VirtualCore::` in a nested-name-specifier and need a complete `qb::VirtualCore`, and `VirtualCore.h`
 already includes `Actor.h` — so `Actor.h` can never host them. The body has to go where the include
 cycle *closes*, which is a position, not a file you get to choose.

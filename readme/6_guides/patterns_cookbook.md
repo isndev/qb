@@ -53,7 +53,7 @@ event handled in an ordinary `on()`.** Use a bare `callback` only for work that 
 outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
 [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
 the full contract.
-<!-- src: qb/src/qb/core/Actor.h:1512-1513,2265-2267, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:330-338,363 -->
+<!-- src: qb/src/qb/core/Actor.h:1518-1519,2271-2273, qb/src/qb/core/Actor.h:867-870, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:330-338,363 -->
 
 ## Recipe: one-shot timer
 
@@ -776,8 +776,9 @@ public:
   the id when the watch arrived) or `core_stopped`. Watching an actor already watched is a no-op until
   that answer arrives.
 - `unwatch(id)` guarantees no `DownEvent` of that watch afterwards, even one already on its way.
-- Ids are reused: the replacement you spawn for a dead actor is likely to get its id. Unwatch the
-  outgoing actor before you watch its replacement, or the old answer answers the new watch.
+- Slots can be reused, but a replacement has a different instance ID. Withdraw an obsolete watch
+  when changing dependencies. If you reuse a logical service address, `unwatch` it before requesting
+  a new watch; an outstanding watch of that address remains tied to its captured incarnation.
 - Death watch tells you an actor is *gone*, not that it is *stuck*: for a live actor that stopped
   answering, `co_await qb::ping(ctx, id, timeout)`.
 

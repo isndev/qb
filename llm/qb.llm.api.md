@@ -29,7 +29,8 @@ Conventions: signatures are shown verbatim; `[T]` = template; "→" = returns;
 | Alias | Definition | Purpose |
 |---|---|---|
 | `qb::CoreId` | `uint16_t` | Logical core index. |
-| `qb::ServiceId` | `uint16_t` | Service slot within a core. |
+| `qb::ServiceId` | `uint16_t` | Process-local service tag index; distinct from an actor slot. |
+| `qb::ActorSlotId` | `uint32_t` | Storage type for the 24-bit actor slot. |
 | `qb::TypeId` | `uint16_t` | Per-type id. |
 | `qb::EventId` | `TypeId` | Event type id. |
 | `qb::ActorIdList` | `std::vector<ActorId>` | Ordered actor ids. |
@@ -41,21 +42,32 @@ Conventions: signatures are shown verbatim; `[T]` = template; "→" = returns;
 Constants: `qb::MaxCores = 256` (ActorId.h). `qb::NoAffinity = numeric_limits<CoreId>::max()` (Main.h) — sentinel "no CPU affinity"; any `CoreId >= MaxCores` is silently ignored.
 
 ### `class qb::ActorId`
-Compound unique actor address = `ServiceId` + `CoreId`, bit-castable to/from `uint32_t`.
-*   `ActorId() noexcept` — equals `NotFound` (invalid).
-*   `ActorId(uint32_t id) noexcept` — construct from raw value.
-*   `static constexpr uint32_t NotFound = 0;`
-*   `static constexpr ServiceId BroadcastSid = (numeric_limits<ServiceId>::max)();`
-*   `[[nodiscard]] ServiceId sid() const noexcept` — service id.
-*   `[[nodiscard]] CoreId index() const noexcept` — core index.
-*   `[[nodiscard]] bool is_broadcast() const noexcept` — true when `sid() == BroadcastSid`.
-*   `[[nodiscard]] bool is_valid() const noexcept` — true when `sid() != 0`. No actor ever holds service id 0, so `NotFound` and every `(0, core)` id are invalid and a `BroadcastId` is valid (until 3.3 it tested the whole raw value, and `(0, core)` read valid on every core but 0) _(ActorId.h:470-473)_.
-*   `operator uint32_t() const noexcept` — raw value.
-*   `std::hash<qb::ActorId>` specialization exists (hash = the uint32 value).
-*   use: `qb::ActorId dst = actor.id();`
+A single 64-bit numeric value: `[generation:32 | core:8 | slot:24]`. Public `CoreId` remains `uint16_t`; encoded cores are 0..255. Ordinary slots are `1..0xFEFFFF` (16,711,679 positions per core before outstanding reservations, retired slots and resource limits). Service tags `1..65534` occupy `0xFF0000 | tag`; `0xFF0000` is invalid, and `0xFFFFFF` with generation zero is broadcast.
+*   `constexpr ActorId() noexcept` — invalid `NotFound`.
+*   `constexpr ActorId(std::uint64_t raw) noexcept` — checked numeric decoding; malformed values become `NotFound`.
+*   `ActorId(std::uint32_t) = delete` — no 32-bit import; the former implicit `operator uint32_t()` is removed.
+*   `static constexpr std::uint64_t NotFound = 0;`
+*   `static constexpr ActorSlotId BroadcastSid = 0x00ffffffu;`, `ServiceBand = 0x00ff0000u;`, `MaxOrdinarySlot = ServiceBand - 1u;`
+*   `static constexpr std::uint32_t MaxGeneration = (std::numeric_limits<std::uint32_t>::max)();`
+*   `[[nodiscard]] static constexpr ActorId from_raw(std::uint64_t raw) noexcept` — checked full-width decoder.
+*   `[[nodiscard]] static constexpr ActorId from_parts(ActorSlotId slot, CoreId core, std::uint32_t generation) noexcept` — validates the core before packing and rejects malformed slot/generation combinations.
+*   `[[nodiscard]] static constexpr ActorId ordinary(ActorSlotId slot, CoreId core, std::uint32_t generation) noexcept` — ordinary instance; generation must be nonzero.
+*   `[[nodiscard]] static constexpr ActorId service_address(ServiceId tag, CoreId core) noexcept` — logical address, generation zero.
+*   `[[nodiscard]] static constexpr ActorId service_instance(ServiceId tag, CoreId core, std::uint32_t generation) noexcept` — exact service incarnation; nonzero generation.
+*   `[[nodiscard]] constexpr std::uint64_t raw64() const noexcept` — complete numeric codec; no implicit integer export.
+*   `[[nodiscard]] constexpr ActorSlotId slot() const noexcept`, `sid() const noexcept` — full 24-bit slot in a 32-bit storage type; `sid()` is not a service tag.
+*   `[[nodiscard]] constexpr CoreId index() const noexcept`, `[[nodiscard]] constexpr std::uint32_t generation() const noexcept`.
+*   `[[nodiscard]] constexpr ServiceId service_tag() const noexcept` — use only for a service address/instance.
+*   `[[nodiscard]] constexpr bool is_ordinary() const noexcept`, `is_service() const noexcept`, `is_service_address() const noexcept`, `is_service_instance() const noexcept`, `is_instance() const noexcept`, `is_broadcast() const noexcept`, `is_valid() const noexcept`.
+*   `is_valid()` accepts ordinary instances, service instances, logical service addresses and broadcast. Slot zero, ordinary generation zero, service tag zero/65535, and nonzero-generation broadcast are invalid.
+*   Equality and ordering compare every bit. `std::hash<qb::ActorId>` uses the full value, folding its halves when `size_t` is narrower.
+
+Every actual actor, including a service, has a nonzero-generation instance ID. A released slot advances generation; exhaustion retires the slot instead of wrapping. Exact handles/events never resolve a replacement within one engine run. Logical service addresses intentionally select the current service when received. IDs have no engine/node namespace and no process-wide or durable uniqueness guarantee. This layout breaks source compatibility with the old 32-bit codec and changes ABI: rebuild all consumers/modules/plugins consistently. No release-version or performance conclusion follows from the layout. Source: `src/qb/core/ActorId.h` (`ActorId`, `BroadcastId`, `std::hash<qb::ActorId>`), `src/qb/core/detail/actor_id_pool.h` (`ActorIdPool`), `src/qb/core/VirtualCore.cpp` (`ActorIdPool::release`).
+
+<!-- src: src/qb/core/ActorId.h:403-420,422-457,459-510,657-663; src/qb/core/detail/actor_id_pool.h:34-49; src/qb/core/VirtualCore.cpp:2075-2091 -->
 
 ### `class qb::BroadcastId : public ActorId`
-Targets all actors on one core (uses `BroadcastSid`). Default ctor deleted.
+Targets all actors on one core (slot `BroadcastSid`, generation zero). Default ctor deleted; an input core outside 0..255 produces an invalid ID. Source: `src/qb/core/ActorId.h` (`BroadcastId`).
 *   `explicit BroadcastId(uint32_t core_id) noexcept`
 *   use: `push<MyEvent>(qb::BroadcastId(core_index), args...);`
 
@@ -70,7 +82,7 @@ Targets all actors on one core (uses `BroadcastSid`). Default ctor deleted.
 
 ### `class qb::CoreInitializer : nocopy` (`<qb/core/Main.h>`)
 Per-core pre-start config (affinity, latency, initial actors). Obtain via `Main::core(id)`. Pre-start only.
-*   `[T<_Actor,_Args...>] ActorId addActor(_Args&&... args) noexcept` — schedule an actor; → `ActorId::NotFound` on failure (duplicate ServiceActor or max reached).
+*   `[T<_Actor,_Args...>] ActorId addActor(_Args&&... args) noexcept` — reserve an exact instance ID before storing its factory; → `ActorId::NotFound` on reservation failure (duplicate/refused service or exhausted slot/incarnation capacity).
 *   `[[nodiscard]] ActorBuilder builder() noexcept` — fresh builder for fluent chaining.
 *   `CoreInitializer& setAffinity(const CoreIdSet& cores = {}) noexcept` — CPU pinning; empty = OS default. Chainable.
 *   `CoreInitializer& setLatency(qb::duration latency = qb::duration::zero()) noexcept` — idle event-loop latency; `0` = busy-spin. Chainable.
@@ -84,7 +96,7 @@ Per-core pre-start config (affinity, latency, initial actors). Obtain via `Main:
 *   `[[nodiscard]] const CoreIdSet& getAffinity() const noexcept` — default is `{index}`.
 *   `[[nodiscard]] qb::duration getLatency() const noexcept`
 *   `[[nodiscard]] qb::duration getIdleSpin() const noexcept`
-*   `void clear() noexcept` — drop pending factories/services/affinity.
+*   `void clear() noexcept` — drop pending factories/services/affinity; release abandoned reservations with generation advancement. Source: `src/qb/core/Main.cpp` (`CoreInitializer::clear`).
 *   use: `main.core(0).setLatency(100us).addActor<MyActor>(cfg);`
 
 #### `class qb::CoreInitializer::ActorBuilder`
@@ -114,6 +126,8 @@ Engine controller: configures cores, spawns worker threads, runs the actor syste
 *   `using ActorIdList = CoreInitializer::ActorBuilder::ActorIdList;`
 *   use: `qb::Main m; m.addActor<MyActor>(0); m.start(); m.join();`
 
+Normal `join()` does not reset a successfully started Main: `_is_running` remains set, `core()` still rejects configuration and a further `start()` returns. The identity guarantee is one engine run, with no process-wide namespace. Source: `src/qb/core/Main.cpp` (`Main::join`, `Main::core`, `Main::start`).
+
 ### `class qb::Actor : nocopy` (`<qb/core/Actor.h>`)
 Base class for all actors. Communicate **exclusively via events**. Non-copyable. Each actor has a unique `ActorId`. Must be constructed from within a VirtualCore worker thread.
 *   `Actor() noexcept` (protected) — generates id, registers the 5 default system handlers (Kill/Signal/UnregisterCallback/Ping/Require).
@@ -122,7 +136,7 @@ Base class for all actors. Communicate **exclusively via events**. Non-copyable.
 *   `virtual qb::io::async::task<bool> onInit()` (protected; default `co_return true`) — async coroutine for one-time init after id assignment, before event processing; may `co_await`. `co_return true` activates the actor; `co_return false` or throwing aborts & destroys it. While suspended the actor is *Activating*. Register event handlers here.
 *   `void kill() const noexcept` — flag for removal; stops new events, drains queued, destroyed later by VirtualCore.
 *   `void watch(ActorId target) const noexcept` — death watch (3.3): exactly one `qb::DownEvent{watched, reason}` once `target` is gone, on any core — after its destructor ran, whatever ended it (`killed`, `init_failed`, `init_threw`); at once for an id no actor holds (`unknown`); `core_stopped` when its core had stopped or ended on an exception. Register `qb::DownEvent`, or the answer is an `unhandled` dead letter. Watching an actor already watched is a no-op until the answer arrives; watching oneself is ignored; a watcher that dies first is never told, and its watches are withdrawn _(`Actor.h:515-531`)_.
-*   `void unwatch(ActorId target) const noexcept` — closes the watch: no `DownEvent` of it arrives afterwards, even one already on its way. Ids are reused: unwatch an outgoing actor before watching its replacement, or the old answer answers the new watch _(`Actor.h:533-538`)_.
+*   `void unwatch(ActorId target) const noexcept` — closes the watch: no `DownEvent` of it arrives afterwards, even one already on its way. Instance targets include generation; logical service targets retain the requested address as their ticket key, and tickets distinguish repeated watches of that address. Source: `src/qb/core/VirtualCore.cpp` (`__unwatch__`, `__on_actor_down__`, `__on_watch_down__`).
 *   `static void *operator new(std::size_t)`, `operator new(std::size_t, std::align_val_t)`, placement `operator new(std::size_t, void*) noexcept`, and the matching sized `operator delete(void*, std::size_t) noexcept`, aligned and placement forms — the actor object comes from the core thread's `qb::allocator::thread_arena` (16-byte size classes up to 1 KiB over `slab_cache` slabs, LIFO reuse per class; a type above 1 KiB or with `alignas` above 16 falls through to the global allocator). A derived class that declares its own `operator new` / `operator delete` hides them (the pool hook); `qb::allocate_actor<T>` stays the construction hook. Never `delete` an actor yourself _(`Actor.h:561-582`)_.
 *   Default system event handlers (overridable): `void on(const KillEvent&) noexcept` (calls `kill()`), `void on(const SignalEvent&) noexcept` (kills on **SIGINT or SIGTERM** — the two terminal signals; every *other* registered signal is deliberately non-terminal, so override this handler to act on e.g. SIGHUP/SIGUSR1), `void on(const UnregisterCallbackEvent&) noexcept`, `void on(const PingEvent&) noexcept`. The base methods are `noexcept`; a derived override without `noexcept` that throws stops its `VirtualCore` and is reported by `Main::hasError()`.
 
@@ -133,10 +147,10 @@ Accessors:
 *   `[[nodiscard]] const CoreIdSet& getCoreSet() const noexcept`
 *   `[[nodiscard]] CoreStats getCoreStats() const noexcept` — a COPY of the cumulative counters of this actor's own core (`qb::CoreStats`, below): what it received, what it published into other cores' mailboxes, the backpressure it met, the `EventQOS0` events it dropped, its io callbacks and passes. The counters are plain integers the core's thread writes, so a snapshot is always of the CALLER's core, taken between two events; for every core, ask a responder on each (`qb::ask_all`) _(`Actor.h:779-799`)_.
 *   `[[nodiscard]] uint64_t time() const noexcept` — VirtualCore cached timestamp, **nanoseconds since epoch** (constant within one handler/`on(qb::LoopEvent const&)` tick). For continuous high-precision time use `qb::unix_nanos(qb::wall_now())`.
-*   `[T<_ServiceActor>] [[nodiscard]] _ServiceActor* getService() const noexcept` — same-core service pointer, or `nullptr` if no service of that type is registered on this core. **The one lookup that is NOT phase-gated**, deliberately: it consults neither `is_active()` nor `is_alive()`, so it resolves a service whose async `onInit()` is still in flight *and* one that has been killed but not yet reaped. That is what lets a service look itself or a peer up from inside its own `onInit()` — the answer to "can I look this up from `onInit()`?" is yes here and **no** for `ActorHandle::get()`. The cost is yours: what you get back may be mid-init, so `push` it an event rather than reading its state _(`Actor.h:835-852`, body `VirtualCore.h:1225-1248`)_.
+*   `[T<_ServiceActor>] [[nodiscard]] _ServiceActor* getService() const noexcept` — same-core service pointer, or `nullptr` if no service of that type is registered on this core. **The one lookup that is NOT phase-gated**, deliberately: it consults neither `is_active()` nor `is_alive()`, so it resolves a service whose async `onInit()` is still in flight *and* one that has been killed but not yet reaped. That is what lets a service look itself or a peer up from inside its own `onInit()` — the answer to "can I look this up from `onInit()`?" is yes here and **no** for `ActorHandle::get()`. The cost is yours: what you get back may be mid-init, so `push` it an event rather than reading its state _(`Actor.h:839-856`, body `VirtualCore.h:1114-1136`)_.
 *   `[[nodiscard]] bool is_alive() const noexcept` — true until `kill()` processed. **Not** a phase check: it is already true while the actor is still Activating.
-*   `[[nodiscard]] bool is_active() const noexcept` — alive **and** past `onInit()`. It differs from `is_alive()` exactly across the Activating window, so it is the self-directed counterpart of `ActorHandle::ready()` (for a child) and `is_actor_alive(id)` (for a peer). Exactly two lookups consult it — `VirtualCore::findActor<T>()` (hence every `ActorHandle` accessor) and `VirtualCore::isActorAlive()`; `getService<T>()` consults nothing, and the inbound-event dispatch gate keys off `VirtualCore::_activating` membership instead and **defers** rather than withholds. The header carries the full inventory as a table _(`Actor.h:868-912`)_.
-*   `[[nodiscard]] bool is_actor_alive(ActorId id) const noexcept` — untyped liveness probe for *another* actor: true iff `id` names an actor on **this** VirtualCore that is alive and whose `onInit()` has completed. One hash lookup, no `dynamic_cast` (the type-erased sibling of `ActorHandle<T>::ready()`). Use it to prune bookkeeping that stores bare `ActorId`s — subscriber lists, routing tables — as `qb::PubSub<Topic>` does; the framework prunes only its *own* subscription map when an actor dies. **Same-core only**: `false` for a remote id proves nothing, so use `co_await qb::ping(...)` for cross-core liveness.
+*   `[[nodiscard]] bool is_active() const noexcept` — alive **and** past `onInit()`. It differs from `is_alive()` exactly across the Activating window, so it is the self-directed counterpart of `ActorHandle::ready()` (for a child) and `is_actor_alive(id)` (for a peer). Exactly two lookups consult it — `VirtualCore::findActor<T>()` (hence every `ActorHandle` accessor) and `VirtualCore::isActorAlive()`; `getService<T>()` consults nothing, and the inbound-event dispatch gate keys off `VirtualCore::_activating` membership instead and **defers** rather than withholds. The header carries the full inventory as a table _(`Actor.h:872-916`)_.
+*   `[[nodiscard]] bool is_actor_alive(ActorId id) const noexcept` — untyped liveness probe for *another* actor: true iff `id` names an actor on **this** VirtualCore that is alive and whose `onInit()` has completed. Exact instance IDs use the indexed registry and complete identity comparison; logical service addresses query the current incarnation with the same phase gate. There is no `dynamic_cast`; handles remain exact-instance lookups. Use it to prune bookkeeping that stores bare `ActorId`s — subscriber lists, routing tables — as `qb::PubSub<Topic>` does; the framework prunes only its *own* subscription map when an actor dies. **Same-core only**: `false` for a remote id proves nothing, so use `co_await qb::ping(...)` for cross-core liveness.
 
 Callback management (requires deriving `ICallback`):
 *   `[T<_Actor>] void registerCallback(_Actor& actor) const noexcept` — per-loop `on(qb::LoopEvent const&)` ticks.
@@ -164,20 +178,20 @@ Event sending:
 Type checks & referenced actors:
 *   `[T<_Type>] [[nodiscard]] bool is(uint32_t id) const noexcept`
 *   `[T<_Type>] [[nodiscard]] bool is(const RequireEvent& event) const noexcept`
-*   `[T<_Actor,_Args...>] qb::ActorHandle<_Actor> addRefActor(_Args&&... args) const` — create+init a referenced actor on the **same** core; returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`). Check `handle.valid()` first: terminal core teardown refuses creation before the child's constructor runs and returns an empty handle. For a valid handle, `get()` resolves on demand and returns `nullptr` while Activating, after failed init or after death; `operator->` requires `ready()` and asserts in debug if unavailable. Send to a valid `handle.id()` any time; gate direct calls on `handle.ready()`. Parent does not own it. _(`Actor.h:2438-2458, :2492-2497`)_
-*   `[T<_Actor,_Args...>] [[nodiscard]] ActorHandle<_Actor> addRefHandle(_Args&&... args) const` — **`addRefActor<T>()` marked `[[nodiscard]]`**: it forwards to it and returns the same phase-aware `qb::ActorHandle<T>`. It is not a different or "more checked" handle: spell it this way when the handle is the point (a dropped one is a compiler warning), and `addRefActor` for a fire-and-forget child _(`Actor.h:1399-1409`)_.
+*   `[T<_Actor,_Args...>] qb::ActorHandle<_Actor> addRefActor(_Args&&... args) const` — create+init a referenced actor on the **same** core; returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`). Check `handle.valid()` first: terminal core teardown refuses creation before the child's constructor runs and returns an empty handle. For a valid handle, `get()` resolves on demand and returns `nullptr` while Activating, after failed init or after death; `operator->` requires `ready()` and asserts in debug if unavailable. Send to a valid `handle.id()` any time; gate direct calls on `handle.ready()`. Parent does not own it. _(`Actor.h:2450-2470, :2505-2510`)_
+*   `[T<_Actor,_Args...>] [[nodiscard]] ActorHandle<_Actor> addRefHandle(_Args&&... args) const` — **`addRefActor<T>()` marked `[[nodiscard]]`**: it forwards to it and returns the same phase-aware `qb::ActorHandle<T>`. It is not a different or "more checked" handle: spell it this way when the handle is the point (a dropped one is a compiler warning), and `addRefActor` for a fire-and-forget child _(`Actor.h:1405-1415`)_.
 
 Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level escape hatch:
-*   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. An exception OTHER than `cancelled_error` escaping the body is caught by the wrapper and REPORTED on `std::cerr` (naming the actor, the API and `what()`) — it is not propagated anywhere, because a spawned coroutine has no caller; catch it in the body and answer through an event. _(`spawn` declared `Actor.h:1478-1513`, body `VirtualCore.h:1712`, the named overload the unnamed one delegates to)_
-*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill. It may outlive the actor **while another actor keeps the same VirtualCore running**; the detached task alone does not keep the loop alive, so completion after the last actor dies is not guaranteed. Use a same-core keeper that waits for a completion event when shutdown must follow the task. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1418-1476`, body `VirtualCore.h:1698`, keeper test `coroutine-detached.cpp:878-938`)_
-    The core loop breaks when `__reap__()` reports the last actor gone. _(`VirtualCore.cpp:1022-1024`)_
-*   `[T<Func>] void spawn(std::string_view name, Func&& func) const`, `[T<Func>] void spawn_detached(std::string_view name, Func&& func) const` — since 3.3: `spawn` / `spawn_detached` under a name the core's `CoroutineScheduler::dump()` reports for the coroutine while it lives (Huly QB-71); the unnamed forms are these with an empty name, which stores nothing. With `set_suspension_tracking(true)` on the core's thread the dump also says what the coroutine waits on and for how long. _(Actor.h:1523, Actor.h:1527)_
+*   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. An exception OTHER than `cancelled_error` escaping the body is caught by the wrapper and REPORTED on `std::cerr` (naming the actor, the API and `what()`) — it is not propagated anywhere, because a spawned coroutine has no caller; catch it in the body and answer through an event. _(`spawn` declared `Actor.h:1484-1519`, body `VirtualCore.h:1600`, the named overload the unnamed one delegates to)_
+*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill. It may outlive the actor **while another actor keeps the same VirtualCore running**; the detached task alone does not keep the loop alive, so completion after the last actor dies is not guaranteed. Use a same-core keeper that waits for a completion event when shutdown must follow the task. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1424-1482`, body `VirtualCore.h:1586`, keeper test `coroutine-detached.cpp:878-938`)_
+    The core loop breaks when `__reap__()` reports the last actor gone. _(`VirtualCore.cpp:1078-1080`)_
+*   `[T<Func>] void spawn(std::string_view name, Func&& func) const`, `[T<Func>] void spawn_detached(std::string_view name, Func&& func) const` — since 3.3: `spawn` / `spawn_detached` under a name the core's `CoroutineScheduler::dump()` reports for the coroutine while it lives (Huly QB-71); the unnamed forms are these with an empty name, which stores nothing. With `set_suspension_tracking(true)` on the core's thread the dump also says what the coroutine waits on and for how long. _(Actor.h:1529, Actor.h:1533)_
 *   Both: MUST NOT touch actor members after any `co_await` (the actor may be destroyed mid-suspension, and the scope does **not** legalise member access — it only bounds how long the coroutine can stay parked). Capture everything by value before the first `co_await`; reply via `ctx.push<Event>()` / `ctx.push_to<Event>(dest, …)`.
-*   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1529-1545`, `:2343-2346`)_
+*   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1535-1551`, `:2349-2352`)_
 *   `[T<E>] bool resolve_ask(E& e) const noexcept` — call from `on(E&)`; returns `true` if `e` matched a pending `qb::ask` of this actor and was delivered to the waiting coroutine, `false` if unsolicited.
 *   `[[nodiscard]] bool resolve_require(RequireEvent& e) const noexcept` — the discovery counterpart of `resolve_ask`. The auto-registered `void on(RequireEvent&) noexcept` already calls it, so `co_await qb::ping` / `qb::require` need no boilerplate; an override of that handler must call it first or those coroutines never resolve. Returns `false` for a legacy `correlation_id == 0` reply or one that is not ours.
-*   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1698-1700`).
-    The scoped `spawn()` path allocates its scope in `VirtualCore.h:1712-1715`.
+*   `[[nodiscard]] bool has_active_coroutines() const`, `[[nodiscard]] std::size_t active_coroutine_count() const`, `[[nodiscard]] bool has_coro_scope() const noexcept` (true once `spawn()` **or** `context()` lazily allocated the scope; `spawn_detached()` never does — `VirtualCore.h:1586-1588`).
+    The scoped `spawn()` path allocates its scope in `VirtualCore.h:1600-1603`.
 *   use: `registerEvent<MyEvent>(*this);` in `onInit`, then `void on(const MyEvent& e) { reply(...); }`.
 
 Tag: `struct no_default_events_t{}; inline constexpr no_default_events_t no_default_events{};` — pass to the protected ctor to opt out of default handlers.
@@ -189,31 +203,32 @@ Returned by `Actor::to()`. Copyable, not default-constructible.
 *   use: `to(dst).push<A>().push<B>();`
 
 #### `class qb::CoroContext`
-Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1687-1696`)_; the alias `qb::coro_context` at _(`Actor.h:2833`)_.
+Safe restricted context handed to `spawn_detached` coroutines (captures the actor's `ActorId` by value, survives destruction — events to a dead actor are dropped, never delivered into freed memory). The `CoroContext` class is at _(`Actor.h:1693-1702`)_; the alias `qb::coro_context` at _(`Actor.h:2855`)_.
 *   `[T<_Event,Args...>] void push(Args&&... args)` — push to self.
 *   `[T<_Event,Args...>] void push_to(ActorId dest, Args&&... args)` — push to a given dest.
 *   `[T<_Event,Args...>] void broadcast(Args&&... args)` — broadcast to all actors on all cores (backs `qb::require`).
 *   `[[nodiscard]] ActorId id() const noexcept`, `[[nodiscard]] uint64_t time() const noexcept` (epoch nanoseconds).
 
 #### `class qb::ScopedCoroContext : public CoroContext`
-Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:2222-2335`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2841`)_.
+Context handed to `spawn()` bodies and returned by `Actor::context()`; alias `qb::scoped_coro_context`. A **superset** of `CoroContext` that also carries the actor's cancellation token, so everything below is cancelled when the actor is killed/destroyed. This is the type every `qb::` patterns free function takes. The `ScopedCoroContext` class is at _(`Actor.h:2228-2341`)_; the alias `qb::scoped_coro_context` at _(`Actor.h:2863`)_.
 *   `[[nodiscard]] const qb::io::async::cancellation_token& token() const noexcept`, `[[nodiscard]] bool cancelled() const noexcept`.
 *   `[[nodiscard]] qb::io::async::cancellation_token child_token() const` — a fresh token cancelled with the actor scope, cancellable independently.
 *   `[[nodiscard]] task<void> sleep(qb::duration d) const` — cancellation-aware sleep; throws `cancelled_error` on cancel.
 *   `[[nodiscard]] yield_awaiter cancellation_point() const` — `co_await` it inside a compute loop so a killed actor's coroutine bails between iterations.
 *   `[[nodiscard]] cancellation_awaiter until_cancelled() const` — park with no other work until the actor is killed (no timer allocated).
 *   `[T<T>] [[nodiscard]] auto cancellable(task<T>&& t) const` — wrap any `task<T>` so it is cancelled with the actor scope.
-*   `[T<F, ...Args>] [[nodiscard]] auto offload(F&& fn, Args&&... args) const` — since 3.3: `qb::io::async::offload(fn, args...)` scoped to the actor, i.e. `cancellable()` over it. The call runs on the offload pool; a kill ends the WAIT at once (`cancelled_error`), the call runs on to its end and its result is discarded on the core. A bare `qb::io::async::offload` in an actor's coroutine is not woken by a kill. _(`Actor.h:2331-2334`)_
+*   `[T<F, ...Args>] [[nodiscard]] auto offload(F&& fn, Args&&... args) const` — since 3.3: `qb::io::async::offload(fn, args...)` scoped to the actor, i.e. `cancellable()` over it. The call runs on the offload pool; a kill ends the WAIT at once (`cancelled_error`), the call runs on to its end and its result is discarded on the core. A bare `qb::io::async::offload` in an actor's coroutine is not woken by a kill. _(`Actor.h:2337-2340`)_
 
 #### `class qb::ActorHandle<_Actor>` — canonical; `qb::RefActorHandle<_Actor>` is an alias of it
-Type-safe, **phase-aware** weak reference to a same-core referenced actor, returned by `addRefActor` / `addRefHandle`. `RefActorHandle` is not a class: it is a `using` alias retained for source compatibility _(`Actor.h:2521-2522`)_. Dereference only on the owning core's thread.
+Type-safe, **phase-aware** weak reference to a same-core referenced actor, returned by `addRefActor` / `addRefHandle`. `RefActorHandle` is not a class: it is a `using` alias retained for source compatibility _(`Actor.h:2534-2535`)_. Dereference only on the owning core's thread.
 *   `[[nodiscard]] ActorId id() const noexcept` — valid after a successful `addRefActor` (`handle.valid()`), **even while the child is still Activating**, so it is safe to `push()` to (events are stashed and replayed FIFO once the child becomes active).
 *   `[[nodiscard]] bool valid() const noexcept` — true iff the handle was constructed from a non-null actor (creation succeeded). Terminal core teardown returns an empty handle before the child constructor runs. **Not** a liveness or readiness test.
-*   `[[nodiscard]] _Actor* get() const noexcept` — the pointer iff resolved **and** `is_active()`. `nullptr` otherwise — and "otherwise" is wider than "dead": also **while the child is still Activating** (its async `onInit()` has not completed) and after a failed init _(`Actor.h:2449-2455`)_.
-*   `[[nodiscard]] bool ready() const noexcept` — `== (get() != nullptr)`; the sync gate for the Activating window _(`Actor.h:2457-2461`)_.
-*   `[[nodiscard]] qb::io::async::task<bool> ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const` — `co_await` until the child is active — event-driven since 3.2: resumed by the core pass that ends the child's activation (after its stashed events are replayed), not by a 1 ms poll; returns `false` if it did not become active in time, or as soon as it is known that it never will (a failed or throwing init, the activation deadline, a kill while Activating); an already-active child answers without suspending; a kill of the waiting actor throws `cancelled_error`. The async gate for the same window _(`Actor.h:2487-2490`; the awaiter `Actor.h:2096-2203`)_.
+*   `[[nodiscard]] _Actor* get() const noexcept` — the pointer iff resolved **and** `is_active()`. `nullptr` otherwise — and "otherwise" is wider than "dead": also **while the child is still Activating** (its async `onInit()` has not completed) and after a failed init _(`Actor.h:2461-2467`)_.
+*   `[[nodiscard]] bool ready() const noexcept` — `== (get() != nullptr)`; the sync gate for the Activating window _(`Actor.h:2469-2473`)_.
+*   `[[nodiscard]] qb::io::async::task<bool> ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const` — `co_await` until the child is active — event-driven since 3.2: resumed by the core pass that ends the child's activation (after its stashed events are replayed), not by a 1 ms poll; returns `false` if it did not become active in time, or as soon as it is known that it never will (a failed or throwing init, the activation deadline, a kill while Activating); an already-active child answers without suspending; a kill of the waiting actor throws `cancelled_error`. The async gate for the same window _(`Actor.h:2499, src/qb/core/Actor.h:2427-2430`; the awaiter `Actor.h:2102-2209`)_.
 *   `operator->`, `operator*` — `get()` with a **debug assert** that it is ready; in a release build an unready handle is UB.
 *   `explicit operator bool` — `== ready()`.
+*   The handle stores the complete instance ID: a reused slot cannot make an old handle resolve a replacement within the same run. `ready_async()` snapshots that ID when called, before its helper coroutine initially suspends; moving/reassigning/destroying the handle before awaiting the returned task does not change its target. Source: `src/qb/core/Actor.h` (`ActorHandle::ready_async`, `ready_async_impl`), `src/qb/core/VirtualCore.h` (`ActorHandle::get`, `__actor_slot__`).
 *   **Trap:** `auto h = addRefActor<Child>(cfg); h->method();` dereferences `nullptr` whenever `Child::onInit()` is async — debug assert, release UB. Gate the dereference on `ready()`, or `if (co_await h.ready_async(context())) h->method();`. Only the dereference needs the gate; `push(h.id(), ...)` never does.
 
 ### `class qb::Service : public Actor`
@@ -222,8 +237,10 @@ Internal base for per-core singleton-style actors. `explicit Service(ServiceId s
 ### `class qb::ServiceActor<Tag> : public Service`
 Singleton actor base, unique per VirtualCore per `Tag`. Default-constructible.
 *   use: `struct MyService : qb::ServiceActor<MyTag> { ... };` then `getService<MyService>()`.
-*   `[T<Tag>] [[nodiscard]] static ActorId Actor::getServiceId(CoreId index) noexcept` — the id a `ServiceActor<Tag>` has on core `index` (one service id per tag, the same on every core). Arithmetic past the first call: it proves nothing runs there _(Actor.h:832-833, body VirtualCore.h:1519-1528)_.
-*   **Registration.** A tag's service id is drawn once per process, when the tag registers — at static initialisation for every tag the program names (a `ServiceActor<Tag>`, `getService<T>()`, `getServiceId<Tag>()`), so before any core exists. Each core seeds its pool of ordinary-actor ids above the registered tags, and a tag whose FIRST registration comes while any `VirtualCore` is alive — one an image loaded mid-run brings — is **refused**: `getServiceId` gives `{0, index}` (`is_valid()` false), `addActor` returns `NotFound`, `addRefActor` an invalid handle, the service is never constructed, a CRIT line names the tag and a debug build asserts. A first registration is accepted again once every core is gone: load an image that brings service tags before `Main::start` _(Actor.h:2368-2383; VirtualCore.h:1543-1557; VirtualCore.cpp:1737-1772)_. A tag registering between the first `core(index)` and `start()` moves the floor of a pool whose ordinary ids `addActor` already promised: that core refuses to start (a CRIT names the core and the tag; `hasError()`), and a core that promised none starts normally _(VirtualCore.cpp:1774-1799)_.
+*   `[T<Tag>] [[nodiscard]] static ActorId Actor::getServiceId(CoreId index) noexcept` — logical service address: slot `ServiceBand | tag`, generation zero. It does not prove an instance exists and is distinct from the nonzero-generation ID returned by service admission or `Actor::id()`.
+*   **Delivery.** A logical destination binds once to the current service on the receiving core, before activation gating/stashing; handlers then see the captured instance as `getDestination()`. Exact instance-addressed events, handles and activation waits never follow a replacement. `getService<T>()` remains same-core and deliberately phase-blind. A logical death watch keeps its requested address as the watch key and is answered when the instance present at registration dies; an exact instance watch keeps its full ID.
+*   **Registration.** A tag index is allocated once per process through `Actor::registerIndex<Tag>()` and remains stable; service incarnation generations change on release. First-time registration while any core is alive remains refused (invalid address, CRIT, debug assert), so load images introducing tags before `Main::start`. Ordinary capacity is independent of registered tags, and a tag registered before startup cannot shift an already reserved ordinary ID.
+Source: `src/qb/core/VirtualCore.h` (`Actor::getServiceId`, `VirtualCore::getService`), `src/qb/core/VirtualCore.cpp` (`__register_service__`, `__resolve_destination__`, `__receive_events__`, `__register_watch__`, `__on_actor_down__`), `src/qb/core/Actor.cpp` (`Service::Service`).
 
 ### `class qb::Pipe` (`<qb/core/Pipe.h>`)
 Communication channel between actors (obtained via `Actor::getPipe`).
@@ -265,14 +282,14 @@ An event that reaches no actor is a dead letter: the core that dropped it counts
 *   `enum class DownReason : std::uint8_t { killed, init_failed, init_threw, core_stopped, unknown }` — `killed`: `kill()`, a `KillEvent`, the engine's shutdown; `init_failed`: `onInit()` returned false or missed its activation deadline; `init_threw`; `core_stopped`: its core had stopped when the watch reached it, or ended on an exception; `unknown`: no actor held the id _(`DeathWatch.h:36-53`)_.
 *   `inline constexpr std::size_t DownReasons = 5`; `constexpr std::string_view down_reason_name(DownReason) noexcept`.
 *   `struct DownEvent : Event { ActorId watched; DownReason reason; DownEvent(); DownEvent(ActorId gone, DownReason why) noexcept; }` — `getSource()` is the watched id too _(`DeathWatch.h:79-96`)_.
-*   A target-down answer follows that actor's destructor; the reaper calls `__on_actor_down__` afterwards. _(`VirtualCore.cpp:1273-1287`)_
-*   `unknown` and `core_stopped` need no target destructor: an absent target or stopped core is answered by the watcher's core. _(`VirtualCore.cpp:1563-1578, :1643-1652`)_
-*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an answer about an id's previous holder from answering a later watch of the reused id. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1543-1548, :1622-1641`)_
+*   A target-down answer follows that actor's destructor; the reaper calls `__on_actor_down__` afterwards. _(`VirtualCore.cpp:1334-1343, src/qb/core/VirtualCore.cpp:1747-1780`)_
+*   `unknown` and `core_stopped` need no target destructor: the target core answers an unresolved target; the watcher answers an unconfigured core or a core it observes stopping/stopped. _(`VirtualCore.cpp:1623-1638, :1703-1713`)_
+*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an earlier answer from closing a later logical-address watch; full instance generations distinguish replacements. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1603-1608, :1682-1701`)_
 
 ### Events (`<qb/core/Event.h>`)
 
 #### `class qb::Event` (alias `qb::event`)
-Base class for all events; carries header state, id, dest, source. `dest`/`source` are framework-managed (private).
+Base class for all events; carries header state, id, dest, source. `dest`/`source` are framework-managed (private). Two complete 64-bit ActorIds give an occupied header of 24 bytes (state/count/type, destination at byte 8, source at byte 16); the base remains cache-line aligned. On the observed arm64 layout with 64-byte buckets, a plain byte-array payload of 40 bytes occupies one bucket and 41 bytes occupies two. Alignment and derived-event members can change the boundary: measure the actual event type, including ServiceEvent/CorrelatedEvent. Source: `src/qb/core/Event.h` (`Event`, `detail::event_wire`), `tests/core/unit/core/event-header.cpp` (payload-boundary assertions).
 *   `using id_handler_type = ActorId;` `using id_type = EventId` — **one representation in every build mode since 3.0** (it used to be `const char*` without NDEBUG, which moved `dest` from byte 8 to byte 16).
 *   `[T<T>] static id_type type_to_id() noexcept` — `T` must be a **complete** type (it reaches `typeid(T)`).
 *   `[T<T>] static char const *type_to_name() noexcept` — `typeid(T).name()`; diagnostics only.
@@ -307,8 +324,8 @@ Service-to-service event.
 
 #### Event templates
 *   `[T<_Args...>] struct WithData : Event { std::tuple<_Args...> data; explicit WithData(_Args&&...); }`
-*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:855-856`)_.
-*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:864-865`)_.
+*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:797-798`)_.
+*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:806-807`)_.
 *   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
 
 Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a segmented FIFO (256 KB segments from a per-core `segment_pool`, carved eight to a 2 MB slab from the process-wide `allocator::slab_cache`) that never moves a queued event; `Actor::push`'s returned reference is valid until the handler that obtained it returns.

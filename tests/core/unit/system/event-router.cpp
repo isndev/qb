@@ -42,6 +42,7 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include <qb/core/ActorId.h>
 #include <qb/system/event/router.h>
 
 struct ActorId {
@@ -737,3 +738,60 @@ TEST(EventRouting, MemhOnErrorReturnPreservesTransferredOwnership) {
 }
 
 } // namespace router_throw_test
+
+TEST(EventRouting, ActorIdentityBanksSeparateOrdinaryAndServiceSlots) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    const auto                                        ordinary = qb::ActorId::ordinary(7, 2, 9);
+    const auto                                        service  = qb::ActorId::service_instance(7, 2, 9);
+    table.insert_or_assign(ordinary, 17);
+    table.insert_or_assign(service, 29);
+    ASSERT_NE(table.find(ordinary), nullptr);
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(ordinary), 17);
+    EXPECT_EQ(*table.find(service), 29);
+    EXPECT_EQ(table.find(qb::ActorId::service_address(7, 2)), nullptr);
+    std::size_t visited = 0;
+    int         sum     = 0;
+    table.for_each([&](qb::ActorId key, int value) {
+        EXPECT_TRUE(key == ordinary || key == service);
+        if (visited == 0) {
+            EXPECT_EQ(key, service) << "preserve the former service-first traversal";
+        }
+        ++visited;
+        sum += value;
+    });
+    EXPECT_EQ(visited, 2u);
+    EXPECT_EQ(sum, 46);
+}
+
+TEST(EventRouting, ActorIdentityLookupAndEraseRejectStaleIncarnations) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    for (bool service : {false, true}) {
+        const auto old  = service ? qb::ActorId::service_instance(42, 3, 0x12345678) : qb::ActorId::ordinary(42, 3, 0x12345678);
+        const auto next = service ? qb::ActorId::service_instance(42, 3, 0x12345679) : qb::ActorId::ordinary(42, 3, 0x12345679);
+        table.insert_or_assign(old, 1);
+        EXPECT_EQ(table.find(next), nullptr);
+        table.erase(old);
+        table.insert_or_assign(next, 2);
+        EXPECT_EQ(table.find(old), nullptr);
+        table.erase(old);
+        ASSERT_NE(table.find(next), nullptr);
+        EXPECT_EQ(*table.find(next), 2);
+        table.erase(next);
+        EXPECT_EQ(table.find(next), nullptr);
+    }
+}
+
+TEST(EventRouting, ActorIdentityHighSlotAndServiceTagRemainIndependent) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    const auto                                        high    = qb::ActorId::ordinary(200000, 255, 0x89abcdef);
+    const auto                                        service = qb::ActorId::service_instance(65534, 255, 0xfedcba98);
+    table.insert_or_assign(high, 1);
+    table.insert_or_assign(service, 2);
+    ASSERT_NE(table.find(high), nullptr);
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(high), 1);
+    EXPECT_EQ(*table.find(service), 2);
+    EXPECT_EQ(table.find(qb::ActorId::ordinary(200000, 254, 0x89abcdef)), nullptr);
+    EXPECT_EQ(table.find(qb::ActorId::service_instance(65534, 254, 0xfedcba98)), nullptr);
+}

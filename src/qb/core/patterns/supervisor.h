@@ -189,7 +189,7 @@ public:
      * @brief `qb::supervision::watch`: a watched child is gone, whatever ended it.
      * @details A child is unwatched before it is replaced, so a `DownEvent` here is about the
      *          current child of a slot -- never one restarted already, by its `ChildDown` or by a
-     *          sibling's restart, even when the replacement reuses its id.
+     *          sibling's restart, even when the replacement reuses its slot with a new generation.
      */
     void
     on(qb::DownEvent &e) {
@@ -270,9 +270,9 @@ private:
     void
     child_down(std::size_t const slot) {
         if (_max_restarts && over_restart_limit()) {
-            // Not restarted: the slot holds no child from here on. Ids are reused, and the dead
-            // child's may already name another actor -- one this supervisor's teardown or a sibling's
-            // restart would otherwise kill. In watch mode, an answer about it still on its way would
+            // Not restarted: the slot holds no child from here on. Clear its bookkeeping even
+            // though the dead child's complete identity cannot address a replacement incarnation.
+            // In watch mode, an answer about that outgoing child still on its way must not
             // escalate a second time.
             if (_mode == qb::supervision::watch && _children[slot].is_valid())
                 this->unwatch(_children[slot]);
@@ -297,8 +297,8 @@ private:
 
     void
     start_slot(std::size_t i) {
-        // Watch mode: the outgoing child is unwatched first. Its id is likely its replacement's (ids
-        // are reused), and the answer about it still on its way must not be taken for the new one.
+        // Watch mode: withdraw the outgoing child's watch before replacing the recorded identity.
+        // Its late answer must not restart a slot that already holds a different incarnation.
         if (_mode == qb::supervision::watch && _children[i].is_valid())
             this->unwatch(_children[i]);
         _children[i] = spawn_child(i, _gen[i]);

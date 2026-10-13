@@ -25,12 +25,12 @@ A consumer compiled with the knob against an archive compiled without it therefo
 The archive **defines** one symbol per axis, named after the value it was compiled with. Every consumer translation unit that parses a qb header **references** one symbol per axis, named after the value *it* is being compiled with:
 
 ```cpp
-QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint[] = {
+QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint_actor64[] = {
     &QB_ABI_SYM_VERSION, &QB_ABI_SYM_CACHELINE, &QB_ABI_SYM_EXCEPTIONS,
-    &QB_ABI_SYM_CORO_DEBUG, &QB_ABI_SYM_STD_JTHREAD
+    &QB_ABI_SYM_CORO_DEBUG, &QB_ABI_SYM_STD_JTHREAD, &QB_ABI_SYM_ACTOR_ID
 };
 ```
-<!-- src: qb/src/qb/utility/abi.h:364-366 -->
+<!-- src: qb/src/qb/utility/abi.h:373-375 -->
 
 Equal configuration, the references resolve. Different configuration, the link fails and names the axis and *this* translation unit's value. Reproduced here by compiling one object at 128 and the other at 64:
 
@@ -40,7 +40,7 @@ Undefined symbols for architecture arm64:
       qb::detail::abi_fingerprint in main.o
 ```
 
-The array is named `abi_fingerprint` on purpose: the linker prints it on the `referenced from:` line, and grepping for it is the one search that leads to `qb/utility/abi.h` and its explanation.
+The array name includes `abi_fingerprint` on purpose: the linker prints it on the `referenced from:` line, and grepping for it is the one search that leads to `qb/utility/abi.h` and its explanation.
 
 The archive's side of the story is one command away, and needs no demangler:
 
@@ -50,28 +50,29 @@ strings <prefix>/lib/libqb-io.a | grep '^qb-abi '  # -> qb-abi qb=<version> cach
 ```
 <!-- src: qb/src/qb/utility/abi.h:47-50 -->
 
-Both were run here against the object that defines them; the second prints `qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1` (the version being the one the archive was built from), which is the answer to "what was this built with?" in one line. The definitions live in `qb/src/qb/io/abi.cpp:46-50`, so every archive carries them.
+Both were run here against the object that defines them; the second prints `qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1 actor_id=64` (the version being the one the archive was built from), which is the answer to "what was this built with?" in one line. The definitions live in `qb/src/qb/io/abi.cpp:46-51`, so every archive carries them.
 
 **There is no opt-out macro, deliberately.** Every axis below is a configuration in which the two sides are provably unsound together; the fix is to rebuild qb with the same setting, not to silence the check (`qb/src/qb/utility/abi.h:58-60`).
 
 Two implementation details are load-bearing rather than decorative, and both were measured rather than assumed:
 
-- **`__attribute__((used))`** is what makes the check per-translation-unit rather than per-optimiser-whim. Without it, a constant-initialised, never-read pointer array is discarded at `-O1` and above, and a lone oddly-configured translation unit slips through (`qb/src/qb/utility/abi.h:247-252`).
-- **`__attribute__((retain))` is not optional on ELF.** `used` only stops the *compiler* from dropping the array; GNU ld's `--gc-sections` discards the unreferenced section before it resolves the relocations inside it, so every mismatched configuration linked cleanly under `-ffunction-sections -fdata-sections -Wl,--gc-sections` — with clang-19 *and* g++-14, ld 2.44. That is a common consumer setting, so without `retain` the check would be silently defeated for exactly the builds most likely to use it (`qb/src/qb/utility/abi.h:254-261`).
+- **`__attribute__((used))`** is what makes the check per-translation-unit rather than per-optimiser-whim. Without it, a constant-initialised, never-read pointer array is discarded at `-O1` and above, and a lone oddly-configured translation unit slips through (`qb/src/qb/utility/abi.h:267-270`).
+- **`__attribute__((retain))` is not optional on ELF.** `used` only stops the *compiler* from dropping the array; GNU ld's `--gc-sections` discards the unreferenced section before it resolves the relocations inside it, so every mismatched configuration linked cleanly under `-ffunction-sections -fdata-sections -Wl,--gc-sections` — with clang-19 *and* g++-14, ld 2.44. That is a common consumer setting, so without `retain` the check would be silently defeated for exactly the builds most likely to use it (`qb/src/qb/utility/abi.h:259-266`).
 
-On MSVC and clang-cl the same axes are additionally emitted as `#pragma detect_mismatch` records, which the Microsoft linker reports as `LNK2038` naming **both** values (`qb/src/qb/utility/abi.h:385-393`). That pragma is a verified no-op on Mach-O and ELF, so it is a bonus on Windows, never the mechanism. It goes through `_Pragma` rather than `#pragma` because a `#pragma` line's arguments are not macro-expanded — both sides of the comparison would otherwise read `QB_ABI_STR(...)` and could never differ (`qb/src/qb/utility/abi.h:378-384`).
+On MSVC and clang-cl the same axes are additionally emitted as `#pragma detect_mismatch` records, which the Microsoft linker reports as `LNK2038` naming **both** values (`qb/src/qb/utility/abi.h:394-403`). That pragma is a verified no-op on Mach-O and ELF, so it is a bonus on Windows, never the mechanism. It goes through `_Pragma` rather than `#pragma` because a `#pragma` line's arguments are not macro-expanded — both sides of the comparison would otherwise read `QB_ABI_STR(...)` and could never differ (`qb/src/qb/utility/abi.h:387-393`).
 
-## The five axes
+## Fingerprint axes
 
 An axis qualifies only if a difference between archive and consumer is (a) *possible* in a build that otherwise compiles and links, (b) *silent* — no diagnostic from any tool, and (c) *unsound* — it changes the layout of a public type, or the body of an entity the archive also defines (`qb/src/qb/utility/abi.h:63-68`).
 
 | Axis | Symbol | What differs |
 |---|---|---|
-| qb version | `qb_abi_version_M_m_p` | installed headers and archive are one unit, and nothing else detects skew. It is also the axis that catches a consumer compiled with **no** qb CMake usage requirements at all |
+| qb version and identity layout | `qb_abi_version_M_m_p_actor64` | installed headers and archive are one unit, and nothing else detects skew. It is also the axis that catches a consumer compiled with **no** qb CMake usage requirements at all |
 | cache line | `qb_abi_cacheline_N` | `sizeof(qb::Event)` 64 → 128, `CoroutineFrameAllocator::kAlign` 64 → 128 |
 | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks 8 inline bodies, two of which the archive also defines |
 | coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 → 40 |
-| jthread source | `qb_abi_std_jthread_[01]` | `qb::jthread` 16 → 24, moving every member after it: `qb::Main` 88 → 96, `qb::VirtualCore` 8648 → 8656 |
+| jthread source | `qb_abi_std_jthread_[01]` | Changing the jthread representation can move later members; measure the concrete build rather than reuse historical structure sizes |
+| actor identity | `qb_abi_actor_id_64` | ActorId is 8 bytes; the occupied event header is 24 bytes, with its source at byte 16 |
 
 <!-- src: qb/src/qb/utility/abi.h:69-77 -->
 
@@ -80,10 +81,24 @@ Each value is derived **once**, in `abi.h`, from the raw knob — and qb's own s
 The version comes from qb's CMake usage requirements, never from a literal written in the header. A translation unit compiled without them — a hand-written `-I`/`-l` line — is not merely missing the version, it is also missing `QB_HAS_SSL` / `QB_HAS_QUIC` / `QB_HAS_COMPRESSION`, and gets a program whose inline feature answers contradict the archive's out-of-line ones. So that case gets a symbol whose *name* says what to do about it:
 
 ```
-"_qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements", referenced from:
+"_qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements_actor64", referenced from:
 ```
 
-which is what a compile against the source tree with a bare `-Isrc` produces, verbatim (`qb/src/qb/utility/abi.h:226-232`).
+which is what a compile against the source tree with a bare `-Isrc` produces, verbatim (`qb/src/qb/utility/abi.h:231-237`).
+
+### Actor identity changes require a coherent rebuild
+
+The 64-bit identity layout must not be combined with a 32-bit archive, even when both
+builds carry the same release version. Its fixed layout symbol and the version-symbol
+suffix reject either direction. The retained reference array also has a different name,
+so old and new consumer translation units cannot fold away each other's layout checks.
+Rebuild the complete qb/module/consumer graph together; the link check does not convert
+old event bytes or truncate identities. Source: `qb/utility/abi.h` and `qb/io/abi.cpp`.
+
+The ordinary numeric codec uses `raw64()` and `ActorId::from_raw(uint64_t)`. The old
+`uint32_t` constructor and numeric conversion are unavailable. A serialized integer
+is not a durable identity: an actor id is scoped to its engine run. Validate any
+application-level persistence contract separately.
 
 ### What is deliberately excluded
 
@@ -103,7 +118,7 @@ Each exclusion must be re-argued before it changes (`qb/src/qb/utility/abi.h:79-
 
 A handful of qb entities are *identity* rather than data: the event type-id counter, the per-type magic static that draws from it, the router's disposer table, the `ServiceActor` registry, the per-thread `listener` and `VirtualCore`, the coroutine frame pool, and the `no_protocol()` null-object sentinel — which is compared **by address**.
 
-Every one of them is a vague-linkage entity: an `inline` variable, a static data member of a class template, or a function-local `static`. Vague linkage means "N definitions, the linker keeps one", and *which* linker does the keeping matters. The static linker folds them within one image; the dynamic linker coalesces the remaining weak definitions **across** images. That second step is what `-fvisibility=hidden` turns off (`qb/src/qb/utility/abi.h:284-294`).
+Every one of them is a vague-linkage entity: an `inline` variable, a static data member of a class template, or a function-local `static`. Vague linkage means "N definitions, the linker keeps one", and *which* linker does the keeping matters. The static linker folds them within one image; the dynamic linker coalesces the remaining weak definitions **across** images. That second step is what `-fvisibility=hidden` turns off (`qb/src/qb/utility/abi.h:289-299`).
 
 The failure it produces is exact and silent. Host executable plus a `dlopen`ed plugin, both statically linking qb, plugin compiled `-fvisibility=hidden` (`RTLD_LOCAL` and `RTLD_GLOBAL` alike):
 
@@ -113,13 +128,13 @@ The failure it produces is exact and silent. Host executable plus a `dlopen`ed p
  host: KillEvent=1  SignalEvent=2      host:   KillEvent=1  SignalEvent=2
  plug: KillEvent=1  Noop=7             plug:   KillEvent=1  Noop=2   <-- COLLISION
 ```
-<!-- src: qb/src/qb/utility/abi.h:298-306 -->
+<!-- src: qb/src/qb/utility/abi.h:303-311 -->
 
 Two distinct event types hold id 2, so the router sends them to the same slot. Both runs exit 0 and print nothing. `visibility("default")` on the anchor restores the coalescing, measured on the same harness with the plugin still compiled `-fvisibility=hidden`.
 
-The attribute has a **second** job that decides whether an anchor can be shared at all. A `thread_local` defined out of line in a `.cpp` emits a `non-external` TLS descriptor — private to its image by construction — so two images that each link `libqb-io.a` get two per-thread event loops on the *same* thread, and neither dyld nor the linker says a word. The same entity defined `inline` in a header emits a **weak-external** descriptor that dyld coalesces. That is why these anchors live in headers rather than in `.cpp` files, and why moving one back would silently reintroduce the split (`qb/src/qb/utility/abi.h:310-321`).
+The attribute has a **second** job that decides whether an anchor can be shared at all. A `thread_local` defined out of line in a `.cpp` emits a `non-external` TLS descriptor — private to its image by construction — so two images that each link `libqb-io.a` get two per-thread event loops on the *same* thread, and neither dyld nor the linker says a word. The same entity defined `inline` in a header emits a **weak-external** descriptor that dyld coalesces. That is why these anchors live in headers rather than in `.cpp` files, and why moving one back would silently reintroduce the split (`qb/src/qb/utility/abi.h:315-326`).
 
-`QB_ABI_ANCHOR` is empty on MSVC: qb annotates no symbol for `__declspec(dllimport)` today, so a Windows *shared* build needs the export-macro work first. On ELF and Mach-O it is exactly the annotation `-fvisibility=hidden` requires (`qb/src/qb/utility/abi.h:324-337`).
+`QB_ABI_ANCHOR` is empty on MSVC: qb annotates no symbol for `__declspec(dllimport)` today, so a Windows *shared* build needs the export-macro work first. On ELF and Mach-O it is exactly the annotation `-fvisibility=hidden` requires (`qb/src/qb/utility/abi.h:329-342`).
 
 ## The cache line: `qb/utility/prefix.h`
 
@@ -146,7 +161,7 @@ struct QB_LOCKFREE_EVENT_BUCKET_ALIGNMENT EventBucket { uint32_t __raw__[…]; }
 | that ceiling, in bytes | 65 472 | 65 408 |
 | a default `pipe<EventBucket>` at rest | 256 KiB | 512 KiB |
 
-An event wider than the ceiling can never be enqueued into a peer mailbox, because the ring enqueue is all-or-nothing. The flush does not retry it: it logs at `LOG_CRIT`, disposes the event and skips it (`src/qb/core/VirtualCore.cpp:564-567`). That is the practical face of "keep events small" — the number is 1023 buckets, and it comes from here.
+An event wider than the ceiling can never be enqueued into a peer mailbox, because the ring enqueue is all-or-nothing. The flush does not retry it: it logs at `LOG_CRIT`, disposes the event and skips it (`src/qb/core/VirtualCore.cpp:619-622`). That is the practical face of "keep events small" — the number is 1023 buckets, and it comes from here.
 
 Doubling the cache line also doubles every pipe's resting allocation, which is the other half of the [pipe memory profile](./buffers.md#memory-it-grows-and-it-does-not-come-back).
 
@@ -165,10 +180,10 @@ Four small headers round out the layer. None of them is a facility you go lookin
 ## Pitfalls
 
 - **`KNOWN_L1_CACHE_LINE_SIZE` is a public ABI axis, not a tuning flag.** Setting it on the consumer and not on the library is a link error by design; setting it on both re-lays out `qb::Event`, halves the mailbox event ceiling *in buckets* (1023 → 511; in bytes it barely moves) and doubles every pipe's resting allocation. If you set it, set it for the whole build.
-- **A hand-written `-I`/`-l` line will not link.** You get `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements`, which is the intended outcome: without qb's CMake usage requirements you are also missing the feature macros, and the resulting program's inline answers contradict the archive's (`qb/src/qb/utility/abi.h:226-232`).
+- **A hand-written `-I`/`-l` line will not link.** You get `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements`, which is the intended outcome: without qb's CMake usage requirements you are also missing the feature macros, and the resulting program's inline answers contradict the archive's (`qb/src/qb/utility/abi.h:231-237`).
 - **Do not mix `NDEBUG` across translation units.** It is deliberately *not* in the fingerprint, so nothing will tell you; the residual is documented above and in [Building qb](../7_reference/building.md).
-- **Do not move a `QB_ABI_ANCHOR` entity out of a header into a `.cpp`.** It silently changes a weak-external TLS descriptor into a private one, and two images then get two copies of something that must be one (`qb/src/qb/utility/abi.h:310-321`).
-- **`-fvisibility=hidden` on a plugin needs the anchors.** Without them the event type-id counter is duplicated per image and two event types collide on one id — with no crash and no message (`qb/src/qb/utility/abi.h:298-306`).
+- **Do not move a `QB_ABI_ANCHOR` entity out of a header into a `.cpp`.** It silently changes a weak-external TLS descriptor into a private one, and two images then get two copies of something that must be one (`qb/src/qb/utility/abi.h:315-326`).
+- **`-fvisibility=hidden` on a plugin needs the anchors.** Without them the event type-id counter is duplicated per image and two event types collide on one id — with no crash and no message (`qb/src/qb/utility/abi.h:303-311`).
 - **`QB_ASSUME` is not `assert`.** Its expression is never evaluated; a side effect written inside one simply does not happen (`qb/src/qb/utility/branch_hints.h:73-76`).
 - **`qb::nocopy` also deletes the move members** (`qb/src/qb/utility/nocopy.h:71-76`). If you inherit it and want moves, declare them.
 

@@ -99,7 +99,7 @@ BM_Pipeline_Chain_Latency(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK_TEMPLATE(BM_Pipeline_Chain_Latency, LightEvent)
+BENCHMARK_TEMPLATE(BM_Pipeline_Chain_Latency, RoutedLatencyEvent)
     ->Apply(qb::bench::apply_pipeline_chain_args)
     ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
     ->Unit(benchmark::kMillisecond)

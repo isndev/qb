@@ -215,6 +215,9 @@
 #define QB_ABI_SYM_EXCEPTIONS QB_ABI_PASTE(qb_abi_exceptions_, QB_ABI_EXCEPTIONS)
 #define QB_ABI_SYM_CORO_DEBUG QB_ABI_PASTE(qb_abi_coroutine_debug_, QB_ABI_CORO_DEBUG)
 #define QB_ABI_SYM_STD_JTHREAD QB_ABI_PASTE(qb_abi_std_jthread_, QB_ABI_STD_JTHREAD)
+// Actor identity changes the event wire layout even within the same release train.
+// Keep this fixed by the source layout, never by a consumer-selectable build option.
+#define QB_ABI_SYM_ACTOR_ID qb_abi_actor_id_64
 
 // The version comes from qb's CMake usage requirements (QB_VERSION_* -- see
 // qb/cmake/qbConfig.cmake, sourced from QB_FRAMEWORK_VERSION), never from a literal written here:
@@ -223,11 +226,13 @@
 // version, it is also missing QB_HAS_SSL / QB_HAS_QUIC / QB_HAS_COMPRESSION, and gets a program
 // whose inline feature answers contradict the archive's out-of-line ones. So that case gets a
 // symbol whose name says what to do about it rather than a misleading `0_0_0`.
+// The layout suffix also makes old headers reject the new archive: retaining the old
+// version symbol would let a 32-bit consumer silently link to 64-bit event operations.
 #if defined(QB_VERSION_MAJOR) && defined(QB_VERSION_MINOR) && defined(QB_VERSION_PATCH)
-#define QB_ABI_SYM_VERSION QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH)
+#define QB_ABI_SYM_VERSION QB_ABI_PASTE(QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH), _actor64)
 #define QB_ABI_VERSION_TEXT QB_ABI_STR(QB_VERSION_MAJOR) "." QB_ABI_STR(QB_VERSION_MINOR) "." QB_ABI_STR(QB_VERSION_PATCH)
 #else
-#define QB_ABI_SYM_VERSION qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements
+#define QB_ABI_SYM_VERSION qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements_actor64
 #define QB_ABI_VERSION_TEXT "unknown"
 #endif
 
@@ -240,14 +245,14 @@
  */
 #define QB_ABI_FINGERPRINT_TEXT                                                                                  \
     "qb-abi qb=" QB_ABI_VERSION_TEXT " cacheline=" QB_ABI_STR(QB_ABI_CACHELINE_BYTES) " exceptions=" QB_ABI_STR( \
-        QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD)
+        QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD) " actor_id=64"
 
 #ifdef __cplusplus
 
 // `used` is what makes the check per-translation-unit rather than per-optimiser-whim: without it
 // a constant-initialised, never-read pointer array is discarded at -O1 and above, and a lone
 // oddly-configured TU would slip through. With it, EVERY TU that parses a qb header carries the
-// references. Cost: one 5-word COMDAT array the linker folds to a single copy, and no static
+// references. Cost: one 6-word COMDAT array the linker folds to a single copy, and no static
 // initialiser (the addresses are constant expressions -- qb/core/Event.cpp deliberately carries
 // no __mod_init_func and this must not change that).
 //
@@ -337,7 +342,7 @@
 #endif
 
 // Annotated for the same reason as the identity anchors above: a shared qb built
-// `-fvisibility=hidden` would otherwise stop exporting these six and every consumer would fail to
+// `-fvisibility=hidden` would otherwise stop exporting these seven and every consumer would fail to
 // link. Loud rather than silent, but total. A static archive was never at risk -- hidden
 // visibility governs dynamic export, not static-link resolution.
 extern "C" {
@@ -351,6 +356,8 @@ QB_ABI_ANCHOR extern const char QB_ABI_SYM_EXCEPTIONS;
 QB_ABI_ANCHOR extern const char QB_ABI_SYM_CORO_DEBUG;
 /** @brief Defined by libqb-io, named after the archive's `QB_ABI_STD_JTHREAD`. */
 QB_ABI_ANCHOR extern const char QB_ABI_SYM_STD_JTHREAD;
+/** @brief Defined by libqb-io for the 64-bit actor identity and event wire layout. */
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_ACTOR_ID;
 /** @brief Defined by libqb-io: `QB_ABI_FINGERPRINT_TEXT` as the archive spells it. */
 QB_ABI_ANCHOR extern const char qb_abi_fingerprint[];
 }
@@ -361,9 +368,11 @@ namespace qb::detail {
  * @details Named plainly on purpose: the linker prints it on the `referenced from:` line, and
  *          `abi_fingerprint` is the one grep that leads to this file and its explanation.
  */
-QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint[] = {
-    &QB_ABI_SYM_VERSION, &QB_ABI_SYM_CACHELINE, &QB_ABI_SYM_EXCEPTIONS, &QB_ABI_SYM_CORO_DEBUG, &QB_ABI_SYM_STD_JTHREAD
-};
+// A distinct retained array name prevents mixed 32/64-bit consumer TUs from
+// coalescing away one layout's references before the linker checks them.
+QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint_actor64[] = {&QB_ABI_SYM_VERSION,     &QB_ABI_SYM_CACHELINE,
+                                                                                &QB_ABI_SYM_EXCEPTIONS,  &QB_ABI_SYM_CORO_DEBUG,
+                                                                                &QB_ABI_SYM_STD_JTHREAD, &QB_ABI_SYM_ACTOR_ID};
 } // namespace qb::detail
 
 #endif /* __cplusplus */
@@ -390,6 +399,7 @@ QB_ABI_DETECT_MISMATCH("qb_cacheline", QB_ABI_STR(QB_ABI_CACHELINE_BYTES))
 QB_ABI_DETECT_MISMATCH("qb_exceptions", QB_ABI_STR(QB_ABI_EXCEPTIONS))
 QB_ABI_DETECT_MISMATCH("qb_coroutine_debug", QB_ABI_STR(QB_ABI_CORO_DEBUG))
 QB_ABI_DETECT_MISMATCH("qb_std_jthread", QB_ABI_STR(QB_ABI_STD_JTHREAD))
+QB_ABI_DETECT_MISMATCH("qb_actor_id", "64")
 #endif
 
 #endif /* QB_UTILS_ABI_H */

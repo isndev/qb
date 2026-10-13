@@ -152,14 +152,20 @@ static_assert(sizeof(MsgOrder) <= sizeof(EventBucket));
 static_assert(sizeof(MsgPing) <= sizeof(EventBucket));
 static_assert(sizeof(MsgNotify) <= sizeof(EventBucket));
 
-[[nodiscard]] constexpr std::uint32_t
-pack_actor(std::uint16_t const sid, std::uint16_t const core = 0) noexcept {
-    return (static_cast<std::uint32_t>(core) << 16) | static_cast<std::uint32_t>(sid);
+// One source for the candidate and c73dfecc A/B builds. Construct complete identities once,
+// before timing; only the legacy branch knows the former 16-bit sid / 16-bit core codec.
+template <typename Id>
+[[nodiscard]] Id
+bench_actor_id(std::uint16_t const sid, std::uint16_t const core = 0) noexcept {
+    if constexpr (requires { Id::ordinary(sid, core, std::uint32_t{1}); })
+        return Id::ordinary(sid, core, 1);
+    else
+        return Id((static_cast<std::uint32_t>(core) << 16) | static_cast<std::uint32_t>(sid));
 }
 
-constexpr std::uint32_t kBenchDstOrder = pack_actor(201);
-constexpr std::uint32_t kBenchDstPing  = pack_actor(202);
-constexpr std::uint32_t kBenchDstNote  = pack_actor(203);
+const qb::ActorId kBenchDstOrder = bench_actor_id<qb::ActorId>(201);
+const qb::ActorId kBenchDstPing  = bench_actor_id<qb::ActorId>(202);
+const qb::ActorId kBenchDstNote  = bench_actor_id<qb::ActorId>(203);
 
 // Consumer-local checksum: keeps handler work observable without an atomic per message.
 struct LocalChecksum {
@@ -177,8 +183,8 @@ class HandlerOrder final {
     LocalChecksum    *_checksum;
 
 public:
-    HandlerOrder(std::uint32_t const packed, LocalChecksum &checksum) noexcept
-        : _id(packed)
+    HandlerOrder(qb::ActorId const id, LocalChecksum &checksum) noexcept
+        : _id(id)
         , _checksum(&checksum) {}
     [[nodiscard]] qb::ActorId
     id() const noexcept {
@@ -199,8 +205,8 @@ class HandlerPing final {
     LocalChecksum    *_checksum;
 
 public:
-    HandlerPing(std::uint32_t const packed, LocalChecksum &checksum) noexcept
-        : _id(packed)
+    HandlerPing(qb::ActorId const id, LocalChecksum &checksum) noexcept
+        : _id(id)
         , _checksum(&checksum) {}
     [[nodiscard]] qb::ActorId
     id() const noexcept {
@@ -221,8 +227,8 @@ class HandlerNotify final {
     LocalChecksum    *_checksum;
 
 public:
-    HandlerNotify(std::uint32_t const packed, LocalChecksum &checksum) noexcept
-        : _id(packed)
+    HandlerNotify(qb::ActorId const id, LocalChecksum &checksum) noexcept
+        : _id(id)
         , _checksum(&checksum) {}
     [[nodiscard]] qb::ActorId
     id() const noexcept {
@@ -268,11 +274,11 @@ make_routed_bucket(std::size_t const pid, std::uint64_t const sent) noexcept {
     const auto salt = static_cast<std::uint32_t>(sent + pid * 997u);
     switch ((sent + pid) % 3u) {
         case 0u:
-            return write_bucket<MsgOrder>(qb::ActorId{kBenchDstOrder}, salt);
+            return write_bucket<MsgOrder>(kBenchDstOrder, salt);
         case 1u:
-            return write_bucket<MsgPing>(qb::ActorId{kBenchDstPing}, salt);
+            return write_bucket<MsgPing>(kBenchDstPing, salt);
         default:
-            return write_bucket<MsgNotify>(qb::ActorId{kBenchDstNote}, salt);
+            return write_bucket<MsgNotify>(kBenchDstNote, salt);
     }
 }
 

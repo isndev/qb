@@ -8,7 +8,7 @@
 
 ## The decision the whole tier descends from
 
-An `ActorId` is `{ServiceId, CoreId}` packed into 32 bits, and **the core half is not metadata — it is the routing decision.** Every send resolves the destination core, then appends raw bytes to a buffer dedicated to that core. Nothing ever looks an actor up by identity across a thread boundary.
+An `ActorId` packs a 32-bit generation, an 8-bit core and a 24-bit slot into 64 bits. **The core selects the receiving thread; the complete identity selects one incarnation.** Every send resolves the destination core, then appends raw bytes to a buffer dedicated to that core. Nothing ever looks an actor up by identity across a thread boundary.
 
 Because actors are thread-affine, `VirtualCore::_handler` — a `thread_local` pointer to "the core running on this thread" — is always the right core, so almost every `qb::Actor` member is a one-line forward through it and **the actor state path carries no lock, no atomic and no fence.** `_alive` is a plain `bool` on purpose.
 

@@ -640,7 +640,7 @@ CoroContext::time() const noexcept {
 }
 
 Service::Service(ServiceId const sid) noexcept
-    : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
+    : Actor(VirtualCore::_handler->__generate_service_id__(sid)) {}
 
 namespace detail {
 
@@ -653,14 +653,15 @@ namespace detail {
 // until a program calls `qb::io::log::init()`. So on its own it would leave this report missing
 // in ordinary builds, which is the very failure being fixed. `qb::io::cerr()` is qb's own
 // mutex-guarded stderr (`qb/io.h:166`), always compiled, and is what the engine already uses to
-// announce a failed core init (`Main.cpp:658-659`). Nothing here is on a hot path: reaching this
+// announce a failed core init (`Main.cpp:670-671`). Nothing here is on a hot path: reaching this
 // function at all means a coroutine body threw.
 void
 report_unhandled_coroutine_exception(ActorId const owner, char const *const api, std::exception_ptr ep) noexcept {
     const auto emit = [&](char const *const what) {
-        QB_LOG_CRIT("Actor(" << owner.index() << '.' << owner.sid() << ") " << api << "() coroutine body let an exception escape: " << what
+        QB_LOG_CRIT("Actor(" << owner.index() << '.' << owner.sid() << "@" << owner.generation() << ") " << api
+                             << "() coroutine body let an exception escape: " << what
                              << " -- the frame unwound and the exception was DISCARDED.");
-        qb::io::cerr() << "CRITICAL: qb Actor(" << owner.index() << '.' << owner.sid() << ") " << api
+        qb::io::cerr() << "CRITICAL: qb Actor(" << owner.index() << '.' << owner.sid() << "@" << owner.generation() << ") " << api
                        << "() coroutine body let an exception escape, and it was DISCARDED: " << what
                        << " -- a spawned coroutine has no caller to receive it. Catch it in the body and report through an event." << std::endl;
     };
@@ -761,13 +762,13 @@ Actor::unwatch(ActorId const target) const noexcept {
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << "@" << actor.id().generation() << ")";
     return os;
 }
 #endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << "@" << actor.id().generation() << ")";
     return os;
 }

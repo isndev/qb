@@ -44,7 +44,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:501-534`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:447-547`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -299,7 +299,7 @@ void Worker::on(const DoWork &event) {
 
 On a detected failure the supervisor picks a policy:
 
-- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). It is a new actor even when its id is the old one's — ids are reused — so unwatch the old id before watching the new actor, and update any routing tables.
+- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). A replacement has a new instance ID even when its slot is reused. Withdraw obsolete watches and update routing tables to that identity; use a logical service address only when following replacements is intended.
 - **Delegate.** Reassign the failed worker's pending work to a healthy peer in the pool.
 - **Escalate.** If a worker fails repeatedly, or the failure is structural, notify a higher-level manager or alerting actor instead of restarting in a loop.
 - **Degrade or stop.** If a critical dependency is gone, stop dependent actors or switch the subsystem into a reduced-capability mode rather than serving incorrect results.
@@ -466,7 +466,7 @@ Decision table:
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.
 - **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, `watch()` the actors you depend on (one `DownEvent` when one is gone) and `co_await qb::ping` the ones that might be stuck — see [Supervision](#supervision).
-- **Watching a replacement while its predecessor's answer is on its way.** Ids are reused, and watching an id already watched is a no-op until its answer arrives: that answer — about the predecessor — would answer the new watch. `unwatch()` the outgoing actor before watching its replacement.
+- **Reusing a logical service watch while its predecessor's answer is on its way.** Instance generations distinguish replacements. A logical service watch, however, retains its requested address and captured incarnation until answered; watching that same address again is a no-op while pending. `unwatch()` the address before starting a new watch of it.
 
 ## See also
 

@@ -23,16 +23,20 @@
  */
 
 #include <qb/core/ActorId.h>
+#include <ostream>
 
-// Every ActorId member is defined in-class (see the note at the top of the class): the
-// accessors sit on the per-event hot path of code instantiated in the user's TU, where an
-// out-of-line definition is a call into the archive. Nothing is left to define here.
+// Accessors remain in-class on the per-event path. Only diagnostic stream output lives here.
+
+std::ostream &
+qb::operator<<(std::ostream &os, qb::ActorId const &id) {
+    return os << id.index() << '.' << id.slot() << '@' << id.generation();
+}
 
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::ActorId const &id) {
     std::stringstream ss;
-    ss << id.index() << "." << id.sid();
+    ss << id.index() << "." << id.slot() << "@" << id.generation();
     os << ss.str();
     return os;
 }
