@@ -687,6 +687,11 @@ class ApiActor : public qb::Actor {
     std::unique_ptr<qb::io::async::ScopedTimeout<std::function<void()>>> _drain_check;
 
 public:
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::KillEvent>(*this);
+        co_return true;
+    }
+
     void on(qb::KillEvent const &) {
         if (!has_active_coroutines()) {
             kill();

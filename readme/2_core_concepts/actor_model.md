@@ -147,8 +147,9 @@ stateDiagram-v2
         processed one event at a time.
     end note
     note right of Killing
-        kill() sets _alive = false and stops new
-        events; queued events may still drain.
+        kill() sets _alive = false; no later
+        queued event invokes an actor handler.
+        Its storage is still drained and disposed.
         ~Actor() runs later, VirtualCore-controlled.
     end note
 ```
@@ -157,7 +158,7 @@ Key invariants, each grounded in the source:
 
 - **Construction is thread-affine.** An actor must be constructed from within a `VirtualCore` worker thread, never from the main thread or an arbitrary user thread. The constructors assert this (`VirtualCore::_handler != nullptr`). In practice you never call the constructor directly — you use `engine.core(idx).addActor<T>(...)`, `engine.addActor<T>(idx, ...)`, or `addRefActor<T>(...)`, all of which run the construction on the correct thread.
 - **`onInit()` runs exactly once**, after construction and id assignment, before any business event is processed. It is an async coroutine (`qb::io::async::task<bool>`): `co_return true` activates the actor, `co_return false` or an uncaught exception aborts registration and immediately destroys it. While a suspended `onInit()` is in flight the actor is **Activating** — unicast business events are stashed and replayed FIFO once active, bounded by `qb::VirtualCore::activation_deadline_ns`. `is_active()` reports whether activation completed (vs `is_alive()`).
-- **`kill()` only flags.** It sets the internal `_alive` flag to `false` and asks the `VirtualCore` to schedule removal. The actor stops receiving *new* events but may still drain events already queued; `~Actor()` runs later, under `VirtualCore` control, not at the point of the `kill()` call. `kill()` is `const noexcept` — handlers can call it even through a const `this`.
+- **`kill()` stops later dispatch immediately and defers destruction.** It sets the internal `_alive` flag to `false` and asks the `VirtualCore` to schedule removal. The current handler runs to its return, but queued business events no longer invoke this actor's handlers; the core may still drain and dispose their storage. `~Actor()` runs later, under `VirtualCore` control, not at the point of the `kill()` call. Use an explicit drain-and-ack phase before `kill()` when queued business work must complete. `kill()` is `const noexcept` — handlers can call it even through a const `this`.
 - **The destructor is the RAII boundary.** It runs after the actor has terminated and the engine removes it. Member objects with their own destructors are cleaned up here; this is the natural place to release anything not covered by RAII members.
 
 The full lifecycle walkthrough, the `is_alive()` semantics, and graceful-shutdown patterns are owned by [qb-core: the Actor API](../4_qb_core/actor.md). Runnable lifecycle coverage lives in [`tests/core/system/lifecycle/`](../../tests/core/system/lifecycle/).
@@ -198,7 +199,7 @@ That guarantee covers an actor's *own* state only. It does not extend to memory 
 ## Pitfalls
 
 - **Do not block in a handler.** Event handlers and `qb::ICallback::on(qb::LoopEvent const&)` implementations run on the `VirtualCore` thread and must never block. A long computation, a synchronous file read, or a wait on an external lock freezes the entire core, stalling *every* actor assigned to it. Offload long work to a spawned coroutine (`spawn`) or a dedicated worker actor; `qb::io::async::defer` moves it off the current handler frame but keeps it on the same core's turn, and `qb::io::async::callback` **without** a delay does not move it at all — it runs inline. See [Asynchronous I/O](./async_io.md).
-- **`kill()` is not immediate.** It flags the actor; queued events may still be processed and the destructor runs later. Do not assume the actor is gone the instant `kill()` returns.
+- **`kill()` stops future handler dispatch before destruction.** The current handler finishes, queued event storage may still be drained and disposed without invoking the actor, and the destructor runs later. Do not assume the actor object is gone the instant `kill()` returns.
 - **Sharing external state is your responsibility.** The lock-free guarantee applies only to an actor's private members. If an actor must touch a global, a static, or a non-thread-safe third-party library, you must serialize that access yourself — typically by funneling all access through one dedicated "manager" actor so the actor model serializes it for you.
 - **Direct calls on referenced actors bypass the mailbox.** `addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>`; calling `handle->method()` skips the child's event queue and its one-event-at-a-time guarantee. Only call through the handle when `handle.ready()` (the child is active) — `get()`/`operator->` return `nullptr` (debug `assert`) while it is Activating or after it died, never a dangling pointer. Prefer sending events to `handle.id()` after checking `handle.valid()`; they are stashed while Activating. See [qb-core: the Actor API](../4_qb_core/actor.md).
 - **`send()` requires a trivially destructible event.** The unordered `send<Event>()` path requires the event type to be trivially destructible and does not guarantee delivery order; prefer the ordered `push<Event>()` for almost all cases. Ordering and delivery semantics are detailed in [The event system](./event_system.md).
@@ -207,6 +208,6 @@ That guarantee covers an actor's *own* state only. It does not extend to memory 
 
 - [The event system](./event_system.md) — defining events, the `push`/`send`/`reply`/`forward` API, and ordering guarantees.
 - [Concurrency and parallelism](./concurrency.md) — how `qb::Main` and `qb::VirtualCore` schedule actors across cores.
-- [Asynchronous I/O](./async_io.md) — keeping handlers non-blocking with the event loop and `qb::io::async::callback`.
+- [Asynchronous I/O](./async_io.md) — keeping handlers non-blocking with event-loop I/O and offloading blocking calls when needed.
 - [qb-core: the Actor API](../4_qb_core/actor.md) — the complete actor reference: full lifecycle, callbacks, referenced actors, services, and coroutines.
 - [Getting started](../6_guides/getting_started.md) — these concepts in a first runnable program.

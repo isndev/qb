@@ -239,7 +239,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 `Actor::spawn()` and `Actor::spawn_detached()` are the two supported ways to run a C++20 coroutine inside an actor. Both launch the coroutine in an *isolated context* on the actor's own `VirtualCore` and return immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. They differ only in lifetime:
 
 - **`spawn()` — recommended default.** *Scoped* to the actor: `kill()` cancels it at the next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` with cancellation-aware operations (`ctx.sleep`, `ctx.until_cancelled`, `ctx.cancellation_point`, `ctx.cancellable`). Request/response patterns (`qb::ask`, `qb::ask_all`, `qb::run_saga`, …) are free functions in `qb/patterns.h` built on it.
-- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's lifetime: it runs to completion even after the actor is destroyed and is never cancelled. Its callable receives a plain `qb::CoroContext`. Use it only when the work must deliberately outlive its actor.
+- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1696-1707; qb/src/qb/core/VirtualCore.cpp:1022-1024 -->
 
 The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which both entry points share.
 
@@ -281,7 +281,7 @@ The result arrives as an ordinary event handler — `on(ProcessingComplete&)` �
 
 - `spawn()` and `spawn_detached()` must be called from the actor's `VirtualCore` worker thread; each debug-asserts that a coroutine scheduler exists on the calling thread.
 - Each call creates two coroutine frames by design (a lifetime-tracking wrapper plus your body). The wrapper increments a reference-counted census cell that outlives the actor (a plain count — the frame and the actor share one thread), so a suspended coroutine cannot use-after-free its owner.
-- A `spawn()` coroutine also joins the actor's cancellation scope; `kill()` cancels the scope, so any of its coroutines parked on a cancellation-aware op (`ctx.sleep`, `qb::ask`, `ctx.until_cancelled`, `ctx.cancellation_point`) unwind promptly instead of running to a long timeout. A `spawn_detached()` coroutine is never cancelled and runs to completion.
+- A `spawn()` coroutine also joins the actor's cancellation scope; `kill()` cancels the scope, so any of its coroutines parked on a cancellation-aware op (`ctx.sleep`, `qb::ask`, `ctx.until_cancelled`, `ctx.cancellation_point`) unwind promptly instead of running to a long timeout. `spawn_detached()` is not cancelled by that scope; completion still requires its VirtualCore to remain running.
 - `has_active_coroutines()` reports whether any spawned coroutine is still in flight — useful when deciding whether it is safe to `kill()`.
 
 **Pitfalls.**

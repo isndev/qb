@@ -39,7 +39,7 @@ namespace ev = ::ev;
 
 /* qb builds its vendored libev with EV_MULTIPLICITY=1 (qb/ev/config.h.cmakein). ev.h only
  * learns that from the generated ev_config.h, and its last-resort lookup for that file is guarded
- * by __has_include (ev.h:82-85) -- so if the file is not reachable, ev.h SILENTLY falls back to its
+ * by __has_include (ev.h:39-42) -- so if the file is not reachable, ev.h SILENTLY falls back to its
  * own default of EV_FEATURE_CONFIG == 4. Every ev_* prototype then grows a loop parameter that the
  * compiled libqev.a does not have: an ODR/ABI mismatch that links and then misbehaves at runtime.
  * Make the miss a compile error instead. */

@@ -111,6 +111,18 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `QB_INSTALL` | bool; `ON` **standalone**, `OFF` embedded | Generate installation rules (`cmake --install`) (`qbConfig.cmake:130-134`, `CMakeLists.txt:326`). Same standalone/embedded split, for a different reason: an embedded qb that added its own `install()` rules would inject qb's headers and CMake package files into the *parent* project's `cmake --install`. A superproject that genuinely wants them passes `-DQB_INSTALL=ON`. |
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
+With `QB_BUILD_DOCS=ON`, Doxygen describes the **configured build** rather than a
+superset of every optional feature. The build collects numeric qb compiler definitions
+from dependency detection into `QB_DOXYGEN_PREDEFINED` (`docs/CMakeLists.txt:139-147`),
+which the configured Doxyfile consumes.
+For example, SSL-gated crypto declarations appear only when OpenSSL was found and
+`QB_HAS_SSL=1` is part of that build. Reconfigure with the desired features before
+generating the API reference.
+
+The `qb-docs` target writes HTML under the build directory's `docs/html`
+(`docs/CMakeLists.txt:60-64`). It does not produce LaTeX or a PDF; no PDF
+toolchain is configured for that target.
+
 ### Optional features
 
 | Option | Type / default | Effect |
@@ -362,14 +374,16 @@ The distinction that matters is between **umbrellas** and **class headers**:
 | include | complete class | member templates (`push<E>`, `spawn`, …) |
 |---|---|---|
 | `<qb/actor.h>` `<qb/main.h>` `<qb/patterns.h>` `<qb/core/patterns.h>` | yes | **yes** |
-| `<qb/core/Actor.h>` `<qb/core/VirtualCore.h>` | yes | **no** |
+| `<qb/core/Actor.h>` | yes | **no** |
+| `<qb/core/VirtualCore.h>` | yes | **yes** |
 
-A class header gives you a complete `qb::Actor` with every member template *declared*, so a TU that
-calls `push<E>()` compiles clean and fails at **link**. That is by design and it is not going to
-change: the bodies live at the tail of `VirtualCore.h` (they were `Actor.tpp` through
-2.6.0), because they need a complete `qb::VirtualCore` — and
-`VirtualCore.h` is what drags `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. Making
-every actor TU pay that is the worse trade. **Include an umbrella.**
+`<qb/core/Actor.h>` declares the member templates but does not define them: a TU that calls
+`push<E>()` through that header alone can compile and then fail at **link**. The bodies live at
+the tail of `<qb/core/VirtualCore.h>` (they were `Actor.tpp` through 2.6.0), because they need a
+complete `qb::VirtualCore`. Including `VirtualCore.h` directly supplies those bodies and is
+covered by an installed-entry-point link test. The umbrellas remain the usual entry points:
+`VirtualCore.h` also brings `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU.
+<!-- src: qb/src/qb/core/VirtualCore.h:1480-1484; qb/scripts/installed-entry-points/qb_core_VirtualCore_h.cpp:21-42 -->
 
 `<qb/main.h>` was on the wrong side of that table until 3.0.0.
 
@@ -400,8 +414,8 @@ every actor TU pay that is the worse trade. **Include an umbrella.**
   Check that neither image is compiled `-fvisibility=hidden` against a qb older than 3.0.0, and
   prefer one shared qb over two statically linked copies.
 - **`undefined symbol: qb::Actor::push<MyEvent>(qb::ActorId const&) const`.** The TU entered through
-  a class header (`<qb/core/Actor.h>`, `<qb/core/VirtualCore.h>`) rather than an umbrella. Include
-  `<qb/actor.h>`, `<qb/main.h>` or `<qb/patterns.h>` instead — see
+  `<qb/core/Actor.h>` alone. Include `<qb/core/VirtualCore.h>` or an umbrella such as
+  `<qb/actor.h>`, `<qb/main.h>` or `<qb/patterns.h>` — see
   [Which header may I include first?](#which-header-may-i-include-first). The same source can link at
   `-O0` and fail at `-O3`, because a sibling TU may emit a weak out-of-line copy at `-O0` and not at
   `-O3`; a Debug build that links is not evidence.

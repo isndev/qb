@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-921 (set_insecure / secure-by-default doc), :927 (verify_peer) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-923 (set_insecure / secure-by-default doc), :929 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -94,9 +94,9 @@ The production hazard is the opt-out. `set_insecure()` clears verification (it i
 grep -rn "set_insecure" your_service/ qbm/
 ```
 
-Note one asymmetry: when you adopt an externally-created `SSL` handle via `init(SSL*)`, qb-io does **not** touch verification policy — your context's settings are used as-is. If you build the context yourself, you own the verification posture.
+Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. qb passes a null callback while setting that mode; by the OpenSSL `SSL_set_verify` contract, this retains any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:521-528 (init(SSL*)), :918-919 (verification-untouched note) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:638-646 (adoption), :705-723 (policy branches), :932-936 (connect-time application), :572-575 (null callback) -->
 
 ### Server contexts
 

@@ -166,7 +166,7 @@ not be touched after either call. See [Messaging](../4_qb_core/messaging.md).
 | `registerCallback` | `template<class _Actor> void registerCallback(_Actor& actor) const noexcept` | Enrolls an actor that also inherits `ICallback`. |
 | `unregisterCallback` | `template<class _Actor> void unregisterCallback(_Actor& actor) const noexcept` | |
 | `spawn` | `template<class Func> void spawn(Func&& func) const` | **Recommended.** Launches a *scoped* coroutine cancelled when the actor is killed; communicates back via [`ScopedCoroContext`](#coroutines) (cancellation-aware ops + `ask()`). |
-| `spawn_detached` | `template<class Func> void spawn_detached(Func&& func) const` | Launches a *detached* coroutine that outlives the actor; communicates back via [`CoroContext`](#coroutines). |
+| `spawn_detached` | `template<class Func> void spawn_detached(Func&& func) const` | Launches a coroutine uncancelled by its actor's death; completion still needs the same core kept alive. Communicates via [`CoroContext`](#coroutines). |
 | `resolve_ask` | `template<class E> bool resolve_ask(E& e) const noexcept` | Routes an `AskEvent`-derived reply to the awaiting `spawn` coroutine; call first in the asker's `on(E&)`. |
 | `has_active_coroutines` | `bool has_active_coroutines() const` | |
 
@@ -330,10 +330,11 @@ public:
 
 - **Header:** `qb/io/async/event/all.h` (one struct per header in `qb/io/async/event/`)
 
-`qb::io::async::event::io`, `::timer`, `::signal`, `::file`, `::disconnected`, `::pending_read`,
-`::pending_write`, `::eos`, `::dispose`, `::extracted`, and `::handshake`. A component receives these
-through matching `on(event::T&)` handlers. The end-of-input event is `event::input_drained` (aliased
-`event::eof`).
+`qb::io::async::event::io`, `::timer`, `::signal`, and `::file` are kernel watcher events delivered as
+mutable lvalues to matching `on(event::T&)` handlers. Synthesized lifecycle notifications such as
+`::disconnected`, `::pending_read`, `::pending_write`, `::eos`, `::dispose`, `::extracted`, and
+`::handshake` are detected and dispatched as rvalues: handle them with `on(event::T&&)` or
+`on(const event::T&)`. The end-of-input event is `event::input_drained` (aliased `event::eof`).
 
 ### Sockets and addresses
 

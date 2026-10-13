@@ -21,7 +21,7 @@ Every analysis is grounded in source you can build and run, and all three now li
 | Analysis | Source | What it demonstrates |
 |---|---|---|
 | [TCP chat system](./chat_tcp_analysis.md) | `examples/05-services/01-tcp-chat/` | A multi-core TCP chat server and client. A dedicated `AcceptActor` round-robins connections to a `ServerActor` pool; each `ServerActor` owns its `ChatSession`s; a central `ChatRoomActor` holds chat state. Covers the `qb::io::use<>` client/server mixins, a custom binary `ChatProtocol`, and non-actor session objects. |
-| [Asynchronous file processing](./file_processor_analysis.md) | `examples/05-services/03-file-pipeline/` | A manager-worker pattern that keeps blocking file I/O off the event loop. A `FileManager` dispatches `ReadFileRequest`/`WriteFileRequest` to a `FileWorker` pool; each worker wraps synchronous `qb::io::sys::file` calls in `qb::io::async::callback`. |
+| [File processing on dedicated cores](./file_processor_analysis.md) | `examples/05-services/03-file-pipeline/` | A manager-worker pattern that keeps blocking file I/O off the manager and client cores. Each `FileWorker` calls synchronous `qb::io::sys::file` operations inside a no-delay `qb::io::async::callback`, so its own core still blocks. |
 | [Publish/subscribe message broker](./message_broker_analysis.md) | `examples/05-services/02-pubsub-broker/` | A topic-based TCP broker. An `AcceptActor` feeds a `ServerActor` pool of `BrokerSession`s; a central `TopicManagerActor` owns subscriptions and fans published payloads out through a shared `broker::MessageContainer` so the payload is stored once and shared across deliveries. |
 
 ## Suggested reading order

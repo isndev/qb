@@ -278,9 +278,16 @@ public:
 
 void run_client(Client &client) {
     // connect() is ASYNCHRONOUS: it reaches state::connecting and returns.
-    client.connect(qb::io::uri{"quic://example.org:4433"});  // default ALPN: {"h3"}
+    qb::io::async::quic::tls_config tls;
+    tls.server_name = "example.org";  // certificate name, separate from routing
+    client.connect(qb::io::uri{"quic://203.0.113.10:4433"}, std::move(tls));
 }
 ```
+
+The URI host passed to this low-level endpoint must be a numeric address: it is parsed with
+`inet_pton` and no DNS lookup occurs here. Resolve a hostname asynchronously first, select an
+address, and keep the original hostname in `tls.server_name` for certificate verification. The
+documentation address above is a placeholder; replace it with the resolved peer address.
 
 > **Do not open a stream before `event::connected`.** `connect()` returns as soon as the endpoint reaches `state::connecting`; the peer's `initial_max_streams_bidi` has not arrived yet, so `ngtcp2_conn_open_bidi_stream` answers `NGTCP2_ERR_STREAM_ID_BLOCKED` — and the backend turns **any** non-zero ngtcp2 return into `throw std::runtime_error("ngtcp2 stream open failed with …")`. Every stream-opening call site in the test suite opens only after reaching `connected`. Drive it from the `event::connected` hook, or pump the loop until the endpoint reports `connected` before opening.
 > <!-- src: qb/src/qb/io/async/quic/endpoint.h:480 (connect returns at state::connecting), :495-501 (open_bidirectional_stream); qb/src/qb/io/quic.cpp:507-508 (the throw); qb/tests/io/system/quic/quic-handshake.cpp:657 (establish_loopback pumps to connected), :663 (then opens) -->

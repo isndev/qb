@@ -131,7 +131,9 @@ sequenceDiagram
 thread, and `onInit()` runs once. If that coroutine suspends, the actor is *Activating*: unicast events
 for it are stashed and replayed in order when it activates, broadcasts and kills still reach it, and an
 init that returns `false`, throws or outlives its deadline (5 s by default) removes the actor before it
-processes a message — reported by `Main::hasError()`, never thrown. `kill()`, or a `KillEvent` from
+processes a message. A synchronous startup failure is reported by `Main::hasError()`; a failure after
+`onInit()` suspended is observed through actor lifecycle signals, deathwatch or logs rather than that
+engine-wide flag. `kill()`, or a `KillEvent` from
 anyone, ends it: the handler calls already queued for it are skipped, its coroutine scope is cancelled,
 and the destructor runs on the same thread. `Main::join()` returns when every actor has stopped.
 
@@ -522,7 +524,9 @@ Semantic versioning on the public API. `main` is exactly the last release and `d
 one; the version has one source of truth, `QB_FRAMEWORK_VERSION` in
 [`cmake/qbConfig.cmake`](./cmake/qbConfig.cmake), from which every other version string is derived.
 The three modules and the examples ship in lockstep with qb; qev versions on its own. A link-time
-fingerprint refuses to combine a library and a consumer built with different feature gates
+fingerprint refuses five unsafe configuration mismatches: qb version, cache-line size, exception mode,
+coroutine-debug mode and the `jthread` implementation. Feature definitions such as SSL, QUIC and
+compression are propagated separately by CMake targets; they are not fingerprint axes
 ([VERSIONING.md](./VERSIONING.md)).
 
 ## License

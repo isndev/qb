@@ -131,6 +131,19 @@ if (DOXYGEN_FOUND)
                        "Install Graphviz to get the class/collaboration/include diagrams.")
     endif ()
 
+    # Doxygen preprocesses headers even with MACRO_EXPANSION=NO. Give it the
+    # same numeric qb definitions as this configured build, so conditional
+    # declarations (notably QB_HAS_SSL) match the API that was compiled.
+    # QB_VERSION is intentionally excluded: PROJECT_NUMBER already carries it,
+    # and its quoted value is not a Doxyfile PREDEFINED token.
+    set(QB_DOXYGEN_PREDEFINED "")
+    foreach (_qb_definition IN LISTS QB_COMPILE_DEFINITIONS)
+        if (_qb_definition MATCHES "^QB_[A-Z0-9_]+=[0-9]+$")
+            list(APPEND QB_DOXYGEN_PREDEFINED "${_qb_definition}")
+        endif ()
+    endforeach ()
+    list(JOIN QB_DOXYGEN_PREDEFINED " " QB_DOXYGEN_PREDEFINED)
+
     configure_file(${DOXYGEN_IN} ${DOXYGEN_OUT} @ONLY)
 
     # Target name is a fixed, valid identifier. It used to be "${QB_PREFIX}-docs", which

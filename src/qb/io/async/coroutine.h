@@ -154,15 +154,10 @@
  *         co_return id * 10;
  *     };
  *
- *     std::vector<task<int>> tasks;
- *     for (int i = 0; i < 5; ++i) {
- *         tasks.push_back(worker(i));  // Create tasks
- *     }
- *
- *     std::vector<int> results;
- *     for (auto& t : tasks) {
- *         results.push_back(co_await t);  // Await each
- *     }
+ *     // when_all owns and starts every lazy task before waiting for the results.
+ *     auto [a, b, c] = co_await when_all(worker(1), worker(2), worker(3));
+ *     if (a + b + c != 60)
+ *         throw std::runtime_error("unexpected aggregate");
  * }
  * @endcode
  *

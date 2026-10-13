@@ -434,11 +434,14 @@ parameter. It is also what you pass to the free functions of the patterns librar
 `co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1529-1545, :2343-2346)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
-receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
-actor dies — it runs to completion, orphaned. Reach for it only for fire-and-forget work that must
-*intentionally outlive* the actor, e.g. flushing an audit record during shutdown. It cannot be used
+receives a plain `qb::CoroContext` (no scope token), and killing the actor does **not** cancel the
+coroutine. It can outlive the actor only while the **same VirtualCore stays running**: a detached
+task does not keep that core alive, and its loop exits when its last actor dies. Keep another actor
+on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
-`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476)_
+`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476;
+VirtualCore.h:1696-1707; coroutine-detached.cpp:878-938)_
+The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1022-1024)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -448,9 +451,13 @@ void on(const AuditEvent &) {
         ctx.push_to<ResultEvent>(sink, qb::string<64>{"flushed"});
         co_return;
     });
-    kill();                                   // the detached flush still completes
+    kill();                                   // safe only if a same-core keeper remains alive
 }
 ```
+
+Here `_sink` is a keeper actor **on this core**. It registers `ResultEvent`, remains alive while
+the task sleeps, and kills itself only in `on(const ResultEvent&)`. Without that completion handshake,
+the last actor can die before the timer fires; engine cleanup does not drive the orphaned task.
 
 Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_scope()` (true once
 `spawn()` **or** `context()` has lazily allocated the scope — `spawn_detached()` never does).
@@ -518,8 +525,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pushes); `push_reply(e)` / `push_forward(dest, e)` are the same answers taking the pipe,
   FIFO with everything the actor pushed to that destination — use them when an answer must
   follow what you pushed.
-- **Blocking work** — wrap synchronous file/DB calls in `qb::io::async::callback` (blocks one callback
-  turn, not the actor handler) or hand off to a dedicated worker actor.
+- **Blocking work** — `callback(fn)` calls `fn` inline; `callback(fn, delay > 0)` runs it later on
+  the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
+  `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
+  option only when placed on a different core and returning the result by event. _(io.h:368-404;
+  Actor.h:2304-2334; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
 
@@ -631,11 +641,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
-  cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, deliberately outlives it);
+  cancelled when the actor dies) over `spawn_detached()` (`CoroContext`, not cancelled by actor death;
+  it can finish afterwards only while another actor keeps the same VirtualCore running);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1476 / VirtualCore.h:1686; `spawn` Actor.h:1513 /
-  VirtualCore.h:1712)_
+  VirtualCore.h:1712)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1022-1024)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -712,7 +723,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:921`.
+  `socket::set_insecure()` is declared at `ssl/socket.h:923`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -967,7 +978,8 @@ Type checks & referenced actors:
 
 Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level escape hatch:
 *   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. An exception OTHER than `cancelled_error` escaping the body is caught by the wrapper and REPORTED on `std::cerr` (naming the actor, the API and `what()`) — it is not propagated anywhere, because a spawned coroutine has no caller; catch it in the body and answer through an event. _(`spawn` declared `Actor.h:1478-1513`, body `VirtualCore.h:1712`, the named overload the unnamed one delegates to)_
-*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill: it runs to completion, orphaned. Use only for fire-and-forget work that must intentionally outlive the actor. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1418-1476`, body `VirtualCore.h:1698`, the named overload the unnamed one delegates to)_
+*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill. It may outlive the actor **while another actor keeps the same VirtualCore running**; the detached task alone does not keep the loop alive, so completion after the last actor dies is not guaranteed. Use a same-core keeper that waits for a completion event when shutdown must follow the task. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1418-1476`, body `VirtualCore.h:1698`, keeper test `coroutine-detached.cpp:878-938`)_
+    The core loop breaks when `__reap__()` reports the last actor gone. _(`VirtualCore.cpp:1022-1024`)_
 *   `[T<Func>] void spawn(std::string_view name, Func&& func) const`, `[T<Func>] void spawn_detached(std::string_view name, Func&& func) const` — since 3.3: `spawn` / `spawn_detached` under a name the core's `CoroutineScheduler::dump()` reports for the coroutine while it lives (Huly QB-71); the unnamed forms are these with an empty name, which stores nothing. With `set_suspension_tracking(true)` on the core's thread the dump also says what the coroutine waits on and for how long. _(Actor.h:1523, Actor.h:1527)_
 *   Both: MUST NOT touch actor members after any `co_await` (the actor may be destroyed mid-suspension, and the scope does **not** legalise member access — it only bounds how long the coroutine can stay parked). Capture everything by value before the first `co_await`; reply via `ctx.push<Event>()` / `ctx.push_to<Event>(dest, …)`.
 *   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1529-1545`, `:2343-2346`)_
@@ -1369,7 +1381,7 @@ Reliable stream socket (IPv4/IPv6/Unix). `constexpr is_secure() == false`. Re-ex
 *   Non-blocking: `int n_connect(const qb::io::endpoint&) noexcept` / `n_connect(const uri&)` / `n_connect_v4`/`n_connect_v6`/`n_connect_un` — by name, an address refused AT ONCE gives way to the next; one in progress is the caller's to complete (the async connector falls back on a later failure itself).
 *   Free helpers (namespace `qb::io::tcp`, since 3.3): `std::vector<qb::io::endpoint> resolve_endpoints(int af, const std::string& host, uint16_t port)` — every address of the family, in the resolver's order; `qb::duration connect_attempt_budget(qb::duration remaining, std::size_t left) noexcept` — `remaining / left`, never under 2 s unless `remaining` is shorter (Go's dialer).
 *   `void connected() noexcept` — no-op for plain TCP (overridden by ssl).
-*   `int read(void* dest, std::size_t len) const noexcept` / `int write(const void* data, std::size_t size) const noexcept` — read 0 = peer shutdown, negative = error/EWOULDBLOCK.
+*   `int read(void* dest, std::size_t len) const noexcept` / `int write(const void* data, std::size_t size) const noexcept` — positive read = bytes; `-1` with system error 0 = peer shutdown; `-1` with a nonzero error also covers failure or EWOULDBLOCK/EAGAIN.
 *   `int bind(const qb::io::endpoint&) noexcept` / `int bind(const qb::io::uri&) noexcept` / `int disconnect() const noexcept`.
 *   use: `qb::io::tcp::socket s; s.init(); s.connect(uri("tcp://host:80"), 5s);`
 
@@ -1799,8 +1811,8 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `static std::pair<std::string,std::string> generate_ec_keypair(const std::string& curve = "prime256v1")`
 *   `static std::vector<unsigned char> rsa_sign(const std::vector<unsigned char>& data, const std::string& private_key, DigestAlgorithm = DigestAlgorithm::SHA256)`; `static bool rsa_verify(..., const std::string& public_key, DigestAlgorithm = DigestAlgorithm::SHA256)`.
 *   `static std::vector<unsigned char> ec_sign(...)`; `static bool ec_verify(...)` (ECDSA).
-*   Ed25519: `static std::pair<std::string,std::string> generate_ed25519_keypair()` / `generate_ed25519_keypair_bytes()`; `ed25519_sign(...)` / `ed25519_verify(...)` (PEM and raw-bytes overloads).
-*   X25519: `static std::pair<std::string,std::string> generate_x25519_keypair()` / `generate_x25519_keypair_bytes()`; `x25519_key_exchange(...)` (raw-bytes and PEM overloads).
+*   Ed25519: `static std::pair<std::string,std::string> generate_ed25519_keypair()` and `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> generate_ed25519_keypair_bytes()` — both `{private, public}`; `ed25519_sign(...)` / `ed25519_verify(...)` have PEM and raw-byte overloads.
+*   X25519: `static std::pair<std::string,std::string> generate_x25519_keypair()` and `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> generate_x25519_keypair_bytes()` — both `{private, public}`; `x25519_key_exchange(...)` has raw-byte and PEM overloads.
 *   ECIES (X25519 + AEAD; **raw-byte keys only, there is no PEM/`std::string` overload and no `DigestAlgorithm` parameter**):
     *   `static std::pair<std::vector<unsigned char>,std::vector<unsigned char>> ecies_encrypt(const std::vector<unsigned char>& data, const std::vector<unsigned char>& recipient_public_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)` → **`{ephemeral_public_key, ciphertext}`, in that order** — NOT `{ciphertext, ephemeral}`, which is what this line used to say. `ecies_decrypt` takes them the other way round (ciphertext first), so the pair is deliberately not in call order; feeding it straight through throws `Failed to create public key from raw bytes`. _(`crypto_asymmetric.cpp:450`)_
     *   `static std::vector<unsigned char> ecies_decrypt(const std::vector<unsigned char>& encrypted_data, const std::vector<unsigned char>& ephemeral_public_key, const std::vector<unsigned char>& recipient_private_key, const std::vector<unsigned char>& optional_shared_info = {}, ECIESMode = ECIESMode::AES_GCM)`. _(`crypto.h:1120-1124`)_

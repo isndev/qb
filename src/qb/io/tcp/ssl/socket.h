@@ -915,8 +915,10 @@ public:
      * @warning Disabling verification removes protection against
      *          man-in-the-middle attacks. Only use it when the channel is
      *          trusted through other means.
-     * @note When you supply your own `SSL` handle via `init(SSL*)`, qb-io does
-     *       not touch verification — your context's policy is used as-is.
+     * @note `init(SSL*)` adopts the handle. On a fresh socket, client setup later
+     *       applies qb-io's peer-verification mode and hostname target. OpenSSL
+     *       retains an already-installed verification callback when qb passes a
+     *       null callback while setting that mode.
      */
     void set_insecure() noexcept;
 

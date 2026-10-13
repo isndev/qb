@@ -121,7 +121,7 @@ task<void> caller() {
 
 ### `shared_task<T>` — one computation, many awaiters
 
-`shared_task<T>` (`coroutine/shared_task.h`) is a copyable handle to a single coroutine result. The first `co_await` runs the computation; later awaits — from any number of coroutines — observe the same result without re-running it.
+`shared_task<T>` (`coroutine/shared_task.h`) is a copyable handle to a single coroutine result. `make_shared_task` immediately schedules a runner on the current coroutine scheduler; execution begins when that ready queue is drained, even if nobody awaits the handle. Any number of later awaits observe the same result without re-running it. Keep a plain `task<T>` when work must remain lazy until it is awaited.
 
 ```cpp
 // src: derived from qb/src/qb/io/async/coroutine/shared_task.h
@@ -133,7 +133,7 @@ task<int> compute_value() { co_await sleep(50ms); co_return 42; }
 
 task<void> fan_out() {
     shared_task<int> shared = make_shared_task(compute_value());
-    int a = co_await shared;        // triggers execution
+    int a = co_await shared;        // observes the scheduled computation
     int b = co_await shared;        // reuses the cached result, no extra work
     // a == b == 42
 }
@@ -549,8 +549,9 @@ What `close()` does to each parked party is worth a table of its own, because th
 
 ```cpp
 auto res = co_await select(ch_int, ch_string);   // select_result
-if (res.index == 0)      use(res.get<int>());
-else if (!res.closed)    use(res.get<std::string>());
+if (res.closed)          handle_closed_channel(res.index);
+else if (res.index == 0) use(res.get<int>());
+else                     use(res.get<std::string>());
 ```
 
 `select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1100-1124`).
@@ -745,7 +746,7 @@ The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::
 
 Under `qb-core`, each `VirtualCore` runs one thread, one listener, and one coroutine scheduler. The actor dispatch model assumes a handler runs to completion with exclusive access to its actor's state — but a `co_await` *yields the thread*, letting other handlers run in between. A coroutine that touches actor members across a suspension point is therefore a single-thread data race, and the actor may even be destroyed while the coroutine is parked.
 
-The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations, usable with the free `qb::ask()` request/reply helper. `spawn_detached` is the explicit fire-and-forget variant: the coroutine outlives the actor and receives a plain `qb::CoroContext` (an `ActorId`-by-value handle). The example below uses `spawn`.
+The supported integration points are `Actor::spawn` and `Actor::spawn_detached`. Both launch an *isolated* coroutine and may communicate back only through events. `spawn` is the recommended default: the coroutine is *scoped* to the actor (cancelled when the actor is killed) and receives a `qb::ScopedCoroContext` with cancellation-aware operations, usable with the free `qb::ask()` request/reply helper. `spawn_detached` is the explicit fire-and-forget variant: it receives a plain `qb::CoroContext` (an `ActorId`-by-value handle) and is not cancelled on kill; another actor must keep the same core running if it must finish after its parent dies. The example below uses `spawn`.
 
 ```cpp
 // src: derived from examples/03-coroutines/02-actor-coroutines.cpp

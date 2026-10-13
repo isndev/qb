@@ -263,11 +263,11 @@ Key facts, grounded in the headers:
 
 The write handler mirrors this with `O_WRONLY | O_CREAT | O_TRUNC` and mode `0644`, reports `bytes_written`, and treats a short write as a failure.
 
-### Why this keeps the core responsive — and the caveat
+### Why this confines blocking to worker cores
 
 The intent of the pattern is sound: blocking I/O is delegated to workers on cores reserved for that purpose ([`async_in_actors.md` → Blocking file I/O](../async_in_actors.md#blocking-file-io-from-an-actor) catalogs this as pattern 2), so a slow disk stalls only the I/O cores.
 
-But the *callback* in this example does **not** defer the work. `qb::io::async::callback(func)` — the overload with no delay — invokes `func()` **inline at the call site**; so does the timed overload when the duration is non-positive. <!-- src: qb/src/qb/io/async/io.h:368,388-389,410-412 --> The blocking `read`/`write` therefore runs synchronously inside the worker's `on(...)` handler, on the worker's core. What the design actually buys is **core isolation** (the manager and client on core 0 never block on disk) plus a clean place to factor the I/O code — not asynchrony within the worker. To truly defer the blocking call to a later loop turn you would pass a strictly positive `qb::duration`; to make the worker itself non-blocking you would need a thread pool or `file_watcher`-style readiness, neither of which this example uses.
+But the *callback* in this example does **not** defer the work. `qb::io::async::callback(func)` — the overload with no delay — invokes `func()` **inline at the call site**; so does the timed overload when the duration is non-positive. <!-- src: qb/src/qb/io/async/io.h:368,388-389,410-412 --> The blocking `read`/`write` therefore runs synchronously inside the worker's `on(...)` handler, on the worker's core. What the design actually buys is **core isolation** (the manager and client on core 0 never block on disk) plus a clean place to factor the I/O code — not asynchrony within the worker. A positive `qb::duration` would only move the blocking call to a later turn on that same core; keeping the worker core responsive requires offloading the call or using a genuinely non-blocking API.
 
 ## The `ClientActor` driver
 
@@ -293,19 +293,22 @@ void scheduleTick(qb::duration d) {
 }
 ```
 
-`startTests()` writes five files; each write response triggers a read of the same file; each read response is printed. The client counts outstanding requests in `_pending_requests` and, once that reaches zero, schedules a coordinated shutdown:
+`startTests()` writes five files; each successful write response triggers a read of the same file. The client marks a failed write, a failed read, or bytes that differ from what it wrote; completion is successful only when all five expected files were verified. The abbreviated excerpt below shows the verdict and shutdown boundary; the response handlers that update `_failed` and `_expected` remain in the source:
 
 ```cpp
 // src: examples/05-services/03-file-pipeline/main.cpp
 void checkCompletion() {
-    if (_pending_requests == 0)
+    if (_pending_requests == 0) {
+        g_file_pipeline_ok.store(!_failed && _expected.size() == 5);
         scheduleTick<ShutdownTick>(1s);           // chrono literal — see Pitfalls
+    }
 }
 
 void on(ShutdownTick&) {
     broadcast<qb::KillEvent>();                   // fan out shutdown to every actor
 }
 ```
+<!-- src: examples/05-services/03-file-pipeline/main.cpp:143-192 (write/read verdicts), :270-281 (final oracle and shutdown) -->
 
 `broadcast<qb::KillEvent>()` delivers a [`qb::KillEvent`](../../4_qb_core/messaging.md) to every actor on every core; each actor's `on(qb::KillEvent&)` handler calls `kill()`, and the engine's `join()` in `main` returns once all cores have drained.
 
@@ -338,7 +341,7 @@ engine.join();
 - **`callback(func)` with no delay runs inline.** This is the central correction to the example's framing: the worker's blocking I/O executes synchronously inside the message handler, not on a later loop turn. The responsiveness guarantee comes from placing workers on dedicated cores, not from the callback. Pass a strictly positive `qb::duration` to genuinely defer. <!-- src: qb/src/qb/io/async/io.h:368,388-389,410-412 -->
 - **The worker's lambdas capture `this` — harmlessly, because they fire inline.** Both worker callbacks are the *no-delay* overload, so `this` is necessarily valid: the call happens inside the handler that made it. <!-- src: examples/05-services/03-file-pipeline/file_worker.h:112 -->
 - **A `this`-capturing lambda with a real delay is a dangling timer — this client used to have two.** `ClientActor::onInit()` armed `qb::io::async::callback([this]() { startTests(); }, 500ms)` and the completion path armed `qb::io::async::callback([this]() { broadcast<qb::KillEvent>(); }, 1s)`. Both called a member function on a raw `this` after a delay, and the timed overload heap-allocates a `Timeout` owned by the **listener**, not by the actor — nothing cancels it if the actor dies first. <!-- src: qb/src/qb/io/async/io.h:420 --> In the shipped happy path nothing killed `ClientActor` before either fired, so it was a latent shape rather than an observed crash — which is exactly why it survived so long; adapt such code and it becomes a live one. **Adding `is_alive()` is not the fix** — it is a member read (`qb/src/qb/core/Actor.h:863-866`), so on a destroyed actor the guard is itself the use-after-free. Both sites now bind the wait to the actor through `scheduleTick<T>(d)`, which is `spawn([d](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { co_await ctx.sleep(d); ctx.template push<T>(); })`, whose scope `Actor::kill()` cancels. <!-- src: qb/src/qb/core/Actor.h:1512-1513 --> Note that it is not a mechanical substitution: the body may not touch actor state after the `co_await`, so each delay also needs a tick event and a handler. See [Async in actors → capture safety](../async_in_actors.md#capture-safety-the-actor-may-be-gone).
-- **The manager's response handlers never run.** `FileManager::on(ReadFileResponse&)` / `on(WriteFileResponse&)` are registered but unreachable, because workers reply to the client directly. Do not cite them as the response path. If you want responses to flow through the manager (for example, to centralize logging or retries), have the worker reply to `_manager_id` and let the manager `forward` to `response.requestor`.
+- **The manager's response handlers never run.** `FileManager::on(ReadFileResponse&)` / `on(WriteFileResponse&)` are registered but unreachable, because workers reply to the client directly. Do not cite them as the response path. If responses must flow through the manager, save `request_id -> requestor` when dispatching work, have the worker answer `_manager_id`, then look up and erase that correlation before forwarding. The response types carry no `requestor` member, and after redirection `getSource()` identifies the worker rather than the original client.
 - **Delays are `std::chrono` durations, not `double`.** Earlier revisions passed a bare `double` (`0.5`, `1.0`); neither `callback(_Func&&, std::chrono::duration<Rep, Period>)` nor `ScopedCoroContext::sleep(qb::duration)` matches a `double`. The example now uses the [`qb` chrono literals](../../0_foundations/time.md) — `scheduleTick<StartTestsTick>(500ms)` and `scheduleTick<ShutdownTick>(1s)`. **Those suffixes need a using-directive in scope**: `qb::time_literals` is an inline namespace that re-exports `std::chrono_literals`, so each translation unit needs `using namespace qb::time_literals;` (or `std::chrono_literals`). The snippets above omit it for brevity; without it the block fails to compile with `no matching literal operator for call to 'operator""ms'`. <!-- src: qb/src/qb/io/async/io.h:402-404 ; qb/src/qb/system/time.h:115-117 -->
 - **Read priority can starve writes.** `on(WorkerAvailable&)` always drains `_read_requests` before `_write_requests`. Under sustained read load, queued writes wait indefinitely. A fair dispatcher would interleave the two queues.
 - **More workers than cores share a thread.** Mapping four workers onto three cores means two workers contend for one core's thread; their blocking I/O serializes. Size the worker pool to the I/O cores you actually reserved.

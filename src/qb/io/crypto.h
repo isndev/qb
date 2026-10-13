@@ -972,7 +972,7 @@ public:
     /**
      * @brief Generate Ed25519 keypair returning raw byte vectors
      *
-     * @return Paire de clés au format PEM (privée, publique)
+     * @return Raw private-key and public-key byte vectors, in that order
      */
     static std::pair<std::vector<unsigned char>, std::vector<unsigned char>> generate_ed25519_keypair_bytes();
 
@@ -993,7 +993,7 @@ public:
      * Signe des données avec l'algorithme Ed25519.
      *
      * @param data Données à signer
-     * @param private_key Clé privée Ed25519 au format PEM
+     * @param private_key Raw Ed25519 private-key bytes
      * @return Signature
      */
     static std::vector<unsigned char> ed25519_sign(const std::vector<unsigned char> &data, const std::vector<unsigned char> &private_key);
@@ -1018,7 +1018,7 @@ public:
      *
      * @param data Données qui ont été signées
      * @param signature Signature à vérifier
-     * @param public_key Clé publique Ed25519 au format PEM
+     * @param public_key Raw Ed25519 public-key bytes
      * @return Vrai si la signature est valide
      */
     static bool ed25519_verify(const std::vector<unsigned char> &data, const std::vector<unsigned char> &signature,
@@ -1039,7 +1039,7 @@ public:
      * Génère une paire de clés X25519 pour l'échange de clés
      * Diffie-Hellman sur courbe elliptique.
      *
-     * @return Paire de clés au format PEM (privée, publique)
+     * @return Raw private-key and public-key byte vectors, in that order
      */
     static std::pair<std::vector<unsigned char>, std::vector<unsigned char>> generate_x25519_keypair_bytes();
 

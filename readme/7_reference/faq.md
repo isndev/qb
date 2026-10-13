@@ -100,7 +100,7 @@ To signal a *local* failure, `co_return false` from `onInit()` (it is a `qb::io:
 
 ## Can I use coroutines inside an actor?
 
-Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1512-1513` and `:1475-1476`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper; `spawn_detached()` runs the coroutine detached, so it outlives the actor and receives a plain `qb::CoroContext`. Prefer `spawn()` unless the work must deliberately outlive its actor.
+Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`, under strict lifetime rules. They are the only supported way to run a coroutine from within an actor (`qb/src/qb/core/Actor.h:1512-1513` and `:1475-1476`). `spawn()` *scopes* the coroutine to the actor — it is cancelled when the actor is killed — and hands it a `qb::ScopedCoroContext` with cancellation-aware operations and the native `ask()` request/response helper. `spawn_detached()` receives a plain `qb::CoroContext` and is not cancelled on kill, but completing after the actor dies requires another actor to keep the same core running. Prefer `spawn()` unless the work must deliberately outlive its actor.
 
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
@@ -132,10 +132,12 @@ The coroutine layer itself — `task<T>`, awaiters, channels, scopes, generators
 
 ## Can I call a blocking third-party library from an actor?
 
-Not directly inside an `on()` handler or a registered callback. A blocking call (synchronous file or network I/O, `std::this_thread::sleep_for`, a blocking library call) stalls the actor's `VirtualCore` and, with it, every other actor on that core. Two patterns keep the loop responsive:
+Not directly inside an `on()` handler or a registered callback. A blocking call (synchronous file or network I/O, `std::this_thread::sleep_for`, a blocking library call) stalls the actor's `VirtualCore` and, with it, every other actor on that core. Two patterns keep that core responsive:
 
-- **Move a short, infrequent blocking call off the handler frame with `qb::io::async::defer`.** The handler returns first; the blocking work runs at the tail of the same loop turn, still occupying that turn but no longer holding up the handler that queued it. Note that `qb::io::async::callback(f)` with **no** delay does *not* do this — it runs `f` inline, inside the handler, which is the very thing you were trying to avoid. Only `callback(f, d)` with `d > 0` schedules.
-- **Delegate to dedicated worker actors** — possibly on cores configured with higher latency — that perform the blocking operation and reply with an event.
+- **Run the call on the offload pool** with `co_await ctx.offload(fn, copied_values...)` from an actor coroutine. Return its result by value and leave actor state on the core.
+- **Delegate to worker actors on different cores**; have them reply by event.
+
+`qb::io::async::defer` and a positive-delay `callback` only change *when* the call blocks this same core; `callback(f)` with no delay runs inline in the handler. None moves the call to another thread. <!-- src: qb/src/qb/io/async/io.h:368-404; qb/src/qb/core/Actor.h:2304-2334 -->
 
 See [Async operations in actors](../5_core_io_integration/async_in_actors.md).
 

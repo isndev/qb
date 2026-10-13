@@ -536,6 +536,37 @@ policy.
 
 ### Fixed
 
+- **`qb-docs` now generates its published HTML without an incomplete LaTeX side output (Huly QB-1022).**
+  The unused PDF path required `mmdc` and `epstopdf`, emitted Mermaid errors, and still returned success;
+  the obsolete `DOT_MULTI_TARGETS` setting is removed.
+- **Build, migration and coroutine guides now match the shipped contracts (Huly QB-423, QB-426,
+  QB-427, QB-471, QB-478).** Module source tests use a qb source superbuild, not an installed qb;
+  `callback` does not move blocking work off a core; detached work needs the same core kept alive
+  through completion; migrated event payloads avoid the reserved routing field `id`; and direct
+  `<qb/core/VirtualCore.h>` consumers have the actor member-template bodies.
+- **Doxygen now documents the configured feature profile (Huly QB-425).** Its
+  preprocessor receives the numeric qb compiler definitions, so SSL-gated crypto
+  declarations appear when SSL is available and stay absent in no-SSL builds.
+- **Transport and integration examples now carry the state their APIs require (Huly QB-332, QB-469, QB-470,
+  QB-474).** QUIC routing uses a numeric address while preserving the TLS hostname, the file-pipeline alternative
+  stores requester correlation explicitly, the TCP server declares its retained URI and registers its kill handler,
+  and raw TLS adoption distinguishes ownership, connect-time verification mode and callback retention.
+- **Reference contracts now distinguish ABI axes, relocation guarantees, raw key types, callback categories,
+  TLS-pool teardown and TCP EOF (Huly QB-422, QB-428, QB-429, QB-476, QB-477, QB-889).** The fingerprint no longer
+  claims feature gates it does not encode; `growable_ring` documents its basic guarantee for throwing move-only
+  elements; byte-key factories have their vector return types; lifecycle callback signatures match rvalue
+  detection; TLS freelists document their RAII drain and late-delete fallback; and TCP close is `-1` with error zero.
+- **Actor lifecycle and ownership recipes no longer promise observations or transfers the runtime does not provide
+  (Huly QB-421, QB-445, QB-446, QB-466, QB-467, QB-468, QB-475).** The overview distinguishes synchronous startup errors
+  from later activation failure, delayed callbacks no longer dereference a possibly destroyed actor as a guard,
+  `kill()` stops subsequent handler dispatch while deferring destruction, event fanout constructs independent owning
+  events, graceful-drain examples register their `KillEvent`, timeout
+  arbitration clears success state exactly once, and transport shutdown distinguishes abort from drain completion.
+- **Coroutine documentation now matches scheduling, detached-result and channel-close contracts (Huly QB-307,
+  QB-424, QB-447, QB-885).** The scatter/gather example starts lazy tasks with `when_all`, the Doxygen quick start
+  consumes a `task<int>` inside a spawned `task<void>` wrapper, `shared_task` is described as scheduled by its
+  factory, and the `select` example checks `closed` before casting its empty value.
+
 - **Embedded codec gates see the features qb actually built (Huly QB-875).**
   `add_subdirectory(qb)` now exports resolved `QB_HAS_ZSTD` and `QB_HAS_BROTLI`
   beside the other `QB_HAS_*` flags. A parent calling `qb_add_executable`,

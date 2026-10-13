@@ -219,7 +219,7 @@ public:
     [[nodiscard]] SSL *ssl_handle() const noexcept;
 };
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-975 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-977 -->
 
 Key behaviors verified in the header:
 
@@ -268,7 +268,7 @@ Key behaviors verified in the header:
   `SSL_ERROR_ZERO_RETURN` — the peer sent `close_notify`), so the framework's error path
   disposes the session; and **`0` when OpenSSL needs more socket readiness**
   (`WANT_READ` / `WANT_WRITE`) or the handshake is still in progress. That is the inverse of
-  `tcp::socket::read`, where `0` means the peer closed. The header's `@return` block says
+  `tcp::socket::read`, which also reports peer close as `-1` but leaves the system error at zero. The header's `@return` block says
   otherwise and is wrong.
   <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1048-1053 (orderly shutdown returns -1), :1058-1060 (WANT_* returns 0), :1065 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted
@@ -305,7 +305,7 @@ int rc = c.connect_v4("127.0.0.1", 64388);
 ```
 <!-- src: qb/tests/io/system/tls/tls-peer-verification.cpp:200-205 -->
 
-**Supplying your own `SSL` handle through `init(SSL*)` does not opt you out of that policy** — and this is the one place on the page where getting it wrong is a security bug rather than a compile error. `setup_client_ssl()` calls `apply_client_verification_()` unconditionally, and that function branches on whether an `ssl::Context` was supplied, not on whether *you* built the handle. An `init(SSL*)` socket has no `Context`, so it takes the auto-context branch: `SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr)` plus hostname checking. A `SSL_VERIFY_NONE` you set on your own context is overridden to `SSL_VERIFY_PEER`, and a verify callback you installed on the handle is replaced with `nullptr`. `SSL_set_quiet_shutdown` and `SSL_set_connect_state` are applied to your handle too.
+**Supplying your own `SSL` handle through `init(SSL*)` does not opt you out of that policy** — and this is the one place on the page where getting it wrong is a security bug rather than a compile error. `setup_client_ssl()` calls `apply_client_verification_()` unconditionally, and that function branches on whether an `ssl::Context` was supplied, not on whether *you* built the handle. An `init(SSL*)` socket has no `Context`, so it takes the auto-context branch: `SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr)` plus hostname checking. A `SSL_VERIFY_NONE` mode you set is therefore changed to `SSL_VERIFY_PEER`; OpenSSL keeps an already-installed verification callback when the callback argument is null. `SSL_set_quiet_shutdown` and `SSL_set_connect_state` are applied to your handle too.
 
 To keep an `init(SSL*)` handle unverified — the shape every SSL test in the suite uses for a self-signed fixture — call `set_insecure()` before connecting. To keep *your own* verification policy, build a `qb::io::ssl::Context` and pass that instead: the `Context` path is honoured as written.
 
@@ -332,7 +332,7 @@ handle and are silent no-ops without one, which is the trap on this table:
 
 `disable_session_resumption()` and `set_session()` are mutually exclusive when deferred; the last call wins.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1365-1371 (set_verify_callback needs a handle), :1373-1379 (set_verify_depth), :1353 (sni deferred), :1362 (alpn deferred), :1191-1192 (resumption deferred, drops the session), :1210 (ocsp deferred), :1322-1323 (session deferred), :1184 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :921 (set_insecure) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1365-1371 (set_verify_callback needs a handle), :1373-1379 (set_verify_depth), :1353 (sni deferred), :1362 (alpn deferred), :1191-1192 (resumption deferred, drops the session), :1210 (ocsp deferred), :1322-1323 (session deferred), :1184 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :923 (set_insecure) -->
 
 #### Introspection and sessions
 
@@ -681,8 +681,8 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
   `QB_HAS_SSL` in the build configuration before depending on any of this.
 - **Verification is on by default — including for an `SSL` handle you built yourself.**
   `init(SSL*)` does not exempt you: the socket applies `SSL_VERIFY_PEER` and hostname checking
-  to your handle, replacing a `SSL_VERIFY_NONE` and any verify callback you installed. To keep
-  a handle unverified, call `set_insecure()`; to keep your own policy, pass an `ssl::Context`
+  to your handle, replacing a `SSL_VERIFY_NONE` mode while retaining an already-installed callback.
+  To keep a handle unverified, call `set_insecure()`; to keep your own policy branch, pass an `ssl::Context`
   instead of a raw `SSL*`.
 - **`read()` returns `-1`, not `0`, when the peer shuts the TLS session down cleanly** — and
   `0` when OpenSSL merely wants more socket readiness. Do not carry `tcp::socket::read`'s
