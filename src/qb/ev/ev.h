@@ -727,7 +727,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
 #endif
 
 /* these may evaluate ev multiple times, and the other arguments at most once */
-/* either use ev_init + qev_TYPE_set, or the qev_TYPE_init macro, below, to first initialise a watcher */
+/* either use ev_init + ev_TYPE_set, or the ev_TYPE_init macro, below, to first initialise a watcher */
 #define ev_init(ev, cb_)                                        \
     do {                                                        \
         *ev_watcher_active_(ev) = *ev_watcher_pending_(ev) = 0; \
