@@ -62,6 +62,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -106,6 +107,7 @@ public:
     std::size_t                              sent_stream_bytes           = 0;
     bool                                     sent_stream_fin             = false;
     int                                      extend_stream_credit_calls  = 0;
+    std::uint64_t                            extended_connection_id      = 0;
     std::uint64_t                            extended_stream_id          = 0;
     std::uint64_t                            extended_bytes              = 0;
     int                                      send_datagram_calls         = 0;
@@ -119,8 +121,11 @@ public:
     std::uint64_t                            stop_stream_code            = 0;
     std::uint64_t                            close_code                  = 0;
     std::string                              close_reason;
-    bool                                     close_on_send_stream_data = false;
-    int                                      timeout_calls             = 0;
+    bool                                     close_on_send_stream_data  = false;
+    bool                                     close_on_next_packet_drain = false;
+    bool                                     throw_on_next_packet_drain = false;
+    int                                      drain_packets_calls        = 0;
+    int                                      timeout_calls              = 0;
     std::vector<qb::io::quic::backend_event> queued_events;
     std::vector<qb::io::quic::packet>        queued_packets;
 
@@ -169,6 +174,15 @@ public:
 
     std::vector<qb::io::quic::packet>
     drain_packets() override {
+        ++drain_packets_calls;
+        if (throw_on_next_packet_drain) {
+            throw_on_next_packet_drain = false;
+            throw std::runtime_error("packet drain boom");
+        }
+        if (close_on_next_packet_drain) {
+            close_on_next_packet_drain = false;
+            queued_events.push_back({qb::io::quic::backend_event::kind::connection_closed, 0, 0, 78, "closed while draining packets", {}});
+        }
         auto out = std::move(queued_packets);
         queued_packets.clear();
         return out;
@@ -210,9 +224,10 @@ public:
     }
 
     void
-    extend_stream_credit(std::uint64_t, std::uint64_t stream_id, std::uint64_t bytes) override {
+    extend_stream_credit(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t bytes) override {
         ++extend_stream_credit_calls;
-        extended_stream_id = stream_id;
+        extended_connection_id = connection_id;
+        extended_stream_id     = stream_id;
         extended_bytes += bytes;
     }
 

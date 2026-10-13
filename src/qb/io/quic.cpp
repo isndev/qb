@@ -249,7 +249,7 @@ class native_backend final : public backend {
     bool                                  _started            = false;
     bool                                  _closing            = false;
     bool                                  _close_event_queued = false;
-    // A read-triggered writer attempt is due; this does not promise positive output.
+    // A read- or credit-triggered writer attempt is due; this does not promise positive output.
     bool _transport_pending = false;
 
     [[nodiscard]] std::string
@@ -559,7 +559,9 @@ public:
             return;
         }
         ngtcp2_conn_extend_max_offset(_conn, bytes);
-        drain_transport();
+        // The endpoint flushes outside dispatch and once after a read's credit callbacks.
+        // Direct backend callers observe the due attempt through wants_write()/drain_packets().
+        _transport_pending = _started && !_closing;
     }
 
     void

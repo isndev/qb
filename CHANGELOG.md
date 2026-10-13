@@ -252,6 +252,13 @@ policy.
 
 ### Changed
 
+- **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
+  The native backend updates stream and connection offsets immediately and marks a writer attempt due;
+  direct callers generate its packets, sent counters and writer-generated events through
+  `drain_packets()`. The endpoint still flushes synchronously outside event dispatch, but combines
+  credit updates from a dispatch batch after its handlers unwind. Sends and other mutators keep their
+  synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
+
 - **The run-time `qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` keeps its producers in a `region_vector` (Huly
   QB-1012).** From 64 KiB its rings -- `nb_producer` of them, 65 728 bytes each for an engine's mailbox -- are a
   `region_cache` region: destroyed, they stay mapped for the next ring set of the same size instead of going back to

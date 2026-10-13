@@ -49,8 +49,9 @@ private:
     // while the dispatch loop is running; a send/credit/reset issued by a user handler re-enters
     // drain_backend_events, which then only raises `_drain_events_again` so the outermost loop
     // drains the newly-queued events after the current handler has fully unwound.
-    bool _draining_events    = false;
-    bool _drain_events_again = false;
+    bool _draining_events        = false;
+    bool _drain_events_again     = false;
+    bool _credit_packets_pending = false;
 
 protected:
     virtual void
@@ -95,8 +96,10 @@ protected:
 
     void
     refresh_native_backend_after_close() {
-        if (_state == state::closed && _native_backend_owned)
-            _backend = qb::io::quic::make_native_backend();
+        if (_state == state::closed && _native_backend_owned) {
+            _credit_packets_pending = false;
+            _backend                = qb::io::quic::make_native_backend();
+        }
     }
 
     void
@@ -204,7 +207,25 @@ protected:
     drain_backend_packets() {
         if (!_backend)
             return;
-        auto packets = _backend->drain_packets();
+        struct CreditDrainGuard {
+            endpoint              &owner;
+            qb::io::quic::backend *attached;
+            bool                   pending;
+            ~CreditDrainGuard() noexcept {
+                // Allocation or a throwing backend may leave the drain incomplete. Keep its
+                // retry obligation only while this is still the backend that received credit.
+                if (pending && owner._backend.get() == attached) {
+                    owner._credit_packets_pending = true;
+                    // A drain outside event dispatch has no outer guard to arm its retry.
+                    if (!owner._draining_events && owner._io_event && owner._socket.is_open() && !(owner._io_event->events & EV_WRITE))
+                        owner._io_event->set(owner._io_event->events | EV_WRITE);
+                }
+            }
+        } credit_guard{*this, _backend.get(), _credit_packets_pending};
+        // Any ordinary send/close drain also flushes credits queued by the current handler.
+        // Consume before calling out: a synchronous transport failure may enqueue new credit.
+        _credit_packets_pending = false;
+        auto packets            = _backend->drain_packets();
         for (auto &pkt : packets)
             _pending_udp_packets.push_back(std::move(pkt));
         flush_udp_packets();
@@ -216,6 +237,7 @@ protected:
         else if (_io_event)
             _io_event->set(EV_READ);
         arm_timer();
+        credit_guard.pending = false;
     }
 
     void
@@ -244,15 +266,19 @@ protected:
         // connection (or, on a server, of every connection it multiplexes). Mirrors the guards in
         // `listener::_drain_deferred` and `CoroutineScheduler::run_ready`.
         struct DrainGuard {
-            bool &flag;
-            explicit DrainGuard(bool &f) noexcept
-                : flag(f) {
-                flag = true;
+            endpoint &owner;
+            explicit DrainGuard(endpoint &ep) noexcept
+                : owner(ep) {
+                owner._draining_events = true;
             }
             ~DrainGuard() noexcept {
-                flag = false;
+                owner._draining_events = false;
+                // An exception can bypass the final credit flush. Arrange one writable retry
+                // without changing the watcher at all on a normally completed read.
+                if (owner._credit_packets_pending && owner._io_event && owner._socket.is_open() && !(owner._io_event->events & EV_WRITE))
+                    owner._io_event->set(owner._io_event->events | EV_WRITE);
             }
-        } drain_guard{_draining_events};
+        } drain_guard{*this};
         do {
             _drain_events_again = false;
             for (auto const &event : _backend->drain_events()) {
@@ -296,6 +322,12 @@ protected:
                         event.connection_id, std::string_view{reinterpret_cast<const char *>(event.payload.data()), event.payload.size()}
                     });
                 }
+            }
+            if (_credit_packets_pending && _backend) {
+                drain_backend_packets();
+                // Packet generation can itself queue a close. Deliver it under this same guard,
+                // before the outermost reap, even when no mutator requested another event drain.
+                _drain_events_again = true;
             }
         } while (_drain_events_again && _backend);
         _draining_events = false; // clear BEFORE the reap below (the guard's dtor is a harmless re-clear)
@@ -358,8 +390,9 @@ public:
 
     void
     set_backend(std::unique_ptr<qb::io::quic::backend> backend) noexcept {
-        _backend              = std::move(backend);
-        _native_backend_owned = false;
+        _credit_packets_pending = false;
+        _backend                = std::move(backend);
+        _native_backend_owned   = false;
     }
 
     void
@@ -509,10 +542,13 @@ public:
         if (!_backend || bytes == 0)
             return;
         _backend->extend_stream_credit(connection_id, stream_id, bytes);
-        // Flush the generated MAX_STREAM_DATA / MAX_DATA flow-control frames and
-        // re-arm EV_WRITE, exactly like every other backend mutator above.
-        // Without this the credit grant is queued but never sent, so the peer
-        // never learns it may send more and the receive path stalls.
+        _credit_packets_pending = true;
+        if (_draining_events) {
+            _drain_events_again = true;
+            return;
+        }
+        // Outside dispatch credit still flushes immediately; inside, the outer event drain
+        // emits MAX_STREAM_DATA/MAX_DATA once for the batch after the handlers have unwound.
         drain_backend_packets();
         drain_backend_events();
     }

@@ -113,7 +113,9 @@ struct ReentrantSendEndpoint : qb::io::async::quic::endpoint {
         order.push_back("stream_data:enter");
         in_stream_data            = true;
         const std::byte payload[] = {std::byte{'x'}};
+        extend_stream_credit(ev.connection_id, ev.id, 1);
         send_stream_data(ev.connection_id, ev.id, std::span<const std::byte>(payload, 1), false);
+        extend_stream_credit(ev.connection_id, ev.id, 3);
         in_stream_data = false;
         order.push_back("stream_data:exit");
     }
@@ -136,10 +138,11 @@ struct ThrowingDispatchEndpoint : qb::io::async::quic::endpoint {
     bool throw_next       = true;
 
     void
-    dispatch(qb::io::async::quic::event::stream_data const &) override {
+    dispatch(qb::io::async::quic::event::stream_data const &ev) override {
         ++data_dispatches;
         if (throw_next) {
             throw_next = false;
+            extend_stream_credit(ev.connection_id, ev.id, ev.payload.size());
             throw std::runtime_error("handler boom");
         }
     }
@@ -147,6 +150,36 @@ struct ThrowingDispatchEndpoint : qb::io::async::quic::endpoint {
     void
     dispatch(qb::io::async::quic::event::connection_closed const &) override {
         ++close_dispatches;
+    }
+};
+
+// Several DATA/framing credits in one receive batch must reach the backend immediately while
+// sharing its final packet drain. A writer-generated error must still precede the final reap.
+struct CreditingDispatchEndpoint : qb::io::async::quic::endpoint {
+    using qb::io::async::quic::endpoint::endpoint;
+
+    FakeQuicBackend         *probe                     = nullptr;
+    bool                     throw_credit_packet_drain = false;
+    std::vector<int>         packet_drains_in_handler;
+    std::vector<std::string> order;
+
+    void
+    dispatch(qb::io::async::quic::event::stream_data const &ev) override {
+        order.push_back("data:enter");
+        for (std::uint64_t bytes = 1; bytes <= 3; ++bytes) {
+            extend_stream_credit(ev.connection_id, ev.id, bytes);
+            EXPECT_EQ(probe->extended_connection_id, ev.connection_id);
+            EXPECT_EQ(probe->extended_stream_id, ev.id);
+            packet_drains_in_handler.push_back(probe->drain_packets_calls);
+        }
+        probe->close_on_next_packet_drain = true;
+        probe->throw_on_next_packet_drain = throw_credit_packet_drain;
+        order.push_back("data:exit");
+    }
+
+    void
+    dispatch(qb::io::async::quic::event::connection_closed const &) override {
+        order.push_back("connection_closed");
     }
 };
 
@@ -501,13 +534,58 @@ TEST(QuicAdapterEndpoint, ReentrantSendCloseIsDeferredPastTheOuterDispatch) {
     data.stream_id     = 0;
     data.payload       = {std::byte{'r'}, std::byte{'q'}};
     raw->queued_events.push_back(std::move(data));
+    const auto packet_drains = raw->drain_packets_calls;
     endpoint.poll();
 
+    EXPECT_EQ(raw->extend_stream_credit_calls, 2);
+    EXPECT_EQ(raw->extended_bytes, 4u);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 3) << "poll, the nested send, and only the remaining credit batch each drain once";
     EXPECT_FALSE(endpoint.close_seen_reentrantly) << "connection_closed was dispatched on a nested stack inside the stream_data handler";
     ASSERT_EQ(endpoint.order.size(), 3u);
     EXPECT_EQ(endpoint.order[0], "stream_data:enter");
     EXPECT_EQ(endpoint.order[1], "stream_data:exit");
     EXPECT_EQ(endpoint.order[2], "connection_closed") << "the deferred close must run after the read fully unwinds";
+}
+
+TEST(QuicAdapterEndpoint, ReadCreditBatchDrainsOnceAndDispatchesWriterFailureAfterHandlers) {
+    FakeQuicBackend          *raw = nullptr;
+    CreditingDispatchEndpoint endpoint{make_fake(raw)};
+    endpoint.probe = raw;
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::stream_data, 7, 0, 0, {}, {std::byte{'a'}}});
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::stream_data, 9, 4, 0, {}, {std::byte{'b'}}});
+    const auto packet_drains = raw->drain_packets_calls;
+    endpoint.poll();
+
+    EXPECT_EQ(raw->extend_stream_credit_calls, 6);
+    EXPECT_EQ(raw->extended_bytes, 12u);
+    EXPECT_EQ(endpoint.packet_drains_in_handler, std::vector<int>(6, packet_drains + 1))
+        << "credit updates must not drain inside either handler";
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 2) << "poll's initial packet drain plus one drain for all six credits";
+    EXPECT_EQ(endpoint.order, (std::vector<std::string>{"data:enter", "data:exit", "data:enter", "data:exit", "connection_closed"}));
+    EXPECT_EQ(endpoint.current_state(), State::closed);
+}
+
+TEST(QuicAdapterEndpoint, FailedCreditPacketDrainRetriesWithoutAnotherInboundPacket) {
+    FakeQuicBackend          *raw = nullptr;
+    CreditingDispatchEndpoint endpoint{make_fake(raw)};
+    endpoint.probe                     = raw;
+    endpoint.throw_credit_packet_drain = true;
+    ASSERT_TRUE(endpoint.connect(qb::io::uri{"quic://127.0.0.1:4433"}));
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::stream_data, 7, 0, 0, {}, {std::byte{'a'}}});
+
+    const auto packet_drains = raw->drain_packets_calls;
+    EXPECT_THROW(endpoint.poll(), std::runtime_error);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 2) << "poll plus the failed final credit drain";
+    EXPECT_EQ(raw->extend_stream_credit_calls, 3);
+    EXPECT_EQ(endpoint.order, (std::vector<std::string>{"data:enter", "data:exit"}));
+
+    qb::io::async::run(EVRUN_NOWAIT);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 3) << "the incomplete credit drain must be retried by EV_WRITE";
+    EXPECT_EQ(raw->extend_stream_credit_calls, 3) << "retry packet generation without regranting credit";
+    EXPECT_EQ(endpoint.order, (std::vector<std::string>{"data:enter", "data:exit", "connection_closed"}));
+    EXPECT_EQ(endpoint.current_state(), State::closed);
 }
 
 /**
@@ -674,10 +752,13 @@ TEST(QuicAdapterEndpoint, EndpointMutationOverloadsDelegateToBackend) {
     endpoint.send_datagram(std::span<const std::byte>{datagram});
     endpoint.send_datagram(99, std::span<const std::byte>{datagram});
 
+    const auto packet_drains = raw->drain_packets_calls;
     endpoint.extend_stream_credit(1, 2, 0);
     EXPECT_EQ(raw->extend_stream_credit_calls, 0) << "a zero-byte credit grant is a no-op";
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains);
 
     endpoint.extend_stream_credit(1, 2, 4);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 1) << "credit outside dispatch must still flush before returning";
 
     EXPECT_EQ(raw->send_stream_data_calls, 2);
     EXPECT_EQ(raw->sent_connection_id, 7u);
@@ -688,8 +769,17 @@ TEST(QuicAdapterEndpoint, EndpointMutationOverloadsDelegateToBackend) {
     EXPECT_EQ(raw->sent_datagram_connection_id, 99u);
     EXPECT_EQ(raw->sent_datagram_bytes, 6u);
     EXPECT_EQ(raw->extend_stream_credit_calls, 1);
+    EXPECT_EQ(raw->extended_connection_id, 1u);
     EXPECT_EQ(raw->extended_stream_id, 2u);
     EXPECT_EQ(raw->extended_bytes, 4u);
+
+    raw->throw_on_next_packet_drain = true;
+    EXPECT_THROW(endpoint.extend_stream_credit(1, 2, 5), std::runtime_error);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 2);
+    qb::io::async::run(EVRUN_NOWAIT);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 3) << "an incomplete immediate credit drain also needs a writable retry";
+    EXPECT_EQ(raw->extend_stream_credit_calls, 2);
+    EXPECT_EQ(raw->extended_bytes, 9u) << "retry must not duplicate either grant";
 }
 
 /**
@@ -1495,8 +1585,14 @@ TEST(QuicAdapterEndpoint, ThrowingDispatchDoesNotWedgeLaterEventDelivery) {
 
     // The throw propagates out of poll() (the real loop contains it at the dispatch locus);
     // what matters is the state it leaves the endpoint in.
+    const auto packet_drains = raw->drain_packets_calls;
     EXPECT_THROW(endpoint.poll(), std::runtime_error);
     EXPECT_EQ(endpoint.data_dispatches, 1);
+    EXPECT_EQ(raw->extend_stream_credit_calls, 1);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 1) << "the throwing handler leaves its credit for a writable retry";
+    qb::io::async::run(EVRUN_NOWAIT);
+    EXPECT_EQ(raw->drain_packets_calls, packet_drains + 2)
+        << "the exception guard must arm a retry without another inbound packet or explicit poll";
 
     // The endpoint must still be live: a subsequent event is delivered normally.
     qb::io::quic::backend_event more;

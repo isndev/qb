@@ -332,7 +332,9 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
   carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
-- QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1020-1021,1465-1492)_
+- QUIC `extend_stream_credit` updates the backend immediately. The endpoint flushes it synchronously outside event dispatch and batches it until the current handlers unwind inside dispatch; direct native callers explicitly drain packets after granting credit. _(src/qb/io/async/quic/endpoint.h:541-554; src/qb/io/quic.cpp:547-564)_
+- Native QUIC `wants_write()` exposes the due writer attempt; readiness can produce an empty packet vector. _(src/qb/io/quic.cpp:393-404)_
+- QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1022-1023,1467-1494)_
 
 ### Coroutines inside an actor
 
