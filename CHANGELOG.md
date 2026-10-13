@@ -9,6 +9,9 @@ policy.
 
 ### Fixed
 
+- **`qb-docs` now generates its published HTML without an incomplete LaTeX side output (Huly QB-1022).**
+  The unused PDF path required `mmdc` and `epstopdf`, emitted Mermaid errors, and still returned success;
+  the obsolete `DOT_MULTI_TARGETS` setting is removed.
 - **Build, migration and coroutine guides now match the shipped contracts (Huly QB-423, QB-426,
   QB-427, QB-471, QB-478).** Module source tests use a qb source superbuild, not an installed qb;
   `callback` does not move blocking work off a core; detached work needs the same core kept alive

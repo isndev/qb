@@ -119,6 +119,10 @@ For example, SSL-gated crypto declarations appear only when OpenSSL was found an
 `QB_HAS_SSL=1` is part of that build. Reconfigure with the desired features before
 generating the API reference.
 
+The `qb-docs` target writes HTML under the build directory's `docs/html`
+(`docs/CMakeLists.txt:60-64`). It does not produce LaTeX or a PDF; no PDF
+toolchain is configured for that target.
+
 ### Optional features
 
 | Option | Type / default | Effect |
