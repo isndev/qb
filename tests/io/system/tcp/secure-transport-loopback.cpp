@@ -30,9 +30,9 @@
  *     aware override) draining decrypted bytes into `in()` / `pendingRead()`. The round-trip proves the
  *     stcp `read()` correctly retrieves SSL-buffered application data.
  *
- * POSIX-only (`WINDOWS_EXCLUDE`): like ssl-socket-loopback.cpp, both sides busy-poll the non-blocking
- * handshake; on Windows the completion ordering races (the production async event-loop SSL path is
- * Windows-clean — see qbm-http). SSL is gated at CMake (`REQUIRES ssl`); the shipped self-signed
+ * Both POSIX and Windows keep the accepted socket alive until the client has finished.
+ * The synchronous client uses a fixture deadline covering TCP and TLS; the server polls its
+ * nonblocking handshake. SSL is gated at CMake (`REQUIRES ssl`); the shipped self-signed
  * `cert.pem`/`key.pem` are located via the shared ssl_fixtures helper.
  *
  * Signatures relied on:
@@ -80,6 +80,7 @@
 
 #include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
+#include "../../shared/tls_deadline.h"
 
 using namespace std::chrono_literals;
 
@@ -103,14 +104,17 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
         const int status = socket.handshake_status();
         if (status < 0) {
             ADD_FAILURE() << "server handshake_status reported a fatal error: " << status;
+            socket.disconnect();
             return;
         }
         if (status == 1)
             break;
         std::this_thread::sleep_for(1ms);
     }
-    if (!socket.handshake_complete())
+    if (!socket.handshake_complete()) {
         ADD_FAILURE() << "server handshake did not complete within the deadline";
+        socket.disconnect();
+    }
 }
 
 // Deadline-bounded encrypted read of exactly `n` bytes on a raw ssl::socket.
@@ -259,8 +263,8 @@ TEST(SecureTransport, SacceptAndStcpRoundTripEncryptedPayload) {
     client.transport().set_insecure(); // self-signed test cert
     ASSERT_TRUE(client.transport().set_sni_hostname("localhost"));
     ASSERT_TRUE(client.transport().set_alpn_protocols({"qb-test"}));
-    // Blocking connect_v4 completes both the TCP connect and the TLS handshake.
-    ASSERT_EQ(client.transport().connect_v4("127.0.0.1", port), 0);
+    // Exercise the synchronous API; its TLS phase is also bounded by the fixture.
+    ASSERT_EQ(qb::io::test::connect_tls_blocking_until(client.transport(), port, std::chrono::steady_clock::now() + 5s), 0);
     ASSERT_TRUE(client.transport().handshake_complete());
 
     // Send "hello" through the stcp stream half (publish into _out_buffer, then
@@ -331,8 +335,9 @@ TEST(SecureTransport, SacceptFlushReleasesAlreadyMovedOutSlot) {
         client.set_insecure();
         // The result was discarded: a connect that failed left the main thread's
         // accept below with nothing to accept, and no record of why.
-        EXPECT_EQ(client.connect_v4("127.0.0.1", port), 0) << "secure client connect failed";
-        client_connected = true;
+        const int result = qb::io::test::connect_tls_blocking_until(client, port, std::chrono::steady_clock::now() + 5s);
+        EXPECT_EQ(result, 0) << "secure client connect failed";
+        client_connected = result == 0 && client.handshake_complete();
     });
 
     const qb::io::test::thread_joiner client_joiner{client_thread};

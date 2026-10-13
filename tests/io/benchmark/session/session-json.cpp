@@ -66,6 +66,7 @@
 
 #include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
+#include "../../shared/tls_deadline.h"
 
 using namespace qb::io;
 using namespace std::chrono_literals;
@@ -296,26 +297,19 @@ BM_SessionJson_Tls(benchmark::State &state) {
     std::atomic<bool>        g_worker_ready{false};
     std::atomic<bool>        g_worker_failed{false};
     std::atomic<bool>        g_worker_stop{false};
+    std::atomic<bool>        g_worker_done{false};
 
     std::thread worker([&] {
+        // Published after client destruction and callback/loop cleanup.
+        struct Completion {
+            std::atomic<bool> &done;
+            ~Completion() {
+                done.store(true);
+            }
+        } completion{g_worker_done};
         qb::io::async::init(); // the client owns this thread's loop
         JsonSecureClient client;
-        bool             connected           = false;
-        bool             connection_finished = false;
-        qb::io::async::tcp::connect<qb::io::tcp::ssl::socket>(
-            qb::io::uri{"tcp://127.0.0.1:" + std::to_string(port)},
-            [&](qb::io::tcp::ssl::socket &&socket) {
-                connected = socket.is_open() && socket.handshake_complete();
-                if (connected)
-                    client.transport() = std::move(socket);
-                connection_finished = true;
-            },
-            5s, false);
-        const auto connect_deadline = std::chrono::steady_clock::now() + 5s;
-        while (!connection_finished && !g_worker_stop.load() && std::chrono::steady_clock::now() < connect_deadline)
-            qb::io::async::listener::current.run(EVRUN_NOWAIT);
-        if (!connected || g_worker_stop.load()) {
-            qb::io::async::listener::current.clear();
+        if (!qb::io::test::connect_tls_worker_until(client.transport(), port, g_worker_stop, std::chrono::steady_clock::now() + 5s)) {
             g_worker_failed.store(true);
             g_worker_ready.store(true);
             return;
@@ -352,6 +346,10 @@ BM_SessionJson_Tls(benchmark::State &state) {
 
     auto stop_worker = [&] {
         g_worker_stop.store(true);
+        // The server keeps making progress until the worker has released its TLS
+        // connection. A late worker observes stop before attempting any connection.
+        while (!g_worker_done.load())
+            pump_server_slice();
         if (worker.joinable())
             worker.join();
     };

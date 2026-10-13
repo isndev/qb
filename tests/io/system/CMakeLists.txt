@@ -79,6 +79,7 @@ qb_add_test(MODULE qb-io TIER system NAME udp-datagram      SOURCES udp/udp-data
 qb_add_test(MODULE qb-io TIER system NAME tls-text-roundtrip    SOURCES tls/tls-text-roundtrip.cpp    DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 qb_add_test(MODULE qb-io TIER system NAME tls-peer-verification SOURCES tls/tls-peer-verification.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 qb_add_test(MODULE qb-io TIER system NAME tls-starttls-upgrade  SOURCES tls/tls-starttls-upgrade.cpp  DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+qb_add_test(MODULE qb-io TIER system NAME tls-worker-deadline SOURCES tls/tls-worker-deadline.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 
 # --- session (text/binary command loopback / json / text protocol roundtrip) ---
 qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
@@ -139,6 +140,7 @@ if (QB_HAS_SSL)
                 qb-io-test-system-tls-peer-verification
                 qb-io-test-system-tls-starttls-upgrade
                 qb-io-test-system-session-json
+                qb-io-test-system-tls-worker-deadline
                 qb-io-test-system-text-session-loopback
                 qb-io-test-system-quic-handshake
                 qb-io-test-system-quic-endpoint-loop)
@@ -167,6 +169,7 @@ if (QB_IO_EV_TEST_BACKENDS)
             qb-io-test-system-async-bases-framing
             qb-io-test-system-async-connect-timeout
             qb-io-test-system-session-json
+            qb-io-test-system-tls-worker-deadline
             qb-io-test-system-offload
             qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
