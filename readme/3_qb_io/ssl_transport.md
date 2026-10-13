@@ -219,7 +219,7 @@ public:
     [[nodiscard]] SSL *ssl_handle() const noexcept;
 };
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-975 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-977 -->
 
 Key behaviors verified in the header:
 
@@ -332,7 +332,7 @@ handle and are silent no-ops without one, which is the trap on this table:
 
 `disable_session_resumption()` and `set_session()` are mutually exclusive when deferred; the last call wins.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1365-1371 (set_verify_callback needs a handle), :1373-1379 (set_verify_depth), :1353 (sni deferred), :1362 (alpn deferred), :1191-1192 (resumption deferred, drops the session), :1210 (ocsp deferred), :1322-1323 (session deferred), :1184 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :921 (set_insecure) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1365-1371 (set_verify_callback needs a handle), :1373-1379 (set_verify_depth), :1353 (sni deferred), :1362 (alpn deferred), :1191-1192 (resumption deferred, drops the session), :1210 (ocsp deferred), :1322-1323 (session deferred), :1184 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :923 (set_insecure) -->
 
 #### Introspection and sessions
 

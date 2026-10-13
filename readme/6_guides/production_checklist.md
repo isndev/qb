@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-921 (set_insecure / secure-by-default doc), :927 (verify_peer) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-923 (set_insecure / secure-by-default doc), :929 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 

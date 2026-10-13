@@ -278,7 +278,7 @@ public:
 };
 ```
 
-Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1512-1513,2265-2267, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp:237-250 -->
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1512-1513,2265-2267, qb/src/qb/core/Actor.cpp:555-566, examples/01-actors/06-doing-things-later.cpp:240-253 -->
 
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:93 -->
 
@@ -448,7 +448,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
    });
    ```
 
-2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:280,286-290 -->
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:298,304-308 -->
 
 3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. `examples/02-io/08-timeouts-and-watchers.cpp` demonstrates both watchers, and is candid about the limit: a directory event says THAT something changed, never WHAT. <!-- src: examples/02-io/08-timeouts-and-watchers.cpp:194,204 -->
 
