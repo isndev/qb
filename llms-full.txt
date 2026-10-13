@@ -710,7 +710,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:921`.
+  `socket::set_insecure()` is declared at `ssl/socket.h:923`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
