@@ -258,24 +258,23 @@ policy.
   neither kind is ever lent for the other; on POSIX, where a mapping's pages are the process's once written, it is a
   region like any other. The engine's mailbox blocks are reserved regions (under Fixed). Pinned by
   `qb-io-test-unit-region-cache`.
-- **`qb::lockfree::mpsc::block_ringbuffer<T, max_size>`: an MPSC ring buffer whose every producer ring its constructor
-  builds, in one block -- the engine's mailbox (`qb/system/lockfree/mpsc.h`, Huly QB-203).** The runtime-producer
-  `ringbuffer<T, max_size, 0>`'s forms -- `enqueue_at<Index>`, `enqueue(index, ...)`, the round-robin `enqueue(...)`
-  under a producer's lock, `dequeue`, `has_data`, both `consume_all`, `ringOf` -- over one block of `nb_producer`
-  rings at their natural stride, each constructed by default-initialisation: its lock and index lines written, its
-  slot array left to its producer's writes. Its walks read a ring where the block holds it, as the vector of rings did
-  -- no slot loaded, no test. `rings()` is its producer count, `closed()` says whether its rings were built closed,
-  `block()` and `block_bytes()` where they are. On POSIX the block is a `region_cache` region. On Windows it is a
-  reserved one: the constructor commits each ring's header pages and builds the ring CLOSED -- full to its producer,
-  empty to its consumer -- and the producer's first write commits the ring's slots and opens it, on the slow path a
-  producer takes when its snapshot of the consumer's index cannot prove room, so a write that fits tests nothing new;
-  a refused commit terminates, the send path being `noexcept`. A ring has one producer by construction -- one thread
-  per index -- so two threads never race its first write, and the round-robin forms open a ring under its producer's
-  lock. Built closed on request on POSIX (`block_ringbuffer(nb_producer, true)`), the rings commit nothing there and
-  run the protocol where ThreadSanitizer sees it. Pinned by `qb-core-test-unit-mpsc-block-ring`.
-
-### Changed
-
+- **`qb::lockfree::mpsc::block_ringbuffer<T, max_size, Closed>`: an MPSC ring buffer whose every producer ring its
+  constructor builds, in one block -- the engine's mailbox (`qb/system/lockfree/mpsc.h`, Huly QB-203).** The
+  runtime-producer `ringbuffer<T, max_size, 0>`'s forms -- `enqueue_at<Index>`, `enqueue(index, ...)`, the round-robin
+  `enqueue(...)` under a producer's lock, `dequeue`, `has_data`, both `consume_all`, `ringOf` -- over one block of
+  `nb_producer` rings at their natural stride, each constructed by default-initialisation: its lock and index lines
+  written, its slot array left to its producer's writes. Its walks read a ring where the block holds it, as the vector
+  of rings did -- no slot loaded, no test. `rings()` is its producer count, `closed()` says whether its rings are
+  built closed, `block()` and `block_bytes()` where they are. On POSIX the block is a `region_cache` region and its
+  rings are `spsc::ringbuffer`, the fixed ring's code to the instruction. On Windows it is a reserved region and its
+  rings are built CLOSED (`Closed`, true there by default) -- full to their producer, empty to their consumer: the
+  constructor commits each ring's header pages, and the producer's first write commits the ring's slots and opens it,
+  on the slow path a producer takes when its snapshot of the consumer's index cannot prove room, so a write that fits
+  tests nothing new; a refused commit terminates, the send path being `noexcept`. Only a closed block's rings carry
+  the test of the closed mark, so a POSIX engine compiles none of the protocol; `block_ringbuffer<T, N, true>` builds
+  closed rings on POSIX too, where they commit nothing, to run the protocol under ThreadSanitizer. A ring has one
+  producer by construction -- one thread per index -- so two threads never race its first write, and the round-robin
+  forms open a ring under its producer's lock. Pinned by `qb-core-test-unit-mpsc-block-ring`.
 - **A spinning core's idle poll is paced by one ordered read of the CPU counter, the same instructions on both
   compilers (Huly QB-251); the pass holds less live state, and the tick phase and the reap run out of its loop (Huly
   QB-257).** An idle pass of a spinning core is a poll of its peer rings, and what sits between two polls decides the

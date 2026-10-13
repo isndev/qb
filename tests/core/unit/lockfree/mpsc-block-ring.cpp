@@ -21,8 +21,8 @@
  *   - a block holds every producer's ring from its construction, at one stride from the block's first byte, and its
  *     producing forms and consumer walks are the vector's: each form writes its own index's ring, the consumer drains in
  *     index order;
- *   - the CLOSED protocol, on every platform -- a POSIX block is built closed on request, which commits nothing there
- *     and runs the protocol where ThreadSanitizer sees it: a closed ring is empty to its consumer (`has_data`, both
+ *   - the CLOSED protocol, on every platform -- `block_ringbuffer<T, N, true>` builds a POSIX block closed, which commits
+ *     nothing there and runs the protocol where ThreadSanitizer sees it: a closed ring is empty to its consumer (`has_data`, both
  *     `consume_all`, `dequeue`, `empty()`) and full to its producer until its first write, which each producing form
  *     and `write_room` through `ringOf` open, and a zero-length query does not; an opened ring fills and drains as any;
  *   - producers opening their rings while the consumer walks: every item delivered once and in order, nothing read from
@@ -45,6 +45,7 @@
 #include <latch>
 #include <set>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -61,7 +62,8 @@ namespace mpsc_block_ring_test {
 using namespace std::chrono_literals;
 
 constexpr std::size_t kCap = 63; // a 64-slot ring: the concurrent cases' producers find theirs full and retry
-using Block                = qb::lockfree::mpsc::block_ringbuffer<std::uint64_t, kCap>;
+using Block                = qb::lockfree::mpsc::block_ringbuffer<std::uint64_t, kCap>;       // the platform's: closed on Windows
+using ClosedBlock          = qb::lockfree::mpsc::block_ringbuffer<std::uint64_t, kCap, true>; // the protocol, on every platform
 
 constexpr std::size_t   kProducers  = 16;
 constexpr std::size_t   kPublishers = 8;
@@ -81,14 +83,16 @@ item(std::size_t const producer, std::uint64_t const seq, std::uint64_t const ro
 
 /// What producer @p index last saw of its consumer's index: one past its write index in a ring built closed -- full to
 /// its producer -- and the consumer's true index once the ring has opened. Producer side; here, one thread.
+template <typename B>
 [[nodiscard]] std::size_t
-seen_read_index(Block &block, std::size_t const index) {
+seen_read_index(B &block, std::size_t const index) {
     return block.ringOf(index).producer_seen_read_index();
 }
 
 /// Every item a copy-out walk delivers, in delivery order.
+template <typename B>
 [[nodiscard]] std::vector<std::uint64_t>
-drain(Block &block) {
+drain(B &block) {
     std::vector<std::uint64_t> scratch(kCap);
     std::vector<std::uint64_t> items;
     block.consume_all([&items](std::uint64_t *batch, std::size_t const count) { items.insert(items.end(), batch, batch + count); },
@@ -133,7 +137,7 @@ TEST(MpscBlockRing, ABlockHoldsEveryRingFromItsConstructionAtOneStrideAndDrainsT
 }
 
 TEST(MpscBlockRing, AClosedRingIsEmptyToItsConsumerAndItsProducersFirstWriteOpensIt) {
-    Block block(kProducers, true);
+    ClosedBlock block(kProducers);
     ASSERT_TRUE(block.closed());
     for (std::size_t i = 0; i < kProducers; ++i) {
         EXPECT_TRUE(block.ringOf(i).empty()) << "closed ring " << i << " is not empty to its consumer";
@@ -183,7 +187,7 @@ TEST(MpscBlockRing, ProducersOpeningTheirRingsWhileTheConsumerWalksDeliverEveryI
     // read as non-empty would deliver them, and they carry their round. A ring's first write and the consumer's polls of
     // its published index are what ThreadSanitizer checks.
     for (int round = 0; round < kRounds; ++round) {
-        Block                    block(kPublishers, true);
+        ClosedBlock              block(kPublishers);
         std::latch               go(1);
         std::atomic<std::size_t> finished{0};
         std::atomic<bool>        give_up{false};
@@ -257,7 +261,7 @@ TEST(MpscBlockRing, RoundRobinWritersOpenAClosedRingOnceUnderItsLock) {
     // The round-robin forms are the only way two threads write one ring, and they take its producer's lock: eight
     // writers on a one-ring block make its first write at once, and the lock lets one open it.
     for (int round = 0; round < kRounds; ++round) {
-        Block                    block(1, true);
+        ClosedBlock              block(1);
         std::latch               go(kWriters);
         std::atomic<std::size_t> finished{0};
         std::atomic<bool>        give_up{false};
@@ -312,10 +316,17 @@ TEST(MpscBlockRing, RoundRobinWritersOpenAClosedRingOnceUnderItsLock) {
 TEST(MpscBlockRing, TheEnginesMailboxIsABlockWithEveryRingBuiltClosedOnWindowsOnly) {
     qb::SharedCoreCommunication::Mailbox mailbox(qb::MaxCores, 0ns, 0us);
     EXPECT_EQ(mailbox.rings(), qb::MaxCores);
+    // An open block's ring is the plain fixed ring -- develop's code, no test of the closed mark on any write; only a
+    // closed block's is the closable one.
+    using MailboxRing            = std::remove_reference_t<decltype(mailbox.ringOf(0))>;
+    constexpr std::size_t kSlots = qb::detail::max_deliverable_buckets;
 #if defined(_WIN32)
     EXPECT_TRUE(mailbox.closed());
+    static_assert(std::is_same_v<MailboxRing, qb::lockfree::spsc::internal::closable_ringbuffer<EventBucket, kSlots>>);
 #else
     EXPECT_FALSE(mailbox.closed());
+    static_assert(std::is_same_v<MailboxRing, qb::lockfree::spsc::ringbuffer<EventBucket, kSlots>>,
+                  "a POSIX engine's mailbox ring carries the closed protocol");
 #endif
     EXPECT_FALSE(mailbox.has_data());
 }
