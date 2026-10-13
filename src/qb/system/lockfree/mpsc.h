@@ -813,6 +813,16 @@ public:
     }
 };
 
+namespace detail {
+/// Is a `block_ringbuffer`'s block reserved, its rings' slots committed by their first writes? On Windows, where a
+/// committed mapping commits every page of it; elsewhere a mapping's pages are the process's once written.
+#if defined(_WIN32) || defined(_WIN64)
+inline constexpr bool block_reserved = true;
+#else
+inline constexpr bool block_reserved = false;
+#endif
+} // namespace detail
+
 /**
  * @brief Multi-Producer Single-Consumer ring buffer whose every producer ring is built by its constructor, in one
  * block: the engine's mailbox (Huly QB-203).
@@ -831,12 +841,16 @@ public:
  *   bytes may be backed by a 2 MiB page each time: the block, then, is resident nearly whole, as in 3.2.
  * - **Windows.** A committed mapping commits every page of a block, written or not, so the block is RESERVED
  *   (`region_acquire_reserved`): its address range is the buffer's, its pages are not. The constructor commits each
- *   ring's header pages (`region_commit`) and builds the ring CLOSED (`spsc::ringbuffer::close`): full to its
+ *   ring's header pages (`region_commit`) and builds the ring CLOSED (`spsc::internal::closable_ringbuffer`): full to its
  *   producer, empty to its consumer. The producer's first write -- any producing form, `write_room`, or a write
  *   through `ringOf` -- takes the slow path every producer takes when its snapshot cannot prove room, finds the ring
  *   closed there, commits the ring's slots and opens it; nothing on a write that fits tests anything new. A refused
  *   commit terminates, as a failed allocation on the `noexcept` send path does. At rest: the header pages committed
  *   (18 MiB at 64 cores) and the block's range reserved (271 MB at 64 cores, 1.1 GB at 128).
+ * - **Closed is a template parameter** (`Closed`, `detail::block_reserved` by default: true on Windows, false
+ *   elsewhere). Only a closed block's rings carry the test of the closed mark, `closable_ringbuffer`; an open one's
+ *   are `spsc::ringbuffer`, develop's code to the instruction -- a POSIX engine compiles none of the protocol. A POSIX
+ *   test instantiates `block_ringbuffer<T, N, true>` to run it where ThreadSanitizer sees it (it commits nothing).
  * - **One producer per ring.** The engine gives each core its own index into every mailbox, so a ring's first write
  *   has one writer and two threads never open one ring. The round-robin forms open a ring under its producer's lock.
  * - **Restart.** The block goes back to the region cache when the buffer is destroyed, its committed pages with it,
@@ -845,37 +859,36 @@ public:
  *
  * @tparam T The type of elements stored in the buffer
  * @tparam max_size The maximum capacity per producer buffer
+ * @tparam Closed Build the rings closed, their slots committed by their first writes (Windows: always)
  */
-template <typename T, std::size_t max_size>
+template <typename T, std::size_t max_size, bool Closed = detail::block_reserved>
 class block_ringbuffer : public nocopy {
     using size_t = std::size_t;
+    /// The ring: the fixed spsc ring, develop's code, or -- built closed -- the one that tests the closed mark.
+    using Ring = std::conditional_t<Closed, spsc::internal::closable_ringbuffer<T, max_size>, spsc::ringbuffer<T, max_size>>;
 
     /// A producer's ring and its lock, the line the round-robin forms take.
     struct Producer {
-        constexpr static const int    padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
-        SpinLock                      lock;                     ///< Lock for this producer
-        char                          padding1[padding_size]{}; ///< Padding to avoid false sharing
-        spsc::ringbuffer<T, max_size> _ringbuffer;              ///< The producer's dedicated ring buffer
+        constexpr static const int padding_size = QB_LOCKFREE_CACHELINE_BYTES - sizeof(SpinLock);
+        SpinLock                   lock;                     ///< Lock for this producer
+        char                       padding1[padding_size]{}; ///< Padding to avoid false sharing
+        Ring                       _ringbuffer;              ///< The producer's dedicated ring buffer
     };
-    using Ring = spsc::ringbuffer<T, max_size>;
 
     /// Where a producer's ring starts: past its lock line, at the ring's alignment.
     static constexpr size_t ring_offset = (QB_LOCKFREE_CACHELINE_BYTES + alignof(Ring) - 1) / alignof(Ring) * alignof(Ring);
     static_assert(sizeof(Producer) == ring_offset + sizeof(Ring), "a producer is its lock line and its ring, nothing else");
     /// What constructing a ring writes: its lock line and the ring's index blocks -- the slots follow.
-    static constexpr size_t header_bytes = ring_offset + Ring::slots_offset;
+    static constexpr size_t header_bytes = ring_offset + spsc::internal::closable_ringbuffer<T, max_size>::slots_offset;
     static_assert(std::is_trivially_default_constructible_v<T>,
                   "default-initialisation leaves the slots unwritten: on Windows, in pages not committed yet");
 
-#if defined(_WIN32) || defined(_WIN64)
-    static constexpr bool reserved = true; ///< The block reserved, each ring's header committed, its slots by its first write
-#else
-    static constexpr bool reserved = false; ///< The block a mapping: its pages are the process's once written
-#endif
+    static constexpr bool reserved = detail::block_reserved; ///< The block reserved, each ring's slots committed by its first write
+    static_assert(Closed || !reserved, "a reserved block's rings are closed until their first write commits their slots");
 
     Producer *const   _rings;       ///< The block: `_nb_producer` rings at their stride, the first at its start
+    Producer *const   _end;         ///< One past the last ring, as the vector of rings held it
     const std::size_t _block_bytes; ///< The block's size, as `region_acquire_reserved` was asked for it
-    const bool        _closed;      ///< The rings were built closed (`spsc::ringbuffer::close`)
     const std::size_t _nb_producer; ///< Number of producers: at offset 24, where the vector of rings had it
 
     [[nodiscard]] static Producer *
@@ -888,17 +901,16 @@ public:
     block_ringbuffer() = delete;
 
     /**
-     * @brief Builds every producer's ring, in one block.
+     * @brief Builds every producer's ring, in one block -- closed when `Closed` is: always on Windows, where the block
+     *        is only reserved; on POSIX only in an instantiation that asks (a test of the protocol: it commits nothing
+     *        there, a mapping's pages being the process's once written).
      * @param nb_producer The number of producers (at least one)
-     * @param closed Build the rings CLOSED, their slots committed by their producers' first writes: always on Windows,
-     *        where the block is only reserved; on POSIX false by default, true to run the protocol there (a test: it
-     *        commits nothing, a mapping's pages being the process's once written).
      * @throws std::bad_alloc when the block cannot be reserved or a header committed.
      */
-    explicit block_ringbuffer(std::size_t const nb_producer, bool const closed = reserved)
+    explicit block_ringbuffer(std::size_t const nb_producer)
         : _rings(take_block(nb_producer))
+        , _end(_rings + nb_producer)
         , _block_bytes(nb_producer * sizeof(Producer))
-        , _closed(reserved || closed)
         , _nb_producer(nb_producer) {
         for (size_t i = 0; i < _nb_producer; ++i) {
             void *const at = _rings + i;
@@ -910,7 +922,7 @@ public:
             }
             // Default-initialisation: the lock and the index blocks written, the slots left as the block has them.
             Producer *const ring = ::new (at) Producer;
-            if (_closed)
+            if constexpr (Closed)
                 ring->_ringbuffer.close();
         }
     }
@@ -920,8 +932,8 @@ public:
      *        using the buffer.
      */
     ~block_ringbuffer() noexcept {
-        for (size_t i = 0; i < _nb_producer; ++i)
-            _rings[i].~Producer();
+        for (Producer *ring = _rings; ring != _end; ++ring)
+            ring->~Producer();
         qb::allocator::detail::region_release_reserved(_rings, _block_bytes);
     }
 
@@ -1074,7 +1086,7 @@ public:
     /**
      * @brief Direct access to a producer's ring, a producer-side handle: the SPSC contract applies to what you do with
      *        it.
-     * @details A closed ring is handed out closed, and nothing is tested here: every member of `spsc::ringbuffer` that
+     * @details A closed ring is handed out closed, and nothing is tested here: every member of the closable ring that
      *          writes a slot -- both `enqueue` forms and `write_room` -- passes through the slow path that opens it, so
      *          the ring's first write through this handle commits its slots, as an `enqueue` on this buffer would.
      *          `SharedCoreCommunication::send_run` takes a ring this way on every run.
@@ -1091,10 +1103,10 @@ public:
         return _nb_producer;
     }
 
-    /// Were the rings built closed, their slots committed by their producers' first writes? Always on Windows.
-    [[nodiscard]] bool
-    closed() const noexcept {
-        return _closed;
+    /// Are the rings built closed, their slots committed by their producers' first writes? Always on Windows.
+    [[nodiscard]] static constexpr bool
+    closed() noexcept {
+        return Closed;
     }
 
     /// The block's first byte: producer `i`'s lock line is `block_bytes() / rings()` bytes times `i` past it.
