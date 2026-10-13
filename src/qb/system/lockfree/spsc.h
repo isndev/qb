@@ -92,9 +92,9 @@ namespace internal {
  * every wrap while the consumer writes its index.
  *
  * A ring can be built CLOSED (`close()`, Huly QB-203): full to its producer -- its snapshot
- * one past its write index -- and empty to its consumer, with `closed_index` in the
+ * one past its write index -- and empty to its consumer, with `~max_size` in the
  * consumer's published line. The producer's first write finds no room on its snapshot,
- * reloads the published index as every refused snapshot does, and on `closed_index` opens
+ * reloads the published index as every refused snapshot does, and on that mark opens
  * the ring (`open()`): commits the slots and stores the consumer's true index, 0 -- the one
  * store a producer ever makes to the consumer's line, before the consumer can have taken
  * anything. A write that fits tests nothing new. `mpsc::block_ringbuffer` builds the
@@ -200,7 +200,7 @@ protected:
     read_available(size_t const max_size) const {
         size_t       write_index = write_index_.load(std::memory_order_acquire);
         const size_t read_index  = read_index_.load(std::memory_order_relaxed);
-        if (read_index == closed_index)
+        if (closed_mark(read_index))
             return 0; // a ring built closed holds nothing
         return read_available(write_index, read_index, max_size);
     }
@@ -217,7 +217,7 @@ protected:
     write_available(size_t const max_size) const {
         size_t       write_index = write_index_.load(std::memory_order_relaxed);
         const size_t read_index  = read_index_.load(std::memory_order_acquire);
-        if (read_index == closed_index)
+        if (closed_mark(read_index))
             return 0; // a ring built closed takes nothing until its producer's first write opens it
         return write_available(write_index, read_index, max_size);
     }
@@ -236,15 +236,19 @@ protected:
         size_t avail = write_available(write_index, cached_read_index_, max_size);
         if (avail < wanted) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
-            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
+            if (unlikely(closed_mark(cached_read_index_))) [[unlikely]]
                 return open(buffer, max_size); // nothing the caller holds lives across the call
             avail = write_available(write_index, cached_read_index_, max_size);
         }
         return avail;
     }
 
-    /// `read_index_`'s value in a ring built closed (`close()`): never an index.
-    static constexpr size_t closed_index = ~size_t{0};
+    /// Is this published read index the mark of a ring built closed (`close()`)? The mark is `~max_size`: its sign bit is
+    /// set, as no index's is, so the test is one `test`, and the cold open reads the slot count back from it.
+    [[nodiscard]] static constexpr bool
+    closed_mark(size_t const read_index) noexcept {
+        return static_cast<std::make_signed_t<size_t>>(read_index) < 0;
+    }
 
     /**
      * @brief Builds the ring CLOSED: full to its producer, empty to its consumer, until the producer's first write
@@ -252,13 +256,13 @@ protected:
      * @details A fresh ring only (no write yet). The producer's snapshot of the consumer's index is set where a full
      *          ring would have it, so its first write -- any of the producing forms, or `write_room` -- takes the slow
      *          path every producer takes when its snapshot cannot prove room; there the published read index, which
-     *          holds `closed_index`, sends it to `open()`. The consumer reads the published write index, still 0: an
+     *          holds the closed mark, sends it to `open()`. The consumer reads the published write index, still 0: an
      *          empty ring. Nothing on the path of a write that fits tests anything new.
      */
     void
     close(size_t const max_size) noexcept {
         cached_read_index_ = next_index(write_index_local_, max_size);
-        read_index_.store(closed_index, std::memory_order_relaxed);
+        read_index_.store(~max_size, std::memory_order_relaxed);
     }
 
     /**
@@ -285,8 +289,8 @@ protected:
     /// calls this last, keeping nothing live across the call (on MSVC, which does not shrink-wrap: no callee-saved
     /// register more), and it calls no producing form back, so nothing recurses into the fast path's inliner.
     QB_NOINLINE QB_COLD bool
-    open_and_enqueue(T const &t, T *const buffer, size_t const max_size) noexcept {
-        (void) open(buffer, max_size); // a fresh ring: its producer's index is 0, and a single item always fits
+    open_and_enqueue(T const &t, T *const buffer) noexcept {
+        (void) open(buffer, ~cached_read_index_); // the mark holds the slot count; a fresh ring takes a single item
         new (buffer) T(t);
         write_index_local_ = 1;
         write_index_.store(1, std::memory_order_release);
@@ -296,8 +300,8 @@ protected:
     /// The bulk form of the above: at most the fresh ring's room, `max_size - 1` items, all or none per `_All`.
     template <std::same_as<bool> auto _All>
     QB_NOINLINE QB_COLD size_t
-    open_and_enqueue(const T *input_buffer, size_t input_count, T *const internal_buffer, size_t const max_size) noexcept {
-        size_t const room = open(internal_buffer, max_size); // a fresh ring: its producer's index is 0, no wrap
+    open_and_enqueue(const T *input_buffer, size_t input_count, T *const internal_buffer) noexcept {
+        size_t const room = open(internal_buffer, ~cached_read_index_); // the mark holds the slot count; no wrap
         if constexpr (_All) {
             if (room < input_count)
                 return 0;
@@ -370,8 +374,8 @@ protected:
 
         if (next == cached_read_index_) {
             cached_read_index_ = read_index_.load(std::memory_order_acquire);
-            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
-                return open_and_enqueue(t, buffer, max_size); // a ring built closed (`close()`): its first write
+            if (unlikely(closed_mark(cached_read_index_))) [[unlikely]]
+                return open_and_enqueue(t, buffer); // a ring built closed (`close()`): its first write
             if (next == cached_read_index_)
                 return false; /* ringbuffer is full */
         }
@@ -401,8 +405,8 @@ protected:
         size_t       avail       = write_available(write_index, cached_read_index_, max_size);
         if (avail < input_count) { // `producer_available`, with a closed ring's first write handed off whole
             cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
-            if (unlikely(cached_read_index_ == closed_index)) [[unlikely]]
-                return open_and_enqueue<_All>(input_buffer, input_count, internal_buffer, max_size);
+            if (unlikely(closed_mark(cached_read_index_))) [[unlikely]]
+                return open_and_enqueue<_All>(input_buffer, input_count, internal_buffer); // four register arguments
             avail = write_available(write_index, cached_read_index_, max_size);
         }
 
