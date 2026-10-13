@@ -425,7 +425,7 @@ protected:
             if (unlikely(closed_mark(cached_read_index_, max_size))) [[unlikely]]
                 (void) open(buffer, max_size); // the snapshot is 0 now and `next` is 1: the item goes in below
             if (next == cached_read_index_)
-                return false; /* ringbuffer is full */
+                return false; /* full */
         }
 
         new (buffer + write_index) T(t); // copy-construct
@@ -885,43 +885,47 @@ namespace internal {
 /**
  * @brief The fixed-size ring, buildable CLOSED: the ring of `mpsc::block_ringbuffer<T, N, true>` -- the engine's
  *        mailbox on Windows, where its slots are reserved pages until its producer's first write (Huly QB-203).
- * @details Every producing member opens a closed ring on its first write -- the class note of `ringbuffer<T>` says
- *          how -- and is otherwise the fixed ring's; the consuming members are the fixed ring's. No other type tests
- *          the closed mark: a ring that cannot be closed carries none of this.
+ * @details Every producing member opens a closed ring on its first write -- the base's class note says how -- and is
+ *          otherwise the fixed ring's; the consuming members are the fixed ring's. No other type tests the closed
+ *          mark: a ring that cannot be closed carries none of this.
  */
+/// The fixed ring a closable one extends.
 template <typename T, std::size_t Slots>
-class closable_ringbuffer : public spsc::ringbuffer<T, Slots> {
-    using base   = spsc::ringbuffer<T, Slots>;
+using fixed_ring = spsc::ringbuffer<T, Slots>;
+
+template <typename T, std::size_t Slots>
+class closable_ringbuffer : public fixed_ring<T, Slots> {
+    using base   = fixed_ring<T, Slots>;
     using size_t = std::size_t;
 
 public:
-    /// The bytes before the slots: the four index blocks, all a constructor writes. The slots follow.
-    static constexpr size_t slots_offset = (sizeof(spsc::internal::ringbuffer<T>) + alignof(std::array<T, base::max_size>) - 1)
+    /// The bytes before the slots: the four index blocks (eight lines, all a constructor writes). The slots follow.
+    static constexpr size_t slots_offset = (8 * QB_LOCKFREE_CACHELINE_BYTES + alignof(std::array<T, base::max_size>) - 1)
                                            / alignof(std::array<T, base::max_size>) * alignof(std::array<T, base::max_size>);
 
-    /// Builds this fresh ring CLOSED until its producer's first write -- see `ringbuffer<T>::close`.
+    /// Builds this fresh ring CLOSED until its producer's first write -- see the index blocks' `close`.
     void
     close() noexcept {
-        spsc::internal::ringbuffer<T>::close(base::max_size);
+        base::close(base::max_size);
     }
 
     /// Producer side: slots writable right now; the first call on a closed ring opens it.
     [[nodiscard]] size_t
     write_room(size_t const wanted) noexcept {
-        return spsc::internal::ringbuffer<T>::closable_write_room(wanted, this->array_.data(), base::max_size);
+        return base::closable_write_room(wanted, this->array_.data(), base::max_size);
     }
 
     /// Enqueue a single element; the first write on a closed ring opens it.
     inline bool
     enqueue(T const &t) noexcept {
-        return spsc::internal::ringbuffer<T>::closable_enqueue(t, this->array_.data(), base::max_size);
+        return base::closable_enqueue(t, this->array_.data(), base::max_size);
     }
 
     /// Enqueue multiple elements, all or none per `_All`; the first write on a closed ring opens it.
     template <std::same_as<bool> auto _All = true>
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
-        return spsc::internal::ringbuffer<T>::template closable_enqueue<_All>(t, size, this->array_.data(), base::max_size);
+        return base::template closable_enqueue<_All>(t, size, this->array_.data(), base::max_size);
     }
 };
 
