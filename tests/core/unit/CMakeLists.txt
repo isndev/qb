@@ -69,3 +69,18 @@ qb_add_test(MODULE qb-core TIER unit NAME ring-buffer SOURCES container/ring-buf
 # std::byteswap (C++23) and the portable (C++20) path, wider integers and enums reverse their bytes, floating point
 # reverses its representation, and the to/from conversions swap on the opposite-order host only.
 qb_add_test(MODULE qb-core TIER unit NAME endian SOURCES system/endian.cpp DEPENDS ${PROJECT_NAME})
+# mpsc-ring-allocation pins the runtime-producer mpsc::ringbuffer's rings (Huly QB-203): none at construction and none from
+# a consumer's walk, a producer's own on its first enqueue (each producing form, ringOf too) and no other, and rings
+# published while the consumer walks deliver every item once and in order; engine-sized rings start at their own offsets
+# in their pages, in one region_cache region per buffer (POSIX) or one per ring (Windows, QB-1012), the next buffer reuses
+# them without mapping any, and a race for one ring constructs it once. The engine side is mailbox-footprint and
+# engine-restart-mailboxes.
+qb_add_test(MODULE qb-core TIER unit NAME mpsc-ring-allocation SOURCES lockfree/mpsc-ring-allocation.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
+# mpsc-block-ring pins mpsc::block_ringbuffer, the engine's mailbox (Huly QB-203): every ring built at construction at one
+# stride in one block, drained in index order; the CLOSED protocol on every platform (built closed on request on POSIX,
+# where ThreadSanitizer runs it): a closed ring is empty to its consumer and opened by its producer's first write, each
+# producing form and write_room through ringOf alike, producers opening rings while the consumer walks deliver every item
+# once and in order with nothing read from a closed ring, round-robin writers open one ring under its lock; the engine's
+# Mailbox built closed on Windows only; on Windows the block commits its rings' header pages at rest and a ring's slot
+# pages on its first write, exactly (VirtualQuery), and the next mailbox reuses the block with what it had committed.
+qb_add_test(MODULE qb-core TIER unit NAME mpsc-block-ring SOURCES lockfree/mpsc-block-ring.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)

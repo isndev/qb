@@ -32,7 +32,7 @@ The structural reason is that "accept" is not a suspension point with one answer
 If you want it in a `main()` or a test, `wait_readable` on the listening descriptor gives it to you in five lines:
 
 ```cpp
-// src: derived from qb/tests/io/unit/coroutine/awaiter-protocol.cpp:764-782 (wait_readable on a raw fd)
+// src: derived from qb/tests/io/unit/coroutine/awaiter-protocol.cpp:780-799 (wait_readable on a raw fd)
 #include <qb/io/async.h>
 #include <qb/io/tcp/listener.h>
 

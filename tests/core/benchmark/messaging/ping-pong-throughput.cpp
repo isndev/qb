@@ -28,10 +28,10 @@
  * a per-run `shared_ptr<std::atomic<bool>>`, asserted by a one-shot out-of-loop probe run — never a
  * `EXPECT_LT(duration,…)` ctest gate (this is a perf harness).
  *
- * Benchmark methodology: actor-graph construction and `start()` are excluded from timing; only the
- * drain (`join()`) is measured under `UseRealTime()`. Counters (`round_trips_per_s`, `messages_per_s`,
+ * Benchmark methodology: actor-graph construction is excluded from timing; `start()` and
+ * the drain (`join()`) are measured under `UseRealTime()`. Counters (`round_trips_per_s`, `messages_per_s`,
  * `bytes_per_s`) are assigned once after the loop. Compare results only against benches that share
- * this same "time join() only" policy (cf. the start(true)-inside-the-loop benches).
+ * this same startup-and-drain policy.
  */
 
 #include <algorithm>
@@ -177,8 +177,8 @@ BM_PINGPONG(benchmark::State &state) {
         state.PauseTiming();
         qb::Main main;
         build_pingpong<EventTrait>(main, nb_ping_actor, nb_ping, nb_core, corrupt);
-        main.start();
         state.ResumeTiming();
+        main.start();
         main.join();
     }
 

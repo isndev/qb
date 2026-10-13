@@ -1077,9 +1077,9 @@ TEST(ActorCoroutineAsk, ReplyResumesTheFrameInsideTheRoutingHandler) {
 // 13. The continuation of the LAST ask completes the spawned coroutine inside the handler,
 //     and that same handler kills the actor: the completed frame sits in the scheduler's
 //     deferred-destroy list when the actor's scope is torn down in the same pass. Two
-//     things are pinned: the work finished (the sum), and — under the sanitize preset,
-//     where this suite runs with leak detection on — the frame and the scope's token state
-//     are freed (the shape leaked 264 bytes per actor until `destroy_all_suspended()` learnt
+//     things are pinned: the work finished (the sum), and explicit frame/closure witnesses
+//     return to baseline after join, independently of sanitizer leak-detection settings.
+//     The shape leaked 264 bytes per actor until `destroy_all_suspended()` learnt
 //     to free a scrubbed done root, QB-185).
 // ---------------------------------------------------------------------------
 namespace {
@@ -1087,19 +1087,22 @@ std::atomic<int> g_lastkill_sum{0};
 } // namespace
 
 class TraderKillOnLast : public qb::Actor {
-    qb::ActorId _market;
-    int         _replies = 0;
+    qb::ActorId          _market;
+    std::shared_ptr<int> _probe;
+    int                  _replies = 0;
 
 public:
-    explicit TraderKillOnLast(qb::ActorId m)
-        : _market(m) {}
+    explicit TraderKillOnLast(qb::ActorId m, std::shared_ptr<int> probe)
+        : _market(m)
+        , _probe(std::move(probe)) {}
 
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         registerEvent<AskDone>(*this); // the exception path only: a starved host must not hang the case
         auto mkt = _market;
-        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        spawn([mkt, probe = std::move(_probe)](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            (void) probe; // the borrowed weak witness observes closure/frame reclamation
             int sum = 0;
             try {
                 for (int i = 1; i <= 4; ++i) {
@@ -1131,13 +1134,18 @@ public:
 };
 
 TEST(ActorCoroutineAsk, LastReplyCompletesTheFrameAndKillsTheActorInTheSamePass) {
-    g_ask_threw    = false;
-    g_lastkill_sum = 0;
-    qb::Main main;
-    auto     mkt = main.addActor<Market>(0);
-    main.addActor<TraderKillOnLast>(0, mkt);
+    g_ask_threw                            = false;
+    g_lastkill_sum                         = 0;
+    const auto               frames_before = qb::io::async::detail::CoroutineFrameAllocator::live_frames;
+    auto                     probe         = std::make_shared<int>(1);
+    const std::weak_ptr<int> lifetime      = probe;
+    qb::Main                 main;
+    auto                     mkt = main.addActor<Market>(0);
+    main.addActor<TraderKillOnLast>(0, mkt, std::move(probe));
     main.start(false);
     main.join();
+    EXPECT_TRUE(lifetime.expired()) << "the completed coroutine closure must be reclaimed";
+    EXPECT_EQ(qb::io::async::detail::CoroutineFrameAllocator::live_frames, frames_before);
     EXPECT_FALSE(main.hasError());
     EXPECT_FALSE(g_ask_threw.load()) << kAskThrew;
     EXPECT_EQ(g_lastkill_sum.load(), 20) << "four asks completed before the kill: 2+4+6+8";

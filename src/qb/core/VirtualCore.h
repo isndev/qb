@@ -879,7 +879,7 @@ private:
     QB_NOINLINE QB_COLD void __on_core_stopping__(CoreId core) noexcept;
     /// After a core's thread is done with it -- the core marked stopped, then destroyed with its
     /// actors, whatever ended it: a normal stop, a failed start, an exception that unwound it --
-    /// and once a watch has crossed cores: tell every core still running (`detail::CoreStopping`).
+    /// tell the cores still running that watched one of its actors (`detail::CoreStopping`).
     /// Static: it runs after the core object is gone (`Main::start_thread`).
     QB_NOINLINE QB_COLD static void __announce_stop__(SharedCoreCommunication &engine, CoreId index) noexcept;
     /// Whether an event is one of the death watch's control events -- never a dead letter.

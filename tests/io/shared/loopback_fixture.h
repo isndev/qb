@@ -75,6 +75,7 @@
 #ifndef QB_IO_TESTS_SHARED_LOOPBACK_FIXTURE_H
 #define QB_IO_TESTS_SHARED_LOOPBACK_FIXTURE_H
 
+#include <atomic>
 #include <chrono>
 #include <thread>
 #include <utility>
@@ -132,6 +133,20 @@ public:
     }
 };
 
+// Stop cooperative workers before the joining member runs during destruction.
+class stopping_thread_joiner {
+    std::atomic<bool> &_stop;
+    thread_joiner      _joiner;
+
+public:
+    stopping_thread_joiner(std::thread &thread, std::atomic<bool> &stop)
+        : _stop(stop)
+        , _joiner(thread) {}
+    ~stopping_thread_joiner() {
+        _stop.store(true);
+    }
+};
+
 // ---------------------------------------------------------------------------
 // wait_acceptable_within — bounded wait until a listener has a connection QUEUED.
 //
@@ -166,8 +181,9 @@ wait_acceptable_within(::socket_type listener_fd, std::chrono::milliseconds budg
 // The accepted socket is unaffected: `qb::io::socket::accept_n` sets every accepted
 // descriptor non-blocking regardless of the listener's own mode.
 // ---------------------------------------------------------------------------
+template <typename Listener, typename Socket>
 [[nodiscard]] inline bool
-accept_within(qb::io::tcp::listener &listener, qb::io::tcp::socket &out, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
+accept_within(Listener &listener, Socket &out, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
     listener.set_nonblocking(true);
     const auto deadline = std::chrono::steady_clock::now() + budget;
     for (;;) {
@@ -264,6 +280,7 @@ with_tcp_pair(Server &&server, Client &&client) {
         server(std::move(accepted));
     });
 
+    const thread_joiner joiner{server_thread};
     client(port);
     server_thread.join();
 }

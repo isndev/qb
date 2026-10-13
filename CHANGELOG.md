@@ -7,6 +7,15 @@ policy.
 
 ## [Unreleased]
 
+### Changed
+
+- **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
+  The native backend updates stream and connection offsets immediately and marks a writer attempt due;
+  direct callers generate its packets, sent counters and writer-generated events through
+  `drain_packets()`. The endpoint still flushes synchronously outside event dispatch, but combines
+  credit updates from a dispatch batch after its handlers unwind. Sends and other mutators keep their
+  synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
+
 ### Added
 
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
@@ -94,9 +103,10 @@ policy.
   removal; every answer carries the watch's ticket and becomes the `DownEvent` only where it closes that record, so
   two answers deliver one and an answer about an id's previous holder never closes a later watch of the reused id. A
   request travels to the target's CORE, not to the actor, so an actor still in its `onInit()` cannot stash it and
-  lose it with a failed init. Once a watch has crossed cores, a core that stops tells every core still running, as
-  the last thing its thread does -- after it was marked stopped and destroyed with its actors, on a normal stop, a
-  failed start or an exception -- and a store-load fence on each side guarantees that a watch reaching it too late is
+  lose it with a failed init. A core that stops tells the cores still running that watched one of its actors (each
+  watcher core sets its bit in the watched core's set, Huly QB-203), as the last thing its thread does -- after it
+  was marked stopped and destroyed with its actors, on a normal stop, a failed start or an exception -- and a
+  store-load fence on each side guarantees that a watch reaching it too late is
   answered (`core_stopped`) by the watcher's own core. The death watch's own events are never dead letters. Nobody
   pays for it who does not use it: no pass reads anything, and removing an actor tests two empty tables -- measured
   level on both hosts (MSVC 19.51, g++-14): the Savina one- and two-core cells, `fib` among them (it creates and
@@ -247,23 +257,33 @@ policy.
   back; nothing in qb calls it. `region_allocator<T>` is the stateless standard allocator over it: a request of at
   least 64 KiB is a region, a smaller one the global allocator's; `region_vector<T>` and `region_ptr<T>` (built by
   `make_region<T>()`) are its two shapes. The cache's acquire and release, its growth helpers and its counters are
-  `detail`. Cold path only: a container reaches it when it grows or dies, never per event. Pinned by
+  `detail`. Cold path only: a container reaches it when it grows or dies, never per event. A lookup -- an exact size,
+  the largest within a range -- bisects a table of the sizes cached, so its cost under the lock does not grow with the
+  number of regions held: on Windows the runtime-producer `mpsc::ringbuffer` keeps a region per ring there (Huly
+  QB-203), 4 032 for 64 buffers of 64 producers that all wrote, which a lookup walking the cached regions visited one
+  by one, a page each. A region can also be RESERVED (`detail::region_acquire_reserved`, Huly QB-203): on Windows a
+  range `VirtualAlloc(MEM_RESERVE)` holds for its owner, who commits its pages as it needs them
+  (`detail::region_commit`), cached with what was committed in it and apart from the committed regions of its size --
+  neither kind is ever lent for the other; on POSIX, where a mapping's pages are the process's once written, it is a
+  region like any other. The engine's mailbox blocks are reserved regions (under Fixed). Pinned by
   `qb-io-test-unit-region-cache`.
-
-### Changed
-
-- **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
-  The native backend updates stream and connection offsets immediately and marks a writer attempt due;
-  direct callers generate its packets, sent counters and writer-generated events through
-  `drain_packets()`. The endpoint still flushes synchronously outside event dispatch, but combines
-  credit updates from a dispatch batch after its handlers unwind. Sends and other mutators keep their
-  synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
-
-- **The run-time `qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` keeps its producers in a `region_vector` (Huly
-  QB-1012).** From 64 KiB its rings -- `nb_producer` of them, 65 728 bytes each for an engine's mailbox -- are a
-  `region_cache` region: destroyed, they stay mapped for the next ring set of the same size instead of going back to
-  `malloc`, until `region_cache::trim()` returns them to the OS. The compile-time form is unchanged, and so is every
-  access: the vector's element type and layout are the same.
+- **`qb::lockfree::mpsc::block_ringbuffer<T, max_size, Closed>`: an MPSC ring buffer whose every producer ring its
+  constructor builds, in one block -- the engine's mailbox (`qb/system/lockfree/mpsc.h`, Huly QB-203).** The
+  runtime-producer `ringbuffer<T, max_size, 0>`'s forms -- `enqueue_at<Index>`, `enqueue(index, ...)`, the round-robin
+  `enqueue(...)` under a producer's lock, `dequeue`, `has_data`, both `consume_all`, `ringOf` -- over one block of
+  `nb_producer` rings at their natural stride, each constructed by default-initialisation: its lock and index lines
+  written, its slot array left to its producer's writes. Its walks read a ring where the block holds it, as the vector
+  of rings did -- no slot loaded, no test. `rings()` is its producer count, `closed()` says whether its rings are
+  built closed, `block()` and `block_bytes()` where they are. On POSIX the block is a `region_cache` region and its
+  rings are `spsc::ringbuffer`, the fixed ring's code to the instruction. On Windows it is a reserved region and its
+  rings are built CLOSED (`Closed`, true there by default) -- full to their producer, empty to their consumer: the
+  constructor commits each ring's header pages, and the producer's first write commits the ring's slots and opens it,
+  on the slow path a producer takes when its snapshot of the consumer's index cannot prove room, so a write that fits
+  tests nothing new; a refused commit terminates, the send path being `noexcept`. Only a closed block's rings carry
+  the test of the closed mark, so a POSIX engine compiles none of the protocol; `block_ringbuffer<T, N, true>` builds
+  closed rings on POSIX too, where they commit nothing, to run the protocol under ThreadSanitizer. A ring has one
+  producer by construction -- one thread per index -- so two threads never race its first write, and the round-robin
+  forms open a ring under its producer's lock. Pinned by `qb-core-test-unit-mpsc-block-ring`.
 - **A spinning core's idle poll is paced by one ordered read of the CPU counter, the same instructions on both
   compilers (Huly QB-251); the pass holds less live state, and the tick phase and the reap run out of its loop (Huly
   QB-257).** An idle pass of a spinning core is a poll of its peer rings, and what sits between two polls decides the
@@ -295,6 +315,30 @@ policy.
   to the loop's shape loses, and the jittered cross-core push probe sits +2.7 % inside the control's range; and
   dev/bench's `BM_PINGPONG` 8c reads +9.0 % (the gate's threshold for it is 10.7 %), its ungated 1c case +5.7 % (the
   case's spread is 12.4 %). Making the idle poll's phase de-correlated, judged by mode share, is a follow-up.
+- **`qb::lockfree::mpsc::ringbuffer<T, max_size, 0>` constructs a producer's ring on that producer's first enqueue,
+  and says how many it holds (Huly QB-203).** The runtime-producer form value-initialised a `std::vector` of all its
+  producers' rings at construction -- every byte of every slot array written, used or not. It now holds one slot per
+  producer (eight to a 64-byte line, in whole lines) and constructs a ring when its producer first enqueues, by any
+  producing form or `ringOf(index)`: default-initialised, so the slot array's pages become the process's only as the
+  producer writes them, and published by a release store its readers load with acquire, after a compare-exchange that
+  claims the slot so that two threads never construct one ring. Where a ring lives is the platform's. On POSIX it is
+  built in its place in one block the buffer takes at construction from `region_allocator` -- from 64 KiB a
+  `region_cache` region (Huly QB-1012) whose pages no ring was written into are not the process's, and whose last
+  bytes hold the slots, so a buffer holds nothing on the heap but its own object. On Windows it is a region of its
+  own, allocated by that first enqueue: a committed mapping would commit every page of a block. Either way a destroyed
+  buffer's regions stay mapped for the next of their size until `region_cache::trim()`. A ring starts at its own
+  offset in its pages, in the bytes the page rounding leaves (28 slots of 128 bytes for engine-sized rings, five
+  further per producer and one per step of the buffer's colour): page-aligned rings would put every ring's index lines
+  in one L1 set and one 4K-aliasing class, the hazard `segmented_pipe` staggers its segments against, where the
+  vector's 66 176-byte stride spread them -- the stride the block keeps. Construction and the consumer's walks
+  (`has_data`, both `consume_all`, `dequeue`) construct nothing; a walk reads one slot per producer and skips an empty
+  one, where an unused ring cost the two lines of its header. The engine's mailbox is no longer this type but
+  `block_ringbuffer` (under Added): its producers all produce, and a consumer that skips empty slots polls its live
+  rings harder -- with the engine's rings constructed by their first events, a chain of eight cores passing one event
+  ran 46 to 47 loop passes per round trip against 35 to 36, and took 9 % longer per round trip. On Windows the first
+  enqueue on an index can throw `std::bad_alloc` and no later one can; on POSIX none can, the constructor having taken
+  the block. `rings()` (runtime form only) counts the rings constructed so far. The fixed-producer form is unchanged.
+  Pinned by `qb-core-test-unit-mpsc-ring-allocation`.
 - **`ActorId::is_valid()` tests the service id alone: `(0, core)` is invalid on every core (Huly QB-1007).** It
   tested the whole 32-bit value, so `(0, c)` read valid on every core but 0, although no actor ever holds service
   id 0 -- it was the id a service got when its `ServiceIndex` was read too early (under Fixed). `NotFound` stays
@@ -492,6 +536,9 @@ policy.
 
 ### Fixed
 
+- **Shipped API documentation guard ignores C++ comments and literals (Huly QB-561, QB-562).**
+  A retired name left only in a comment cannot satisfy a public API claim, and every
+  citation on a line is checked even when an earlier one matches.
 - **Native QUIC batches read-triggered packet generation (Huly QB-988).**
   The endpoint's existing packet drain generates pending transport output after its UDP receive batch,
   avoiding an additional writer pass after every received datagram. `wants_write()` keeps handshake
@@ -505,6 +552,43 @@ policy.
   The aggregate barrier preserves the exact FIFO checksum and count checks;
   event production, mailbox work, handlers and the timed observation are unchanged.
 
+- **An engine no longer writes a mailbox ring for every pair of cores before its first event (Huly QB-203).** Every
+  core's mailbox held a ring per core and value-initialised all of them in `Main::start()`: N x N rings of 66 176
+  bytes, every page written -- 4.1 MiB resident on 8 cores, 263 MiB on 64, 1.02 GiB on 128 (qb-vs-others'
+  `pipe-footprint` probe on 3.2, Linux and Windows alike), committed and resident before any event, almost all of it
+  for pairs of cores that never talk. The mailbox is now an `mpsc::block_ringbuffer` (under Added): it still builds
+  every ring in `start()`, in one block per mailbox at the stride the vector had, but without its slot array -- its
+  lock and index lines, a page per ring (two for the one ring in eight whose header straddles a page), 18 MiB at 64
+  cores and 72 MiB at 128 -- and its producers and consumer read the rings as they did. A ring's slot pages become the
+  process's as events land. An idle 64-core engine now grows the process by 22 MiB where it grew by 262 MiB
+  (`qb-core-test-system-mailbox-footprint`, Linux, g++-14). On a kernel whose transparent huge pages are `always`, the
+  pages written every 66 176 bytes of a mailbox's block may each be backed by a 2 MiB page, and the block is then
+  resident nearly whole, as in 3.2; `madvise` and `never` keep the page per ring. On Windows, where a committed
+  mapping commits every page of it, written or not, a mailbox's block is reserved: its rings' header pages are
+  committed and each ring is built closed, and the first event a core sends to that mailbox commits that ring's slots
+  -- at rest a 64-core engine commits the 18 MiB of headers and reserves 271 MB of address space (1.1 GB at 128); a
+  refused commit terminates the process, as an allocation failure on the `noexcept` send path does. A full mesh still
+  writes every ring it uses, as events land. `start()` writes a page where it wrote a ring: the restart witness counts
+  322 page faults in a 16-core engine's first `start()` against 4 177 for the value-initialised mailbox
+  (`qb-core-test-system-engine-restart-mailboxes`). The blocks are `region_cache` regions (QB-1012, below), so an
+  engine started after another builds its mailboxes in pages the first left mapped -- on Windows with what the first
+  committed in them -- each core's mailbox in its own block again: the mailboxes go back to the cache in the exact
+  reverse of the order they were built in, the cache lending the region of a size it took back last first, and a block
+  holds its rings at fixed offsets, so they sit where they sat. A block that changed cores brought a ring that had
+  been its first owner's own index, never written, 16 pages a mailbox: given back in build order, the witness's second
+  16-core engine faulted 248 pages; given back in reverse, 25, and the witness now bounds it at three a core. The
+  engine's shared objects also sit where 3.2's did: the death watch's watcher bits are an allocation of their own
+  rather than 8 KiB inside `SharedCoreCommunication`, whose growth had moved the mailboxes on the heap, where qvo
+  ping-pong 1c read 2-3 % past its spread on WSL2 with its instructions unchanged (callgrind: 580 per round trip on
+  both sides). A stop no longer tells the cores that did not ask: once one watch had crossed cores, every core that
+  stopped sent a notice to every core still running -- on Windows committing a ring's slots for every pair that never
+  talked -- and a stopping core now tells only the cores that watched one of its actors
+  (`qb-core-test-system-death-watch`, which counts what a core that never talked takes in). The footprint witness
+  reads the process's own resident set (and, on Windows, its private commit) across the start of a 64-core engine --
+  after a warm-up engine, whose cached regions `region_cache::trim()` hands back first -- and bounds the growth by a
+  page per ring and eight rings per core, against the sixty-four whole rings per core the eager mailbox wrote;
+  `qb-core-test-unit-mpsc-block-ring` reads, on Windows, the pages a mailbox's block has committed: its rings' headers
+  at rest, and a ring's slots more once its producer writes.
 - **qb builds without SSL on a host that has no OpenSSL headers, and the TLS headers say why they refuse such a
   build (Huly QB-1015).** `tests/io/system/async/async-io-plan-contracts.cpp` included
   `<qb/io/transport/saccept.h>` outside its `#ifdef QB_HAS_SSL`, and that header reaches `<openssl/ssl.h>`: a
@@ -557,6 +641,16 @@ policy.
   1 000, +7 200 minor faults per 11 engines, instruction count and simulated cache misses unchanged; the first
   bad commit by bisection is the one whose removal of a 16-byte thread-local moved that chunk next to the top,
   and v3.2.1 sat 7.9 KB under the threshold. With the spare list the cell and the fault count return to v3.2.1's.
+- **A stopping engine's core threads no longer stall on the spare list's lock under ThreadSanitizer (Huly QB-1009
+  follow-up).** The list above is taken at every core thread's start and given back at its exit, so an engine that
+  stops brings all its core threads to one lock at once, and the lock was a bare `test_and_set` loop: each waiter held
+  the line exclusive, and under ThreadSanitizer, whose atomic read-modify-writes go through a sync object of their
+  own, the holder's `clear()` queued behind them. `qb-core-test-system-mailbox-footprint` (sanitize-thread, 64 cores)
+  stalled once for 18 minutes in a gate run on a loaded host; under gdb, which slows every thread's start and exit, 4
+  of 5 runs of 40 repetitions stalled (98 of 200 repetitions done, 150 s a run), 50 of the 64 threads in the loop. The
+  lock is now test-and-test-and-set with the pause hint, the shape of `qb::lockfree::SpinLock`: a waiter spins on a
+  relaxed read and retries the exchange only once the flag reads clear -- 0 of 5 runs stalled under gdb and 200 of 200
+  repetitions passed with and without it. Cold path only, once per thread start and exit.
 - **An engine started after another one in the same process builds its per-core buffers in memory the first left
   mapped (Huly QB-1012).** What a core builds that grows with the engine -- the router's handler table of each event
   type (65 536 slots of 32 bytes once the actor ids pass 32 768), the actor registry, the kill queues, the callback
@@ -573,15 +667,16 @@ policy.
   `region_cache::trim()`. qb sets none of glibc's thresholds (`mallopt` is process-wide, turns the dynamic adjustment
   off for every allocation and overrides the program's own choice), and the engine's buffers no longer move them.
   Pinned by `qb-core-test-system-engine-restart-faults` (one core, 40 000 actors on eight event types: the page faults
-  of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores: the faults
-  `Main::start()` takes on its thread for a second engine's rings), counts rather than times, and by
-  `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and the coroutines' per-thread
-  storage still goes back to `malloc` at thread exit. Measured on 2026-10-12 (one core, 40 000 actors on eight event
-  types, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds (23.5 against 23.7 MiB; 20.8
-  against 20.9); an engine started after another takes 90 page faults instead of 3 455 and 4.4 instead of 8.0 ms (200
-  instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its final buffers until
-  `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 % (1c) and -5.0 % (2c)
-  on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a side.
+  of every engine after the first) and `qb-core-test-system-engine-restart-mailboxes` (16 cores whose pairs all talk:
+  the faults a second engine's rings cost on the threads that write them, `Main::start()`'s and the senders'), counts
+  rather than times, and by `ActorArena.AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing`. The io loop's and
+  the coroutines' per-thread storage still goes back to `malloc` at thread exit. Measured on 2026-10-12 (one core,
+  40 000 actors on eight event types, WSL2 g++-14 / Windows MSVC): a running engine holds what the control holds (23.5
+  against 23.7 MiB; 20.8 against 20.9); an engine started after another takes 90 page faults instead of 3 455 and 4.4
+  instead of 8.0 ms (200 instead of 5 455, 6.6 instead of 10.1 ms); a process whose only engine stopped holds its
+  final buffers until `trim()` (9.3 MiB after it, against the control's 10.5); qb-vs-others `fork-join-create` -4.7 %
+  (1c) and -5.0 % (2c) on WSL2, -20.0 % and -23.1 % on Windows, `fib` -21.8 % and -17.8 %, three physical copies a
+  side.
 
 - **ABI documentation distinguishes the C++20/23 `expected` implementations (Huly QB-286).** A successful
   fingerprint probe does not establish identical layouts. The `expected` selector is not fingerprinted;

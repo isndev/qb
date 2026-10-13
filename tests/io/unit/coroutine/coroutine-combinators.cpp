@@ -638,13 +638,15 @@ TEST_F(CoroutineCombinators, TimeoutAbandonsButDoesNotInterruptSlowOperation) {
     std::atomic<bool> inner_finished{false};
     std::atomic<bool> done{false};
 
+    auto op = [&inner_finished]() -> task<int> {
+        co_await sleep(60ms); // outlives the 20ms timeout
+        inner_finished.store(true);
+        co_return 7;
+    };
+
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([&]() -> task<void> {
         try {
-            auto op = [&inner_finished]() -> task<int> {
-                co_await sleep(60ms); // outlives the 20ms timeout
-                inner_finished.store(true);
-                co_return 7;
-            };
             co_await coro_with_timeout(op(), 20ms);
             ADD_FAILURE() << "expected timeout_error";
         } catch (const timeout_error &) {

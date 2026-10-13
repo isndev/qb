@@ -329,10 +329,20 @@ TEST(IoHandler, BroadcastReachesAllSessionsAndExtractRemovesOne) {
         }
     });
 
+    struct stop_and_join {
+        std::atomic<bool> &stop;
+        std::thread       &worker;
+        ~stop_and_join() {
+            stop.store(true);
+            if (worker.joinable())
+                worker.join();
+        }
+    } cleanup{stop, worker};
+
     // Wait for all clients to land in the server registry.
-    EXPECT_TRUE(pump_until([&] { return server.session_count() == static_cast<std::size_t>(kClients); }, 3s))
+    ASSERT_TRUE(pump_until([&] { return server.session_count() == static_cast<std::size_t>(kClients); }, 3s))
         << "not all clients registered; session_count=" << server.session_count();
-    EXPECT_EQ(server.sessions().size(), static_cast<std::size_t>(kClients));
+    ASSERT_EQ(server.sessions().size(), static_cast<std::size_t>(kClients));
 
     // Broadcast to ALL sessions; every client must receive the line.
     server.stream(std::string("broadcast"), '\n');

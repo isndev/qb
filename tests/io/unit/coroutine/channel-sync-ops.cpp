@@ -339,6 +339,7 @@ TEST_F(ChannelLoopOps, TrySendCopyOverloadHandsValueToParkedReceiver) {
     std::atomic<bool>    received{false};
     std::string          got;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup1;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);            // set just before the suspend point
         auto val = co_await ch.recv(); // parks: buffer empty, not closed
@@ -374,6 +375,7 @@ TEST_F(ChannelLoopOps, SendForParkedThenClosedReportsFailure) {
 
     ASSERT_TRUE(ch.try_send(1)); // fill the cap-1 buffer so send_for must park
 
+    const qb::io::test::coroutine_scope_cleanup cleanup2;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         bool ok = co_await ch.send_for(2, 5s); // long timeout: only close() can wake us
@@ -406,6 +408,7 @@ TEST_F(ChannelLoopOps, SendForParkedDeliversDirectlyToLaterReceiver) {
     std::atomic<bool> sender_result{false};
 
     // Sender parks first: no receiver yet, capacity 0 -> slow path, parks.
+    const qb::io::test::coroutine_scope_cleanup cleanup3;
     coro_scheduler().spawn([&]() -> task<void> {
         sender_parked.store(true);
         bool ok = co_await ch.send_for(77, 5s);
@@ -417,6 +420,7 @@ TEST_F(ChannelLoopOps, SendForParkedDeliversDirectlyToLaterReceiver) {
 
     // Receiver parks behind it and immediately wakes one sender, whose value the
     // wake hands to this receiver before resuming it.
+    const qb::io::test::coroutine_scope_cleanup cleanup4;
     coro_scheduler().spawn([&]() -> task<void> {
         auto val = co_await ch.recv();
         if (val) {
@@ -448,6 +452,7 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
 
     // Both channels empty + open -> try_data and try_closed both fall through to
     // `return false` -> await_ready false -> select suspends and registers.
+    const qb::io::test::coroutine_scope_cleanup cleanup5;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         auto res = co_await select(ch_a, ch_b);
@@ -465,6 +470,7 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
     // path that satisfies a registered _select_waiters entry (try_send only ever
     // wakes _recv_waiters / buffers, never a parked select). This resolves the
     // select with ch_b as the winner.
+    const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([&]() -> task<void> { co_await ch_b.send(std::string{"picked"}); });
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "select never resolved after a send";
@@ -488,6 +494,7 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
     std::atomic<bool>   done{false};
     std::atomic<size_t> winner{99};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup7;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         // recv() parks forever (nobody sends); check_cancelled wins on cancel,
@@ -536,6 +543,7 @@ TEST_F(ChannelLoopOps, ParkedSendDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
 
     ASSERT_TRUE(ch.try_send(1)); // fill cap-1 buffer so the send parks
 
+    const qb::io::test::coroutine_scope_cleanup cleanup8;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         // Named locals of this frame — see the note in the recv-side case above.
@@ -582,6 +590,7 @@ TEST_F(ChannelLoopOps, WokenSenderOwnsTheSlotItsWakeFreedSoANewcomerCannotTakeIt
     std::atomic<bool> sent{false};
     ASSERT_TRUE(ch.try_send(1)); // the buffer is full: the next send parks
 
+    const qb::io::test::coroutine_scope_cleanup cleanup9;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         co_await ch.send(2); // parks on the full buffer
@@ -613,6 +622,7 @@ TEST_F(ChannelLoopOps, TimedSenderWokenByAFreedSlotOwnsItToo) {
     std::atomic<bool> ok{false};
     ASSERT_TRUE(ch.try_send(1));
 
+    const qb::io::test::coroutine_scope_cleanup cleanup10;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         ok.store(co_await ch.send_for(2, 5s)); // parks: buffer full, long timeout
@@ -638,6 +648,7 @@ TEST_F(ChannelLoopOps, RendezvousSenderWokenByAReceiverHandsItsValueToThatReceiv
     std::atomic<int>  received{-1};
     std::atomic<int>  interposer_sent{-1}; // 1 = try_send accepted, 0 = refused
 
+    const qb::io::test::coroutine_scope_cleanup cleanup11;
     coro_scheduler().spawn([&]() -> task<void> {
         sender_parked.store(true);
         co_await ch.send(7); // no receiver yet: parks
@@ -647,10 +658,12 @@ TEST_F(ChannelLoopOps, RendezvousSenderWokenByAReceiverHandsItsValueToThatReceiv
     ASSERT_FALSE(sent.load());
 
     // Queued back to back: the receiver parks (waking the sender), then the interposer runs BEFORE the sender resumes.
+    const qb::io::test::coroutine_scope_cleanup cleanup12;
     coro_scheduler().spawn([&]() -> task<void> {
         auto v = co_await ch.recv();
         received.store(v ? *v : -2);
     });
+    const qb::io::test::coroutine_scope_cleanup cleanup13;
     coro_scheduler().spawn([&]() -> task<void> {
         interposer_sent.store(ch.try_send(8) ? 1 : 0);
         co_return;
@@ -668,6 +681,7 @@ TEST_F(ChannelLoopOps, WokenSenderReclaimedBeforeItResumesHasDeliveredExactlyOnc
     std::atomic<bool> done{false};
     ASSERT_TRUE(ch.try_send(1)); // full: the send below parks
 
+    const qb::io::test::coroutine_scope_cleanup cleanup14;
     coro_scheduler().spawn([&]() -> task<void> {
         auto sender = [&ch]() -> task<int> {
             co_await ch.send(2); // parks on the full buffer

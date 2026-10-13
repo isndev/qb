@@ -64,7 +64,7 @@ reset_oracles() {
 [[nodiscard]] std::uint32_t
 ring_core_count() {
     const unsigned hw = std::thread::hardware_concurrency();
-    return hw == 0u ? 1u : static_cast<std::uint32_t>(hw);
+    return hw == 0u ? 1u : static_cast<std::uint32_t>(hw < qb::MaxCores ? hw : qb::MaxCores);
 }
 
 struct MyTag {};

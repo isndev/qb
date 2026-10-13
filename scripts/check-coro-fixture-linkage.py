@@ -153,6 +153,9 @@ def strip_comments(src: str) -> str:
             j = n if j == -1 else j + 2
             out.append("".join("\n" if ch == "\n" else " " for ch in src[i:j]))
             i = j
+        elif c == "'" and nxt.isalnum() and re.search(r"\b[0-9][0-9A-Za-z]*$", src[:i]):
+            out.append(c)  # C++ digit separator, not a character literal
+            i += 1
         elif c in "\"'":
             quote = c
             j = i + 1

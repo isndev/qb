@@ -471,7 +471,7 @@ Helpers: `qb::mono_now()`, `qb::wall_now()`, `qb::unix_seconds()`/`unix_millis()
 ### Lock-free primitives and system info
 
 - **Lock-free** (`qb/system/lockfree/`): `qb::lockfree::SpinLock` (TTAS), `spsc::ringbuffer`,
-  `mpsc::ringbuffer`, and `mpsc_unbounded_queue`. These are correctness-critical concurrency primitives;
+  `mpsc::ringbuffer`, `mpsc::block_ringbuffer` (the engine's mailbox) and `mpsc_unbounded_queue`. These are correctness-critical concurrency primitives;
   see [Concurrency primitives](../0_foundations/concurrency_primitives.md).
 - **System** : `qb::CPU` (`qb/system/cpu.h`) for core counts and affinity; `qb::endian` (`qb/system/endian.h`)
   for byte-order detection and `byteswap`.

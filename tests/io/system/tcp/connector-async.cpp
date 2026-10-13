@@ -398,13 +398,10 @@ TEST_F(ConnectorAsyncTest, AcceptTransportAcceptsClientAndClosesListener) {
     RawAcceptorServer server;
     server.accepted_count = &accepted_count;
 
-    // Bind an ephemeral loopback port directly on the accept transport's listener,
-    // then start the accept watcher (the same two-step the server wrappers do; uses
-    // listen_v4(0) per the restructure spec's no-fixed-ports invariant).
-    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done) << "acceptor failed to bind an ephemeral loopback port";
+    // Public listen() must start the accept watcher on an ephemeral loopback port.
+    ASSERT_TRUE(server.listen(qb::io::uri{"tcp://127.0.0.1:0"})) << "acceptor listen must bind and start";
     const auto port = server.transport().local_endpoint().port();
     ASSERT_NE(port, 0);
-    server.start();
 
     qb::io::tcp::socket client;
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), SocketStatus::Done);

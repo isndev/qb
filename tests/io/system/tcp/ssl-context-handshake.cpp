@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cerrno>
 #include <string>
 #include <thread>
 
@@ -44,6 +45,7 @@
 #include <qb/io/tcp/ssl/socket.h>
 
 #include "../../shared/ssl_fixtures.h"
+#include "../../shared/loopback_fixture.h"
 
 using namespace std::chrono_literals;
 using qb::io::ssl::Context;
@@ -58,12 +60,16 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     while (!socket.handshake_complete() && std::chrono::steady_clock::now() < deadline) {
         const int status = socket.handshake_status();
-        if (status < 0)
-            return; // fatal (expected in the reject case) — stop driving
+        if (status < 0) {
+            socket.disconnect();
+            return; // fatal (expected in the reject case) — release the peer
+        }
         if (status == 1)
             return;
         std::this_thread::sleep_for(1ms);
     }
+    if (!socket.handshake_complete())
+        socket.disconnect();
 }
 
 } // namespace
@@ -80,17 +86,18 @@ TEST(SslContextHandshake, ContextClientAndServerNegotiateAlpn) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::string       server_alpn;
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    std::string                       server_alpn;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        if (listener.accept(server_socket) != 0)
+        if (!qb::io::test::accept_within(listener, server_socket))
             return;
         drive_server_handshake(server_socket);
         if (server_socket.handshake_complete())
             server_alpn = server_socket.get_alpn_selected_protocol();
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
 
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
@@ -123,14 +130,15 @@ TEST(SslContextHandshake, VerifyingContextRejectsSelfSignedServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        if (listener.accept(server_socket) != 0)
+        if (!qb::io::test::accept_within(listener, server_socket))
             return;
         drive_server_handshake(server_socket, 3s); // will fault on the client's verify abort — bounded
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
 
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
@@ -160,14 +168,15 @@ TEST(SslContextHandshake, TypedClientCallbacksFireDuringHandshake) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        if (listener.accept(server_socket) != 0)
+        if (!qb::io::test::accept_within(listener, server_socket))
             return;
         drive_server_handshake(server_socket);
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
 
@@ -218,14 +227,15 @@ TEST(SslContextHandshake, ServerSniCallbackFiresWithClientHostname) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        if (listener.accept(server_socket) != 0)
+        if (!qb::io::test::accept_within(listener, server_socket))
             return;
         drive_server_handshake(server_socket);
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
 
@@ -253,17 +263,18 @@ TEST(SslContextHandshake, PerConnectionAlpnOverridesContext) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::atomic<bool> server_ready{false};
-    std::string       server_alpn;
-    std::thread       server_thread([&] {
+    std::atomic<bool>                 server_ready{false};
+    std::string                       server_alpn;
+    std::thread                       server_thread([&] {
         qb::io::tcp::ssl::socket server_socket;
         server_ready = true;
-        if (listener.accept(server_socket) != 0)
+        if (!qb::io::test::accept_within(listener, server_socket))
             return;
         drive_server_handshake(server_socket);
         if (server_socket.handshake_complete())
             server_alpn = server_socket.get_alpn_selected_protocol();
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
     while (!server_ready.load())
         std::this_thread::sleep_for(1ms);
 
@@ -304,15 +315,16 @@ TEST(SslContextHandshake, SessionResumeBeforeConnectIsDeferredNotDropped) {
     // socket), so join() would hang — a race the fast dev build won and ASan/TSan timing lost.
     // Bounding the loop keeps teardown portable and race-free, mirroring the single-accept
     // sibling tests above (the server thread self-exits; no cross-thread accept cancellation).
-    std::thread server_thread([&] {
+    std::thread                       server_thread([&] {
         for (int i = 0; i < 2; ++i) {
             qb::io::tcp::ssl::socket server_socket;
-            if (listener.accept(server_socket) != 0)
+            if (!qb::io::test::accept_within(listener, server_socket))
                 return; // real error — stop driving
             accepted.fetch_add(1);
             drive_server_handshake(server_socket);
         }
     });
+    const qb::io::test::thread_joiner server_joiner{server_thread};
 
     // First connection captures a session.
     qb::io::ssl::Session session{};
@@ -328,9 +340,16 @@ TEST(SslContextHandshake, SessionResumeBeforeConnectIsDeferredNotDropped) {
     // Second connection: set_session()/resume() BEFORE connect on a Context socket (SSL not minted yet).
     {
         qb::io::tcp::ssl::socket c2{Context::client()};
-        EXPECT_TRUE(c2.set_session(session)) << "set_session/resume before connect must be DEFERRED (true), not dropped (false)";
+        ASSERT_TRUE(c2.set_session(session)) << "set_session/resume before connect must be DEFERRED (true), not dropped (false)";
+        auto *expected_session = session._session_handle;
+        qb::io::ssl::free_session(session); // only the pending socket reference keeps it alive
         c2.insecure();
-        ASSERT_EQ(c2.connect_v4("127.0.0.1", port), 0);
+        const int result = c2.n_connect(qb::io::endpoint("127.0.0.1", port), "localhost");
+        const int error  = qb::io::socket::get_last_errno();
+        ASSERT_TRUE(result == 0 || error == EINPROGRESS || qb::io::socket::not_send_error(error));
+        ASSERT_NE(c2.ssl_handle(), nullptr);
+        EXPECT_EQ(SSL_get_session(c2.ssl_handle()), expected_session) << "the retained session must be installed when SSL is minted";
+        drive_server_handshake(c2);
         EXPECT_TRUE(c2.handshake_complete()) << "the deferred session must be applied without breaking the handshake";
     }
 

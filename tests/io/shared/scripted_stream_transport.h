@@ -229,11 +229,12 @@ public:
     /// Read through the base stream, transforming the freshly-read buffer in place.
     int
     read() {
-        int result = _base_stream.read();
+        const auto retained = _base_stream.in().size();
+        int        result   = _base_stream.read();
         if (result > 0) {
             char       *data = const_cast<char *>(_base_stream.in().data());
             std::size_t size = _base_stream.in().size();
-            _transform_func(data, size);
+            _transform_func(data + retained, size - retained);
         }
         return result;
     }

@@ -78,7 +78,7 @@ reset_atoms() {
 [[nodiscard]] std::uint32_t
 hardware_cores() {
     const unsigned hw = std::thread::hardware_concurrency();
-    return hw == 0u ? 1u : static_cast<std::uint32_t>(hw);
+    return hw == 0u ? 1u : static_cast<std::uint32_t>(hw < qb::MaxCores ? hw : qb::MaxCores);
 }
 
 // ---------------------------------------------------------------------------

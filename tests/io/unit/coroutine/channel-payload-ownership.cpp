@@ -85,6 +85,7 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyPayloadRoundTripsThroughChannelRecv) {
     std::atomic<bool> done{false};
     int               value = 0;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup1;
     coro_scheduler().spawn([&]() -> task<void> {
         auto msg = co_await messages.recv();
         if (msg && *msg)
@@ -103,6 +104,7 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyPayloadRoundTripsThroughAsyncStream) {
     std::atomic<bool> done{false};
     std::vector<int>  values;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup2;
     coro_scheduler().spawn([source, &values, &done]() -> task<void> {
         co_await async_stream<std::unique_ptr<int>>::from_channel_shared(source).for_each([&values](std::unique_ptr<int> v) {
             if (v)
@@ -136,6 +138,7 @@ TEST_F(ChannelPayloadOwnership, LargePayloadMovesThroughChannelWithoutCorruption
     std::size_t       received_size = 0;
     std::uint64_t     received_hash = 0;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup3;
     coro_scheduler().spawn([&]() -> task<void> {
         auto msg = co_await messages.recv();
         if (msg) {
@@ -155,6 +158,7 @@ TEST_F(ChannelPayloadOwnership, SharedChannelKeepsSourceAliveAcrossConsumerCorou
     std::atomic<bool>        done{false};
     std::vector<std::string> result;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup4;
     coro_scheduler().spawn([messages, &done, &result]() -> task<void> {
         result = co_await async_stream<std::string>::from_channel_shared(messages).collect();
         done.store(true);
@@ -182,6 +186,7 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyPayloadGoesThroughEverySendPath) {
     std::atomic<bool>             done{false};
     std::vector<int>              received;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup5;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await messages.send(std::make_unique<int>(1)); // send_awaiter (buffered fast path)
         auto a = co_await messages.recv();
@@ -225,20 +230,23 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue)
     bool                          timed_out_empty = false;
     int                           recovered       = 0;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([&]() -> task<void> {
         // Buffer is empty -> recv_for takes the slow path and parks on the select state.
         auto a          = co_await messages.recv_for(20ms);
         timed_out_empty = !a.has_value();
 
         // The value the slow path could not accept is still deliverable.
-        EXPECT_TRUE(messages.try_send(std::make_unique<int>(42)));
         auto b = co_await messages.recv();
         if (b && *b)
             recovered = **b;
         done.store(true);
     });
 
+    coro_scheduler().run_ready();
+    ASSERT_TRUE(messages.has_live_select_waiter()) << "receiver must be parked before sending";
+    EXPECT_TRUE(messages.try_send(std::make_unique<int>(42)));
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only recv_for slow-path coroutine never completed";
     EXPECT_TRUE(timed_out_empty) << "documented contract: a move-only recv_for slow path resolves as a timeout";
-    EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a subsequently sent value";
+    EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a value sent while the receiver was parked";
 }

@@ -31,9 +31,8 @@
  *   - RequestResponseRoundTrip                : connect, write "PING", read "PONG" back (dual oracle:
  *                                               client sees PONG *and* server confirms it saw PING).
  *   - ConnectedSocketWritesToServer           : client write is observed verbatim server-side.
- *   - CoalescedServerWritesReadInOneRecv      : 3 newline-framed records sent as one write arrive
- *                                               coalesced in a single recv (renamed from the
- *                                               misleading "MultipleFrames" — TCP has no frames).
+ *   - ServerRecordsSurvivePartialReads        : 3 newline-framed records are accumulated across
+ *                                               deliberately small client reads.
  *   - FailedConnectDoesNotPoisonLaterConnect  : a refused connect followed by a good one, same coro.
  *   - ParallelClientsAllConnect               : N coroutines connect to one listener concurrently.
  *   - ConnectWithExistingSocketSucceeds       : connect_with_socket over a pre-init'd fd.
@@ -61,6 +60,7 @@
  * @ingroup Tests
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -149,6 +149,22 @@ read_until_data(qb::io::tcp::socket &socket, bool &timed_out, qb::duration timeo
     co_return std::string{};
 }
 
+task<std::string>
+read_exact_data(qb::io::tcp::socket &socket, bool &timed_out, std::size_t want) {
+    const auto  deadline = qb::mono_now() + 1s;
+    std::string data;
+    while (data.size() < want && qb::mono_now() < deadline) {
+        char      fragment[3]; // force multiple positive reads even when TCP coalesces sends
+        const int n = socket.read(fragment, std::min(sizeof(fragment), want - data.size()));
+        if (n > 0)
+            data.append(fragment, static_cast<std::size_t>(n));
+        else
+            co_await sleep(1ms);
+    }
+    timed_out = data.size() != want;
+    co_return data;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -159,7 +175,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectResumesWithOpenSocket) {
     std::atomic<int>  server_port{0};
     std::atomic<bool> accepted{false};
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -171,12 +187,14 @@ TEST_F(TcpConnectorLoopbackTest, ConnectResumesWithOpenSocket) {
         listener.disconnect();
         listener.close();
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
     std::atomic<bool> done{false};
     bool              connected = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup1;
     coro_scheduler().spawn([&]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         connected   = socket.has_value() && socket->is_open();
@@ -205,6 +223,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectToRefusedPortResumesEmpty) {
     std::atomic<bool> done{false};
     bool              connected = true;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup2;
     coro_scheduler().spawn([&]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(port)}, 500ms);
         connected   = socket.has_value();
@@ -228,7 +247,7 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
     std::atomic<bool> server_done{false};
     std::atomic<bool> server_saw_ping{false};
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -249,6 +268,7 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
         listener.close();
         server_done.store(true);
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
@@ -258,6 +278,7 @@ TEST_F(TcpConnectorLoopbackTest, RequestResponseRoundTrip) {
     bool              write_ok     = false;
     bool              read_timeout = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup3;
     coro_scheduler().spawn([&]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         connected   = socket.has_value();
@@ -301,7 +322,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectedSocketWritesToServer) {
     std::atomic<bool> server_done{false};
     std::string       received;
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -319,12 +340,14 @@ TEST_F(TcpConnectorLoopbackTest, ConnectedSocketWritesToServer) {
         listener.close();
         server_done.store(true);
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
     std::atomic<bool> client_done{false};
     bool              write_ok = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup4;
     coro_scheduler().spawn([&]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         if (socket) {
@@ -347,12 +370,9 @@ TEST_F(TcpConnectorLoopbackTest, ConnectedSocketWritesToServer) {
 }
 
 // ---------------------------------------------------------------------------
-// Three newline-delimited records sent in ONE server write arrive coalesced in a
-// single client recv. Renamed from the legacy "MultipleFrames" — TCP is a byte
-// stream with no frame boundaries; the contract is that the bytes arrive intact
-// and in order, NOT that they are delivered as three separate reads.
+// Three newline-delimited records arrive intact and in order across partial reads.
 // ---------------------------------------------------------------------------
-TEST_F(TcpConnectorLoopbackTest, CoalescedServerWritesReadInOneRecv) {
+TEST_F(TcpConnectorLoopbackTest, ServerRecordsSurvivePartialReads) {
     std::atomic<int> server_port{0};
 
     std::thread server([&] {
@@ -364,26 +384,29 @@ TEST_F(TcpConnectorLoopbackTest, CoalescedServerWritesReadInOneRecv) {
         ASSERT_TRUE(accept_within(listener, sock)) << "no client connected within the accept budget";
         if (sock.is_open()) {
             const char payload[] = "ALPHA\nBETA\nGAMMA\n";
-            (void) sock.write(payload, std::strlen(payload));
+            ASSERT_EQ(qb::io::socket::send_n(sock.native_handle(), payload, static_cast<int>(std::strlen(payload)), 1s),
+                      static_cast<int>(std::strlen(payload)));
             sock.close();
         }
         listener.disconnect();
         listener.close();
     });
 
+    const qb::io::test::thread_joiner server_joiner{server};
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
     std::atomic<bool> done{false};
     std::string       data;
     bool              read_timeout = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([&]() -> task<void> {
         auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
         if (!socket) {
             done.store(true);
             co_return;
         }
-        data = co_await read_until_data(*socket, read_timeout);
+        data = co_await read_exact_data(*socket, read_timeout, 17);
         socket->close();
         done.store(true);
         co_return;
@@ -406,8 +429,8 @@ TEST_F(TcpConnectorLoopbackTest, FailedConnectDoesNotPoisonLaterConnect) {
     const unsigned short dead_port = refused_port();
     ASSERT_GT(dead_port, 0u);
 
-    std::atomic<int> server_port{0};
-    std::thread      server([&] {
+    std::atomic<int>                  server_port{0};
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -417,6 +440,7 @@ TEST_F(TcpConnectorLoopbackTest, FailedConnectDoesNotPoisonLaterConnect) {
         listener.disconnect();
         listener.close();
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
@@ -424,6 +448,7 @@ TEST_F(TcpConnectorLoopbackTest, FailedConnectDoesNotPoisonLaterConnect) {
     bool              first_failed     = false;
     bool              second_succeeded = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup5;
     coro_scheduler().spawn([&]() -> task<void> {
         auto failed  = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(dead_port)}, 500ms);
         first_failed = !failed.has_value();
@@ -454,7 +479,7 @@ TEST_F(TcpConnectorLoopbackTest, ParallelClientsAllConnect) {
     std::atomic<int> server_port{0};
     std::atomic<int> accepted{0};
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -470,12 +495,14 @@ TEST_F(TcpConnectorLoopbackTest, ParallelClientsAllConnect) {
         listener.disconnect();
         listener.close();
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
     std::atomic<int> completed{0};
     std::atomic<int> connected{0};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup6;
     for (int i = 0; i < kClients; ++i) {
         coro_scheduler().spawn([&]() -> task<void> {
             auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(static_cast<unsigned short>(server_port.load()))}, 1s);
@@ -506,7 +533,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectWithExistingSocketSucceeds) {
     std::atomic<int>  server_port{0};
     std::atomic<bool> accepted{false};
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -518,6 +545,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectWithExistingSocketSucceeds) {
         listener.disconnect();
         listener.close();
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
@@ -525,6 +553,7 @@ TEST_F(TcpConnectorLoopbackTest, ConnectWithExistingSocketSucceeds) {
     bool              connected = false;
     bool              init_ok   = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup7;
     coro_scheduler().spawn([&]() -> task<void> {
         qb::io::tcp::socket existing_socket;
         init_ok = existing_socket.init(AF_INET) == qb::io::SocketStatus::Done;
@@ -562,8 +591,8 @@ TEST_F(TcpConnectorLoopbackTest, SequentialAttemptsReuseScheduler) {
     std::atomic<int> successes{0};
 
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
-        std::atomic<int> server_port{0};
-        std::thread      server([&] {
+        std::atomic<int>                  server_port{0};
+        std::thread                       server([&] {
             qb::io::tcp::listener listener;
             ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
             server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -574,9 +603,11 @@ TEST_F(TcpConnectorLoopbackTest, SequentialAttemptsReuseScheduler) {
             listener.disconnect();
             listener.close();
         });
+        const qb::io::test::thread_joiner server_joiner{server};
 
         ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
+        const qb::io::test::coroutine_scope_cleanup cleanup8;
         coro_scheduler().spawn([&, port = static_cast<unsigned short>(server_port.load())]() -> task<void> {
             auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(port)}, 1s);
             if (socket) {
@@ -617,7 +648,7 @@ TEST_F(TcpConnectorLoopbackTest, ExplicitTransportCoroutineConnectResolvesToTheC
     std::atomic<int>  server_port{0};
     std::atomic<bool> accepted{false};
 
-    std::thread server([&] {
+    std::thread                       server([&] {
         qb::io::tcp::listener listener;
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         server_port.store(static_cast<int>(listener.local_endpoint().port()));
@@ -629,12 +660,14 @@ TEST_F(TcpConnectorLoopbackTest, ExplicitTransportCoroutineConnectResolvesToTheC
         listener.disconnect();
         listener.close();
     });
+    const qb::io::test::thread_joiner server_joiner{server};
 
     ASSERT_TRUE(pump_until([&] { return server_port.load() > 0; }, 1s)) << "server never bound";
 
     std::atomic<bool> done{false};
     bool              connected = false;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup9;
     coro_scheduler().spawn([&]() -> task<void> {
         // Explicit transport + timeout: the ONLY form that used to break.
         auto socket = co_await qb::io::async::tcp::connect<qb::io::transport::tcp>(

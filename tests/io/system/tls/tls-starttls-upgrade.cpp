@@ -240,15 +240,15 @@ TEST(TlsStarttlsUpgrade, OpportunisticUpgradeCompletesViaCallbackAndCoroutine) {
 
     // ---- coroutine (co_await) form ----
     bool coro_done = false, coro_secure = false;
-    qb::io::async::run_sync([&]() -> qb::io::async::task<void> {
+    auto upgrade = [&]() -> qb::io::async::task<void> {
         auto sock   = co_await qb::io::async::tcp::starttls_connect<qb::io::transport::stcp, test_starttls_negotiator>(remote, 5s, false);
         coro_done   = true;
         coro_secure = sock.has_value() && sock->is_open() && sock->handshake_complete();
         co_return;
-    }());
+    };
+    qb::io::async::run_sync(upgrade());
     EXPECT_TRUE(coro_done);
     EXPECT_TRUE(coro_secure) << "co_await STARTTLS did not reach a completed TLS handshake";
-
     server.shutdown();
     qb::io::async::listener::current.clear();
 }

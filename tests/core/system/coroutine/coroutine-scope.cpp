@@ -290,8 +290,8 @@ public:
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
                 for (;;) {
-                    co_await ctx.cancellation_point(); // throws once the scope is cancelled
-                    co_await ctx.sleep(2ms);
+                    co_await ctx.cancellation_point(); // the sole operation that can throw cancellation
+                    co_await qb::io::async::sleep(2ms);
                     g_loop_iterations.fetch_add(1, std::memory_order_relaxed);
                 }
             } catch (const qb::io::async::cancelled_error &) {
@@ -326,10 +326,32 @@ private:
     }
 };
 
+// Keep the core alive until the uncancellable pacing sleep reaches the explicit
+// cancellation point, or until the test's failure deadline expires.
+class CancellationPointKeeper
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::mono_time _deadline{};
+
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        _deadline = qb::mono_now() + 2s;
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (g_scoped_cancel_observed.load() || qb::mono_now() >= _deadline)
+            kill();
+    }
+};
+
 TEST(ActorCoroutineScope, CancellationPointBailsOnKill) {
     reset_flags();
     qb::Main main;
     main.addActor<CancellationPointActor>(0);
+    main.addActor<CancellationPointKeeper>(0);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());

@@ -16,7 +16,7 @@
  * quic-handshake.cpp` proves the happy-path loopback handshake end-to-end. What neither covers — and
  * what this file targets — are the `endpoint`'s own *event-loop body* branches that only execute when
  * a REAL libngtcp2 backend produces real packets/timeouts AND the framework's libev watchers actually
- * fire (`endpoint.h:143-156,173-219,595-640`):
+ * fire (`endpoint.h:146-159,176-241,631-676`):
  *
  *   - the `on(event::io)` EV_READ receive loop bounded by `settings.udp_rx_batch_size` — the
  *     budget-limited datagram drain (the live handshake leaves the budget unlimited, so the
@@ -49,7 +49,9 @@
  * @ingroup Tests
  */
 
+#include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -106,7 +108,7 @@ establish_loopback(Server &server, Client &client, std::vector<std::string> cons
 /**
  * @test A tiny udp_rx_batch_size still delivers a multi-packet payload across several poll cycles
  * @brief `on(event::io)` reads at most `settings.udp_rx_batch_size` datagrams per EV_READ wakeup
- *        (endpoint.h:599-625). With the budget pinned to 1 on the server, a client payload that the
+ *        (endpoint.h:635-661). With the budget pinned to 1 on the server, a client payload that the
  *        backend fragments across multiple QUIC packets cannot all be consumed in a single readable
  *        wakeup — the loop hits the `budget-- > 0` ceiling and yields, and the framework re-arms
  *        EV_READ so the remainder is drained on subsequent wakeups. Driving a payload to the server
@@ -151,10 +153,10 @@ TEST(QuicEndpointLoop, RxBatchBudgetDeliversMultiPacketPayloadAcrossPolls) {
 /**
  * @test A tiny udp_tx_batch_size still flushes a large response across several poll cycles
  * @brief `flush_udp_packets` sends at most `settings.udp_tx_batch_size` datagrams per call before
- *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:173-200). With the budget
+ *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:176-203). With the budget
  *        pinned to 1 on the server, a large server-initiated payload cannot drain in a single flush:
  *        `drain_backend_packets` must observe the still-non-empty pending queue, arm EV_WRITE
- *        (endpoint.h:203-218), and the subsequent writable wakeups must flush the rest. The client
+ *        (endpoint.h:234-240), and the subsequent writable wakeups must flush the rest. The client
  *        receiving the whole payload proves the throttled multi-poll flush over the REAL socket (the
  *        unit test only throttles the mock backend; here the bytes travel a live loopback datagram
  *        path and the EV_WRITE re-arm is genuinely taken).
@@ -213,7 +215,7 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
 /**
  * @test The endpoint's timer watcher tears down an idle connection without any inbound packet
  * @brief `arm_timer` programs the libev timer from `backend::next_timeout()` and `on(event::timer&)`
- *        feeds `backend::on_timeout(now)` (endpoint.h:143-156,633-640). With a very short idle_timeout
+ *        feeds `backend::on_timeout(now)` (endpoint.h:146-159,669-676). With a very short idle_timeout
  *        on the client and the server then stopped (no more packets ever arrive), the ONLY thing that
  *        can close the client is its own timer firing: the connection must transition to `closed`
  *        purely through the timer path. This is the one teardown the packet-driven tests never reach
@@ -222,29 +224,54 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
  */
 TEST(QuicEndpointLoop, IdleTimeoutClosesConnectionViaTimerPath) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
-
     qb::io::async::init();
 
-    qb::io::quic::settings client_settings;
-    client_settings.idle_timeout = std::chrono::milliseconds(300); // short, so the idle timer fires quickly
+    std::atomic<unsigned short> port{0};
+    std::atomic<bool>           server_failed{false};
+    std::atomic<bool>           stop{false};
+    std::thread                 worker([&] {
+        qb::io::async::init();
+        CallbackQuicServer server;
+        if (!server.listen(qb::io::uri{"quic://127.0.0.1:0"}, ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"), {"h3"})) {
+            server_failed.store(true);
+            return;
+        }
+        port.store(server.local_endpoint().port());
+        while (!stop.load() && server.connected == 0)
+            qb::io::async::listener::current.run(EVRUN_NOWAIT);
+        // Keep the UDP socket and backend alive, but stop all server progress.
+        // No CONNECTION_CLOSE can reach the client before its idle verdict.
+        while (!stop.load())
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        server.close();
+        qb::io::async::listener::current.clear();
+    });
+    struct worker_cleanup {
+        std::atomic<bool> &stop;
+        std::thread       &worker;
+        ~worker_cleanup() {
+            stop.store(true);
+            if (worker.joinable())
+                worker.join();
+        }
+    } cleanup{stop, worker};
 
-    CallbackQuicServer server;
+    ASSERT_TRUE(pump_until([&] { return port.load() != 0 || server_failed.load(); }));
+    ASSERT_FALSE(server_failed.load());
+    qb::io::quic::settings settings;
+    settings.idle_timeout = std::chrono::milliseconds(300);
     CallbackQuicClient client;
-    client.set_settings(client_settings);
-
-    establish_loopback(server, client);
-    EXPECT_EQ(client.current_state(), State::connected);
-
-    // Stop the server so no further packets reach the client. From here the client can only learn it is
-    // dead through its OWN idle timer (arm_timer -> on(timer&) -> backend::on_timeout), which must drive
-    // it to closed. The deadline is comfortably above idle_timeout but still bounded.
-    server.close();
-
+    client.set_settings(settings);
+    qb::io::quic::tls_config tls;
+    tls.server_name = "localhost";
+    tls.verify_peer = false;
+    ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:" + std::to_string(port.load())}, tls, {"h3"}));
+    ASSERT_TRUE(pump_until([&] { return client.current_state() == State::connected; }));
     EXPECT_TRUE(pump_until([&] { return client.current_state() == State::closed; }, std::chrono::seconds(8)))
         << "the idle client was never closed by its timer path";
     EXPECT_EQ(client.current_state(), State::closed);
-    EXPECT_GE(client.closed, 1) << "the timer-driven teardown must dispatch a connection_closed";
-
+    EXPECT_GE(client.closed, 1);
+    EXPECT_EQ(client.last_close_reason, qb::io::quic::disconnect_reason::idle_timeout);
     client.close();
     qb::io::async::listener::current.clear();
 }
@@ -278,7 +305,7 @@ TEST(QuicEndpointLoop, ReconnectAfterCloseRearmsIoWatcherOnNewSocket) {
 
 /**
  * @test Destroying a still-connected live endpoint closes it and drops its watchers cleanly
- * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:325-328). The
+ * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:357-360). The
  *        unit-tier ListenerClearDoesNotDangleEndpointWatchers proves this for a MOCK-backed endpoint
  *        torn down by an explicit listener clear; here a NATIVE-backed client is brought to `connected`
  *        over the live loopback and then destroyed while still open, so the destructor's close() runs

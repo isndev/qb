@@ -185,6 +185,20 @@ reset_async_context() noexcept {
     qb::io::async::init();
 }
 
+// Declare after borrowed test state, before spawning work that refers to it.
+// Reclaim frames without resuming them while their captures are still alive.
+class coroutine_scope_cleanup {
+public:
+    coroutine_scope_cleanup()                                           = default;
+    coroutine_scope_cleanup(const coroutine_scope_cleanup &)            = delete;
+    coroutine_scope_cleanup &operator=(const coroutine_scope_cleanup &) = delete;
+    ~coroutine_scope_cleanup() {
+        if (qb::io::async::listener::current.has_coro_scheduler())
+            qb::io::async::listener::current.reset_coro_scheduler();
+        qb::io::async::listener::current.clear();
+    }
+};
+
 } // namespace qb::io::test
 
 #endif // QB_IO_TESTS_SHARED_COROUTINE_TEST_SUPPORT_H

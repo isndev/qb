@@ -216,8 +216,9 @@ TEST_F(CoroutineAwaiterTests, ImmediateAwaiterNeverSuspends) {
     std::atomic<int> counter{0};
     std::atomic<int> value_seen{-1};
 
-    auto counter_ptr = &counter;
-    auto value_ptr   = &value_seen;
+    auto                                        counter_ptr = &counter;
+    auto                                        value_ptr   = &value_seen;
+    const qb::io::test::coroutine_scope_cleanup cleanup1;
     coro_scheduler().spawn([counter_ptr, value_ptr]() -> task<void> {
         // Single immediate awaiter.
         co_await immediate_awaiter{};
@@ -259,7 +260,8 @@ TEST_F(CoroutineAwaiterTests, ImmediateAwaiterNeverSuspends) {
 TEST_F(CoroutineAwaiterTests, AlwaysSuspendAwaiterSuspendsThenResumes) {
     std::atomic<int> stage{0};
 
-    auto stage_ptr = &stage;
+    auto                                        stage_ptr = &stage;
+    const qb::io::test::coroutine_scope_cleanup cleanup2;
     coro_scheduler().spawn([stage_ptr]() -> task<void> {
         stage_ptr->store(1);
         co_await always_suspend_awaiter{};
@@ -284,7 +286,8 @@ TEST_F(CoroutineAwaiterTests, AwaitSuspendReturningFalseResumesImmediately) {
     bool             suspend_called = false;
     std::atomic<int> stage{0};
 
-    auto stage_ptr = &stage;
+    auto                                        stage_ptr = &stage;
+    const qb::io::test::coroutine_scope_cleanup cleanup3;
     coro_scheduler().spawn([stage_ptr, &suspend_called]() -> task<void> {
         stage_ptr->store(1);
         co_await bool_no_suspend_awaiter{&suspend_called};
@@ -327,8 +330,9 @@ TEST_F(CoroutineAwaiterTests, AwaiterProtocolOrder) {
     std::vector<std::string> log;
     std::atomic<bool>        done{false};
 
-    auto log_ptr  = &log;
-    auto done_ptr = &done;
+    auto                                        log_ptr  = &log;
+    auto                                        done_ptr = &done;
+    const qb::io::test::coroutine_scope_cleanup cleanup4;
     coro_scheduler().spawn([log_ptr, done_ptr]() -> task<void> {
         co_await ProtocolTracker{log_ptr};
         done_ptr->store(true);
@@ -368,7 +372,8 @@ TEST_F(CoroutineAwaiterTests, AwaitSuspendReceivesValidHandle) {
     bool              handle_ok = false;
     std::atomic<bool> done{false};
 
-    auto done_ptr = &done;
+    auto                                        done_ptr = &done;
+    const qb::io::test::coroutine_scope_cleanup cleanup5;
     coro_scheduler().spawn([done_ptr, &handle_ok]() -> task<void> {
         co_await HandleChecker{&handle_ok};
         done_ptr->store(true);
@@ -407,7 +412,8 @@ TEST_F(CoroutineAwaiterTests, AwaiterKeepsStateAcrossSuspend) {
 
     std::atomic<int> result{-1};
 
-    auto result_ptr = &result;
+    auto                                        result_ptr = &result;
+    const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([result_ptr]() -> task<void> {
         int val = co_await StatefulAwaiter{};
         result_ptr->store(val);
@@ -446,8 +452,9 @@ TEST_F(CoroutineAwaiterTests, AwaiterDestroyedAfterAwait) {
     std::atomic<bool> awaiter_destroyed{false};
     std::atomic<bool> after_await{false};
 
-    auto destroyed_ptr = &awaiter_destroyed;
-    auto after_ptr     = &after_await;
+    auto                                        destroyed_ptr = &awaiter_destroyed;
+    auto                                        after_ptr     = &after_await;
+    const qb::io::test::coroutine_scope_cleanup cleanup7;
     coro_scheduler().spawn([destroyed_ptr, after_ptr]() -> task<void> {
         co_await TrackedAwaiter{destroyed_ptr};
         // The awaiter must already be destroyed by the time control reaches here.
@@ -485,7 +492,8 @@ TEST_F(CoroutineAwaiterTests, MoveOnlyAwaiter) {
 
     std::atomic<int> result{-1};
 
-    auto result_ptr = &result;
+    auto                                        result_ptr = &result;
+    const qb::io::test::coroutine_scope_cleanup cleanup8;
     coro_scheduler().spawn([result_ptr]() -> task<void> {
         int val = co_await MoveOnlyAwaiter{42};
         result_ptr->store(val);
@@ -532,6 +540,7 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
     auto target        = make_target();
     auto target_handle = target.handle();
 
+    const qb::io::test::coroutine_scope_cleanup cleanup9;
     coro_scheduler().spawn([order_ptr, done_ptr, target_handle, caller_handle]() -> task<void> {
         order_ptr->push_back(1);
 
@@ -576,7 +585,8 @@ TEST_F(CoroutineAwaiterTests, CustomSymmetricTransfer) {
 TEST_F(CoroutineAwaiterTests, AwaitResumeExceptionPropagates) {
     std::atomic<bool> caught{false};
 
-    auto caught_ptr = &caught;
+    auto                                        caught_ptr = &caught;
+    const qb::io::test::coroutine_scope_cleanup cleanup10;
     coro_scheduler().spawn([caught_ptr]() -> task<void> {
         try {
             co_await throwing_awaiter{};
@@ -597,7 +607,8 @@ TEST_F(CoroutineAwaiterTests, AwaitResumeExceptionPropagates) {
 TEST_F(CoroutineAwaiterTests, AwaitReadyExceptionPropagates) {
     std::atomic<bool> caught{false};
 
-    auto caught_ptr = &caught;
+    auto                                        caught_ptr = &caught;
+    const qb::io::test::coroutine_scope_cleanup cleanup11;
     coro_scheduler().spawn([caught_ptr]() -> task<void> {
         try {
             co_await ready_throwing_awaiter{};
@@ -630,7 +641,8 @@ TEST_F(CoroutineAwaiterTests, AwaitSuspendExceptionPropagates) {
 
     std::atomic<bool> caught{false};
 
-    auto caught_ptr = &caught;
+    auto                                        caught_ptr = &caught;
+    const qb::io::test::coroutine_scope_cleanup cleanup12;
     coro_scheduler().spawn([caught_ptr]() -> task<void> {
         try {
             co_await ThrowInSuspend{};
@@ -666,7 +678,8 @@ TEST_F(CoroutineAwaiterTests, SleepAwaiterWaitsAtLeastDuration) {
     auto              start = std::chrono::steady_clock::now();
     std::atomic<bool> completed{false};
 
-    auto completed_ptr = &completed;
+    auto                                        completed_ptr = &completed;
+    const qb::io::test::coroutine_scope_cleanup cleanup13;
     coro_scheduler().spawn([completed_ptr]() -> task<void> {
         co_await sleep(50ms);
         completed_ptr->store(true);
@@ -686,7 +699,8 @@ TEST_F(CoroutineAwaiterTests, SleepAwaiterWaitsAtLeastDuration) {
 TEST_F(CoroutineAwaiterTests, ZeroDurationSleepYields) {
     std::atomic<int> stage{0};
 
-    auto stage_ptr = &stage;
+    auto                                        stage_ptr = &stage;
+    const qb::io::test::coroutine_scope_cleanup cleanup14;
     coro_scheduler().spawn([stage_ptr]() -> task<void> {
         stage_ptr->store(1);
         co_await sleep(0ms);
@@ -706,7 +720,8 @@ TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
     auto              start = std::chrono::steady_clock::now();
     std::atomic<bool> completed{false};
 
-    auto completed_ptr = &completed;
+    auto                                        completed_ptr = &completed;
+    const qb::io::test::coroutine_scope_cleanup cleanup15;
     coro_scheduler().spawn([completed_ptr]() -> task<void> {
         co_await sleep(20ms);
         co_await sleep(20ms);
@@ -727,7 +742,8 @@ TEST_F(CoroutineAwaiterTests, MultipleSleepsAccumulate) {
 TEST_F(CoroutineAwaiterTests, MixedAwaiterTypes) {
     std::atomic<int> result{0};
 
-    auto result_ptr = &result;
+    auto                                        result_ptr = &result;
+    const qb::io::test::coroutine_scope_cleanup cleanup16;
     coro_scheduler().spawn([result_ptr]() -> task<void> {
         co_await immediate_awaiter{};
         result_ptr->fetch_add(1);
@@ -769,8 +785,9 @@ TEST_F(CoroutineAwaiterTests, WaitReadableResumesWhenDataArrives) {
     std::atomic<int>  stage{0};
     std::atomic<char> byte_seen{0};
 
-    auto stage_ptr = &stage;
-    auto byte_ptr  = &byte_seen;
+    auto                                        stage_ptr = &stage;
+    auto                                        byte_ptr  = &byte_seen;
+    const qb::io::test::coroutine_scope_cleanup cleanup17;
     coro_scheduler().spawn([stage_ptr, byte_ptr, read_fd]() -> task<void> {
         stage_ptr->store(1);             // running, about to park on the read end
         co_await wait_readable(read_fd); // suspends in socket_awaiter::await_suspend (ev_io armed)
@@ -809,8 +826,9 @@ TEST_F(CoroutineAwaiterTests, WaitWritableResumesOnWritableFd) {
     const int read_fd  = fds[0];
     const int write_fd = fds[1];
 
-    std::atomic<bool> wrote{false};
-    auto              wrote_ptr = &wrote;
+    std::atomic<bool>                           wrote{false};
+    auto                                        wrote_ptr = &wrote;
+    const qb::io::test::coroutine_scope_cleanup cleanup18;
     coro_scheduler().spawn([wrote_ptr, write_fd]() -> task<void> {
         co_await wait_writable(write_fd); // pipe write end is writable → resumes promptly
         const char c = 'Q';
@@ -848,7 +866,8 @@ TEST_F(CoroutineAwaiterTests, SocketAwaiterDestructorStopsArmedWatcher) {
     const long        baseline = detail::CoroutineFrameAllocator::live_frames;
     std::atomic<bool> resumed{false};
 
-    auto resumed_ptr = &resumed;
+    auto                                        resumed_ptr = &resumed;
+    const qb::io::test::coroutine_scope_cleanup cleanup19;
     coro_scheduler().spawn([resumed_ptr, read_fd]() -> task<void> {
         co_await wait_readable(read_fd); // never becomes readable in this test
         resumed_ptr->store(true);        // must NOT run
@@ -890,7 +909,8 @@ TEST_F(CoroutineAwaiterTests, TimerAwaiterDestructorStopsArmedTimer) {
     const long        baseline = detail::CoroutineFrameAllocator::live_frames;
     std::atomic<bool> resumed{false};
 
-    auto resumed_ptr = &resumed;
+    auto                                        resumed_ptr = &resumed;
+    const qb::io::test::coroutine_scope_cleanup cleanup20;
     coro_scheduler().spawn([resumed_ptr]() -> task<void> {
         co_await sleep(3000ms); // long timer we will never let fire
         resumed_ptr->store(true);
@@ -938,6 +958,7 @@ TEST_F(CoroutineAwaiterTests, AsyncAwaiterBridgesACallbackResult) {
     auto *got_string_ptr  = &got_string;
     auto *deferred_cb_ptr = &deferred_cb;
 
+    const qb::io::test::coroutine_scope_cleanup cleanup21;
     coro_scheduler().spawn([got_int_ptr, done_ptr, got_string_ptr, deferred_cb_ptr]() -> task<void> {
         // (a) callback invoked synchronously from inside await_suspend
         got_string_ptr->assign(co_await async_awaiter<std::string>([](auto cb) { cb(std::string("hello")); }));

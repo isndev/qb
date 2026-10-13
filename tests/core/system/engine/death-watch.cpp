@@ -33,15 +33,19 @@
  *     exception, after its actors' destructors; a watch opened during a blocked exceptional
  *     destructor gets no early answer; every watch is answered while its target's core stops,
  *     whichever side of the stop it lands on;
- *   - the engine shuts down cleanly, without a dead letter, with watches in place across cores.
+ *   - the engine shuts down cleanly, without a dead letter, with watches in place across cores;
+ *   - a core that stops tells the cores that watched one of its actors and no other: after one cross-core watch, a
+ *     core that never talked to anyone takes in no event when the watched core stops (Huly QB-203).
  *
  * Results are written on the cores' threads and read after `join()`, which orders them.
  */
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <mutex>
@@ -1099,6 +1103,141 @@ TEST(DeathWatch, TheEngineShutsDownCleanlyWithWatchesInPlace) {
     EXPECT_FALSE(engine.hasError());
     EXPECT_EQ(g_mutual_up.load(), 8);
     EXPECT_EQ(letters.load(), 0) << "the death watch's own traffic is never a letter, and every DownEvent is handled";
+}
+
+// --- a stop is told to the cores that watched, and to no other (Huly QB-203) ---------------------------------------------
+
+// Up once the target's core thread has returned from its work: a thread_local's destructor runs after the thread's
+// function, so after `Main::start_thread` sent that core's stop notices -- each one is in its core's mailbox.
+std::atomic<bool> g_target_core_exited{false};
+
+struct CoreExitSentinel {
+    ~CoreExitSentinel() {
+        g_target_core_exited = true;
+        g_target_core_exited.notify_all();
+    }
+};
+
+// Called on the target's core thread: one sentinel per thread, destroyed when that thread exits.
+void
+arm_core_exit_sentinel() {
+    static thread_local CoreExitSentinel sentinel;
+    (void) sentinel;
+}
+
+// The watched actor, alone on its core: the core stops when it dies.
+class SentinelTarget : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        arm_core_exit_sentinel();
+        co_return true;
+    }
+};
+
+// Watches `target` across cores and kills it; stays up until the engine stops.
+class QuietWatcher : public qb::Actor {
+    const qb::ActorId _target;
+
+public:
+    explicit QuietWatcher(qb::ActorId target)
+        : _target(target) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::DownEvent>(*this);
+        watch(_target);
+        push<qb::KillEvent>(_target);
+        co_return true;
+    }
+    void
+    on(qb::DownEvent const &e) {
+        g_seen.push_back({e.watched, e.reason, false});
+        ++g_downs;
+        g_downs.notify_all();
+    }
+};
+
+constexpr qb::CoreId kStopCores = 6; // core 0 watches core 1; cores 2 to 5 never talk to anyone
+
+// What a bystander's core has done, published by that core at the end of every pass: the pass, then what it took in.
+struct BystanderView {
+    std::atomic<std::uint64_t> passes{0};
+    std::atomic<std::uint64_t> received{0};
+};
+std::array<BystanderView, kStopCores> g_bystanders;
+
+// Neither watches nor is watched, and never sends: no event has any business reaching its core. Every pass it publishes
+// what its core has taken in so far -- a stop notice would be one.
+class Bystander
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &loop) override {
+        auto &view = g_bystanders[getIndex()];
+        view.received.store(getCoreStats().events_received, std::memory_order_relaxed);
+        view.passes.store(loop.iteration, std::memory_order_release); // after `received`: read in that order
+    }
+};
+
+TEST(DeathWatch, AStoppingCoreTellsTheCoresThatWatchedItAndNoOther) {
+    reset();
+    g_target_core_exited = false;
+    for (auto &view : g_bystanders) {
+        view.passes   = 0;
+        view.received = 0;
+    }
+    std::array<std::uint64_t, kStopCores> received{};
+    bool                                  drained = true;
+    {
+        qb::Main engine;
+        for (qb::CoreId core = 0; core < kStopCores; ++core)
+            engine.core(core).setAffinity(qb::CoreIdSet{qb::NoAffinity}).setLatency(1ms);
+        const auto target = engine.addActor<SentinelTarget>(1);
+        engine.addActor<QuietWatcher>(0, target);
+        for (qb::CoreId core = 2; core < kStopCores; ++core)
+            engine.addActor<Bystander>(core);
+        engine.start();
+        // The watcher has its answer -- stopped before it, it could be killed with the answer still on its way -- and
+        // core 1 has stopped: every notice it sent is in its core's mailbox. A bystander's pass that STARTS after this
+        // point drains its mailbox before its callback runs: the second pass published after the first reading below
+        // is one -- it started after the first, whose callback came after that reading.
+        for (int downs = g_downs.load(); downs == 0; downs = g_downs.load())
+            g_downs.wait(downs);
+        g_target_core_exited.wait(false);
+        auto const deadline = std::chrono::steady_clock::now() + 30s;
+        for (qb::CoreId core = 2; core < kStopCores; ++core) {
+            auto         &view = g_bystanders[core];
+            std::uint64_t seen = view.passes.load(std::memory_order_acquire);
+            for (int published = 0; published < 2;) {
+                if (std::chrono::steady_clock::now() >= deadline) {
+                    drained = false;
+                    break;
+                }
+                if (std::uint64_t const now = view.passes.load(std::memory_order_acquire); now != seen) {
+                    seen = now;
+                    ++published;
+                } else
+                    std::this_thread::sleep_for(50us);
+            }
+            received[core] = view.received.load(std::memory_order_relaxed);
+        }
+        engine.stop();
+        engine.join();
+        ASSERT_FALSE(engine.hasError());
+    }
+    ASSERT_TRUE(drained) << "a bystander's core ran no two passes in 30 s after the watched core stopped";
+    ASSERT_EQ(g_seen.size(), 1u);
+    EXPECT_EQ(g_seen[0].reason, qb::DownReason::killed);
+    for (qb::CoreId core = 2; core < kStopCores; ++core)
+        EXPECT_EQ(received[core], 0u) << "core " << core << " watched nothing and nobody sends to it, yet it took in " << received[core]
+                                      << " event(s) once core 1 had stopped: a stopping core told a core that never watched it "
+                                         "(Huly QB-203)";
 }
 
 } // namespace death_watch_test

@@ -58,10 +58,11 @@ WHAT IT CHECKS
 
 WHAT IT DELIBERATELY DOES NOT CATCH
 -----------------------------------
-It is textual. Events are matched by their last name, so `qb::http::event::disconnected` and
-`qb::io::async::event::disconnected` are one key — conservative in R1 (more handlers checked,
-never fewer), and the reason R2 reads the probe category per name. An event reached through a
-`using` alias of another spelling, or a gate written through a macro, is invisible to it. A
+It is textual. The last event name indexes candidates; conflicting qualified names are then
+excluded. Relative names match namespace suffixes, so `event::disconnected` can still match
+either HTTP or I/O when its namespace cannot be resolved textually. Friendship must cover the
+handler's event and each applicable probe's cv/ref spelling, not unrelated namesakes. An event
+reached through a `using` alias of another spelling, or a gate written through a macro, is invisible to it. A
 handler whose class grants access some other way (a friend function template specialisation of
 the detector) is reported and needs the annotation. These are stated, not hidden behind a green.
 
@@ -95,7 +96,7 @@ FRIEND_ALL_RE = re.compile(r"template\s*<[^<>;{}]*>\s*friend\s+struct\s+(?:::)?h
 HEAD_RE = re.compile(r"\b(class|struct)\s+(?:alignas\s*\([^)]*\)\s*)?([A-Za-z_]\w*)\s*(?:final\s*)?(?::[^{;()]*)?\{")
 ACCESS_RE = re.compile(r"(public|private|protected)\s*:(?!:)")
 HANDLER_RE = re.compile(r"\bon\s*\(")
-ANNOTATION_RE = re.compile(r"handler-access:\s*(\S.*)")
+ANNOTATION_RE = re.compile(r"//[^\n]*?handler-access:[ \t]*(\S[^\n]*)")
 # Words that end a type spelling without naming a parameter: `const Evt` has no parameter name.
 TYPE_WORDS = {"const", "volatile", "typename", "struct", "class", "unsigned", "signed", "long", "short"}
 
@@ -207,13 +208,8 @@ def split_top_level(args: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def event_key(type_text: str) -> tuple[str, str]:
-    """(event name, probe category) of one argument or parameter spelling.
-
-    The name is the last `::` component with template arguments, cv and references dropped;
-    the category is what a gate spelled that way probes, or what a handler parameter takes:
-    "lvalue" (non-const `T&`), "const_lvalue" (`T const&` / `const T&`), "rvalue" (anything
-    else: `T`, `T&&`)."""
+def parameter_type(type_text: str) -> str:
+    """Remove attributes, a default and the optional parameter name."""
     t = re.sub(r"\[\[[^\]]*\]\]", " ", type_text)  # [[maybe_unused]] and friends
     t = re.sub(r"\btypename\b", " ", t)
     t = t.split("=", 1)[0].strip()  # a default argument
@@ -227,6 +223,12 @@ def event_key(type_text: str) -> tuple[str, str]:
         m = re.search(r"([A-Za-z_]\w*)\s+([A-Za-z_]\w*)$", t)
         if m and m.group(1) not in TYPE_WORDS:
             t = t[: m.start(2)].rstrip()
+    return t
+
+
+def event_key(type_text: str) -> tuple[str, str]:
+    """Return the terminal event name and its value/reference probe category."""
+    t = parameter_type(type_text)
     is_const = bool(re.search(r"\bconst\b", t))
     stripped = t.replace("&&", " RR ").strip()
     if " RR " in stripped or stripped.endswith("RR"):
@@ -256,9 +258,78 @@ def walk(root: str):
                 yield os.path.join(dirpath, fn)
 
 
-def derive_gates(framework_roots: list[str]) -> dict[str, set[str]]:
-    """event name -> the probe categories its gates use, over every framework gate."""
-    gates: dict[str, set[str]] = {}
+def canonical_type(spelling: str) -> str:
+    """Keep namespace and reference identity; normalize spacing and top-level cv."""
+    spelling = re.sub(r"\btypename\b", "", spelling).strip()
+    match = re.fullmatch(r"(const\s+)?([\w:]+)(\s+const)?\s*(&&|&)?", spelling)
+    if match:
+        return ("const " if match[1] or match[3] else "") + match[2].removeprefix("::") + (match[4] or "")
+    return re.sub(r"\s+", "", spelling).removeprefix("::")
+
+
+def event_parts(spelling: str) -> tuple[str, str]:
+    """Separate a canonical event identity from the detector's exact cv/ref arguments."""
+    spelling = re.sub(r"\btypename\b", "", spelling).strip()
+    reference = re.search(r"(&&|&)\s*$", spelling)
+    ref = reference[1] if reference else ""
+    if reference:
+        spelling = spelling[:reference.start()].rstrip()
+    cv = set()
+    # Read qualifiers while token boundaries still exist, including around template types.
+    # Only outer qualifiers belong to the detector; const inside Event<const T> does not.
+    while match := re.match(r"^(const|volatile)\b\s*", spelling):
+        cv.add(match[1])
+        spelling = spelling[match.end():].lstrip()
+    while match := re.search(r"\s+\b(const|volatile)$", spelling):
+        cv.add(match[1])
+        spelling = spelling[:match.start()].rstrip()
+    qualifiers = " ".join(sorted(cv)) + ref
+    absolute = "::" if spelling.startswith("::") else ""
+    return absolute + canonical_type(spelling), qualifiers
+
+
+def same_event(left: str, right: str) -> bool:
+    """Permit relative namespace spellings without equating conflicting qualified names."""
+    if left.startswith("::") and right.startswith("::"):
+        return left == right
+    left, right = left.removeprefix("::"), right.removeprefix("::")
+    return left == right or left.endswith("::" + right) or right.endswith("::" + left)
+
+
+def self_spellings(src: str, head: re.Match) -> set[str]:
+    """Injected class name and its explicit current template specialization, if named."""
+    cls = head.group(2)
+    result = {cls}
+    end = len(src[:head.start()].rstrip())
+    # Walk outer template declarations: a template-template parameter is not the owner.
+    pos = 0
+    while match := re.search(r"\btemplate\s*<", src[pos:end]):
+        start = pos + match.end()
+        close = match_angle(src, start - 1)
+        if close < 0 or close > end:
+            break
+        if close == end:
+            names = []
+            for parameter in split_top_level(src[start:close - 1]):
+                if parameter.startswith("template"):
+                    nested = match_angle(parameter, parameter.find("<"))
+                    if nested < 0:
+                        return result
+                    parameter = parameter[nested:]
+                parameter = parameter.split("=", 1)[0].strip()
+                name = re.search(r"([A-Za-z_]\w*)$", parameter)
+                if not name:
+                    return result
+                names.append(name[1] + ("..." if "..." in parameter else ""))
+            result.add(cls + "<" + ",".join(names) + ">")
+            break
+        pos = close
+    return result
+
+
+def derive_gates(framework_roots: list[str]) -> dict[str, set[tuple[str, str]]]:
+    """event name -> exact event spellings and categories used by framework gates."""
+    gates: dict[str, set[tuple[str, str]]] = {}
     for root in framework_roots:
         for path in walk(root):
             if os.path.basename(path) == "type_traits.h":
@@ -279,11 +350,11 @@ def derive_gates(framework_roots: list[str]) -> dict[str, set[str]]:
                     continue
                 name, cat = event_key(args[first_event])
                 if name:
-                    gates.setdefault(name, set()).add(cat)
+                    gates.setdefault(name, set()).add((args[first_event], cat))
     return gates
 
 
-def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
+def scan_file(path: str, gates: dict[str, set[tuple[str, str]]]) -> tuple[list[str], int]:
     try:
         raw = open(path, encoding="utf-8", errors="replace").read()
     except OSError:
@@ -294,6 +365,7 @@ def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
     handlers = 0
     for head in HEAD_RE.finditer(src):
         kind, cls = head.group(1), head.group(2)
+        owners = self_spellings(src, head)
         body_start = head.end()  # just past the class body's `{`
         access = "public" if kind == "struct" else "private"
         friends: set[str] = set()
@@ -326,8 +398,9 @@ def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
                     close = match_angle(src, fe.end() - 1)
                     if close > 0:
                         args = split_top_level(src[fe.end() : close - 1])
-                        if len(args) >= 3:
-                            friends.add(event_key(args[2])[0])
+                        if (len(args) == 3 and canonical_type(args[0]) in owners
+                                and canonical_type(args[1]) == "void"):
+                            friends.add(args[2])
                         i = close
                         continue
                 hm = HANDLER_RE.match(src, i)
@@ -348,21 +421,32 @@ def scan_file(path: str, gates: dict[str, set[str]]) -> tuple[list[str], int]:
             if name not in gates:
                 continue
             line = src.count("\n", 0, off) + 1
-            note = " ".join(raw_lines[max(0, line - 3) : line])
-            ann = ANNOTATION_RE.search(note)
-            if ann and ann.group(1).strip():
+            notes = raw_lines[max(0, line - 3) : line]
+            if any(ANNOTATION_RE.search(note) for note in notes):
                 continue
-            if acc != "public" and not befriends_all and name not in friends:
+            handler_type, _ = event_parts(parameter_type(first))
+            applicable = {(spelling, category) for spelling, category in gates[name]
+                          if same_event(handler_type, event_parts(spelling)[0])}
+            if not applicable:
+                continue
+            gate_categories = {category for _, category in applicable}
+            required_probes = {event_parts(spelling) for spelling, _ in applicable}
+            friend_probes = {event_parts(spelling) for spelling in friends
+                             if same_event(handler_type, event_parts(spelling)[0])}
+            covered = all(any(same_event(gate_type, friend_type) and gate_cvref == friend_cvref
+                              for friend_type, friend_cvref in friend_probes)
+                          for gate_type, gate_cvref in required_probes)
+            if acc != "public" and not befriends_all and not covered:
                 findings.append(
                     f"{path}:{line}: [R1] {cls}::on({first.strip()}) is {acc} and {cls} does not befriend "
                     f"the detector, so the gate on `{name}` cannot see it and skips it silently. Add "
                     f"`friend struct has_method_on<{cls}, void, <the event type>>;` (befriending the base "
                     f"that dispatches is not enough), or `// handler-access: <reason>` if no gate reaches it."
                 )
-            if cat == "lvalue" and "lvalue" not in gates[name]:
+            if cat == "lvalue" and "lvalue" not in gate_categories:
                 findings.append(
                     f"{path}:{line}: [R2] {cls}::on({first.strip()}) takes a non-const lvalue reference; "
-                    f"the gates on `{name}` probe {', '.join(sorted(gates[name]))}, which it cannot bind, "
+                    f"the gates on `{name}` probe {', '.join(sorted(gate_categories))}, which it cannot bind, "
                     f"so it is never called. Take `&&` or `const &`."
                 )
     return findings, handlers
@@ -376,6 +460,13 @@ def default_args() -> list[str]:
         f"{os.path.join(qb_root, 'src')}:150", f"{os.path.join(qb_root, 'tests')}:240",
         "--min-handlers=480", "--min-gated=8",
     ]
+
+
+def format_gates(gates: dict[str, set[tuple[str, str]]]) -> str:
+    """Render exact spelling and category without assuming gate entries are strings."""
+    return ", ".join(
+        f"{name}[{'/'.join(f'{spelling}:{category}' for spelling, category in sorted(entries))}]"
+        for name, entries in sorted(gates.items()))
 
 
 def main() -> int:
@@ -422,7 +513,7 @@ def main() -> int:
         )
         return 2
     print(f"gated events ({len(gates)}, derived from the framework's has_on / has_method_on / has_own_on uses):")
-    print("  " + ", ".join(f"{k}[{'/'.join(sorted(v))}]" for k, v in sorted(gates.items())))
+    print("  " + format_gates(gates))
 
     findings: list[str] = []
     total_visited = 0

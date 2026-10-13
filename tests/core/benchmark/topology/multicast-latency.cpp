@@ -11,17 +11,17 @@
  * @file benchmark/topology/multicast-latency.cpp
  * @brief Producer → N consumers MULTICAST latency (one event fans out to every consumer once).
  *
- * One producer at core 0 multicasts each source event to all `NB_ACTORS` consumers (a single hop,
+ * One producer at core 0 sends batches of separate branch events to `NB_ACTORS` consumers (a single hop,
  * `NB_ACTORS`-wide), unlike the pipeline chain where one event walks a serial chain. `NB_CORE` is
  * the consumer placement spread divisor (`multicast_consumer_core_for_index`: producer on 0,
- * consumers cycle `1 .. NB_CORE-1`). Deliveries per run = `NB_EVENTS * NB_ACTORS`.
+ * consumers cycle `1 .. NB_CORE-1`). Completed branch deliveries per run = `NB_EVENTS`.
  *
  * The latency sample lives on the shared `ProducerActor`; it is published to the cross-thread sink
  * via the `shared/LatencyFlush.h` / `BenchmarkIterationSink` idiom and read on the benchmark thread
  * after `join()` (`QB_ACTOR_BENCH_HISTOGRAM=1` dumps percentiles).
  *
  * Delivery guard (NOT a `EXPECT_LT(duration,…)` ctest gate — this is a perf harness): the producer
- * completes one round-trip (and takes one latency sample) per source event, so after `join()` the
+ * completes one round-trip (and takes one latency sample) per completed branch event, so after `join()` the
  * recorded `latency_samples` MUST equal `NB_EVENTS`. A one-shot, out-of-loop probe run asserts that
  * equality, catching a multicast that drops a branch before any timing.
  *
@@ -60,7 +60,7 @@ BM_Multicast_Latency(benchmark::State &state) {
     const auto nb_actor  = static_cast<std::uint32_t>(state.range(1));
     const auto nb_core   = static_cast<std::uint32_t>(state.range(2));
 
-    // One-shot out-of-loop delivery guard: one completed round-trip per source event.
+    // One-shot out-of-loop delivery guard: one completed round-trip per completed branch event.
     {
         qb::bench::reset_last_latency_stats();
         qb::Main probe;
@@ -85,7 +85,7 @@ BM_Multicast_Latency(benchmark::State &state) {
         main.join();
 
         const double source_events            = static_cast<double>(nb_events);
-        const double deliveries               = static_cast<double>(nb_events) * static_cast<double>(nb_actor);
+        const double deliveries               = static_cast<double>(nb_events);
         state.counters["source_events_per_s"] = benchmark::Counter(source_events, benchmark::Counter::kIsIterationInvariantRate);
         state.counters["deliveries_per_s"]    = benchmark::Counter(deliveries, benchmark::Counter::kIsIterationInvariantRate);
         const auto lat                        = qb::bench::last_latency_stats_snapshot();

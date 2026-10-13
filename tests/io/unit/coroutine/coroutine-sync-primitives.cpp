@@ -96,6 +96,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreLimitsConcurrency) {
         finished.fetch_add(1);
     };
 
+    const qb::io::test::coroutine_scope_cleanup workers_cleanup;
     for (int i = 0; i < N; ++i)
         coro_scheduler().spawn(worker());
 
@@ -119,6 +120,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreScopedAcquireAutoReleases) {
     std::atomic<bool> acquired{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup1;
     coro_scheduler().spawn([&]() -> task<void> {
         auto guard = co_await sem.scoped_acquire();
         acquired.store(true);
@@ -156,7 +158,8 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreAvailableAndTotalPermits) {
 }
 
 TEST_F(CoroutineSyncPrimitives, SemaphoreWithHelperReturnsResultAndRestoresPermit) {
-    std::atomic<bool> done{false};
+    std::atomic<bool>                           done{false};
+    const qb::io::test::coroutine_scope_cleanup cleanup2;
     coro_scheduler().spawn([&]() -> task<void> {
         semaphore sem(1);
         auto      result = co_await with_semaphore(sem, []() { return 42; });
@@ -179,6 +182,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreCancelAcquireWakesAndRetracts) {
 
     EXPECT_TRUE(sem.try_acquire()); // hold the only permit so the waiter must park
 
+    const qb::io::test::coroutine_scope_cleanup cleanup3;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         try {
@@ -212,6 +216,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreCancelledWaiterSkippedNextServed) {
 
     EXPECT_TRUE(sem.try_acquire()); // hold the permit
 
+    const qb::io::test::coroutine_scope_cleanup cleanup4;
     coro_scheduler().spawn([&]() -> task<void> {
         a_parked.store(true);
         try {
@@ -222,6 +227,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreCancelledWaiterSkippedNextServed) {
     });
     EXPECT_TRUE(pump_until([&] { return a_parked.load(); }));
 
+    const qb::io::test::coroutine_scope_cleanup cleanup5;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await sem.acquire(); // plain waiter, queued behind A
         b_acquired.store(true);
@@ -246,6 +252,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreGrantedBeatsRacingCancel) {
 
     EXPECT_TRUE(sem.try_acquire()); // hold the permit
 
+    const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         try {
@@ -279,6 +286,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreEntryCancelledAcquireThrowsWithoutTakin
 
     token.cancel(); // pre-cancelled before the acquire ever runs
 
+    const qb::io::test::coroutine_scope_cleanup cleanup7;
     coro_scheduler().spawn([&]() -> task<void> {
         try {
             co_await sem.acquire(token); // await_ready true -> resume throws
@@ -304,6 +312,7 @@ TEST_F(CoroutineSyncPrimitives, SemaphoreScopedGuardExplicitReleaseRestoresEarly
     std::atomic<bool> permit_back_after_release{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup8;
     coro_scheduler().spawn([&]() -> task<void> {
         auto guard = co_await sem.scoped_acquire();
         EXPECT_EQ(sem.available_permits(), 0u); // guard holds the permit
@@ -336,6 +345,7 @@ TEST_F(CoroutineSyncPrimitives, MutexSerializesAccess) {
         finished.fetch_add(1);
     };
 
+    const qb::io::test::coroutine_scope_cleanup workers_cleanup;
     for (int i = 0; i < N; ++i)
         coro_scheduler().spawn(worker());
 
@@ -358,18 +368,21 @@ TEST_F(CoroutineSyncPrimitives, MutexWaitersCountReflectsContention) {
     // Drives a CONTENDED path so waiters_count() is observed non-zero (the original asserted
     // it == 0 in a single-coroutine context where no waiter could ever exist).
     async_mutex       mtx;
+    async_event       release_holder;
     std::atomic<bool> holder_acquired{false};
     std::atomic<bool> contender_parked{false};
     std::atomic<bool> contender_acquired{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup9;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await mtx.lock();
         holder_acquired.store(true);
-        co_await sleep(50ms); // hold long enough for the contender to queue
+        co_await release_holder.wait(); // release only after the contender is observed parked
         mtx.unlock();
     });
     EXPECT_TRUE(pump_until([&] { return holder_acquired.load(); }));
 
+    const qb::io::test::coroutine_scope_cleanup cleanup10;
     coro_scheduler().spawn([&]() -> task<void> {
         contender_parked.store(true);
         co_await mtx.lock(); // must park behind the holder
@@ -381,6 +394,7 @@ TEST_F(CoroutineSyncPrimitives, MutexWaitersCountReflectsContention) {
     EXPECT_TRUE(pump_until([&] { return mtx.waiters_count() == 1u; })) << "contended waiter never registered in waiters_count()";
     EXPECT_FALSE(contender_acquired.load()) << "the contender must still be parked while the holder owns the lock";
 
+    release_holder.set();
     EXPECT_TRUE(pump_until([&] { return contender_acquired.load(); })) << "the contender never acquired after release";
     EXPECT_EQ(mtx.waiters_count(), 0u);
     EXPECT_FALSE(mtx.is_locked());
@@ -391,8 +405,9 @@ TEST_F(CoroutineSyncPrimitives, MutexHandOffIsNeverBargedByANewcomer) {
     // HANDS the lock to the first waiter without ever freeing it. A newcomer arriving between that hand-off and the
     // waiter's resume must queue behind the waiter -- were the lock free for that instant, the newcomer's synchronous
     // fast path would take it first and the waiter would resume into a lock someone else holds.
-    std::vector<int> order;
-    bool             done = false;
+    std::vector<int>                            order;
+    bool                                        done = false;
+    const qb::io::test::coroutine_scope_cleanup cleanup11;
     coro_scheduler().spawn([&]() -> task<void> {
         async_mutex m;
         EXPECT_TRUE(m.try_lock()); // this coroutine holds the lock
@@ -419,7 +434,8 @@ TEST_F(CoroutineSyncPrimitives, MutexHandOffIsNeverBargedByANewcomer) {
 }
 
 TEST_F(CoroutineSyncPrimitives, MutexWithHelperReturnsResultAndUnlocks) {
-    std::atomic<bool> done{false};
+    std::atomic<bool>                           done{false};
+    const qb::io::test::coroutine_scope_cleanup cleanup12;
     coro_scheduler().spawn([&]() -> task<void> {
         async_mutex mtx;
         auto        result = co_await with_lock(mtx, []() { return std::string("hello"); });
@@ -438,6 +454,7 @@ TEST_F(CoroutineSyncPrimitives, MutexScopedGuardExplicitUnlockReleasesEarly) {
     std::atomic<bool> unlocked_after_explicit{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup13;
     coro_scheduler().spawn([&]() -> task<void> {
         auto guard = co_await mtx.scoped_lock();
         EXPECT_TRUE(mtx.is_locked());
@@ -506,6 +523,7 @@ TEST_F(CoroutineSyncPrimitives, RWLockWriterExcludesReaders) {
         finished.fetch_add(1);
     };
 
+    const qb::io::test::coroutine_scope_cleanup cleanup14;
     coro_scheduler().spawn(writer());
     for (int i = 0; i < N; ++i)
         coro_scheduler().spawn(reader());
@@ -523,6 +541,7 @@ TEST_F(CoroutineSyncPrimitives, RWLockScopedGuardsProveWriterExclusion) {
     std::atomic<bool> second_writer_acquired{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup15;
     coro_scheduler().spawn([&]() -> task<void> {
         {
             // Read guard then write guard, exercising both scoped paths.
@@ -561,6 +580,7 @@ TEST_F(CoroutineSyncPrimitives, RWLockLastReaderReleaseWakesQueuedWriter) {
     std::atomic<bool> reader_released{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup16;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await rw.lock_read();
         reader_holding.store(true);
@@ -574,6 +594,7 @@ TEST_F(CoroutineSyncPrimitives, RWLockLastReaderReleaseWakesQueuedWriter) {
     });
     EXPECT_TRUE(pump_until([&] { return reader_holding.load(); }));
 
+    const qb::io::test::coroutine_scope_cleanup cleanup17;
     coro_scheduler().spawn([&]() -> task<void> {
         writer_parked.store(true);
         co_await rw.lock_write(); // parks behind the active reader
@@ -590,8 +611,9 @@ TEST_F(CoroutineSyncPrimitives, RwLockNewReaderQueuesBehindWaitingWriterAndNoHan
     // The rw-lock is writer-preferring -- a reader arriving while a writer WAITS queues behind it -- and, its free paths
     // being synchronous (Huly QB-287), each hand-off must keep the lock held: a reader arriving while the write lock is
     // being handed to the parked writer queues too. Expected order: the writer, then both readers, admitted together.
-    std::vector<char> order;
-    bool              done = false;
+    std::vector<char>                           order;
+    bool                                        done = false;
+    const qb::io::test::coroutine_scope_cleanup cleanup18;
     coro_scheduler().spawn([&]() -> task<void> {
         async_rw_lock rw;
         co_await rw.lock_read(); // this coroutine holds a read lock (free: taken without suspending)
@@ -627,6 +649,7 @@ TEST_F(CoroutineSyncPrimitives, RWLockGuardsExplicitUnlockReleaseEarly) {
     std::atomic<bool> second_writer_acquired{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup19;
     coro_scheduler().spawn([&]() -> task<void> {
         {
             auto rg = co_await rw.scoped_read_lock();
@@ -668,18 +691,22 @@ TEST_F(CoroutineSyncPrimitives, BarrierReleasesAllOnLastArrival) {
         passed.fetch_add(1);
     };
 
+    const qb::io::test::coroutine_scope_cleanup cleanup20;
     coro_scheduler().spawn(worker());
+    const qb::io::test::coroutine_scope_cleanup cleanup21;
     coro_scheduler().spawn(worker());
 
     EXPECT_TRUE(pump_until([&] { return arrived.load() == 2; })) << "two workers never arrived";
     EXPECT_EQ(passed.load(), 0) << "the barrier must hold until all 3 arrive";
 
+    const qb::io::test::coroutine_scope_cleanup cleanup22;
     coro_scheduler().spawn(worker());
     EXPECT_TRUE(pump_until([&] { return passed.load() == 3; })) << "the barrier never released after the 3rd arrival";
 }
 
 TEST_F(CoroutineSyncPrimitives, BarrierResetAndReuseAcrossPhases) {
-    std::atomic<bool> done{false};
+    std::atomic<bool>                           done{false};
+    const qb::io::test::coroutine_scope_cleanup cleanup23;
     coro_scheduler().spawn([&]() -> task<void> {
         barrier b(2);
         int     phase = 0;
@@ -718,8 +745,11 @@ TEST_F(CoroutineSyncPrimitives, EventManualResetWakesAllWaiters) {
         co_await ev.wait();
         woken.fetch_add(1);
     };
+    const qb::io::test::coroutine_scope_cleanup cleanup24;
     coro_scheduler().spawn(waiter());
+    const qb::io::test::coroutine_scope_cleanup cleanup25;
     coro_scheduler().spawn(waiter());
+    const qb::io::test::coroutine_scope_cleanup cleanup26;
     coro_scheduler().spawn(waiter());
 
     qb::io::async::run_for(10ms);
@@ -734,6 +764,7 @@ TEST_F(CoroutineSyncPrimitives, EventManualResetNewWaiterPassesThrough) {
     ev.set();
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup27;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await ev.wait(); // already set -> returns immediately
         woken.store(true);
@@ -748,6 +779,7 @@ TEST_F(CoroutineSyncPrimitives, EventManualResetClearsSignal) {
     ev.reset();
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup28;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await ev.wait();
         woken.store(true);
@@ -767,7 +799,9 @@ TEST_F(CoroutineSyncPrimitives, EventAutoResetWakesOneWaiterPerSet) {
         co_await ev.wait();
         woken.fetch_add(1);
     };
+    const qb::io::test::coroutine_scope_cleanup cleanup29;
     coro_scheduler().spawn(waiter());
+    const qb::io::test::coroutine_scope_cleanup cleanup30;
     coro_scheduler().spawn(waiter());
     qb::io::async::run_for(10ms);
     EXPECT_EQ(woken.load(), 0);
@@ -786,6 +820,7 @@ TEST_F(CoroutineSyncPrimitives, EventAutoResetStoresSignalWhenNoWaiter) {
     ev.set(); // signal stored
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup31;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await ev.wait(); // consumes the stored signal
         woken.store(true);
@@ -817,6 +852,7 @@ TEST_F(CoroutineSyncPrimitives, EventWaitIsCancellableViaCheckCancelled) {
     std::atomic<bool>   done{false};
     std::atomic<size_t> winner{99};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup32;
     coro_scheduler().spawn([&]() -> task<void> {
         parked.store(true);
         // Named locals of this frame: `task`'s initial_suspend is suspend_always, so each body runs
@@ -846,6 +882,7 @@ TEST_F(CoroutineSyncPrimitives, ProducerConsumerEventHandshake) {
     std::string       message;
     std::atomic<bool> finished{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup33;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await sleep(5ms);
         message = "hello";
@@ -853,6 +890,7 @@ TEST_F(CoroutineSyncPrimitives, ProducerConsumerEventHandshake) {
         co_await done.wait();
         finished.store(true);
     });
+    const qb::io::test::coroutine_scope_cleanup cleanup34;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await ready.wait();
         EXPECT_EQ(message, "hello");
@@ -876,7 +914,9 @@ TEST_F(CoroutineSyncPrimitives, LatchReleasesWaitersAtZero) {
         co_await latch.wait();
         woken.fetch_add(1);
     };
+    const qb::io::test::coroutine_scope_cleanup cleanup35;
     coro_scheduler().spawn(waiter());
+    const qb::io::test::coroutine_scope_cleanup cleanup36;
     coro_scheduler().spawn(waiter());
     qb::io::async::run_for(10ms);
     EXPECT_EQ(woken.load(), 0);
@@ -895,6 +935,7 @@ TEST_F(CoroutineSyncPrimitives, LatchAlreadyZeroPassesImmediately) {
     async_latch       latch(0); // already done
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup37;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await latch.wait();
         woken.store(true);
@@ -911,7 +952,9 @@ TEST_F(CoroutineSyncPrimitives, LatchArriveAndWait) {
         co_await latch.arrive_and_wait();
         woken.fetch_add(1);
     };
+    const qb::io::test::coroutine_scope_cleanup cleanup38;
     coro_scheduler().spawn(worker());
+    const qb::io::test::coroutine_scope_cleanup cleanup39;
     coro_scheduler().spawn(worker());
 
     EXPECT_TRUE(pump_until([&] { return woken.load() == 2; })) << "arrive_and_wait never released both workers";
@@ -921,6 +964,7 @@ TEST_F(CoroutineSyncPrimitives, LatchCountDownByN) {
     async_latch       latch(10);
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup40;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await latch.wait();
         woken.store(true);
@@ -956,6 +1000,7 @@ TEST_F(CoroutineSyncPrimitives, LatchExtraCountDownPastZeroIsSafe) {
     async_latch       latch(1);
     std::atomic<bool> woken{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup41;
     coro_scheduler().spawn([&]() -> task<void> {
         co_await latch.wait();
         woken.store(true);

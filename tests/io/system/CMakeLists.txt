@@ -79,6 +79,7 @@ qb_add_test(MODULE qb-io TIER system NAME udp-datagram      SOURCES udp/udp-data
 qb_add_test(MODULE qb-io TIER system NAME tls-text-roundtrip    SOURCES tls/tls-text-roundtrip.cpp    DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 qb_add_test(MODULE qb-io TIER system NAME tls-peer-verification SOURCES tls/tls-peer-verification.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 qb_add_test(MODULE qb-io TIER system NAME tls-starttls-upgrade  SOURCES tls/tls-starttls-upgrade.cpp  DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+qb_add_test(MODULE qb-io TIER system NAME tls-worker-deadline SOURCES tls/tls-worker-deadline.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 
 # --- session (text/binary command loopback / json / text protocol roundtrip) ---
 qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
@@ -87,7 +88,7 @@ qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES sessio
 
 # --- io (blocking + async file ops) / quic (native + loopback handshake) ---
 qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-blocking-io.cpp DEPENDS ${PROJECT_NAME})
-qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
+qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-loop SOURCES quic/quic-endpoint-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
 if (TARGET qb-io-test-system-quic-handshake AND NOT QB_INSTALL)
     target_compile_definitions(qb-io-test-system-quic-handshake PRIVATE QB_IO_QUIC_TEST_HOOKS=1)
@@ -139,6 +140,7 @@ if (QB_HAS_SSL)
                 qb-io-test-system-tls-peer-verification
                 qb-io-test-system-tls-starttls-upgrade
                 qb-io-test-system-session-json
+                qb-io-test-system-tls-worker-deadline
                 qb-io-test-system-text-session-loopback
                 qb-io-test-system-quic-handshake
                 qb-io-test-system-quic-endpoint-loop)
@@ -167,19 +169,23 @@ if (QB_IO_EV_TEST_BACKENDS)
             qb-io-test-system-async-bases-framing
             qb-io-test-system-async-connect-timeout
             qb-io-test-system-session-json
+            qb-io-test-system-tls-worker-deadline
             qb-io-test-system-offload
             qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})
             set(_qb_lock "evmx_${_qb_tgt}")
             set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
+            get_test_property(${_qb_tgt} LABELS _qb_base_labels)
+            get_test_property(${_qb_tgt} TIMEOUT _qb_base_timeout)
             foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
                 add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
                 set_tests_properties(${_qb_tgt}-ev-${_qb_be} PROPERTIES
                         ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
                         WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
                         RESOURCE_LOCK "${_qb_lock}"
-                        LABELS "module:qb-io;ev-backend;ev-backend-${_qb_be}")
+                        LABELS "${_qb_base_labels};ev-backend;ev-backend-${_qb_be}"
+                        TIMEOUT "${_qb_base_timeout}")
             endforeach ()
         endif ()
     endforeach ()

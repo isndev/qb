@@ -47,9 +47,9 @@ Two compile-time details shape what a benchmark actually exercises:
 Every core benchmark declares `UseRealTime()`, because the work runs on `VirtualCore` worker threads rather than the benchmark thread, so wall time is the meaningful measure. Almost all of them also wrap actor-graph construction in `PauseTiming()`/`ResumeTiming()` so that only the engine run is timed. Where the benchmarks differ is whether engine startup is inside the timed region:
 
 - **Startup is timed.** Most throughput benchmarks resume timing before calling the blocking `main.start(true)`, so both startup and the drain (`join()`) fall inside the measurement. (`qb/tests/core/benchmark/messaging/fan-in-contention.cpp:106-114`.)
-- **Startup is excluded.** `messaging/ping-pong-throughput.cpp` calls the non-blocking `main.start()` while timing is paused, resumes timing, and measures only the drain phase (`main.join()`). (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:176-183`.)
+- **Ping-pong times startup and drain.** `messaging/ping-pong-throughput.cpp` excludes actor-graph construction, then resumes timing before `main.start()` and `main.join()`. Earlier results from its drain-only loop are not directly comparable. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:176-183`.)
 
-The two regions are not directly comparable — compare results only across benchmarks that time the same region. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:30-33`.)
+Compare results only across benchmarks that time the same region and count completed work. (`qb/tests/core/benchmark/messaging/ping-pong-throughput.cpp:31-34`.)
 
 Cross-thread latency benchmarks cannot use a `thread_local` sink: actors write on a worker thread while the benchmark thread reads after `join()`. The shared, mutex-guarded sink in `BenchmarkIterationSink.h` (`record_last_latency` / `last_latency_stats_snapshot`) bridges that gap. (`qb/tests/core/shared/BenchmarkIterationSink.h`.)
 
@@ -61,7 +61,7 @@ The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (
 
 | Source | Executable suffix | Measures |
 |---|---|---|
-| `micro/mpsc-mailbox-fanin.cpp` | `mpsc-mailbox-fanin` | Lock-free MPSC mailbox fan-in sweep over `qb::lockfree::mpsc::ringbuffer`, mirroring the engine's per-producer SPSC routing — without `qb::Main`. |
+| `micro/mpsc-mailbox-fanin.cpp` | `mpsc-mailbox-fanin` | Lock-free MPSC mailbox fan-in sweep over `qb::lockfree::mpsc::block_ringbuffer`, the engine's mailbox type, mirroring its per-producer SPSC routing — without `qb::Main`. |
 | `micro/mpsc-router-dispatch.cpp` | `mpsc-router-dispatch` | MPSC mailbox ingress plus `qb::router::memh` typed dispatch, modeling a single consumer core draining mailboxes. |
 | `micro/spinlock-contention.cpp` | `spinlock-contention` | `qb::lockfree::SpinLock` uncontended acquire/release latency and N-thread contended throughput. |
 | `micro/jsonb-dump.cpp` | `jsonb-dump` | `qb::json` / `qb::jsonb` serialize (`dump()`) and parse throughput on an HTTP-shaped payload. |

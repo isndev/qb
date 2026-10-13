@@ -360,17 +360,20 @@ TEST_F(CoroutineTimingPatterns, TimeoutPattern) {
     std::atomic<bool> operation_completed{false};
     std::atomic<bool> done{false};
 
-    auto op_ptr      = &operation_completed;
-    auto timeout_ptr = &timeout_occurred;
-    auto done_ptr    = &done;
+    auto                                        op_ptr      = &operation_completed;
+    auto                                        timeout_ptr = &timeout_occurred;
+    auto                                        done_ptr    = &done;
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([op_ptr, timeout_ptr, done_ptr]() -> task<void> {
         auto slow_operation = [op_ptr]() -> task<void> {
             co_await sleep(100ms);
             op_ptr->store(true);
             co_return;
         };
-        auto       operation = slow_operation();
-        const auto start     = std::chrono::steady_clock::now();
+        auto operation = slow_operation();
+        operation.handle().resume(); // arm the timer before observing the running task
+        EXPECT_FALSE(operation.handle().done());
+        const auto start = std::chrono::steady_clock::now();
         while (std::chrono::steady_clock::now() - start < 50ms) {
             if (operation.handle().promise().is_ready()) {
                 co_await operation;

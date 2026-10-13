@@ -13,7 +13,7 @@
  *
  * Models the engine's receive hot path without a `qb::Main`: multiple producers fan three trivially-
  * copyable message types (`MsgOrder` / `MsgPing` / `MsgNotify`, all `<= sizeof(EventBucket)`) into a
- * `qb::lockfree::mpsc::ringbuffer<EventBucket, Cap, 0>`, and one consumer drains by batch and routes
+ * `qb::lockfree::mpsc::block_ringbuffer<EventBucket, Cap>`, and one consumer drains by batch and routes
  * each bucket through `qb::router::memh<BenchEvt>` to a typed handler — the same `route()` the engine
  * uses. The handlers fold each message into a consumer-LOCAL checksum (no per-message atom in the hot
  * path), so the dispatch work stays observable yet cheap.

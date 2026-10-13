@@ -48,7 +48,7 @@ llm/qb.llm.api.md	Event.h:855-856	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:864-865	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	VirtualCore.cpp:1273-1287	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
 llm/qb.llm.api.md	VirtualCore.cpp:1543-1548	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1563-1578	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1563-1578	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
 llm/qb.llm.api.md	VirtualCore.cpp:1622-1641	73311f4ebccc	void
 llm/qb.llm.api.md	VirtualCore.cpp:1643-1652	c027cf31c3fe	void
 llm/qb.llm.api.md	VirtualCore.cpp:1737-1772	6255f8b6dda5	ServiceId
@@ -99,13 +99,13 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:85-122	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1022-1023	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1467-1494	abe6342ced08	static int
 llm/qb.llm.api.md	src/qb/io/quic.cpp:393-404	f3b23d71b8f5	bool
-llm/qb.llm.api.md	src/qb/io/quic.cpp:430-434	facad3675b7c	}
+llm/qb.llm.api.md	src/qb/io/quic.cpp:408-434	75c6d9c8f575	drain_packets() override {
 llm/qb.llm.api.md	src/qb/io/quic.cpp:547-564	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.api.md	src/qb/io/quic/backend.h:62-81	ec2d3314ea37	virtual void on_udp_datagram(packet_view datagram)                 = 0;
 llm/qb.llm.api.md	src/qb/io/quic/types.h:75-91	a8fbf3a1d458	struct stats {
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
 llm/qb.llm.api.md	task.h:749-764	f2192a619a48	await_resume() {
-llm/qb.llm.api.md	thread_arena.h:93-215	ea8135f03b7e	class thread_arena {
+llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:308-390	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:164-164	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1055-1094	a16655e99a31	if (port_begin) {
@@ -140,16 +140,14 @@ llm/qb.llm.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std:
 llm/qb.llm.md	DeathWatch.h:36-96	727ef60e200b	/*!
 llm/qb.llm.md	Event.h:820-833	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
-llm/qb.llm.md	Main.cpp:470-472	74f8f97adb96	} else if (core_factory.empty()) {
-llm/qb.llm.md	Main.cpp:659-661	0f521c2df42b	Main::core(CoreId const index) {
-llm/qb.llm.md	Main.h:305-305	5130406e8b76	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
-llm/qb.llm.md	Main.h:322-322	1bf8f0dd34f5	CoreInitializer &setIdleSpin(qb::duration idle_spin = kDefaultIdleSpi...
-llm/qb.llm.md	Main.h:405-407	8e039460f53f	/// Default `setIdleSpin()`: measured to hold a two-core ping-pong on...
+llm/qb.llm.md	Main.cpp:508-510	74f8f97adb96	} else if (core_factory.empty()) {
+llm/qb.llm.md	Main.cpp:698-700	0f521c2df42b	Main::core(CoreId const index) {
+llm/qb.llm.md	Main.h:307-324	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
 llm/qb.llm.md	VirtualCore.cpp:1171-1192	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
 llm/qb.llm.md	VirtualCore.cpp:1273-1287	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
 llm/qb.llm.md	VirtualCore.cpp:1395-1402	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1563-1578	54e820ca29af	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1563-1578	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
 llm/qb.llm.md	VirtualCore.cpp:1622-1652	904dffe89372	void
 llm/qb.llm.md	VirtualCore.cpp:1688-1715	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
 llm/qb.llm.md	VirtualCore.cpp:1737-1772	6255f8b6dda5	ServiceId
@@ -221,7 +219,7 @@ llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw 
 llm/qb.llm.md	ssl/context.h:237-248	8f8ec340851e	/**
 llm/qb.llm.md	ssl/listener.cpp:215-215	2f35dcaa0759	listener::set_supported_alpn_protocols(const std::vector<std::string>...
 llm/qb.llm.md	ssl/listener.h:118-146	568219875e9c	/**
-llm/qb.llm.md	ssl/socket.h:487-487	37e2ac1caed3	explicit socket(qb::io::ssl::Context ctx) noexcept;
+llm/qb.llm.md	ssl/socket.h:480-514	206b0d649699	/**
 llm/qb.llm.md	ssl/socket.h:662-662	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
 llm/qb.llm.md	ssl/socket.h:921-921	0e2c7a135bf8	void set_insecure() noexcept;
@@ -236,7 +234,7 @@ llm/qb.llm.md	tcp/connector.h:954-954	e6381c56922f	connect_awaiter(const connect
 llm/qb.llm.md	tcp/listener.h:32-46	d52de035dbc3	/**
 llm/qb.llm.md	tcp/socket.cpp:100-107	2829bae2b61d	connect_attempt_budget(qb::duration const remaining, std::size_t cons...
 llm/qb.llm.md	teardown.h:54-54	12cffac47308	run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexc...
-llm/qb.llm.md	thread_arena.h:125-170	1e7eb599b710	allocate(std::size_t const size) {
+llm/qb.llm.md	thread_arena.h:126-171	1e7eb599b710	allocate(std::size_t const size) {
 llm/qb.llm.md	time.h:8-25	980581677f9f	*  - `qb::duration`  — a span. Signed, nanosecond resolution (`int64`...
 llm/qb.llm.md	time.h:93-93	5ca19947bbc8	using duration = std::chrono::nanoseconds;
 llm/qb.llm.md	time.h:96-96	93d026d68ec7	using mono_time = std::chrono::steady_clock::time_point;

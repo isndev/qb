@@ -260,10 +260,10 @@ public:
             // ask_quorum spawns a detached collector + parks; race it against a faster timer so the
             // quorum frame is reclaimed while parked (st->cont would dangle without the dtor fix).
             (void) co_await qb::io::async::when_any(qb::ask_quorum<qb::test::Probe>(c, targets, 1, qb::test::Probe{1}, 5s),
-                                                    [c]() -> qb::io::async::task<int> {
-                                                        co_await c.sleep(5ms);
+                                                    [](qb::ScopedCoroContext timer_context) -> qb::io::async::task<int> {
+                                                        co_await timer_context.sleep(5ms);
                                                         co_return 99;
-                                                    }());
+                                                    }(c));
             c.template push_to<TriggerReply>(target); // now make the collector's ask resolve → quorum_wake
             co_await c.sleep(80ms);
             g_q_reclaim_ran.store(true);

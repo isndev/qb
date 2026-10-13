@@ -362,15 +362,19 @@ TEST_F(IoPlanContractsTest, ScopedCallbackFiresOnce) {
 }
 
 TEST_F(IoPlanContractsTest, ScopedCallbackDestructionCancelsPendingTimer) {
-    std::atomic<int> fired{0};
+    std::atomic<int>   fired{0};
+    auto               retained = std::make_shared<int>(1);
+    std::weak_ptr<int> lifetime = retained;
     {
-        auto timer = async::scoped_callback([&] { fired.fetch_add(1); }, 1s);
+        auto timer = async::scoped_callback([&, retained] { fired.fetch_add(1); }, 20ms);
+        retained.reset();
         ASSERT_NE(timer, nullptr);
         EXPECT_FALSE(timer->fired());
         // Destroyed on scope exit — the watcher must be torn down before it can fire.
     }
 
-    EXPECT_FALSE(pump_until([&] { return fired.load() > 0; }, 250ms))
+    EXPECT_TRUE(lifetime.expired()) << "the cancelled callback must release its captures";
+    EXPECT_FALSE(pump_until([&] { return fired.load() > 0; }, 50ms))
         << "destroying a ScopedTimeout before its deadline must cancel the callback";
     EXPECT_EQ(fired.load(), 0);
 }
@@ -431,10 +435,9 @@ TEST_F(IoPlanContractsTest, AcceptorListenAutoStartsWatcher) {
     plan_test::autostart_server server;
     server.connection_count = &connection_count;
 
-    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done) << "binding listener must succeed";
+    ASSERT_TRUE(server.listen(qb::io::uri{"tcp://127.0.0.1:0"})) << "acceptor listen must bind and start";
     const auto port = server.transport().local_endpoint().port();
     ASSERT_NE(port, 0);
-    server.start();
 
     qb::io::tcp::socket client;
     ASSERT_EQ(client.connect_v4("127.0.0.1", port), SocketStatus::Done);

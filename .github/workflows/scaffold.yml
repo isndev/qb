@@ -194,12 +194,12 @@ jobs:
             echo 'nested'                                  > "${inv}/subdir/inner.txt"
 
             local before after rc=0
-            before=$(cd "${inv}" && find . | sort | md5sum)
+            before=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
             # The log goes OUTSIDE the invocation directory: writing it inside would change the
             # very hash this control compares.
             ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" "$@" ) \
               > "${inv}.log" 2>&1 || rc=$?
-            after=$(cd "${inv}" && find . | sort | md5sum)
+            after=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
 
             echo "--- ${script} ${label} -> exit ${rc}"
             sed 's/^/    /' "${inv}.log"
@@ -263,7 +263,7 @@ jobs:
             echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
             echo 'nested'                                  > "${inv}/subdir/inner.txt"
 
-            before=$(cd "${inv}" && find . | sort | md5sum)
+            before=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
             rc=0
             if [ "${path}" = probe ]; then
               ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
@@ -272,7 +272,7 @@ jobs:
               ( cd "${inv}" && QB_TEMPLATE_REF=develop bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
                 > "${inv}.log" 2>&1 || rc=$?
             fi
-            after=$(cd "${inv}" && find . | sort | md5sum)
+            after=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
 
             echo "--- ${script} against an unreachable template (${path}) -> exit ${rc}"
             sed 's/^/    /' "${inv}.log"
@@ -332,11 +332,11 @@ jobs:
             rm -rf "${inv}"; mkdir -p "${inv}"
             echo 'user data the scaffolder must not touch' > "${inv}/keepme.txt"
 
-            before=$(cd "${inv}" && find . | sort | md5sum)
+            before=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
             rc=0
             ( cd "${inv}" && bash "${GITHUB_WORKSPACE}/script/${script}" m ) \
               > "${inv}.log" 2>&1 || rc=$?
-            after=$(cd "${inv}" && find . | sort | md5sum)
+            after=$(python3 "${GITHUB_WORKSPACE}/scripts/tree-manifest.py" "${inv}")
 
             echo "--- ${script} against an empty template -> exit ${rc}"
             sed 's/^/    /' "${inv}.log"

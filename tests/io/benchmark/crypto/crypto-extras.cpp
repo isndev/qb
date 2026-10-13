@@ -84,6 +84,10 @@ BM_Crypto_Hkdf(benchmark::State &state) {
 // ---------------------------------------------------------------------------
 void
 BM_Crypto_Argon2id(benchmark::State &state) {
+#ifndef QB_HAS_ARGON2
+    state.SkipWithError("Argon2 support is unavailable");
+    return;
+#endif
     const auto t_cost = static_cast<std::uint32_t>(state.range(0));
     const auto m_cost = static_cast<std::uint32_t>(state.range(1));
 

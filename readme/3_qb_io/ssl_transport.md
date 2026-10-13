@@ -303,7 +303,7 @@ qb::io::tcp::ssl::socket c;
 c.set_insecure();                            // disables MITM protection — use deliberately
 int rc = c.connect_v4("127.0.0.1", 64388);
 ```
-<!-- src: qb/tests/io/system/tls/tls-peer-verification.cpp:196-201 -->
+<!-- src: qb/tests/io/system/tls/tls-peer-verification.cpp:200-205 -->
 
 **Supplying your own `SSL` handle through `init(SSL*)` does not opt you out of that policy** — and this is the one place on the page where getting it wrong is a security bug rather than a compile error. `setup_client_ssl()` calls `apply_client_verification_()` unconditionally, and that function branches on whether an `ssl::Context` was supplied, not on whether *you* built the handle. An `init(SSL*)` socket has no `Context`, so it takes the auto-context branch: `SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr)` plus hostname checking. A `SSL_VERIFY_NONE` you set on your own context is overridden to `SSL_VERIFY_PEER`, and a verify callback you installed on the handle is replaced with `nullptr`. `SSL_set_quiet_shutdown` and `SSL_set_connect_state` are applied to your handle too.
 
@@ -664,7 +664,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/tests/io/system/CMakeLists.txt:111-113
+# src: qb/tests/io/system/CMakeLists.txt:112-114
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \

@@ -16,13 +16,8 @@
  *     uninitialised key material). The neighbouring Pbkdf2RejectsInvalidKeySizes test only
  *     drives the `key_size <= 0` guard, which short-circuits *before* PKCS5 is ever called;
  *     this drives the PKCS5-returns-failure clear path itself.
- *   - `generate_secure_random_string` rejection-sampling refill: with a character range
- *     whose size does not divide 256 the modulo-bias rejection loop discards bytes, and with
- *     a sufficiently long request the pre-drawn `len * 2` byte pool is exhausted and refilled
- *     mid-string. The neighbouring SecureRandomStringValidatesRangeAndLength test uses a
- *     2-char range (256 % 2 == 0 -> nothing is ever rejected -> the refill branch is dead),
- *     so this is the only test that enters the refill loop, while still proving the output
- *     stays in-range, has the requested length, and is non-degenerate.
+ *   - `generate_secure_random_string` output properties for biased ranges. The separate
+ *     crypto-random-refill executable owns the byte source and proves pool exhaustion.
  *   - `evp` chunked-stream digest loop: the streaming hash reads in `buffer_size` (128 KiB)
  *     chunks; inputs below that bound (every existing stream test uses a 20-byte string) run
  *     the read loop exactly once. A >128 KiB stream forces multiple `EVP_DigestUpdate` chunk
@@ -65,8 +60,8 @@ namespace {
  * `(256 / range_size) * range_size` strictly less than 256, so some random bytes are
  * rejected and the rejection-sampling loop in `generate_secure_random_string` actually
  * iterates. Size 129 in particular rejects roughly half of all draws (256 / 129 == 1,
- * threshold 129, so values 129..255 are discarded), which reliably exhausts the pre-drawn
- * `len * 2` byte pool on a long request and forces a refill.
+ * threshold 129, so values 129..255 are discarded). This randomized case does not
+ * prove pool exhaustion; crypto-random-refill supplies that deterministic witness.
  */
 std::string
 make_range(std::size_t size) {
@@ -105,11 +100,9 @@ TEST(CryptoReachableEdgesTest, Pbkdf2RejectsNonPositiveIterationCount) {
 // generate_secure_random_string — rejection-sampling refill loop
 // =============================================================================
 
-TEST(CryptoReachableEdgesTest, SecureRandomStringRefillsPoolUnderBiasedRange) {
-    // Range size 129 does not divide 256, so the rejection loop discards ~50% of draws.
-    // A 5000-char request pre-draws 10000 bytes; with ~half rejected, the pool is exhausted
-    // and refilled at least once mid-string — the path the 2-char-range neighbour can never
-    // reach (256 % 2 == 0 -> zero rejections -> dead refill branch).
+TEST(CryptoReachableEdgesTest, SecureRandomStringOutputPropertiesUnderBiasedRange) {
+    // Exercise production entropy with a biased range. Pool exhaustion is not an
+    // oracle here: a legitimate initial draw can satisfy the entire request.
     const std::string range  = make_range(129);
     const std::size_t length = 5000;
     const std::string result = qb::crypto::generate_secure_random_string(length, range);
@@ -130,8 +123,7 @@ TEST(CryptoReachableEdgesTest, SecureRandomStringRefillsPoolUnderBiasedRange) {
     const std::set<char> used(result.begin(), result.end());
     EXPECT_GT(used.size(), range.size() / 2);
 
-    // Two independent long draws over the biased range must differ (the refill path is fed by
-    // the CSPRNG, not a fixed buffer).
+    // Two independent long draws over the biased range must differ.
     EXPECT_NE(result, qb::crypto::generate_secure_random_string(length, range));
 }
 

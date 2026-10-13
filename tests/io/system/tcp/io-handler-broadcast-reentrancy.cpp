@@ -71,6 +71,7 @@
 #include <qb/io/protocol/text.h>
 
 #include "../../shared/coroutine_test_support.h"
+#include "../../shared/loopback_fixture.h"
 
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
@@ -281,10 +282,10 @@ TEST(IoHandlerBroadcastReentrancy, ClientDropShrinksRegistryViaDisconnected) {
 
     // A controllable worker: it exposes a flag to drop exactly one client mid-run,
     // so the main thread can observe the server erase that session.
-    std::atomic<bool> drop_one{false};
-    std::atomic<int>  connected{0};
-    std::atomic<bool> stop{false};
-    std::thread       worker([&] {
+    std::atomic<bool>                          drop_one{false};
+    std::atomic<int>                           connected{0};
+    std::atomic<bool>                          stop{false};
+    std::thread                                worker([&] {
         qb::io::async::init();
         std::vector<std::unique_ptr<ProbeClient>> clients;
         for (int i = 0; i < kClients; ++i) {
@@ -305,6 +306,7 @@ TEST(IoHandlerBroadcastReentrancy, ClientDropShrinksRegistryViaDisconnected) {
             qb::io::async::run_for(5ms);
         }
     });
+    const qb::io::test::stopping_thread_joiner worker_cleanup{worker, stop};
 
     EXPECT_TRUE(pump_until([&] { return server.session_count() == static_cast<std::size_t>(kClients); }, 3s))
         << "not all clients registered; session_count=" << server.session_count();

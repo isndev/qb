@@ -51,16 +51,28 @@ std::atomic<bool> g_xc_inited{false};
 std::atomic<bool> g_xc_after{true};
 std::atomic<bool> g_xc_order{true};
 
+struct InitGateBarrier : qb::Event {};
+
 class XCoreSlow : public qb::Actor {
-    int _expected_next = 0;
+    bool _barrier       = false;
+    int  _expected_next = 0;
 
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
-        co_await context().sleep(40ms);
+        registerEvent<InitGateBarrier>(*this);
+        const auto deadline = qb::mono_now() + 2s;
+        while (!_barrier && qb::mono_now() < deadline)
+            co_await context().sleep(1ms);
+        if (!_barrier)
+            co_return false;
         g_xc_inited.store(true);
         co_return true;
+    }
+    void
+    on(InitGateBarrier const &) {
+        _barrier = true;
     }
     void
     on(Tick &e) {
@@ -83,6 +95,7 @@ public:
     onInit() override {
         for (int i = 0; i < 4; ++i)
             push<Tick>(_t, i); // cross-core unicast to an Activating actor → stashed remotely
+        push<InitGateBarrier>(qb::BroadcastId(_t.index()));
         kill();
         co_return true;
     }

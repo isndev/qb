@@ -127,10 +127,10 @@ TEST_F(AsyncConnectTimeoutTest, RefusedPortYieldsEmptySocketFromLoopNotReentrant
 }
 
 // =============================================================================
-// Unroutable address — connector enforces its timeout, yields empty socket
+// Native failure smoke test; the fake connector suite separately witnesses deadline expiry.
 // =============================================================================
 
-TEST_F(AsyncConnectTimeoutTest, UnroutableAddressTimesOutAndYieldsEmptySocket) {
+TEST_F(AsyncConnectTimeoutTest, UnroutableAddressFailsWithinBudgetAndYieldsEmptySocket) {
     std::atomic<bool> fired{false};
     std::atomic<bool> socket_open{true};
 
@@ -144,10 +144,10 @@ TEST_F(AsyncConnectTimeoutTest, UnroutableAddressTimesOutAndYieldsEmptySocket) {
         1s); // 1s connect budget
 
     // The callback must arrive within a generous multiple of the configured timeout.
-    EXPECT_TRUE(pump_until([&] { return fired.load(); }, 5s)) << "connector never delivered a timeout result";
+    EXPECT_TRUE(pump_until([&] { return fired.load(); }, 5s)) << "connector never delivered a failure result";
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
-    EXPECT_FALSE(socket_open.load()) << "a timed-out connect must yield an empty (closed) socket";
+    EXPECT_FALSE(socket_open.load()) << "a failed connect must yield an empty (closed) socket";
     EXPECT_LT(elapsed, 5s) << "connector ignored its timeout budget (took too long to give up)";
 }
 

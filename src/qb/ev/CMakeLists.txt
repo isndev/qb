@@ -440,7 +440,11 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     # installed prefix. Embedded, the parent already exposes them at that path through its own
     # include root and this is a harmless duplicate of two headers; standalone, it is the only
     # thing that makes the namespaced spelling work before `cmake --install`.
-    foreach (_qev_public_header ev.h ev++.h)
+    set(_qev_build_headers ev.h ev++.h)
+    if (QB_EV_LIBEVENT_COMPAT)
+        list(APPEND _qev_build_headers event.h event_compat.h)
+    endif ()
+    foreach (_qev_public_header IN LISTS _qev_build_headers)
         configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${_qev_public_header}"
                        "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/${_qev_public_header}"
                        COPYONLY)
@@ -657,14 +661,37 @@ endif()
         else ()
             set(QB_EV_PC_PRIVATE_LIBS "-lm")
         endif ()
-        configure_file(
-                ${CMAKE_CURRENT_SOURCE_DIR}/qev.pc.in
-                ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
-                @ONLY
-        )
-        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
-                DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
-                COMPONENT qev_Development)
+        # pcfiledir is <prefix>/<libdir>/pkgconfig; account for nested libdirs.
+        set(QB_EV_PC_UP "..")
+        string(REPLACE "/" ";" _qev_pc_libdir_parts "${CMAKE_INSTALL_LIBDIR}")
+        foreach (_qev_pc_part IN LISTS _qev_pc_libdir_parts)
+            if (NOT _qev_pc_part STREQUAL "")
+                string(APPEND QB_EV_PC_UP "/..")
+            endif ()
+        endforeach ()
+        set(QB_EV_PC_LIBNAME qev)
+        configure_file(${CMAKE_CURRENT_SOURCE_DIR}/qev.pc.in
+                ${CMAKE_CURRENT_BINARY_DIR}/qev.pc @ONLY)
+        set(QB_EV_PC_LIBNAME qevd)
+        configure_file(${CMAKE_CURRENT_SOURCE_DIR}/qev.pc.in
+                ${CMAKE_CURRENT_BINARY_DIR}/qev-debug.pc @ONLY)
+        if (CMAKE_CONFIGURATION_TYPES)
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+                    CONFIGURATIONS Release RelWithDebInfo MinSizeRel
+                    COMPONENT qev_Development)
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev-debug.pc
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+                    CONFIGURATIONS Debug COMPONENT qev_Development)
+        elseif (CMAKE_BUILD_TYPE MATCHES "^[Dd][Ee][Bb][Uu][Gg]$")
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev-debug.pc
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+                    COMPONENT qev_Development)
+        else ()
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/qev.pc
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+                    COMPONENT qev_Development)
+        endif ()
     endif ()
 
     # The upstream copyright notices, installed with the artefacts they cover.

@@ -135,8 +135,8 @@ struct WatchDown : Event {
         : reason(why)
         , ticket(number) {}
 };
-/// A core that has stopped, to every core still running -- sent only once a watch has crossed
-/// cores: each answers (`core_stopped`) the watches it still holds open on that core.
+/// A core that has stopped, to each core still running that watched one of its actors: each
+/// answers (`core_stopped`) the watches it still holds open on that core.
 /// Destination `BroadcastId(core)`, source `BroadcastId(stopped core)`.
 struct CoreStopping : Event {};
 

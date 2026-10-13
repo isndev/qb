@@ -44,7 +44,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:463-496`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:501-534`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
 
 ```mermaid
 flowchart TD

@@ -199,7 +199,9 @@ cmake --build build --parallel
 cmake --install build --prefix /your/prefix    # omit --prefix for the system default
 ```
 
-The install (`CMakeLists.txt:326-485`) lays out. Every rule below is emitted by the one shared
+The install (`CMakeLists.txt:326-485`) lays out. It records the resolved
+`QB_BUILD_SHARED_LIBS` choice in its ABI fingerprint and honours `DESTDIR` staging for that
+file (`CMakeLists.txt:425-472`). Every rule below is emitted by the one shared
 helper `qb_install_package()` (`cmake/qbPackage.cmake:92-233`), which each qbm module calls with
 the same arguments shape:
 

@@ -632,10 +632,12 @@ TEST_F(CryptoPrimitivesTest, RandomGeneratorFactoryIsSeededAndUsable) {
     std::vector<std::mt19937::result_type> seq_b;
     seq_a.reserve(8);
     seq_b.reserve(8);
-    bool varies = false;
-    auto first  = gen32_a();
+    bool                      varies = false;
+    std::mt19937::result_type first{};
     for (int i = 0; i < 8; ++i) {
         const auto v = gen32_a();
+        if (i == 0)
+            first = v;
         seq_a.push_back(v);
         seq_b.push_back(gen32_b());
         if (v != first) {

@@ -100,6 +100,33 @@ ipv6_loopback_available() {
     return probe.listen_v6(0, "::1") == qb::io::SocketStatus::Done;
 }
 
+struct local_connect_result {
+    unsigned short port;
+    int            result;
+    int            error;
+};
+
+template <typename Connect>
+local_connect_result
+connect_on_available_port(qb::io::socket &socket, Connect connect) {
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        const auto port = reserve_free_tcp_port();
+        if (!port)
+            return {0, -1, 0};
+        const int result = connect(port);
+        const int error  = qb::io::socket::get_last_errno();
+#ifdef _WIN32
+        constexpr int address_in_use = WSAEADDRINUSE;
+#else
+        constexpr int address_in_use = EADDRINUSE;
+#endif
+        if (result == 0 || error != address_in_use || attempt == 7)
+            return {port, result, error};
+        socket.close(); // only retry a candidate-port collision, never another connect failure
+    }
+    return {0, -1, 0};
+}
+
 } // namespace
 
 // ===========================================================================
@@ -220,7 +247,8 @@ TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::tcp::socket endpoint_client;
     EXPECT_EQ(endpoint_client.connect(qb::io::endpoint().as_in("127.0.0.1", port)), 0);
@@ -244,8 +272,9 @@ TEST(TCPSocket, BlockingConnectVariantsReachLoopbackServer) {
 TEST(TCPSocket, InitialisedUnboundSocketBindsAndConnectsInItsOwnFamily) {
     qb::io::tcp::listener listener;
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
-    const auto  server = qb::io::endpoint().as_in("127.0.0.1", listener.local_endpoint().port());
-    std::thread server_thread([&] { accept_tcp_connections(listener, 2); });
+    const auto          server = qb::io::endpoint().as_in("127.0.0.1", listener.local_endpoint().port());
+    std::thread         server_thread([&] { accept_tcp_connections(listener, 2); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::tcp::socket bound;
     ASSERT_EQ(bound.init(AF_INET), 0);
@@ -371,7 +400,8 @@ TEST(TCPSocket, IPv6ConnectVariantsReachLoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::tcp::socket endpoint_client;
     EXPECT_EQ(endpoint_client.connect(qb::io::endpoint().as_in("::1", port)), 0);
@@ -434,7 +464,8 @@ TEST(TCPSocket, UnixUriBindListenAndConnectVariantsReachLocalSocket) {
     ASSERT_EQ(listener.listen(uri), qb::io::SocketStatus::Done);
     EXPECT_TRUE(listener.is_open());
 
-    std::thread server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_tcp_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::tcp::socket uri_client;
     EXPECT_EQ(uri_client.connect(uri), 0);
@@ -558,7 +589,8 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsReachLoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::socket xp_client;
     EXPECT_EQ(xp_client.xpconnect("127.0.0.1", port), 0);
@@ -594,32 +626,34 @@ TEST(TCPSocket, LowLevelPortableConnectVariantsCanBindExplicitLocalPorts) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::socket blocking_client;
-    const auto     blocking_local_port = reserve_free_tcp_port();
-    ASSERT_NE(blocking_local_port, 0);
-    EXPECT_EQ(blocking_client.pconnect(qb::io::endpoint("127.0.0.1", port), blocking_local_port), 0);
-    EXPECT_EQ(blocking_client.local_endpoint().port(), blocking_local_port);
+    const auto     blocking = connect_on_available_port(
+        blocking_client, [&](unsigned short local) { return blocking_client.pconnect(qb::io::endpoint("127.0.0.1", port), local); });
+    ASSERT_NE(blocking.port, 0);
+    EXPECT_EQ(blocking.result, 0) << "errno=" << blocking.error;
+    EXPECT_EQ(blocking_client.local_endpoint().port(), blocking.port);
     blocking_client.close();
 
     qb::io::socket timeout_client;
-    const auto     timeout_local_port = reserve_free_tcp_port();
-    ASSERT_NE(timeout_local_port, 0);
-    EXPECT_EQ(timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s, timeout_local_port), 0);
-    EXPECT_EQ(timeout_client.local_endpoint().port(), timeout_local_port);
+    const auto     timed = connect_on_available_port(
+        timeout_client, [&](unsigned short local) { return timeout_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), 1s, local); });
+    ASSERT_NE(timed.port, 0);
+    EXPECT_EQ(timed.result, 0) << "errno=" << timed.error;
+    EXPECT_EQ(timeout_client.local_endpoint().port(), timed.port);
     timeout_client.close();
 
     server_thread.join();
 
     qb::io::socket nonblocking_client;
-    const auto     nonblocking_local_port = reserve_free_tcp_port();
-    ASSERT_NE(nonblocking_local_port, 0);
-    const int ret = nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), nonblocking_local_port);
-    const int err = qb::io::socket::get_last_errno();
-    EXPECT_TRUE(ret == 0 || err == EINPROGRESS || qb::io::socket::not_send_error(err))
-        << "unexpected pconnect_n local-port result=" << ret << " errno=" << err;
-    EXPECT_EQ(nonblocking_client.local_endpoint().port(), nonblocking_local_port);
+    const auto     pending = connect_on_available_port(
+        nonblocking_client, [&](unsigned short local) { return nonblocking_client.pconnect_n(qb::io::endpoint("127.0.0.1", port), local); });
+    ASSERT_NE(pending.port, 0);
+    EXPECT_TRUE(pending.result == 0 || pending.error == EINPROGRESS || qb::io::socket::not_send_error(pending.error))
+        << "unexpected pconnect_n local-port result=" << pending.result << " errno=" << pending.error;
+    EXPECT_EQ(nonblocking_client.local_endpoint().port(), pending.port);
     nonblocking_client.close();
 }
 
@@ -969,7 +1003,8 @@ TEST(TCPSocket, CrossStackXpConnectReachesIPv6LoopbackServer) {
     const auto port = listener.local_endpoint().port();
     ASSERT_NE(port, 0);
 
-    std::thread server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    std::thread         server_thread([&] { accept_low_level_connections(listener, expected_connections); });
+    const thread_joiner server_joiner{server_thread};
 
     qb::io::socket xp_client;
     EXPECT_EQ(xp_client.xpconnect("::1", port), 0) << "xpconnect could not reach the ::1 loopback server";

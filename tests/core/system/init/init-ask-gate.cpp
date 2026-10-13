@@ -143,15 +143,28 @@ std::atomic<bool> g_both_ask_pre_activation{false};
 // to stop an unbounded wait from hanging to the 120s tier timeout when the flag never arrives.
 constexpr int kResponderPollCap = 300;
 
+struct InitGateBarrier : qb::Event {};
+
 class AsyncResponder : public qb::Actor {
+    bool _barrier = false;
+
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Cfg>(*this);
         g_both_responder_activating.store(true); // window OPEN — the asker waits on this
-        co_await context().sleep(25ms);          // Activating — the asker's request stashes HERE
-        g_both_responder_activated.store(true);  // window CLOSED
+        registerEvent<InitGateBarrier>(*this);
+        const auto deadline = qb::mono_now() + 2s;
+        while (!_barrier && qb::mono_now() < deadline)
+            co_await context().sleep(1ms);
+        if (!_barrier)
+            co_return false;
+        g_both_responder_activated.store(true); // window CLOSED
         co_return true;
+    }
+    void
+    on(InitGateBarrier const &) {
+        _barrier = true;
     }
     void
     on(Cfg &e) {
@@ -179,6 +192,9 @@ public:
         // Sampled as late as possible before the request goes out: false means the responder had
         // already finished onInit, so the request reached an ACTIVE actor and was never stashed.
         g_both_ask_pre_activation.store(!g_both_responder_activated.load());
+        qb::io::async::defer([ctx = context(), target = _r] {
+            ctx.push_to<InitGateBarrier>(qb::BroadcastId(target.index()));
+        }); // the ask below is enqueued before this deferred broadcast can be dispatched
         auto reply = co_await qb::ask(context(), _r, Cfg{4}, 2s);
         g_both_value.store(reply.response);
         kill();

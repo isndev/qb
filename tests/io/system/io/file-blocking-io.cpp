@@ -52,6 +52,7 @@
 
 #include <gtest/gtest.h>
 #include <qb/io/system/file.h>
+#include "../../shared/file_descriptor_probe.h"
 
 using namespace qb::io;
 
@@ -202,6 +203,7 @@ TEST(FileBlockingIo, AdoptRawDescriptorClosesPriorAndReads) {
     ASSERT_GE(file.open(scratch.path(), O_RDONLY), 0);
     ASSERT_TRUE(file.is_open());
 
+    const qb::io::test::file_descriptor_probe previous(file.native_handle());
     // Open a second, independent OS descriptor and adopt it. open(int) must close
     // the first handle and return the adopted fd unchanged.
     const int raw = ::open(scratch.path().c_str(), O_RDONLY);
@@ -209,6 +211,7 @@ TEST(FileBlockingIo, AdoptRawDescriptorClosesPriorAndReads) {
     EXPECT_EQ(file.open(raw), raw) << "open(fd) must store and return the adopted descriptor";
     EXPECT_TRUE(file.is_open());
     EXPECT_EQ(file.native_handle(), raw);
+    EXPECT_TRUE(previous.closed_or_reused_by(file.native_handle())) << "the previous file descriptor survived replacement";
 
     // Reads must flow through the adopted descriptor.
     char      buffer[128] = {0};

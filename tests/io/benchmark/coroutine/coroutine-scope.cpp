@@ -45,6 +45,7 @@ using namespace std::chrono_literals;
 
 void
 reset_async_context() {
+    qb::io::async::listener::current.reset_coro_scheduler();
     qb::io::async::listener::current.clear();
     qb::io::async::init();
 }
@@ -75,13 +76,15 @@ double_value(std::uint64_t v) {
 
 // The shared computation: a cheap value that all N waiters observe.
 task<std::uint64_t>
-compute_shared(std::uint64_t seed) {
+compute_shared(std::uint64_t seed, async_event *release) {
+    co_await release->wait();
     co_return seed *seed + 7u;
 }
 
 // One waiter on the shared_task: awaits the handle and accumulates the result.
 task<void>
-shared_waiter(shared_task<std::uint64_t> sh, std::atomic<std::uint64_t> *sink, std::atomic<int> *done) {
+shared_waiter(shared_task<std::uint64_t> sh, std::atomic<std::uint64_t> *sink, std::atomic<int> *done, std::size_t *enrolled) {
+    ++*enrolled;
     auto v = co_await sh;
     sink->fetch_add(v, std::memory_order_relaxed);
     done->fetch_add(1, std::memory_order_relaxed);
@@ -154,12 +157,21 @@ BM_SharedTask_FanOut(benchmark::State &state) {
         reset_async_context();
         std::atomic<std::uint64_t> sink{0};
         std::atomic<int>           done{0};
+        async_event                release;
+        std::size_t                enrolled = 0;
         state.ResumeTiming();
 
-        auto sh = make_shared_task(compute_shared(static_cast<std::uint64_t>(waiters)));
+        auto sh = make_shared_task(compute_shared(static_cast<std::uint64_t>(waiters), &release));
         for (std::size_t i = 0; i < waiters; ++i)
-            coro_scheduler().spawn(shared_waiter(sh, &sink, &done));
+            coro_scheduler().spawn(shared_waiter(sh, &sink, &done, &enrolled));
 
+        coro_scheduler().run_ready();
+        if (enrolled != waiters || done.load(std::memory_order_relaxed) != 0 || release.waiters_count() != 1) {
+            qb::io::async::listener::current.reset_coro_scheduler();
+            state.SkipWithError("shared_task fan-out did not park every waiter");
+            break;
+        }
+        release.set();
         drain_until([&done, waiters] { return done.load(std::memory_order_relaxed) == static_cast<int>(waiters); });
 
         last_sink = sink.load(std::memory_order_relaxed);

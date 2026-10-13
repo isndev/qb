@@ -174,6 +174,19 @@ it at poll latency and a callback armed on it fires at its delay — `latency` o
 no io watchers it parks on its mailbox condition variable and wakes for a producer's event or the
 timeout. Either park ends the moment another core enqueues an event to it.
 
+**An engine's memory follows its traffic.** Each core's mailbox (`qb::lockfree::mpsc::block_ringbuffer`) has one 64
+KiB ring per core of the engine, every one constructed in `start()` without its slot array (3.3, Huly QB-203) — its
+lock and index lines, a page — and a ring's slot pages are written as events land, while a core's outbound pipe
+allocates nothing before its first push. Before its first event an engine holds a 64 KiB receive buffer per core, its
+loops, and a page per pair of cores (an idle 64-core engine: 22 MiB in all; a kernel whose transparent huge pages are
+`always` may back each page with a 2 MiB one) — where through 3.2 every mailbox held a written ring per core from
+`start()` (1 GiB at 128 cores). The mailbox builds every ring because a consumer that skips empty slots polls its live
+rings harder (a chain of eight cores ran 9 % slower). On Windows a mailbox's block is reserved: the ring headers are
+what is committed at rest (18 MiB at 64 cores, with 271 MB of address space reserved), and the first send between two
+cores commits that ring's slots; a refused commit terminates the process, the cross-core send path being `noexcept`. A
+full mesh is still quadratic: the pages of a ring per pair that talked, `N × (N − 1)`. `qb/system/lockfree/mpsc.h` has
+the mechanism.
+
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
 `pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
 arm64 macOS does not implement: it answers `KERN_NOT_SUPPORTED` for every core (measured on an Apple M4
@@ -508,11 +521,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   built it destroys it, on its own thread, in the reap phase. Under AddressSanitizer the arena poisons a
   block it holds, so a read through a dead actor's pointer (a `this` captured by a loop-owned callback, a
   handle read without its gate) is reported as `use-after-poison` -- the report `malloc` used to give and
-  the arena had taken away. _(Actor.h:561-582, thread_arena.h:125-170)_
+  the arena had taken away. _(Actor.h:561-582, thread_arena.h:126-171)_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
   registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
-  rings are `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks. A buffer a container outgrows
+  blocks are `qb::allocator::region_cache` regions from 64 KiB, not `malloc` blocks. A buffer a container outgrows
   is unmapped at once, so a running engine holds no doubling ladder; the final buffers of an engine that stops
   stay mapped; the next engine's containers grow straight into them (the largest cached region each can use), so
   a restarted engine builds without page faults. A process that wants that memory back between engines calls
@@ -557,7 +570,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
   core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
   wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
-  the other way; `setLatency(0)` never sleeps at all. _(Main.h:305, :322, :405-407; measured in the
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:307-324; measured in the
   qb-vs-others benchmark, TUNING guide §8.2)_
 - **A `setLatency` under a millisecond sleeps a millisecond and a half on Windows, and what it says
   on Linux.** Both parks — the condition variable of a core that owns no io watcher (MSVC's `wait_for`
@@ -616,7 +629,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:659-661, :470-472)_
+  with 0 actors fails startup. _(Main.cpp:698-700, :508-510)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
@@ -683,7 +696,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:487, :921, :84, :96)_
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
+  `socket::set_insecure()` is declared at `ssl/socket.h:921`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -738,13 +752,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   per-member.** Including `crypto.h` in a no-SSL build compiles: `qb::crypto` still declares everything that
   needs no OpenSSL (the hex codec the pgsql `bytea` wire format depends on), and the OpenSSL-only members are
   removed from the class, so misuse fails at the **call site** (`no member named 'md5' in 'qb::crypto'`) rather
-  than at the `#include`. These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
+  than at the `#include`. _(crypto.h:33-44; compression.h:39-41)_ These are the compile-time flags the headers gate on; the `QB_WITH_SSL`/`QB_WITH_COMPRESSION`
   CMake options, when enabled, define the `QB_HAS_SSL`/`QB_HAS_COMPRESSION` macros. AEAD `decrypt`/`verify_token`
   return empty on auth failure — treat empty as rejection, never as "decrypted to nothing"; `decrypt_with_metadata`
   is the one that tells them apart (`nullopt` = rejected, an engaged empty vector = an empty plaintext). No length
   is handed to OpenSSL's `int` parameters unchecked: buffers past INT_MAX are processed in chunks (crypto.h:105-116),
-  an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973). _(crypto.h:33-44;
-  compression.h:39-41; crypto.h:666-668, :908-914)_
+  an unsplittable length throws `std::length_error` (crypto.h:122-127; Huly QB-973).
+  The AEAD declarations above are in `crypto.h:666-668` and `crypto.h:908-914`.
 
 ## Build / integration
 

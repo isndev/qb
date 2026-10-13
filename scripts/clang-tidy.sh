@@ -151,7 +151,7 @@ elif [ "${MODE}" = changed ]; then
     )
 fi
 
-PLAN_OUTPUT="$(
+if ! PLAN_OUTPUT="$(
     python3 - "${ROOT}" "${BUILD_DIR}/compile_commands.json" "${MODE}" "${#PLAN_INPUT[@]}" "${PLAN_INPUT[@]}" <<'PY'
 import json
 import re
@@ -279,7 +279,10 @@ for rel in skipped:
 for tu in selected:
     print(f"TU {tu}")
 PY
-)"
+)"; then
+    printf 'clang-tidy: translation-unit planner failed\n' >&2
+    exit 2
+fi
 
 SCOPE_CODE_FILES=0
 PROJECT_TUS=0

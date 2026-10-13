@@ -70,7 +70,7 @@ writer attempt due; direct callers must call `drain_packets()` to generate its o
 and writer-generated events therefore advance at that drain, rather than during the credit call.
 The endpoint generates and flushes packets, refreshes its statistics and readiness, and arms its timer
 before dispatching the received events.
-<!-- src: qb/src/qb/io/quic/backend.h:62-81; qb/src/qb/io/quic.cpp:547-564,393-404,430-434; qb/src/qb/io/async/quic/endpoint.h:207-240,562-579,660-675 -->
+<!-- src: qb/src/qb/io/quic/backend.h:62-81; qb/src/qb/io/quic.cpp:547-564,393-404,408-434; qb/src/qb/io/async/quic/endpoint.h:207-240,562-579,660-675 -->
 
 Receive counters and read callbacks update immediately. Sent-byte and sent-packet counters describe
 encoded packets and advance during packet generation, before the endpoint attempts UDP transmission.
@@ -302,7 +302,7 @@ deliberately cleared `server_name`, or a URI with no host, not a forgotten one.
 <!-- src: qb/src/qb/io/quic.cpp:39-51 (make_wire_alpn), :43-44 (the 1..255 throw), :48-49 (the at-least-one throw), :984-992 (hostname verification) -->
 
 After `close()` stops the UDP watcher and closes the socket, `connect()` or `listen()` refreshes a native backend the endpoint created itself. A backend supplied through the constructor or `set_backend(...)` stays under the caller's control. The next connection binds the existing watcher to its new socket descriptor and starts it, so the listener receives packets from that attempt.
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:85-122,391-396,409-431,458-488,614-629; qb/tests/io/system/quic/quic-endpoint-loop.cpp:254-275 -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:85-122,391-396,409-431,458-488,614-629; qb/tests/io/system/quic/quic-endpoint-loop.cpp:281-302 -->
 
 ### Streams and protocols
 
@@ -371,7 +371,7 @@ Server-side and client-side close semantics differ. A `connection_closed` carryi
 The QUIC layer separates UDP packet RX/TX budgets, per-stream read and write limits, stream credit updates, connection flow control, congestion and loss handled by the backend, and application pending output in `qb` pipes. Credit is extended only for bytes actually consumed — and if you build on `server` or `connector`, **that happens for you**: `feed_stream_data` extends credit by exactly the bytes the protocol took out of `in()`. You call `extend_stream_credit` by hand only on the raw `endpoint` path.
 
 The stream-count quotas are separate from byte credit. `max_streams_bidi` and `max_streams_uni` cap peer-initiated streams open at once. For a peer stream delivered through `stream_open_cb`, the native backend marks it and grants one more stream of the same direction on close. Ngtcp2 already renews the quota for implicitly opened streams, so the backend leaves those to it; locally initiated closes do not grant the peer a slot. A server configured with one remote unidirectional slot accepts four such streams in sequence on the same connection once each prior stream has closed.
-<!-- src: qb/src/qb/io/quic.cpp:1022-1023,1467-1494; qb/tests/io/system/quic/quic-endpoint-loop.cpp:325-367 -->
+<!-- src: qb/src/qb/io/quic.cpp:1022-1023,1467-1494; qb/tests/io/system/quic/quic-endpoint-loop.cpp:352-394 -->
 
 Inbound credit must be flushed so the generated `MAX_STREAM_DATA` / `MAX_DATA` frames reach the peer.
 `extend_stream_credit(...)` updates the backend immediately. Outside event dispatch, the endpoint

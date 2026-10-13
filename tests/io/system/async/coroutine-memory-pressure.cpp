@@ -66,12 +66,16 @@ TEST_F(CoroutineMemoryPressure, LargeAllocationTouchedAndCompletes) {
     std::atomic<bool> success{false};
     std::atomic<bool> done{false};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([&]() -> task<void> {
         auto data = std::make_unique<char[]>(kPayloadBytes);
         for (std::size_t i = 0; i < kPayloadBytes; i += 4096)
-            data[i] = static_cast<char>(i % 256);
-        // Read back a couple of touched pages to prove the writes landed.
-        success = (data[0] == 0 && data[4096] == static_cast<char>(4096 % 256));
+            data[i] = static_cast<char>(1 + (i / 4096) % 127);
+        co_await sleep(1ms);
+        bool matches = true;
+        for (std::size_t i = 0; i < kPayloadBytes; i += 4096)
+            matches = matches && data[i] == static_cast<char>(1 + (i / 4096) % 127);
+        success = matches;
         done    = true;
         co_return; // make this a coroutine: the lambda's task<void> body has no other co_*
     });
@@ -84,12 +88,15 @@ TEST_F(CoroutineMemoryPressure, ManyLargePayloadCoroutinesAllComplete) {
     constexpr int    coro_count = 10;
     std::atomic<int> completed{0};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     for (int i = 0; i < coro_count; ++i) {
         coro_scheduler().spawn([&completed]() -> task<void> {
             auto data = std::make_unique<std::vector<char>>(kPayloadBytes);
             for (std::size_t j = 0; j < data->size(); j += 4096)
-                (*data)[j] = static_cast<char>(j % 256);
+                (*data)[j] = static_cast<char>(1 + (j / 4096) % 127);
             co_await sleep(10ms); // hold the payload across a suspension
+            for (std::size_t j = 0; j < data->size(); j += 4096)
+                EXPECT_EQ((*data)[j], static_cast<char>(1 + (j / 4096) % 127));
             completed.fetch_add(1);
         });
     }
@@ -102,6 +109,7 @@ TEST_F(CoroutineMemoryPressure, ManySmallAllocationsEachVerifyValue) {
     constexpr int    count = 100;
     std::atomic<int> completed{0};
 
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     for (int i = 0; i < count; ++i) {
         coro_scheduler().spawn([&completed, i]() -> task<void> {
             auto data = std::make_unique<int>(i);

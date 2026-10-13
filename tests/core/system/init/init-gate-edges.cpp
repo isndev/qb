@@ -87,17 +87,29 @@ std::atomic<bool> g_so_all_after{true};
 std::atomic<bool> g_so_burst_issued{false};
 std::atomic<bool> g_so_burst_pre_activation{false};
 
+struct InitGateBarrier : qb::Event {};
+
 class SlowConsumer : public qb::Actor {
-    int _expected_next = 1;
+    bool _barrier       = false;
+    int  _expected_next = 1;
 
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
-        co_await context().sleep(40ms); // long enough for the burst to pile up while Activating
+        registerEvent<InitGateBarrier>(*this);
+        const auto deadline = qb::mono_now() + 2s;
+        while (!_barrier && qb::mono_now() < deadline)
+            co_await context().sleep(1ms);
+        if (!_barrier)
+            co_return false;
         g_so_burst_pre_activation.store(g_so_burst_issued.load());
         g_so_inited.store(true);
         co_return true;
+    }
+    void
+    on(InitGateBarrier const &) {
+        _barrier = true;
     }
     void
     on(Tick &e) {
@@ -125,6 +137,7 @@ public:
         for (int i = 1; i <= 5; ++i)
             push<Tick>(_target, i);
         g_so_burst_issued.store(true);
+        push<InitGateBarrier>(qb::BroadcastId(_target.index()));
         kill();
         co_return true;
     }
@@ -166,14 +179,25 @@ std::atomic<int> g_ms_senders_issued{0};
 std::atomic<int> g_ms_senders_pre_activation{-1};
 
 class MultiStashVictim : public qb::Actor {
+    unsigned _barriers = 0;
+
 public:
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Tick>(*this);
-        co_await context().sleep(40ms);
+        registerEvent<InitGateBarrier>(*this);
+        const auto deadline = qb::mono_now() + 2s;
+        while (_barriers < 3 && qb::mono_now() < deadline)
+            co_await context().sleep(1ms);
+        if (_barriers != 3)
+            co_return false;
         g_ms_senders_pre_activation.store(g_ms_senders_issued.load());
         g_ms_inited.store(true);
         co_return true;
+    }
+    void
+    on(InitGateBarrier const &) {
+        ++_barriers;
     }
     void
     on(Tick &) {
@@ -196,6 +220,7 @@ public:
         for (int i = 0; i < 3; ++i)
             push<Tick>(_t, i);
         g_ms_senders_issued.fetch_add(1);
+        push<InitGateBarrier>(qb::BroadcastId(_t.index()));
         kill();
         co_return true;
     }

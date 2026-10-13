@@ -137,7 +137,10 @@ TEST(SocketErrorPaths, ReopenReplacesDescriptorWithAFreshOne) {
     EXPECT_TRUE(sock.is_open());
     // The previous fd was closed; the new one is independently valid.
     EXPECT_NE(sock.native_handle(), qb::io::inet::invalid_socket);
-    (void) first_handle;
+    int       old_type   = 0;
+    const int old_status = qb::io::socket::get_optval(first_handle, SOL_SOCKET, SO_TYPE, old_type);
+    EXPECT_TRUE(old_status != 0 || (first_handle == sock.native_handle() && old_type == SOCK_DGRAM))
+        << "the previous stream socket survived reopen";
     sock.close();
 }
 
@@ -182,12 +185,12 @@ TEST(SocketErrorPaths, ConnectToAClosedPortIsRefused) {
     client.close();
 }
 
-TEST(SocketErrorPaths, TimedConnectToBlackHoleAddressTimesOut) {
+TEST(SocketErrorPaths, TimedConnectToTestNetAddressFails) {
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
 
-    // 192.0.2.0/24 (TEST-NET-1, RFC 5737) is guaranteed non-routable: the SYN is
-    // black-holed, so a 1ns budget forces the select()<=0 timeout branch of connect_n.
+    // TEST-NET with a tiny budget exercises bounded failure; a native routing error
+    // may win before the timer, so this case does not claim a deadline-expiry witness.
     const int ret = qb::io::socket::connect_n(client.native_handle(), qb::io::endpoint("192.0.2.1", 9), qb::duration(1));
     EXPECT_EQ(ret, -1) << "timed connect_n to a black-holed address with a 1ns budget must fail";
     client.close();

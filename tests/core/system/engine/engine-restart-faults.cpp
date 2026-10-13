@@ -124,6 +124,12 @@ faults_of_one_engine() {
 using namespace engine_restart_faults_test;
 
 TEST(EngineRestartFaults, AnEngineRebuildsItsPerCoreTablesInPagesItsPredecessorLeftFaulted) {
+#ifdef QB_WITH_LOGGING
+    // The per-core tables, not the logger: an unoptimised build logs every actor's lifecycle, and the logger's
+    // per-thread buffers (8 MiB each, freed when a core thread ends) would be faulted in again by every engine --
+    // 6 144 pages a warm engine under the coverage preset, 90 with the logger at WARN, as in Release.
+    qb::io::log::setLevel(qb::io::log::Level::WARN);
+#endif
     ASSERT_GE(qb::test::process_page_faults(), 0) << "the platform's fault counter is unreadable";
     std::array<long long, kEngines> faults{};
     for (auto &count : faults)

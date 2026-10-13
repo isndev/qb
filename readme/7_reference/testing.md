@@ -97,9 +97,9 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib); `compression-zstd` / `compression-brotli` (`REQUIRES compression zstd` / `brotli`, 3.3) only with the opt-in codec, all three on the shared `codec_contract.h`.
 
-<!-- src: qb/tests/io/unit/CMakeLists.txt:70-77 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:75-84 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. The QUIC suites are gated the same way, by `REQUIRES quic ssl network` (`qb/tests/io/system/CMakeLists.txt:90-91`), so they too are simply not registered without QUIC; their *cases* additionally carry a `QB_HAS_QUIC` `#ifdef` so the file still asserts the negative contract when it is compiled without it (`qb/tests/io/system/quic/quic-handshake.cpp:87-99`). Some multi-core core tests also require a host with more than one hardware thread; the multi-core cases skip when only one core is available (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:91-92`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:87-99`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
 ### Running under sanitizers
 
@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:950,975`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until that core stops; call `join()` afterward if other cores may still run (`qb/src/qb/core/Main.h:950`, `qb/src/qb/core/Main.cpp:585-590`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true`, spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:970,995`). Passing `start(false)` instead turns the calling thread into a worker and blocks inline until that core stops; call `join()` afterward if other cores may still run (`qb/src/qb/core/Main.h:970`, `qb/src/qb/core/Main.cpp:624-629`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -217,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:252,996`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:254,1016`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 

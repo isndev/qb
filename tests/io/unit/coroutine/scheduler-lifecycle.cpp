@@ -515,12 +515,16 @@ TEST_F(CoroutineSchedulerTests, PendingCountReflectsReadyQueue) {
 TEST_F(CoroutineSchedulerTests, AwaitingCompletedTaskReturnsValue) {
     std::atomic<int> result{-1};
 
-    auto result_ptr = &result;
+    auto                                        result_ptr = &result;
+    const qb::io::test::coroutine_scope_cleanup cleanup;
     coro_scheduler().spawn([result_ptr]() -> task<void> {
         auto inner_fn = []() -> task<int> {
             co_return 42;
         };
-        int val = co_await inner_fn();
+        auto inner = inner_fn();
+        inner.handle().resume();
+        EXPECT_TRUE(inner.handle().done());
+        int val = co_await inner;
         result_ptr->store(val);
         co_return;
     });
@@ -1412,19 +1416,21 @@ TEST_F(CoroutineSchedulerTests, HasWorkSeesADeferredFrameAndRunReadyFreesIt) {
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "...and the same turn's drain frees it";
     EXPECT_FALSE(standalone.has_work());
 
-    // The QB-185 shape: completion by a manual resume, i.e. outside any run_ready() turn.
-    h = standalone.spawn_tracked(trivial_completion_coro());
+    // Consume the initial ready entry, park, then finish outside the scheduler drain.
+    auto pause_once = []() -> task<void> {
+        co_await std::suspend_always{};
+    };
+    h = standalone.spawn_tracked(pause_once());
     ASSERT_TRUE(h);
-    EXPECT_EQ(standalone.run_ready(0), 1u) << "bound of 0 means unbounded; the first turn only starts it";
-    // trivial_completion_coro completes on its first resume, so the frame is already freed here;
-    // land one in frames_to_destroy_ by hand instead:
-    h = standalone.spawn_tracked(trivial_completion_coro());
-    ASSERT_TRUE(h);
-    h.resume(); // -> final_suspend, deferred; still (stale) in the ready queue, not popped
+    EXPECT_EQ(standalone.run_ready(), 1u);
+    ASSERT_FALSE(standalone.has_ready());
+    EXPECT_FALSE(h.done());
+    h.resume();
     ASSERT_TRUE(h.done());
     EXPECT_GT(detail::CoroutineFrameAllocator::live_frames, baseline) << "deferred, not freed";
+    EXPECT_FALSE(standalone.has_ready());
     EXPECT_TRUE(standalone.has_work()) << "a frame to free is work even with nothing to resume";
-    EXPECT_EQ(standalone.run_ready(), 0u) << "the stale done() entry is popped and skipped, nothing is resumed";
+    EXPECT_EQ(standalone.run_ready(), 0u) << "an empty ready queue still drains deferred destruction";
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "the turn's drain freed the deferred frame";
     EXPECT_FALSE(standalone.has_work());
     EXPECT_EQ(standalone.active_count(), 0u);

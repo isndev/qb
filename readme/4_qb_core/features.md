@@ -91,7 +91,7 @@ Owned by [Engine — `qb::Main` and `VirtualCore`](./engine.md). See also [Core 
 | Engine controller | `qb::Main` (alias `qb::engine`) | Owns the `CoreInitializer`s, spawns one worker thread per `VirtualCore`, and drives start/stop/join and signal handling. |
 | Worker thread | `qb::VirtualCore` | Per-thread worker that owns its actors and runs an independent event loop backed by a `qb::io::async::listener`. |
 | Static actor affinity | actor placement at `addActor` time | Actors are assigned to a core at creation and never migrate between cores. |
-| Lock-free inter-core messaging | `qb::lockfree::mpsc::ringbuffer` mailboxes | Cross-core events travel through MPSC ring buffers with no mutex on the hot path. |
+| Lock-free inter-core messaging | `qb::lockfree::mpsc::block_ringbuffer` mailboxes | Cross-core events travel through MPSC ring buffers with no mutex on the hot path. |
 | Idle latency policy | `CoreInitializer::setLatency(qb::duration)` / `Main::setLatency(qb::duration)` | `qb::duration::zero()` (the default) busy-spins for lowest latency; a positive value sleeps when idle to trade latency for CPU. |
 | CPU affinity | `CoreInitializer::setAffinity(qb::CoreIdSet)` | Pin a worker thread to specific physical CPUs; `qb::NoAffinity` lets the OS scheduler choose. |
 | Lifecycle control | `Main::start(bool async = true)`, `Main::stop()`, `Main::join()`, `Main::hasError()` | Start the engine (optionally blocking), request a clean stop, wait for workers, and check for startup/runtime errors. |

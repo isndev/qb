@@ -59,7 +59,7 @@ set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
 # QB_SANITIZE the system package is therefore not offered as a candidate: FetchContent builds the
 # pinned tag with the same flags as every other target. QB_USE_SYSTEM_GTEST=ON still forces the
 # system package, and says what that buys.
-if(QB_BUILD_TESTS)
+if(QB_BUILD_TESTS OR QB_BUILD_BENCHMARKS)
     if(QB_USE_SYSTEM_GTEST)
         find_package(GTest CONFIG REQUIRED)
         if(QB_SANITIZE)
@@ -192,3 +192,15 @@ if(QB_BUILD_BENCHMARKS)
 
     set(QB_HAS_BENCHMARK TRUE)
 endif()
+
+# Fetched support libraries must compile with the same sanitizer instrumentation as
+# their callers. Runtime linkage alone does not instrument their object files.
+foreach(_qb_support gtest gtest_main gmock gmock_main benchmark benchmark_main)
+    if(TARGET ${_qb_support})
+        get_target_property(_qb_support_imported ${_qb_support} IMPORTED)
+        if(NOT _qb_support_imported)
+            target_compile_options(${_qb_support} PRIVATE ${QB_SANITIZE_COMPILE_OPTS})
+            target_link_options(${_qb_support} PRIVATE ${QB_SANITIZE_LINK_OPTS})
+        endif()
+    endif()
+endforeach()

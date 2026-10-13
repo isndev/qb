@@ -660,7 +660,11 @@ TEST(ScopedTimerEdge, RestartRearmsAndSecondStopIsInertReturningStoredSpan) {
     // restart() re-arms the timer: elapsed() reads the live monotonic delta again (non-negative).
     timer.restart();
     EXPECT_GE(timer.elapsed().count(), 0) << "restart() makes elapsed() a live measure again";
-    // The dtor now runs stop() on the re-armed timer, firing the callback a final time.
+    const auto rearmed = timer.stop();
+    EXPECT_EQ(calls, 2) << "restart() must re-arm callback delivery";
+    EXPECT_EQ(cb_value, rearmed);
+    EXPECT_EQ(timer.stop(), rearmed);
+    EXPECT_EQ(calls, 2);
 }
 
 // ---------------------------------------------------------------------------

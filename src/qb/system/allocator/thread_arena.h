@@ -68,6 +68,7 @@
 #include <cstdint>
 #include <new>
 #include <qb/system/allocator/slab.h>
+#include <qb/system/cpu.h>  /* qb::spin_loop_pause */
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 
 // The sanitizer's poison calls, in an AddressSanitizer build only -- detected the way Event.cpp
@@ -373,10 +374,18 @@ private:
     QB_ABI_ANCHOR static inline constinit void            *spares_{nullptr};
     QB_ABI_ANCHOR static inline constinit std::atomic_flag spares_flag_{};
 
+    // Test-and-test-and-set, the shape of `qb::lockfree::SpinLock::lock()`: a waiter spins on a relaxed load with the
+    // pause hint and retries the exchange only once the flag reads clear. The list is taken when a core thread starts
+    // and given back when it exits, so an engine that stops brings every core here at once; a bare `test_and_set`
+    // loop kept the line exclusive between them, and under ThreadSanitizer, whose atomic read-modify-writes go through
+    // a sync object of their own, the 64 core threads of a stopping engine stalled there -- the holder's `clear()`
+    // queued behind the waiters' exchanges: under gdb, 4 of 5 runs of the TSan footprint witness stalled, 50 of 64
+    // threads in this loop, and none with this lock (40 repetitions a run; Huly QB-1009, found by QB-203).
     static void
     spares_lock() noexcept {
         while (spares_flag_.test_and_set(std::memory_order_acquire))
-            ;
+            while (spares_flag_.test(std::memory_order_relaxed))
+                qb::spin_loop_pause();
     }
     static void
     spares_unlock() noexcept {

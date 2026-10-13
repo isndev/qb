@@ -30,7 +30,9 @@
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <exception>
 #include <memory>
+#include <qb/system/allocator/region.h>
 #include <qb/utility/branch_hints.h>
 #include <qb/utility/nocopy.h>
 #include <qb/utility/prefix.h>
@@ -83,6 +85,17 @@ namespace internal {
  * The derived buffer storage begins on the block AFTER the four index blocks: the ring's
  * first slots used to share a line with `read_index_`, which the producer writes on
  * every wrap while the consumer writes its index.
+ *
+ * A ring can be built CLOSED (Huly QB-203) -- `closable_ringbuffer`, the ring of
+ * `mpsc::block_ringbuffer` on Windows, and nothing else: full to its producer (its
+ * snapshot one past its write index) and empty to its consumer, with a mark the
+ * consumer's published line can never hold as an index, `~max_size`. The producer's
+ * first write finds no room on its snapshot, reloads the published index as every
+ * refused snapshot does, and on the mark opens the ring (`open()`): commits the slots
+ * and stores the consumer's true index, 0 -- the one store a producer ever makes to the
+ * consumer's line, before the consumer can have taken anything. The `closable_*` members
+ * below are those writes; every other ring calls the members above them, which hold no
+ * test of the mark.
  *
  * @tparam T Type of elements stored in the ringbuffer
  */
@@ -241,6 +254,68 @@ protected:
         return producer_available(write_index_local_, wanted, max_size);
     }
 
+    // ---- a ring built closed (`closable_ringbuffer`, Huly QB-203) -------------------------------------------------
+
+    /// Is this published read index the mark of a ring built closed? The mark is `~max_size`, above every index.
+    [[nodiscard]] static constexpr bool
+    closed_mark(size_t const read_index, size_t const max_size) noexcept {
+        return read_index >= max_size;
+    }
+
+    /**
+     * @brief Builds the ring CLOSED: full to its producer, empty to its consumer, until the producer's first write
+     *        opens it. A fresh ring only (no write yet).
+     * @details The producer's snapshot of the consumer's index is set where a full ring would have it, so its first
+     *          write -- a `closable_enqueue` or `closable_write_room` -- takes the slow path every producer takes when
+     *          its snapshot cannot prove room; there the published read index, which holds the mark, sends it to
+     *          `open()`. The consumer reads the published write index, still 0: an empty ring.
+     */
+    void
+    close(size_t const max_size) noexcept {
+        cached_read_index_ = next_index(write_index_local_, max_size);
+        read_index_.store(~max_size, std::memory_order_relaxed);
+    }
+
+    /**
+     * @brief Opens a closed ring: commits its slots (`region_commit`: Windows commits the pages a reserved block left
+     *        uncommitted, POSIX has nothing to do), then gives the producer its true snapshot. The producer's own
+     *        thread, once.
+     * @details The producer writes the consumer's published line here, the one time it ever does: the consumer
+     *          publishes its read index only after taking an item, and there is none before this write. A refused
+     *          commit cannot be reported from a send path that is `noexcept`: it terminates, as a failed allocation
+     *          there does.
+     * @return The room the ring now has, every slot: a closed ring was never written.
+     */
+    QB_NOINLINE QB_COLD size_t
+    open(T *const buffer, size_t const max_size) noexcept {
+        if (!qb::allocator::detail::region_commit(buffer, max_size * sizeof(T)))
+            std::terminate();
+        cached_read_index_ = 0;
+        read_index_.store(0, std::memory_order_relaxed);
+        return write_available(write_index_local_, 0, max_size);
+    }
+
+    /// `producer_available` for a ring that may be closed: the mark opens it, and the room it then has is returned,
+    /// so the caller keeps nothing live across the cold call. Forced inline: MSVC gives up a function the call made
+    /// bigger, and a call per write is what the closed protocol must not cost.
+    QB_MSVC_FORCEINLINE size_t
+    closable_producer_available(size_t const write_index, size_t const wanted, T *const buffer, size_t const max_size) {
+        size_t avail = write_available(write_index, cached_read_index_, max_size);
+        if (avail < wanted) {
+            cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
+            if (unlikely(closed_mark(cached_read_index_, max_size))) [[unlikely]]
+                return open(buffer, max_size);
+            avail = write_available(write_index, cached_read_index_, max_size);
+        }
+        return avail;
+    }
+
+    /// `write_room` for a ring that may be closed: its first call opens it.
+    [[nodiscard]] size_t
+    closable_write_room(size_t const wanted, T *const buffer, size_t const max_size) noexcept {
+        return closable_producer_available(write_index_local_, wanted, buffer, max_size);
+    }
+
     /**
      * @brief Consumer side: elements readable at @p read_index, refreshing the write-index
      *        snapshot only when the snapshot cannot prove @p wanted elements
@@ -305,6 +380,95 @@ protected:
     enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
         const size_t write_index = write_index_local_; // the producer's own copy: never the published line
         const size_t avail       = producer_available(write_index, input_count, max_size);
+
+        if constexpr (_All) {
+            if (avail < input_count)
+                return 0;
+        } else {
+            if (!avail)
+                return 0;
+            input_count = (std::min) (input_count, avail);
+        }
+
+        size_t new_write_index = write_index + input_count;
+
+        if (write_index + input_count > max_size) {
+            /* copy data in two sections */
+            const size_t count0 = max_size - write_index;
+            const size_t count1 = input_count - count0;
+
+            std::memcpy(internal_buffer + write_index, input_buffer, count0 * sizeof(T));
+            std::memcpy(internal_buffer, input_buffer + count0, count1 * sizeof(T));
+            new_write_index -= max_size;
+        } else {
+            std::memcpy(internal_buffer + write_index, input_buffer, input_count * sizeof(T));
+
+            if (new_write_index == max_size)
+                new_write_index = 0;
+        }
+
+        write_index_local_ = new_write_index;
+        write_index_.store(new_write_index, std::memory_order_release);
+        return input_count;
+    }
+
+    /// `enqueue(t, buffer, max_size)` for a ring that may be closed: the mark opens it, then the item goes in. Nothing
+    /// of the item is handed to the cold call -- an item passed by reference to an out-of-line function is an item
+    /// the caller must keep in memory on every write, and MSVC copies it there on the fast path too.
+    bool
+    closable_enqueue(T const &t, T *buffer, size_t const max_size) {
+        const size_t write_index = write_index_local_; // the producer's own copy: never the published line
+        const size_t next        = next_index(write_index, max_size);
+
+        if (next == cached_read_index_) {
+            cached_read_index_ = read_index_.load(std::memory_order_acquire);
+            if (unlikely(closed_mark(cached_read_index_, max_size))) [[unlikely]]
+                (void) open(buffer, max_size); // the snapshot is 0 now and `next` is 1: the item goes in below
+            if (next == cached_read_index_)
+                return false; /* full */
+        }
+
+        new (buffer + write_index) T(t); // copy-construct
+
+        write_index_local_ = next;
+        write_index_.store(next, std::memory_order_release);
+
+        return true;
+    }
+
+    /// A closed ring's first bulk write: opens it, then copies into the fresh ring from slot 0 (no wrap), all or none
+    /// per `_All`. The bulk write's fast path tail-calls this with four register arguments -- the slot count is read
+    /// back from the mark -- and it calls no producing form back.
+    template <std::same_as<bool> auto _All>
+    QB_NOINLINE QB_COLD size_t
+    open_and_enqueue(const T *input_buffer, size_t input_count, T *const internal_buffer) noexcept {
+        size_t const room = open(internal_buffer, ~cached_read_index_);
+        if constexpr (_All) {
+            if (room < input_count)
+                return 0;
+        } else {
+            input_count = (std::min) (input_count, room);
+            if (!input_count)
+                return 0;
+        }
+        std::memcpy(internal_buffer, input_buffer, input_count * sizeof(T));
+        write_index_local_ = input_count;
+        write_index_.store(input_count, std::memory_order_release);
+        return input_count;
+    }
+
+    /// `enqueue<_All>(input, count, buffer, max_size)` for a ring that may be closed.
+    template <std::same_as<bool> auto _All>
+    size_t
+    closable_enqueue(const T *input_buffer, size_t input_count, T *internal_buffer, size_t const max_size) {
+        const size_t write_index = write_index_local_; // the producer's own copy: never the published line
+        size_t       avail       = write_available(write_index, cached_read_index_, max_size);
+        if (avail < input_count) {
+            cached_read_index_ = read_index_.load(std::memory_order_acquire); // the one cross-line read
+            if (unlikely(closed_mark(cached_read_index_, max_size))) [[unlikely]]
+                return open_and_enqueue<_All>(input_buffer, input_count, internal_buffer);
+            avail = write_available(write_index, cached_read_index_, max_size);
+        }
 
         if constexpr (_All) {
             if (avail < input_count)
@@ -484,6 +648,9 @@ static_assert(sizeof(ringbuffer<int>) == 8 * QB_LOCKFREE_CACHELINE_BYTES,
 static_assert(alignof(ringbuffer<int>) == 2 * QB_LOCKFREE_CACHELINE_BYTES,
               "spsc::internal::ringbuffer starts on a two-line block so the derived storage does too");
 
+template <typename T, std::size_t Slots>
+class closable_ringbuffer;
+
 } // namespace internal
 
 /**
@@ -500,6 +667,8 @@ class ringbuffer : public internal::ringbuffer<T> {
     using size_t                     = std::size_t;
     constexpr static size_t max_size = _MaxSize + 1;
     std::array<T, max_size> array_;
+    template <typename, std::size_t>
+    friend class internal::closable_ringbuffer; // the ring of mpsc::block_ringbuffer, built closed (Huly QB-203)
 
 public:
     /**
@@ -710,6 +879,57 @@ public:
         return internal::ringbuffer<T>::consume_all(func, array_.get(), max_size_);
     }
 };
+
+namespace internal {
+
+/**
+ * @brief The fixed-size ring, buildable CLOSED: the ring of `mpsc::block_ringbuffer<T, N, true>` -- the engine's
+ *        mailbox on Windows, where its slots are reserved pages until its producer's first write (Huly QB-203).
+ * @details Every producing member opens a closed ring on its first write -- the base's class note says how -- and is
+ *          otherwise the fixed ring's; the consuming members are the fixed ring's. No other type tests the closed
+ *          mark: a ring that cannot be closed carries none of this.
+ */
+/// The fixed ring a closable one extends.
+template <typename T, std::size_t Slots>
+using fixed_ring = spsc::ringbuffer<T, Slots>;
+
+template <typename T, std::size_t Slots>
+class closable_ringbuffer : public fixed_ring<T, Slots> {
+    using base   = fixed_ring<T, Slots>;
+    using size_t = std::size_t;
+
+public:
+    /// The bytes before the slots: the four index blocks (eight lines, all a constructor writes). The slots follow.
+    static constexpr size_t slots_offset = (8 * QB_LOCKFREE_CACHELINE_BYTES + alignof(std::array<T, base::max_size>) - 1)
+                                           / alignof(std::array<T, base::max_size>) * alignof(std::array<T, base::max_size>);
+
+    /// Builds this fresh ring CLOSED until its producer's first write -- see the index blocks' `close`.
+    void
+    close() noexcept {
+        base::close(base::max_size);
+    }
+
+    /// Producer side: slots writable right now; the first call on a closed ring opens it.
+    [[nodiscard]] size_t
+    write_room(size_t const wanted) noexcept {
+        return base::closable_write_room(wanted, this->array_.data(), base::max_size);
+    }
+
+    /// Enqueue a single element; the first write on a closed ring opens it.
+    inline bool
+    enqueue(T const &t) noexcept {
+        return base::closable_enqueue(t, this->array_.data(), base::max_size);
+    }
+
+    /// Enqueue multiple elements, all or none per `_All`; the first write on a closed ring opens it.
+    template <std::same_as<bool> auto _All = true>
+    inline size_t
+    enqueue(T const *t, size_t size) noexcept {
+        return base::template closable_enqueue<_All>(t, size, this->array_.data(), base::max_size);
+    }
+};
+
+} // namespace internal
 
 } // namespace qb::lockfree::spsc
 
