@@ -248,7 +248,9 @@ Both flags apply to the Release configuration. A Debug build is not a meaningful
 
 ## Pitfalls
 
-- **Blocking inside a handler stalls the whole core.** A long computation, a synchronous I/O call, or a wait on a mutex or condition variable inside `on(Event&)` or `on(qb::LoopEvent const&)` freezes every actor on that `VirtualCore`. `qb::io::async::callback` does not offload it: the no-delay form runs inline, and a delayed form runs on the same core later. Use a non-blocking API, `co_await ctx.offload(fn, copied_values...)` from an actor coroutine, or a dedicated worker actor on another core that sends a result event back. <!-- src: qb/src/qb/io/async/io.h:368-389; qb/src/qb/core/Actor.h:2304-2334 -->
+- **Blocking inside a handler stalls the whole core.** A long computation, a synchronous I/O call, or a wait on a mutex or condition variable inside `on(Event&)` or `on(qb::LoopEvent const&)` freezes every actor on that `VirtualCore`.
+  The `callback` overloads run inline or later on the current loop; neither offloads blocking work. <!-- src: qb/src/qb/io/async/io.h:368-404 -->
+  Use a non-blocking API, `co_await ctx.offload(fn, copied_values...)` from an actor coroutine, or a dedicated worker actor on another core that sends a result event back. <!-- src: qb/src/qb/core/Actor.h:2304-2334 -->
 - **Configuring after `start()`.** Affinity, latency, and placement are pre-start only. `Main::core(id)` throws once the engine is running.
 - **Touching a core you do not populate.** `Main::core(n)` registers core `n`; if no actor lands there, that worker fails to start, logging `... Started with 0 Actor` and reporting `VirtualCore::Error::NoActor`. Configure latency and affinity inside the same loop that places actors.
 - **Reaching for `send` before `push`.** The ordering guarantee `push` gives is cheap; the bugs `send` introduces are not. Use `send` only when order is provably irrelevant, and prefer a `qb::trivial_event` payload — the compiler requires one only when the event derives from `qb::EventQOS0`.

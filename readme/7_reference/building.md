@@ -112,8 +112,9 @@ Pass these at configure time (`cmake -D<NAME>=<VALUE> ...`). Defaults and source
 | `CMAKE_INSTALL_PREFIX` | path | Standard install root. |
 
 With `QB_BUILD_DOCS=ON`, Doxygen describes the **configured build** rather than a
-superset of every optional feature. It receives the numeric qb compiler definitions
-from dependency detection (`docs/CMakeLists.txt:139-147`, `docs/Doxyfile.in:405`).
+superset of every optional feature. The build collects numeric qb compiler definitions
+from dependency detection into `QB_DOXYGEN_PREDEFINED` (`docs/CMakeLists.txt:139-147`),
+which the configured Doxyfile consumes.
 For example, SSL-gated crypto declarations appear only when OpenSSL was found and
 `QB_HAS_SSL=1` is part of that build. Reconfigure with the desired features before
 generating the API reference.

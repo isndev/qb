@@ -423,7 +423,8 @@ task does not keep that core alive, and its loop exits when its last actor dies.
 on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
 `CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476;
-VirtualCore.h:1696-1707; VirtualCore.cpp:1022-1024; coroutine-detached.cpp:878-938)_
+VirtualCore.h:1696-1707; coroutine-detached.cpp:878-938)_
+The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1022-1024)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -628,7 +629,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1476 / VirtualCore.h:1686; `spawn` Actor.h:1513 /
-  VirtualCore.h:1712; VirtualCore.cpp:1022-1024)_
+  VirtualCore.h:1712)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1022-1024)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
