@@ -432,11 +432,13 @@ parameter. It is also what you pass to the free functions of the patterns librar
 `co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1529-1545, :2343-2346)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
-receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
-actor dies — it runs to completion, orphaned. Reach for it only for fire-and-forget work that must
-*intentionally outlive* the actor, e.g. flushing an audit record during shutdown. It cannot be used
+receives a plain `qb::CoroContext` (no scope token), and killing the actor does **not** cancel the
+coroutine. It can outlive the actor only while the **same VirtualCore stays running**: a detached
+task does not keep that core alive, and its loop exits when its last actor dies. Keep another actor
+on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
-`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476)_
+`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476;
+VirtualCore.h:1696-1707; VirtualCore.cpp:1022-1024; coroutine-detached.cpp:878-938)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -446,9 +448,13 @@ void on(const AuditEvent &) {
         ctx.push_to<ResultEvent>(sink, qb::string<64>{"flushed"});
         co_return;
     });
-    kill();                                   // the detached flush still completes
+    kill();                                   // safe only if a same-core keeper remains alive
 }
 ```
+
+Here `_sink` is a keeper actor **on this core**. It registers `ResultEvent`, remains alive while
+the task sleeps, and kills itself only in `on(const ResultEvent&)`. Without that completion handshake,
+the last actor can die before the timer fires; engine cleanup does not drive the orphaned task.
 
 Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_scope()` (true once
 `spawn()` **or** `context()` has lazily allocated the scope — `spawn_detached()` never does).
@@ -516,8 +522,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pushes); `push_reply(e)` / `push_forward(dest, e)` are the same answers taking the pipe,
   FIFO with everything the actor pushed to that destination — use them when an answer must
   follow what you pushed.
-- **Blocking work** — wrap synchronous file/DB calls in `qb::io::async::callback` (blocks one callback
-  turn, not the actor handler) or hand off to a dedicated worker actor.
+- **Blocking work** — `callback(fn)` calls `fn` inline; `callback(fn, delay > 0)` runs it later on
+  the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
+  `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
+  option only when placed on a different core and returning the result by event. _(io.h:368-389;
+  Actor.h:2304-2334; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
 
@@ -965,7 +974,7 @@ Type checks & referenced actors:
 
 Coroutines (C++20) — `spawn` is the default; `spawn_detached` is the low-level escape hatch:
 *   `[T<Func>] void spawn(Func&& func) const` — **preferred**. Runs `func(qb::ScopedCoroContext)` bound to the actor's per-actor cancellation scope: killing/destroying the actor cancels the scope, so a coroutine parked on `ctx.sleep` / `ctx.cancellation_point` / `ctx.until_cancelled` / `ctx.cancellable` / any patterns-library helper wakes on the next loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (RAII + `catch` run). Must be called from the actor's own VirtualCore thread. Pass the lambda **without** trailing `()`. An exception OTHER than `cancelled_error` escaping the body is caught by the wrapper and REPORTED on `std::cerr` (naming the actor, the API and `what()`) — it is not propagated anywhere, because a spawned coroutine has no caller; catch it in the body and answer through an event. _(`spawn` declared `Actor.h:1478-1513`, body `VirtualCore.h:1712`, the named overload the unnamed one delegates to)_
-*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill: it runs to completion, orphaned. Use only for fire-and-forget work that must intentionally outlive the actor. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1418-1476`, body `VirtualCore.h:1698`, the named overload the unnamed one delegates to)_
+*   `[T<Func>] void spawn_detached(Func&& func) const` — low level. Runs `func(qb::CoroContext)` in an isolated context that is **not** cancelled on kill. It may outlive the actor **while another actor keeps the same VirtualCore running**; the detached task alone does not keep the loop alive, so completion after the last actor dies is not guaranteed. Use a same-core keeper that waits for a completion event when shutdown must follow the task. It cannot drive `qb::ask` or any patterns helper (they require a `ScopedCoroContext`; a `CoroContext` is a compile error). _(`spawn_detached` declared `Actor.h:1418-1476`, body `VirtualCore.h:1698`, loop `VirtualCore.cpp:1022-1024`, keeper test `coroutine-detached.cpp:878-938`)_
 *   `[T<Func>] void spawn(std::string_view name, Func&& func) const`, `[T<Func>] void spawn_detached(std::string_view name, Func&& func) const` — since 3.3: `spawn` / `spawn_detached` under a name the core's `CoroutineScheduler::dump()` reports for the coroutine while it lives (Huly QB-71); the unnamed forms are these with an empty name, which stores nothing. With `set_suspension_tracking(true)` on the core's thread the dump also says what the coroutine waits on and for how long. _(Actor.h:1523, Actor.h:1527)_
 *   Both: MUST NOT touch actor members after any `co_await` (the actor may be destroyed mid-suspension, and the scope does **not** legalise member access — it only bounds how long the coroutine can stay parked). Capture everything by value before the first `co_await`; reply via `ctx.push<Event>()` / `ctx.push_to<Event>(dest, …)`.
 *   `[[nodiscard]] ScopedCoroContext context() const` — the same cancellation-aware context, available wherever you hold the actor and **not** only inside a `spawn()` body: use it inside `onInit()` (itself a `task<bool>` with no `ctx` parameter) and as the first argument to every patterns free function (`qb::ask(context(), …)`). Lazily allocates the scope. _(`Actor.h:1529-1545`, `:2343-2346`)_

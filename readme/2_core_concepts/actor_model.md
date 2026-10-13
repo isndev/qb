@@ -208,6 +208,6 @@ That guarantee covers an actor's *own* state only. It does not extend to memory 
 
 - [The event system](./event_system.md) — defining events, the `push`/`send`/`reply`/`forward` API, and ordering guarantees.
 - [Concurrency and parallelism](./concurrency.md) — how `qb::Main` and `qb::VirtualCore` schedule actors across cores.
-- [Asynchronous I/O](./async_io.md) — keeping handlers non-blocking with the event loop and `qb::io::async::callback`.
+- [Asynchronous I/O](./async_io.md) — keeping handlers non-blocking with event-loop I/O and offloading blocking calls when needed.
 - [qb-core: the Actor API](../4_qb_core/actor.md) — the complete actor reference: full lifecycle, callbacks, referenced actors, services, and coroutines.
 - [Getting started](../6_guides/getting_started.md) — these concepts in a first runnable program.

@@ -417,11 +417,13 @@ parameter. It is also what you pass to the free functions of the patterns librar
 `co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1529-1545, :2343-2346)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
-receives a plain `qb::CoroContext` (no scope token), and the coroutine is **not** cancelled when the
-actor dies — it runs to completion, orphaned. Reach for it only for fire-and-forget work that must
-*intentionally outlive* the actor, e.g. flushing an audit record during shutdown. It cannot be used
+receives a plain `qb::CoroContext` (no scope token), and killing the actor does **not** cancel the
+coroutine. It can outlive the actor only while the **same VirtualCore stays running**: a detached
+task does not keep that core alive, and its loop exits when its last actor dies. Keep another actor
+on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
-`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476)_
+`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476;
+VirtualCore.h:1696-1707; VirtualCore.cpp:1022-1024; coroutine-detached.cpp:878-938)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -431,9 +433,13 @@ void on(const AuditEvent &) {
         ctx.push_to<ResultEvent>(sink, qb::string<64>{"flushed"});
         co_return;
     });
-    kill();                                   // the detached flush still completes
+    kill();                                   // safe only if a same-core keeper remains alive
 }
 ```
+
+Here `_sink` is a keeper actor **on this core**. It registers `ResultEvent`, remains alive while
+the task sleeps, and kills itself only in `on(const ResultEvent&)`. Without that completion handshake,
+the last actor can die before the timer fires; engine cleanup does not drive the orphaned task.
 
 Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_scope()` (true once
 `spawn()` **or** `context()` has lazily allocated the scope — `spawn_detached()` never does).
@@ -501,8 +507,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pushes); `push_reply(e)` / `push_forward(dest, e)` are the same answers taking the pipe,
   FIFO with everything the actor pushed to that destination — use them when an answer must
   follow what you pushed.
-- **Blocking work** — wrap synchronous file/DB calls in `qb::io::async::callback` (blocks one callback
-  turn, not the actor handler) or hand off to a dedicated worker actor.
+- **Blocking work** — `callback(fn)` calls `fn` inline; `callback(fn, delay > 0)` runs it later on
+  the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
+  `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
+  option only when placed on a different core and returning the result by event. _(io.h:368-389;
+  Actor.h:2304-2334; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
 

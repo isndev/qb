@@ -122,9 +122,9 @@ The queue, the mutex, the condition variable, and the explicit thread all disapp
 
 // A job is an event.
 struct JobEvent : qb::Event {
-    int id;
+    int job_id;               // Event::id is a framework routing field
     int amount;
-    JobEvent(int i, int a) : id(i), amount(a) {}
+    JobEvent(int i, int a) : job_id(i), amount(a) {}
 };
 
 // The worker owns the state that used to sit behind the mutex.
@@ -139,7 +139,7 @@ public:
 
     void on(const JobEvent &job) {
         _total += job.amount;             // runs serially on this core
-        qb::io::cout() << "job " << job.id << " -> total " << _total << '\n';
+        qb::io::cout() << "job " << job.job_id << " -> total " << _total << '\n';
     }
 };
 
@@ -173,6 +173,10 @@ int main() {
 }
 ```
 
+The manual `Job` may keep a field called `id`. A derived `qb::Event` may not: `Event::id`
+is a routing field, and the event-construction guard rejects an accessible shadow. The
+migrated payload uses `job_id` consistently. <!-- src: qb/src/qb/core/Event.h:1071-1078 -->
+
 Notes on the translation:
 
 - `submit(Job)` became `push<JobEvent>(worker, …)`. The engine owns the queue; there is no `notify`.
@@ -194,7 +198,7 @@ Cross-core `push` is delivered over a lock-free queue; the code above is unchang
 
 ### Pitfalls
 
-- **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core. Wrap blocking or long-running work (synchronous file I/O, a slow library call) in `qb::io::async::callback` so it does not freeze the loop, or restructure it as events. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/core/ICallback.h:16`.)_
+- **Do not block inside a handler.** A handler holds its core's event-loop thread until it returns; blocking stalls every actor on that core. `qb::io::async::callback(fn)` runs inline, and a positive-delay callback still runs on this core. Use a non-blocking API, `co_await ctx.offload(fn, copied_values...)` from an actor coroutine, or a worker actor explicitly placed on another core that returns a result event. See [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md). _(`qb/src/qb/io/async/io.h:368-389`; `qb/src/qb/core/Actor.h:2304-2334`.)_
 - **Do not share an actor's state with other threads.** The no-lock guarantee holds only because one core touches the state. Reintroducing a raw pointer, a `std::shared_ptr` to mutable data, or a global shared with non-actor code reintroduces the data race. Communicate by sending events.
 - **`addActor` can fail — and *how* depends on the path.** The pre-start `Main::addActor<T>(coreId, …)` overload does **not** run `onInit()`; it returns `qb::ActorId::NotFound` (the default-constructed, invalid ID) only when the per-core ID pool is exhausted or a duplicate service `Tag` is registered. An `onInit()` that returns `false` for a pre-start actor is detected at startup: the engine flags that core `VirtualCore::Error::BadActorInit`, the core fails to start, and you observe it via `hasError()` after the run — not through the returned ID. The runtime `addRefActor` / `addActor(…)` path is the one that *does* run `onInit()` at add time and returns an invalid ID when it returns `false` — and, since 3.3, when its core's id pool is spent, without constructing the actor or running its `onInit()`. Guard every returned ID with `is_valid()`, and gate startup with `hasError()`. _(`qb/src/qb/core/Main.h:1148-1173`, `qb/src/qb/core/Main.h:1186-1190`; `qb/src/qb/core/Main.cpp:511-517`; `qb/src/qb/core/VirtualCore.h:130`; `qb/src/qb/core/VirtualCore.cpp:1196-1219`; `qb/src/qb/core/VirtualCore.h:1457-1461`; `qb/src/qb/core/ActorId.h:413,470-471`; [Error handling](./error_handling.md).)_
 - **Add every actor before `start()`.** Actors are constructed on their worker thread when the engine starts; `addActor` must be called beforehand.

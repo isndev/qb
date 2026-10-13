@@ -166,7 +166,7 @@ not be touched after either call. See [Messaging](../4_qb_core/messaging.md).
 | `registerCallback` | `template<class _Actor> void registerCallback(_Actor& actor) const noexcept` | Enrolls an actor that also inherits `ICallback`. |
 | `unregisterCallback` | `template<class _Actor> void unregisterCallback(_Actor& actor) const noexcept` | |
 | `spawn` | `template<class Func> void spawn(Func&& func) const` | **Recommended.** Launches a *scoped* coroutine cancelled when the actor is killed; communicates back via [`ScopedCoroContext`](#coroutines) (cancellation-aware ops + `ask()`). |
-| `spawn_detached` | `template<class Func> void spawn_detached(Func&& func) const` | Launches a *detached* coroutine that outlives the actor; communicates back via [`CoroContext`](#coroutines). |
+| `spawn_detached` | `template<class Func> void spawn_detached(Func&& func) const` | Launches a coroutine uncancelled by its actor's death; completion still needs the same core kept alive. Communicates via [`CoroContext`](#coroutines). |
 | `resolve_ask` | `template<class E> bool resolve_ask(E& e) const noexcept` | Routes an `AskEvent`-derived reply to the awaiting `spawn` coroutine; call first in the asker's `on(E&)`. |
 | `has_active_coroutines` | `bool has_active_coroutines() const` | |
 

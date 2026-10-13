@@ -263,11 +263,11 @@ Key facts, grounded in the headers:
 
 The write handler mirrors this with `O_WRONLY | O_CREAT | O_TRUNC` and mode `0644`, reports `bytes_written`, and treats a short write as a failure.
 
-### Why this keeps the core responsive — and the caveat
+### Why this confines blocking to worker cores
 
 The intent of the pattern is sound: blocking I/O is delegated to workers on cores reserved for that purpose ([`async_in_actors.md` → Blocking file I/O](../async_in_actors.md#blocking-file-io-from-an-actor) catalogs this as pattern 2), so a slow disk stalls only the I/O cores.
 
-But the *callback* in this example does **not** defer the work. `qb::io::async::callback(func)` — the overload with no delay — invokes `func()` **inline at the call site**; so does the timed overload when the duration is non-positive. <!-- src: qb/src/qb/io/async/io.h:368,388-389,410-412 --> The blocking `read`/`write` therefore runs synchronously inside the worker's `on(...)` handler, on the worker's core. What the design actually buys is **core isolation** (the manager and client on core 0 never block on disk) plus a clean place to factor the I/O code — not asynchrony within the worker. To truly defer the blocking call to a later loop turn you would pass a strictly positive `qb::duration`; to make the worker itself non-blocking you would need a thread pool or `file_watcher`-style readiness, neither of which this example uses.
+But the *callback* in this example does **not** defer the work. `qb::io::async::callback(func)` — the overload with no delay — invokes `func()` **inline at the call site**; so does the timed overload when the duration is non-positive. <!-- src: qb/src/qb/io/async/io.h:368,388-389,410-412 --> The blocking `read`/`write` therefore runs synchronously inside the worker's `on(...)` handler, on the worker's core. What the design actually buys is **core isolation** (the manager and client on core 0 never block on disk) plus a clean place to factor the I/O code — not asynchrony within the worker. A positive `qb::duration` would only move the blocking call to a later turn on that same core; keeping the worker core responsive requires offloading the call or using a genuinely non-blocking API.
 
 ## The `ClientActor` driver
 

@@ -116,11 +116,14 @@ gate is verified with `-DQB_TESTS_WERROR=ON`.
 
 ## Standalone vs monorepo
 
-Each module builds both inside the monorepo (qb added via `add_subdirectory`) and standalone
-(`find_package(qb CONFIG REQUIRED)`). Module CMake resolves the dependency with the guard
-`if(NOT TARGET qb::core) find_package(qb CONFIG REQUIRED) endif()` and links the namespaced
-aliases (`qb::core`, `qb::io`, `qbm::http`, …), so the same `qb_add_test(...)` call works either
-way.
+Module **source tests** need a root that adds a qb source tree before adding the module:
+its CMake code calls development helpers (`qb_status_message`, `qb_register_module`,
+`qb_add_test`) that an installed qb package does not provide. Use the qb-dev root, or the
+[module CI superbuild](https://github.com/isndev/qbm-http/blob/main/.github/ci/superbuild/CMakeLists.txt)
+with `-DQBM_CI_QB_DIR=/path/to/qb` and `-DQBM_CI_MODULE_DIR=/path/to/qbm-http`.
+The module's own CI uses that shape. Consuming an **installed** module is different:
+`find_package(qbm-http CONFIG REQUIRED)` gives the `qbm::http` target; it does not build
+the module's source tests.
 
 ## Quality bar (enforced during review)
 

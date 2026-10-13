@@ -9,6 +9,11 @@ policy.
 
 ### Fixed
 
+- **Build, migration and coroutine guides now match the shipped contracts (Huly QB-423, QB-426,
+  QB-427, QB-471, QB-478).** Module source tests use a qb source superbuild, not an installed qb;
+  `callback` does not move blocking work off a core; detached work needs the same core kept alive
+  through completion; migrated event payloads avoid the reserved routing field `id`; and direct
+  `<qb/core/VirtualCore.h>` consumers have the actor member-template bodies.
 - **Transport and integration examples now carry the state their APIs require (Huly QB-332, QB-469, QB-470,
   QB-474).** QUIC routing uses a numeric address while preserving the TLS hostname, the file-pipeline alternative
   stores requester correlation explicitly, the TCP server declares its retained URI and registers its kill handler,
