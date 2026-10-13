@@ -293,19 +293,22 @@ void scheduleTick(qb::duration d) {
 }
 ```
 
-`startTests()` writes five files; each write response triggers a read of the same file; each read response is printed. The client counts outstanding requests in `_pending_requests` and, once that reaches zero, schedules a coordinated shutdown:
+`startTests()` writes five files; each successful write response triggers a read of the same file. The client marks a failed write, a failed read, or bytes that differ from what it wrote; completion is successful only when all five expected files were verified. The abbreviated excerpt below shows the verdict and shutdown boundary; the response handlers that update `_failed` and `_expected` remain in the source:
 
 ```cpp
 // src: examples/05-services/03-file-pipeline/main.cpp
 void checkCompletion() {
-    if (_pending_requests == 0)
+    if (_pending_requests == 0) {
+        g_file_pipeline_ok.store(!_failed && _expected.size() == 5);
         scheduleTick<ShutdownTick>(1s);           // chrono literal — see Pitfalls
+    }
 }
 
 void on(ShutdownTick&) {
     broadcast<qb::KillEvent>();                   // fan out shutdown to every actor
 }
 ```
+<!-- src: examples/05-services/03-file-pipeline/main.cpp:143-192 (write/read verdicts), :270-281 (final oracle and shutdown) -->
 
 `broadcast<qb::KillEvent>()` delivers a [`qb::KillEvent`](../../4_qb_core/messaging.md) to every actor on every core; each actor's `on(qb::KillEvent&)` handler calls `kill()`, and the engine's `join()` in `main` returns once all cores have drained.
 
