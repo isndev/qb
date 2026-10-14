@@ -484,13 +484,13 @@ struct PaddedEvent : public qb::Event {
 static_assert(sizeof(PaddedEvent) == QB_LOCKFREE_EVENT_BUCKET_BYTES || sizeof(PaddedEvent) == 2 * QB_LOCKFREE_EVENT_BUCKET_BYTES,
               "the probe poisons at most two buckets before replacing them with PaddedEvent");
 
-std::atomic<const void *> g_poisoned_slot{nullptr};
-std::atomic<const void *> g_second_poisoned_slot{nullptr};
-std::atomic<bool>         g_poison_written{false};
-std::atomic<const void *> g_padded_slot{nullptr};
-std::atomic<std::size_t>  g_tail_begin{0};
-std::atomic<std::size_t>  g_tail_end{0};
-std::atomic<int>          g_tail_nonzero{-1};
+std::atomic<const void *>                  g_poisoned_slot{nullptr};
+[[maybe_unused]] std::atomic<const void *> g_second_poisoned_slot{nullptr}; // used when PaddedEvent spans two buckets
+std::atomic<bool>                          g_poison_written{false};
+std::atomic<const void *>                  g_padded_slot{nullptr};
+std::atomic<std::size_t>                   g_tail_begin{0};
+std::atomic<std::size_t>                   g_tail_end{0};
+std::atomic<int>                           g_tail_nonzero{-1};
 
 class SlotRecv final : public qb::Actor {
 public:
