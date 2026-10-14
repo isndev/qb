@@ -1396,6 +1396,11 @@ policy.
 
 ### Documentation
 
+- **Actor lifetime and handle dereference guidance corrected (Huly QB-1050).** A remaining
+  error-handling example treated `is_alive()` inside a delayed `[this]` callback as a safety guard;
+  that check reads the destroyed actor itself. The guides now use an actor-scoped wait or an owned
+  `scoped_callback`. `ActorHandle::get()` is nullable, while `operator->` and `operator*` require
+  `ready()` and assert in debug; rules, the `llm/` reference and book pages now agree.
 - **`addRefHandle<T>()` is `addRefActor<T>()` marked `[[nodiscard]]`, not a compatibility alias (Huly QB-982).**
   Its doc, the `llm/` pair and five book pages called it an alias "retained for source compatibility" -- against the
   rule that no deprecated alias exists since 3.0, and against `addRefActor`'s own doc, which sends a caller who wants

@@ -201,7 +201,7 @@ The surfaces that observe the phase do **not** all behave the same, and that is 
 | Surface | Consults | While the target is *Activating* |
 |---|---|---|
 | `VirtualCore::findActor<T>(id)` | `is_active()` | **withheld** — `nullptr` |
-| `ActorHandle<T>::get()` / `operator->` / `operator*` / `ready()` / `operator bool` | `findActor` | **withheld** — `nullptr` / `false` |
+| `ActorHandle<T>::get()` / `ready()` / `operator bool` | `findActor` | **withheld** — `nullptr` / `false`; `operator->` / `operator*` require readiness and assert in debug (`Actor.h:2505-2519`) |
 | `is_actor_alive(id)` | `is_active()` | **withheld** — `false` |
 | `is_active()` | `_alive && _activated` | `false` |
 | `is_alive()` | `_alive` only | `true` — it is not a phase check |
@@ -237,7 +237,7 @@ void on(qb::KillEvent const &) {              // no `override`
 }
 ```
 
-`registerEvent<E>(*this)` is normally called from `onInit()`, but constructor-body registration works too (the id is already assigned) and so does registration at runtime from any handler. What `onInit()` uniquely offers is the failure path: `co_return false` aborts activation and prevents replay of stashed business events; control events and replies to its own initialization-time asks may still run while initialization is suspended. `unregisterEvent<E>(*this)` stops delivery of one type; `qb::Actor`'s removal from the router happens automatically at the reap (`src/qb/core/VirtualCore.h:1327-1343`; `src/qb/core/VirtualCore.cpp:307-310, src/qb/core/VirtualCore.cpp:312-324`).
+`registerEvent<E>(*this)` is normally called from `onInit()`, but constructor-body registration works too (the id is already assigned) and so does registration at runtime from any handler. What `onInit()` uniquely offers is the failure path: `co_return false` aborts activation and prevents replay of stashed business events; control events and replies to its own initialization-time asks may still run while initialization is suspended. `unregisterEvent<E>(*this)` stops delivery of one type; `qb::Actor`'s removal from the router happens automatically at the reap (`src/qb/core/VirtualCore.h:1327-1343`; `src/qb/core/VirtualCore.cpp:307-310, src/qb/core/VirtualCore.cpp:1315-1316`).
 
 ### Steady state: sending
 
@@ -308,7 +308,7 @@ What follows, in order, on the same pass:
 
 1. **The actor stops being called.** It is still in the router's handler map, so events addressed to it are still copied and routed — but the dispatch trampoline checks `handler.is_alive()` first, so no handler runs ([dispatch-time liveness](./messaging.md#is_alive-is-checked-at-dispatch-not-at-enqueue)).
 2. **Its `ICallback` tick is skipped** if it was killed earlier in the same pass (`src/qb/core/VirtualCore.cpp:1989-1993`).
-3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, and erases the `unique_ptr` — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1282-1350`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:155-171`).
+3. **The reap phase destroys it**: `removeActor(id)` unregisters the callback, unsubscribes every event type, cancels the coroutine scope again as a catch-all, moves the `unique_ptr` out of its registry slot, then resets it — which is where `~Actor()` finally runs (`src/qb/core/VirtualCore.cpp:1315-1348`) and where the sized `operator delete` hands the block back to its size class in the thread's arena (`src/qb/system/allocator/thread_arena.h:155-171`).
 4. **The incarnation is released.** After the destructor, its slot advances generation; an ordinary slot becomes reusable and a service tag can admit a new service instance. Generation exhaustion retires the slot. `ServiceIndex` remains the stable tag, not the instance ID. Source: `src/qb/core/VirtualCore.cpp` (`removeActor`, `ActorIdPool::release`).
 5. **Its watchers are told.** Each actor that `watch()`ed it is sent one `qb::DownEvent{id, killed}`, from here, by `__on_actor_down__` — after the destructor, the id back in the pool ([death watch](#death-watch-learning-that-another-actor-is-gone); `src/qb/core/VirtualCore.cpp:1345-1348`).
 
@@ -485,7 +485,7 @@ Either way the coroutine frame can survive its actor safely while the same core 
 - **Assuming `kill()` destroys.** It flags. The destructor runs at the reap, later in the same pass — or later still if an `onInit()` frame is suspended.
 - **Sending events from `~Actor()`.** The actor is being torn down and its instance is being retired.
 - **Trusting a non-null `getService<T>()`.** It is not phase-gated: the service may be mid-`onInit()` or already killed. Ask it, do not read it.
-- **Calling `operator->` on a handle you have not checked.** `nullptr` while Activating, after a failed init, after death, and from the wrong thread. `ready()` first, or `co_await ready_async(context())`.
+- **Calling `operator->` on a handle you have not checked.** `get()` returns `nullptr` while Activating, after a failed init, after death, and from the wrong thread; `operator->` asserts in debug and dereferencing without readiness is invalid (`Actor.h:2505-2510`). Check `ready()` first, or `co_await ready_async(context())`.
 - **Treating `time()` as a live clock.** It is cached per loop pass. Use `qb::unix_nanos(qb::wall_now())` for a fresh reading.
 - **Blocking in a handler or an `on(qb::LoopEvent const&)` tick.** One thread serves every actor on the core, and nothing diagnoses it — see [Async in actors](../5_core_io_integration/async_in_actors.md).
 - **Using a received event after `reply()` or `forward()`.** Both consume it, and both need `void on(E&)`.

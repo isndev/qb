@@ -301,7 +301,8 @@ spawn([d = 100ms](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 //                             no timer). THE way to continue after the current handler unwinds,
 //                             e.g. a handler that must destroy/replace the object it runs on.
 //   callback(fn) / fn()    -> run INLINE, right now (callback(fn) is NOT deferred).
-qb::io::async::defer([this] { if (is_alive()) reconnect(); }); // never runs re-entrantly
+// An actor's deferred closure must own its captures; defer does not extend actor lifetime.
+// Never capture `this` and then call is_alive() from the deferred closure.
 
 // Inactivity timeout (CRTP): implement on(event::timer&), call updateTimeout() on activity.
 class Session : public qb::io::async::with_timeout<Session> {
@@ -525,9 +526,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `addActor`; reach same-core via `getService<Cfg>()`, any core via `qb::Actor::getServiceId<CfgTag>(core)`.
   The tag registers at static initialisation; register an image that brings one before `Main::start`.
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware
-  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
-  and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
-  dangling pointer. It retains the exact incarnation and never resolves a replacement within the run.
+  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()` resolves the live actor on demand
+  and yields `nullptr` while the child is Activating, after a failed init, or once it died — never a
+  dangling pointer. `operator->` requires `ready()` and asserts in debug when unavailable
+  (`Actor.h:2505-2510`). It retains the exact incarnation and never resolves a replacement within the run.
   `ready_async()` captures that ID at the call, even if the handle changes before awaiting its task.
   Check `handle.valid()` before sending to its id; gate direct calls on `handle.ready()`.
   `addRefHandle<Child>()` is `addRefActor` marked `[[nodiscard]]` — same handle type, not a stronger or
@@ -740,7 +742,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1752-1785, :1628-1643, :1687-1706, src/qb/core/VirtualCore.cpp:1708-1718, :1752-1785)_
+  _(VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1539-1541, :1628-1643, :1661-1667, :1687-1706, :1708-1718, :1752-1785)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
@@ -1145,8 +1147,9 @@ An event that reaches no actor is a dead letter: the core that dropped it counts
 *   `inline constexpr std::size_t DownReasons = 5`; `constexpr std::string_view down_reason_name(DownReason) noexcept`.
 *   `struct DownEvent : Event { ActorId watched; DownReason reason; DownEvent(); DownEvent(ActorId gone, DownReason why) noexcept; }` — `getSource()` is the watched id too _(`DeathWatch.h:79-96`)_.
 *   A target-down answer follows that actor's destructor; the reaper calls `__on_actor_down__` afterwards. _(`VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1752-1785`)_
-*   `unknown` and `core_stopped` need no target destructor: the target core answers an unresolved target; the watcher answers an unconfigured core or a core it observes stopping/stopped. _(`VirtualCore.cpp:1628-1643, :1708-1718`)_
-*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an earlier answer from closing a later logical-address watch; full instance generations distinguish replacements. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1608-1613, :1687-1706`)_
+*   `unknown` needs no target destructor: the target core answers an unresolved target; the watcher answers an unconfigured core. _(`VirtualCore.cpp:1628-1632, :1661-1667`)_
+*   `core_stopped` needs no target destructor: the watcher answers a core it observes stopping or stopped. _(`VirtualCore.cpp:1636-1643, :1708-1718`)_
+*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an earlier answer from closing a later logical-address watch; full instance generations distinguish replacements. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1539-1541, :1604-1613, :1687-1706`)_
 
 ### Events (`<qb/core/Event.h>`)
 

@@ -126,7 +126,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 | Periodic callbacks | `qb::ICallback` + `registerCallback(*this)` | Mixin granting an `on(qb::LoopEvent const&)` tick once per `VirtualCore` loop iteration, after the core has received and dispatched that iteration's events; the body must be fast and non-blocking. |
 | Service actors | `qb::ServiceActor<Tag>` | One instance per `VirtualCore`, identified by a unique `Tag`; reached on the same core via `getService<MyService>()`. |
 | Dependency discovery | `require<TargetActor>()` | Broadcasts a `PingEvent`; live actors of the target type reply with `qb::RequireEvent`, handled with `is<TargetActor>(event)`. |
-| Safe child references | `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) | The return type of `addRefActor<T>()`. Phase-aware: `get()`/`operator->` resolve the live actor on demand and yield `nullptr` while it is Activating, after a failed init, or once it died — never a dangling pointer. `id()` is usable immediately; `ready()` / `co_await ready_async(ctx)` wait for an async-init child. |
+| Safe child references | `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) | The return type of `addRefActor<T>()`. Phase-aware: `get()` resolves the live actor on demand and yields `nullptr` while it is Activating, after a failed init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable (`Actor.h:2505-2510`). `id()` is usable immediately; `ready()` / `co_await ready_async(ctx)` wait for an async-init child. |
 
 ---
 

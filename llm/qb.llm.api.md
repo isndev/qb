@@ -283,8 +283,9 @@ An event that reaches no actor is a dead letter: the core that dropped it counts
 *   `inline constexpr std::size_t DownReasons = 5`; `constexpr std::string_view down_reason_name(DownReason) noexcept`.
 *   `struct DownEvent : Event { ActorId watched; DownReason reason; DownEvent(); DownEvent(ActorId gone, DownReason why) noexcept; }` — `getSource()` is the watched id too _(`DeathWatch.h:79-96`)_.
 *   A target-down answer follows that actor's destructor; the reaper calls `__on_actor_down__` afterwards. _(`VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1752-1785`)_
-*   `unknown` and `core_stopped` need no target destructor: the target core answers an unresolved target; the watcher answers an unconfigured core or a core it observes stopping/stopped. _(`VirtualCore.cpp:1628-1643, :1708-1718`)_
-*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an earlier answer from closing a later logical-address watch; full instance generations distinguish replacements. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1608-1613, :1687-1706`)_
+*   `unknown` needs no target destructor: the target core answers an unresolved target; the watcher answers an unconfigured core. _(`VirtualCore.cpp:1628-1632, :1661-1667`)_
+*   `core_stopped` needs no target destructor: the watcher answers a core it observes stopping or stopped. _(`VirtualCore.cpp:1636-1643, :1708-1718`)_
+*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an earlier answer from closing a later logical-address watch; full instance generations distinguish replacements. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1539-1541, :1604-1613, :1687-1706`)_
 
 ### Events (`<qb/core/Event.h>`)
 

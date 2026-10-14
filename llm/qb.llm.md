@@ -286,7 +286,8 @@ spawn([d = 100ms](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 //                             no timer). THE way to continue after the current handler unwinds,
 //                             e.g. a handler that must destroy/replace the object it runs on.
 //   callback(fn) / fn()    -> run INLINE, right now (callback(fn) is NOT deferred).
-qb::io::async::defer([this] { if (is_alive()) reconnect(); }); // never runs re-entrantly
+// An actor's deferred closure must own its captures; defer does not extend actor lifetime.
+// Never capture `this` and then call is_alive() from the deferred closure.
 
 // Inactivity timeout (CRTP): implement on(event::timer&), call updateTimeout() on activity.
 class Session : public qb::io::async::with_timeout<Session> {
@@ -510,9 +511,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `addActor`; reach same-core via `getService<Cfg>()`, any core via `qb::Actor::getServiceId<CfgTag>(core)`.
   The tag registers at static initialisation; register an image that brings one before `Main::start`.
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware
-  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
-  and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
-  dangling pointer. It retains the exact incarnation and never resolves a replacement within the run.
+  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()` resolves the live actor on demand
+  and yields `nullptr` while the child is Activating, after a failed init, or once it died — never a
+  dangling pointer. `operator->` requires `ready()` and asserts in debug when unavailable
+  (`Actor.h:2505-2510`). It retains the exact incarnation and never resolves a replacement within the run.
   `ready_async()` captures that ID at the call, even if the handle changes before awaiting its task.
   Check `handle.valid()` before sending to its id; gate direct calls on `handle.ready()`.
   `addRefHandle<Child>()` is `addRefActor` marked `[[nodiscard]]` — same handle type, not a stronger or
@@ -725,7 +727,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1752-1785, :1628-1643, :1687-1706, src/qb/core/VirtualCore.cpp:1708-1718, :1752-1785)_
+  _(VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1539-1541, :1628-1643, :1661-1667, :1687-1706, :1708-1718, :1752-1785)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

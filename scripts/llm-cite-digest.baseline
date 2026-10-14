@@ -44,8 +44,11 @@ llm/qb.llm.api.md	Event.h:797-798	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:806-807	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	VirtualCore.cpp:1081-1083	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1339-1348	05279575f79c	if (!_ids.mark_retiring(id))
-llm/qb.llm.api.md	VirtualCore.cpp:1608-1613	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1628-1643	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1539-1541	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
+llm/qb.llm.api.md	VirtualCore.cpp:1604-1613	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
+llm/qb.llm.api.md	VirtualCore.cpp:1628-1632	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1636-1643	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
+llm/qb.llm.api.md	VirtualCore.cpp:1661-1667	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
 llm/qb.llm.api.md	VirtualCore.cpp:1687-1706	73311f4ebccc	void
 llm/qb.llm.api.md	VirtualCore.cpp:1708-1718	5c14683bf048	void
 llm/qb.llm.api.md	VirtualCore.h:1114-1136	4f679e59b3c4	_ServiceActor *
@@ -213,7 +216,9 @@ llm/qb.llm.md	src/qb/core/ActorId.h:403-420	f9d651e0a7e8	std::uint64_t _value{0}
 llm/qb.llm.md	src/qb/core/ActorId.h:422-457	49e40540366f	constexpr ActorId() noexcept = default;
 llm/qb.llm.md	src/qb/core/ActorId.h:459-510	016bc1498599	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:657-663	690a03a23553	std::size_t
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1539-1541	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
 llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1628-1643	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1661-1667	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
 llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1687-1706	73311f4ebccc	void
 llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1708-1718	5c14683bf048	void
 llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1752-1785	9effe2d193b3	void

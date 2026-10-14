@@ -445,9 +445,10 @@ of a peer actor — see [Coroutines](#coroutines-for-async-io) below.
 `addRefActor<T>(args...)` creates a child actor on the **same** `VirtualCore` and returns a
 phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`, `qb/core/Actor.h`). The parent does not
 own the child — the child manages its own lifecycle and must `kill()` itself. The handle never
-dangles: it caches the `ActorId` and resolves the live pointer on demand, so `get()` / `operator->`
-return `nullptr` while the child is still *Activating* (async `onInit` in flight), after a failed
-init, or once it died. The child has its own `ActorId` and receives events normally.
+dangles: it caches the `ActorId`, and `get()` resolves the live pointer on demand, returning
+`nullptr` while the child is still *Activating* (async `onInit` in flight), after a failed
+init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable
+(`Actor.h:2505-2510`). The child has its own `ActorId` and receives events normally.
 
 ```cpp
 // src: derived from qb/tests/core/system/actor/actor-add.cpp
@@ -586,8 +587,8 @@ Supervision techniques:
 - **Cascade shutdown explicitly.** A supervisor's `on(KillEvent const &)` should push `KillEvent` to
   each worker before killing itself. There is no automatic parent/child teardown; the cooperative
   `kill()` model means you choose the order.
-- **Prefer `RefActorHandle` for same-core workers** so a dereference after a worker has died yields
-  `nullptr` rather than undefined behavior. For workers on other cores, hold their `ActorId`s and
+- **Prefer `RefActorHandle` for same-core workers** so `get()` after a worker has died yields
+  `nullptr` rather than a stale pointer; only dereference after `ready()` (`Actor.h:2505-2519`). For workers on other cores, hold their `ActorId`s and
   rely on the router dropping events to dead ids.
 
 ## Dependency resolution with require
@@ -742,8 +743,9 @@ context.
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.
 - **Calling `handle->method()` on a non-active child.** `addRefActor<T>()` returns a phase-aware
-  `qb::ActorHandle<T>` whose `get()`/`operator->` yield `nullptr` (debug `assert`) while the child is
-  Activating, after a failed init, or once it died. Gate direct calls on `handle.ready()` (or
+  `qb::ActorHandle<T>` whose `get()` yields `nullptr` while the child is Activating, after a failed
+  init, or once it died. `operator->` asserts in debug when unavailable (`Actor.h:2505-2510`).
+  Gate direct calls on `handle.ready()` (or
   `co_await handle.ready_async(context())`); prefer sending to `handle.id()` after checking `handle.valid()`.
 - **Cross-core `ActorHandle` use.** Handles are same-core only. Reach actors on other cores by
   `id()`.

@@ -383,23 +383,12 @@ A throw from inside a callback does **not** reach the `VirtualCore` fail-stop bo
 
 `callback()` with a positive timeout allocates a self-deleting `Timeout<F>` on the heap and hands ownership to the event loop. The closure runs at some *later* loop iteration. If that closure captures `this` (an actor) by raw pointer or reference, and the actor is destroyed before the timer fires, the callback dereferences freed memory. ASan does not always catch this — the timing is loop-dependent.
 
-There are two correct guards, and they compose:
+`is_alive()` is **not** a guard for a callback that captures `this`: it reads a member of the actor, so calling it after destruction is already a use-after-free (`qb/src/qb/core/Actor.h:867-870`). Same-core execution does not extend the actor's lifetime. Bind the wait to the actor's cancellation scope with `spawn` and `co_await ctx.sleep(delay)`, then send a self-addressed event through the context; the coroutine must not access actor members after suspension (`qb/src/qb/core/Actor.h:1518-1519`).
 
-**1. Guard the body with `is_alive()`** when the callback only touches the actor through the framework (sending events, calling `kill()`):
-
-```cpp
-qb::io::async::callback([this]() {
-    if (this->is_alive())                 // cheap liveness check before any use
-        this->push<Tick>(this->id());
-}, std::chrono::seconds(1));
-```
-
-`is_alive()` queries the actor's registration in the engine; it is valid to call from the callback because the callback runs on the same `VirtualCore` thread. This guards against the actor having been killed — but note it does not by itself protect a callback that dereferences actor *member data* before the check, and it does not help if the timer outlives the actor's *destructor*. For that, use the second guard.
-
-**2. Own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback can never run after the actor is gone:
+Another option is to **own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback cannot run after the actor is gone:
 
 ```cpp
-// src: qb/src/qb/io/async/io.h:441 (class ScopedTimeout), :507, :529 (scoped_callback overloads)
+// src: qb/src/qb/io/async/io.h:441 (class ScopedTimeout), :507, :519-526 (scoped_callback overloads)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>
@@ -435,6 +424,8 @@ Use it when a handler must do something that is unsafe inline — above all, des
 
 ```cpp
 // src: qb/src/qb/io/async/listener.h:1507 (qb::io::async::defer), :1076 (listener::defer)
+// This connection is owned by std::shared_ptr and derives from
+// std::enable_shared_from_this<Connection>.
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —
@@ -463,7 +454,7 @@ Decision table:
 - **Throwing a non-`std::exception` type.** It is caught — the worker boundary has a `catch (...)` beside the `catch (const std::exception &)` and both publish a phase-appropriate error — but only the typed arm can log *what* was thrown, so the crash report names nothing. Throw standard exception types.
 - **Treating `push` failure as catchable.** Sending is `noexcept` and never reports a bad destination to the SENDER. A message to a dead or unknown `ActorId` is dropped — and since 3.3 reported as a dead letter by the core that received it — but nothing comes back. If delivery matters, design an explicit acknowledgement plus a timeout.
 - **Relying on a callback exception to signal anything.** `async::callback` swallows exceptions and its timer self-deletes anyway (`scoped_callback`'s does not, but it swallows them just the same). Report via an event or owned state instead.
-- **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed, dereferencing freed memory. Guard with `is_alive()` and, for actor-lifetime timers, own the timer with `scoped_callback`.
+- **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed; even calling `is_alive()` through that pointer is a use-after-free. Use an actor-scoped `spawn` with `ctx.sleep()` and a context event, or own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.
 - **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, `watch()` the actors you depend on (one `DownEvent` when one is gone) and `co_await qb::ping` the ones that might be stuck — see [Supervision](#supervision).
 - **Reusing a logical service watch while its predecessor's answer is on its way.** Instance generations distinguish replacements. A logical service watch, however, retains its requested address and captured incarnation until answered; watching that same address again is a no-op while pending. `unwatch()` the address before starting a new watch of it.

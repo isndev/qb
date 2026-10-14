@@ -147,7 +147,7 @@ There is no `std::mutex` on the message path. The only locks in `qb-core` guard 
 
 ## Pitfalls
 
-- **Touching another actor's state directly.** Calling a public method via `handle->` bypasses the mailbox and the actor model's guarantees. It is safe only when `handle.ready()` (the actor is active); on a non-ready handle `get()` returns `nullptr` (debug `assert`), so never `operator->` an Activating / dead handle. Prefer sending an event to `handle.id()`.
+- **Touching another actor's state directly.** Calling a public method via `handle->` bypasses the mailbox and the actor model's guarantees. It is safe only when `handle.ready()` (the actor is active); on a non-ready handle `get()` returns `nullptr`, while `operator->` asserts in debug (`Actor.h:2505-2510`). Prefer sending an event to `handle.id()`.
 - **Reading `_alive` from outside the owning thread.** It is not atomic; a cross-thread read is a data race (`src/qb/core/Actor.h:345`). Use `qb::ActorHandle<T>` (alias `RefActorHandle<T>`).
 - **Capturing `this` (or any member by reference) into a `spawn_detached` coroutine.** The actor can die while the coroutine is suspended (`src/qb/core/Actor.h:1437-1443`). Capture by value; reach the actor only through `CoroContext`.
 - **Blocking the worker thread.** `std::this_thread::sleep_for`, a heavy syscall, or a long computation in a handler or `on(qb::LoopEvent const&)` stalls every actor on the core (`src/qb/core/ICallback.h:16-19`). Offload to a coroutine or a dedicated I/O actor.
