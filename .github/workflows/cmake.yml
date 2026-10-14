@@ -20,6 +20,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       LLVM_VERSION: ${{ matrix.llvm_version || '22' }}
+      # Three daemon-free OpenSSL binaries, registered only with QB_HAS_SSL. They are already
+      # part of the full suite below; this list adds assertions, not another test run.
+      QB_SSL_CTESTS: >-
+        qb-io-test-unit-ssl-context-config
+        qb-io-test-unit-ssl-context-value
+        qb-io-test-unit-ssl-context-guards
 
     strategy:
       fail-fast: false
@@ -146,6 +152,11 @@ jobs:
             -DQB_BUILD_EXAMPLES=ON
             -DQB_BUILD_BENCHMARKS=ON
             -DQB_USE_SYSTEM_GTEST=ON
+            # The suite can otherwise pass with TLS tests silently unregistered when OpenSSL
+            # is unavailable: QB_WITH_SSL defaults to ON but its historical fallback is OFF.
+            # QUIC stays AUTO, so an absent ngtcp2 OpenSSL helper does not fail this matrix.
+            -DQB_WITH_SSL=ON
+            -DQB_REQUIRE_FEATURES=ON
             # Not QB_USE_SYSTEM_BENCHMARK=ON: that switch is find_package(benchmark 1.9.5 REQUIRED),
             # and Ubuntu 24.04's libbenchmark-dev is 1.8.3 -- six red runs (d1897d3c..fa1c5ce3)
             # after the floor moved to 1.9.5 in 3da3b4d4. The default path considers the system
@@ -189,6 +200,96 @@ jobs:
 
           cmake "${args[@]}"
 
+      - name: Assert SSL requested and compiled in
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="${{ steps.build.outputs.dir }}/CMakeCache.txt"
+          grep -Fxq 'QB_WITH_SSL:BOOL=ON' "$cache" || {
+            echo '::error::QB_WITH_SSL was not requested'; exit 1; }
+          grep -Fxq 'QB_REQUIRE_FEATURES:BOOL=ON' "$cache" || {
+            echo '::error::requested feature downgrade is not fatal'; exit 1; }
+          defs="$(sed -n 's/^QB_COMPILE_DEFINITIONS:INTERNAL=//p' "$cache")"
+          case ";${defs};" in
+            *';QB_WITH_SSL=1;'*) ;;
+            *) echo '::error::QB_WITH_SSL is absent from compiled definitions'; exit 1 ;;
+          esac
+          case ";${defs};" in
+            *';QB_HAS_SSL=1;'*) ;;
+            *) echo '::error::OpenSSL was requested but QB_HAS_SSL is absent from compiled definitions'; exit 1 ;;
+          esac
+          ctest --test-dir "${{ steps.build.outputs.dir }}" --show-only=json-v1 \
+            > "${RUNNER_TEMP}/qb-ssl-registered.json"
+          python3 - "${RUNNER_TEMP}/qb-ssl-registered.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          expected = os.environ['QB_SSL_CTESTS'].split()
+          names = [t['name'] for t in json.load(open(sys.argv[1]))['tests']]
+          missing = [name for name in expected if names.count(name) != 1]
+          print(f'TLS CTest registration: {len(expected) - len(missing)}/{len(expected)} required')
+          if len(expected) < 3 or len(set(expected)) != len(expected) or missing:
+              print(f'::error::TLS test registration missing or duplicated: {missing}')
+              sys.exit(1)
+          PY
+          echo 'SSL requested and compiled in: QB_WITH_SSL=1, QB_HAS_SSL=1'
+
+      - name: Negative control — missing OpenSSL must stop configuration
+        if: matrix.name == 'ubuntu-gcc-cxx20-release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="${RUNNER_TEMP}/qb-openssl-negative"
+          set +e
+          cmake -S "${GITHUB_WORKSPACE}" -B "$scratch" -G Ninja \
+            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
+            -DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=TRUE \
+            -DQB_WITH_SSL=ON -DQB_REQUIRE_FEATURES=ON -DQB_WITH_QUIC=OFF \
+            -DQB_WITH_ZSTD=OFF -DQB_WITH_BROTLI=OFF \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF -DQB_BUILD_BENCHMARKS=OFF \
+            -DQB_INSTALL=OFF > "${RUNNER_TEMP}/qb-openssl-negative.log" 2>&1
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo '::error::configuration accepted a requested but missing OpenSSL'; exit 1
+          fi
+          grep -Fq 'OpenSSL not found - SSL/TLS support disabled' "${RUNNER_TEMP}/qb-openssl-negative.log" || {
+            cat "${RUNNER_TEMP}/qb-openssl-negative.log"
+            echo '::error::negative configuration failed for a reason other than missing OpenSSL'; exit 1; }
+          grep -Fq 'QB_REQUIRE_FEATURES=ON' "${RUNNER_TEMP}/qb-openssl-negative.log" || {
+            echo '::error::OpenSSL downgrade was not made fatal by QB_REQUIRE_FEATURES'; exit 1; }
+          echo "negative control caught unavailable OpenSSL (cmake exit $rc)"
+
+          # Scope control: the same three tests must disappear when SSL is explicitly OFF.
+          # Configure only; no binaries or extra suite are built or run.
+          no_ssl="${RUNNER_TEMP}/qb-no-ssl-registration"
+          cmake -S "${GITHUB_WORKSPACE}" -B "$no_ssl" -G Ninja \
+            -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 \
+            -DQB_WITH_SSL=OFF -DQB_WITH_QUIC=OFF -DQB_REQUIRE_FEATURES=ON \
+            -DQB_WITH_COMPRESSION=OFF -DQB_WITH_ZSTD=OFF -DQB_WITH_BROTLI=OFF \
+            -DQB_USE_SYSTEM_GTEST=ON \
+            -DQB_BUILD_TESTS=ON -DQB_BUILD_EXAMPLES=OFF -DQB_BUILD_BENCHMARKS=OFF \
+            -DQB_INSTALL=OFF > "${RUNNER_TEMP}/qb-no-ssl-registration.log" 2>&1 || {
+              cat "${RUNNER_TEMP}/qb-no-ssl-registration.log"; exit 1; }
+          ctest --test-dir "$no_ssl" --show-only=json-v1 \
+            > "${RUNNER_TEMP}/qb-no-ssl-registration.json"
+          python3 - "${RUNNER_TEMP}/qb-no-ssl-registration.json" <<'PY'
+          import json
+          import os
+          import sys
+
+          expected = set(os.environ['QB_SSL_CTESTS'].split())
+          names = [t['name'] for t in json.load(open(sys.argv[1]))['tests']]
+          present = expected & set(names)
+          always_on = 'qb-io-test-unit-crypto-nossl-core'
+          print(f'SSL-OFF registration: TLS={len(present)}, always-on={names.count(always_on)}')
+          if present or len(expected) < 3 or names.count(always_on) != 1:
+              print(f'::error::SSL-OFF registration control failed: TLS={sorted(present)}, '
+                    f'{always_on} count={names.count(always_on)}')
+              sys.exit(1)
+          PY
+
       - name: Build
         run: >
           cmake --build "${{ steps.build.outputs.dir }}"
@@ -197,7 +298,36 @@ jobs:
 
       - name: Test
         working-directory: ${{ steps.build.outputs.dir }}
-        run: ctest --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4
+        run: >
+          ctest --build-config ${{ matrix.build_type }} --output-on-failure --parallel 4
+          --output-junit "${{ runner.temp }}/qb-cmake-results.xml"
+
+      - name: Assert TLS tests executed without CTest skips
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "${{ runner.temp }}/qb-cmake-results.xml" <<'PY'
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          expected = os.environ['QB_SSL_CTESTS'].split()
+          cases = list(ET.parse(sys.argv[1]).getroot().iter('testcase'))
+          by_name = {name: [case for case in cases if case.get('name') == name]
+                     for name in expected}
+          missing = [name for name, matches in by_name.items() if len(matches) != 1]
+          skipped = [name for name, matches in by_name.items()
+                     if matches and matches[0].find('skipped') is not None]
+          failed = [name for name, matches in by_name.items()
+                    if matches and (matches[0].find('failure') is not None
+                                    or matches[0].find('error') is not None)]
+          executed = len(expected) - len(missing) - len(skipped)
+          print(f'TLS CTest: registered={len(expected) - len(missing)} executed={executed} '
+                f'skipped={len(skipped)} failed={len(failed)} floor>=3')
+          if len(expected) < 3 or len(set(expected)) != len(expected) or missing or skipped or failed or executed < 3:
+              print(f'::error::TLS CTest gate: missing={missing} skipped={skipped} failed={failed}')
+              sys.exit(1)
+          PY
 
   # Linux-only, and it has to be: the defect is a libstdc++ ABI-tag divergence between
   # clang and gcc, and libc++ has no cxx11 tag at all — so the macos-clang job above, and
