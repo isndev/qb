@@ -241,10 +241,29 @@ TEST(EventHeader, ExactBytePayloadsPinTheOneBucketBoundary) {
     EXPECT_EQ((sizeof(BytePayload<Event, 49>)), 128u);
     EXPECT_EQ((getItemSize<BytePayload<Event, 40>, EventBucket>()), 1u);
     EXPECT_EQ((getItemSize<BytePayload<Event, 41>, EventBucket>()), 2u);
+    EXPECT_EQ(sizeof(qb::CorrelatedEvent), 64u);
+    EXPECT_EQ(sizeof(qb::ServiceEvent), 64u);
+#if defined(_MSC_VER)
+    SCOPED_TRACE("MS ABI: derived payloads cannot reuse a base event's tail padding");
+    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 1>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 32>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 1>)), 128u);
+    EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 30>)), 128u);
+    EXPECT_EQ((getItemSize<qb::CorrelatedEvent, EventBucket>()), 1u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::CorrelatedEvent, 1>, EventBucket>()), 2u);
+    EXPECT_EQ((getItemSize<qb::ServiceEvent, EventBucket>()), 1u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::ServiceEvent, 1>, EventBucket>()), 2u);
+#else
+    SCOPED_TRACE("Itanium ABI: derived payloads reuse the base event's tail padding");
     EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 32>)), 64u);
-    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 33>)), 128u);
     EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 30>)), 64u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::CorrelatedEvent, 32>, EventBucket>()), 1u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::ServiceEvent, 30>, EventBucket>()), 1u);
+#endif
+    EXPECT_EQ((sizeof(BytePayload<qb::CorrelatedEvent, 33>)), 128u);
     EXPECT_EQ((sizeof(BytePayload<qb::ServiceEvent, 31>)), 128u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::CorrelatedEvent, 33>, EventBucket>()), 2u);
+    EXPECT_EQ((getItemSize<BytePayload<qb::ServiceEvent, 31>, EventBucket>()), 2u);
 }
 
 // ---------------------------------------------------------------------------
