@@ -42,12 +42,12 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:797-798	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:806-807	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.cpp:1078-1080	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.api.md	VirtualCore.cpp:1334-1343	05279575f79c	if (!_ids.mark_retiring(id))
-llm/qb.llm.api.md	VirtualCore.cpp:1603-1608	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1623-1638	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1682-1701	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1703-1713	5c14683bf048	void
+llm/qb.llm.api.md	VirtualCore.cpp:1081-1083	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.api.md	VirtualCore.cpp:1339-1348	05279575f79c	if (!_ids.mark_retiring(id))
+llm/qb.llm.api.md	VirtualCore.cpp:1608-1613	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
+llm/qb.llm.api.md	VirtualCore.cpp:1628-1643	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1687-1706	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1708-1718	5c14683bf048	void
 llm/qb.llm.api.md	VirtualCore.h:1114-1136	4f679e59b3c4	_ServiceActor *
 llm/qb.llm.api.md	VirtualCore.h:1586-1586	e9dc7855af62	Actor::spawn_detached(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1586-1588	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
@@ -86,8 +86,8 @@ llm/qb.llm.api.md	src/qb/core/ActorId.h:403-420	f9d651e0a7e8	std::uint64_t _valu
 llm/qb.llm.api.md	src/qb/core/ActorId.h:422-457	49e40540366f	constexpr ActorId() noexcept = default;
 llm/qb.llm.api.md	src/qb/core/ActorId.h:459-510	016bc1498599	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.api.md	src/qb/core/ActorId.h:657-663	690a03a23553	std::size_t
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1747-1780	9effe2d193b3	void
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2075-2091	58e409058068	void
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1752-1785	9effe2d193b3	void
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2088-2104	58e409058068	void
 llm/qb.llm.api.md	src/qb/core/detail/actor_id_pool.h:34-49	0a08de35a5c3	struct Entry {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:207-240	9554d137f47e	drain_backend_packets() {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:326-340	e6a54fbc82e3	if (_credit_packets_pending && _backend) {
@@ -146,12 +146,12 @@ llm/qb.llm.md	Main.cpp:505-507	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:710-712	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Main.h:312-329	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1078-1080	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.md	VirtualCore.cpp:1227-1248	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1334-1343	05279575f79c	if (!_ids.mark_retiring(id))
-llm/qb.llm.md	VirtualCore.cpp:1455-1462	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:764-770	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
-llm/qb.llm.md	VirtualCore.cpp:901-913	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.cpp:1081-1083	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.md	VirtualCore.cpp:1230-1251	3f3d481b4457	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1339-1348	05279575f79c	if (!_ids.mark_retiring(id))
+llm/qb.llm.md	VirtualCore.cpp:1460-1467	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:767-773	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
+llm/qb.llm.md	VirtualCore.cpp:904-916	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
 llm/qb.llm.md	VirtualCore.h:1114-1136	4f679e59b3c4	_ServiceActor *
 llm/qb.llm.md	VirtualCore.h:1574-1574	1f3db9b196c8	Actor::spawn_detached(Func &&func) const {
 llm/qb.llm.md	VirtualCore.h:1584-1595	095ce8f5dddd	template <typename Func>
@@ -213,11 +213,11 @@ llm/qb.llm.md	src/qb/core/ActorId.h:403-420	f9d651e0a7e8	std::uint64_t _value{0}
 llm/qb.llm.md	src/qb/core/ActorId.h:422-457	49e40540366f	constexpr ActorId() noexcept = default;
 llm/qb.llm.md	src/qb/core/ActorId.h:459-510	016bc1498599	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:657-663	690a03a23553	std::size_t
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1623-1638	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1682-1701	73311f4ebccc	void
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1703-1713	5c14683bf048	void
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1747-1780	9effe2d193b3	void
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2075-2091	58e409058068	void
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1628-1643	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1687-1706	73311f4ebccc	void
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1708-1718	5c14683bf048	void
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:1752-1785	9effe2d193b3	void
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2088-2104	58e409058068	void
 llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:34-49	0a08de35a5c3	struct Entry {
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:541-554	42fdc6b6c1d9	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	src/qb/io/quic.cpp:1022-1023	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;

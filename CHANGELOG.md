@@ -19,6 +19,10 @@ policy.
   The occupied event header grows from 16 to 24 bytes; the base event and allocator bucket remain
   64 bytes. On the measured arm64 layout, a plain byte payload fits 40 bytes in one bucket instead
   of 48; derived event layouts require their own size check. Performance acceptance is still pending.
+  Admission grows the owning registry geometrically and constructs each fresh metadata row directly;
+  instance lookup decodes the slot and generation once. Reservation, generation and retirement checks
+  remain enforced across user constructors, init and destructors. Native performance validation of
+  this cost reduction remains pending; the source exception is documented in VERSIONING.md.
 
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;

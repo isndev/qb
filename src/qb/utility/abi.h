@@ -39,7 +39,7 @@
  * ```
  * Undefined symbols for architecture arm64:
  *   "_qb_abi_cacheline_128", referenced from:
- *       qb::detail::abi_fingerprint in main.o
+ *       qb::detail::abi_fingerprint_actor64 in main.o
  * ```
  *
  * The archive's side of the story is one command away, and needs no demangler:
@@ -66,15 +66,21 @@
  * (c) *unsound* — it changes the layout of a public type, or the body of an entity the archive
  * also defines.
  *
+ * The numeric layout examples for the configuration axes below are historical measurements
+ * from the 3.0 audit, not current ActorId64 structure sizes. The actor-identity row describes
+ * the current source layout; native mixed-layout verification is a separate requirement.
+ *
  * | axis | symbol | why it qualifies (measured) |
  * |---|---|---|
- * | qb version | `qb_abi_version_M_m_p` | installed headers and archive are one unit; nothing else detects skew, and it is the axis that
- * catches a consumer compiled without qb's CMake usage requirements at all | | cache line | `qb_abi_cacheline_N` | `sizeof(qb::Event)` 64 ->
- * 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 | | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks 8 inline bodies, of
- * which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also* defined by the archive | |
- * coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 | | jthread source |
- * `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps `qb::jthread` 16 ->
- * 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 |
+ * | qb version and identity layout | `qb_abi_version_M_m_p_actor64` | installed headers and archive are one unit; nothing else detects skew,
+ * and it is the axis that catches a consumer compiled without qb's CMake usage requirements at all | | cache line | `qb_abi_cacheline_N` |
+ * `sizeof(qb::Event)` 64 -> 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 | | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions`
+ * forks 8 inline bodies, of which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also*
+ * defined by the archive | | coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 | |
+ * jthread source | `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps
+ * `qb::jthread` 16 -> 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 | | actor identity |
+ * `qb_abi_actor_id_64` | identities widen from 32 to 64 bits and change the event header layout (occupied header 16 to 24 bytes measured on
+ * arm64) |
  *
  * Deliberately **excluded**, each for a reason that must be re-argued before it changes:
  *
@@ -382,8 +388,9 @@ QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint_actor64[] = {
 // main.obj`, i.e. it names BOTH sides, which no ELF/Mach-O linker will do for an undefined
 // symbol. Verified to be an inert no-op under Apple clang on Mach-O (compiles, emits no
 // linker-option load command, does not fail a mismatched link), hence the guard: it is a bonus
-// where it works, never the mechanism. UNVERIFIED on MSVC -- no Windows toolchain is reachable
-// from this project's development hosts; see dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7.
+// where it works, never the mechanism. MSVC was unavailable in the historical 3.0 audit
+// (dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7). Current ActorId64 mixed-layout
+// rejection still requires its own native verification; a homogeneous package link is not that proof.
 //
 // It goes through `_Pragma`, not `#pragma`, and that is load-bearing rather than stylistic: a
 // `#pragma` line's arguments are NOT macro-expanded. Measured here -- `clang -E` on

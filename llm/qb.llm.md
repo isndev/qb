@@ -109,16 +109,19 @@ allocator/constructor. Factories bind their promised IDs explicitly; nested chil
 consume another promise. Failed reservations/constructors are released with generation advancement.
 The initializer moves its pool to the core at startup and receives the generation metadata back only
 after terminal actor/frame/pipe cleanup. Storage has separate ordinary-slot and service-tag banks,
-so one service does not allocate an actor row at its encoded 24-bit offset. No dispatch allocation
+so one service does not allocate an actor row at its encoded 24-bit offset. The owning registry grows
+geometrically, while fresh metadata rows are constructed only for issued slots. Reservation checks
+remain at publication and after user init; retirement prevents reuse during the destructor. No dispatch allocation
 is needed for registry lookup. The identity guarantee is within an engine run; it does not supply a
 process/engine namespace. Normal `join()` does not make a successfully started `Main` configurable
 or restartable: `_is_running` remains set, `core()` rejects configuration and `start()` returns.
 Source: `src/qb/core/ActorId.h` (`ActorId`), `src/qb/core/Main.h` (`CoreInitializer::addActor`),
 `src/qb/core/Main.cpp` (`Main::start_thread`, `Main::start`, `Main::join`, `Main::core`),
 `src/qb/core/VirtualCore.h` (`addReferencedActor`, `__actor_slot__`),
-`src/qb/core/VirtualCore.cpp` (`__install_id_pool__`, `__receive_events__`, `removeActor`, `ActorIdPool::release`).
+`src/qb/core/VirtualCore.cpp` (`__install_id_pool__`, `__prepare_actor_slot__`, `__receive_events__`,
+`removeActor`, `ActorIdPool::reserve_ordinary`, `ActorIdPool::release`).
 
-<!-- src: src/qb/core/ActorId.h:403-420,422-457,459-510,657-663; src/qb/core/detail/actor_id_pool.h:34-49; src/qb/core/VirtualCore.cpp:2075-2091 -->
+<!-- src: src/qb/core/ActorId.h:403-420,422-457,459-510,657-663; src/qb/core/detail/actor_id_pool.h:34-49; src/qb/core/VirtualCore.cpp:2088-2104 -->
 
 ## Core APIs (verified signatures)
 
@@ -474,7 +477,7 @@ on that core alive until the task reports completion (or complete the work befor
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
 `CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1424-1482;
 VirtualCore.h:1584-1595; coroutine-detached.cpp:878-938)_
-The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1078-1080)_
+The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1081-1083)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -601,7 +604,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:388-410; VirtualCore.cpp:764-770, :901-913, :1227-1248; coroutine/scheduler.h:850-854)_
+  _(Actor.cpp:388-410; VirtualCore.cpp:767-773, :904-916, :1230-1251; coroutine/scheduler.h:850-854)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -681,7 +684,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1482 / VirtualCore.h:1574; `spawn` Actor.h:1519 /
-  VirtualCore.h:1600)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1078-1080)_
+  VirtualCore.h:1600)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1081-1083)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -698,7 +701,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:802-819; VirtualCore.h:959-971; VirtualCore.cpp:1455-1462)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:802-819; VirtualCore.h:959-971; VirtualCore.cpp:1460-1467)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
@@ -722,7 +725,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1334-1343, src/qb/core/VirtualCore.cpp:1747-1780, :1623-1638, :1682-1701, src/qb/core/VirtualCore.cpp:1703-1713, :1747-1780)_
+  _(VirtualCore.cpp:1339-1348, src/qb/core/VirtualCore.cpp:1752-1785, :1628-1643, :1687-1706, src/qb/core/VirtualCore.cpp:1708-1718, :1752-1785)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

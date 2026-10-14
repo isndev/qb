@@ -263,7 +263,10 @@ VirtualCore::__prepare_actor_slot__(ActorId const id) {
     const std::size_t slot  = id.is_service() ? id.service_tag() : id.slot();
     const std::size_t limit = id.is_service() ? std::numeric_limits<ServiceId>::max() : ActorId::MaxOrdinarySlot + 1u;
     if (slot >= bank.size())
-        allocator::detail::region_resize(bank, slot + 1u, limit);
+        // Grow the logical registry geometrically as well as its allocation. Fresh
+        // admissions then initialise/check the extended pointer range once per doubling,
+        // rather than invoking vector growth for every successive ordinary slot.
+        allocator::detail::region_resize(bank, std::max(slot + 1u, bank.size() * 2u), limit);
 }
 
 ActorId
@@ -1254,7 +1257,9 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
         return ActorId::NotFound;
     Actor        &actor = *actor_ptr;
     const ActorId id    = actor.id();
-    if (unlikely(!id.is_instance() || !_ids.owns_reservation(id) || __actor_slot__(id) != nullptr)) {
+    // The direct bank/slot check below rejects an occupied registry entry before init.
+    // No user code runs between these guards; a second exact-instance lookup adds no gate.
+    if (unlikely(!id.is_instance() || !_ids.owns_reservation(id))) {
         QB_LOG_CRIT("Error Cannot add " << actor << ": its reservation is unavailable");
         return ActorId::NotFound;
     }
@@ -2030,16 +2035,18 @@ ActorId
 detail::ActorIdPool::reserve_ordinary() {
     if (empty())
         return ActorId::NotFound;
-    ActorSlotId slot = _free_head;
-    if (slot != 0) {
-        _free_head = _ordinary[slot].state;
-    } else {
-        slot = _ordinary.empty() ? 1u : static_cast<ActorSlotId>(_ordinary.size());
-        allocator::detail::region_resize(_ordinary, static_cast<std::size_t>(slot) + 1u, static_cast<std::size_t>(_ordinary_limit) + 1u);
+    if (const ActorSlotId slot = _free_head; slot != 0) {
+        Entry &item = _ordinary[slot];
+        _free_head  = item.state;
+        item.state  = Reserved;
+        return ActorId::ordinary(slot, _core, item.generation);
     }
-    Entry &item = _ordinary[slot];
-    item.state  = Reserved;
-    return ActorId::ordinary(slot, _core, item.generation);
+    const ActorSlotId slot = _ordinary.empty() ? 1u : static_cast<ActorSlotId>(_ordinary.size());
+    allocator::detail::region_reserve(_ordinary, static_cast<std::size_t>(slot) + 1u, static_cast<std::size_t>(_ordinary_limit) + 1u);
+    if (_ordinary.empty())
+        _ordinary.emplace_back();                // invalid row zero, never returned as an actor identity
+    _ordinary.emplace_back(Entry{1u, Reserved}); // one new row, without the resize helper
+    return ActorId::ordinary(slot, _core, 1u);
 }
 
 ActorId
@@ -2057,14 +2064,20 @@ detail::ActorIdPool::reserve_service(ServiceId const tag) {
 
 detail::ActorIdPool::Entry *
 detail::ActorIdPool::entry(ActorId const id) noexcept {
-    if (!id.is_instance() || id.index() != _core)
+    // Decode once. The instance domain is every nonzero slot except the service-band
+    // marker and broadcast slot, with a nonzero generation. Retain core, bounds and
+    // generation checks for callers supplying stale or foreign identities.
+    const ActorSlotId slot       = id.slot();
+    const auto        generation = id.generation();
+    if (generation == 0 || id.index() != _core || slot == 0 || slot == ActorId::ServiceBand || slot == ActorId::BroadcastSid)
         return nullptr;
-    auto             &bank = id.is_service() ? _services : _ordinary;
-    const std::size_t slot = id.is_service() ? id.service_tag() : id.slot();
-    if (slot >= bank.size())
+    const bool        service = slot > ActorId::ServiceBand;
+    auto             &bank    = service ? _services : _ordinary;
+    const std::size_t index   = service ? static_cast<ServiceId>(slot) : slot;
+    if (index >= bank.size())
         return nullptr;
-    Entry &item = bank[slot];
-    return item.generation == id.generation() ? &item : nullptr;
+    Entry &item = bank[index];
+    return item.generation == generation ? &item : nullptr;
 }
 
 detail::ActorIdPool::Entry const *
