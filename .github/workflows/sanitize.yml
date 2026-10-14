@@ -48,7 +48,7 @@ jobs:
             -DCMAKE_CXX_COMPILER="clang++-${LLVM_VERSION}" \
             -DQB_CXX_STANDARD=20 \
             -DQB_BUILD_EXAMPLES=OFF \
-            -DQB_USE_SYSTEM_GTEST=ON \
+            -DQB_USE_SYSTEM_GTEST=OFF \
             -DQB_ENABLE_NATIVE_ARCH=OFF \
             -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}" 2>&1 | tee "${RUNNER_TEMP}/configure.log"
           builddir="$(sed -n 's/^-- Build files have been written to: //p' "${RUNNER_TEMP}/configure.log" | tail -1)"
@@ -87,6 +87,9 @@ jobs:
                     f"instrumenting the build it claims to instrument.")
               sys.exit(1)
           PY
+
+      - name: Prove pinned GoogleTest is instrumented, with negative controls
+        run: python3 scripts/check-sanitizer-gtest-provenance.py "${SANITIZE_BUILD_DIR}" address,undefined
 
       - name: Build
         run: cmake --build --preset sanitize --parallel "$(nproc)"
