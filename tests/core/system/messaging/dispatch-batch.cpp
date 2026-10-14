@@ -136,7 +136,7 @@ public:
             if (i == kCounters / 2)
                 broadcast<Pulse>(); // dest = BroadcastId: sid out of the actor table's range
             if (i == kCounters / 3)
-                push<Ping>(qb::ActorId(60000u | (static_cast<std::uint32_t>(id().index()) << 16)), seq++); // no actor ever had this sid
+                push<Ping>(qb::ActorId::ordinary(60000, id().index(), 1), seq++); // no actor ever had this sid
         }
     }
 

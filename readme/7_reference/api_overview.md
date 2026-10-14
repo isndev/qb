@@ -236,9 +236,10 @@ public:
 | Type | Definition | Notes |
 |---|---|---|
 | `qb::CoreId` | `uint16_t` | Logical core id. `qb::MaxCores == 256`. |
-| `qb::ServiceId` | `uint16_t` | Actor slot within a core. |
+| `qb::ServiceId` | `uint16_t` | Logical service tag; separate from ordinary actor slots. |
+| `qb::ActorSlotId` | `uint32_t` | Storage for a 24-bit actor slot. |
 | `qb::TypeId` / `qb::EventId` | `uint16_t` | Dense per-type identifier. |
-| `qb::ActorId` | compound `{ServiceId, CoreId}` | `sid()`, `index()`, `is_valid()`, `is_broadcast()`, `operator uint32_t()`. `ActorId::NotFound == 0`. |
+| `qb::ActorId` | 64-bit `[generation:32 \| core:8 \| slot:24]` | `slot()` / `sid()`, `index()`, `generation()`, kind checks, `raw64()` / checked `from_raw()`. Zero is invalid. |
 | `qb::BroadcastId` | `ActorId` subclass | `explicit BroadcastId(uint32_t core_id)` targets every actor on one core. |
 | `qb::CoreIdSet` | alias of `CoreIdBitSet` | Affinity and reachability set over `[0, MaxCores)`. |
 | `qb::NoAffinity` | `constexpr CoreId` sentinel | `std::numeric_limits<CoreId>::max()` — let the OS schedule the thread. |

@@ -66,15 +66,15 @@ struct TestEvent : public qb::Event {};
 class TestActor final : public qb::Actor {
 public:
     TestActor() {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
     }
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
         g_inits.fetch_add(1, std::memory_order_relaxed);
         // Uniquely-tagged CRIT line — the content oracle greps for this in the flushed log file.
-        QB_LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex()) << " id=" << static_cast<std::uint32_t>(id()));
+        QB_LOG_CRIT(kLogTag << " init core=" << static_cast<std::uint32_t>(getIndex()) << " id=" << id().raw64());
         registerEvent<TestEvent>(*this);
         push<TestEvent>(id()); // self-send: drives the handler, then self-kill
         co_return true;

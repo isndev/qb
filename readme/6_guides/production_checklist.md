@@ -164,7 +164,7 @@ Each `VirtualCore` runs a busy loop by default. `CoreInitializer::setLatency(qb:
 - `qb::duration::zero()` (the default) — low-latency mode: the core spins, consuming a full CPU on its assigned core.
 - `latency > 0` — the core may sleep up to that duration when idle, cutting CPU use at the cost of worst-case event-handling latency. A core that owns active qb-io watchers sleeps inside its io loop, so sockets and io timers still wake it at poll latency and `latency` only caps the park; a core with no io watchers sleeps on its mailbox condition variable and wakes only for a producer's event or the timeout.
 
-<!-- src: qb/src/qb/core/Main.h:284-307 -->
+<!-- src: qb/src/qb/core/Main.h:289-312 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Main.h (CoreInitializer API)
@@ -239,11 +239,11 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 `qb::Main::start()` installs handlers for **both** `SIGINT` and `SIGTERM` automatically (in both async and synchronous modes). The handler is async-signal-safe: it bumps that signal's own generation and a global `_signal_generation` counter that each `VirtualCore` polls every loop iteration — one `SignalEvent` per signal raised, so a signal raised after a `SIGTERM` can never hide it — and the write is observed within the configured mailbox latency and the engine shuts down gracefully.
 
-<!-- src: qb/src/qb/core/Main.cpp:405-416 (onSignal), :757-767 (install_default_signals registers SIGINT + SIGTERM), :626 (sync start path), :648 (async start path) -->
+<!-- src: qb/src/qb/core/Main.cpp:401-412 (onSignal), :769-779 (install_default_signals registers SIGINT + SIGTERM), :638 (sync start path), :660 (async start path) -->
 
 On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_RESTART`), so a *second* `SIGINT` still triggers the graceful path rather than the historical System-V behavior of resetting to default and terminating the process. On Windows, `std::signal` is used.
 
-<!-- src: qb/src/qb/core/Main.cpp:714-732 (install_signal incl. comment + sigaction body) -->
+<!-- src: qb/src/qb/core/Main.cpp:726-744 (install_signal incl. comment + sigaction body) -->
 
 `SIGINT` and `SIGTERM` need no explicit registration. To receive an additional
 platform signal such as `SIGHUP`, register it after constructing the engine and
@@ -273,13 +273,13 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/src/qb/core/Main.cpp:777-790 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:789-802 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it raises SIGINT's generation the same way and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
-<!-- src: qb/src/qb/core/Main.cpp:668-677 (stop) -->
+<!-- src: qb/src/qb/core/Main.cpp:680-689 (stop) -->
 
 **Checklist**
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:657-659 (LOG_CRIT/stderr on init failure), :663-666 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:669-671 (LOG_CRIT/stderr on init failure), :675-678 (hasError), qb/src/qb/io/async/io.h:1345-1348,2757-2760 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

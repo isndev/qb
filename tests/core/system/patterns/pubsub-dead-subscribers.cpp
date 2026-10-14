@@ -233,3 +233,120 @@ TEST(PubSubDeadSubscribers, ALaterSubscribeReclaimsDeadSlots) {
                                               << " survivors plus the newcomer): `subscribe()` is not reclaiming the slots of "
                                                  "subscribers that died, so the list grows without bound as subscribers churn";
 }
+
+namespace pubsub_service_address_test {
+
+struct SubscriberTag {};
+std::atomic<int>         g_service_constructed{0};
+std::atomic<int>         g_service_destroyed{0};
+std::atomic<int>         g_service_delivered{0};
+std::atomic<bool>        g_logical_alive{false};
+std::atomic<bool>        g_old_instance_dead{false};
+std::atomic<bool>        g_replacement_alive{false};
+std::atomic<bool>        g_replacement_distinct{false};
+std::atomic<std::size_t> g_count_initial{0};
+std::atomic<std::size_t> g_count_after_prune{0};
+std::atomic<std::size_t> g_slots_after_prune{0};
+std::atomic<std::size_t> g_count_after_replacement{0};
+
+class ServiceSubscriber : public qb::ServiceActor<SubscriberTag> {
+public:
+    ServiceSubscriber() {
+        ++g_service_constructed;
+    }
+    ~ServiceSubscriber() override {
+        ++g_service_destroyed;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<Tick>(*this);
+        co_return true;
+    }
+    void
+    on(Tick const &) {
+        ++g_service_delivered;
+    }
+};
+
+class Driver
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _original;
+    int         _pass = 0;
+
+public:
+    explicit Driver(qb::ActorId original)
+        : _original(original) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<Tick>(*this);
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(Tick const &) {}
+    void
+    on(qb::LoopEvent const &) final {
+        ++_pass;
+        if (_pass == 1) {
+            const auto address = getServiceId<SubscriberTag>(getIndex());
+            auto      *bus     = getService<qb::PubSub<Tick>>();
+            bus->subscribe(address);
+            g_logical_alive.store(is_actor_alive(address));
+            g_count_initial.store(bus->subscriber_count());
+            bus->subscribe(id()); // a second subscribe invokes pruning of the logical service
+            g_count_after_prune.store(bus->subscriber_count());
+            g_slots_after_prune.store(bus->tracked_slot_count());
+            bus->publish(17);
+        } else if (_pass == 3) {
+            push<qb::KillEvent>(_original);
+        } else if (_pass == 5) {
+            const auto replacement = addRefActor<ServiceSubscriber>();
+            g_replacement_distinct.store(replacement.valid() && replacement.id() != _original && replacement.id().slot() == _original.slot());
+            g_old_instance_dead.store(!is_actor_alive(_original));
+            g_replacement_alive.store(replacement.valid() && is_actor_alive(replacement.id())
+                                      && is_actor_alive(getServiceId<SubscriberTag>(getIndex())));
+            auto *bus = getService<qb::PubSub<Tick>>();
+            g_count_after_replacement.store(bus->subscriber_count());
+            bus->publish(99); // the retained logical subscription follows this instance
+        } else if (_pass == 8) {
+            push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        }
+    }
+};
+
+} // namespace pubsub_service_address_test
+
+TEST(PubSubDeadSubscribers, LogicalServiceSubscriberSurvivesPruningAndFollowsTheCurrentInstance) {
+    using namespace pubsub_service_address_test;
+    g_service_constructed.store(0);
+    g_service_destroyed.store(0);
+    g_service_delivered.store(0);
+    g_logical_alive.store(false);
+    g_old_instance_dead.store(false);
+    g_replacement_alive.store(false);
+    g_replacement_distinct.store(false);
+    g_count_initial.store(0);
+    g_count_after_prune.store(0);
+    g_slots_after_prune.store(0);
+    g_count_after_replacement.store(0);
+    qb::Main main;
+    main.addActor<qb::PubSub<Tick>>(0);
+    const auto original = main.addActor<ServiceSubscriber>(0);
+    ASSERT_TRUE(original.is_service_instance());
+    main.addActor<Driver>(0, original);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    EXPECT_EQ(g_service_constructed.load(), 2);
+    EXPECT_EQ(g_service_destroyed.load(), 2);
+    EXPECT_TRUE(g_logical_alive.load());
+    EXPECT_EQ(g_count_initial.load(), 1u);
+    EXPECT_EQ(g_count_after_prune.load(), 2u);
+    EXPECT_EQ(g_slots_after_prune.load(), 2u);
+    EXPECT_TRUE(g_replacement_distinct.load());
+    EXPECT_TRUE(g_old_instance_dead.load());
+    EXPECT_TRUE(g_replacement_alive.load());
+    EXPECT_EQ(g_count_after_replacement.load(), 2u);
+    EXPECT_EQ(g_service_delivered.load(), 2) << "both service instances must receive the retained logical subscription";
+}

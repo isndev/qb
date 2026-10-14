@@ -96,7 +96,7 @@ BM_Multicast_Latency(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK_TEMPLATE(BM_Multicast_Latency, LightEvent)
+BENCHMARK_TEMPLATE(BM_Multicast_Latency, RoutedLatencyEvent)
     ->Apply(qb::bench::apply_pipeline_multicast_args)
     ->ArgNames({"NB_EVENTS", "NB_ACTORS", "NB_CORE"})
     ->Unit(benchmark::kMillisecond)

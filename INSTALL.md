@@ -165,14 +165,14 @@ A prebuilt prefix records its own configuration in **`share/qb/abi-fingerprint.t
 $ cat /your/prefix/share/qb/abi-fingerprint.txt
 # qb ABI + configuration fingerprint of THIS installed prefix.
 # ...
-qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1
+qb-abi qb=<version> cacheline=64 exceptions=1 coroutine_debug=0 std_jthread=1 actor_id=64
 cxx_standard=20 compiler=AppleClang-21.0.0.21000101 build_type=Release shared_libs=OFF
 ssl=TRUE compression=TRUE quic=TRUE argon2=TRUE
 unordered_map=ska nlohmann=3.12.0
 ```
 
 The `qb-abi` line is read back **out of the installed archive**, not re-derived from CMake
-variables, so it cannot drift from the artefact. Its five axes are enforced **at link time**: a
+variables, so it cannot drift from the artefact. Its six axes are enforced **at link time**: a
 consumer compiled with a different value references a symbol this archive does not define and the
 link fails naming the axis (see `src/qb/utility/abi.h`). The lines below it are *not* link-enforced
 — they record what configure resolved, which is what a packager needs to check that a hermetic

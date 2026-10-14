@@ -26,7 +26,7 @@ The model of concurrent computation in which independent "actors" communicate on
 
 #### `ActorId` (`qb::ActorId`)
 
-The system-wide identity of an actor. It is a compound 32-bit value built from a [`ServiceId`](#serviceid-qbserviceid) (the actor's slot within a core, `sid()`) and a [`CoreId`](#coreid-qbcoreid) (the hosting `VirtualCore`, `index()`); it converts to and from `uint32_t`. A default-constructed `ActorId()` equals `ActorId::NotFound` (`== 0`) and is invalid; `is_valid()` reports whether the value differs from `NotFound`. `is_broadcast()` is true when the service id is `BroadcastSid` (`ServiceId` max). Defined in `src/qb/core/ActorId.h`.
+The identity of one actor incarnation within an engine run: `[generation:32 | core:8 | slot:24]`. `index()` names the receiving core; `slot()` / `sid()` and `generation()` identify its instance. Ordinary and service-instance IDs have nonzero generations. Generation-zero service addresses resolve the current service, while slot `0xFFFFFF` with generation zero broadcasts on one core. Default construction is invalid. Use `raw64()` / checked `from_raw()` for the numeric codec; no 32-bit conversion remains. Defined in `src/qb/core/ActorId.h`.
 
 <a id="addrefactort-addrefhandlet"></a>
 #### `addRefActor<T>()` / `addRefHandle<T>()`
@@ -39,7 +39,7 @@ The configured mapping of a [`VirtualCore`](#virtualcore-qbvirtualcore) thread o
 
 #### `BroadcastId` (`qb::BroadcastId`)
 
-A specialized [`ActorId`](#actorid-qbactorid) whose service id is `BroadcastSid`, used as the destination of `push<Event>(qb::BroadcastId(core_id), ...)` to deliver one event to every actor on a single core. Constructed only from a `core_id`; the default constructor is deleted. Defined in `src/qb/core/ActorId.h`. Contrast [broadcast](#broadcast-actorbroadcastt).
+A specialized [`ActorId`](#actorid-qbactorid) whose slot is `BroadcastSid` (`0xFFFFFF`) with generation zero, used as the destination of `push<Event>(qb::BroadcastId(core_id), ...)` to deliver one event to every actor on a single core. Constructed only from a `core_id`; the default constructor is deleted. Defined in `src/qb/core/ActorId.h`. Contrast [broadcast](#broadcast-actorbroadcastt).
 
 #### broadcast (`actor.broadcast<T>()`)
 
@@ -154,7 +154,7 @@ A singleton-style actor: one instance per [`VirtualCore`](#virtualcore-qbvirtual
 
 #### `ServiceId` (`qb::ServiceId`)
 
-A `uint16_t` identifying an actor *within* its core — the low component of an [`ActorId`](#actorid-qbactorid), readable via `ActorId::sid()`. The reserved value `BroadcastSid` (`ServiceId` max) marks a [`BroadcastId`](#broadcastid-qbbroadcastid). Defined in `src/qb/core/ActorId.h`.
+A process-stable `uint16_t` service tag in `1..65534`, encoded in ActorId's service slot band. `service_tag()` extracts it from a service identity; `sid()` instead returns the full 24-bit slot. It is separate from ordinary actor slots and from the broadcast slot `0xFFFFFF`. Defined in `src/qb/core/ActorId.h`.
 
 #### `spawn()`
 
@@ -170,7 +170,7 @@ Return the `VirtualCore`'s cached timestamp as whole nanoseconds (`uint64_t`). I
 
 #### `VirtualCore` (`qb::VirtualCore`)
 
-A worker thread (`std::jthread`) owned by [`Main`](#main-engine-qbmain-alias-qbengine). It exclusively owns a set of actors, runs the event loop dispatching their events and callbacks, flushes inter-core messages, and runs its own [`qb-io` event loop](#listener-qbioasynclistener). A `VirtualCore` is strictly single-threaded: its actor maps and `ServiceIdPool` use no synchronization, so actors must communicate only through events. Listed in the qb-core public API; see [Threading model](../2_core_concepts/threading_model.md).
+A worker thread (`std::jthread`) owned by [`Main`](#main-engine-qbmain-alias-qbengine). It exclusively owns a set of actors, runs the event loop dispatching their events and callbacks, flushes inter-core messages, and runs its own [`qb-io` event loop](#listener-qbioasynclistener). A `VirtualCore` is strictly single-threaded: its actor registries and incarnation metadata use no synchronization, so actors must communicate only through events. Listed in the qb-core public API; see [Threading model](../2_core_concepts/threading_model.md).
 
 ---
 

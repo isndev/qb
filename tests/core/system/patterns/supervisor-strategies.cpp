@@ -743,7 +743,7 @@ TEST(ActorSupervisor, ChildDiesWithoutStopRestartedInWatchMode) {
 }
 
 // The three strategies again, in watch mode: a child that stop()s is restarted by its ChildDown, and
-// its replacement -- or a sibling's -- most likely reuses its id. Settling 50 passes instead of
+// its replacement -- or a sibling's -- may reuse its slot with a new incarnation. Settling 50 passes instead of
 // stopping at the expected count, a second restart (the outgoing child's DownEvent taken for its
 // replacement) would show as an extra spawn.
 static void
@@ -856,7 +856,9 @@ TEST(ActorSupervisor, SyncInitFailureRestartedNextPassInWatchMode) {
 // ===========================================================================
 namespace {
 std::atomic<int>  g_escalations{0};
-std::atomic<bool> g_id_reused{false};
+std::atomic<bool> g_slot_reused{false};
+std::atomic<bool> g_incarnation_changed{false};
+std::atomic<bool> g_given_up_child_empty{false};
 std::atomic<bool> g_bystander_alive{false};
 
 struct GaveUp : public qb::Event {};
@@ -878,6 +880,7 @@ protected:
     void
     on_escalate() override {
         ++g_escalations;
+        g_given_up_child_empty.store(!child(0).is_valid());
         push<GaveUp>(_director);
     }
 };
@@ -886,7 +889,8 @@ protected:
 class Bystander : public qb::Actor {};
 
 // Crashes every child once (two deaths: one restart, then the escalation), spawns a bystander that
-// reuses the dead child's id, kills the supervisor, and checks 20 passes later who is still alive.
+// reuses the dead child's slot with a new generation, kills the supervisor, and checks 20 passes later
+// who is still alive. Also inspect child(0), so incarnation-safe routing cannot hide a stale supervisor slot.
 class Director : public qb::Actor {
     struct Tick : public qb::Event {};
 
@@ -916,8 +920,9 @@ public:
     on(GaveUp const &) {
         if (_bystander.is_valid())
             return; // a second escalation is the defect the count reports; do not stack the scenario
-        _bystander  = addRefActor<Bystander>().id();
-        g_id_reused = _bystander == _last_child;
+        _bystander            = addRefActor<Bystander>().id();
+        g_slot_reused         = _bystander.index() == _last_child.index() && _bystander.slot() == _last_child.slot();
+        g_incarnation_changed = _bystander.generation() != _last_child.generation();
         push<qb::KillEvent>(_sup); // its teardown kills its children -- and must not kill the bystander
         push<Tick>(id());
     }
@@ -936,9 +941,11 @@ public:
 void
 run_giving_up(qb::supervision const mode) {
     reset_globals();
-    g_escalations     = 0;
-    g_id_reused       = false;
-    g_bystander_alive = false;
+    g_escalations          = 0;
+    g_slot_reused          = false;
+    g_incarnation_changed  = false;
+    g_given_up_child_empty = false;
+    g_bystander_alive      = false;
     qb::Main main;
     main.addActor<Director>(0, mode);
     main.start(false);
@@ -946,8 +953,10 @@ run_giving_up(qb::supervision const mode) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_spawns.load(), 2) << "1 initial + 1 restart, then the cap";
     EXPECT_EQ(g_escalations.load(), 1) << "one death past the cap, one escalation";
-    ASSERT_TRUE(g_id_reused.load()) << "the case needs the bystander to reuse the dead child's id";
-    EXPECT_TRUE(g_bystander_alive.load()) << "the supervisor's teardown killed an actor that reused its dead child's id";
+    ASSERT_TRUE(g_slot_reused.load()) << "the case needs the bystander to reuse the dead child's slot";
+    ASSERT_TRUE(g_incarnation_changed.load()) << "a reused slot must receive a new incarnation";
+    EXPECT_TRUE(g_given_up_child_empty.load()) << "an escalated supervisor slot must hold no stale child identity";
+    EXPECT_TRUE(g_bystander_alive.load()) << "the supervisor's teardown killed an actor that reused its dead child's slot";
 }
 } // namespace
 
