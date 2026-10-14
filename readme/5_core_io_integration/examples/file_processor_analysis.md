@@ -308,7 +308,7 @@ void on(ShutdownTick&) {
     broadcast<qb::KillEvent>();                   // fan out shutdown to every actor
 }
 ```
-<!-- src: examples/05-services/03-file-pipeline/main.cpp:143-192 (write/read verdicts), :270-281 (final oracle and shutdown) -->
+<!-- src: examples/05-services/03-file-pipeline/main.cpp:197-246 (write/read verdicts), :324-335 (final oracle and shutdown) -->
 
 `broadcast<qb::KillEvent>()` delivers a [`qb::KillEvent`](../../4_qb_core/messaging.md) to every actor on every core; each actor's `on(qb::KillEvent&)` handler calls `kill()`, and the engine's `join()` in `main` returns once all cores have drained.
 

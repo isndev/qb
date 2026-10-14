@@ -441,7 +441,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 
    The `qb-example-services-file-pipeline` worker instead calls the **no-delay** `async::callback` around its read: that invokes the lambda inline in its handler. It does not offload or defer the call. Its responsiveness comes from the dedicated worker cores in option 2, not from `callback`. <!-- src: examples/05-services/03-file-pipeline/file_worker.h:112; qb/src/qb/io/async/io.h:368-389 -->
 
-2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:298,304-308 -->
+2. **Dedicate worker actors to I/O.** Place file-I/O actors on their own core(s) and delegate requests to them as events. Blocking is then confined to that core, leaving the rest of the system unaffected. The `qb-example-services-file-pipeline` example builds exactly this manager-worker topology. <!-- src: examples/05-services/03-file-pipeline/main.cpp:351,357-361 -->
 
 3. **Watch the filesystem instead of polling it.** To *react* to file or directory changes, use `qb::io::async::file_watcher<T>` / `directory_watcher<T>`, which deliver `on(qb::io::async::event::file const&)` notifications through the loop with no blocking. `examples/02-io/08-timeouts-and-watchers.cpp` demonstrates both watchers, and is candid about the limit: a directory event says THAT something changed, never WHAT. <!-- src: examples/02-io/08-timeouts-and-watchers.cpp:194,204 -->
 
