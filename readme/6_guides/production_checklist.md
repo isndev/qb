@@ -245,7 +245,9 @@ On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_
 
 <!-- src: qb/src/qb/core/Main.cpp:714-732 (install_signal incl. comment + sigaction body) -->
 
-To shut down on additional signals — typically `SIGTERM` under an init system or container orchestrator — register them after constructing the engine:
+`SIGINT` and `SIGTERM` need no explicit registration. To receive an additional
+platform signal such as `SIGHUP`, register it after constructing the engine and
+handle its `qb::SignalEvent` in the actor that owns the requested action:
 
 ```cpp
 // src: derived from qb/src/qb/core/Main.cpp (signal API)
@@ -256,8 +258,12 @@ int main() {
     qb::Main engine;
     // ... configure cores and actors ...
 
-    qb::Main::registerSignal(SIGTERM);   // graceful shutdown on SIGTERM too
+#ifdef SIGHUP
+    qb::Main::registerSignal(SIGHUP);    // actors may handle this extra signal
+#endif
+#ifdef SIGPIPE
     qb::Main::ignoreSignal(SIGPIPE);     // ignore broken-pipe (SIG_IGN)
+#endif
 
     engine.start();
     engine.join();
@@ -277,7 +283,7 @@ The three signal entry points are static and `noexcept`: `registerSignal(signum)
 
 **Checklist**
 
-- [ ] `SIGTERM` registered if your orchestrator sends it on shutdown.
+- [ ] Default `SIGINT`/`SIGTERM` shutdown tested; register and handle only additional signals you use.
 - [ ] `SIGPIPE` ignored if you do raw socket writes that could hit a closed peer.
 - [ ] Shutdown drains in-flight work within your orchestrator's grace period (tune `setLatency` so the signal generation is observed promptly).
 

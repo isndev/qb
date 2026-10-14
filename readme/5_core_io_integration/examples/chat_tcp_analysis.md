@@ -181,7 +181,7 @@ pipe<char>& pipe<char>::put<chat::Message>(const chat::Message& msg) {
 > `this`, which is why the by-value form was invisible on macOS and corrupted on Linux.
 > <!-- src: qb/src/qb/core/Actor.h:1074-1083 -->
 > It was not hypothetical here: `ChatRoomActor` runs on core 3 and the two `ServerActor`s on core 1
-> (`examples/05-services/01-tcp-chat/server/main.cpp:63`, `:69`), and `ChatRoomActor::sendToSession()` does
+> (`examples/05-services/01-tcp-chat/server/main.cpp:72`, `:78`), and `ChatRoomActor::sendToSession()` does
 > `push<SendMessageEvent>(server_id)` (`examples/05-services/01-tcp-chat/server/ChatRoomActor.cpp:161`) — so
 > every targeted delivery is a cross-core hop, and short payloads such as `"Welcome Bob"` are the
 > common case. Replayed on both standard libraries, the by-value shape reads `self-referential: YES`
@@ -407,29 +407,39 @@ void ChatRoomActor::broadcastMessage(const std::string& content) {
 
 ## Client walkthrough
 
-### `InputActor` — console input off the I/O path
+### `InputActor` — console input outside actor cores
 
-`InputActor` mixes `qb::Actor` with `qb::ICallback`. `onInit()` calls `registerCallback(*this)`; thereafter the engine invokes `on(qb::LoopEvent const&)` once per loop iteration on the actor's core.
+`main` owns a cancellable `LineSource` before starting the engine and passes it by reference to
+`InputActor`. Its reader waits outside every `VirtualCore`; on POSIX it watches stdin and a stop
+pipe, while Windows uses a supervised relay process so a pending console or redirected-pipe
+read cannot hold an actor's teardown. `InputActor` still mixes `qb::Actor` with `qb::ICallback`:
+`onInit()` registers the callback, and each loop pass drains at most 16 already-complete lines.
+The input core parks for up to 5 ms when idle rather than spinning on an empty queue.
 
 ```cpp
 // src: examples/05-services/01-tcp-chat/client/InputActor.cpp
 void InputActor::on(qb::LoopEvent const &) {
-    std::string line;
-    std::getline(std::cin, line);                    // see the blocking note below
-
-    if (line == "quit") {
-        push<qb::KillEvent>(_client_id);             // shut down the ClientActor
-        push<qb::KillEvent>(id());                   // and self
-        return;
-    }
-    if (!line.empty()) {
-        auto& evt = push<ChatInputEvent>(_client_id);
-        evt.message = std::move(line);
+    qb_example::input::Event next;
+    for (std::size_t drained = 0; drained < 16 && _input.try_pop(next); ++drained) {
+        if (next.kind != qb_example::input::Event::Kind::line || next.text == "quit") {
+            shutdown();                              // kill network actor and self
+            return;
+        }
+        if (next.text.empty())
+            continue;
+        if (next.text.size() > 256) {
+            qb::io::cerr() << "Chat message exceeds 256 bytes; line ignored" << std::endl;
+            continue;
+        }
+        auto &evt = push<ChatInputEvent>(_client_id);
+        evt.message = std::move(next.text);
     }
 }
 ```
 
-> **Blocking-I/O caveat.** `std::getline(std::cin, ...)` blocks the calling `VirtualCore` until a line arrives, which stalls that core's event loop. Placing `InputActor` on its own core (core 0) keeps the blocking out of the network path, but it is not truly non-blocking. A production client would use platform non-blocking console reads or a dedicated reader thread that messages the actor. The example keeps it simple deliberately.
+EOF, `quit`, or a read error stops both client actors. A line larger than the event's 256-byte
+capacity is rejected before assignment instead of silently truncated. The reader is stopped by
+`main` only after `engine.join()`, so no actor joins a blocked input thread during shutdown.
 
 ### `ClientActor` — connect, authenticate, reconnect
 
@@ -567,7 +577,8 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 6. `ChatRoomActor` registers the user, replies via `SendMessageEvent` → the owning `ServerActor` → the client's `ChatSession`, and broadcasts a join line to every session.
 7. Chat lines follow the same path: `CHAT_MESSAGE` → `ChatEvent` → `ChatRoomActor` formats and broadcasts → `SendMessageEvent`s fan back out.
 8. On disconnect or idle timeout, the `ChatSession` notifies its `ServerActor`, which pushes a `DisconnectEvent`; `ChatRoomActor` cleans up its maps and announces the departure. The client, if still running, schedules a reconnect.
-9. The operator presses Enter at the server console; `engine.stop()` then `engine.join()` drains and joins all cores.
+9. Enter or external shutdown stops the server; `qb::Main::stop()` then `engine.join()` drains
+   and joins all cores. EOF only disables interactive console control, leaving a service running.
 
 ## Pitfalls
 
@@ -576,7 +587,9 @@ The connect deadline (`CONNECT_TIMEOUT`) and the reconnect delay (`RECONNECT_DEL
 - **`transport().listen()` is the low-level call.** It returns `int` (`0` == success) and does not arm the watcher; call `start()` afterward. The mixin's higher-level `bool listen(...)` auto-arms — choose one, not both.
 - **No `Protocol::end` here.** Length-prefixed framing means `*this << msg;` sends a complete message. A trailing `<< Protocol::end` belongs to delimiter-based protocols, not this one.
 - **`setTimeout` is on the timeout mixin, not the client.** `updateTimeout()` must be called on every meaningful activity (inbound *and* outbound), or the session drops mid-conversation. The example resets it in both `ChatSession::on(Message)` and `ServerActor::on(SendMessageEvent&)`.
-- **Console input blocks its core.** Keep `std::getline`-style readers off any core that carries network actors. The example isolates `InputActor` on core 0 for exactly this reason.
+- **Console input must never block a core.** A separate cancellable source owns stdin; the actor's
+  callback drains ready lines without waiting. The network actor remains on core 1, and main
+  stops the reader after engine shutdown even if stdin held an unfinished line.
 - **Bad frames are terminal.** `ChatProtocol` calls `not_ok()` for a bad magic/version or a payload beyond either the 64 KiB application ceiling or the I/O limit. It never allocates from an untrusted announced length while the body is incomplete.
 - **A `this`-capturing `qb::io::async::callback(f, delay)` is a dangling timer, and an `is_alive()` guard does not save it.** The timer is owned by the listener, not by the actor, so it fires after `~Actor()`; the guard is a member read, which makes the guard itself the use-after-free. This example's reconnect path used to have that shape and no longer does — it waits with `spawn(...)` + `co_await ctx.sleep(d)` and wakes the actor with a `ReconnectTickEvent`. Where you want a handle rather than a coroutine, hold a `qb::io::async::scoped_callback` as a member. See [Reconnection](#client-walkthrough).
 - **Never put a bare `std::string` in an event.** Events are relocated with `memcpy` and the source destructor never runs, so a payload member may hold no pointer into its own storage — which a short `std::string` does on libstdc++. `SendMessageEvent` used to carry its `chat::Message` (and therefore that string) by value, across a core boundary, on every delivered line; it now carries a `std::shared_ptr<const chat::Message>`. Use `qb::string<N>` for bounded text or put the data on the heap behind a `std::shared_ptr`, as every other event on both sides of this example does. And note the second half of the rule: boxing makes the *event* relocatable, not the *pointee* owned — do not mutate a payload after publishing it to another core.
