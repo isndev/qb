@@ -1003,10 +1003,10 @@ uri::parse() noexcept {
                         }
 
                         // An empty port ("host:") is the scheme's default (RFC 3986 3.2.3) unless the colon belongs to
-                        // an unbracketed IPv6 host ("fe80::"), whose colons all stay in the host as before.
+                        // an unbracketed IPv6 host ("fe80::"), whose colons stay in the host; looked for only then.
                         const bool empty_port = colon + 1 == authority_end;
-                        const bool bare_ipv6  = std::find(host_begin, colon, ':') != colon;
-                        if (all_digits && !(empty_port && bare_ipv6)) {
+                        const bool bare_ipv6  = empty_port && std::find(host_begin, colon, ':') != colon;
+                        if (all_digits && !bare_ipv6) {
                             host_end   = colon;
                             port_begin = colon + 1;
                             port_end   = authority_end;
