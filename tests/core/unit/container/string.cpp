@@ -53,6 +53,20 @@
 // runtime supplies its own of each form, and a block taken by one family and given back to the other is an
 // alloc-dealloc mismatch (gtest's stable_sort takes its buffer with the nothrow form and frees it with the sized one).
 // The array and aligned forms are left whole to one family -- the runtime's, or the library's, which call these.
+//
+// Not under clang's ThreadSanitizer: its runtime is a static archive whose new/delete object defines the scalar forms
+// beside the array ones it supplies, so replacing the scalar forms is a duplicate definition at link (clang-22,
+// libclang_rt.tsan_cxx). There the probe counts nothing and the bound below is not asserted; the release, ASan and
+// MSVC builds assert it, and gcc's TSan (a shared runtime) still does.
+#if defined(__clang__) && defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+#define QB_STRING_PROBE_REPLACES_ALLOCATOR 0
+#endif
+#endif
+#if !defined(QB_STRING_PROBE_REPLACES_ALLOCATOR)
+#define QB_STRING_PROBE_REPLACES_ALLOCATOR 1
+#endif
+
 namespace string_alloc_probe {
 std::atomic<bool>        counting{false};
 std::atomic<std::size_t> bytes{0};
@@ -65,6 +79,7 @@ allocate(std::size_t size) noexcept {
 }
 } // namespace string_alloc_probe
 
+#if QB_STRING_PROBE_REPLACES_ALLOCATOR
 void *
 operator new(std::size_t size) {
     if (void *p = string_alloc_probe::allocate(size))
@@ -93,6 +108,7 @@ operator delete(void *p, std::size_t) noexcept {
     std::free(p);
 }
 #endif
+#endif // QB_STRING_PROBE_REPLACES_ALLOCATOR
 
 namespace {
 
@@ -1062,7 +1078,9 @@ TEST_F(StringTest, ExtractionKeepsTheCapacityAndNeverBuffersTheWord) {
     string_alloc_probe::counting.store(true);
     huge >> kept;
     string_alloc_probe::counting.store(false);
-    EXPECT_LT(string_alloc_probe::bytes.load(), std::size_t{4096}) << "the word was buffered before it was cut";
+    if (QB_STRING_PROBE_REPLACES_ALLOCATOR) {
+        EXPECT_LT(string_alloc_probe::bytes.load(), std::size_t{4096}) << "the word was buffered before it was cut";
+    }
     EXPECT_EQ(std::string_view(kept), "wwwwwwww");
     huge >> rest;
     EXPECT_EQ(rest, "after");
