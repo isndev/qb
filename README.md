@@ -468,8 +468,8 @@ transports and the modules, and there is no transparent remoting, no persistent 
 supervision tree — a parent holds a child through `addRefActor` and reads its handle only once it is
 `ready()`, any actor can `watch()` another and is told once it is gone, and `qb::Supervisor` restarts
 children by a strategy. Inside the process, delivery is in order per sender and receiver with `push`, unordered
-and cheaper for a lone notice with `send`, and an event wider than the mailbox ring is a compile
-error: bulk data travels behind a pointer, not by value.
+and cheaper for a lone notice with `send`, and an event wider than the mailbox ring, or aligned past one
+of its cache-line buckets, is a compile error: bulk data travels behind a pointer, not by value.
 
 ## Build options
 

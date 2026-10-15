@@ -23,6 +23,9 @@
  *
  * These are runtime `EXPECT`s over `constexpr bool`s on purpose, not `static_assert`s: a
  * `static_assert` that stops firing is indistinguishable from a file nobody compiled.
+ *
+ * The same funnel holds the width (`event_fits_ring`, Huly QB-61) and alignment
+ * (`event_fits_bucket_alignment`, Huly QB-269) contracts: their predicates are pinned here too.
  */
 
 #include <cstdint>
@@ -249,6 +252,48 @@ TEST(EventFieldShadow, WidthPredicateRejectsPastTheRingCeiling) {
     EXPECT_FALSE(d::event_fits_ring<PastTheCeiling>);
     EXPECT_FALSE(d::event_fits_ring<WayPastTheCeiling>);
     EXPECT_GT((qb::allocator::getItemSize<PastTheCeiling, EventBucket>()), d::max_deliverable_buckets);
+}
+
+// -- the alignment contract (Huly QB-269): `event_fits_bucket_alignment<T>`, both polarities ---------
+//
+// Every queue places an event on a bucket boundary and nothing stronger. Before the guard an
+// `alignas(128)` event compiled at every sink and was constructed one bucket off its alignment:
+// UBSan, "store to misaligned address ... which requires 128 byte alignment", at the first push.
+/** Exactly a bucket's alignment, spelled out: what every event inherits from `qb::Event`. */
+struct alignas(QB_LOCKFREE_EVENT_BUCKET_BYTES) AtTheBucketAlignment : qb::Event {
+    int v;
+};
+/** A member aligned below the bucket leaves the event at the bucket's alignment. */
+struct WithAlignedMember : qb::Event {
+    alignas(16) unsigned char lane[16];
+};
+/** Two buckets: what two events one bucket apart can never both have. */
+struct alignas(2 * QB_LOCKFREE_EVENT_BUCKET_BYTES) PastTheBucketAlignment : qb::Event {
+    int v;
+};
+/** The same through a member held by value: the event inherits its alignment. */
+struct OverAlignedPayload {
+    alignas(2 * QB_LOCKFREE_EVENT_BUCKET_BYTES) unsigned char line[2 * QB_LOCKFREE_EVENT_BUCKET_BYTES];
+};
+struct WithOverAlignedMember : qb::Event {
+    OverAlignedPayload payload;
+};
+
+TEST(EventFieldShadow, AlignmentPredicateAcceptsUpToTheBucketAlignment) {
+    EXPECT_EQ(alignof(qb::Event), alignof(EventBucket)) << "the base event is aligned to exactly one bucket";
+    EXPECT_TRUE(d::event_fits_bucket_alignment<qb::Event>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<Clean>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<AtTheBucketAlignment>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<WithAlignedMember>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<CleanService>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<CleanQOS0>);
+    EXPECT_TRUE(d::event_fits_bucket_alignment<AtTheCeiling>);
+}
+
+TEST(EventFieldShadow, AlignmentPredicateRejectsPastTheBucketAlignment) {
+    EXPECT_FALSE(d::event_fits_bucket_alignment<PastTheBucketAlignment>);
+    EXPECT_FALSE(d::event_fits_bucket_alignment<WithOverAlignedMember>);
+    EXPECT_GT(alignof(WithOverAlignedMember), alignof(EventBucket));
 }
 
 TEST(EventFieldShadow, ReturnsExactlyTheSameTypeIdAsTypeToId) {

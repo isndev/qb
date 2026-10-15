@@ -363,6 +363,10 @@ pipe.allocated_push<BlobEvent>(0, blob);
 
 **Size the event small, not the payload.** The hint only helps the source pipe reserve space; the ceiling that matters is the destination ring, and no hint moves it.
 
+### Alignment: one bucket, never more
+
+Every queue an event crosses holds `EventBucket`s and advances in whole buckets, so an event starts on a bucket boundary and on nothing stronger: a pipe segment's first event already sits one bucket past the segment's header, and two events aligned to two buckets, one bucket apart, cannot both be. `qb::Event` is aligned to exactly one bucket (the cache line, 64 bytes by default) and every event inherits that. An event that asks for more -- `struct alignas(128) E : qb::Event`, or a member held by value with that alignment -- is refused at compile time since 3.3, by a `static_assert` on `qb::detail::event_fits_bucket_alignment<T>` in `qb::detail::routing_safe_type_id<T>`, the funnel every sink reaches (Huly QB-269). Until then it compiled at every sink and was constructed misaligned, which UBSan reports as a store to a misaligned address. Keep over-aligned data behind a pointer member.
+
 ## Ordering, stated exactly
 
 The runtime makes one ordering promise:

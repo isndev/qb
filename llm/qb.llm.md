@@ -601,6 +601,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   libstdc++ (short-string buffer addressed by an internal pointer) and is therefore invalid in an
   event even for a same-core `push`; `qb::string<N>`, `std::vector` and smart pointers are fine.
   _(VirtualCore.cpp `__flush_all__`; Event.h `detail::event_wire::copy`)_
+- **An event is aligned to one `EventBucket` at most** (the cache line, 64 bytes by default, which every event
+  inherits from `qb::Event`). Every queue it crosses -- pipe, mailbox ring, activation stash -- places it on a bucket
+  boundary and nothing stronger, so an `alignas` past that, on the event or on a member it holds by value, is a
+  compile error since 3.3: a `static_assert` on `qb::detail::event_fits_bucket_alignment<T>` in the funnel every
+  enqueue sink reaches (Huly QB-269). Until then it compiled and was constructed misaligned. Keep over-aligned data
+  behind a pointer member. _(Event.h `detail::event_fits_bucket_alignment`, `detail::routing_safe_type_id`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
   replied/forwarded. _(Actor.cpp:577-595)_ They are `send`-family: unordered relative to the handler's
   pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with

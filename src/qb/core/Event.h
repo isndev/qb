@@ -1054,7 +1054,25 @@ template <typename T>
 inline constexpr bool event_fits_ring = allocator::getItemSize<T, EventBucket>() <= max_deliverable_buckets;
 
 /**
- * @brief Type id for `T`, refusing to route an event that hides a `qb::Event` routing field.
+ * @brief `true` when `T` asks for no more alignment than the event queues give: an `EventBucket`'s
+ *        (Huly QB-269).
+ * @details Every queue an event crosses -- the pipe segments, the mailbox rings, the receive buffer,
+ *          the activation stash -- holds `EventBucket`s and advances in whole buckets, so an event
+ *          starts on a bucket boundary and nothing stronger: a segment's first event already sits one
+ *          bucket past a header, and two events of two buckets each, one bucket apart, cannot both be
+ *          aligned to two. `qb::Event` itself is aligned to exactly one bucket, which every event
+ *          inherits; an `alignas` past it was accepted and constructed at an address its alignment
+ *          forbids (UBSan: "store to misaligned address ... which requires 128 byte alignment", at
+ *          every sink). Named rather than spelled inline in the `static_assert` so the guard is
+ *          *testable in both polarities* -- see `qb-core-test-unit-event-field-shadow`.
+ */
+template <typename T>
+inline constexpr bool event_fits_bucket_alignment = alignof(T) <= alignof(EventBucket);
+
+/**
+ * @brief Type id for `T`, refusing to route an event that hides a `qb::Event` routing field -- or one
+ *        the queues cannot carry: wider than the mailbox ring, aligned past a bucket, a QoS-0 payload
+ *        that is not trivially destructible.
  * @tparam T The event type being constructed and routed.
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
@@ -1139,6 +1157,15 @@ routing_safe_type_id() noexcept {
                                       "pointer member (a std::shared_ptr<std::vector<T>> held by the receiver, see "
                                       "Pipe::allocated_push). The offending type is the template argument of the "
                                       "qb::detail::routing_safe_type_id<T> instantiation named below.");
+    // The alignment contract (Huly QB-269): the queues place an event on a bucket boundary and
+    // nothing stronger, so a type that asks for more would be constructed misaligned.
+    static_assert(event_fits_bucket_alignment<T>,
+                  "qb: this event type is aligned PAST qb::EventBucket (alignof(T) > alignof(EventBucket), the cache-line "
+                  "size, 64 bytes by default). Every queue an event crosses -- the pipe, the mailbox ring, the activation "
+                  "stash -- places it on a bucket boundary and nothing stronger, so an instance would be constructed at an "
+                  "address its alignment forbids. Drop the alignas from the event (and from any member it holds by value), "
+                  "or keep the over-aligned data behind a pointer member. The offending type is the template argument of "
+                  "the qb::detail::routing_safe_type_id<T> instantiation named below.");
 
     if constexpr (std::is_base_of_v<EventQOS0, T>) {
         static_assert(std::is_trivially_destructible_v<T>,

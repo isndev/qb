@@ -9,6 +9,17 @@ policy.
 
 ### Changed
 
+- **An event type aligned past `qb::EventBucket` is a compile error (Huly QB-269).** Every queue an event crosses
+  -- the pipe, the mailbox ring, the activation stash -- places it on a bucket boundary and nothing stronger, and
+  `qb::Event` is aligned to exactly one bucket (the cache line, 64 bytes by default). An event declared
+  `alignas(128)`, or holding a member of that alignment by value, compiled at every sink and was constructed at
+  an address its alignment forbids: UBSan reported `store to misaligned address ... which requires 128 byte
+  alignment` at `push`, `to().push`, `Pipe::push`, `Pipe::allocated_push`, `send` and `broadcast`. The enqueue
+  funnel `qb::detail::routing_safe_type_id<T>` now `static_assert`s `qb::detail::event_fits_bucket_alignment<T>`
+  (`alignof(T) <= alignof(EventBucket)`) with a message naming the remedy -- keep the over-aligned data behind a
+  pointer member. Code that relied on it was undefined behaviour; no event in qb, the modules, the examples or
+  qb-vs-others is affected. Pinned in both polarities by `qb-core-test-unit-event-field-shadow`.
+
 - **The embedded loop's `EVFLAG_NOSIGMASK` leaves the signal mask alone, and without it a watched
   signal is unblocked (qev, Huly QB-713).** The test was inverted, as in libev 4.33 (reversed in
   libev's CVS since): the flag unblocked a signal its caller kept blocked, and the default never

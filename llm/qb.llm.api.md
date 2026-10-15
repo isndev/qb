@@ -284,6 +284,7 @@ Base class for all events; carries header state, id, dest, source. `dest`/`sourc
 *   `[[nodiscard]] uint8_t getQOS() const noexcept` — **2** by default (`EventQOS2 == Event`); disjoint from the liveness bit.
 *   `[[nodiscard]] id_handler_type getDestination() const noexcept`, `getSource() const noexcept`
 *   `[[nodiscard]] std::size_t getSize() const noexcept`
+*   alignment: `alignof(qb::Event) == alignof(EventBucket)` (one cache line). A derived event aligned past it -- `alignas` on the event, or on a member held by value -- is refused at compile time since 3.3: `static_assert(qb::detail::event_fits_bucket_alignment<T>)` in `qb::detail::routing_safe_type_id<T>`, the funnel of `push`/`send`/`broadcast`/`Pipe::push`/`allocated_push` (Huly QB-269); the queues place an event on a bucket boundary and nothing stronger.
 *   free function `[[nodiscard]] char const *qb::event_type_name(Event::id_type) noexcept` — reverse-resolves a runtime `getID()` to `typeid(T).name()`, or `"<unregistered>"`. Diagnostics only; the router never calls it.
 
 #### QoS tiers
