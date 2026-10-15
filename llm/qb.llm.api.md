@@ -831,7 +831,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `struct event::pending_read { std::size_t bytes; }`, `struct event::pending_write { std::size_t bytes; }`
 *   `struct event::input_drained {}` (`using eof = input_drained;`) — input buffer fully parsed.
 *   `struct event::eos {}` — all buffered output written.
-*   `struct event::dispose {}` — final cleanup hook (standalone components).
+*   `struct event::dispose {}` — final cleanup hook (standalone components). It runs after the component's watcher is stopped and its transport ended (3.3, Huly QB-1060): closed when the peer's EOF or a socket error ended the connection, shut down for sending when the component did -- the peer reads EOF, nothing is reset, and the descriptor stays until the object dies or its next transport replaces it. Closing the transport in the hook is harmless.
 *   `struct event::extracted {}` — session handed off (e.g. protocol upgrade).
 *   `struct event::handshake {}` — TLS handshake completed.
 

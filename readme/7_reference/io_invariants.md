@@ -225,12 +225,34 @@ registry, or as a member — never relocate them.
   (`0`) code is generated automatically on kernel EOF
   (`src/qb/io/async/io.h:1304`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1535-1538`). It fires `on(event::disconnected)` if the
+  (`src/qb/io/async/io.h:1538-1541`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then notifies
-  `server().disconnected(id())`, otherwise it stops the watcher and fires
-  `on(event::dispose)`.
+  `server().disconnected(id())`, otherwise it stops the watcher, ends the
+  transport and fires `on(event::dispose)`.
+- A standalone object's `dispose()` **ends its transport** once the watcher is
+  stopped (`src/qb/io/async/io.h:3104-3107`), after `on(event::disconnected)`
+  — which still sees it as the connection left it — and before
+  `on(event::dispose)`, the one hook that may free the object
+  (`src/qb/io/async/teardown.h:100-116`). Who ended the connection is read
+  before the hooks run (`src/qb/io/async/io.h:3084`): no reason of the
+  object's and a protocol still ok mean the peer's EOF or a socket error did,
+  and the transport is closed — `disconnect()` when it has one, then
+  `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
+  When the object ended it (`disconnect()`, a framing error, a size guard,
+  the end of `close_after_deliver()`), only the sending side is shut down:
+  the peer reads EOF once everything queued has left, and nothing is reset.
+  A close there would reset a peer whose bytes are still unread: its next
+  send fails, and on Windows it also drops what it received and has not
+  read yet — the tail of the reply `close_after_deliver()` promised. The descriptor then
+  stays with the object until its destruction or its next transport; a
+  listening socket has no sending side, so an acceptor keeps its port until
+  then. Before 3.3 the transport was left as it was: the peer of a
+  `disconnect()` never saw EOF (Huly QB-1060). Closing it again from a hook
+  is harmless; a transport installed from inside `on(event::disconnected)`
+  is the one ended, so the next connection's is installed once `dispose()`
+  has returned.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
-  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:54`), which
+  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:58`), which
   contains what they throw and logs it (WARN, with `what()`), so the steps
   after them always run: the watcher is stopped, or the session handed back to
   its server. A throw used to skip them. The listener contained it, so nothing

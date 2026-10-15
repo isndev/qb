@@ -559,6 +559,26 @@ policy.
 
 ### Fixed
 
+- **A standalone io object's `dispose()` ends its transport (Huly QB-1060).** `input<>`, `output<>` and
+  `io<>` stopped a standalone object's watcher -- a client's, an acceptor's -- and left its transport as it
+  was until the object connected again or was destroyed: the peer of a `disconnect()`, or of a connection
+  ended by a framing error, never saw EOF, so a server kept the connection and the work it routed for it
+  alive (qbm-http's HTTP/2 client met it as QB-1021 and closed its socket by hand), and a client whose peer
+  hung up stayed in CLOSE_WAIT. `dispose()` now ends the transport once the watcher is stopped, after
+  `on(event::disconnected&&)`, which still sees it as the connection left it, and before
+  `on(event::dispose&&)`, which may free the object. When the peer's EOF or a socket error ended the
+  connection the transport is closed (`disconnect()` when it has one, then `close()`). When the object
+  ended it -- `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()` -- only its
+  sending side is shut down: the peer reads EOF once everything queued has left, and nothing is reset. A
+  close there would reset a peer whose bytes are still unread: its next send fails, and on Windows it also
+  drops what it received and has not read yet -- closing outright cut the 64 MiB reply of the QB-294 test
+  2 MB short there. The descriptor then stays with the object until its destruction or its next transport, as before,
+  and an acceptor keeps its port. A hook that closes the transport again does nothing; a transport installed
+  from inside `on(event::disconnected&&)` is the one ended. A server's session is unchanged: its server tears
+  it down. Witnesses: `qb-io-test-system-standalone-dispose-ends-transport` (a tcp client: EOF after a
+  `disconnect()`, no reset with input left unread, no CLOSE_WAIT after its peer's EOF) and the three bases in
+  `async-bases-framing`.
+
 - **The embedded event loop: seven defects of the loop and of its Windows backend (qev, Huly
   QB-315, QB-316, QB-317, QB-337, QB-340, QB-724, QB-736).** Windows: the `SOCKET <-> fd`
   registry grows its free list with its fd table, committing each size after its `realloc`

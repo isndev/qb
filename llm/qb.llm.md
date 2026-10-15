@@ -746,7 +746,17 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2241-2270, :2722-2729, :3136-3140)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2255-2284, :2736-2743, :3167-3171)_
+- **A standalone io's `dispose()` ends its transport** (Huly QB-1060): once the watcher is stopped, after
+  `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
+  When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
+  no CLOSE_WAIT socket. When the object ended it (`disconnect()`, a framing error, a size guard, the end of
+  `close_after_deliver()`) only its sending side is shut down: the peer reads EOF after everything queued and
+  nothing is reset (a close resets a peer whose bytes are unread: its next send fails, and Windows drops its unread
+  tail); the descriptor
+  stays until the object dies or its next transport replaces it, and an acceptor keeps its port. Closing it
+  again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
+  returned. A server's session is torn down by its server. _(io.h:3084, :3104-3107; teardown.h:100-116)_
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,
@@ -755,7 +765,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **A teardown hook that throws is contained, and the teardown still completes.** `dispose()` runs
   `on(event::disconnected&&)` and `on(event::dispose&&)` through `detail::run_teardown_hook`: the exception is logged
   (WARN, with `what()`), then the watcher is stopped or the session handed back to its server. Throwing from them
-  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:54)_
+  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:58)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:281-298)_

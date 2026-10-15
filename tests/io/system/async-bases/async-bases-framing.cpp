@@ -35,12 +35,15 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -96,25 +99,24 @@ make_stream_pair() {
 // API so this test does not depend on the platform typedef's namespace.
 using socket_handle_t = decltype(std::declval<qb::io::tcp::socket>().native_handle());
 
-// Non-owning view of one StreamPair end, exposing exactly the transport surface the async
-// CRTP bases require. I/O routes through qb::io::tcp::socket::read()/write() (the production
-// transport methods → identical cross-platform semantics). close() only DETACHES: the
-// StreamPair still owns and closes the socket, matching the original FdTransport whose fd
-// was owned by PipePair. native_handle() keeps returning the captured handle after detach —
-// the base never touches it post-close, and the socket stays open until the pair dies.
+// View of one StreamPair end, exposing exactly the transport surface the async CRTP bases
+// require. I/O routes through qb::io::tcp::socket::read()/write() (the production transport
+// methods → identical cross-platform semantics). close() closes the socket, as a production
+// transport's does: a standalone base's dispose() calls it once its watcher is stopped, and the
+// peer then reads EOF (Huly QB-1060). The StreamPair still owns the socket -- closing it again
+// at scope exit is a no-op -- and nothing else closes it, so the pair must still outlive the
+// probe. native_handle() is the socket's own: invalid once it is closed.
 class SocketTransport {
-    qb::io::tcp::socket *_sock   = nullptr;
-    socket_handle_t      _handle = static_cast<socket_handle_t>(-1);
+    qb::io::tcp::socket *_sock = nullptr;
 
 public:
     SocketTransport() = default;
     explicit SocketTransport(qb::io::tcp::socket &sock) noexcept
-        : _sock(&sock)
-        , _handle(sock.native_handle()) {}
+        : _sock(&sock) {}
 
     [[nodiscard]] socket_handle_t
     native_handle() const noexcept {
-        return _handle;
+        return _sock ? _sock->native_handle() : qb::io::invalid_socket;
     }
 
     void
@@ -135,7 +137,8 @@ public:
 
     void
     close() noexcept {
-        _sock = nullptr;
+        if (_sock)
+            _sock->close();
     }
 };
 
@@ -1282,9 +1285,12 @@ TEST_F(AsyncIoBaseTest, DuplexWriteErrorsDistinguishWouldBlockFromHardFailure) {
 // tick stays in out(), and the next start() on the same object sends it first -- on the HTTP/2
 // client that put a request ahead of the connection preface. reset_for_reconnect() leaves nothing
 // of the previous connection -- buffers, protocol -- and start() clears the dispose latches.
+// dispose() ends the transport the connection ended with (Huly QB-1060): the next connection comes
+// with its own.
 // -------------------------------------------------------------------------------------------
 TEST_F(AsyncIoBaseTest, DuplexResetForReconnectLeavesNothingOfThePreviousConnection) {
     auto            pair = make_stream_pair();
+    auto            next = make_stream_pair(); // the next connection's; declared first, it outlives the probe
     PipeDuplexProbe session{pair.probe};
     ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
     session.base().start();
@@ -1304,15 +1310,16 @@ TEST_F(AsyncIoBaseTest, DuplexResetForReconnectLeavesNothingOfThePreviousConnect
     EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
     EXPECT_FALSE(session.base().is_connected()) << "the dispose latches are start()'s to clear, not the reset's";
 
-    // The next connection on the same object (the same socket stands in for a new transport):
-    // only what IT publishes reaches the peer -- "stalenext" was the defect.
+    // The next connection on the same object, over its own transport: only what IT publishes
+    // reaches the peer -- "stalenext" was the defect.
     ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.transport() = SocketTransport{next.probe};
     session.base().start();
     EXPECT_TRUE(session.base().is_connected()) << "start() clears the dispose latches";
     session.base().publish(std::string_view{"next"});
     run_nowait_iterations();
     std::array<char, 16> buffer{};
-    const auto           read = pair.peer.read(buffer.data(), buffer.size());
+    const auto           read = next.peer.read(buffer.data(), buffer.size());
     ASSERT_EQ(read, 4);
     EXPECT_EQ(std::string_view(buffer.data(), 4), "next");
 }
@@ -1476,6 +1483,162 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowCompletesWhenItsHooksThrow) {
 
     ASSERT_EQ(pair.peer.write("data", 4), 4);
     EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
+}
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-1060 -- a standalone base's dispose() stopped its watcher and left the transport as it
+// was, until the object connected again or died: the peer of a disconnect(), or of a framing error,
+// never saw EOF, and the end that read its peer's EOF stayed open (CLOSE_WAIT). dispose() now ends
+// the transport once the watcher is stopped: closed when the peer's EOF or a socket error ended the
+// connection, shut down for sending when this object did -- the peer reads EOF after everything
+// queued, and nothing is reset, input left unread included. Each base, each path. (The production
+// composition, a tcp client, is in tcp/standalone-dispose-ends-transport.cpp.)
+// ---------------------------------------------------------------------------------------------
+
+namespace {
+
+/// What `peer` reads up to a clean EOF within `budget`, or nothing when the connection stays open
+/// (a peer never blocks here: it reads "would block" until the budget runs out) or is reset.
+std::optional<std::string>
+read_to_eof(qb::io::tcp::socket &peer, std::chrono::milliseconds budget = std::chrono::milliseconds{1000}) {
+    peer.set_nonblocking(true);
+    const auto            deadline = std::chrono::steady_clock::now() + budget;
+    std::string           received;
+    std::array<char, 256> buffer{};
+    do {
+        const int n = peer.read(buffer.data(), buffer.size());
+        if (n > 0) {
+            received.append(buffer.data(), static_cast<std::size_t>(n));
+            continue;
+        }
+        // tcp::socket::read() reports the peer's clean close as -1 with the error cleared.
+        const int error = qb::io::socket::get_last_errno();
+        if (error == 0)
+            return received;
+        if (!qb::io::socket::not_recv_error(error))
+            return std::nullopt; // a reset, not the clean end a disposed transport sends
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    } while (std::chrono::steady_clock::now() < deadline);
+    return std::nullopt;
+}
+
+} // namespace
+
+TEST_F(AsyncIoBaseTest, InputDisposeEndsItsTransport) {
+    {
+        // This object ends it: the sending side is shut down, the peer reads EOF.
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
+        input.base().start();
+
+        input.base().disconnect(0);
+        run_nowait_iterations();
+        ASSERT_EQ(input.dispose_events, 1u);
+        EXPECT_EQ(read_to_eof(pair.peer), std::optional<std::string>{""}) << "the peer of a disconnect() must see EOF";
+    }
+    {
+        // The peer ends it: the end that read its EOF is closed, not left in CLOSE_WAIT.
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
+        input.base().start();
+
+        pair.peer.disconnect();
+        for (int pass = 0; pass < 100 && input.dispose_events == 0u; ++pass)
+            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_EQ(input.dispose_events, 1u);
+        EXPECT_FALSE(pair.probe.is_open()) << "an input whose peer hung up must not keep its end open";
+    }
+}
+
+TEST_F(AsyncIoBaseTest, OutputDisposeEndsItsTransport) {
+    {
+        // This object ends it: what was delivered stays delivered, then the peer reads EOF.
+        auto            pair = make_stream_pair();
+        PipeOutputProbe output{pair.probe};
+        output.base().start();
+        output.base().publish(std::string_view{"last"});
+        run_nowait_iterations();
+        ASSERT_EQ(output.pendingWrite(), 0u);
+
+        output.base().disconnect(0);
+        run_nowait_iterations();
+        ASSERT_EQ(output.dispose_events, 1u);
+        EXPECT_EQ(read_to_eof(pair.peer), std::optional<std::string>{"last"}) << "the delivery, then EOF";
+    }
+    {
+        // A write error ends it: the transport is closed.
+        auto            pair = make_stream_pair();
+        PipeOutputProbe output{pair.probe};
+        output.force_write_hard_error();
+        output.base().start();
+        output.base().publish(std::string_view{"lost"});
+        run_nowait_iterations();
+        ASSERT_EQ(output.dispose_events, 1u);
+        EXPECT_FALSE(pair.probe.is_open()) << "an output whose socket failed must not keep it open";
+    }
+}
+
+TEST_F(AsyncIoBaseTest, DuplexDisposeEndsItsTransportOnEveryPath) {
+    {
+        // An explicit disconnect().
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+        session.base().start();
+
+        session.base().disconnect();
+        run_nowait_iterations();
+        ASSERT_EQ(session.dispose_events, 1u);
+        EXPECT_EQ(read_to_eof(pair.peer), std::optional<std::string>{""}) << "the peer of a disconnect() must see EOF";
+    }
+    {
+        // A framing error: the protocol marks itself not ok after the message it delivered.
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true), nullptr);
+        session.base().start();
+        ASSERT_EQ(pair.peer.write("data", 4), 4);
+
+        for (int pass = 0; pass < 100 && session.dispose_events == 0u; ++pass)
+            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_EQ(session.dispose_events, 1u);
+        EXPECT_EQ(session.last_disconnect_reason, -1);
+        EXPECT_EQ(read_to_eof(pair.peer), std::optional<std::string>{""}) << "the peer of a connection ended by a framing error must see EOF";
+    }
+    {
+        // The peer's own EOF: the end that read it must not stay open (CLOSE_WAIT).
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+        session.base().start();
+
+        pair.peer.disconnect();
+        for (int pass = 0; pass < 100 && session.dispose_events == 0u; ++pass)
+            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_EQ(session.dispose_events, 1u);
+        EXPECT_FALSE(pair.probe.is_open()) << "a client whose peer hung up must not keep its end open";
+    }
+    {
+        // This object ends it with the peer's bytes still unread: closing would reset the peer -- its next
+        // send fails, and on Windows it also drops what it has not read yet, the reply below. The end is a
+        // shutdown of the sending side: the reply, then a clean EOF, and the peer may still send.
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+        session.base().start();
+        session.base().publish(std::string_view{"reply"});
+        run_nowait_iterations();
+        ASSERT_EQ(session.pendingWrite(), 0u);
+
+        ASSERT_EQ(pair.peer.write("unread", 6), 6); // no loop pass reads it: the disconnect is handled first
+        session.base().disconnect();
+        run_nowait_iterations();
+        ASSERT_EQ(session.dispose_events, 1u);
+        EXPECT_EQ(read_to_eof(pair.peer), std::optional<std::string>{"reply"}) << "the reply, then EOF -- not a reset that loses it";
+        EXPECT_EQ(pair.peer.write("more", 4), 4) << "the connection is half-closed, not reset: the peer may still finish sending";
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

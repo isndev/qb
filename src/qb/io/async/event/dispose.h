@@ -41,9 +41,17 @@ namespace qb::io::async::event {
  *       during the I/O component's cleanup phase, which occurs before the actor's destructor.
  *       This allows actors to perform final cleanup of I/O-related resources. The sequence is:
  *       1. `on(event::disconnected&&)` is called (if connection was active)
- *       2. `on(event::dispose&&)` is called (final cleanup hook)
- *       3. I/O component destructor runs (unregisters from listener)
- *       4. Actor destructor runs (if actor is being destroyed)
+ *       2. The watcher is stopped and the transport ended: closed when the peer's EOF or a socket
+ *          error ended the connection, shut down for sending when this side did, so that its peer
+ *          reads EOF (Huly QB-1060)
+ *       3. `on(event::dispose&&)` is called (final cleanup hook; closing the transport here is safe,
+ *          and a no-op when it is closed already)
+ *       4. I/O component destructor runs (unregisters from listener)
+ *       5. Actor destructor runs (if actor is being destroyed)
+ *
+ *       Only a standalone object -- not a server's session, which its server tears down -- gets
+ *       this event. Step 2 is the descriptor-backed bases' (`input<>`, `output<>`, `io<>`): a QUIC
+ *       stream (`buffered_io<>`) has no socket of its own to end.
  *
  * Usage Example:
  * @code

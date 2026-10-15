@@ -342,7 +342,7 @@ Negative values are reserved for the framework. Positive values above `1` are av
 
 ### Protocol-level errors
 
-When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`src/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To resume on the same transport you must install a fresh protocol instance via `switch_protocol`.
+When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`src/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To use the same io object for another connection you must install a fresh protocol instance via `switch_protocol` — and, on a standalone client, a new transport: `dispose()` has ended the one the connection ended with (Huly QB-1060).
 
 ```cpp
 // Inside an AProtocol<MyIO> implementation:
