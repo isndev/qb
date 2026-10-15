@@ -4592,6 +4592,18 @@ ev_timer_count_addr(EV_P) EV_NOEXCEPT {
     return &timercnt;
 }
 
+#if EV_PERIODIC_ENABLE
+/* qev: the number of active ev_periodic watchers, read inline (the shape of ev_timer_count_addr).
+ * ev_timer_next folds the earliest periodic into the deadline it answers, but an embedder that
+ * skips a non-blocking pass while *ev_timer_count_addr reads 0 never asks it: a loop holding
+ * periodics and no ev_timer looked as if it had nothing to fire. This is the count that gate
+ * reads beside the timer count. */
+const int *
+ev_periodic_count_addr(EV_P) EV_NOEXCEPT {
+    return &periodiccnt;
+}
+#endif
+
 /* The earliest deadline the loop holds, on the clock ev_clock_now () reads (EV_TSTAMP_HUGE --
  * 1e13 seconds, beyond any reading -- when it holds none): the top of the timer heap, and of the periodic heap brought onto the
  * monotonic scale when periodics are compiled in. What an embedder compares a reading of its

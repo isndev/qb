@@ -25,6 +25,12 @@ policy.
 
 ### Added
 
+- **The embedded loop exports `ev_periodic_count_addr(loop)` (qev, Huly QB-275).** `const int *`
+  to the number of active `ev_periodic` watchers, read inline and valid until `ev_loop_destroy`,
+  declared under `EV_PERIODIC_ENABLE` beside the other `ev_periodic_*`: the counterpart of
+  `ev_timer_count_addr`, for a listener gate that must see a loop holding periodics and no timer.
+  `ev_run` and every other loop function compile to the same instructions. qb's `qb-ev` archive
+  exports 73 `ev_*` on Linux and 74 on Windows (`ev_default_loop_ptr` included).
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
   `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the answer straight
   into the peer's mailbox, ahead of whatever the handler pushed to that peer earlier -- the documented `send`-family,

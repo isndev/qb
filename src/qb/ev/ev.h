@@ -929,6 +929,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
     EV_API_DECL void ev_periodic_start(EV_P_ ev_periodic * w) EV_NOEXCEPT;
     EV_API_DECL void ev_periodic_stop(EV_P_ ev_periodic * w) EV_NOEXCEPT;
     EV_API_DECL void ev_periodic_again(EV_P_ ev_periodic * w) EV_NOEXCEPT;
+    EV_API_DECL const int *ev_periodic_count_addr(EV_P) EV_NOEXCEPT; /* qev: active ev_periodic watchers, read inline (as ev_timer_count_addr); valid until ev_loop_destroy */
 #endif
 
 /* only supported in the default loop */
