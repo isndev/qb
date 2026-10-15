@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <sstream>
@@ -136,7 +138,11 @@ public:
 
     uint32_t const *
     get_digest(digest32_t digest) {
-        size_t const bitCount = this->m_byteCount * 8;
+        // The message length in BITS, written on 64 bits, big-endian (FIPS 180-4, 5.1.1). qb fork: the high four bytes
+        // were written as zeros and the low four from the bit count, so from 2^29 bytes hashed -- 2^32 bits -- the
+        // encoded length wrapped and the digest was another message's (Huly QB-383). The byte count is 64-bit too, so
+        // a 32-bit size_t does not wrap it first.
+        std::uint64_t const bitCount = this->m_byteCount * 8;
         process_byte(0x80);
         if (this->m_blockByteIndex > 56) {
             while (m_blockByteIndex != 0) {
@@ -150,14 +156,8 @@ public:
                 process_byte(0);
             }
         }
-        process_byte(0);
-        process_byte(0);
-        process_byte(0);
-        process_byte(0);
-        process_byte(static_cast<unsigned char>((bitCount >> 24) & 0xFF));
-        process_byte(static_cast<unsigned char>((bitCount >> 16) & 0xFF));
-        process_byte(static_cast<unsigned char>((bitCount >> 8) & 0xFF));
-        process_byte(static_cast<unsigned char>((bitCount) & 0xFF));
+        for (int shift = 56; shift >= 0; shift -= 8)
+            process_byte(static_cast<unsigned char>((bitCount >> shift) & 0xFF));
 
         memcpy(digest, m_digest, 5 * sizeof(uint32_t));
         return digest;
@@ -249,10 +249,10 @@ private:
     }
 
 private:
-    digest32_t m_digest;
-    uint8_t    m_block[64];
-    size_t     m_blockByteIndex;
-    size_t     m_byteCount;
+    digest32_t    m_digest;
+    uint8_t       m_block[64];
+    size_t        m_blockByteIndex;
+    std::uint64_t m_byteCount;
 };
 } // namespace detail
 
@@ -524,32 +524,50 @@ operator<(uuid const &lhs, uuid const &rhs) noexcept {
     return lhs.data < rhs.data;
 }
 
+namespace detail {
+// qb fork: the 36 characters of `id`'s canonical text (8-4-4-4-12 hexadecimal digits), written whatever any stream's
+// formatting state is -- the text names the identifier, so nothing may change it (Huly QB-382).
+template <typename CharT>
+inline void
+uuid_text(uuid const &id, CharT (&text)[36], bool upper_case) noexcept {
+    constexpr char lower_digits[] = "0123456789abcdef";
+    constexpr char upper_digits[] = "0123456789ABCDEF";
+    const char    *digits         = upper_case ? upper_digits : lower_digits;
+    std::size_t    at             = 0;
+    std::size_t    index          = 0;
+    for (std::byte const byte : id.as_bytes()) {
+        if (index == 4 || index == 6 || index == 8 || index == 10)
+            text[at++] = static_cast<CharT>('-');
+        auto const value = std::to_integer<unsigned>(byte);
+        text[at++]       = static_cast<CharT>(digits[value >> 4]);
+        text[at++]       = static_cast<CharT>(digits[value & 0xF]);
+        ++index;
+    }
+}
+} // namespace detail
+
+// qb fork (Huly QB-382): the canonical text is built first, whatever the stream's basefield, adjustfield, showbase or
+// fill, then inserted as ONE formatted string -- width() pads the whole identifier with the stream's fill on its
+// adjustfield's side, as for a std::string, and is reset to 0. Nothing else of the stream's state changes; uppercase,
+// which writes the same identifier, is honoured. The bytes used to be written one by one with the caller's adjustfield
+// and showbase kept: on a `std::left` stream the byte 0x04 came out as "40", another identifier, and the fill '0' the
+// insertion set stayed behind.
 template <class Elem, class Traits>
 std::basic_ostream<Elem, Traits> &
 operator<<(std::basic_ostream<Elem, Traits> &s, uuid const &id) {
-    // save current flags
-    std::ios_base::fmtflags f(s.flags());
-
-    // manipulate stream as needed
-    s << std::hex << std::setfill(static_cast<Elem>('0')) << std::setw(2) << (int) id.data[0] << std::setw(2) << (int) id.data[1]
-      << std::setw(2) << (int) id.data[2] << std::setw(2) << (int) id.data[3] << '-' << std::setw(2) << (int) id.data[4] << std::setw(2)
-      << (int) id.data[5] << '-' << std::setw(2) << (int) id.data[6] << std::setw(2) << (int) id.data[7] << '-' << std::setw(2)
-      << (int) id.data[8] << std::setw(2) << (int) id.data[9] << '-' << std::setw(2) << (int) id.data[10] << std::setw(2) << (int) id.data[11]
-      << std::setw(2) << (int) id.data[12] << std::setw(2) << (int) id.data[13] << std::setw(2) << (int) id.data[14] << std::setw(2)
-      << (int) id.data[15];
-
-    // restore original flags
-    s.flags(f);
-
-    return s;
+    Elem text[36];
+    detail::uuid_text(id, text, (s.flags() & std::ios_base::uppercase) != 0);
+    return s << std::basic_string_view<Elem, Traits>(text, 36);
 }
 
+// qb fork: built from the canonical text directly, no stream -- a std::hash<uuid> (below) is a to_string, and a
+// session table keyed by uuid hashes one per lookup.
 template <class CharT = char, class Traits = std::char_traits<CharT>, class Allocator = std::allocator<CharT>>
 inline std::basic_string<CharT, Traits, Allocator>
 to_string(uuid const &id) {
-    std::basic_stringstream<CharT, Traits, Allocator> sstr;
-    sstr << id;
-    return sstr.str();
+    CharT text[36];
+    detail::uuid_text(id, text, false);
+    return std::basic_string<CharT, Traits, Allocator>(text, 36);
 }
 
 inline void

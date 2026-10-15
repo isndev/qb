@@ -540,6 +540,20 @@ policy.
 
 ### Fixed
 
+- **`qb::uuid`'s inserter writes the identifier whatever the stream's format, and UUIDv5 hashes long names as SHA-1
+  does (Huly QB-382, QB-383).** `operator<<` wrote each byte with `std::hex`, fill `'0'` and `setw(2)` but kept the
+  caller's adjustfield and showbase: on a `std::left` stream the byte `0x04` came out as `"40"` -- the text named
+  another identifier -- `showbase` printed `0x` prefixes, and the fill `'0'` stayed set after the insertion. The
+  canonical text is now built first and inserted as ONE formatted string: flags and fill are left as they were,
+  `width()` pads the whole identifier as for a `std::string` and is reset (it was spent on the first byte), and
+  `uppercase` still writes upper-case digits. `uuids::to_string` builds that text without a `std::stringstream`, so
+  `std::hash<qb::uuid>`, which hashes it, no longer builds a stream per call -- an `io_handler` session table hashes
+  one per lookup. The SHA-1 behind `uuid_name_generator` wrote four zero bytes and then the low 32 bits of the
+  message's bit length: from 2^29 bytes hashed -- namespace and name together reaching 512 MiB -- the length wrapped
+  and the digest, hence the UUID, was another message's; the length is now written on 64 bits, from a 64-bit byte
+  count. Pinned by `tests/io/unit/core/uuid-codec.cpp` (new, `qb-io-test-unit-uuid-codec`): every stream format
+  against the canonical text and its parse, the state left behind, FIPS 180 and RFC 9562 known answers, and SHA-1
+  on both sides of 2^29 bytes (in optimised builds, see the source).
 - **`qb::io::uri` is a value: copies and moves keep the query map, an assigned text is classified afresh, and a
   bracketed host takes only a port (Huly QB-350, QB-351, QB-352).** The copy and the move parsed the source text again,
   so every edit made through the mutable `queries()` -- qbm-http's request validator sanitizes `Request::uri()` that

@@ -432,6 +432,8 @@ Locale-independent, non-throwing, allocation-free `string_view`→number over `s
 ### `using qb::uuid = ::uuids::uuid;` (`<qb/uuid.h>`)
 RFC 4122 128-bit UUID over the vendored uuids library.
 *   `uuid qb::generate_random_uuid();` — random (v4) UUID (thread_local mt19937 seeded from random_device).
+*   `operator<<` writes the canonical 36-character text whatever the stream's basefield, adjustfield, showbase or fill, as ONE formatted string: `width()` pads the whole text with the stream's fill and is reset; flags and fill are left as they were; `uppercase` is honoured (3.3, Huly QB-382: a `std::left` stream turned byte `0x04` into `"40"`). `uuids::to_string(id)` builds the text without a stream.
+*   `uuids::uuid_name_generator(ns)(name)` — name-based (v5) UUID; its SHA-1 encodes the message length on 64 bits, so a name past 512 MiB hashes as SHA-1 does (3.3, Huly QB-383).
 *   use: `qb::uuid id = qb::generate_random_uuid();`
 
 ### `class qb::string<_Size = 30> : public std::array<char, _Size + 1>` (`<qb/string.h>`)

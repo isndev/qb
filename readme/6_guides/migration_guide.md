@@ -653,7 +653,7 @@ std::string s = std::to_string(id);    std::string s = uuids::to_string(id);
                                        std::string s = to_string(id);
 ```
 
-`uuids::to_string` is at `qb/src/qb/vendor/uuid/include/uuid.h:547-549`, and `qb::uuid` is
+`uuids::to_string` is at `qb/src/qb/vendor/uuid/include/uuid.h:565-567`, and `qb::uuid` is
 `::uuids::uuid` (`qb/src/qb/uuid.h:45`), so the unqualified call resolves by argument-dependent lookup.
 `std::hash<uuids::uuid>` is untouched — a `qb::uuid` still works as a map key.
 

@@ -190,3 +190,7 @@ unset(_qb_multi_config)
 # oldest region of a size, a table of 200 sizes. A reserved region (QB-203) is lent again as one with what was committed
 # in it, and on Windows never for a committed request nor a committed region for a reserved one.
 qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.cpp DEPENDS ${PROJECT_NAME})
+# uuid-codec pins the stduuid fork's text and name codecs (Huly QB-382, QB-383): operator<< writes the canonical text
+# whatever the stream's formatting state and leaves that state as it found it, and the SHA-1 behind UUIDv5 encodes the
+# message length on 64 bits -- the 2^29-byte boundary case runs in optimised builds only (see the source).
+qb_add_test(MODULE qb-io TIER unit NAME uuid-codec SOURCES core/uuid-codec.cpp DEPENDS ${PROJECT_NAME})
