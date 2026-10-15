@@ -1308,13 +1308,14 @@ operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
 /**
  * @brief Input stream operator for qb::string
  *
- * Reads one whitespace-delimited word as for a std::string -- leading white space skipped, then up to white space,
- * the end of the stream or width() characters, width() reset to 0 -- and keeps its first `_Size` characters: the
- * rest of the word is consumed and dropped as it is read, never buffered (Huly QB-1002: it was read whole into a
- * std::string first, a long token allocating its whole length). A read that finds no word sets failbit and leaves
- * @p str as it was, as std::string's does. It is noexcept: with the stream's exceptions() enabled, a read that throws
- * leaves @p str unchanged and its failure in the stream's state (eofbit / failbit / badbit), the next operation on
- * that stream throws.
+ * Reads one whitespace-delimited word as for a std::string -- leading white space skipped (unless noskipws), then up
+ * to white space, the end of the stream or width() characters, width() reset to 0 -- and keeps its first `_Size`
+ * characters: the rest of the word is consumed and dropped as it is read, never buffered (Huly QB-1002: it was read
+ * whole into a std::string first, a long token allocating its whole length). @p str ends as a std::string would: left
+ * as it was when the sentry fails (nothing but white space left: failbit), else holding what was read -- nothing at a
+ * white space a noskipws stream cannot skip (failbit), the characters taken before a stream buffer threw (badbit). It
+ * is noexcept: with the stream's exceptions() enabled, the throw is contained, the failure stays in the stream's state
+ * (eofbit / failbit / badbit) and the next operation on that stream throws.
  *
  * @tparam _Size Maximum size of the string
  * @param is Input stream
@@ -1352,14 +1353,13 @@ operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
             state |= std::ios_base::badbit; // the stream buffer threw, as std::string's extraction reports it
         }
         is.width(0);
+        str = word; // what was read, even nothing: std::string's extraction empties its target once the sentry passes
         if (!extracted)
             state |= std::ios_base::failbit;
         if (state)
-            is.setstate(state); // throws when the stream asked for it: then str is left as it was
-        if (extracted)
-            str = word;
+            is.setstate(state); // throws when the stream asked for it, contained below
     } catch (...) {
-        // the stream's state already records the failure; str is left as it was
+        // the stream's state already records the failure
     }
     return is;
 }

@@ -9,10 +9,12 @@ policy.
 
 ### Changed
 
-- **`qb::string`'s `operator>>` leaves the target as it was when it reads no word (Huly QB-1002)**, as
-  `std::string`'s does; it emptied it. The two stream operators keep their `noexcept`: 3.x keeps the signatures 3.0
-  shipped (VERSIONING.md), so a stream whose `exceptions()` asked for a throw still finds its failure in its state and
-  throws on its next operation -- removing `noexcept`, `std::string`'s behaviour, is a 4.0 change.
+- **`qb::string`'s `operator>>` sets its target as `std::string`'s extraction does (Huly QB-1002).** A stream with
+  nothing but white space left fails its sentry and leaves the target as it was -- it emptied it; past the sentry the
+  target holds what was read: nothing at a white space a `noskipws` stream cannot skip, the word before a throw the
+  stream's `exceptions()` asked for. The two stream operators keep their `noexcept`: 3.x keeps the signatures 3.0
+  shipped (VERSIONING.md), so that throw is contained, the failure stays in the stream's state and its next operation
+  throws -- removing `noexcept`, `std::string`'s behaviour, is a 4.0 change.
 - **`qb::io::log::init()` says when its file cannot be opened (Huly QB-327).** It prints the one-line `WARNING` the
   load-time default prints, naming the file: every log line is discarded until a later `init()` names a file that
   opens. It was silent.

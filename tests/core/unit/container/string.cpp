@@ -1028,6 +1028,30 @@ TEST_F(StringTest, ExtractionKeepsTheCapacityAndNeverBuffersTheWord) {
     EXPECT_TRUE(nothing_again.fail());
     EXPECT_EQ(std::string_view(tail), "tail") << "a read that found no word changed the string";
 
+    // Past the sentry the target holds what was read, as std::string's: nothing at a white space a noskipws stream
+    // cannot skip, and the word before a throw the stream asked for (contained here, the stream keeps the failure).
+    std::istringstream at_space_reference(" word");
+    std::string        emptied("kept");
+    at_space_reference >> std::noskipws >> emptied;
+    EXPECT_TRUE(at_space_reference.fail());
+    EXPECT_EQ(emptied, "") << "the std::string behaviour this mirrors";
+    std::istringstream at_space(" word");
+    qb::string<8>      at_space_word("kept");
+    at_space >> std::noskipws >> at_space_word;
+    EXPECT_TRUE(at_space.fail());
+    EXPECT_TRUE(at_space_word.empty()) << "a read stopped at a white space kept the old word";
+    std::istringstream throwing_reference("last");
+    throwing_reference.exceptions(std::ios::eofbit);
+    std::string read_before_throw;
+    EXPECT_ANY_THROW(throwing_reference >> read_before_throw);
+    EXPECT_EQ(read_before_throw, "last") << "the std::string behaviour this mirrors";
+    std::istringstream throwing("last");
+    throwing.exceptions(std::ios::eofbit);
+    qb::string<8> last_word("kept");
+    throwing >> last_word;
+    EXPECT_TRUE(throwing.eof());
+    EXPECT_EQ(std::string_view(last_word), "last") << "the word read before the eofbit throw was dropped";
+
     // The bound: a one-MiB word leaves the allocator alone.
     std::istringstream huge(std::string(1u << 20, 'w') + " after");
     qb::string<8>      kept;
