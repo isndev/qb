@@ -595,6 +595,12 @@ policy.
   teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
   witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
   one completion per pass and one fewer per extra completion (callgrind).
+- **An async TCP connect that fails after its watcher no longer survives a loop teardown (Huly
+  QB-873).** A connect in progress arms an io watcher and a self-hold the watcher's teardown hook breaks.
+  When the readiness reported the failure (`SO_ERROR`) and no address was left, the watcher went away and
+  the failure was deferred with a capture of its own, leaving the self-hold set: a `listener::clear()`
+  that dropped the deferred failure before it ran left the connector and the user's completion callback
+  alive, unreachable. The deferred failure now takes the self-hold over.
 - **One generation of deferred callbacks per `run()` call (Huly QB-448).** A callback deferred by a
   deferred callback ran in the same `run(EVRUN_NOWAIT)` call: `run()`'s own drain after the loop took
   what the in-loop drain had left for the next turn, and when the loop invoked a fed watcher on entry

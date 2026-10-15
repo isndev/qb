@@ -217,7 +217,7 @@ What it does **not** give you is cancellation-awareness. A coroutine parked in a
 <!-- src: qb/src/qb/io/async/coroutine/awaiter.h:30-35, :383-397 (await_resume stops the watcher), :407-430 (destructor) -->
 
 > Nor is one copied. Since 3.3 the connect awaiters, `select`'s and `when_all` / `when_any`'s are neither copyable nor movable, as `timeout_awaiter` and `awaiter_base` already were: each destructor deactivates, resolves or reclaims through a state a copy shared, so the copy destroyed first -- a temporary, a vector's old storage -- left the live awaiter never resuming (Huly QB-302). `co_await` what the factory returns, or name it once (`auto op = tcp::connect(u, 5s); co_await op;`) and `co_await` the name.
-<!-- src: qb/src/qb/io/async/tcp/connector.h:954-957, qb/src/qb/io/async/coroutine/combinators.h:191-194, qb/src/qb/io/async/coroutine/channel.h:1148-1151 (copy and move deleted) -->
+<!-- src: qb/src/qb/io/async/tcp/connector.h:961-964, qb/src/qb/io/async/coroutine/combinators.h:191-194, qb/src/qb/io/async/coroutine/channel.h:1148-1151 (copy and move deleted) -->
 
 ### Awaiting a TCP connect
 
@@ -240,9 +240,9 @@ task<void> connect_to(qb::io::uri remote) {
 ```
 
 `connect<Transport>(uri remote, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` defaults to `transport::tcp`. A zero timeout means no deadline.
-<!-- src: qb/src/qb/io/async/tcp/connector.h:1018-1022 (connect factory), :997-998 (await_resume std::optional<Socket_>) -->
+<!-- src: qb/src/qb/io/async/tcp/connector.h:1025-1029 (connect factory), :1004-1005 (await_resume std::optional<Socket_>) -->
 
-**Every address, in order (3.3).** A hostname URI resolves to every address of its family -- IPv4 unless the URI says otherwise -- and the connector tries them in the resolver's order. One that refuses, fails or does not answer within its share of the deadline is closed and the next is tried; the deadline stays the whole connect's, and a TLS failure on an address that answered is final: the next would present the same server (`src/qb/io/async/tcp/connector.h:136-142`). The share is `tcp::connect_attempt_budget`: the time left over the addresses left, never under two seconds unless less is left, so a dead first address in a DNS round-robin no longer eats the deadline (`src/qb/io/tcp/socket.cpp:100-107`). `connect<Transport>(std::vector<qb::io::endpoint> endpoints, std::string host, timeout, verify_peer)` runs the same over addresses you resolved yourself -- on the [offload pool](#offloading-blocking-work), from a cache -- with `host` the name TLS verifies (`src/qb/io/async/tcp/connector.h:1043`).
+**Every address, in order (3.3).** A hostname URI resolves to every address of its family -- IPv4 unless the URI says otherwise -- and the connector tries them in the resolver's order. One that refuses, fails or does not answer within its share of the deadline is closed and the next is tried; the deadline stays the whole connect's, and a TLS failure on an address that answered is final: the next would present the same server (`src/qb/io/async/tcp/connector.h:138-144`). The share is `tcp::connect_attempt_budget`: the time left over the addresses left, never under two seconds unless less is left, so a dead first address in a DNS round-robin no longer eats the deadline (`src/qb/io/tcp/socket.cpp:100-107`). `connect<Transport>(std::vector<qb::io::endpoint> endpoints, std::string host, timeout, verify_peer)` runs the same over addresses you resolved yourself -- on the [offload pool](#offloading-blocking-work), from a cache -- with `host` the name TLS verifies (`src/qb/io/async/tcp/connector.h:1050`).
 
 ## Offloading blocking work
 
@@ -394,7 +394,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await sleep(d)` | `timer_awaiter`, i.e. a `ev_timer` (`awaiter.h:294`); `d <= 0` is a bare re-enqueue with no timer at all | the timer |
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, ev)` | `socket_awaiter`, i.e. a `ev_io` watcher (`awaiter.h:470`) | fd readiness |
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:627`) | your callback |
-| `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:916`) | connect success, failure, or the connector's own deadline |
+| `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:923`) | connect success, failure, or the connector's own deadline |
 | `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
 | `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:725`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
