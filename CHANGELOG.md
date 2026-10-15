@@ -536,6 +536,14 @@ policy.
 
 ### Fixed
 
+- **The native QUIC writer no longer zero-fills its packet buffer before every write (Huly QB-1057).**
+  `drain_transport` value-initialised its 1200-byte `NGTCP2_MAX_UDP_PAYLOAD_SIZE` buffer on each writer
+  iteration (an inline 150-qword `rep stos`), although ngtcp2 writes every byte it reports as written and
+  the writer copies exactly those bytes out. The buffer is now left uninitialised. Callgrind, WSL2 g++-14
+  Release, one stream and 300 sends, runs moving the same data: 9,342 instructions per send before
+  (A/A 0), 8,883-8,891 after (A/A 0.09 %), -4.9 %; the writer's own cost per call drops from 215 to 99.
+  Valgrind memcheck reports the same single pre-existing ngtcp2-internal context before and after, while a
+  control copying 8 unwritten bytes is caught at `sendto`; clang-analyzer finds nothing.
 - **The QUIC stream-session cap refuses new streams, never one it already admitted (Huly QB-329).**
   `io_handler` tested `set_max_sessions()` before looking the `{connection_id, stream_id}` pair up, so
   once the registry was full every later chunk of an admitted stream -- one opened by `stream_started`

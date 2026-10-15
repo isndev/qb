@@ -1230,7 +1230,7 @@ private:
         // read can bring, while DATAGRAMs (never flow controlled) and control frames still go out.
         bool connection_credit_spent = false;
         for (;;) {
-            std::array<uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf{};
+            std::array<uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf; // not zeroed: ngtcp2 writes every byte it reports written
             ngtcp2_path_storage                              ps;
             ngtcp2_path_storage_zero(&ps);
             ngtcp2_pkt_info  pi{};
