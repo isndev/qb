@@ -9,6 +9,10 @@ policy.
 
 ### Changed
 
+- **`qb::string`'s `operator>>` leaves the target as it was when it reads no word (Huly QB-1002)**, as
+  `std::string`'s does; it emptied it. The two stream operators keep their `noexcept`: 3.x keeps the signatures 3.0
+  shipped (VERSIONING.md), so a stream whose `exceptions()` asked for a throw still finds its failure in its state and
+  throws on its next operation -- removing `noexcept`, `std::string`'s behaviour, is a 4.0 change.
 - **`qb::io::log::init()` says when its file cannot be opened (Huly QB-327).** It prints the one-line `WARNING` the
   load-time default prints, naming the file: every log line is discarded until a later `init()` names a file that
   opens. It was silent.
@@ -546,6 +550,17 @@ policy.
 
 ### Fixed
 
+- **`qb::string` closes three gaps with `std::string` (Huly QB-1002).** A const char array --
+  `const char raw[3] = {'x','y','z'}` -- took the non-template `const char*` constructor, `assign` and `operator=`,
+  whose `strlen` reads past an array without a NUL (`std::string` does the same); the pointer forms are now templates
+  an array argument cannot win, so every array, a literal included, takes the bounded array form. `operator>>` read the
+  whole word into a temporary `std::string` before keeping what fitted, so a long token allocated its whole length; it
+  now reads as `std::string`'s extraction does -- leading white space skipped, `width()` honoured and reset, the word
+  consumed whole -- keeping the first `_Size` characters and dropping the rest as it reads, with no allocation.
+  `find(needle, pos)` answered `npos` at `pos == size()` whatever the needle, and `contains("")` was false on an empty
+  string; both now answer as `std::string` does. Pinned by `StringTest.AConstCharArrayIsReadWithinItsBounds`,
+  `StringTest.ExtractionKeepsTheCapacityAndNeverBuffersTheWord` and `StringAlgorithmTest.AnEmptyNeedleIsFoundUpToTheSize`
+  in `tests/core/unit/container/string.cpp`.
 - **The startup log diagnostic follows the open, not the path (Huly QB-327).** The default `LogInitializer` warned when
   `./qb.1.log` did not EXIST: a directory of that name exists, nanolog's open of it fails, and every log line was
   discarded with no word. The answer is now nanolog's own, `nanolog::log_file_opened()`, taken from the first file's
