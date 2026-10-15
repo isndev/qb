@@ -740,7 +740,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:762)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:772)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug

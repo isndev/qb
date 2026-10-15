@@ -296,13 +296,16 @@ event_del(struct event *ev) {
 
     dLOOPev;
 
+    /* Unconditionally (qev QB-712): a stop clears a pending activation even on a watcher that is
+     * not active, and event_active makes one pending WITHOUT starting it -- a timeout always, the
+     * io watcher of an event that has no fd interest. Stopping only what was active let the
+     * callback run on the next pass, after the removal. A stop of an inactive watcher does no more. */
     if (ev->ev_events & EV_SIGNAL)
         ev_signal_stop(EV_A_ & ev->iosig.sig);
-    else if (ev->ev_events & (EV_READ | EV_WRITE))
+    else
         ev_io_stop(EV_A_ & ev->iosig.io);
 
-    if (ev_is_active(&ev->to))
-        ev_timer_stop(EV_A_ & ev->to);
+    ev_timer_stop(EV_A_ & ev->to);
 
     ev->ev_flags = EVLIST_INIT;
 

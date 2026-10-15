@@ -123,6 +123,7 @@ struct loop_ref {
 #if EV_MULTIPLICITY
         return EV_AX == other.EV_AX;
 #else
+        (void) other; // one loop: every reference is to it
         return true;
 #endif
     }
@@ -132,6 +133,7 @@ struct loop_ref {
 #if EV_MULTIPLICITY
         return !(*this == other);
 #else
+        (void) other;
         return false;
 #endif
     }
@@ -494,7 +496,9 @@ struct base : ev_watcher {
     static void
     function_thunk(EV_P_ ev_watcher *w, int revents) {
         function(*static_cast<watcher *>(w), revents);
+#if EV_MULTIPLICITY // a single-loop build passes no loop to name (qev QB-711)
         (void) loop;
+#endif
     }
 
     // method callback
@@ -515,7 +519,9 @@ struct base : ev_watcher {
     static void
     method_thunk(EV_P_ ev_watcher *w, int revents) {
         (static_cast<K *>(w->data)->*method)(*static_cast<watcher *>(w), revents);
+#if EV_MULTIPLICITY
         (void) loop;
+#endif
     }
 
     // no-argument callback
@@ -529,12 +535,16 @@ struct base : ev_watcher {
     static void
     method_noargs_thunk(EV_P_ ev_watcher *w, int) {
         (static_cast<K *>(w->data)->*method)();
+#if EV_MULTIPLICITY
         (void) loop;
+#endif
     }
 
+    // Invoke the callback as the loop would: with the watcher's loop, the watcher and the revents
+    // (qev QB-312: the loop was left out, so any use of this operator failed to compile).
     void
     operator()(int events = EV_UNDEF) {
-        return ev_cb(static_cast<ev_watcher *>(this))(static_cast<ev_watcher *>(this), events);
+        return ev_cb(static_cast<ev_watcher *>(this))(EV_A_ static_cast<ev_watcher *>(this), events);
     }
 
     bool
@@ -807,9 +817,11 @@ set_embed(struct ev_loop *embedded_loop) EV_NOEXCEPT {
     ev_embed_set(static_cast<ev_embed *>(this), embedded_loop);
 }
 
+// set_embed, not set: set (loop) is the base's, and it moved this watcher to the loop it was
+// meant to embed, leaving that loop unset (qev QB-313).
 void
 start(struct ev_loop *embedded_loop) EV_NOEXCEPT {
-    set(embedded_loop);
+    set_embed(embedded_loop);
     start();
 }
 

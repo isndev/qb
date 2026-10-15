@@ -571,6 +571,30 @@ policy.
   armed, and after a fork -- pushing a due periodic past its fire. It now makes the jump test of the
   loop's own time update. The default build's code is unchanged, instruction for instruction.
   Witness in qev's white-box `test-linux-internals`, red before.
+- **The embedded loop's libevent layer: `event_del` cancels an activation still pending (qev, Huly
+  QB-712).** A timeout made pending by `event_active` ran its callback after `event_del`, which
+  stopped the timer only when it was active; the io watcher of an event with no fd interest had
+  the same hole. Both are stopped unconditionally now. `src/qb/ev/event.c` is compiled only with
+  `QB_EV_LIBEVENT_COMPAT=ON`, OFF in qb; witness in qev's `tests/test-event-compat.c`.
+- **`<qb/ev/ev++.h>`: a direct call `w (revents)` compiles and hands the callback its loop (qev,
+  Huly QB-312).** It passed the watcher where libev's callback takes the loop, so any use failed
+  to compile; it now invokes the callback as `ev_invoke` would. The same shared header carries two
+  fixes for profiles qb does not build: `ev::embed::start (loop)` embeds that loop instead of
+  moving the watcher to it (QB-313; `embed` is outside qb's watcher families), and the header
+  compiles under `EV_MULTIPLICITY=0` (QB-711; qb builds with multiplicity). Witnesses in qev's
+  `tests/test-cxx.cpp`, run by its build matrix in both profiles.
+- **The embedded loop's io_uring backend watches descriptor 0 and keeps a loop handed between
+  threads working; its Linux aio backend frees its arrays (qev, Huly QB-336, QB-744, QB-338).**
+  Under `QB_EV_BACKEND=iouring` a watcher on fd 0 never fired: its first poll is tagged 0, which
+  the completion drain skipped as a sentinel. The ring was created `IORING_SETUP_SINGLE_ISSUER`, so
+  a loop called from a second thread -- one at a time, as qev's contract allows -- aborted through
+  `ev_syserr` on that thread's first submission (`EEXIST`); and a poll whose submitting thread had
+  exited, which the kernel completes `-ECANCELED`, was dropped without a re-arm. qb's cores keep one
+  loop per thread for life, so those two are reachable only by code that moves a loop itself. The
+  aio backend (`QB_EV_USE_LINUXAIO`, OFF here) kept its iocb table and submission batch past its
+  teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
+  witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
+  one completion per pass and one fewer per extra completion (callgrind).
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

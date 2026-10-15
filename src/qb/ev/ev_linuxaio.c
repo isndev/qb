@@ -196,6 +196,18 @@ linuxaio_free_iocbp(EV_P) {
     linuxaio_iocbpmax = 0; /* next resize will completely reallocate the array, at some overhead */
 }
 
+/* The backend's final release (qev QB-338): the iocbs, and the two pointer arrays it grows itself --
+ * the per-fd iocb table and the io_submit batch -- which linuxaio_free_iocbp keeps on purpose, for
+ * a fork or a regrow to reuse. Called where this backend ends for good: its destroy, and the
+ * permanent switch to epoll, after which no destroy of this backend runs. */
+ecb_cold static void
+linuxaio_free_arrays(EV_P) {
+    linuxaio_free_iocbp(EV_A);
+    ev_free(linuxaio_iocbps);
+    linuxaio_iocbps = 0;
+    array_free(linuxaio_submit, EMPTY);
+}
+
 static void
 linuxaio_modify(EV_P_ int fd, int oev, int nev) {
     array_needsize(ANIOCBP, linuxaio_iocbps, linuxaio_iocbpmax, fd + 1, linuxaio_array_needsize_iocbp);
@@ -442,7 +454,7 @@ linuxaio_poll(EV_P_ ev_tstamp timeout) {
                     /* TODO: might be more prudent? */
 
                     /* to bad, we can't get a new aio context, go 100% epoll */
-                    linuxaio_free_iocbp(EV_A);
+                    linuxaio_free_arrays(EV_A);
                     ev_io_stop(EV_A_ & linuxaio_epoll_w);
                     ev_ref(EV_A);
                     linuxaio_ctx = 0;
@@ -522,7 +534,7 @@ inline_size void
 linuxaio_destroy(EV_P) {
     ev_io_stop(EV_A_ & linuxaio_epoll_w);
     epoll_destroy(EV_A);
-    linuxaio_free_iocbp(EV_A);
+    linuxaio_free_arrays(EV_A);
     evsys_io_destroy(linuxaio_ctx); /* fails in child, aio context is destroyed */
     if (backend_fd != (uintptr_t) -1) {
         close((int) (uintptr_t) backend_fd);
