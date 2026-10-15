@@ -34,7 +34,7 @@ Given a version `MAJOR.MINOR.PATCH`:
 
 ## Source compatibility
 
-Guaranteed within a major version, except for the explicitly approved Redis correction below.
+Guaranteed within a major version, except for the explicitly approved corrections below.
 Otherwise, code that compiles against `3.0` keeps compiling against every later `3.x`; changes
 requiring a source edit wait for `4.0`.
 
@@ -56,6 +56,30 @@ Ordinary calls retain their spelling. Taking an untyped address can require an e
 This exception does not relax the source-compatibility policy for unrelated APIs. Consumers rebuild as
 required below. Huly QB-1019 tracks restoring the previous address syntax while preserving the real
 C++20/C++23 ABI separation and ordinary-path performance; it does not block this accepted correction.
+
+### Approved 3.3 exception: two Redis result types that could not carry a result
+
+The maintainer approved changing the result type of two qbm-redis commands (Huly QB-652, QB-653).
+`client_unblock` yielded `Reply<status>`, and its callback form took a `Reply<status>`; CLIENT UNBLOCK
+answers an integer, `1` or `0`, which the `status` type cannot decode, so every call failed whatever
+the server did. Both forms now yield `Reply<bool>`: `true` when the client was blocked.
+`command_info` yielded `Reply<std::vector<std::map<std::string, std::string>>>`, whose decoder paired
+neighbouring positions as string keys and values, failed on Redis 7 and later and on RESP3, and
+dropped a failure's reason; both forms now yield `Reply<qb::json>`, one object per name with its
+positions named and native types kept, `null` for an unknown name. Code that names the old type --
+a callback parameter, a declared variable -- or reads its value is updated to the new one; code that
+only tests `ok()` compiles unchanged.
+
+### Approved 3.3 exception: a literal `nullptr` operand of `qb::string`
+
+The maintainer approved one source change in `qb::string` (Huly QB-1002). Every member and operator
+that takes a C string now reads a char array within its bounds, through a `const char (&)[N]` form
+beside a pointer form deduced from `char const *` or `char *`, and a literal `nullptr` matches
+neither. `append`, `+=`, `compare`, `find`, `rfind`, `starts_with`, `ends_with`, `contains`, `<`,
+`>`, `<=`, `>=` and `operator+` given a literal `nullptr` no longer compile: each read it with
+`strlen(nullptr)`, which is undefined behaviour. `==` and `!=` with `nullptr` are unchanged, and the
+constructor, `assign` and `operator=` never accepted it. A null `const char *` held in a variable
+still compiles and is still undefined, as it is for `std::string`.
 
 ## Binary compatibility
 
