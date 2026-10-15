@@ -29,6 +29,10 @@ policy.
 
 ### Added
 
+- **`merge()` on `qb::unordered_set`, `qb::unordered_flat_map` and `qb::unordered_flat_set` (Huly QB-1004).** The node
+  set relinks its nodes as the node map does; the flat tables move each element whose key is absent (a flat table
+  relocates its elements, so no pointer into one survives an insertion anyway). Pinned by
+  `UnorderedMapContract.TheFlatMapMergesAsTheNodeMapDoes` and `UnorderedMapContract.TheNodeSetMergesByRelinkingToo`.
 - **`nanolog::log_file_opened()` and `NanoLogLine::operator<<(string_literal_t)` (Huly QB-327, QB-366).** The first
   says whether the last `nanolog::initialize()` opened its file; the second borrows static text explicitly -- the
   pointer a char array is no longer stored as.
@@ -550,6 +554,14 @@ policy.
 
 ### Fixed
 
+- **`qb::unordered_map::merge` relinks the nodes it takes, and an empty flat table counts a bucket (Huly QB-1004).**
+  `merge` built every element it took again, in a new node, and freed the source's: a pointer or reference to a merged
+  element dangled, where `std::unordered_map::merge` keeps it valid -- the stability `qb::unordered_map` documents. A
+  source of the same key, mapped and allocator types now gives its nodes, nothing allocated, built or freed (unequal
+  stateful allocators still move the elements one by one). An empty `unordered_flat_map` / `unordered_flat_set`
+  counted no bucket while `bucket(k)` answered 0 or 1, past the table; it counts one, as the node tables do. Pinned by
+  `UnorderedMapContract.MergeRelinksTheNodesItTakes` and `UnorderedMapContract.BucketOfAKeyNamesABucketOfTheTable` in
+  `tests/core/unit/container/unordered-map-contract.cpp`.
 - **The gzip / deflate streaming providers take an input or a window past 4 GiB (Huly QB-1004).** zlib counts a call
   in a 32-bit `uInt`, and `compress` / `decompress` threw `std::runtime_error` past it, where their contract lets a
   call take part of its input and fill part of its window. They now hand zlib at most `detail::zlib_max_chunk` of each

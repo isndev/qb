@@ -654,7 +654,59 @@ public:
         return num_elements == 0;
     }
 
+    // qb local modification (Huly QB-1004): std::unordered_map / std::unordered_set ::merge. The NODE of each element of
+    // `source` whose key is absent here is unlinked from `source` and linked into this table: nothing is allocated,
+    // built, moved or freed, and "pointers and references to the transferred elements remain valid, but now refer into
+    // *this". An element whose key is already here stays in `source`. The keys are hashed and compared by THIS table,
+    // so `source` may differ in its hasher and its equality, never in its entry type. A growth that throws leaves both
+    // tables whole: the node being taken is still in `source`. The previous merge (unordered_map's) built every element
+    // again in a new node and freed the old one. Allocators that may differ and do -- std makes equal ones a
+    // precondition -- move the elements instead, one by one, as before.
+    template <typename OtherTable>
+    void
+    merge_nodes(OtherTable &source) {
+        static_assert(std::is_same_v<typename OtherTable::EntryPointer, EntryPointer>, "merge: the two tables hold the same entries");
+        if (static_cast<const void *>(&source) == static_cast<const void *>(this))
+            return; // every key of a table is already in it
+        if constexpr (!AllocatorTraits::is_always_equal::value) {
+            if (!(get_allocator() == source.get_allocator())) {
+                for (auto it = source.begin(); it != source.end();) {
+                    if (emplace(std::move(*it)).second)
+                        it = source.erase(it);
+                    else
+                        ++it;
+                }
+                return;
+            }
+        }
+        for (EntryPointer *slot = source.entries, *last = source.entries + ptrdiff_t(source.num_slots_minus_one); slot <= last; ++slot) {
+            EntryPointer *link = slot;
+            while (EntryPointer const node = *link) {
+                EntryPointer *bucket  = entries + ptrdiff_t(hash_policy.index_for_hash(hash_object(node->value), num_slots_minus_one));
+                bool          present = false;
+                for (EntryPointer it = *bucket; it && !present; it = it->next)
+                    present = compares_equal(node->value, it->value);
+                if (present) {
+                    link = &node->next; // stays in source
+                    continue;
+                }
+                if (is_full()) {
+                    grow(); // may throw: the node is still linked in source
+                    continue;
+                }
+                *link      = node->next;
+                node->next = *bucket;
+                *bucket    = node;
+                --source.num_elements;
+                ++num_elements;
+            }
+        }
+    }
+
 private:
+    template <typename, typename, typename, typename, typename, typename, typename, typename, typename>
+    friend class sherwood_v10_table; // merge_nodes reads the table it takes from, whose hasher may differ
+
     EntryPointer                                   *entries             = Entry::empty_pointer();
     size_t                                          num_slots_minus_one = 0;
     typename HashPolicySelector<ArgumentHash>::type hash_policy;
@@ -883,18 +935,24 @@ public:
     // qb local modification (Huly QB-372): std::unordered_map::merge -- an element whose key is absent
     // here MOVES in and leaves `source`; one whose key is already here stays in `source`, untouched.
     // Upstream copied every element and left `source` whole, and its rvalue overload read through
-    // const iterators, so it copied too (a move-only mapped type did not compile). One lookup per
-    // element: emplace() only reads its arguments on a hit, and moves them only on a miss.
+    // const iterators, so it copied too (a move-only mapped type did not compile). A source of the same
+    // key, mapped and allocator types gives its NODES (merge_nodes, Huly QB-1004: no allocation, and a
+    // pointer to a merged element stays valid); any other moves each element, with one lookup:
+    // emplace() only reads its arguments on a hit, and moves them only on a miss.
     template <typename K2, typename V2, typename H2, typename E2, typename A2>
     void
     merge(unordered_map<K2, V2, H2, E2, A2> &source) {
         if (static_cast<const void *>(&source) == static_cast<const void *>(this))
             return; // every key of a map is already in it
-        for (auto it = source.begin(); it != source.end();) {
-            if (this->emplace(std::move(it->first), std::move(it->second)).second)
-                it = source.erase(it);
-            else
-                ++it;
+        if constexpr (std::is_same_v<K2, K> && std::is_same_v<V2, V> && std::is_same_v<A2, A>) {
+            this->merge_nodes(source);
+        } else {
+            for (auto it = source.begin(); it != source.end();) {
+                if (this->emplace(std::move(it->first), std::move(it->second)).second)
+                    it = source.erase(it);
+                else
+                    ++it;
+            }
         }
     }
 
@@ -980,6 +1038,20 @@ public:
     std::pair<typename Table::iterator, bool>
     emplace(key_type &&arg) {
         return Table::emplace(std::move(arg));
+    }
+
+    // qb local modification (Huly QB-1004): std::unordered_set::merge, by relinking nodes (merge_nodes): the keys absent
+    // here leave `source`, the others stay; nothing is allocated, and a pointer to a merged key stays valid.
+    template <typename H2, typename E2>
+    void
+    merge(unordered_set<T, H2, E2, A> &source) {
+        this->merge_nodes(source);
+    }
+
+    template <typename H2, typename E2>
+    void
+    merge(unordered_set<T, H2, E2, A> &&source) {
+        this->merge_nodes(source);
     }
 
     friend bool

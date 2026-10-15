@@ -386,6 +386,121 @@ TEST(UnorderedMapContract, MergeMovesAMoveOnlyMappedValue) {
     EXPECT_EQ(*dst.at(3), 3);
 }
 
+namespace unordered_map_contract_test {
+
+// A mapped value that counts how often it is moved or copied: a merge that relinks nodes builds none.
+struct Counted {
+    static inline int built = 0;
+    int               value;
+    explicit Counted(int v)
+        : value(v) {}
+    Counted(Counted &&other) noexcept
+        : value(other.value) {
+        ++built;
+    }
+    Counted(Counted const &other)
+        : value(other.value) {
+        ++built;
+    }
+    Counted &operator=(Counted &&) noexcept = default;
+    Counted &operator=(Counted const &)     = default;
+};
+
+// Another hasher: std::unordered_map::merge accepts a source whose hasher and equality differ.
+struct ShiftedHash {
+    std::size_t
+    operator()(int k) const noexcept {
+        return std::hash<int>{}(k) * 31u + 7u;
+    }
+};
+
+} // namespace unordered_map_contract_test
+
+TEST(UnorderedMapContract, MergeRelinksTheNodesItTakes) {
+    // Huly QB-1004: merge allocated a node per element it took, built the element again in it and freed the
+    // source's -- std::unordered_map::merge relinks the node, so "pointers and references to the transferred elements
+    // remain valid, but now refer into *this". qb::unordered_map promises std's stability contract.
+    using unordered_map_contract_test::Counted;
+    qb::unordered_map<int, Counted> dst;
+    dst.emplace(1, Counted(1));
+    qb::unordered_map<int, Counted, unordered_map_contract_test::ShiftedHash> src;
+    for (int k = 1; k <= 64; ++k)
+        src.emplace(k, Counted(-k));
+    const auto *taken = &*src.find(40);
+    const auto *kept  = &*src.find(1);
+
+    Counted::built = 0;
+    dst.merge(src);
+    EXPECT_EQ(Counted::built, 0) << "the merged elements were built again";
+    ASSERT_EQ(dst.size(), 64u);
+    EXPECT_EQ(&*dst.find(40), taken) << "a merged element moved to another address";
+    EXPECT_EQ(dst.at(40).value, -40);
+    EXPECT_EQ(dst.at(1).value, 1) << "the destination's own element was replaced";
+    ASSERT_EQ(src.size(), 1u);
+    EXPECT_EQ(&*src.find(1), kept) << "the element merge left behind moved";
+    for (int k = 2; k <= 64; ++k)
+        ASSERT_EQ(dst.at(k).value, -k) << k;
+
+    // Every node of the source is still reachable and released exactly once: erase what is left, and let both go.
+    src.erase(1);
+    EXPECT_TRUE(src.empty());
+    EXPECT_EQ(src.begin(), src.end());
+}
+
+TEST(UnorderedMapContract, TheFlatMapMergesAsTheNodeMapDoes) {
+    // Huly QB-1004: qb::unordered_flat_map had no merge. An open-addressing table has no node to relink: the absent
+    // keys MOVE in, one element each, the present ones stay in the source -- std's contract minus node stability,
+    // which a flat table never offers.
+    qb::unordered_flat_map<int, std::string> dst{{1, "one"}};
+    qb::unordered_flat_map<int, std::string> src{{1, "uno"}, {2, "two"}, {3, "three"}};
+    dst.merge(src);
+    EXPECT_EQ(dst.size(), 3u);
+    EXPECT_EQ(dst.at(1), "one");
+    EXPECT_EQ(dst.at(2), "two");
+    EXPECT_EQ(dst.at(3), "three");
+    ASSERT_EQ(src.size(), 1u);
+    EXPECT_EQ(src.at(1), "uno");
+
+    qb::unordered_flat_map<int, std::string> more{{1, "eins"}, {4, "four"}};
+    dst.merge(std::move(more));
+    EXPECT_EQ(dst.at(4), "four");
+    ASSERT_EQ(more.size(), 1u);
+    EXPECT_EQ(more.at(1), "eins");
+    dst.merge(dst);
+    EXPECT_EQ(dst.size(), 4u);
+
+    qb::unordered_flat_map<int, std::unique_ptr<int>> owner;
+    qb::unordered_flat_map<int, std::unique_ptr<int>> giver;
+    giver.emplace(5, std::make_unique<int>(5));
+    const int *object = giver.at(5).get();
+    owner.merge(giver);
+    EXPECT_EQ(owner.at(5).get(), object) << "a move-only mapped value moved";
+    EXPECT_TRUE(giver.empty());
+
+    qb::unordered_flat_set<int> set_dst{1};
+    qb::unordered_flat_set<int> set_src{1, 2};
+    set_dst.merge(set_src);
+    EXPECT_EQ(set_dst.size(), 2u);
+    ASSERT_EQ(set_src.size(), 1u);
+    EXPECT_TRUE(set_src.contains(1));
+}
+
+TEST(UnorderedMapContract, TheNodeSetMergesByRelinkingToo) {
+    // The node set shares the node map's table: its merge relinks the same way (it had none before Huly QB-1004).
+    qb::unordered_set<std::string> dst{"a"};
+    qb::unordered_set<std::string> src{"a", "b", "c"};
+    const std::string             *taken = &*src.find("b");
+    dst.merge(src);
+    ASSERT_EQ(dst.size(), 3u);
+    EXPECT_EQ(&*dst.find("b"), taken) << "a merged element moved to another address";
+    ASSERT_EQ(src.size(), 1u);
+    EXPECT_TRUE(src.contains("a"));
+    qb::unordered_set<std::string> more{"d"};
+    dst.merge(std::move(more));
+    EXPECT_TRUE(dst.contains("d"));
+    EXPECT_TRUE(more.empty());
+}
+
 // ---------------------------------------------------------------------------
 // bucket(key) -- compiles, and names a bucket of the table (Huly QB-373)
 // ---------------------------------------------------------------------------
@@ -420,9 +535,14 @@ TEST(UnorderedMapContract, BucketOfAKeyNamesABucketOfTheTable) {
     expect_bucket_names_a_bucket(node_map, "qb::unordered_map");
     expect_bucket_names_a_bucket(node_set, "qb::unordered_set");
 
-    // The flat tables were never broken: they are the control.
+    // An EMPTY flat table counted no bucket at all while its policy answered 0 or 1 (Huly QB-1004): bucket(k) was past
+    // the table, and the two families disagreed on what an empty table holds. Both count the one bucket every key is in.
     qb::unordered_flat_map<int, int> flat_map;
     qb::unordered_flat_set<int>      flat_set;
+    EXPECT_EQ(flat_map.bucket_count(), (qb::unordered_map<int, int>().bucket_count())) << "an empty table, two answers";
+    EXPECT_EQ(flat_set.bucket_count(), (qb::unordered_set<int>().bucket_count()));
+    expect_bucket_names_a_bucket(flat_map, "qb::unordered_flat_map (empty)");
+    expect_bucket_names_a_bucket(flat_set, "qb::unordered_flat_set (empty)");
     for (int i = 0; i < 1000; ++i) {
         flat_map[i] = i;
         flat_set.insert(i);
