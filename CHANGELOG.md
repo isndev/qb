@@ -577,6 +577,25 @@ policy.
   synthesise a FIN. Pinned by the `ApplicationCodeZero` case of
   `QuicStreamResetTest.PeerObservesStreamResetFromServer`, which now pumps until both peers' full close
   (`ApplicationCode0x42` and `CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf` are the controls).
+- **A QUIC stream without flow-control credit no longer holds back other sends or keeps the writer spinning
+  (Huly QB-333).** The native writer only ever offered ngtcp2 the oldest queued chunk: when that stream's
+  credit was spent it stopped the whole pass, so other streams and the DATAGRAMs waited behind it, and with
+  the connection's credit spent the DATAGRAMs (never flow controlled) waited too. And `wants_write()`
+  reported any queued data, so an endpoint kept `EV_WRITE` armed on the always-writable UDP socket and
+  re-ran the writer on every loop pass until credit arrived. A stream refused for lack of its own credit is
+  now set aside with its later chunks, in order, until the peer's `MAX_STREAM_DATA` reaches ngtcp2's
+  `extend_max_stream_data` callback; a spent connection credit still lets DATAGRAMs and control frames
+  out; and `wants_write()` reports only a due attempt (a read, a credit grant, encoded packets), never
+  refused data. Measured with callgrind on WSL2 g++-14 Release (deterministic instruction counts, three
+  runs a side): an endpoint idling 1000 loop passes with only refused data queued made 1001 writer
+  attempts and executed 3.10 M instructions before, 2 attempts and 0.54 M after; on the common send path
+  (one stream, ACKs flowing) the writer costs about 4 instructions more per call and `send_stream_data` 6,
+  roughly 12 per send of some 9,300 (the parking path is out of line and cold). Pinned by
+  `QuicCreditBlockedHeadTest.BlockedHeadLeavesOtherWorkSendableAndTheWriterIdle` (per-stream and
+  connection credit) and `QuicEndpointLoop.CreditBlockedStreamLeavesTheWriterIdle`, red before the fix;
+  `TxBatchBudgetFlushesLargePayloadAcrossPolls` (congestion-limited, ACK-driven) is the control.
+  `EnforcesPreConnectionSendQueueLimits` no longer expects a backend with no connection to report
+  `wants_write()` for queued data.
 - **A CSPRNG failure no longer leaves a QUIC listener's Retry secret zeroed for good (Huly QB-334).**
   `ensure_retry_secret()` ignored `fill_random()`'s result and marked the secret ready anyway; the fill
   zeroes the buffer on failure, so one failed `RAND_bytes` made every Retry token of that listener minted

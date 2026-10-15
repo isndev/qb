@@ -102,12 +102,15 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:89-96	1482ebff2622	// Connecti
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:98-135	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:330-341	aabe4f0252c0	assign_quic_ids(*session, connection_id, stream_id);
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1041-1042	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1486-1513	99362d517b67	static int
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1514-1535	ba101415d704	// A reset or a stop sets the application error code, 0 included; onl...
-llm/qb.llm.api.md	src/qb/io/quic.cpp:408-419	f3b23d71b8f5	bool
-llm/qb.llm.api.md	src/qb/io/quic.cpp:423-449	75c6d9c8f575	drain_packets() override {
-llm/qb.llm.api.md	src/qb/io/quic.cpp:562-579	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1062-1063	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1264-1272	f4b8ced2987a	if (written == 0) {
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1283-1289	218294b6cd09	if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1559-1564	a8b7cba13412	static int
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1566-1593	99362d517b67	static int
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1594-1615	ba101415d704	// A reset or a stop sets the application error code, 0 included; onl...
+llm/qb.llm.api.md	src/qb/io/quic.cpp:420-435	87eafb98e954	bool
+llm/qb.llm.api.md	src/qb/io/quic.cpp:438-464	75c6d9c8f575	drain_packets() override {
+llm/qb.llm.api.md	src/qb/io/quic.cpp:583-600	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.api.md	src/qb/io/quic/backend.h:62-81	ec2d3314ea37	virtual void on_udp_datagram(packet_view datagram)                 = 0;
 llm/qb.llm.api.md	src/qb/io/quic/types.h:75-91	a8fbf3a1d458	struct stats {
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
@@ -221,10 +224,13 @@ llm/qb.llm.md	scheduler.h:611-611	7dc21eb4cb92	void spawn(std::string_view name,
 llm/qb.llm.md	scheduler.h:633-633	d4378b7b6e55	bool set_suspension_tracking(bool on);
 llm/qb.llm.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:555-568	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
-llm/qb.llm.md	src/qb/io/quic.cpp:1041-1042	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.md	src/qb/io/quic.cpp:1486-1513	99362d517b67	static int
-llm/qb.llm.md	src/qb/io/quic.cpp:408-419	f3b23d71b8f5	bool
-llm/qb.llm.md	src/qb/io/quic.cpp:562-579	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
+llm/qb.llm.md	src/qb/io/quic.cpp:1062-1063	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
+llm/qb.llm.md	src/qb/io/quic.cpp:1264-1272	f4b8ced2987a	if (written == 0) {
+llm/qb.llm.md	src/qb/io/quic.cpp:1283-1289	218294b6cd09	if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+llm/qb.llm.md	src/qb/io/quic.cpp:1559-1564	a8b7cba13412	static int
+llm/qb.llm.md	src/qb/io/quic.cpp:1566-1593	99362d517b67	static int
+llm/qb.llm.md	src/qb/io/quic.cpp:420-435	87eafb98e954	bool
+llm/qb.llm.md	src/qb/io/quic.cpp:583-600	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	ssl/context.cpp:463-463	6a5ed66e2196	if (SSL_CTX_use_certificate_chain_file(_ctx.get(), cert_s.c_str()) != 1)
 llm/qb.llm.md	ssl/context.h:157-157	3b96c5ab4fe6	class QB_API Context {
 llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw C function pointer, no void* arg) ---

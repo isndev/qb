@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <qb/system/container/unordered_map.h>
+#include <qb/utility/branch_hints.h>
 #include <stdexcept>
 
 #ifdef QB_HAS_QUIC
@@ -164,7 +165,7 @@ get_conn_cb(ngtcp2_crypto_conn_ref *ref) {
     return *static_cast<ngtcp2_conn **>(ref->user_data);
 }
 
-// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid` and `ngtcp2_conn_get_expiry` in favour of the
+// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid`, `_get_expiry` and `_get_max_data_left` in favour of the
 // const-correct `*2` spellings (identical semantics; only the `conn` parameter gained `const`).
 // qb's FindNgtcp2 does not pin a minimum version, so select at COMPILE TIME rather than dropping
 // support for pre-1.23 releases — an unconditional switch would simply fail to build there.
@@ -178,6 +179,10 @@ inline ngtcp2_tstamp
 conn_get_expiry(const ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_expiry2(conn);
 }
+inline std::uint64_t
+conn_get_max_data_left(const ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_max_data_left2(conn);
+}
 #else
 inline std::size_t
 conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
@@ -186,6 +191,10 @@ conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
 inline ngtcp2_tstamp
 conn_get_expiry(ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_expiry(conn);
+}
+inline std::uint64_t
+conn_get_max_data_left(ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_max_data_left(conn);
 }
 #endif
 
@@ -210,11 +219,14 @@ class native_backend final : public backend {
         std::vector<std::byte> data;
     };
 
-    settings                                                          _config;
-    stats                                                             _stats;
-    std::vector<std::string>                                          _alpn;
-    std::vector<unsigned char>                                        _wire_alpn;
-    std::deque<queued_stream>                                         _pending_streams;
+    settings                   _config;
+    stats                      _stats;
+    std::vector<std::string>   _alpn;
+    std::vector<unsigned char> _wire_alpn;
+    std::deque<queued_stream>  _pending_streams;
+    // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
+    // out of the writer's way until extend_max_stream_data_cb reports the peer raised that credit.
+    qb::unordered_map<std::uint64_t, std::deque<queued_stream>>       _credit_blocked_streams;
     std::deque<queued_stream>                                         _inflight_streams;
     std::deque<queued_datagram>                                       _pending_datagrams;
     qb::unordered_map<std::uint64_t, std::uint64_t>                   _inflight_datagrams;
@@ -416,7 +428,10 @@ public:
             }
             return false;
         }
-        return _transport_pending || !_packets.empty() || !_pending_streams.empty() || !_pending_datagrams.empty();
+        // Queued data is not a reason to write: every queue was offered to ngtcp2 when it was filled,
+        // and what is left waits for credit, the congestion window or pacing -- a read, a credit grant
+        // or the timer makes the next attempt due.
+        return _transport_pending || !_packets.empty();
     }
 
     std::vector<packet>
@@ -554,6 +569,12 @@ public:
         next_offset += item.data.size();
         _queued_stream_bytes += item.data.size();
         ++_queued_stream_frames;
+        if (!_credit_blocked_streams.empty()) [[unlikely]] {
+            if (auto parked = _credit_blocked_streams.find(stream_id); parked != _credit_blocked_streams.end()) {
+                parked->second.push_back(std::move(item)); // behind its stream's refused chunks
+                return;
+            }
+        }
         _pending_streams.push_back(std::move(item));
         drain_transport();
     }
@@ -1083,6 +1104,7 @@ private:
         // and never throw; rand/new_connection_id fill fixed buffers and already fail closed.)
         callbacks.recv_stream_data         = &guarded<recv_stream_data_cb>::call;
         callbacks.acked_stream_data_offset = &guarded<acked_stream_data_offset_cb>::call;
+        callbacks.extend_max_stream_data   = &guarded<extend_max_stream_data_cb>::call;
         callbacks.stream_open              = &guarded<stream_open_cb>::call;
         callbacks.stream_close             = &guarded<stream_close_cb>::call;
         callbacks.stream_reset             = &guarded<stream_reset_cb>::call;
@@ -1205,6 +1227,9 @@ private:
         _transport_pending = false;
         if (!_conn || !_started)
             return;
+        // Set once the connection's own credit is spent: stream data waits for MAX_DATA, which only a
+        // read can bring, while DATAGRAMs (never flow controlled) and control frames still go out.
+        bool connection_credit_spent = false;
         for (;;) {
             std::array<uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf{};
             ngtcp2_path_storage                              ps;
@@ -1216,7 +1241,7 @@ private:
             ngtcp2_vec       vec{};
             queued_datagram *datagram = nullptr;
 
-            if (!_pending_streams.empty()) {
+            if (!_pending_streams.empty() && !connection_credit_spent) {
                 auto &item = _pending_streams.front();
                 stream_id  = static_cast<int64_t>(item.stream_id);
                 vec.len    = item.data.size() - item.sent_offset;
@@ -1236,8 +1261,15 @@ private:
                                           : ngtcp2_conn_writev_stream(_conn, &ps.path, &pi, buf.data(), buf.size(), &datalen, flags, stream_id,
                                                                       vec.len > 0 ? &vec : nullptr, vec.len > 0 ? 1 : 0, now);
 
-            if (written == 0)
+            if (written == 0) {
+                // Congestion, pacing or nothing left: nothing else fits either. A stream refused by the
+                // connection's spent credit is the one case that leaves other work to try.
+                if (stream_id >= 0 && conn_get_max_data_left(_conn) == 0) {
+                    connection_credit_spent = true;
+                    continue;
+                }
                 break;
+            }
             if (written < 0) {
                 if (datagram) {
                     if (written == NGTCP2_ERR_INVALID_STATE || written == NGTCP2_ERR_INVALID_ARGUMENT) {
@@ -1248,8 +1280,13 @@ private:
                                       "QUIC DATAGRAM packet write failed");
                     break;
                 }
-                if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED)
-                    break;
+                if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+                    // The stream's own credit is spent (ngtcp2 reports it only while the connection
+                    // still has some): park its chunks so the next stream, the DATAGRAMs and the control
+                    // frames are not held behind it. The peer's MAX_STREAM_DATA brings them back.
+                    park_credit_blocked_stream(static_cast<std::uint64_t>(stream_id));
+                    continue;
+                }
                 if (written == NGTCP2_ERR_CLOSING || written == NGTCP2_ERR_DRAINING)
                     break;
                 if (written == NGTCP2_ERR_STREAM_NOT_FOUND || written == NGTCP2_ERR_STREAM_SHUT_WR) {
@@ -1387,8 +1424,44 @@ private:
         _events.push_back(std::move(event));
     }
 
+    // Move every pending chunk of `id`, in order, out of the writer's queue; the other streams keep
+    // theirs. Runs once per refusal, never per writer pass: out of the writer's line.
+    QB_NOINLINE QB_COLD void
+    park_credit_blocked_stream(std::uint64_t id) {
+        auto &parked = _credit_blocked_streams[id];
+        auto  kept   = _pending_streams.begin();
+        for (auto it = _pending_streams.begin(); it != _pending_streams.end(); ++it) {
+            if (it->stream_id == id) {
+                parked.push_back(std::move(*it));
+                continue;
+            }
+            if (kept != it)
+                *kept = std::move(*it);
+            ++kept;
+        }
+        _pending_streams.erase(kept, _pending_streams.end());
+    }
+
+    // The peer raised the stream's credit: its chunks rejoin the writer's queue, behind the others.
+    void
+    unpark_credit_blocked_stream(std::uint64_t id) {
+        auto parked = _credit_blocked_streams.find(id);
+        if (parked == _credit_blocked_streams.end())
+            return;
+        std::move(parked->second.begin(), parked->second.end(), std::back_inserter(_pending_streams));
+        _credit_blocked_streams.erase(parked);
+    }
+
     void
     erase_queued_stream_data(std::uint64_t id) {
+        if (auto parked = _credit_blocked_streams.find(id); parked != _credit_blocked_streams.end()) {
+            for (auto const &chunk : parked->second) {
+                _queued_stream_bytes -= std::min<std::uint64_t>(_queued_stream_bytes, chunk.data.size());
+                if (_queued_stream_frames > 0)
+                    --_queued_stream_frames;
+            }
+            _credit_blocked_streams.erase(parked);
+        }
         for (auto it = _pending_streams.begin(); it != _pending_streams.end();) {
             if (it->stream_id == id) {
                 _queued_stream_bytes -= std::min<std::uint64_t>(_queued_stream_bytes, it->data.size());
@@ -1480,6 +1553,13 @@ private:
                 ++it;
             }
         }
+        return 0;
+    }
+
+    static int
+    extend_max_stream_data_cb(ngtcp2_conn *, int64_t stream_id, uint64_t, void *user_data, void *) {
+        // Called while a packet is read; the endpoint's drain after the read sends what this releases.
+        static_cast<native_backend *>(user_data)->unpark_credit_blocked_stream(static_cast<std::uint64_t>(stream_id));
         return 0;
     }
 
