@@ -181,7 +181,7 @@ qb::io::async::callback([this, task_id]() {
 Two arguments are commonly offered for the guard, and neither holds:
 
 - *"The callback runs on the actor's own core, so capturing `this` is safe — there is no cross-thread access."* This answers the wrong question. The hazard is **lifetime**, not threading; running on the right thread says nothing about whether the object still exists.
-- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:2002-2007,1294-1295,1313-1318 -->
+- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:2008-2013,1294-1295,1313-1318 -->
 
 **The fix is to bind the delay to the actor's lifetime instead of guarding after the fact.** `Actor::spawn` runs a coroutine under the actor's cancellation scope, and `kill()` cancels that scope, so a pending `ctx.sleep` unwinds rather than resuming into a destroyed actor:
 

@@ -540,7 +540,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:1820-1900`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:1863-1947`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -1122,8 +1122,8 @@ routing_safe_type_id() noexcept {
     //
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
-    // full, and it discards it WITHOUT disposing it -- one `if (!event.state.bits.qos)` and a
-    // `continue`, with no `_router.dispose()` (VirtualCore.cpp:1820-1900). Every other event is
+    // full, and it discards it WITHOUT disposing it -- `__refused__` returns false for
+    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:1863-1874). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See

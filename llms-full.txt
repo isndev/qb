@@ -617,6 +617,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   replied/forwarded. _(Actor.cpp:577-595)_ They are `send`-family: unordered relative to the handler's
   pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with
   your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
+  Raw `send(Event const&)` uses `_self_pipe` directly only when the destination's logical core
+  equals the current core; cross-core fallback still selects the destination pipe and clears
+  `alive` in the copied header. _(VirtualCore.cpp:1390-1406)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   check `valid()` before sending, because terminal core teardown returns an empty handle without constructing
   a child. `get()` revalidates the ID without writing through a const handle and returns `nullptr` while Activating, after failed init or after death;
@@ -637,7 +640,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
   ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
   without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
-  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1560-1574; VirtualCore.cpp:1777-1812;
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1560-1574; VirtualCore.cpp:1783-1818;
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
@@ -663,7 +666,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1050-1062; VirtualCore.cpp:1435-1442)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1050-1062; VirtualCore.cpp:1441-1448)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
@@ -687,7 +690,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1313-1327, :1603-1618, :1662-1692, :1728-1755)_
+  _(VirtualCore.cpp:1313-1327, :1609-1624, :1668-1698, :1734-1761)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
@@ -1035,7 +1038,7 @@ Internal base for per-core singleton-style actors. `explicit Service(ServiceId s
 Singleton actor base, unique per VirtualCore per `Tag`. Default-constructible.
 *   use: `struct MyService : qb::ServiceActor<MyTag> { ... };` then `getService<MyService>()`.
 *   `[T<Tag>] [[nodiscard]] static ActorId Actor::getServiceId(CoreId index) noexcept` — the id a `ServiceActor<Tag>` has on core `index` (one service id per tag, the same on every core). Arithmetic past the first call: it proves nothing runs there _(Actor.h:833-834, body VirtualCore.h:1536-1545)_.
-*   **Registration.** A tag's service id is drawn once per process, when the tag registers — at static initialisation for every tag the program names (a `ServiceActor<Tag>`, `getService<T>()`, `getServiceId<Tag>()`), so before any core exists. Each core seeds its pool of ordinary-actor ids above the registered tags, and a tag whose FIRST registration comes while any `VirtualCore` is alive — one an image loaded mid-run brings — is **refused**: `getServiceId` gives `{0, index}` (`is_valid()` false), `addActor` returns `NotFound`, `addRefActor` an invalid handle, the service is never constructed, a CRIT line names the tag and a debug build asserts. A first registration is accepted again once every core is gone: load an image that brings service tags before `Main::start` _(Actor.h:2367-2382; VirtualCore.h:1560-1574; VirtualCore.cpp:1777-1812)_. A tag registering between the first `core(index)` and `start()` moves the floor of a pool whose ordinary ids `addActor` already promised: that core refuses to start (a CRIT names the core and the tag; `hasError()`), and a core that promised none starts normally _(VirtualCore.cpp:1814-1839)_.
+*   **Registration.** A tag's service id is drawn once per process, when the tag registers — at static initialisation for every tag the program names (a `ServiceActor<Tag>`, `getService<T>()`, `getServiceId<Tag>()`), so before any core exists. Each core seeds its pool of ordinary-actor ids above the registered tags, and a tag whose FIRST registration comes while any `VirtualCore` is alive — one an image loaded mid-run brings — is **refused**: `getServiceId` gives `{0, index}` (`is_valid()` false), `addActor` returns `NotFound`, `addRefActor` an invalid handle, the service is never constructed, a CRIT line names the tag and a debug build asserts. A first registration is accepted again once every core is gone: load an image that brings service tags before `Main::start` _(Actor.h:2367-2382; VirtualCore.h:1560-1574; VirtualCore.cpp:1783-1818)_. A tag registering between the first `core(index)` and `start()` moves the floor of a pool whose ordinary ids `addActor` already promised: that core refuses to start (a CRIT names the core and the tag; `hasError()`), and a core that promised none starts normally _(VirtualCore.cpp:1820-1845)_.
 
 ### `class qb::Pipe` (`<qb/core/Pipe.h>`)
 Communication channel between actors (obtained via `Actor::getPipe`).
@@ -1078,8 +1081,8 @@ An event that reaches no actor is a dead letter: the core that dropped it counts
 *   `inline constexpr std::size_t DownReasons = 5`; `constexpr std::string_view down_reason_name(DownReason) noexcept`.
 *   `struct DownEvent : Event { ActorId watched; DownReason reason; DownEvent(); DownEvent(ActorId gone, DownReason why) noexcept; }` — `getSource()` is the watched id too _(`DeathWatch.h:79-96`)_.
 *   A target-down answer follows that actor's destructor; the reaper calls `__on_actor_down__` afterwards. _(`VirtualCore.cpp:1313-1327`)_
-*   `unknown` and `core_stopped` need no target destructor: an absent target or stopped core is answered by the watcher's core. _(`VirtualCore.cpp:1603-1618, :1683-1692`)_
-*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an answer about an id's previous holder from answering a later watch of the reused id. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1583-1588, :1662-1681`)_
+*   `unknown` and `core_stopped` need no target destructor: an absent target or stopped core is answered by the watcher's core. _(`VirtualCore.cpp:1609-1624, :1689-1698`)_
+*   One answer per watch; nothing follows `unwatch()`; a ticket prevents an answer about an id's previous holder from answering a later watch of the reused id. No cost to an actor nobody watches, none to a pass; internal watch events are never dead letters. _(`VirtualCore.cpp:1589-1594, :1668-1687`)_
 
 ### Events (`<qb/core/Event.h>`)
 

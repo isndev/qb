@@ -1388,7 +1388,13 @@ VirtualCore::try_send(Event const &event) const noexcept {
 // pipe, whose copy clears it; the batched flush relocates it later exactly like a try_send miss.
 void
 VirtualCore::send(Event const &event) noexcept {
-    if (event.dest._core_id == _index || unlikely(event.state.bits.alive) || !try_send(event)) {
+    // The local destination is already known: reserve directly in its stable pipe,
+    // without decoding the destination again to discover the same cursor address.
+    if (event.dest._core_id == _index) {
+        detail::event_wire::copy(_self_pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
+        return;
+    }
+    if (unlikely(event.state.bits.alive) || !try_send(event)) {
         auto &pipe = __getPipe__(event.dest._core_id);
         detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
         return;

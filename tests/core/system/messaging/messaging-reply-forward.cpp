@@ -174,7 +174,7 @@ static std::atomic<int> g_relay_destroyed{0};
 static std::atomic<int> g_relay_handled{0};
 
 // Non-trivially destructible on purpose: this is the event the dispatcher must decide the fate
-// of after every handler (`~_Event()` unless `is_alive()`). `push`-only — `send` refuses it.
+// of after every handler (`~_Event()` unless `is_alive()`). Its integer payload owns no resource.
 struct RelayEvent : qb::Event {
     int           hops_left;
     std::uint32_t chain; // which chain this event belongs to (payload must survive every copy)
@@ -362,10 +362,12 @@ fanout_maybe_finish(qb::Actor &self, int const expected, qb::CoreId const other_
 
 class FanOutActor final : public qb::Actor {
     const qb::ActorId _sink;
+    const bool        _raw_copy;
 
 public:
-    explicit FanOutActor(qb::ActorId const sink)
-        : _sink(sink) {}
+    explicit FanOutActor(qb::ActorId const sink, bool raw_copy = false)
+        : _sink(sink)
+        , _raw_copy(raw_copy) {}
 
     qb::io::async::task<bool>
     onInit() final {
@@ -375,8 +377,13 @@ public:
     void
     on(RelayEvent &event) {
         g_relay_handled.fetch_add(1, std::memory_order_relaxed);
-        reply(event);          // copy 1 → source
-        forward(_sink, event); // copy 2 → sink, from an original that now says alive
+        reply(event); // copy 1 → source
+        if (_raw_copy) {
+            EXPECT_TRUE(event.is_alive());
+            send(event); // same destination, without a rewrite that would clear the original flag
+        } else {
+            forward(_sink, event); // copy 2 → sink, from an original that now says alive
+        }
     }
 };
 
@@ -455,6 +462,35 @@ TEST(RelayChain, CrossCoreReplyThenForwardFanOutDestroysBothCopies) {
     qb::Main      main;
     const auto    sink   = main.addActor<FanOutSink>(0, 2 * events, qb::CoreId{1});
     const auto    fanout = main.addActor<FanOutActor>(1, sink);
+    main.addActor<FanOutOrigin>(0, fanout, events, qb::CoreId{1});
+    const auto t = run_relay(main, 3 * events);
+    EXPECT_EQ(t.constructed, events);
+    EXPECT_EQ(t.destroyed, 2 * events);
+}
+
+// Raw send preserves the destination already written by reply(). Both copies return
+// to the origin; the second must clear the inherited alive flag on both transports.
+TEST(RelayChain, SameCoreReplyThenRawSendDestroysBothCopies) {
+    reset_relay();
+    g_fanout_kept        = 0;
+    constexpr int events = 6;
+    qb::Main      main;
+    const auto    fanout = main.addActor<FanOutActor>(0, qb::ActorId{}, true);
+    main.addActor<FanOutOrigin>(0, fanout, events, qb::CoreId{0});
+    const auto t = run_relay(main, 3 * events);
+    EXPECT_EQ(t.constructed, events);
+    EXPECT_EQ(t.destroyed, 2 * events);
+}
+
+TEST(RelayChain, CrossCoreReplyThenRawSendDestroysBothCopies) {
+    if (std::thread::hardware_concurrency() < 2u) {
+        GTEST_SKIP() << "requires-multicore: raw send must cross a mailbox";
+    }
+    reset_relay();
+    g_fanout_kept        = 0;
+    constexpr int events = 6;
+    qb::Main      main;
+    const auto    fanout = main.addActor<FanOutActor>(1, qb::ActorId{}, true);
     main.addActor<FanOutOrigin>(0, fanout, events, qb::CoreId{1});
     const auto t = run_relay(main, 3 * events);
     EXPECT_EQ(t.constructed, events);

@@ -536,6 +536,10 @@ policy.
 
 ### Fixed
 
+- **Same-core raw sends use the core's stable local pipe directly.** `reply` and `forward`
+  no longer repeat the destination lookup before reserving their local copy, avoiding the memory
+  dependency replay isolated during activation-pack profiling (Huly QB-985). Event ownership,
+  ordering, cross-core fallback and transport metrics are unchanged.
 - **An activation result now reflects the ID resolved when the waiter resumes (Huly QB-263, QB-363).**
   `ActorHandle::ready_async` copies the target ID before its lazy coroutine starts and re-resolves it after the
   activation waiter reports success; destroying the handle while it waits cannot leave a coroutine reading it.
