@@ -541,6 +541,63 @@ TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnect
     EXPECT_EQ(server->current_stats().active_connections, 1u);
 }
 
+#ifdef QB_IO_QUIC_TEST_HOOKS
+/**
+ * @test A CSPRNG failure while generating the Retry secret fails closed, then recovers
+ * @brief The listener's Retry secret keys every token it mints and verifies. With the first CSPRNG fill
+ *        failing, the first Initial datagram must leave the secret NOT ready (never a zeroed key
+ *        cached as valid), produce no Retry and admit no connection. Once the CSPRNG works again, the
+ *        same Initial meets a freshly generated, non-zero secret, a Retry goes out and the handshake
+ *        completes (Huly QB-334: the zeroed secret was marked ready for the life of the listener).
+ */
+TEST(QuicHandshakeNativeBackend, StatelessRetrySecretFailureFailsClosedThenRecovers) {
+    ASSERT_TRUE(require_ssl_files());
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+
+    const qb::io::endpoint   server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_endpoint{"127.0.0.1", 54321};
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    ASSERT_TRUE(client->wants_write());
+    const auto initial = client->drain_packets();
+    ASSERT_FALSE(initial.empty());
+    const auto deliver = [&](qb::io::quic::packet const &datagram) {
+        server->on_udp_datagram(
+            {datagram.remote, datagram.local, std::span<const std::byte>{datagram.payload.data(), datagram.payload.size()}});
+    };
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_ready(*server));
+
+    // The first fill of the first datagram is the secret's.
+    qb::io::quic::test::fail_next_random_fills(1);
+    deliver(initial.front());
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_ready(*server)) << "a failed CSPRNG fill must not leave a secret ready";
+    EXPECT_FALSE(server->wants_write()) << "no Retry may be minted without a secret";
+    EXPECT_TRUE(server->drain_packets().empty());
+    EXPECT_EQ(server->current_stats().active_connections, 0u) << "an Initial must not be admitted unvalidated either";
+
+    for (auto const &datagram : initial)
+        deliver(datagram);
+    EXPECT_TRUE(qb::io::quic::test::retry_secret_ready(*server));
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_zeroed(*server)) << "the recovered secret must be fresh CSPRNG output";
+    ASSERT_TRUE(server->wants_write()) << "the recovered listener answers with a Retry";
+
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    EXPECT_TRUE(client_connected) << "the Retry round-trip with the recovered secret must complete the handshake";
+    EXPECT_NE(server_connection_id, 0u);
+}
+#endif
+
 TEST(QuicHandshakeNativeBackend, DisabledStatelessRetryAcceptsInitialWithoutChallenge) {
     ASSERT_TRUE(require_ssl_files());
 
@@ -1183,7 +1240,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
  * @brief After a direct handshake the server sends a bidirectional stream payload; pumping in both
  *        directions delivers the bytes to the client (recv_stream_data_cb -> stream_data event) and
  *        carries the client's ACK back so the server fires acked_stream_data_offset_cb, emitting a
- *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1439-1465.
+ *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1458-1484.
  */
 TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1244,7 +1301,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  * @brief With DATAGRAM enabled on both ends, the server sends a datagram after the handshake; pumping
  *        delivers it to the client (recv_datagram_cb increments datagrams_received) and carries the
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
- *        incrementing datagrams_acked. Covers quic.cpp:1408-1421 (acked branch) + 1551-1556.
+ *        incrementing datagrams_acked. Covers quic.cpp:1427-1440 (acked branch) + 1551-1556.
  */
 TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1411,7 +1468,7 @@ INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::test
  * @brief A non-QUIC payload delivered to a freshly started server parent fails ngtcp2_accept inside
  *        accept_server_connection, which queues a handshake_failed close event rather than spinning up
  *        a child connection; the parent fans that child event up with no connection added. The parent
- *        stays open with zero active connections. Covers quic.cpp:1105-1117 (the accept-rejection arm).
+ *        stays open with zero active connections. Covers quic.cpp:1124-1136 (the accept-rejection arm).
  */
 TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1455,8 +1512,8 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
 /**
  * @test The server observes its own STOP_SENDING when it stops reading a stream (stream_stop_sending_cb).
  * @brief The client opens a bidi stream and writes; the server stops reading it via stop_stream()
- *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:580-590 (the synchronous stop_sending
- *        event queued by stop_stream) AND quic.cpp:1530-1537 (stream_stop_sending_cb, fired by
+ *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:595-605 (the synchronous stop_sending
+ *        event queued by stop_stream) AND quic.cpp:1549-1556 (stream_stop_sending_cb, fired by
  *        ngtcp2 when the local endpoint drains its transport after shutting down the read side).
  *
  * QUIC/ngtcp2 SEMANTICS — important correction over the prior version of this test, which expected
@@ -1516,8 +1573,8 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     constexpr std::uint64_t app_error = 0x9;
     server->stop_stream(server_connection_id, server_stream_id, app_error);
 
-    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:589) and arms
-    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1531)
+    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:604) and arms
+    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1550)
     // for the SAME stream/reason. Pump a bounded number of times and collect every stop_sending event
     // the server observes.
     int                               server_stop_sending_count = 0;
@@ -1549,7 +1606,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
  * @brief The parent server is configured with max_connections == 1. A first client completes the
  *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
  *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
- *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:845-858) which DROPS the
+ *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:861-874) which DROPS the
  *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
  *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
  *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
@@ -1631,9 +1688,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
  *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1502-1511) and emits a trailing stream_data carrying error_code == 1
+ *        SYNTHESIS arm (quic.cpp:1521-1530) and emits a trailing stream_data carrying error_code == 1
  *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1512-1516), then queues stream_closed(finished).
+ *        (quic.cpp:1531-1535), then queues stream_closed(finished).
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -1698,7 +1755,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
     // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1502-1516) and emits a trailing
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1521-1535) and emits a trailing
     // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL

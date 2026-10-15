@@ -74,7 +74,12 @@
 #ifdef QB_IO_QUIC_TEST_HOOKS
 namespace qb::io::quic::test {
 void reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code);
-}
+// The next `count` CSPRNG fills of the native backend fail as a failing RAND_bytes does.
+void fail_next_random_fills(std::size_t count);
+// A native server listener's Retry secret: generated and usable / every byte zero.
+bool retry_secret_ready(backend &server);
+bool retry_secret_zeroed(backend &server);
+} // namespace qb::io::quic::test
 #endif
 
 namespace qb::io::test {

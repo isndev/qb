@@ -50,6 +50,21 @@ make_wire_alpn(std::vector<std::string> const &protocols) {
     return out;
 }
 
+#ifdef QB_IO_QUIC_TEST_HOOKS
+// Test hook: the next `failing_random_fills` fills fail exactly as a failing RAND_bytes does.
+std::size_t failing_random_fills = 0;
+
+bool
+injected_random_failure() noexcept {
+    return failing_random_fills > 0 && (--failing_random_fills, true);
+}
+#else
+constexpr bool
+injected_random_failure() noexcept {
+    return false;
+}
+#endif
+
 // Returns true when `dest` was filled with CSPRNG bytes. On RAND_bytes failure
 // the buffer is zeroed (defensive) and false is returned so security-critical
 // callers can fail closed instead of proceeding with predictable bytes.
@@ -57,7 +72,7 @@ bool
 fill_random(uint8_t *dest, size_t len) {
     if (len == 0)
         return true;
-    if (RAND_bytes(dest, static_cast<int>(len)) != 1) {
+    if (injected_random_failure() || RAND_bytes(dest, static_cast<int>(len)) != 1) {
         std::memset(dest, 0, len);
         return false;
     }
@@ -723,14 +738,14 @@ private:
         return it == _server_connections.end() || is_deferred_closed_connection(connection_id) ? nullptr : it->second.get();
     }
 
-    void
+    // The secret keys every Retry token this listener mints and verifies. Only a successful CSPRNG
+    // fill makes it ready: a failure (fill_random zeroes the buffer) is retried on the next Initial,
+    // never cached as a predictable key for the life of the listener.
+    [[nodiscard]] bool
     ensure_retry_secret() {
-        if (!_retry_secret_ready) {
-            // A failed CSPRNG here only weakens Retry to "tokens we minted this run" (still
-            // unforgeable by an off-path attacker who never saw them); it is never a safety issue.
-            fill_random(_retry_secret.data(), _retry_secret.size());
-            _retry_secret_ready = true;
-        }
+        if (!_retry_secret_ready)
+            _retry_secret_ready = fill_random(_retry_secret.data(), _retry_secret.size());
+        return _retry_secret_ready;
     }
 
     // Send a Retry (address-validation challenge) for an untokened Initial: mint a fresh SCID, bind a
@@ -740,7 +755,8 @@ private:
     // full handshake (ngtcp2_conn + SSL) on it. This is the anti-spoofed-Initial-flood defense.
     void
     send_retry(packet_view datagram, ngtcp2_pkt_hd const &hd) {
-        ensure_retry_secret();
+        if (!ensure_retry_secret())
+            return;
         std::uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
         if (!fill_random(scidbuf, sizeof(scidbuf)))
             return;
@@ -867,7 +883,10 @@ private:
         if (_config.enable_stateless_retry) {
             ngtcp2_pkt_hd hd = {};
             if (ngtcp2_accept(&hd, reinterpret_cast<const uint8_t *>(datagram.payload.data()), datagram.payload.size()) == 0) {
-                ensure_retry_secret();
+                // Without the secret no token can be minted or verified: drop the Initial (fail
+                // closed) rather than admit it unvalidated; the client's retransmission retries.
+                if (!ensure_retry_secret())
+                    return nullptr;
                 if (hd.tokenlen == 0) {
                     // First contact: answer with a Retry challenge and create no state.
                     send_retry(datagram, hd);
@@ -1582,6 +1601,16 @@ public:
         if (!_conn || ngtcp2_conn_shutdown_stream_write(_conn, 0, static_cast<int64_t>(stream_id), application_error_code) != 0)
             throw std::runtime_error("test peer write-half reset failed");
     }
+
+    [[nodiscard]] bool
+    retry_secret_ready_for_test() const noexcept {
+        return _retry_secret_ready;
+    }
+
+    [[nodiscard]] bool
+    retry_secret_zeroed_for_test() const noexcept {
+        return std::all_of(_retry_secret.begin(), _retry_secret.end(), [](std::uint8_t byte) { return byte == 0; });
+    }
 #endif
 };
 
@@ -1615,12 +1644,34 @@ make_native_backend() {
 
 #ifdef QB_IO_QUIC_TEST_HOOKS
 namespace test {
-void
-reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code) {
+namespace {
+native_backend &
+native(backend &peer) {
     auto *native = dynamic_cast<native_backend *>(&peer);
     if (!native)
         throw std::invalid_argument("test peer must use the native QUIC backend");
-    native->reset_stream_write_for_test(stream_id, application_error_code);
+    return *native;
+}
+} // namespace
+
+void
+reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code) {
+    native(peer).reset_stream_write_for_test(stream_id, application_error_code);
+}
+
+void
+fail_next_random_fills(std::size_t count) {
+    failing_random_fills = count;
+}
+
+bool
+retry_secret_ready(backend &server) {
+    return native(server).retry_secret_ready_for_test();
+}
+
+bool
+retry_secret_zeroed(backend &server) {
+    return native(server).retry_secret_zeroed_for_test();
 }
 } // namespace test
 #endif

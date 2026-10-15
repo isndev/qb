@@ -577,6 +577,15 @@ policy.
   synthesise a FIN. Pinned by the `ApplicationCodeZero` case of
   `QuicStreamResetTest.PeerObservesStreamResetFromServer`, which now pumps until both peers' full close
   (`ApplicationCode0x42` and `CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf` are the controls).
+- **A CSPRNG failure no longer leaves a QUIC listener's Retry secret zeroed for good (Huly QB-334).**
+  `ensure_retry_secret()` ignored `fill_random()`'s result and marked the secret ready anyway; the fill
+  zeroes the buffer on failure, so one failed `RAND_bytes` made every Retry token of that listener minted
+  and verified under an all-zero key for the rest of its life, and a later successful RNG never replaced
+  it. The secret is now ready only after a successful fill; while it is missing an Initial is dropped
+  (fail closed: no Retry, no unvalidated admission) and the next Initial draws again. Pinned by
+  `StatelessRetrySecretFailureFailsClosedThenRecovers` in `tests/io/system/quic/quic-handshake.cpp`,
+  through a test-build-only failure hook in `fill_random()` (`QB_IO_QUIC_TEST_HOOKS`, absent from
+  installable builds); before the fix the failed fill left a ready, zeroed secret that minted a Retry.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior
