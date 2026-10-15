@@ -55,7 +55,7 @@
  */
 inline bool
 IN4_IS_ADDR_LOOPBACK(const in_addr *a) {
-    return ((a->s_addr & 0xff) == 0x7f); // 127/8
+    return (ntohl(a->s_addr) >> 24) == 0x7fu; // 127/8: the FIRST octet, s_addr being in network order (Huly QB-1003)
 }
 /**
  * @brief Checks if an IPv4 address is a link-local address
@@ -68,7 +68,7 @@ IN4_IS_ADDR_LOOPBACK(const in_addr *a) {
  */
 inline bool
 IN4_IS_ADDR_LINKLOCAL(const in_addr *a) {
-    return ((a->s_addr & 0xffff) == 0xfea9); // 169.254/16
+    return (ntohl(a->s_addr) >> 16) == 0xa9feu; // 169.254/16: the first two octets, on any host byte order
 }
 /**
  * @brief Checks if an IPv6 address is a global unicast address
@@ -1005,10 +1005,10 @@ public:
     QB__DECL static int set_nonblocking(socket_type s, bool nonblocking);
 
     /**
-     * @brief Test whether the socket has nonblocking flag
+     * @brief Whether the socket is in non-blocking mode
      *
-     * @returns: [1] yes. [0] no
-     * @pitfall: for wsock2, will return [-1] when it's a unconnected SOCK_STREAM
+     * @returns: [1] yes. [0] no. [-1] the mode cannot be read: an invalid descriptor, and on Windows any `socket_type`
+     * @pitfall: Winsock cannot report the mode, so on Windows only the member answers -- the mode its own calls set
      */
     QB__DECL int        test_nonblocking() const;
     QB__DECL static int test_nonblocking(socket_type s);

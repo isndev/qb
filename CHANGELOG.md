@@ -16,6 +16,16 @@ policy.
   included; without it the first watcher's start unblocks its signal. qb itself never passes the
   flag and blocks no signal.
 
+- **`socket::test_nonblocking(socket_type)` answers -1 on Windows, and `qb/io/config.h` no longer re-maps
+  five C-runtime errno names (Huly QB-1003).** Winsock cannot report a socket's mode: the zero-length
+  `recv()` the static form probed with blocked on a blocking socket with nothing to read, answered 0 in
+  both modes with data pending, and read `WSAEWOULDBLOCK` -- the one unambiguous answer, non-blocking -- as
+  "blocking". The member, which tracks the mode its own calls set, is the Windows question. On Windows the
+  header still maps the socket errno names (`EWOULDBLOCK`, `ECONNREFUSED`, ...) to the WSA values the
+  socket layer compares against, but `EBADF`, `EAGAIN` (mapped to `WSATRY_AGAIN`, a resolver code),
+  `EFAULT`, `ENAMETOOLONG` and `ENOTEMPTY` keep the C runtime's: every translation unit that includes a
+  qb socket header compared a C runtime errno with a WSA value -- `errno == EBADF` was 9 == 10009. No qb
+  path compared a socket error with any of the five.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -595,6 +605,12 @@ policy.
   teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
   witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
   one completion per pass and one fewer per extra completion (callgrind).
+- **Socket portability (Huly QB-1003).** `IN4_IS_ADDR_LOOPBACK` / `IN4_IS_ADDR_LINKLOCAL`, qb's own outside
+  Windows, masked the host-order low bits of `s_addr`, which holds the octets in network order: 127/8 and
+  169.254/16 were read from the last octets on a big-endian host. They read the first octets through `ntohl`
+  now. `test_nonblocking()` returned the raw `O_NONBLOCK` bit (2048 on Linux) where it documents 1, took a
+  failed `fcntl()` for "non-blocking", and the Windows member answered 0 for a closed socket; it answers
+  1, 0, or -1 when the mode cannot be read.
 - **An async TCP connect that fails after its watcher no longer survives a loop teardown (Huly
   QB-873).** A connect in progress arms an io watcher and a self-hold the watcher's teardown hook breaks.
   When the readiness reported the failure (`SO_ERROR`) and no address was left, the watcher went away and

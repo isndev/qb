@@ -31,7 +31,9 @@
  *     non-creatable path).
  *   - every failure sets the errno file.h promises (Huly QB-320): EEXIST / ENOENT from a refused
  *     open on both platforms (Windows maps the CreateFileW error), EBADF from read/write on a
- *     closed object.
+ *     closed object -- the EBADF a consumer of qb-io compares against: this TU sees qb's socket
+ *     vocabulary (qb/io/config.h) as every network program does, and that header re-mapped EBADF
+ *     and four other names the C runtime sets errno to onto their WSA values on Windows (Huly QB-1003).
  *
  * Pure `unit`: every operation is a local-filesystem syscall against a unique per-test scratch dir.
  *
@@ -63,9 +65,11 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <system_error>
 
 #include <gtest/gtest.h>
 #include <qb/io/system/file.h>
+#include <qb/io/system/sys__socket.h> // qb/io/config.h's errno vocabulary, as a network program sees it
 #include "../../shared/file_descriptor_probe.h"
 
 #ifdef _WIN32
@@ -103,6 +107,24 @@ protected:
         std::filesystem::remove_all(dir, ec);
     }
 };
+
+// ===========================================================================
+// The errno names the C runtime sets keep the C runtime's values (Huly QB-1003)
+// ===========================================================================
+
+TEST(FileErrnoVocabulary, TheNamesTheCRuntimeSetsKeepTheirValuesBesideQbsSocketHeaders) {
+    // qb/io/config.h maps the socket errno names onto their WSA values on Windows -- what
+    // WSAGetLastError() returns, and what qb's socket layer compares it against. It mapped EBADF (to
+    // 10009), EAGAIN (to WSATRY_AGAIN, a resolver code), EFAULT, ENAMETOOLONG and ENOTEMPTY too: values
+    // the C runtime itself sets errno to, in every translation unit that includes a qb socket header,
+    // so `errno == EBADF` after a failed _read() compared 9 with 10009. std::errc holds the C runtime's
+    // numbers whatever the macros say (MSVC spells them as literals).
+    EXPECT_EQ(EBADF, static_cast<int>(std::errc::bad_file_descriptor));
+    EXPECT_EQ(EAGAIN, static_cast<int>(std::errc::resource_unavailable_try_again));
+    EXPECT_EQ(EFAULT, static_cast<int>(std::errc::bad_address));
+    EXPECT_EQ(ENAMETOOLONG, static_cast<int>(std::errc::filename_too_long));
+    EXPECT_EQ(ENOTEMPTY, static_cast<int>(std::errc::directory_not_empty));
+}
 
 // ===========================================================================
 // open(int fd) adoption + previous-descriptor drop

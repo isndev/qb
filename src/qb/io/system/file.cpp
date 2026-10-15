@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <limits>
+#include <system_error>
 #include <qb/io/system/file.h>
 #if defined(_WIN32)
 #include <fcntl.h>
@@ -38,15 +39,14 @@ namespace qb::io::sys {
 
 namespace {
 
-// The errno of a file descriptor is the C runtime's, and its EBADF is 9 -- the value _read() / _write() set
-// themselves. On Windows, qb/io/config.h re-maps EBADF to WSAEBADF (10009) for the socket layer, and that header is in
-// scope here (qb-io builds as one translation unit), so the C runtime's value is spelled out rather than taken from
-// the macro.
-#if defined(_WIN32)
-constexpr int file_errno_bad_descriptor = 9;
-#else
+// The errno of a file descriptor is the C runtime's EBADF -- the value _read() / _write() set themselves. On
+// Windows, qb/io/config.h re-mapped EBADF to WSAEBADF (10009) for the socket layer in every translation unit
+// that includes it, this one too (qb-io builds as one), and this constant was spelled 9 around it. The header
+// leaves the C runtime's names alone now (Huly QB-1003); the assertion holds it to that where the two meet,
+// at compile time, on the one platform where they differed.
 constexpr int file_errno_bad_descriptor = EBADF;
-#endif
+static_assert(file_errno_bad_descriptor == static_cast<int>(std::errc::bad_file_descriptor),
+              "EBADF must be the C runtime's value: qb/io/config.h must not re-map it (Huly QB-1003)");
 
 } // namespace
 
