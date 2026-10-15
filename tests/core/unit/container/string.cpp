@@ -46,23 +46,41 @@
 
 // The bytes the program asks the global allocator for while `string_alloc_probe::counting` is set: the oracle of the
 // bounded extraction (Huly QB-1002). The replacement is the standard's own -- malloc / free underneath -- and counts
-// nothing outside the window a test opens.
+// nothing outside the window a test opens. EVERY scalar form is replaced, the nothrow pair included: a sanitizer
+// runtime supplies its own of each form, and a block taken by one family and given back to the other is an
+// alloc-dealloc mismatch (gtest's stable_sort takes its buffer with the nothrow form and frees it with the sized one).
+// The array and aligned forms are left whole to one family -- the runtime's, or the library's, which call these.
 namespace string_alloc_probe {
 std::atomic<bool>        counting{false};
 std::atomic<std::size_t> bytes{0};
+
+inline void *
+allocate(std::size_t size) noexcept {
+    if (counting.load(std::memory_order_relaxed))
+        bytes.fetch_add(size, std::memory_order_relaxed);
+    return std::malloc(size ? size : 1);
+}
 } // namespace string_alloc_probe
 
 void *
 operator new(std::size_t size) {
-    if (string_alloc_probe::counting.load(std::memory_order_relaxed))
-        string_alloc_probe::bytes.fetch_add(size, std::memory_order_relaxed);
-    if (void *p = std::malloc(size ? size : 1))
+    if (void *p = string_alloc_probe::allocate(size))
         return p;
     throw std::bad_alloc();
 }
 
+void *
+operator new(std::size_t size, std::nothrow_t const &) noexcept {
+    return string_alloc_probe::allocate(size);
+}
+
 void
 operator delete(void *p) noexcept {
+    std::free(p);
+}
+
+void
+operator delete(void *p, std::nothrow_t const &) noexcept {
     std::free(p);
 }
 
