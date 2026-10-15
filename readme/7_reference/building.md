@@ -139,7 +139,7 @@ toolchain is configured for that target.
 | Option | Type / default | Effect |
 |---|---|---|
 | `QB_ENABLE_OPTIMIZATIONS` | bool; `ON` | Extra Release optimization flags — `-funroll-loops`, `-ftree-vectorize`, `-ffunction-sections`/`-fdata-sections` on GCC/Clang, `/Ot`/`/Gy` on MSVC (`qbConfig.cmake:142`, `qbCompiler.cmake`). |
-| `QB_ENABLE_NATIVE_ARCH` | bool; `OFF` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:152`, `qbCompiler.cmake:387-419`). |
+| `QB_ENABLE_NATIVE_ARCH` | bool; `OFF` | Tune codegen for the build-host CPU: `-march=native`, falling back to `-mcpu=native` (validated per compiler; `/arch:AVX2` on MSVC targeting x64). **Turn `OFF` for portable / distributable binaries** — see the `release-portable` preset (`qbConfig.cmake:152`, `qbCompiler.cmake:387-419`). |
 | `QB_ENABLE_LTO` | bool; `OFF` | Link-time optimization for Release (`-flto`, or `/GL` + `/LTCG` on MSVC) (`qbConfig.cmake:143`, `qbCompiler.cmake:427-452`). |
 | `QB_ENABLE_FAST_MATH` | bool; `OFF` | `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance (`qbConfig.cmake:153`, `qbCompiler.cmake:361,376`). |
 

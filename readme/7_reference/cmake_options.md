@@ -113,7 +113,7 @@ when absent their features degrade silently (see [CMake and dependencies](./cmak
 |---|---|---|
 | `QB_ENABLE_OPTIMIZATIONS` | `ON` | Enable the high-performance optimization flags (GCC/Clang: `-funroll-loops`, `-ftree-vectorize`; MSVC: `/Ot`). |
 | `QB_ENABLE_LTO` | `OFF` | Enable Link Time Optimization (GCC/Clang: `-flto`; MSVC: `/GL` + `/LTCG`). |
-| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tune codegen for the build-host CPU (`-march=native`, falling back to `-mcpu=native`; `/arch:AVX2` on MSVC). Off by default so the artefact stays portable; turn it **on** only for a binary that will run on the machine that built it. |
+| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tune codegen for the build-host CPU (`-march=native`, falling back to `-mcpu=native`; `/arch:AVX2` on MSVC targeting x64). Off by default so the artefact stays portable; turn it **on** only for a binary that will run on the machine that built it. |
 | `QB_ENABLE_FAST_MATH` | `OFF` | Enable `-ffast-math` / `/fp:fast`. Breaks IEEE-754 compliance; off by default. |
 
 Because `QB_ENABLE_NATIVE_ARCH` defaults to `OFF`, a binary built with the defaults is portable: qb

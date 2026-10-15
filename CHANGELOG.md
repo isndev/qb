@@ -566,6 +566,8 @@ policy.
   toolchain still names its target in `CMAKE_SYSTEM_PROCESSOR`. Pinned by `qb-io-test-unit-target-arch`
   (`tests/io/unit/build-contracts/target-arch/`), a languageless fixture configured with the toolchain identity
   fabricated per case. The universal-macOS `-Xarch_*` warning noted on the same ticket is a Mac check, not made here.
+  With `QB_ENABLE_NATIVE_ARCH`, an MSVC-family compiler got `/arch:AVX2` on any 64-bit target, an ARM64 one included
+  (now reachable from an x64 host); it is given to an x64 target only.
 - **A TLS handshake polled through `handshake_status()` no longer makes a socket BIO per poll (Huly QB-1004).**
   `qb::io::ssl::attach_socket` called `SSL_set_fd` every time -- a new socket BIO allocated, the previous one freed --
   and `handshake_status()`, polled until the handshake completes on a client and on an accepted socket alike, attaches

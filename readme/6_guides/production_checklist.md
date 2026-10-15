@@ -14,7 +14,7 @@ Defaults are tuned for *development on the build host*. The most common producti
 
 ## 1. Build a portable binary
 
-`QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
+`QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC targeting x64 uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
 <!-- src: qb/cmake/qbConfig.cmake:144-152 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:366-367 (MSVC /arch:AVX2), :395-409 (-march=native, -mcpu=native fallback) -->
 
