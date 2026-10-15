@@ -536,6 +536,14 @@ policy.
 
 ### Fixed
 
+- **`icase_unordered_map` / `icase_map` erase a `const std::string` key through its folded form (Huly QB-279).**
+  The wrapper imported the base map's whole `erase` set to expose the position forms, and with it the base's
+  `erase(const key_type &)`: for a `const std::string` lvalue that non-template tied with the folding template
+  and won, so the key was looked up unfolded in folded storage and nothing was erased -- qbm-http's
+  `Headers::remove_header` and `CookieJar::remove` kept the entry whenever the name passed had an upper-case letter. The key
+  form is now the folding template alone, constrained to keys the trait converts, and the position and range forms
+  are spelled out over `const_iterator`; `erase(iterator)` on `icase_unordered_map`, which did not compile, now
+  does. Every other key form folded already and is unchanged.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

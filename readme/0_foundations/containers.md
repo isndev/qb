@@ -106,7 +106,7 @@ template <class Value, class Trait = string_to_lower>
 using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value>, Trait>;
 }
 ```
-<!-- src: qb/src/qb/system/container/unordered_map.h:228-229, :414-424 -->
+<!-- src: qb/src/qb/system/container/unordered_map.h:228-229, :441-451 -->
 
 ```cpp
 qb::icase_unordered_map<int> headers;
@@ -117,12 +117,12 @@ headers.has("CONTENT-LENGTH");    // true
 
 Four things to know about it:
 
-- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace`, `at`, `operator[]`, `find` and `erase` — the first at `qb/src/qb/system/container/unordered_map.h:267-270`, the last at `:376-380`, so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value.
+- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace`, `at`, `operator[]`, `find` and `erase` — the first at `qb/src/qb/system/container/unordered_map.h:267-270`, the last at `:382-387`, so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value. Every key form is folded, a `const std::string` included: until 3.3 that one reached the base map's own `erase(const key_type &)`, which looks the key up unfolded, so the entry stayed (Huly QB-279).
 - **The conversion is ASCII-only.** `string_to_lower::charToLower` maps `'A'`–`'Z'` and leaves every other byte alone (`qb/src/qb/system/container/unordered_map.h:116-119`). That is correct for HTTP field names and wrong for arbitrary Unicode, deliberately.
 - **`has(key)` is the membership test** (`qb/src/qb/system/container/unordered_map.h:363-367`). The base map's `count` and `contains` are not among the re-exported members — deliberately, and the point sharpened in 3.0 when the fork gained a `contains()`: there is still no way to reach a lookup that skips the key conversion, which is the whole reason the inheritance is private.
-- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `erase`, `size` (`qb/src/qb/system/container/unordered_map.h:383-390`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion.
+- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `size` (`qb/src/qb/system/container/unordered_map.h:411-417`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion. `erase` is not re-exported for that very reason — the base set includes the key form — but spelled out: the folding key form, and the position and range forms (`:394-397`, `:405-408`), which take a `const_iterator` (an `iterator` converts).
 
-`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:401-405`).
+`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:428-432`).
 
 ## `qb::string<N>` — the reason the first example in the README is not `std::string`
 

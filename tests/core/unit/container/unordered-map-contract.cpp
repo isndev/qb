@@ -56,6 +56,10 @@
  *    qb's own callers (the event router, qbm-http's status handlers) only ever passed one argument
  *    to `try_emplace`, the only form that compiled. Nothing in qb calls `merge` or `bucket`, or uses
  *    a stateful allocator, so none of these defects was reached until now.
+ *
+ * 5. **The case-folding wrappers (`icase_unordered_map`, `icase_map`) erase through the folded
+ *    key, whatever form the key arrives in** (Huly QB-279), and their iterator and range `erase`
+ *    forms erase positions. qbm-http's `Headers::remove_header` is the caller that reached it.
  */
 
 #include <cstdint>
@@ -674,4 +678,99 @@ TEST(UnorderedMapContract, AMoveAssignmentAcrossUnequalAllocatorsKeepsEveryKeyFi
     // source's afterwards: every key sat in the bucket of a hash the table no longer computed.
     expect_move_assignment<node_map_of>("qb::unordered_map");
     expect_move_assignment<flat_map_of>("qb::unordered_flat_map");
+}
+
+// --- 5. The case-folding wrappers erase through the folded key, whatever the key form ----------
+// `icase_basic_map` stores every key folded to lower case, so each lookup must fold its argument
+// first. Its key `erase` did, but the wrapper also imported the base's whole `erase` overload set
+// to expose the iterator forms, and that set includes the base's NON-folding `erase(const Key &)`.
+// For a `const std::string` lvalue the folding template deduces the very same parameter type, the
+// non-template wins the tie, and the lookup ran case-sensitively against the folded storage:
+// `remove_header(name)` with a `const std::string` silently kept the header (Huly QB-279). The
+// same import gave the iterator forms to the folding template on the ska map, where `erase(it)`
+// did not compile at all.
+
+namespace {
+
+template <typename Map>
+[[nodiscard]] Map
+icase_fixture() {
+    Map map;
+    map.emplace("Content-Length", 1);
+    map.emplace("X-Other", 2);
+    return map;
+}
+
+} // namespace
+
+template <typename Map>
+class IcaseMapErase : public ::testing::Test {};
+using IcaseMaps = ::testing::Types<qb::icase_unordered_map<int>, qb::icase_map<int>>;
+TYPED_TEST_SUITE(IcaseMapErase, IcaseMaps);
+
+TYPED_TEST(IcaseMapErase, EveryKeyFormErasesThroughTheFoldedKey) {
+    using Map                = TypeParam;
+    const auto expect_erased = [](Map &map, std::size_t erased, const char *form) {
+        EXPECT_EQ(erased, 1u) << form << ": the key was not found through its folded form";
+        EXPECT_FALSE(map.has("content-length")) << form;
+        EXPECT_EQ(map.size(), 1u) << form << ": the wrong entry went";
+        EXPECT_TRUE(map.has("x-other")) << form;
+    };
+
+    {
+        Map               map = icase_fixture<Map>();
+        const std::string key = "CONTENT-length";
+        expect_erased(map, map.erase(key), "const std::string lvalue");
+    }
+    {
+        Map         map = icase_fixture<Map>();
+        std::string key = "content-LENGTH";
+        expect_erased(map, map.erase(key), "std::string lvalue");
+    }
+    {
+        Map map = icase_fixture<Map>();
+        expect_erased(map, map.erase(std::string("Content-Length")), "std::string rvalue");
+    }
+    {
+        Map                    map = icase_fixture<Map>();
+        const std::string_view key = "CONTENT-LENGTH";
+        expect_erased(map, map.erase(key), "std::string_view");
+    }
+    {
+        Map map = icase_fixture<Map>();
+        expect_erased(map, map.erase("Content-length"), "string literal");
+    }
+    {
+        Map               map    = icase_fixture<Map>();
+        const std::string absent = "Content-Type";
+        EXPECT_EQ(map.erase(absent), 0u) << "an absent key erased something";
+        EXPECT_EQ(map.size(), 2u);
+    }
+}
+
+TYPED_TEST(IcaseMapErase, IteratorAndRangeFormsErasePositionsNotKeys) {
+    using Map = TypeParam;
+    {
+        Map  map = icase_fixture<Map>();
+        auto it  = map.find("X-OTHER");
+        ASSERT_TRUE(it != map.end());
+        map.erase(it); // iterator lvalue
+        EXPECT_EQ(map.size(), 1u);
+        EXPECT_FALSE(map.has("x-other"));
+        map.erase(map.begin()); // iterator rvalue
+        EXPECT_TRUE(map.empty());
+    }
+    {
+        Map        map = icase_fixture<Map>();
+        const auto it  = std::as_const(map).find("content-length");
+        ASSERT_TRUE(it != map.cend());
+        map.erase(it); // const_iterator lvalue
+        EXPECT_EQ(map.size(), 1u);
+        EXPECT_TRUE(map.has("x-other"));
+    }
+    {
+        Map map = icase_fixture<Map>();
+        map.erase(map.cbegin(), map.cend()); // range
+        EXPECT_TRUE(map.empty());
+    }
 }

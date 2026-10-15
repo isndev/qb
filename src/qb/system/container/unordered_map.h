@@ -369,24 +369,51 @@ public:
     /**
      * @brief Erase a key-value pair by key, with the key converted to lowercase
      *
+     * Every key form is folded, a `const std::string &` included. The base's own
+     * `erase(const key_type &)` is deliberately not exposed: for a `const std::string` lvalue
+     * it ties with this template, wins as the non-template, and looks the UNFOLDED key up in
+     * folded storage (Huly QB-279). Only keys the trait can convert select this overload, so
+     * iterators reach the position forms below.
+     *
      * @tparam T Key type
      * @param key The key (will be converted to lowercase)
      * @return The number of elements erased.
      */
     template <typename T>
+    requires requires(T &&key) { _Trait::convert(std::forward<T>(key)); }
     auto
     erase(T &&key) {
         return static_cast<base_t &>(*this).erase(_Trait::convert(std::forward<T>(key)));
     }
 
-    // Import methods from the base map
+    /**
+     * @brief Erase the element at a position (an `iterator` converts)
+     * @param pos A valid, dereferenceable position of this map.
+     * @return What the base map's position `erase` returns.
+     */
+    auto
+    erase(typename base_t::const_iterator pos) {
+        return static_cast<base_t &>(*this).erase(pos);
+    }
+
+    /**
+     * @brief Erase the elements of the range [first, last)
+     * @param first The first position to erase.
+     * @param last The position after the last one to erase.
+     * @return What the base map's range `erase` returns.
+     */
+    auto
+    erase(typename base_t::const_iterator first, typename base_t::const_iterator last) {
+        return static_cast<base_t &>(*this).erase(first, last);
+    }
+
+    // Import methods from the base map (`erase` is spelled out above, never imported)
     using base_t::begin;
     using base_t::cbegin;
     using base_t::cend;
     using base_t::clear;
     using base_t::empty;
     using base_t::end;
-    using base_t::erase;
     using base_t::size;
 
     /**
