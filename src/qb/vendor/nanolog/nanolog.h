@@ -56,18 +56,32 @@ public:
         return *this;
     }
 
+    // qb fork (Huly QB-366): a char ARRAY is copied into the record, up to its first NUL and never past its end -- the
+    // record is written out later, on the writer thread. Every `const char (&)[N]` used to be stored as a POINTER, the
+    // form meant for string literals, which the type cannot tell from a char buffer filled by snprintf, a const local
+    // array or an array member: the writer read them after they had changed or died. Borrowing static text is
+    // explicit: `string_literal_t`, below.
     template <size_t N>
     NanoLogLine &
     operator<<(const char (&arg)[N]) {
-        encode(string_literal_t(arg));
+        char const *const nul = std::char_traits<char>::find(arg, N, '\0');
+        encode_c_string(arg, nul ? static_cast<size_t>(nul - arg) : N);
         return *this;
     }
 
+    // Text of STATIC storage duration, borrowed: the record stores the pointer and the writer thread reads the text
+    // when it writes the record out, so the caller vouches that it outlives the logger (a string literal does).
     struct string_literal_t {
         explicit string_literal_t(char const *s)
             : m_s(s) {}
         char const *m_s;
     };
+
+    NanoLogLine &
+    operator<<(string_literal_t arg) {
+        encode(arg);
+        return *this;
+    }
 
 private:
     char *buffer();
@@ -130,6 +144,8 @@ bool is_logged(LogLevel level);
  * ring_buffer_size_mb - LogLines are pushed into a mpsc ring buffer whose size
  * is determined by this parameter. Since each LogLine is 256 bytes,
  * ring_buffer_size = ring_buffer_size_mb * 1024 * 1024 / 256
+ * qb fork (Huly QB-368): at least 1 MB, at most 1048575 MB -- the ring is indexed by 32-bit counters, and 1048576 MB
+ * is 2^32 items. initialize() refuses a larger ring with std::length_error before it allocates anything.
  */
 struct NonGuaranteedLogger {
     NonGuaranteedLogger(uint32_t ring_buffer_size_mb_)
@@ -154,6 +170,13 @@ struct GuaranteedLogger {};
  */
 void initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
+
+/*
+ * qb fork (Huly QB-327): whether the log file of the last initialize() -- its first roll, <log_file_path>.1.log, which
+ * initialize() opens before it returns -- was OPENED. False before any initialize(). A file that cannot be opened (a
+ * read-only directory, a directory of that name) leaves every line logged through it discarded.
+ */
+bool log_file_opened();
 
 } // namespace nanolog
 

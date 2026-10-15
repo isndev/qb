@@ -9,6 +9,9 @@ policy.
 
 ### Changed
 
+- **`qb::io::log::init()` says when its file cannot be opened (Huly QB-327).** It prints the one-line `WARNING` the
+  load-time default prints, naming the file: every log line is discarded until a later `init()` names a file that
+  opens. It was silent.
 - **A `qb::io::uri` with an empty port has the scheme's default (Huly QB-352).** `http://example.com:/` and
   `https://[::1]:/` now carry the default port of their scheme and the host without the colon (RFC 3986 3.2.3, 6.2.3).
   A name kept the colon -- host `example.com:`, classified `AF_INET6` for it -- and a bracketed host an empty port
@@ -22,6 +25,9 @@ policy.
 
 ### Added
 
+- **`nanolog::log_file_opened()` and `NanoLogLine::operator<<(string_literal_t)` (Huly QB-327, QB-366).** The first
+  says whether the last `nanolog::initialize()` opened its file; the second borrows static text explicitly -- the
+  pointer a char array is no longer stored as.
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
   `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the answer straight
   into the peer's mailbox, ahead of whatever the handler pushed to that peer earlier -- the documented `send`-family,
@@ -540,6 +546,25 @@ policy.
 
 ### Fixed
 
+- **The startup log diagnostic follows the open, not the path (Huly QB-327).** The default `LogInitializer` warned when
+  `./qb.1.log` did not EXIST: a directory of that name exists, nanolog's open of it fails, and every log line was
+  discarded with no word. The answer is now nanolog's own, `nanolog::log_file_opened()`, taken from the first file's
+  open before the writer thread starts. Pinned by `qb-io-test-unit-logger-startup-diagnostic`
+  (`tests/io/unit/build-contracts/logger-startup-diagnostic.cmake`): a fresh process in a writable directory, in one
+  where `qb.1.log` is a directory, and in a read-only one (POSIX, unprivileged).
+- **nanolog's records own their text, keep its whole length, and a NonGuaranteedLogger ring is never empty (Huly
+  QB-366, QB-367, QB-368).** Every `const char (&)[N]` was stored in the record as a pointer -- the form meant for string
+  literals, which the type cannot tell from a char buffer filled by `snprintf`, a const local array or an array member
+  -- and the writer thread read it later, after the code had changed or freed it. An array is now copied, up to its
+  first NUL and never past its end; borrowing static text is explicit (`NanoLogLine::string_literal_t`). A text field
+  was written NUL-terminated and read up to its first NUL, so a `std::string` holding one cut the record and the rest
+  of its bytes were decoded as type tags; a field is now its 32-bit length and its bytes, written out whole (one
+  `write`, no longer a byte at a time). `NonGuaranteedLogger(mb)`'s ring of `mb * 4096` items was computed in 32 bits
+  and wrapped to an empty ring at 1048576 MB, whose writer thread computed `index % 0` (SIGFPE on x86-64); the
+  capacity is computed on 64 bits, and a ring its 32-bit indices cannot count is refused with `std::length_error`
+  before anything is allocated or started. qb's own logger is a `GuaranteedLogger`. Pinned by
+  `tests/io/unit/core/nanolog-record.cpp` (new, `qb-io-test-unit-nanolog-record`, a private compile of nanolog.cpp as
+  `guaranteed-logger-buffer` is).
 - **`qb::uuid`'s inserter writes the identifier whatever the stream's format, and UUIDv5 hashes long names as SHA-1
   does (Huly QB-382, QB-383).** `operator<<` wrote each byte with `std::hex`, fill `'0'` and `setw(2)` but kept the
   caller's adjustfield and showbase: on a `std::left` stream the byte `0x04` came out as `"40"` -- the text named

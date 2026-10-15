@@ -379,7 +379,7 @@ A `qb::allocator::pipe<char>::put<qb::json>` specialization lets JSON be written
 
 `qb/io.h` is the header everything else in `qb-io` includes, and it carries two facilities that are easy to meet by accident.
 
-**`qb::io::cout()` and `qb::io::cerr()`** are temporary stream objects that buffer into a `std::stringstream` and flush the whole thing under a `static std::mutex` in their destructor (`qb/src/qb/io/logger.cpp:45-73`). That is what makes them safe to use from several `VirtualCore` threads without interleaving: one statement, one lock, one atomic write. Use them, not bare `std::cout`, anywhere more than one thread can print. The write is best-effort and never throws: a line that cannot be written — a stream failing with its exceptions enabled, a lock or an allocation failure — is lost, the process is not.
+**`qb::io::cout()` and `qb::io::cerr()`** are temporary stream objects that buffer into a `std::stringstream` and flush the whole thing under a `static std::mutex` in their destructor (`qb/src/qb/io/logger.cpp:71-99`). That is what makes them safe to use from several `VirtualCore` threads without interleaving: one statement, one lock, one atomic write. Use them, not bare `std::cout`, anywhere more than one thread can print. The write is best-effort and never throws: a line that cannot be written — a stream failing with its exceptions enabled, a lock or an allocation failure — is lost, the process is not.
 
 ```cpp
 #include <qb/io.h>
@@ -389,7 +389,9 @@ qb::io::cout() << "core " << id << " ready\n";   // whole line flushed under one
 
 **The `QB_LOG_*` macros** have two backends chosen at build time. Without `QB_WITH_LOGGING` they expand to `qb::io::cout()` (`qb/src/qb/io.h:195-235`). With it they route to nanolog, driven by `qb::io::log::init(file_path, roll_MB = 128)` and `qb::io::log::setLevel(Level)` (`qb/src/qb/io.h:84`, `:63`).
 
-> **A logging build writes a file before `main()` runs.** A load-time static, `LogInitializer`, calls `log::init("./qb", 512)` and sets the level to `INFO` under `NDEBUG` or `DEBUG` otherwise (`qb/src/qb/io/logger.cpp:169-197`). So merely linking `qb::io` in a `QB_WITH_LOGGING` build creates `./qb*.log` relative to the **working directory**, with no call from you. Call `log::init` yourself early if you want it somewhere else; the initializer is compiled out entirely when the option is off.
+> **A logging build writes a file before `main()` runs.** A load-time static, `LogInitializer`, opens the log at `"./qb"` with a 512 MB roll, as `log::init("./qb", 512)` would, and sets the level to `INFO` under `NDEBUG` or `DEBUG` otherwise (`qb/src/qb/io/logger.cpp:190-207`). So merely linking `qb::io` in a `QB_WITH_LOGGING` build creates `./qb*.log` relative to the **working directory**, with no call from you. Call `log::init` yourself early if you want it somewhere else; the initializer is compiled out entirely when the option is off. When the file cannot be **opened** — a read-only directory, a directory named `qb.1.log` — the initializer and `log::init` alike print one `WARNING: qb logging is enabled ...` line on `qb::io::cerr`, since every log line is then discarded until `log::init` names a file that opens. The answer is nanolog's own (`nanolog::log_file_opened()`), not a check that the path exists, which a directory of that name passes (Huly QB-327). _(`qb/src/qb/io/logger.cpp:35-64`.)_
+
+A log record owns its text: nanolog's writer thread formats it later, so every argument is copied into the record when the statement runs. A char array is copied up to its first NUL and never past its end — it was kept as a pointer, the form meant for string literals, and a buffer the code changed or freed after logging it was read afterwards (Huly QB-366); static text can still be borrowed by saying so, `qb::io::log::stream::string_literal_t(text)`. A `std::string` or `std::string_view` is written whole, NUL bytes included, with the fields after it intact (Huly QB-367).
 
 ---
 

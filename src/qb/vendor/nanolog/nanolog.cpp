@@ -31,9 +31,12 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <limits>
 #include <qb/system/time.h>
 #include <qb/utility/build_macros.h>
 #include <queue>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <tuple>
 
@@ -195,14 +198,15 @@ decode(std::ostream &os, char *b, NanoLogLine::string_literal_t *) {
     return b + sizeof(NanoLogLine::string_literal_t);
 }
 
+// A text field: its 32-bit length, then exactly that many bytes, NUL bytes included (see encode_c_string).
 template <>
 char *
 decode(std::ostream &os, char *b, char **) {
-    while (*b != '\0') {
-        os << *b;
-        ++b;
-    }
-    return ++b;
+    uint32_t length;
+    std::memcpy(&length, b, sizeof(length));
+    b += sizeof(length);
+    os.write(b, static_cast<std::streamsize>(length));
+    return b + length;
 }
 
 void
@@ -278,18 +282,24 @@ NanoLogLine::encode(char *arg) {
         encode_c_string(arg, strlen(arg));
 }
 
+// qb fork (Huly QB-367): a text field is its type tag, its length on 32 bits, then its bytes -- all of them, NUL bytes
+// included. It was NUL-terminated and decoded up to the first NUL, so a std::string holding one cut the record there
+// and the decoder read the rest of the text as type tags. A text past 4 GiB is written as consecutive fields, which
+// read back as the same bytes.
 void
 NanoLogLine::encode_c_string(char const *arg, size_t length) {
-    if (length == 0)
-        return;
-
-    resize_buffer_if_needed(1 + length + 1);
-    char *b                           = buffer();
-    auto  type_id                     = TupleIndex<char *, SupportedTypes>::value;
-    *reinterpret_cast<uint8_t *>(b++) = static_cast<uint8_t>(type_id);
-    memcpy(b, arg, length);
-    b[length] = '\0';
-    m_bytes_used += 1 + length + 1;
+    constexpr size_t max_field = std::numeric_limits<uint32_t>::max();
+    while (length) {
+        auto const field = static_cast<uint32_t>(std::min(length, max_field));
+        resize_buffer_if_needed(1 + sizeof(field) + field);
+        char *b                           = buffer();
+        *reinterpret_cast<uint8_t *>(b++) = static_cast<uint8_t>(TupleIndex<char *, SupportedTypes>::value);
+        std::memcpy(b, &field, sizeof(field));
+        std::memcpy(b + sizeof(field), arg, field);
+        m_bytes_used += 1 + sizeof(field) + field;
+        arg += field;
+        length -= field;
+    }
 }
 
 void
@@ -578,6 +588,21 @@ private:
     unsigned int                        m_read_index;
 };
 
+// qb fork (Huly QB-368): the items of a NonGuaranteedLogger ring of `ring_buffer_size_mb` megabytes, at least one --
+// 4096 items of 256 bytes per MB, on 64 bits. The product was taken in 32 bits and wrapped to ZERO at 1048576 MB: an
+// empty ring, whose writer thread computed `index % 0`. The ring's indices are 32-bit counters, so a ring of more
+// items than they count is refused here, before anything is allocated and before the writer thread exists.
+std::size_t
+ring_buffer_items(uint32_t ring_buffer_size_mb) {
+    constexpr std::uint64_t items_per_mb = 1024 * 1024 / sizeof(RingBuffer::Item);
+    std::uint64_t const     items        = std::uint64_t{std::max(1u, ring_buffer_size_mb)} * items_per_mb;
+    if (items > std::numeric_limits<unsigned int>::max())
+        throw std::length_error("nanolog: a NonGuaranteedLogger ring of " + std::to_string(ring_buffer_size_mb)
+                                + " MB has more items than its 32-bit indices count (at most "
+                                + std::to_string(std::numeric_limits<unsigned int>::max() / items_per_mb) + " MB)");
+    return static_cast<std::size_t>(items);
+}
+
 class FileWriter {
 public:
     FileWriter(std::filesystem::path log_file_path, uint32_t log_file_roll_size_mb)
@@ -587,6 +612,12 @@ public:
         : m_log_file_roll_size_bytes(static_cast<uint64_t>(log_file_roll_size_mb) * 1024 * 1024)
         , m_name(std::move(log_file_path)) {
         roll_file();
+    }
+
+    // qb fork (Huly QB-327): whether the file being written was opened. The constructor's roll opens the first one.
+    bool
+    is_open() const noexcept {
+        return m_os && m_os->is_open();
     }
 
     void
@@ -632,8 +663,9 @@ class NanoLogger {
 public:
     NanoLogger(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
-        , m_buffer_base(new RingBuffer(std::max(1u, ngl.ring_buffer_size_mb) * 1024 * 4))
+        , m_buffer_base(new RingBuffer(ring_buffer_items(ngl.ring_buffer_size_mb)))
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
+        , m_file_opened(m_file_writer.is_open())
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -642,8 +674,15 @@ public:
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
         , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
+        , m_file_opened(m_file_writer.is_open())
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
+    }
+
+    // Whether the constructor opened the first file: read before the writer thread exists, so never torn by a roll.
+    bool
+    file_opened() const noexcept {
+        return m_file_opened;
     }
 
     ~NanoLogger() {
@@ -684,6 +723,7 @@ private:
     std::atomic<State>          m_state;
     std::unique_ptr<BufferBase> m_buffer_base;
     FileWriter                  m_file_writer;
+    bool const                  m_file_opened; // after m_file_writer, before m_thread: initialisation order matters
     std::thread                 m_thread;
 };
 
@@ -706,6 +746,12 @@ void
 initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
     nanologger.reset(new NanoLogger(gl, log_file_path, log_file_roll_size_mb));
     atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
+}
+
+bool
+log_file_opened() {
+    NanoLogger const *const logger = atomic_nanologger.load(std::memory_order_acquire);
+    return logger && logger->file_opened();
 }
 
 std::atomic<unsigned int> loglevel = {0};

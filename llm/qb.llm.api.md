@@ -537,7 +537,8 @@ Unbounded lock-free Michael-Scott MPSC queue.
     *   `[T<T>] std::stringstream& operator<<(const T& data)`
     *   use: `qb::io::cout() << "hello" << std::endl;`
 *   `constexpr static bool qb::debug` — false under NDEBUG, true otherwise.
-*   Logging macros `LOG_DEBUG/LOG_VERB/LOG_INFO/LOG_WARN/LOG_CRIT(X)` — no-op unless `QB_STDOUT_LOGGING`/`QB_WITH_LOGGING`. When `QB_WITH_LOGGING`: `qb::io::log::setLevel(Level)`, `qb::io::log::init(const std::string& file_path, uint32_t roll_MB = 128)`.
+*   Logging macros `LOG_DEBUG/LOG_VERB/LOG_INFO/LOG_WARN/LOG_CRIT(X)` — no-op unless `QB_STDOUT_LOGGING`/`QB_WITH_LOGGING`. When `QB_WITH_LOGGING`: `qb::io::log::setLevel(Level)`, `qb::io::log::init(const std::string& file_path, uint32_t roll_MB = 128)` — writes one WARNING line on `qb::io::cerr` when it could not OPEN `<file_path>.1.log` (every line is then discarded), as the load-time default logger does for its file in the working directory (3.3, Huly QB-327: the default asked whether the path existed, and a directory of that name does).
+*   A log record (`qb::io::log::stream` = `nanolog::NanoLogLine`) owns its text, written out later by nanolog's thread: a char array is COPIED, up to its first NUL and never past its end (3.3, Huly QB-366: every `const char (&)[N]` was kept as a pointer, so a buffer changed or freed after the statement was read later); `NanoLogLine::string_literal_t(p)` borrows static text explicitly. A `std::string` / `std::string_view` field is written whole, NUL bytes included, and the fields after it intact (3.3, Huly QB-367). `nanolog::log_file_opened()` says whether the last `initialize()` opened its file. A `NonGuaranteedLogger` ring of more than 1048575 MB (2^32 items) is refused with `std::length_error` before anything is allocated (3.3, Huly QB-368: 1048576 MB wrapped to an empty ring).
 
 ### `class qb::io::uri` (`<qb/io/uri.h>`)
 RFC 3986 URI. Parsed on construction.

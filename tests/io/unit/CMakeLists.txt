@@ -194,3 +194,19 @@ qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.c
 # whatever the stream's formatting state and leaves that state as it found it, and the SHA-1 behind UUIDv5 encodes the
 # message length on 64 bits -- the 2^29-byte boundary case runs in optimised builds only (see the source).
 qb_add_test(MODULE qb-io TIER unit NAME uuid-codec SOURCES core/uuid-codec.cpp DEPENDS ${PROJECT_NAME})
+# nanolog-record pins nanolog's record and its NonGuaranteedLogger ring (Huly QB-366, QB-367, QB-368): a char array is
+# copied into the record, a text field keeps its whole length, a ring its 32-bit indices cannot count is refused. Like
+# guaranteed-logger-buffer it compiles nanolog.cpp privately, with abi.cpp for the fingerprint symbols.
+qb_add_test(MODULE qb-io TIER unit NAME nanolog-record
+            SOURCES core/nanolog-record.cpp ${QB_SOURCE_DIR}/io/abi.cpp
+            INCLUDES ${QB_INCLUDE_DIR})
+# logger-startup-diagnostic (Huly QB-327): the default logger's static initialiser warns when ./qb.1.log could not be
+# OPENED -- not when the path is missing. Any qb-io executable is a probe; it is started fresh in prepared working
+# directories (writable, qb.1.log obstructed by a directory, read-only on an unprivileged POSIX host).
+if(QB_WITH_LOGGING)
+    add_test(NAME qb-io-test-unit-logger-startup-diagnostic
+             COMMAND "${CMAKE_COMMAND}" "-DPROBE=$<TARGET_FILE:qb-io-test-unit-uri-parse>"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/logger-startup-diagnostic"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/logger-startup-diagnostic.cmake")
+    set_tests_properties(qb-io-test-unit-logger-startup-diagnostic PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+endif()
