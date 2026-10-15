@@ -88,6 +88,10 @@ policy.
 - **`nanolog::log_file_opened()` and `NanoLogLine::operator<<(string_literal_t)` (Huly QB-327, QB-366).** The first
   says whether the last `nanolog::initialize()` opened its file; the second borrows static text explicitly -- the
   pointer a char array is no longer stored as.
+- **`icase_basic_map::lookup_fold_capacity` names the longest key a lookup folds on the stack (Huly QB-1068).**
+  `find`, `has`, `at` and `erase(key)` build no `std::string` for a key of up to that many bytes (128; 0 for a
+  map that converts every key) and allocate for a longer one. A caller that must not allocate -- qbm-http's
+  `noexcept` header lookups -- takes another path past it.
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
   `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the answer straight
   into the peer's mailbox, ahead of whatever the handler pushed to that peer earlier -- the documented `send`-family,

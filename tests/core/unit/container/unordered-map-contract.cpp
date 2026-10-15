@@ -1054,3 +1054,31 @@ TEST(StringHash, EqualsStdHashOfTheSameBytesSoBucketsAndOrderAreUnchanged) {
         EXPECT_EQ(qb::string_hash{}(std::string_view(s)), std::hash<std::string>{}(s)) << key;
     }
 }
+
+// --- 7. lookup_fold_capacity names the bound of the stack fold -------------------------------------
+// A caller that must not allocate -- qbm-http's noexcept Headers::has_header / remove_header -- has
+// to know which keys a lookup folds on the stack (Huly QB-1068): exactly those of up to
+// lookup_fold_capacity bytes; one byte more converts. A map that converts every key says 0.
+static_assert(qb::icase_unordered_map<int>::lookup_fold_capacity == 128);
+static_assert(qb::icase_map<int>::lookup_fold_capacity == 128);
+static_assert(qb::icase_basic_map<std::map<std::string, int>>::lookup_fold_capacity == 0,
+              "std::less<std::string> is not transparent: every lookup converts");
+
+TYPED_TEST(IcaseMapLookup, TheLookupFoldCapacityIsTheLongestKeyFoldedOnTheStack) {
+    using Map                 = TypeParam;
+    constexpr std::size_t cap = Map::lookup_fold_capacity;
+    static_assert(cap > 0);
+    Map map;
+    map[std::string(cap, 'K')]     = 1;
+    map[std::string(cap + 1, 'K')] = 2;
+
+    counting_fold_trait::reset();
+    EXPECT_EQ(map.find(std::string(cap, 'k'))->second, 1);
+    EXPECT_EQ(counting_fold_trait::converts, 0) << "a key of exactly the capacity folds on the stack";
+    EXPECT_EQ(counting_fold_trait::folds, 1);
+
+    counting_fold_trait::reset();
+    EXPECT_EQ(map.find(std::string(cap + 1, 'k'))->second, 2);
+    EXPECT_EQ(counting_fold_trait::converts, 1) << "one byte more converts";
+    EXPECT_EQ(counting_fold_trait::folds, 0);
+}
