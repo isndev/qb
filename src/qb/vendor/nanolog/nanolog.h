@@ -64,12 +64,22 @@ public:
     // array or an array member: the writer read them after they had changed or died. Borrowing static text is
     // explicit: `string_literal_t`, below.
     // The copy is written inline, by append_text (Huly QB-1004): for a literal the compiler knows the length and the
-    // bytes, so the field is a few stores -- what the borrowed pointer cost -- and no call.
+    // bytes, so the field is a few stores -- what the borrowed pointer cost -- and no call. The length is read in the
+    // form every compiler folds for a literal: an array whose last byte is NUL (a literal always, and the compiler
+    // knows it) is measured by strlen, which stops inside the array -- g++ and MSVC both fold it, where MSVC calls
+    // memchr for char_traits::find; only an array whose last byte is not NUL is searched, bounded by its N bytes.
     template <size_t N>
     NanoLogLine &
     operator<<(const char (&arg)[N]) {
-        char const *const nul = std::char_traits<char>::find(arg, N, '\0');
-        append_text(arg, nul ? static_cast<size_t>(nul - arg) : N);
+        static_assert(N > 0, "an array has at least one element");
+        size_t length;
+        if (arg[N - 1] == '\0') {
+            length = std::char_traits<char>::length(arg);
+        } else {
+            char const *const nul = std::char_traits<char>::find(arg, N, '\0');
+            length                = nul ? static_cast<size_t>(nul - arg) : N;
+        }
+        append_text(arg, length);
         return *this;
     }
 
