@@ -26,8 +26,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #ifndef NANO_LOG_HEADER_GUARD
 #define NANO_LOG_HEADER_GUARD
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -61,11 +63,13 @@ public:
     // form meant for string literals, which the type cannot tell from a char buffer filled by snprintf, a const local
     // array or an array member: the writer read them after they had changed or died. Borrowing static text is
     // explicit: `string_literal_t`, below.
+    // The copy is written inline, by append_text (Huly QB-1004): for a literal the compiler knows the length and the
+    // bytes, so the field is a few stores -- what the borrowed pointer cost -- and no call.
     template <size_t N>
     NanoLogLine &
     operator<<(const char (&arg)[N]) {
         char const *const nul = std::char_traits<char>::find(arg, N, '\0');
-        encode_c_string(arg, nul ? static_cast<size_t>(nul - arg) : N);
+        append_text(arg, nul ? static_cast<size_t>(nul - arg) : N);
         return *this;
     }
 
@@ -98,6 +102,31 @@ private:
     void encode_c_string(char const *arg, size_t length);
     void resize_buffer_if_needed(size_t additional_bytes);
     void stringify(std::ostream &os, char *start, char const *const end);
+
+    // A text field on the wire (Huly QB-367): its type tag, its length on 32 bits, then exactly that many bytes. The tag
+    // is the index of `char *` in nanolog.cpp's SupportedTypes, asserted there.
+    static constexpr uint8_t text_type_id        = 7;
+    static constexpr size_t  text_field_overhead = 1 + sizeof(uint32_t);
+    static constexpr size_t  max_text_field      = std::numeric_limits<uint32_t>::max();
+
+    // The fast path of a text field (Huly QB-1004): a field that fits the buffer is written here, inline in the caller
+    // -- the tag, the length, the bytes -- so a literal's copy is a handful of stores. A field the buffer cannot hold,
+    // and a text past 4 GiB, go through encode_c_string, out of line. An empty text writes no field, as there.
+    void
+    append_text(char const *text, size_t length) {
+        if (length == 0)
+            return;
+        if (length <= max_text_field && m_bytes_used + text_field_overhead + length <= m_buffer_size) [[likely]] {
+            char *const    b     = (m_heap_buffer ? m_heap_buffer.get() : m_stack_buffer) + m_bytes_used;
+            uint32_t const field = static_cast<uint32_t>(length);
+            b[0]                 = static_cast<char>(text_type_id);
+            std::memcpy(b + 1, &field, sizeof(field));
+            std::memcpy(b + text_field_overhead, text, length);
+            m_bytes_used += text_field_overhead + length;
+        } else {
+            encode_c_string(text, length);
+        }
+    }
 
 private:
     size_t                  m_bytes_used;

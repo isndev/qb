@@ -288,17 +288,17 @@ NanoLogLine::encode(char *arg) {
 // read back as the same bytes.
 void
 NanoLogLine::encode_c_string(char const *arg, size_t length) {
-    constexpr size_t max_field = std::numeric_limits<uint32_t>::max();
+    static_assert(TupleIndex<char *, SupportedTypes>::value == text_type_id, "the inline writer's tag is the text tag");
     for (;;) {
-        auto const field = static_cast<uint32_t>(length < max_field ? length : max_field);
+        auto const field = static_cast<uint32_t>(length < max_text_field ? length : max_text_field);
         if (!field)
             return;
-        resize_buffer_if_needed(1 + sizeof(field) + field);
+        resize_buffer_if_needed(text_field_overhead + field);
         char *const b = !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &m_heap_buffer[m_bytes_used];
-        b[0]          = static_cast<char>(TupleIndex<char *, SupportedTypes>::value);
+        b[0]          = static_cast<char>(text_type_id);
         std::memcpy(b + 1, &field, sizeof(field));
-        std::memcpy(b + 1 + sizeof(field), arg, field);
-        m_bytes_used += 1 + sizeof(field) + field;
+        std::memcpy(b + text_field_overhead, arg, field);
+        m_bytes_used += text_field_overhead + field;
         if (field == length) [[likely]]
             return;
         arg += field;
