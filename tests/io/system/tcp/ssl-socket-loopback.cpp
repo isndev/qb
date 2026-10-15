@@ -159,7 +159,7 @@ public:
 // The socket is flipped NON-BLOCKING first, and that is what makes `deadline` a
 // deadline. Both helpers were written for a non-blocking socket — the `ret == 0`
 // arm below is `ssl::socket::read()` mapping SSL_ERROR_WANT_READ/WANT_WRITE to 0
-// ("no data ready; not an error", ssl/socket.cpp:1004-1010), and NonBlockingReadWithNoDataReportsWouldBlock
+// ("no data ready; not an error", ssl/socket.cpp:1011-1017), and NonBlockingReadWithNoDataReportsWouldBlock
 // pins exactly that return. On a blocking socket that arm is unreachable, so the
 // loop parked inside SSL_read and re-checked `deadline` only between reads it
 // could never return from: a peer that stopped writing without sending
@@ -204,7 +204,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
 }
 
 // Same contract, same reason for the flip: `ssl::socket::write()` maps WANT_WRITE /
-// WANT_READ to 0 (ssl/socket.cpp:1031-1039), so the `ret == 0` arm below is the
+// WANT_READ to 0 (ssl/socket.cpp:1038-1046), so the `ret == 0` arm below is the
 // would-block retry — dead on a blocking socket, which is where this loop's deadline
 // went. Read and write agree on the mode, so neither has to restore it.
 ::testing::AssertionResult
@@ -748,15 +748,27 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
         << "unexpected n_connect_v4 result=" << ret << " errno=" << err;
     EXPECT_NE(client.ssl_handle(), nullptr);
 
-    // Pump the client-side handshake to completion under a deadline.
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    int        status   = client.handshake_status();
+    // Pump the client-side handshake to completion under a deadline. The first poll attaches the descriptor to the
+    // SSL object; every later one finds it attached and leaves the BIO alone -- it used to call SSL_set_fd again,
+    // allocating a new socket BIO and freeing the last one, once per poll (Huly QB-1004).
+    const auto deadline  = std::chrono::steady_clock::now() + 5s;
+    int        status    = client.handshake_status();
+    BIO *const first_bio = SSL_get_rbio(client.ssl_handle());
+    int        bio_swaps = 0;
+    int        polls     = 1;
+    ASSERT_NE(first_bio, nullptr) << "the first handshake_status() attaches the descriptor";
     while (status == 0 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(1ms);
         status = client.handshake_status();
+        ++polls;
+        bio_swaps += SSL_get_rbio(client.ssl_handle()) != first_bio;
     }
     EXPECT_EQ(status, 1) << "non-blocking TLS handshake never completed; last status=" << status;
     EXPECT_TRUE(client.handshake_complete());
+    EXPECT_EQ(client.handshake_status(), 1) << "a completed handshake polls as complete";
+    bio_swaps += SSL_get_rbio(client.ssl_handle()) != first_bio;
+    EXPECT_EQ(bio_swaps, 0) << "handshake_status() replaced the socket BIO on " << bio_swaps << " of " << polls << " later polls";
+    EXPECT_EQ(SSL_get_fd(client.ssl_handle()), static_cast<int>(client.native_handle()));
     EXPECT_FALSE(client.get_negotiated_tls_version().empty());
     // TLS 1.3 completes asymmetrically: the client finishes on SENDING Finished, the
     // server only after READING it — so tearing down here can land inside the server's

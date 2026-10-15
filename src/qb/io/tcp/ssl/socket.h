@@ -42,8 +42,8 @@ namespace qb::io::ssl {
  * @param ssl The SSL connection object.
  * @param native_socket The platform-native socket handle.
  * @return true on success, false on failure.
- * @details Centralizes the Windows `SOCKET` to OpenSSL `int` conversion so the
- *          rest of qb-io does not have to scatter narrowing conversions.
+ * @details Centralizes the Windows `SOCKET` to OpenSSL `int` conversion. A descriptor already attached both ways is
+ *          left as it is -- a handshake is polled through this, and every attach made a new BIO (Huly QB-1004).
  */
 bool attach_socket(SSL *ssl, ::socket_type native_socket);
 

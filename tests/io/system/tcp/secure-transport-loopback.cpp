@@ -121,7 +121,7 @@ drive_server_handshake(qb::io::tcp::ssl::socket &socket, std::chrono::millisecon
 //
 // Non-blocking first, and that is what makes `deadline` a deadline: the `else`
 // arm below is `ssl::socket::read()` reporting WANT_READ/WANT_WRITE as 0
-// (ssl/socket.cpp:1004-1010), which only ever happens on a NON-blocking socket.
+// (ssl/socket.cpp:1011-1017), which only ever happens on a NON-blocking socket.
 // `connect_v4`/`accept` leave these sockets in the OS default (blocking), so the
 // loop used to park inside SSL_read and re-check the clock only between reads it
 // could not return from -- and every caller runs on a thread the other side joins.
@@ -144,7 +144,7 @@ ssl_read_exactly(qb::io::tcp::ssl::socket &socket, char *out, std::size_t n, std
 
 // Deadline-bounded encrypted write of exactly `n` bytes on a raw ssl::socket.
 // Same reasoning as ssl_read_exactly: `ssl::socket::write()` maps WANT_WRITE /
-// WANT_READ to 0 (ssl/socket.cpp:1031-1039), so the retry arm needs the socket
+// WANT_READ to 0 (ssl/socket.cpp:1038-1046), so the retry arm needs the socket
 // non-blocking to ever be taken. Read and write agree on the mode.
 bool
 ssl_write_exactly(qb::io::tcp::ssl::socket &socket, const char *in, std::size_t n, std::chrono::milliseconds timeout = 2s) {

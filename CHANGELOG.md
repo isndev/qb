@@ -554,6 +554,12 @@ policy.
 
 ### Fixed
 
+- **A TLS handshake polled through `handshake_status()` no longer makes a socket BIO per poll (Huly QB-1004).**
+  `qb::io::ssl::attach_socket` called `SSL_set_fd` every time -- a new socket BIO allocated, the previous one freed --
+  and `handshake_status()`, polled until the handshake completes on a client and on an accepted socket alike, attaches
+  on every call. A descriptor already attached both ways is now left as it is; another descriptor is attached afresh.
+  Pinned in `SSLSocketLoopback.DriveNonBlockingConnectToCompletion` (`tests/io/system/tcp/ssl-socket-loopback.cpp`):
+  the read BIO after every poll is the first one.
 - **`qb::unordered_map::merge` relinks the nodes it takes, and an empty flat table counts a bucket (Huly QB-1004).**
   `merge` built every element it took again, in a new node, and freed the source's: a pointer or reference to a merged
   element dangled, where `std::unordered_map::merge` keeps it valid -- the stability `qb::unordered_map` documents. A

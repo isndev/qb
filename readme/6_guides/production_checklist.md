@@ -96,7 +96,7 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. qb passes a null callback while setting that mode; by the OpenSSL `SSL_set_verify` contract, this retains any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:638-646 (adoption), :705-723 (policy branches), :932-936 (connect-time application), :572-575 (null callback) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:645-653 (adoption), :712-730 (policy branches), :939-943 (connect-time application), :579-582 (null callback) -->
 
 ### Server contexts
 

@@ -89,7 +89,14 @@ attach_socket(SSL *ssl, ::socket_type native_socket) {
     }
 #endif
 
-    return SSL_set_fd(ssl, static_cast<int>(native_socket)) == 1;
+    // Already attached to this descriptor, both ways: nothing to do. SSL_set_fd makes a new socket BIO on every call
+    // and frees the one it replaces, and handshake_status() attaches on every poll until the handshake completes --
+    // one BIO per poll, on the client and on the accepted server socket alike (Huly QB-1004). Another descriptor (a
+    // reconnect that kept the SSL object) is attached afresh.
+    const int fd = static_cast<int>(native_socket);
+    if (SSL_get_rfd(ssl) == fd && SSL_get_wfd(ssl) == fd)
+        return true;
+    return SSL_set_fd(ssl, fd) == 1;
 }
 
 Certificate
