@@ -385,7 +385,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `ev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/ev/ev++.h:762`). `start()` therefore stashes
+  copying** (`src/qb/ev/ev++.h:772`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:627-628`, `:795-796`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

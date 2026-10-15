@@ -536,6 +536,13 @@ policy.
 
 ### Fixed
 
+- **`<qb/ev/ev++.h>`: a direct call `w (revents)` compiles and hands the callback its loop (qev,
+  Huly QB-312).** It passed the watcher where libev's callback takes the loop, so any use failed
+  to compile; it now invokes the callback as `ev_invoke` would. The same shared header carries two
+  fixes for profiles qb does not build: `ev::embed::start (loop)` embeds that loop instead of
+  moving the watcher to it (QB-313; `embed` is outside qb's watcher families), and the header
+  compiles under `EV_MULTIPLICITY=0` (QB-711; qb builds with multiplicity). Witnesses in qev's
+  `tests/test-cxx.cpp`, run by its build matrix in both profiles.
 - **The embedded loop's io_uring backend watches descriptor 0 and keeps a loop handed between
   threads working; its Linux aio backend frees its arrays (qev, Huly QB-336, QB-744, QB-338).**
   Under `QB_EV_BACKEND=iouring` a watcher on fd 0 never fired: its first poll is tagged 0, which
