@@ -112,7 +112,6 @@ packages=(
   # hard-stops, because a fetched nlohmann is in no export set and shipping its headers would put
   # nlohmann/ back in the consumer's include root. Provide the real package on both platforms.
   nlohmann-json
-  openssl@3
   zlib
   # The opt-in zstd and brotli codecs (Huly QB-79): the CI lanes and the superproject presets build them.
   zstd
@@ -139,10 +138,28 @@ if [[ "${install_llvm}" == true ]]; then
   packages+=(llvm)
 fi
 
+# One OpenSSL per process. libngtcp2's OpenSSL helper links the OpenSSL its Homebrew formula depends on,
+# so qb must find and link that same one. On the October 2026 runner images Homebrew's default `openssl`
+# is 4.x, libngtcp2 depends on it and openssl@3 is keg-only: pinning openssl@3 here put two OpenSSLs in
+# every QUIC-linked test process, and they segfaulted at start. Without QUIC, the default formula.
+openssl_formula=openssl
+if [[ "${install_quic}" == true ]]; then
+  openssl_formula="$(brew deps libngtcp2 | grep -E '^openssl(@[0-9]+)?$' | head -n 1 || true)"
+  if [[ -z "${openssl_formula}" ]]; then
+    echo "libngtcp2 declares no OpenSSL dependency: cannot pick the OpenSSL its helper links." >&2
+    exit 1
+  fi
+fi
+packages+=("${openssl_formula}")
+
 brew install "${packages[@]}"
 
-prefix_path="$(brew --prefix);$(brew --prefix openssl@3);$(brew --prefix zlib)"
-pkg_config_path="$(brew --prefix openssl@3)/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+openssl_prefix="$(brew --prefix "${openssl_formula}")"
+echo "OpenSSL for this build: ${openssl_formula} ($(brew list --versions "${openssl_formula}")) at ${openssl_prefix}"
+
+# The chosen OpenSSL precedes the Homebrew prefix, so FindOpenSSL cannot pick another one linked there.
+prefix_path="${openssl_prefix};$(brew --prefix);$(brew --prefix zlib)"
+pkg_config_path="${openssl_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
 if [[ "${install_quic}" == true ]]; then
   prefix_path="${prefix_path};$(brew --prefix libngtcp2)"
@@ -159,4 +176,4 @@ fi
 
 export_env CMAKE_PREFIX_PATH "${prefix_path}"
 export_env PKG_CONFIG_PATH "${pkg_config_path}"
-export_env OPENSSL_EXECUTABLE "$(brew --prefix openssl@3)/bin/openssl"
+export_env OPENSSL_EXECUTABLE "${openssl_prefix}/bin/openssl"
