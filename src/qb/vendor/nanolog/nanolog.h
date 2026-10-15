@@ -145,7 +145,7 @@ bool is_logged(LogLevel level);
  * is determined by this parameter. Since each LogLine is 256 bytes,
  * ring_buffer_size = ring_buffer_size_mb * 1024 * 1024 / 256
  * qb fork (Huly QB-368): at least 1 MB, at most 1048575 MB -- the ring is indexed by 32-bit counters, and 1048576 MB
- * is 2^32 items. initialize() refuses a larger ring with std::length_error before it allocates anything.
+ * is 2^32 items. initialize() refuses a larger ring with std::length_error before it allocates the ring's slots.
  */
 struct NonGuaranteedLogger {
     NonGuaranteedLogger(uint32_t ring_buffer_size_mb_)

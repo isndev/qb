@@ -21,10 +21,11 @@ endif()
 set(_warning "WARNING: qb logging is enabled")
 set(_failures "")
 
-# run(<case> <dir>): start the probe in <dir>; sets _rc, _err.
+# run(<case> <dir>): start the probe in <dir>; sets _rc, _err. GTEST_OUTPUT is unset: a listing writes its report
+# there, relative to <dir>, and the read-only case would fail on that write rather than on the log file.
 macro(_qb_probe_in case dir)
-    execute_process(COMMAND "${PROBE}" --gtest_list_tests WORKING_DIRECTORY "${dir}" RESULT_VARIABLE _rc OUTPUT_QUIET
-                    ERROR_VARIABLE _err)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env --unset=GTEST_OUTPUT "${PROBE}" --gtest_list_tests
+                    WORKING_DIRECTORY "${dir}" RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_VARIABLE _err)
     if(NOT _rc EQUAL 0)
         list(APPEND _failures "${case}: the probe exited with ${_rc}:\n${_err}")
     endif()

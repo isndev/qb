@@ -595,8 +595,8 @@ private:
 // qb fork (Huly QB-368): the items of a NonGuaranteedLogger ring of `ring_buffer_size_mb` megabytes, at least one --
 // 4096 items of 256 bytes per MB, on 64 bits. The product was taken in 32 bits and wrapped to ZERO at 1048576 MB: an
 // empty ring, whose writer thread computed `index % 0`. The ring's indices are 32-bit counters, so a ring of more
-// items than they count is refused here, before anything is allocated and before the writer thread exists.
-std::size_t
+// items than they count is refused here: before its slots are allocated, its file opened or its writer thread started.
+static std::size_t
 ring_buffer_items(uint32_t ring_buffer_size_mb) {
     constexpr std::uint64_t items_per_mb = 1024 * 1024 / sizeof(RingBuffer::Item);
     std::uint64_t const     items        = std::uint64_t{std::max(1u, ring_buffer_size_mb)} * items_per_mb;

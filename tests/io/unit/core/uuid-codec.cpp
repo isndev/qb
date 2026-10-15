@@ -118,7 +118,7 @@ TEST(UuidText, TheStreamFormatNeverChangesTheIdentifierWritten) {
     wide << std::left << std::showbase << probe;
     EXPECT_EQ(wide.str(), std::wstring(std::begin(canonical), std::end(canonical) - 1));
 
-    // to_string uses a fresh stream: always canonical.
+    // to_string builds the canonical text, whatever any stream's state.
     EXPECT_EQ(uuids::to_string(probe), canonical);
     EXPECT_EQ(uuids::to_string<wchar_t>(probe), std::wstring(std::begin(canonical), std::end(canonical) - 1));
 }
@@ -126,8 +126,8 @@ TEST(UuidText, TheStreamFormatNeverChangesTheIdentifierWritten) {
 /**
  * @test The insertion leaves the stream's flags and fill as it found them, and pads the WHOLE text to width().
  * @brief Before Huly QB-382 the fill stayed '0' (the next padded value printed "007"), and the caller's width was
- *        spent on the first byte. A uuid now behaves as any formatted inserter (a std::string): width() pads the
- *        36 characters with the caller's fill on the caller's side, then width() is 0.
+ *        replaced by the first byte's setw(2). A uuid now behaves as any formatted inserter (a std::string):
+ *        width() pads the 36 characters with the caller's fill on the caller's side, then width() is 0.
  */
 TEST(UuidText, TheInsertionLeavesTheStreamStateAndPadsTheWholeText) {
     using uuid_codec_test::canonical;

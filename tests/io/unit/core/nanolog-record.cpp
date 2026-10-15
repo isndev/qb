@@ -22,7 +22,7 @@
  *    NUL, so a std::string with an inner NUL cut the record and the bytes after it were decoded as type tags.
  *  - A NonGuaranteedLogger ring is never empty (Huly QB-368). Its capacity, `MB * 4096` items, was computed in 32 bits
  *    and wrapped to 0 at 1 048 576 MB; the writer thread then computed `index % 0`. A capacity its 32-bit indices
- *    cannot count is refused before anything is allocated or started.
+ *    cannot count is refused before its slots are allocated or its writer thread started.
  *
  * The record is driven directly (stringify() is what the writer thread calls), the logger through a private copy of
  * nanolog.cpp like guaranteed-logger-buffer's: no global logger, no qb-io archive.
@@ -34,6 +34,7 @@
 #include <fstream>
 #include <limits>
 #include <memory>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -63,12 +64,14 @@ payload_of(nanolog::NanoLogLine &line) {
     return text.substr(start + 7, text.size() - (start + 7) - 1);
 }
 
-// A unique, empty directory per test, removed afterwards.
+// A unique, empty directory per test and per run (two runs of the binary at once must not share one), removed
+// afterwards.
 class ScratchDir {
 public:
     ScratchDir() {
         const auto *info = ::testing::UnitTest::GetInstance()->current_test_info();
-        _path            = std::filesystem::temp_directory_path() / (std::string("qb-nanolog-record-") + info->name());
+        _path            = std::filesystem::temp_directory_path()
+                           / (std::string("qb-nanolog-record-") + info->name() + "-" + std::to_string(std::random_device{}()));
         std::error_code ec;
         std::filesystem::remove_all(_path, ec);
         std::filesystem::create_directories(_path);

@@ -618,7 +618,7 @@ policy.
   `write`, no longer a byte at a time). `NonGuaranteedLogger(mb)`'s ring of `mb * 4096` items was computed in 32 bits
   and wrapped to an empty ring at 1048576 MB, whose writer thread computed `index % 0` (SIGFPE on x86-64); the
   capacity is computed on 64 bits, and a ring its 32-bit indices cannot count is refused with `std::length_error`
-  before anything is allocated or started. qb's own logger is a `GuaranteedLogger`. Pinned by
+  before its slots are allocated or its writer started. qb's own logger is a `GuaranteedLogger`. Pinned by
   `tests/io/unit/core/nanolog-record.cpp` (new, `qb-io-test-unit-nanolog-record`, a private compile of nanolog.cpp as
   `guaranteed-logger-buffer` is).
 - **`qb::uuid`'s inserter writes the identifier whatever the stream's format, and UUIDv5 hashes long names as SHA-1
@@ -626,7 +626,7 @@ policy.
   caller's adjustfield and showbase: on a `std::left` stream the byte `0x04` came out as `"40"` -- the text named
   another identifier -- `showbase` printed `0x` prefixes, and the fill `'0'` stayed set after the insertion. The
   canonical text is now built first and inserted as ONE formatted string: flags and fill are left as they were,
-  `width()` pads the whole identifier as for a `std::string` and is reset (it was spent on the first byte), and
+  `width()` pads the whole identifier as for a `std::string` and is reset (the first byte's `setw(2)` replaced it), and
   `uppercase` still writes upper-case digits. `uuids::to_string` builds that text without a `std::stringstream`, so
   `std::hash<qb::uuid>`, which hashes it, no longer builds a stream per call -- an `io_handler` session table hashes
   one per lookup. The SHA-1 behind `uuid_name_generator` wrote four zero bytes and then the low 32 bits of the
