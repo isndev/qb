@@ -3762,6 +3762,17 @@ childcb(EV_P_ ev_signal *sw, int revents) {
 
 /*****************************************************************************/
 
+#if EV_PERIODIC_ENABLE
+/* qev: the wall clock jumped -- the realtime - monotonic offset moved by MIN_TIMEJUMP or more
+ * between two measurements of it (`moved`, their difference, a plain variable: it is read twice).
+ * time_update applies this test to its own refresh before it recomputes the periodics; the
+ * refreshes that run beside it apply it too: a supplied clock's (ev_now_set, Huly QB-316) and the
+ * realtime timerfd's (Huly QB-1055). A macro, the very expression the code wrote inline: as an
+ * inline function MSVC materialised the boolean before branching on it, and g++ reshaped the
+ * absolute value -- the default build's object stays the same, instruction for instruction. */
+#define time_jumped(moved) (((moved) < EV_TS_CONST(0.) ? -(moved) : (moved)) >= EV_TS_CONST(MIN_TIMEJUMP))
+#endif
+
 #if EV_USE_TIMERFD
 
 static void periodics_reschedule(EV_P);
@@ -3781,7 +3792,19 @@ timerfdcb(EV_P_ ev_io *iow, int revents) {
     time_update (EV_A_ EV_TSTAMP_HUGE);
     */
 #if EV_PERIODIC_ENABLE
-    periodics_reschedule(EV_A);
+    /* qev (Huly QB-1055): the timerfd turns readable when the wall clock is set
+     * (TFD_TIMER_CANCEL_ON_SET), but also when its own deadline, MAX_BLOCKTIME2 ahead, runs out,
+     * when it is first armed, and after a fork (loop_fork feeds it). The periodics move only when
+     * the wall clock really jumped against the monotonic one, measured afresh here: recomputed on
+     * every wake, a periodic due but not yet delivered was pushed past its fire and every
+     * rescheduler was asked again. Without a monotonic clock both offsets are 0 and time_update's
+     * own jump test does the rescheduling, as it always did. */
+    {
+        ev_tstamp moved = rtmn_diff - (ev_rt_now - get_clock());
+
+        if (ecb_expect_false(time_jumped(moved)))
+            periodics_reschedule(EV_A);
+    }
 #endif
 }
 
@@ -5085,10 +5108,9 @@ now_set_refresh(EV_P) {
     rtmn_diff = ev_rt_now - mn_now;
 #if EV_PERIODIC_ENABLE
     {
-        /* the jump test of time_update: the offset moved by MIN_TIMEJUMP or more */
-        ev_tstamp diff = odiff - rtmn_diff;
+        ev_tstamp moved = odiff - rtmn_diff;
 
-        if (ecb_expect_false((diff < EV_TS_CONST(0.) ? -diff : diff) >= EV_TS_CONST(MIN_TIMEJUMP)))
+        if (ecb_expect_false(time_jumped(moved)))
             periodics_reschedule(EV_A);
     }
 #endif

@@ -559,6 +559,12 @@ policy.
   instructions shorter (an integer test replaces the FP compare and its parity branch). Witnesses
   in qev's suites (`test-win32-internals`, `test-wepoll`, `test-loops`, `test-watchers`), each red
   before.
+- **The embedded loop's realtime timerfd recomputes the periodics only on a wall-clock jump (qev,
+  Huly QB-1055).** With `EV_USE_TIMERFD` (off by default in qb), its callback recomputed every
+  periodic whenever the timerfd woke -- also when its own seventeen-day deadline ran out, when first
+  armed, and after a fork -- pushing a due periodic past its fire. It now makes the jump test of the
+  loop's own time update. The default build's code is unchanged, instruction for instruction.
+  Witness in qev's white-box `test-linux-internals`, red before.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

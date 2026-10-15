@@ -833,6 +833,21 @@ if (QB_EV_BUILD_TESTS AND TARGET qev AND WIN32 AND EXISTS "${CMAKE_CURRENT_SOURC
     set_tests_properties(win32-internals PROPERTIES TIMEOUT 60)
 endif ()
 
+# Its Linux twin: the realtime timerfd's wakes (EV_USE_TIMERFD, off by default, so the test forces it
+# on) come from a wall-clock set or a deadline seventeen days ahead -- nothing a test can produce on
+# demand -- so they are driven white-box the same way, ev.c compiled in.
+if (QB_EV_BUILD_TESTS AND TARGET qev AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND HAVE_SYS_TIMERFD_H
+        AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-linux-internals.c")
+    add_executable(qev-test-linux-internals tests/test-linux-internals.c)
+    target_include_directories(qev-test-linux-internals PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include)
+    target_compile_definitions(qev-test-linux-internals PRIVATE
+            QB_EV_CONFIG_H=${QB_EV_CONFIG_INCLUDE} QB_EV_BUILDING_LIBRARY=1)
+    target_link_libraries(qev-test-linux-internals PRIVATE ${PLATFORM_LIBS})
+    add_test(NAME linux-internals COMMAND qev-test-linux-internals)
+    set_tests_properties(linux-internals PROPERTIES TIMEOUT 60)
+endif ()
+
 if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-backends.c")
     add_executable(qev-bench-backends bench/bench-backends.c)
     target_link_libraries(qev-bench-backends PRIVATE qev)
