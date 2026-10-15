@@ -220,3 +220,8 @@ qb_add_test(MODULE qb-io TIER system NAME offload-pool SOURCES coroutine/offload
 # CoroutineScheduler::dump() and the opt-in suspension tracking (Huly QB-71): off by default the roots by name, on
 # every awaiter's kind, chains root -> leaf, records that age and go with their coroutine, names that go with their frame.
 qb_add_test(MODULE qb-io TIER system NAME suspension-tracking SOURCES coroutine/suspension-tracking.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+
+# A standalone io object's dispose() ends the transport its connection ended with (Huly QB-1060): after a
+# disconnect() the peer reads EOF and nothing is reset, unread input included; a peer's EOF leaves no CLOSE_WAIT
+# socket; a hook that closes the transport again closes nothing else.
+qb_add_test(MODULE qb-io TIER system NAME standalone-dispose-ends-transport SOURCES tcp/standalone-dispose-ends-transport.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)

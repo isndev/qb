@@ -22,10 +22,14 @@
 #ifndef QB_IO_ASYNC_TEARDOWN_H
 #define QB_IO_ASYNC_TEARDOWN_H
 
+#include <concepts>
 #include <exception>
+#include <type_traits>
 #include <utility>
-#include <qb/io.h>                   /* QB_LOG_WARN */
-#include <qb/utility/branch_hints.h> /* QB_NOINLINE, QB_COLD */
+#include <qb/io.h>                    /* QB_LOG_WARN */
+#include <qb/io/system/sys__socket.h> /* qb::io::invalid_socket, QB_SD_SEND, ::shutdown */
+#include <qb/utility/branch_hints.h>  /* QB_NOINLINE, QB_COLD */
+#include <qb/utility/type_traits.h>   /* qb::has_disconnect */
 
 namespace qb::io::async::detail {
 
@@ -58,6 +62,56 @@ run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexcept {
         QB_LOG_WARN("[qb-io] " << hook << " threw: " << e.what() << " -- contained, the teardown completes");
     } catch (...) {
         QB_LOG_WARN("[qb-io] " << hook << " threw a non-std exception -- contained, the teardown completes");
+    }
+}
+
+/**
+ * @brief End the transport of a standalone io object's connection, once its watcher is stopped.
+ * @details A standalone object -- a client, an acceptor: no server owns it -- keeps its transport for as long
+ *          as it lives, and its `dispose()` stopped the watcher and left the transport as it was: after a
+ *          `disconnect()`, a framing error or the peer's EOF the connection stayed open until the object
+ *          connected again or was destroyed. The peer of a `disconnect()` never saw EOF, so a server kept the
+ *          connection and the work it routed for it alive, and a client whose peer hung up stayed in CLOSE_WAIT
+ *          (Huly QB-1060; qbm-http's HTTP/2 client met it as QB-1021). Every standalone `dispose()` calls this
+ *          after `on(event::disconnected&&)`, which still sees the transport as the connection left it, and
+ *          before `on(event::dispose&&)`, the one hook that may free the object; the watcher is stopped first,
+ *          since libev must not watch a descriptor closed under it. How depends on who ended the connection:
+ *
+ *          - The peer or the socket (`ended_by_peer`): its EOF, a read or a write error. Nothing of ours can be
+ *            lost -- the peer sends nothing more and what it sent was read -- so the transport is closed
+ *            outright: `disconnect()` when it has one, as `stream::close()` does (the TLS socket clears its
+ *            connected state there), then `close()`, which releases the descriptor.
+ *          - This object: `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()`.
+ *            Only the sending side is shut down: the peer reads EOF once everything queued has left, and
+ *            nothing is reset. Closing here would reset a peer whose bytes are still unread: its next send
+ *            fails, and on Windows it also drops what it received and has not read yet -- the tail of the very
+ *            reply `close_after_deliver()` promised. The descriptor stays with the object, as it did, until its
+ *            destruction or its next connection's transport releases it. A listening socket has no sending
+ *            side: an acceptor keeps its port until then.
+ *
+ *          Both are no-ops on a closed socket, so a hook that closes the transport again does nothing. A
+ *          transport whose handle is not a socket is not shut down; one without `close()` is not closed.
+ *          Out of line and cold, like the hooks around it.
+ * @param transport     The object's transport (`Derived.transport()`).
+ * @param ended_by_peer Whether the peer's EOF or a socket error ended the connection, rather than this object.
+ */
+template <typename Transport>
+QB_NOINLINE QB_COLD void
+end_transport(Transport &transport, bool ended_by_peer) noexcept {
+    if (ended_by_peer) {
+        if constexpr (qb::has_disconnect<Transport>)
+            static_cast<void>(transport.disconnect());
+        if constexpr (requires { transport.close(); })
+            transport.close();
+        return;
+    }
+    using handle_type = std::remove_cv_t<decltype(qb::io::invalid_socket)>;
+    if constexpr (requires {
+                      { transport.native_handle() } -> std::same_as<handle_type>;
+                  }) {
+        const handle_type handle = transport.native_handle();
+        if (handle != qb::io::invalid_socket)
+            static_cast<void>(::shutdown(handle, QB_SD_SEND)); // the FIN leaves after what is queued
     }
 }
 

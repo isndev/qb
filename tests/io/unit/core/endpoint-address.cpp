@@ -534,6 +534,29 @@ TEST(EndpointAddress, GlobalAddressPredicates) {
     EXPECT_TRUE(qb::io::inet::ip::is_global_in4_addr(&glob4));
     EXPECT_FALSE(qb::io::inet::ip::is_global_in4_addr(&loop4)) << "loopback is not global";
 
+    // 127/8 and 169.254/16 are the FIRST octets, and `s_addr` holds the octets in network byte order:
+    // outside Windows (whose SDK has its own) `IN4_IS_ADDR_LOOPBACK` / `IN4_IS_ADDR_LINKLOCAL` are qb's,
+    // and they masked the host-order LOW bits -- the first octets on a little-endian host only, the
+    // last ones on a big-endian host, where 1.2.3.127 was loopback and 127.0.0.1 global (Huly QB-1003).
+    // The mirrored addresses below are the ones that tell the two readings apart; a little-endian host
+    // cannot fail them against the old masks, a big-endian one could not pass them.
+    struct v4_case {
+        const char *addr;
+        bool        loopback;
+        bool        linklocal;
+    };
+    for (auto const &c :
+         {v4_case{"127.0.0.1", true, false}, v4_case{"127.255.255.254", true, false}, v4_case{"1.2.3.127", false, false},
+          v4_case{"126.255.255.255", false, false}, v4_case{"169.254.0.1", false, true}, v4_case{"169.254.255.255", false, true},
+          v4_case{"254.169.0.1", false, false}, v4_case{"1.2.254.169", false, false}, v4_case{"169.253.0.1", false, false},
+          v4_case{"169.255.0.1", false, false}}) {
+        in_addr a{};
+        ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET, c.addr, &a), 1) << c.addr;
+        EXPECT_EQ(!!IN4_IS_ADDR_LOOPBACK(&a), c.loopback) << c.addr;
+        EXPECT_EQ(!!IN4_IS_ADDR_LINKLOCAL(&a), c.linklocal) << c.addr;
+        EXPECT_EQ(qb::io::inet::ip::is_global_in4_addr(&a), !c.loopback && !c.linklocal) << c.addr;
+    }
+
     in6_addr glob6{}, loop6{};
     ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "2001:db8::1", &glob6), 1);
     ASSERT_EQ(qb::io::inet::compat::inet_pton(AF_INET6, "::1", &loop6), 1);

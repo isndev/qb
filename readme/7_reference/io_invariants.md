@@ -34,7 +34,7 @@ or function, that symbol is named so you can verify it directly.
 
 - Each thread owns **exactly one** `qb::io::async::listener`, reachable through
   the `thread_local` static member `listener::current`
-  (`src/qb/io/async/listener.h:98,104`). Under `qb-core`, every `VirtualCore`
+  (`src/qb/io/async/listener.h:99,105`). Under `qb-core`, every `VirtualCore`
   worker thread has its own `listener::current`; the worker installs it before
   any I/O object is constructed on that core.
 - Every async object — `async::input<>`, `async::output<>`, `async::io<>`,
@@ -46,7 +46,7 @@ or function, that symbol is named so you can verify it directly.
   destroyed on the same thread**; the libev watcher is not cross-thread safe.
 - The listener is **never locked**. All event handlers (`on()` methods) run
   sequentially on the listener's own thread, so I/O state needs no mutex or
-  atomic (`src/qb/io/async/listener.h:81-83`). This is a strictly stronger and
+  atomic (`src/qb/io/async/listener.h:82-84`). This is a strictly stronger and
   strictly single-threaded guarantee than `std::thread`-safety: `qb-io` objects
   are *not* `std::thread`-safe, they are *thread-confined*.
 - To reach an I/O object from another thread, go through the actor mailbox
@@ -54,7 +54,7 @@ or function, that symbol is named so you can verify it directly.
   destination core dequeues and dispatches the event on its own thread.
 - On Windows, the libev epoll backend is wepoll (IOCP). The loop must not run
   on one thread while another thread closes the same loop or its epoll handle
-  (`src/qb/io/async/listener.h:86-88`). One thread per listener satisfies this
+  (`src/qb/io/async/listener.h:87-89`). One thread per listener satisfies this
   contract; do not break it on Windows even for "read-only" access.
 
 Moving an async object is also forbidden. `async::base` declares no move
@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1441-1444`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1534-1537`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,15 +78,21 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:778,806-807,839-841`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:858,889-890,922-924`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:843-844`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:926-927`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
+- `clear()` runs no deferred callback. It holds the drain guard for the whole
+  call and drops the queue on entry and again on exit, so work deferred while it
+  tears down — by a released closure, by the capture of a loop-owned timer it
+  destroys, by a coroutine its flush passes resume — is dropped and its captured
+  state released, never run (`src/qb/io/async/listener.h:871-880,929`; Huly
+  QB-276). Called from a deferred callback, it also ends that drain.
 
 ---
 
@@ -96,7 +102,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1456`).
+  (`src/qb/io/async/listener.h:1549`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -122,7 +128,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1516-1519`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1609-1612`).
 
 ---
 
@@ -149,7 +155,7 @@ registry, or as a member — never relocate them.
   A later delete observes that flag and falls back to global aligned delete, so it
   never touches a destroyed TLS freelist. `ScopedTimeout` itself has no separate
   object pool; its registered watcher uses the watcher pool.
-  (`src/qb/io/async/io.h:240-277,300-314`; `src/qb/io/async/listener.h:175-216,238-251`)
+  (`src/qb/io/async/io.h:240-277,300-314`; `src/qb/io/async/listener.h:176-217,239-252`)
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
@@ -219,12 +225,34 @@ registry, or as a member — never relocate them.
   (`0`) code is generated automatically on kernel EOF
   (`src/qb/io/async/io.h:1304`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1535-1538`). It fires `on(event::disconnected)` if the
+  (`src/qb/io/async/io.h:1538-1541`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then notifies
-  `server().disconnected(id())`, otherwise it stops the watcher and fires
-  `on(event::dispose)`.
+  `server().disconnected(id())`, otherwise it stops the watcher, ends the
+  transport and fires `on(event::dispose)`.
+- A standalone object's `dispose()` **ends its transport** once the watcher is
+  stopped (`src/qb/io/async/io.h:3104-3107`), after `on(event::disconnected)`
+  — which still sees it as the connection left it — and before
+  `on(event::dispose)`, the one hook that may free the object
+  (`src/qb/io/async/teardown.h:100-116`). Who ended the connection is read
+  before the hooks run (`src/qb/io/async/io.h:3084`): no reason of the
+  object's and a protocol still ok mean the peer's EOF or a socket error did,
+  and the transport is closed — `disconnect()` when it has one, then
+  `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
+  When the object ended it (`disconnect()`, a framing error, a size guard,
+  the end of `close_after_deliver()`), only the sending side is shut down:
+  the peer reads EOF once everything queued has left, and nothing is reset.
+  A close there would reset a peer whose bytes are still unread: its next
+  send fails, and on Windows it also drops what it received and has not
+  read yet — the tail of the reply `close_after_deliver()` promised. The descriptor then
+  stays with the object until its destruction or its next transport; a
+  listening socket has no sending side, so an acceptor keeps its port until
+  then. Before 3.3 the transport was left as it was: the peer of a
+  `disconnect()` never saw EOF (Huly QB-1060). Closing it again from a hook
+  is harmless; a transport installed from inside `on(event::disconnected)`
+  is the one ended, so the next connection's is installed once `dispose()`
+  has returned.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
-  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:54`), which
+  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:58`), which
   contains what they throw and logs it (WARN, with `what()`), so the steps
   after them always run: the watcher is stopped, or the session handed back to
   its server. A throw used to skip them. The listener contained it, so nothing
@@ -385,7 +413,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `ev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/ev/ev++.h:772`). `start()` therefore stashes
+  copying** (`src/qb/ev/ev++.h:780`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:627-628`, `:795-796`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

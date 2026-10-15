@@ -426,6 +426,16 @@ using socket_type = int; // Modern C++: using alias
 
 // redefine socket error code for posix api
 #ifdef _WIN32
+// The socket names only, onto the WSA codes WSAGetLastError() reports and qb's socket layer
+// compares against. Five names are left as the C runtime defines them (Huly QB-1003): EBADF,
+// EAGAIN, EFAULT, ENAMETOOLONG and ENOTEMPTY are values the C runtime sets errno to itself
+// (_read()/_write() on a bad descriptor, a refused _rmdir(), ...), and this header is in every
+// translation unit that includes a qb socket header: `errno == EBADF` there compared 9 with
+// 10009 (WSAEBADF). EAGAIN went to WSATRY_AGAIN, a resolver code, besides -- Winsock reports a
+// would-block as WSAEWOULDBLOCK, which EWOULDBLOCK carries -- and no qb path compared a socket
+// error with any of the five. The socket names keep their WSA values, so they still differ from
+// std::errc, which spells the C runtime's numbers as literals (operation_would_block is 140,
+// EWOULDBLOCK here 10035): retiring this map is a larger change than these five.
 #undef EWOULDBLOCK
 #undef EINPROGRESS
 #undef EALREADY
@@ -454,18 +464,13 @@ using socket_type = int; // Modern C++: using alias
 #undef ETIMEDOUT
 #undef ECONNREFUSED
 #undef ELOOP
-#undef ENAMETOOLONG
 #undef EHOSTDOWN
 #undef EHOSTUNREACH
-#undef ENOTEMPTY
 #undef EPROCLIM
 #undef EUSERS
 #undef EDQUOT
 #undef ESTALE
 #undef EREMOTE
-#undef EBADF
-#undef EFAULT
-#undef EAGAIN
 
 #define EWOULDBLOCK WSAEWOULDBLOCK
 #define EINPROGRESS WSAEINPROGRESS
@@ -495,18 +500,13 @@ using socket_type = int; // Modern C++: using alias
 #define ETIMEDOUT WSAETIMEDOUT
 #define ECONNREFUSED WSAECONNREFUSED
 #define ELOOP WSAELOOP
-#define ENAMETOOLONG WSAENAMETOOLONG
 #define EHOSTDOWN WSAEHOSTDOWN
 #define EHOSTUNREACH WSAEHOSTUNREACH
-#define ENOTEMPTY WSAENOTEMPTY
 #define EPROCLIM WSAEPROCLIM
 #define EUSERS WSAEUSERS
 #define EDQUOT WSAEDQUOT
 #define ESTALE WSAESTALE
 #define EREMOTE WSAEREMOTE
-#define EBADF WSAEBADF
-#define EFAULT WSAEFAULT
-#define EAGAIN WSATRY_AGAIN
 #endif
 
 #if !defined(MAXNS)
@@ -554,8 +554,8 @@ using socket_type = int; // Modern C++: using alias
  * Windows toolchain is reachable from this project's development hosts -- see
  * dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7):
  *   * `#define poll WSAPoll` above takes a POSIX *function* name.
- *   * the `#ifdef _WIN32` block below redefines ~40 unprefixed `E*` errno constants
- *     (EWOULDBLOCK, EINPROGRESS, ENOTSOCK, ...) to their WSA equivalents.
+ *   * the `#ifdef _WIN32` block above redefines 35 unprefixed socket `E*` errno constants
+ *     (EWOULDBLOCK, EINPROGRESS, ENOTSOCK, ...) to their WSA equivalents (not EBADF & co: QB-1003).
  */
 #ifdef QB_LEGACY_SOCKET_MACROS
 #ifndef SD_RECEIVE

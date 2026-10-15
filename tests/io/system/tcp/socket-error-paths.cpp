@@ -308,6 +308,10 @@ TEST(SocketErrorPaths, ShutdownAndNonblockingFailOnClosedDescriptor) {
     qb::io::socket closed;
     EXPECT_EQ(closed.shutdown(QB_SD_BOTH), -1) << "shutdown of a closed socket must fail";
     EXPECT_EQ(qb::io::socket::set_nonblocking(closed.native_handle(), true), -1) << "set_nonblocking on an invalid fd must fail";
+    // The header promised this line and nothing asserted it: on POSIX a failed fcntl() (-1) masked with
+    // O_NONBLOCK read as "non-blocking", and the Windows member answered its cache, 0 (Huly QB-1003).
+    EXPECT_EQ(qb::io::socket::test_nonblocking(closed.native_handle()), -1) << "test_nonblocking on an invalid fd must fail";
+    EXPECT_EQ(closed.test_nonblocking(), -1) << "test_nonblocking on a closed socket must fail";
 }
 
 TEST(SocketErrorPaths, DisconnectOnAFreshDatagramSocketIsWellDefined) {

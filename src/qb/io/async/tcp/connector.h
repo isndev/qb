@@ -131,7 +131,9 @@ concept StarttlsNegotiator = requires(N n, qb::io::tcp::socket &s, int revents) 
  * wall-clock deadline via `async::callback`. The instance is kept alive with
  * `std::shared_ptr` and `self_hold_` until exactly one completion is delivered to
  * the user callback (so the object is not destroyed while libev still references
- * it).
+ * it) -- by its io watcher's hold while one is armed, by the deferred callback's
+ * capture once a failure is deferred; a loop teardown (`listener::clear()`) that
+ * drops either reclaims the connector and the user callback with it.
  *
  * **Fallback through the addresses (3.3, Huly QB-164).** A host name is resolved to every address of
  * the URI's family, and the addresses are tried in the resolver's order: one whose TCP connect is
@@ -253,7 +255,12 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         // connector lives exactly as long as the deferred callback — firing delivers then releases it;
         // teardown clearing the defer queue (and its captured shared_ptr) also releases it. Either way
         // the connector + its captured completion callback are reclaimed; no leak.
-        auto self = this->shared_from_this();
+        //
+        // The capture TAKES OVER the self-hold an earlier attempt's watcher armed (Huly QB-873): that
+        // watcher is gone -- the TCP connect failed on its readiness, or was refused at once on a
+        // later address -- and with it the teardown hook that broke the hold, so a hold left set
+        // outlives the dropped callback just the same.
+        auto self = self_hold_ ? std::exchange(self_hold_, nullptr) : this->shared_from_this();
         qb::io::async::defer([self = std::move(self)]() { self->deliver_failure(); });
     }
 

@@ -656,9 +656,8 @@ socket::set_nonblocking(socket_type s, bool nonblocking) {
 int
 socket::test_nonblocking() const {
 #if defined(_WIN32)
-    // The static probe (zero-length recv) blocks on an empty datagram socket and
-    // consumes a pending datagram otherwise; return the tracked mode instead.
-    return _nonblocking;
+    // Winsock has no FIONBIO getter (see below): the mode this object's own calls set, -1 once closed.
+    return this->fd == invalid_socket ? -1 : _nonblocking;
 #else
     return socket::test_nonblocking(this->fd);
 #endif
@@ -666,18 +665,19 @@ socket::test_nonblocking() const {
 int
 socket::test_nonblocking(socket_type s) {
 #if defined(_WIN32)
-    int           r = 0;
-    unsigned char b[1];
-    r = socket::recv(s, b, 0, 0);
-    if (r == 0)
-        return 1;
-    else if (r == -1 && GetLastError() == WSAEWOULDBLOCK)
-        return 0;
-    return -1; /* In  case it is a connection socket (TCP) and it is not in connected
-                  state you will get here 10060 */
+    // Winsock cannot be asked a descriptor's mode (Huly QB-1003). The zero-length recv() this
+    // probed with BLOCKED on a blocking socket with nothing to read, answered 0 in both modes
+    // when data was pending, and read WSAEWOULDBLOCK -- the one unambiguous answer,
+    // non-blocking -- as "blocking". The mode of a raw descriptor is unknown here: -1.
+    (void) s;
+    return -1;
 #else
-    int flags = ::fcntl(s, F_GETFL, 0);
-    return flags & O_NONBLOCK;
+    // 1 or 0 as documented, not the raw flag bit (2048 on Linux); a failed fcntl() is not a
+    // mode -- `-1 & O_NONBLOCK` read as non-blocking (Huly QB-1003).
+    const int flags = ::fcntl(s, F_GETFL, 0);
+    if (flags < 0)
+        return -1;
+    return (flags & O_NONBLOCK) ? 1 : 0;
 #endif
 }
 

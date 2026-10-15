@@ -342,7 +342,7 @@ Negative values are reserved for the framework. Positive values above `1` are av
 
 ### Protocol-level errors
 
-When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`src/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To resume on the same transport you must install a fresh protocol instance via `switch_protocol`.
+When your `AProtocol` implementation detects malformed input (a bad header, an impossible size field, a framing violation), call `not_ok()` on the protocol. This is a one-way latch — `IProtocol::not_ok()` (`src/qb/io/async/protocol.h`) sets the protocol's status to invalid and it **cannot be cleared**; `reset()` clears parsing buffers but does not restore `ok()`. The I/O component checks `protocol()->ok()` during message processing, and once it reads `false` it disposes the connection and dispatches `on(event::disconnected&&)` with `reason == -1` (`protocol_error`). To use the same io object for another connection you must install a fresh protocol instance via `switch_protocol` — and, on a standalone client, a new transport: `dispose()` has ended the one the connection ended with (Huly QB-1060).
 
 ```cpp
 // Inside an AProtocol<MyIO> implementation:
@@ -434,7 +434,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:1507 (qb::io::async::defer), :1076 (listener::defer)
+// src: qb/src/qb/io/async/listener.h:1600 (qb::io::async::defer), :1164 (listener::defer)
 void on(event::disconnected const &) {
     // Reconnect = destroy the current connection and build a new one. Doing it
     // inline here (still inside this handler's dispatch) frees `this` mid-call —

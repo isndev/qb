@@ -169,26 +169,68 @@ TEST_F(CallbackDispatchTest, DeferRunsAfterTheDispatchingHandlerUnwinds) {
     EXPECT_EQ(order, (std::vector<int>{1, 3, 2})) << "deferred work must run after the handler that queued it";
 }
 
-TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
-    // Start inside a timer dispatch, so the first defer drain belongs to an
-    // actual loop iteration (not the pending queue drained before ev_run starts).
-    // Drive the public raw loop to avoid listener::run's additional outer drain.
+namespace {
+
+/// A raw watcher that is only ever FED, the way `disconnect()` feeds an io watcher between two passes:
+/// libev invokes it on entry to the next `ev_run`, before that call's iteration.
+struct FedWatcher {
+    ev_timer         w{};
     std::atomic<int> stage{0};
-    async::callback(
-        [&] {
-            async::defer([&] {
-                stage.store(1);
-                async::defer([&] { stage.store(2); });
-            });
-        },
-        1ms);
-    const auto deadline = std::chrono::steady_clock::now() + 2s;
-    while (stage.load() == 0 && std::chrono::steady_clock::now() < deadline)
-        async::listener::current.loop().run(EVRUN_NOWAIT);
-    ASSERT_EQ(stage.load(), 1) << "a nested defer must not execute in the same loop drain";
-    while (stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
-        async::listener::current.loop().run(EVRUN_NOWAIT);
-    EXPECT_EQ(stage.load(), 2);
+    FedWatcher() {
+        ev_timer_init(&w, &FedWatcher::cb, 0., 0.);
+        w.data = this;
+    }
+    static void
+    cb(struct ev_loop *, ev_timer *w, int) {
+        auto *self = static_cast<FedWatcher *>(w->data);
+        async::defer([self] {
+            self->stage.store(1);
+            async::defer([self] { self->stage.store(2); });
+        });
+    }
+};
+
+} // namespace
+
+TEST_F(CallbackDispatchTest, DeferFromWithinDeferWaitsForTheNextTurn) {
+    // One public `run()` call is one turn, and a defer queued by a deferred callback lands on the
+    // NEXT one. Drive the PUBLIC `listener::run(EVRUN_NOWAIT)`, from the two places a watcher's
+    // handler runs inside it: the loop's iteration (a timer), and the loop's ENTRY (a fed watcher,
+    // invoked before the iteration). The nested defer ran in the call that ran its parent both ways
+    // -- after the loop returned, in `run()`'s own drain, and in the iteration after an entry drain,
+    // through the in-loop drain's zero-delay re-arm (Huly QB-448). This test drove the raw loop until
+    // then, which skips `run()`'s drain, so it could not see either.
+    {
+        std::atomic<int> stage{0};
+        async::callback(
+            [&] {
+                async::defer([&] {
+                    stage.store(1);
+                    async::defer([&] { stage.store(2); });
+                });
+            },
+            1ms);
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (stage.load() == 0 && std::chrono::steady_clock::now() < deadline)
+            async::listener::current.run(EVRUN_NOWAIT);
+        ASSERT_EQ(stage.load(), 1) << "the run() call that ran the deferred callback also ran the defer it queued: one public call "
+                                      "advanced two generations";
+        while (stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
+            async::listener::current.run(EVRUN_NOWAIT);
+        EXPECT_EQ(stage.load(), 2) << "the nested defer never ran on a later turn";
+    }
+    {
+        FedWatcher fed;
+        auto      *loop = static_cast<struct ev_loop *>(async::listener::current.loop());
+        ev_feed_event(loop, &fed.w, EV_CUSTOM);
+        async::listener::current.run(EVRUN_NOWAIT);
+        ASSERT_EQ(fed.stage.load(), 1) << "a handler run on entry to the loop: the run() call that ran its deferred callback also ran "
+                                          "the defer that callback queued";
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while (fed.stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
+            async::listener::current.run(EVRUN_NOWAIT);
+        EXPECT_EQ(fed.stage.load(), 2) << "the nested defer never ran on a later turn";
+    }
 }
 
 // Regression: the deferred queue used to be drained ONLY after `_loop.run()` returned.
@@ -217,6 +259,32 @@ TEST_F(CallbackDispatchTest, DeferIsDrainedFromInsideABlockingRun) {
     async::run(); // blocking run — the documented standalone loop
 
     EXPECT_EQ(order, (std::vector<int>{1, 2})) << "defer() must be drained inside the blocking run, not only after it returns";
+}
+
+// The other half of the blocking contract (Huly QB-448): under a blocking run the in-loop drain
+// serves the queue, and a defer queued by a deferred callback is re-armed for the loop's next
+// iteration. A blocking call that returns before that re-arm fires (EVRUN_ONCE) leaves it to the next
+// call -- its own drain after the loop does not take it -- and a non-blocking call then runs it: the
+// re-arm fires there, the hook stands down (a non-blocking turn drains at its tail), the tail drain
+// takes it.
+TEST_F(CallbackDispatchTest, ABlockingTurnLeavesANestedDeferToTheNextCall) {
+    std::atomic<int> stage{0};
+    async::callback(
+        [&] {
+            async::defer([&] {
+                stage.store(1);
+                async::defer([&] { stage.store(2); });
+            });
+        },
+        1ms);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (stage.load() == 0 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.run(EVRUN_ONCE); // blocks until the timer fires
+    ASSERT_EQ(stage.load(), 1) << "the blocking run() call that ran the deferred callback also ran the defer it queued";
+    EXPECT_TRUE(async::listener::current.has_deferred()) << "the nested defer was lost";
+    while (stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(stage.load(), 2) << "the nested defer never ran on a later call";
 }
 
 TEST_F(CallbackDispatchTest, PendingDeferIsDroppedOnListenerClear) {

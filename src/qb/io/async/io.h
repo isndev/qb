@@ -1523,9 +1523,12 @@ protected:
      *          is explicitly initiated. It ensures cleanup happens only once by checking the `_is_disposed` flag.
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
      *          If `_Derived::has_server` is true (typically for server-side sessions), it notifies the server of the disconnection.
-     *          Otherwise, if `_Derived` implements `on(event::dispose&&)`, that method is called as a final cleanup hook.
-     *          A hook that throws is contained and logged (`detail::run_teardown_hook`): the steps after it still run
-     *          (Huly QB-256). The base class (`async::base`) destructor will handle unregistering the `event::io` watcher.
+     *          Otherwise it stops the watcher, ends the transport (`detail::end_transport`, Huly QB-1060: closed
+     *          when the peer's EOF or a read error ended the connection, its sending side shut down when this
+     *          object did) and, if `_Derived` implements `on(event::dispose&&)`, calls that method as a final
+     *          cleanup hook. A hook that throws is contained and logged (`detail::run_teardown_hook`): the steps
+     *          after it still run (Huly QB-256). The base class (`async::base`) destructor will handle
+     *          unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. Actors should handle `event::disconnected` to
      *       perform cleanup and potentially call `kill()` if the connection loss requires actor termination.
@@ -1536,6 +1539,9 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
+        // Who ended the connection, read before the hooks run: no reason of this object's and a protocol
+        // still ok mean the peer's EOF or a read error did (Huly QB-1060).
+        [[maybe_unused]] const bool ended_by_peer = !_reason && this->_protocol->ok();
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
@@ -1553,6 +1559,7 @@ protected:
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
+            detail::end_transport(Derived.transport(), ended_by_peer);
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -2029,8 +2036,10 @@ protected:
      * @details This method is called internally when an I/O error occurs or when `disconnect()`
      *          is explicitly initiated. It ensures cleanup happens only once by checking `_is_disposed`.
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
-     *          If `_Derived::has_server` is true, it notifies the server. Otherwise, if `_Derived` implements
-     *          `on(event::dispose&&)`, that method is called for final cleanup. A hook that throws is contained and
+     *          If `_Derived::has_server` is true, it notifies the server. Otherwise it stops the watcher, ends the
+     *          transport (`detail::end_transport`, Huly QB-1060: closed after a write error, its sending side shut
+     *          down when this object ended the connection) and, if `_Derived` implements `on(event::dispose&&)`,
+     *          calls that method for final cleanup. A hook that throws is contained and
      *          logged (`detail::run_teardown_hook`): the steps after it still run (Huly QB-256).
      *          The base class (`async::base`) destructor handles unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
@@ -2042,6 +2051,9 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
+        // Who ended the connection, read before the hooks run: no reason of this object's means a write
+        // error did (Huly QB-1060).
+        [[maybe_unused]] const bool ended_by_peer = !_reason;
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
@@ -2059,6 +2071,7 @@ protected:
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
+            detail::end_transport(Derived.transport(), ended_by_peer);
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -2204,7 +2217,8 @@ public:
      *       event `disconnect()` fed and `_reason` is zeroed, so `on(event::disconnected&&)` never runs. Not from inside
      *       `on(event::disconnected&&)` either: on a standalone client `dispose()` stops the watcher as soon as that
      *       handler returns. Both are debug assertions. Clear what the previous connection left with
-     *       `reset_for_reconnect()` before installing the next transport (Huly QB-202).
+     *       `reset_for_reconnect()` before installing the next transport (Huly QB-202): `dispose()` has ended the
+     *       previous one -- closed, or shut down for sending (Huly QB-1060).
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
@@ -3029,20 +3043,30 @@ protected:
      *         and let the server handle watcher cleanup. No explicit `stop()` is needed here.
      *       - **Standalone clients** (`has_server = false`): Created via `connect()` for outgoing connections.
      *         These manage their own lifecycle, so we explicitly call `_async_event.stop()` to prevent
-     *         further events from being processed after disconnection, before calling `event::dispose`.
+     *         further events from being processed after disconnection, then end the transport the connection
+     *         ended with (`detail::end_transport`), before calling `event::dispose`. It is closed outright when
+     *         the peer's EOF or a socket error ended the connection. When this object ended it -- `disconnect()`,
+     *         a framing error, a size guard, the end of `close_after_deliver()` -- only its sending side is shut
+     *         down: the peer reads EOF once everything queued has left and nothing is reset, and the descriptor
+     *         stays until the object's destruction or its next transport. Before 3.3 the transport was left as
+     *         it was: the peer of a `disconnect()` never saw EOF, and a client whose peer hung up stayed in
+     *         CLOSE_WAIT (Huly QB-1060). `on(event::disconnected&&)` still sees the transport as the connection
+     *         left it; one installed from inside that hook is the one ended -- install the next connection's
+     *         after `dispose()` has returned.
      *
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. The sequence is:
      *       1. `on(event::disconnected&&)` is called if implemented, allowing the actor to handle the disconnection
      *          (e.g., attempt reconnection, notify other actors, or call `kill()` if termination is required).
-     *       2. `on(event::dispose&&)` is called if implemented, providing a final cleanup hook before destruction.
-     *       3. The base class destructor unregisters the event watcher from the listener.
+     *       2. A standalone client's watcher is stopped and its transport ended (closed, or shut down for sending).
+     *       3. `on(event::dispose&&)` is called if implemented, providing a final cleanup hook before destruction.
+     *       4. The base class destructor unregisters the event watcher from the listener.
      *       Actors should implement `on(event::disconnected&&)` to handle connection loss gracefully.
      *
      * @warning **Self-destruction must happen ONLY in `on(event::dispose&&)`, never in
      *          `on(event::disconnected&&)`.** For a self-managed standalone client, `dispose()`
      *          still touches `this` after `on(event::disconnected&&)` returns (it stops the
-     *          watcher and then fires `on(event::dispose&&)`), so freeing the object from
+     *          watcher, ends the transport and then fires `on(event::dispose&&)`), so freeing the object from
      *          `on(event::disconnected&&)` (e.g. `delete this`) leaves the rest of `dispose()`
      *          operating on freed memory (use-after-free). `on(event::dispose&&)` is the last
      *          hook and nothing in the framework touches `this` after it returns — that is the
@@ -3054,6 +3078,10 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
+        // Who ended the connection, read before the hooks run: no reason of this object's and a protocol
+        // still ok mean the peer's EOF or a socket error did -- close_after_deliver() ends with a protocol
+        // that is not ok (Huly QB-1060).
+        [[maybe_unused]] const bool ended_by_peer = !_reason && this->_protocol->ok();
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
@@ -3074,6 +3102,9 @@ protected:
             // Standalone client: must stop watcher immediately to prevent further events
             // This is critical for clients created via connect() to avoid processing events after disconnect
             this->_async_event.stop(); // Stop the watcher to prevent further events
+            // ...then end the transport the connection ended with: nothing else would until the object
+            // connects again or dies, and the peer would never see EOF (Huly QB-1060).
+            detail::end_transport(Derived.transport(), ended_by_peer);
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};

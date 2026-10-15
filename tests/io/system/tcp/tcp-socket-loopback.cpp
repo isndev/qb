@@ -819,10 +819,12 @@ TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     // A timed connect leaves the socket BLOCKING, and test_nonblocking() says so even when the socket was
     // non-blocking before: on Windows it answers from a cache the static helpers used to bypass, so it kept
     // saying "non-blocking" (Huly QB-318). POSIX reads the real mode -- the same assertions are its control.
+    // The answer is 1 or 0 (-1: the mode cannot be read): POSIX returned the raw O_NONBLOCK bit, 2048 on
+    // Linux (Huly QB-1003).
     qb::io::socket client;
     ASSERT_TRUE(client.open(AF_INET, SOCK_STREAM, 0));
     ASSERT_EQ(client.set_nonblocking(true), 0);
-    ASSERT_GT(client.test_nonblocking(), 0); // POSIX answers the O_NONBLOCK bit, Windows 1
+    ASSERT_EQ(client.test_nonblocking(), 1);
     EXPECT_EQ(client.connect_n(qb::io::endpoint().as_in("127.0.0.1", 9), 1ms), -1);
     EXPECT_EQ(client.test_nonblocking(), 0);
 
@@ -831,7 +833,26 @@ TEST(TCPSocket, LowLevelNonBlockingAndTimeoutFailuresAreRestored) {
     ASSERT_TRUE(untimed.open(AF_INET, SOCK_STREAM, 0));
     ASSERT_EQ(untimed.test_nonblocking(), 0);
     (void) untimed.connect_n(qb::io::endpoint().as_in("127.0.0.1", 9));
-    EXPECT_GT(untimed.test_nonblocking(), 0);
+    EXPECT_EQ(untimed.test_nonblocking(), 1);
+
+    // The static form reads a raw descriptor. POSIX asks fcntl(). Winsock has no getter, and the
+    // zero-length recv() the Windows form probed with BLOCKS on a blocking socket with nothing to read,
+    // answers 0 in both modes when data is pending, and read WSAEWOULDBLOCK -- the one unambiguous
+    // answer, non-blocking -- as "blocking" (Huly QB-1003). It answers -1 there now: the member, which
+    // tracks the mode its own calls set, is the Windows question.
+    qb::io::tcp::listener server;
+    ASSERT_EQ(server.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    qb::io::tcp::socket peer;
+    ASSERT_EQ(peer.connect_v4("127.0.0.1", server.local_endpoint().port()), qb::io::SocketStatus::Done);
+    ASSERT_EQ(peer.set_nonblocking(true), 0);
+    EXPECT_EQ(peer.test_nonblocking(), 1) << "the member answers on every platform";
+#ifdef _WIN32
+    EXPECT_EQ(qb::io::socket::test_nonblocking(peer.native_handle()), -1) << "a connected non-blocking socket with nothing to read";
+#else
+    EXPECT_EQ(qb::io::socket::test_nonblocking(peer.native_handle()), 1);
+    ASSERT_EQ(peer.set_nonblocking(false), 0);
+    EXPECT_EQ(qb::io::socket::test_nonblocking(peer.native_handle()), 0);
+#endif
 
     qb::io::socket udp(AF_INET, SOCK_DGRAM, 0);
     ASSERT_TRUE(udp.is_open());

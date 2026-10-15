@@ -16,6 +16,16 @@ policy.
   included; without it the first watcher's start unblocks its signal. qb itself never passes the
   flag and blocks no signal.
 
+- **`socket::test_nonblocking(socket_type)` answers -1 on Windows, and `qb/io/config.h` no longer re-maps
+  five C-runtime errno names (Huly QB-1003).** Winsock cannot report a socket's mode: the zero-length
+  `recv()` the static form probed with blocked on a blocking socket with nothing to read, answered 0 in
+  both modes with data pending, and read `WSAEWOULDBLOCK` -- the one unambiguous answer, non-blocking -- as
+  "blocking". The member, which tracks the mode its own calls set, is the Windows question. On Windows the
+  header still maps the socket errno names (`EWOULDBLOCK`, `ECONNREFUSED`, ...) to the WSA values the
+  socket layer compares against, but `EBADF`, `EAGAIN` (mapped to `WSATRY_AGAIN`, a resolver code),
+  `EFAULT`, `ENAMETOOLONG` and `ENOTEMPTY` keep the C runtime's: every translation unit that includes a
+  qb socket header compared a C runtime errno with a WSA value -- `errno == EBADF` was 9 == 10009. No qb
+  path compared a socket error with any of the five.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -549,6 +559,26 @@ policy.
 
 ### Fixed
 
+- **A standalone io object's `dispose()` ends its transport (Huly QB-1060).** `input<>`, `output<>` and
+  `io<>` stopped a standalone object's watcher -- a client's, an acceptor's -- and left its transport as it
+  was until the object connected again or was destroyed: the peer of a `disconnect()`, or of a connection
+  ended by a framing error, never saw EOF, so a server kept the connection and the work it routed for it
+  alive (qbm-http's HTTP/2 client met it as QB-1021 and closed its socket by hand), and a client whose peer
+  hung up stayed in CLOSE_WAIT. `dispose()` now ends the transport once the watcher is stopped, after
+  `on(event::disconnected&&)`, which still sees it as the connection left it, and before
+  `on(event::dispose&&)`, which may free the object. When the peer's EOF or a socket error ended the
+  connection the transport is closed (`disconnect()` when it has one, then `close()`). When the object
+  ended it -- `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()` -- only its
+  sending side is shut down: the peer reads EOF once everything queued has left, and nothing is reset. A
+  close there would reset a peer whose bytes are still unread: its next send fails, and on Windows it also
+  drops what it received and has not read yet -- closing outright cut the 64 MiB reply of the QB-294 test
+  2 MB short there. The descriptor then stays with the object until its destruction or its next transport, as before,
+  and an acceptor keeps its port. A hook that closes the transport again does nothing; a transport installed
+  from inside `on(event::disconnected&&)` is the one ended. A server's session is unchanged: its server tears
+  it down. Witnesses: `qb-io-test-system-standalone-dispose-ends-transport` (a tcp client: EOF after a
+  `disconnect()`, no reset with input left unread, no CLOSE_WAIT after its peer's EOF) and the three bases in
+  `async-bases-framing`.
+
 - **The embedded event loop: seven defects of the loop and of its Windows backend (qev, Huly
   QB-315, QB-316, QB-317, QB-337, QB-340, QB-724, QB-736).** Windows: the `SOCKET <-> fd`
   registry grows its free list with its fd table, committing each size after its `realloc`
@@ -675,6 +705,41 @@ policy.
   `StatelessRetrySecretFailureFailsClosedThenRecovers` in `tests/io/system/quic/quic-handshake.cpp`,
   through a test-build-only failure hook in `fill_random()` (`QB_IO_QUIC_TEST_HOOKS`, absent from
   installable builds); before the fix the failed fill left a ready, zeroed secret that minted a Retry.
+- **Socket portability (Huly QB-1003).** `IN4_IS_ADDR_LOOPBACK` / `IN4_IS_ADDR_LINKLOCAL`, qb's own outside
+  Windows, masked the host-order low bits of `s_addr`, which holds the octets in network order: 127/8 and
+  169.254/16 were read from the last octets on a big-endian host. They read the first octets through `ntohl`
+  now. `test_nonblocking()` returned the raw `O_NONBLOCK` bit (2048 on Linux) where it documents 1, took a
+  failed `fcntl()` for "non-blocking", and the Windows member answered 0 for a closed socket; it answers
+  1, 0, or -1 when the mode cannot be read.
+- **An async TCP connect that fails after its watcher no longer survives a loop teardown (Huly
+  QB-873).** A connect in progress arms an io watcher and a self-hold the watcher's teardown hook breaks.
+  When the readiness reported the failure (`SO_ERROR`) and no address was left, the watcher went away and
+  the failure was deferred with a capture of its own, leaving the self-hold set: a `listener::clear()`
+  that dropped the deferred failure before it ran left the connector and the user's completion callback
+  alive, unreachable. The deferred failure now takes the self-hold over.
+- **One generation of deferred callbacks per `run()` call (Huly QB-448).** A callback deferred by a
+  deferred callback ran in the same `run(EVRUN_NOWAIT)` call: `run()`'s own drain after the loop took
+  what the in-loop drain had left for the next turn, and when the loop invoked a fed watcher on entry
+  (`disconnect()` feeds one) the in-loop drain ran there and its zero-delay re-arm fired in the same
+  call's iteration. The in-loop drain now serves blocking runs only (`run(0)`, `EVRUN_ONCE`, which hand
+  it what was queued before them); a non-blocking call drains once, at its tail, after every watcher it
+  invoked. A bare `defer()` no longer makes the loop run at all (callgrind: 475 -> 156 instructions a
+  pass that defers one callback), and the drain's body is out of line behind an inline emptiness test,
+  which leaves the actor-only pass instruction for instruction as it was but for one alignment `nop`.
+- **`listener::clear()` drops the work deferred while it tears down instead of running it (Huly
+  QB-276).** Its first purge dropped what was queued before the call, but what the teardown released
+  after it -- the capture of a loop-owned `callback(fn, delay)` timer, a coroutine its flush passes
+  resumed -- could `defer()` again, and those flush passes ran it. `clear()` now holds the drain guard
+  for the whole call and drops the queue again on its way out; called from a deferred callback, it ends
+  that drain, so a callback deferred after the clear runs on the next turn.
+- **A loop whose only deadline is a periodic fires it under non-blocking passes (Huly QB-275).** The
+  pass that does not run the loop judged deadlines on `ev_timer_count_addr`, which counts `ev_timer`
+  watchers only, so a loop holding an `ev_periodic` and neither a timer nor an fd never ran under
+  `run(EVRUN_NOWAIT)`: a busy or latency-0 `VirtualCore`, `run_until` and `run_for` never fired it, and
+  one beside a quiet socket fired at the cadence's next poll, up to a `setIoPollInterval` late. The gate
+  now reads qev's periodic count (`ev_periodic_count_addr`, through the new `ev::loop_ref::periodic_count_addr()`)
+  beside the timer count and judges the earliest deadline of either through `ev_timer_next`, as it judges
+  a timer's. A far periodic still costs no loop pass.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

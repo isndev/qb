@@ -47,6 +47,9 @@
  *                                            dangling frame; a later independent connect still tears
  *                                            its own socket down exactly once.
  *   - ParallelAwaitersAllCompleteOnRefused: N coroutine awaiters on a refused port each resume empty.
+ *   - FailureDeferredAfterTheWatcherIsReclaimedWhenClearDropsIt: a connect that fails on readiness
+ *                                            defers its failure; a clear() before that delivery drops it
+ *                                            and must free the connector and its callback (Huly QB-873).
  *
  * De-flake: every wait is `qb::io::test::pump_until` (loud bounded timeout). A *direct* success is
  * delivered synchronously inside connect(); a *failure* (and any pending path) is delivered from the
@@ -61,6 +64,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -187,21 +191,22 @@ public:
     enum class connect_result { direct, pending, fail };
 
     struct state {
-        connect_result   result = connect_result::direct;
-        std::vector<int> handshake_results{1};
-        std::size_t      handshake_index    = 0u;
-        int              fd                 = -1;
-        int              peer_fd            = -1;
-        int              n_connect_calls    = 0;
-        std::uint16_t    last_remote_port   = 0;
-        int              disconnect_calls   = 0;
-        int              connected_calls    = 0;
-        int              get_optval_calls   = 0;
-        int              set_insecure_calls = 0;
-        int              so_error           = 0;
-        int              get_optval_result  = 0;
-        int              handshake_calls    = 0;
-        bool             wants_write        = false; ///< what DirectionalFakeSocket reports for a pending handshake
+        connect_result        result = connect_result::direct;
+        std::vector<int>      handshake_results{1};
+        std::size_t           handshake_index    = 0u;
+        int                   fd                 = -1;
+        int                   peer_fd            = -1;
+        int                   n_connect_calls    = 0;
+        std::uint16_t         last_remote_port   = 0;
+        int                   disconnect_calls   = 0;
+        int                   connected_calls    = 0;
+        int                   get_optval_calls   = 0;
+        int                   set_insecure_calls = 0;
+        int                   so_error           = 0;
+        int                   get_optval_result  = 0;
+        int                   handshake_calls    = 0;
+        bool                  wants_write        = false; ///< what DirectionalFakeSocket reports for a pending handshake
+        std::function<void()> on_so_error_probe;          ///< run once, inside the connector's SO_ERROR read (its readiness callback)
 
         void
         close_native() {
@@ -314,6 +319,8 @@ public:
     int
     get_optval(int, int, T &out) {
         ++_state->get_optval_calls;
+        if (auto probe = std::exchange(_state->on_so_error_probe, nullptr))
+            probe();
         out = static_cast<T>(_state->so_error);
         return _state->get_optval_result;
     }
@@ -808,4 +815,42 @@ TEST_F(TcpConnectorStateMachineTest, SyncFailureDeferredCallbackReclaimedOnListe
     EXPECT_TRUE(weak_sentinel.expired()) << "LEAK: the deferred-failure Timeout was destroyed by listener teardown but never released "
                                             "the connector (self-hold cycle) — connector + user callback leaked";
     EXPECT_EQ(shared->n_connect_calls, 1) << "the synchronous-failure path must have been taken";
+}
+
+// ---------------------------------------------------------------------------
+// The other way a connector reaches a deferred failure (Huly QB-873): the connect was IN PROGRESS, its
+// watcher armed the self-hold and the teardown hook, and the readiness reports SO_ERROR. The watcher is
+// unregistered, no address is left, and the failure is deferred -- a state with no watcher, so no
+// teardown hook. A clear() that runs before that delivery (here: another callback queued ahead of it)
+// drops the deferred closure, and the connector must go with it: the self-hold the watcher's hook used
+// to break was still set, so the connector and the user's callback lived on, unreachable.
+// ---------------------------------------------------------------------------
+TEST_F(TcpConnectorStateMachineTest, FailureDeferredAfterTheWatcherIsReclaimedWhenClearDropsIt) {
+    auto shared      = std::make_shared<FakeConnectorSocket::state>();
+    shared->result   = FakeConnectorSocket::connect_result::pending; // EINPROGRESS: the watcher is armed
+    shared->so_error = ECONNREFUSED;                                 // the readiness reports the refusal
+    // Inside the connector's readiness callback, before it defers its failure: a clear() queued ahead of it.
+    shared->on_so_error_probe = [] {
+        qb::io::async::defer([] { qb::io::async::listener::current.clear(); });
+    };
+
+    auto               sentinel      = std::make_shared<int>(7); // owned by the user callback below
+    std::weak_ptr<int> weak_sentinel = sentinel;
+    int                completions   = 0;
+    qb::io::async::tcp::connect<FakeConnectorSocket>(
+        FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:11"},
+        [s = sentinel, &completions](FakeConnectorSocket &&) {
+            (void) s;
+            ++completions;
+        },
+        0ms);
+    sentinel.reset();
+    ASSERT_FALSE(weak_sentinel.expired()) << "the in-progress connect owns its callback";
+
+    ASSERT_TRUE(pump_until([&] { return shared->get_optval_calls > 0; })) << "the connect's readiness never came";
+    EXPECT_EQ(shared->get_optval_calls, 1);
+    EXPECT_EQ(completions, 0) << "clear() dropped the deferred failure before it ran";
+    EXPECT_FALSE(qb::io::async::listener::current.has_deferred());
+    EXPECT_TRUE(weak_sentinel.expired()) << "LEAK: the deferred failure was dropped by clear() but the connector's self-hold was still "
+                                            "set -- the connector and its completion callback outlived it";
 }

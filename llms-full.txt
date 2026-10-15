@@ -292,7 +292,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1043; tcp/socket.cpp:100-107)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1055-1094; uri.h:473-483)_
@@ -311,12 +311,12 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
   neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
   copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
-  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:954; combinators.h:191; channel.h:1148)_
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:961; combinators.h:191; channel.h:1148)_
 - **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
   on a handshake that waits to read spins a level-triggered loop until the peer answers (Huly QB-301).
-  _(ssl/socket.h:662; tcp/connector.h:321)_
+  _(ssl/socket.h:662; tcp/connector.h:328)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -690,14 +690,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1273-1287, :1563-1578, :1622-1652, :1688-1715)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1455-1468; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1548-1561; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1440-1452)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:373-413)_ _(listener.h:1507)_
+  them. _(listener.h:1533-1545)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:373-413)_ _(listener.h:1600)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:574-603)_
@@ -756,13 +756,23 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:772)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:624-627; ev++.h:780)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2241-2270, :2722-2729, :3136-3140)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2255-2284, :2736-2743, :3167-3171)_
+- **A standalone io's `dispose()` ends its transport** (Huly QB-1060): once the watcher is stopped, after
+  `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
+  When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
+  no CLOSE_WAIT socket. When the object ended it (`disconnect()`, a framing error, a size guard, the end of
+  `close_after_deliver()`) only its sending side is shut down: the peer reads EOF after everything queued and
+  nothing is reset (a close resets a peer whose bytes are unread: its next send fails, and Windows drops its unread
+  tail); the descriptor
+  stays until the object dies or its next transport replaces it, and an acceptor keeps its port. Closing it
+  again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
+  returned. A server's session is torn down by its server. _(io.h:3084, :3104-3107; teardown.h:100-116)_
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,
@@ -771,7 +781,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **A teardown hook that throws is contained, and the teardown still completes.** `dispose()` runs
   `on(event::disconnected&&)` and `on(event::dispose&&)` through `detail::run_teardown_hook`: the exception is logged
   (WARN, with `what()`), then the watcher is stopped or the session handed back to its server. Throwing from them
-  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:54)_
+  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:58)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:281-298)_
@@ -1363,7 +1373,7 @@ RFC 3986 URI. Parsed on construction.
 
 ### Low-level socket (`<qb/io/system/sys__socket.h>`)
 *   `using qb::io::socket_type = int` (POSIX) / `SOCKET` (Windows) (from config.h).
-*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve` (`xpconnect` picks v4/v6 by `getipsv()`, which counts routable addresses only; a local-scope target -- 127/8, 169.254/16, `::1`, ULA, link-local -- is always attempted, the v4 half since 3.3), `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)` (`SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too)/`bool reuse_port(bool)` (since 3.3: `SO_REUSEPORT`, `false` + `ENOPROTOOPT` on Windows)/`exclusive_address(bool)`; `pserve(const endpoint&, bool share_port = false)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`.
+*   `class qb::io::socket` — cross-platform move-only socket wrapper. Lifecycle: `open`/`reopen`/`close`/`is_open`/`native_handle`/`release_handle`. I/O: `send`/`recv`/`sendto`/`recvfrom`, timed `send_n`/`recv_n`/`connect_n`/`handle_read_ready`/`handle_write_ready` taking `qb::duration`. Connect/serve: `pconnect`/`xpconnect`/`pserve` (`xpconnect` picks v4/v6 by `getipsv()`, which counts routable addresses only; a local-scope target -- 127/8, 169.254/16, `::1`, ULA, link-local -- is always attempted, the v4 half since 3.3), `bind`/`listen`/`accept`/`accept_n`. Options: `set_optval`/`get_optval`/`ioctl`/`set_keepalive`/`reuse_address(bool)` (`SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too)/`bool reuse_port(bool)` (since 3.3: `SO_REUSEPORT`, `false` + `ENOPROTOOPT` on Windows)/`exclusive_address(bool)`; `pserve(const endpoint&, bool share_port = false)`. Static: `resolve*`/`getipsv`/`traverse_local_address`/`get_last_errno`. `test_nonblocking()` answers 1 / 0, or -1 when the mode cannot be read: an invalid descriptor, and on Windows every call of the static `test_nonblocking(socket_type)` -- Winsock has no getter; the member answers the mode its own calls set (since 3.3). On Windows `qb/io/config.h` maps the socket errno names (`EWOULDBLOCK`, `ECONNREFUSED`, ...) to their WSA values; `EBADF`, `EAGAIN`, `EFAULT`, `ENAMETOOLONG`, `ENOTEMPTY` keep the C runtime's (since 3.3).
     *   `pserve` sets `SO_REUSEADDR` on POSIX but `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`): on Windows an in-use bind fails fast with `WSAEADDRINUSE` (no silent hijack/shadowing of an already-bound port), while POSIX keeps the TIME_WAIT-rebind behavior.
 *   `struct qb::io::inet::ip::endpoint` (alias surface `qb::io::endpoint`) — address-family-agnostic socket address (union of sockaddr/in/in6/un). Builders `as_in`/`as_un`/`as_is` (each safe on its own storage: `e = e`, `e.as_is(&e.sa_)` keep the address -- since 3.3); accessors `af()`, `port()`, `addr_v4()` (host byte order), `ip()`, `to_string()`; `ip(const char*)` keeps the port and, on a family change, sets `len()` and clears the other family's fields, an unparsable text leaving the endpoint unchanged (since 3.3); `explicit operator bool` (`af()!=AF_UNSPEC`); `operator<`/`operator==`.
 *   `enum qb::io::SocketStatus { Error = -1, Done, CertificateError };`
@@ -1555,13 +1565,13 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `thread_local static listener current;` — the implicit loop every async object binds to.
     *   `[T<_Event,_Actor,_Args...>] _Event& registerEvent(_Actor& actor, _Args&&... args)` — wrap a libev watcher.
     *   `void unregisterEvent(IRegisteredKernelEvent* kevent)` (idempotent).
-    *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then drain coroutines.
+    *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then the deferred callbacks, then coroutines. A non-blocking call drains the deferred callbacks once, at its tail; a blocking run also drains them inside the loop, once per iteration.
     *   `bool has_work() const noexcept` — whether a `run()` turn has anything to do: referenced active watchers, pending events, deferred callbacks, ready coroutines. `VirtualCore` gates its libev pass on it.
     *   `void arm_wake()` / `void disarm_wake() noexcept` / `bool is_wake_armed() const noexcept` — owner thread only; arm the `ev_async` that lets another thread end a `run_once_for()` park (unref'd, never counts as work).
     *   `void wake() noexcept` — end a `run_once_for()` park from ANY thread (`ev_async_send`); the one thread-safe member. Requires `arm_wake()` to have happened-before.
     *   `std::size_t run_once_for(qb::duration cap)` — one turn that may block for at most `cap` until a watcher fires or `wake()` lands (one-shot cap timer + `EVRUN_ONCE`); a turn with deferred/ready/pending work, or `cap <= 0`, is a plain `EVRUN_NOWAIT`. → events invoked this turn. Owner thread only.
-    *   `void set_dispatch_timing(bool enabled) noexcept` / `[[nodiscard]] TimingStats dispatch_timing() const noexcept` — time the watcher dispatch (the callbacks one libev iteration runs) into a `qb::TimingStats`; off by default and free when off (libev's own dispatch through the same pointer); the deferred callbacks and coroutine resumes `run()` drains after it are not part of it; turning it off keeps the stats. Owner thread only. Under qb-core, `CoreInitializer::setPassTiming()` times the whole pass instead (Huly QB-165).
-    *   `void break_one()`, `void clear()`.
+    *   `void set_dispatch_timing(bool enabled) noexcept` / `[[nodiscard]] TimingStats dispatch_timing() const noexcept` — time the watcher dispatch (the callbacks one libev iteration runs) into a `qb::TimingStats`; off by default and free when off (libev's own dispatch through the same pointer); the deferred callbacks and coroutine resumes `run()` drains after it are not part of it (a blocking run's in-loop defer drain is); turning it off keeps the stats. Owner thread only. Under qb-core, `CoreInitializer::setPassTiming()` times the whole pass instead (Huly QB-165).
+    *   `void break_one()`, `void clear()` — `clear()` detaches every watcher (destroying loop-owned timers) and DROPS every deferred callback, never runs one: those queued before it and those deferred while it tears down; called from a deferred callback, it ends that drain.
     *   `std::size_t nb_invoked_event() const`, `total_events_processed() const`, `size() const`.
     *   `ev::loop_ref loop() const`, `CoroutineScheduler& coro_scheduler()`.
 *   Free drivers:
@@ -1584,7 +1594,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   Callbacks / scheduling — three primitives, pick by intent:
     *   `[T<_Func>] void callback(_Func&& func)` — run **inline immediately** (NOT deferred, despite the name).
     *   `[T<_Func,Rep,Period>] void callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` — run after a real `timeout` (`<= 0` runs inline). Use for timeouts/deadlines. The timer keeps its OWN copy of `func` (`Timeout<std::decay_t<_Func>>`: an lvalue is copied, an rvalue moved; a move-only lvalue must be `std::move`d in; `std::ref(fn)` shares one deliberately).
-    *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown.
+    *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown. One generation per turn: a callback deferred by a deferred callback runs on the next `run()` call.
     *   `[T<_Func,Rep,Period>] auto scoped_callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` → `std::unique_ptr<ScopedTimeout<...>>` — hot-path timer variant; destroying/reusing the ptr cancels. Takes a named callable or a temporary and keeps its own copy, like `callback`.
     *   use: `qb::io::async::callback([]{ … }, 200ms);` (timer) · `qb::io::async::defer([]{ … });` (next turn).
 *   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. `interval` is the `stat()` cadence only where the path is polled (macOS, Windows, a non-local Linux filesystem; floor ~0.107 s) — on a local Linux filesystem inotify wakes the watcher and `interval` is unused; the event is two `stat`s either way. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `ev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
@@ -1643,7 +1653,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `struct event::pending_read { std::size_t bytes; }`, `struct event::pending_write { std::size_t bytes; }`
 *   `struct event::input_drained {}` (`using eof = input_drained;`) — input buffer fully parsed.
 *   `struct event::eos {}` — all buffered output written.
-*   `struct event::dispose {}` — final cleanup hook (standalone components).
+*   `struct event::dispose {}` — final cleanup hook (standalone components). It runs after the component's watcher is stopped and its transport ended (3.3, Huly QB-1060): closed when the peer's EOF or a socket error ended the connection, shut down for sending when the component did -- the peer reads EOF, nothing is reset, and the descriptor stays until the object dies or its next transport replaces it. Closing the transport in the hook is harmless.
 *   `struct event::extracted {}` — session handed off (e.g. protocol upgrade).
 *   `struct event::handshake {}` — TLS handshake completed.
 
@@ -1677,7 +1687,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1455-1468`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1548-1561`)_.
 *   `[T] inline void pin_frame_copy(T& copy) noexcept` — keep a by-value coroutine parameter's frame copy at its own alignment: a memory-operand asm barrier on clang (no instruction emitted), a no-op on GCC, MSVC and clang-cl. Shields LLVM issue 159571 (clang older than 22 on a `byval` ABI — x86-64 Linux / Intel macOS — spills a never-written parameter copy at alignment 8 and reads it at 64). Call it before the first suspension of a coroutine that takes an event by value and never assigns to it; every `qb::ask*` pattern coroutine does (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:378)_
 *   use: `co_await qb::io::async::sleep(100ms);`
 

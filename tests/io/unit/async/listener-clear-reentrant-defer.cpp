@@ -34,12 +34,18 @@
  * destructor that `clear()` is running, and requires it to be false. Before the fix the member IS
  * the container being cleared and still reports its remaining elements; after it, `clear()` has
  * already swapped the queue into a local. Verified both ways.
+ *
+ * The same drop holds for what `clear()` releases AFTER that purge -- a loop-owned timer and the state
+ * its callable captured -- whose destructors may defer too: that work is dropped like the rest, never
+ * run by `clear()`'s flush passes (Huly QB-276), on an explicit `clear()` and on a thread's exit.
  */
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 
@@ -137,6 +143,86 @@ TEST(ListenerClear, MemberQueueIsEmptyWhileDroppedClosuresRunTheirDestructors) {
     EXPECT_FALSE(qb::io::async::listener::current.has_deferred())
         << "clear() returned with work still queued: the drain does not loop, so a closure deferred "
            "while the queue was being dropped survives into a torn-down listener";
+}
+
+namespace {
+
+/// Captured by a loop-owned timer (`async::callback(fn, 1h)`), so `clear()` releasing that timer is what
+/// destroys it, AFTER `clear()` purged the queue -- and its destructor defers observable work.
+struct DeferringCapture {
+    std::atomic<bool> *ran;
+    explicit DeferringCapture(std::atomic<bool> *r) noexcept
+        : ran(r) {}
+    DeferringCapture(DeferringCapture const &) = delete;
+    ~DeferringCapture() {
+        qb::io::async::defer([ran = ran, tag = Tracer{}] {
+            (void) tag;
+            ran->store(true, std::memory_order_relaxed);
+        });
+    }
+};
+
+void
+arm_timer_capturing(std::atomic<bool> *ran) {
+    auto capture = std::make_shared<DeferringCapture>(ran);
+    qb::io::async::callback([capture] { (void) capture; }, std::chrono::hours(1)); // never fires
+}
+
+} // namespace
+
+TEST(ListenerClear, WorkDeferredWhileClearReleasesATimersCaptureIsDroppedNotRun) {
+    // The first purge drops what was queued BEFORE clear(); the release of what clear() destroys
+    // after it -- a loop-owned timer and the state its callable captured -- is arbitrary user code
+    // too, and what it defers was then run by clear()'s own flush passes (Huly QB-276).
+    qb::io::async::init();
+    qb::io::async::listener::current.clear();
+    Tracer::reset();
+    std::atomic<bool> ran{false};
+    arm_timer_capturing(&ran);
+    ASSERT_FALSE(qb::io::async::listener::current.has_deferred()) << "nothing is deferred before clear()";
+
+    qb::io::async::listener::current.clear();
+
+    EXPECT_FALSE(ran.load()) << "clear() ran a callback deferred while it released a timer's captured state; clear() drops deferred "
+                                "work, it does not run it";
+    EXPECT_FALSE(qb::io::async::listener::current.has_deferred()) << "clear() returned with work still queued";
+    EXPECT_EQ(Tracer::live.load(), 0) << "the dropped closure's captured state outlived clear()";
+    qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_FALSE(ran.load()) << "the work deferred during clear() ran on the next turn instead of being dropped";
+}
+
+TEST(ListenerClear, WorkDeferredWhileAThreadsListenerIsDestroyedIsDroppedNotRun) {
+    // The ordinary shutdown: a thread exits, its `listener::current` is destroyed, `~listener` clears
+    // it. Same drop (Huly QB-276).
+    Tracer::reset();
+    std::atomic<bool> ran{false};
+    std::thread([&ran] { arm_timer_capturing(&ran); }).join();
+    EXPECT_FALSE(ran.load()) << "~listener ran a callback deferred while it released a timer's captured state";
+    EXPECT_EQ(Tracer::live.load(), 0) << "the dropped closure's captured state outlived the thread's listener";
+}
+
+TEST(ListenerClear, AClearCalledFromADeferredCallbackEndsThatDrain) {
+    // The drain in progress counted its snapshot before the callback ran clear(): the rest of the
+    // snapshot is dropped by the clear, and a callback deferred AFTER it -- new work on a cleared
+    // loop, legitimately -- is the next turn's. The drain used to take it, its count not exhausted
+    // (Huly QB-276, the same generation rule as QB-448).
+    qb::io::async::init();
+    qb::io::async::listener::current.clear();
+    bool dropped_ran = false;
+    bool later_ran   = false;
+    qb::io::async::defer([&later_ran] {
+        qb::io::async::listener::current.clear();
+        qb::io::async::defer([&later_ran] { later_ran = true; });
+    });
+    qb::io::async::defer([&dropped_ran] { dropped_ran = true; }); // in the snapshot, behind the clear
+    qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_FALSE(dropped_ran) << "the clear() did not drop the rest of the drain's snapshot";
+    EXPECT_FALSE(later_ran) << "a callback deferred after the clear ran in the drain that ran the clear";
+    EXPECT_TRUE(qb::io::async::listener::current.has_deferred()) << "the callback deferred after the clear was lost";
+    for (int i = 0; i < 1000 && !later_ran; ++i)
+        qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_TRUE(later_ran) << "the callback deferred after the clear never ran on a later turn";
+    EXPECT_FALSE(dropped_ran);
 }
 
 TEST(ListenerClear, RepeatedClearIsIdempotentAndLeavesNothingLive) {

@@ -105,7 +105,7 @@ You rarely instantiate these directly. The `qb::io::use<_Derived>` helper (`qb/i
 - `close_after_deliver()` — flush all pending output, then disconnect.
 - `stop()` — pause the watcher without running disconnection cleanup, so the component can be restarted with `start()`.
 
-When a read or write fails, or `disconnect()` is requested, the component calls `dispose()` exactly once. `dispose()` invokes `on(event::disconnected&&)` (carrying the reason and, on error, the system errno) if the derived class implements it, then either notifies the owning server (for accepted sessions) or stops the watcher and fires `on(event::dispose&&)` (for standalone clients).
+When a read or write fails, or `disconnect()` is requested, the component calls `dispose()` exactly once. `dispose()` invokes `on(event::disconnected&&)` (carrying the reason and, on error, the system errno) if the derived class implements it, then either notifies the owning server (for accepted sessions) or stops the watcher, ends the transport and fires `on(event::dispose&&)` (for standalone clients and acceptors). The transport is ended after `on(event::disconnected&&)`, which still sees it as the connection left it: closed when the peer's EOF or a socket error ended the connection, shut down for sending when the component ended it -- the peer reads EOF once everything queued has left, and nothing is reset. Before 3.3 it was left as it was until the object connected again or was destroyed: the peer of a `disconnect()` never saw EOF (Huly QB-1060).
 
 ### Timers: `with_timeout`
 

@@ -13,7 +13,10 @@
  * wake from another thread, a byte on a socket at the cadence's next poll. The last case is the
  * consequence for the timer API: a loop that runs only when something is due has a stale clock
  * the rest of the time, so `event::timer` refreshes it before every arm -- the raw C arm, which
- * does not, is the negative control.
+ * does not, is the negative control. A periodic is a deadline too, in a heap of its own that
+ * `ev_timer_count_addr` does not count (`ev_periodic_count_addr` does): a loop holding nothing else
+ * must still fire it, one beside a quiet socket on its deadline rather than at the next poll, and a
+ * far one must still cost no loop pass (Huly QB-275).
  *
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  * Licensed under the Apache License, Version 2.0. See LICENSE for details.
@@ -97,6 +100,66 @@ struct RawTimer {
         ++static_cast<RawTimer *>(w->data)->hits;
     }
 };
+
+/// A raw `ev_periodic` on the current loop: an absolute deadline on the loop's realtime clock, the
+/// watcher family that `ev_timer_count_addr` does not count (only `ev_timer_next` reads its heap).
+struct RawPeriodic {
+    ev_periodic w{};
+    int         hits = 0;
+    explicit RawPeriodic(double after) {
+        ev_now_update(RawTimer::loop_of_current());
+        ev_periodic_init(&w, &RawPeriodic::cb, ev_now(RawTimer::loop_of_current()) + after, 0., nullptr);
+        w.data = this;
+        ev_periodic_start(RawTimer::loop_of_current(), &w);
+    }
+    ~RawPeriodic() {
+        ev_periodic_stop(RawTimer::loop_of_current(), &w);
+    }
+    static void
+    cb(struct ev_loop *, ev_periodic *w, int) {
+        ++static_cast<RawPeriodic *>(w->data)->hits;
+    }
+};
+
+TEST_F(ListenerTimerGate, APeriodicAloneFiresUnderNonBlockingPasses) {
+    // The loop holds one periodic and nothing else: a referenced active watcher (`has_work()`), no
+    // fd, no ev_timer. The gate counted timers only, so it answered "nothing within reach" on every
+    // non-blocking pass and the periodic never fired under a driver that does not park -- a busy
+    // VirtualCore, a latency-0 core, `run_until` (Huly QB-275).
+    RawPeriodic soon(0.005); // 5 ms
+    EXPECT_TRUE(listener::current.has_work()) << "a periodic is work by the loop's own rule";
+    const auto t0 = qb::mono_now();
+    while (soon.hits == 0 && qb::mono_now() - t0 < 1s)
+        listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(soon.hits, 1) << "a periodic alone on the loop never fired under non-blocking passes";
+}
+
+TEST_F(ListenerTimerGate, AFarPeriodicCostsNoLoopPass) {
+    // The other half of QB-275: the periodic is judged like a timer, on its deadline, not by
+    // running the loop on every pass of a core that holds one.
+    RawPeriodic far_off(3600.); // not `far`: a Windows macro
+    EXPECT_EQ(loop_runs_over(1000), 0u) << "with one far periodic, a thousand non-blocking passes ran the loop zero times";
+    EXPECT_EQ(far_off.hits, 0);
+}
+
+TEST_F(ListenerTimerGate, APeriodicBesideAQuietSocketFiresOnItsDeadline) {
+    // Beside a quiet socket, with no timer, "no timer" left the periodic to the cadence's next poll --
+    // ten seconds away here, against a 5 ms deadline (Huly QB-275). The passes between two polls judge
+    // a periodic's deadline as they judge a timer's: on the periodic count beside the timer count.
+    qb::io::test::replay_until_conclusive([] {
+        Pipe                              p;
+        const qb::io::test::CadenceWindow w = qb::io::test::open_cold_interval(10s); // polls, finds nothing, goes cold
+        RawPeriodic                       soon(0.005);
+        const auto                        t0 = qb::mono_now();
+        while (soon.hits == 0 && qb::mono_now() - t0 < 2s)
+            listener::current.run(EVRUN_NOWAIT);
+        if (!qb::io::test::ran_inside(w))
+            return false; // the host stalled the attempt past the interval: a pass may have polled, legitimately
+        EXPECT_EQ(soon.hits, 1) << "the periodic waited for the cadence's next poll (10 s) instead of firing on its deadline (5 ms)";
+        EXPECT_EQ(p.hits, 0) << "the socket stayed quiet";
+        return true;
+    });
+}
 
 TEST_F(ListenerTimerGate, AFarTimerCostsNoLoopPass) {
     RawTimer far_off(3600.); // not `far`: a Windows macro
