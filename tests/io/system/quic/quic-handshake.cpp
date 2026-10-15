@@ -2176,4 +2176,136 @@ INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadHalfRetransmissionTest,
                          ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop));
 #endif
 
+// =============================================================================
+// Hostname binding of a verify_peer client. The native client context trusts OpenSSL's default verify
+// paths and nothing else, so each client is built with SSL_CERT_FILE pointing at the committed
+// CN=localhost certificate the server presents: the chain then verifies, and the name the client binds
+// is the only thing left to decide the handshake.
+// =============================================================================
+namespace quic_handshake_hostname_test {
+
+// The committed CN=localhost pair (system/resources/ssl), not ssl_resource_path(): which pair that search
+// returns depends on the working directory, and only this one carries the name the positive case asks for.
+std::filesystem::path
+localhost_fixture(const char *name) {
+    return std::filesystem::path(__FILE__).lexically_normal().parent_path().parent_path() / "resources" / "ssl" / name;
+}
+
+// SSL_CERT_FILE for the guard's lifetime; the previous value, or its absence, is restored after.
+class scoped_ssl_cert_file {
+public:
+    explicit scoped_ssl_cert_file(std::string const &file) {
+#ifdef _WIN32
+        char       *previous = nullptr; // _dupenv_s, not getenv: MSVC deprecates the latter (C4996)
+        std::size_t length   = 0;
+        if (_dupenv_s(&previous, &length, "SSL_CERT_FILE") == 0 && previous) {
+            _had_previous = true;
+            _previous     = previous;
+        }
+        std::free(previous);
+#else
+        if (char const *previous = std::getenv("SSL_CERT_FILE")) {
+            _had_previous = true;
+            _previous     = previous;
+        }
+#endif
+        assign(file.c_str());
+    }
+    ~scoped_ssl_cert_file() {
+        assign(_had_previous ? _previous.c_str() : nullptr);
+    }
+    scoped_ssl_cert_file(scoped_ssl_cert_file const &)            = delete;
+    scoped_ssl_cert_file &operator=(scoped_ssl_cert_file const &) = delete;
+
+private:
+    static void
+    assign(char const *value) {
+#ifdef _WIN32
+        _putenv_s("SSL_CERT_FILE", value ? value : "");
+#else
+        if (value)
+            ::setenv("SSL_CERT_FILE", value, 1);
+        else
+            ::unsetenv("SSL_CERT_FILE");
+#endif
+    }
+    bool        _had_previous = false;
+    std::string _previous;
+};
+
+// Whether a verify_peer client asking for `server_name` completes its handshake with a server presenting
+// the CN=localhost certificate the client's trust store holds.
+enum class handshake_outcome { connected, refused, undecided };
+
+std::ostream &
+operator<<(std::ostream &os, handshake_outcome outcome) {
+    return os << (outcome == handshake_outcome::connected ? "connected" : outcome == handshake_outcome::refused ? "refused" : "undecided");
+}
+
+handshake_outcome
+verified_client_handshake(std::string const &server_name) {
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->configure(qb::io::quic::settings{});
+    client->configure(qb::io::quic::settings{});
+
+    const qb::io::endpoint   server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_endpoint{"127.0.0.1", 54321};
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = localhost_fixture("cert.pem");
+    server_tls.private_key_file = localhost_fixture("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = server_name;
+    client_tls.verify_peer = true;
+    {
+        scoped_ssl_cert_file trust{localhost_fixture("cert.pem").string()}; // read when the client context is built
+        client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+    }
+
+    // The client's own verdict: `connected`, or `connection_closed` when its handshake fails -- a refusal
+    // observed, not inferred from a deadline passing quietly.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+        deliver_ready_quic_packets(*server, *client);
+        deliver_ready_quic_packets(*client, *server);
+        for (auto const &event : client->drain_events()) {
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                return handshake_outcome::connected;
+            if (event.type == qb::io::quic::backend_event::kind::connection_closed)
+                return handshake_outcome::refused;
+        }
+        [[maybe_unused]] auto const server_events = server->drain_events();
+    }
+    return handshake_outcome::undecided;
+}
+
+} // namespace quic_handshake_hostname_test
+
+/**
+ * @test A verify_peer client binds its server name, and a name OpenSSL refuses to bind fails closed
+ * @brief Against a trusted CN=localhost certificate: `localhost` connects (the trust setup works, so the
+ *        refusals are the name's), `wrong.example.com` does not (the name is checked, not only the chain),
+ *        and neither does `x`. OpenSSL 4.0 validates a name before installing it as the target and refuses
+ *        a single character; the client called `SSL_set1_host` and ignored its result, so under OpenSSL 4 it
+ *        verified the chain alone and accepted the certificate for `x` -- a certificate for any host. The
+ *        target is installed through `X509_VERIFY_PARAM` now and a refused one fails the handshake, as the
+ *        TCP transport's does (Huly QB-1076). Under OpenSSL 3 `x` is installed and simply does not match.
+ */
+TEST(QuicHandshakeNativeBackend, VerifiedClientBindsItsServerNameAndFailsClosedOnARefusedOne) {
+    using quic_handshake_hostname_test::handshake_outcome;
+    using quic_handshake_hostname_test::localhost_fixture;
+    using quic_handshake_hostname_test::verified_client_handshake;
+    ASSERT_TRUE(std::filesystem::exists(localhost_fixture("cert.pem"))) << localhost_fixture("cert.pem");
+    ASSERT_TRUE(std::filesystem::exists(localhost_fixture("key.pem"))) << localhost_fixture("key.pem");
+
+    EXPECT_EQ(verified_client_handshake("localhost"), handshake_outcome::connected)
+        << "the trusted-certificate setup itself is broken, so the two refusals below would prove nothing";
+    EXPECT_EQ(verified_client_handshake("wrong.example.com"), handshake_outcome::refused)
+        << "a certificate issued for localhost was accepted for wrong.example.com: only the chain was checked";
+    EXPECT_EQ(verified_client_handshake("x"), handshake_outcome::refused)
+        << "a server name OpenSSL refused to bind left the chain check alone: any trusted certificate was accepted";
+}
+
 #endif // QB_HAS_QUIC

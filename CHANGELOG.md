@@ -622,6 +622,18 @@ policy.
   and read their dates through calls both versions have. Verified on OpenSSL 4.0.3 (with ngtcp2 1.25.0 built against
   it) and 3.5.7 on Linux, and 3.6.3 on Windows.
 
+- **A QUIC client fails its handshake when OpenSSL refuses the server name it is to verify (Huly QB-1076).** The
+  native client bound hostname verification with `SSL_set1_host()` and ignored its result. OpenSSL 4.0 validates the
+  name before installing it -- a single character, a label over 63 bytes, a trailing dot are refused -- and a refused
+  name left no target: the client checked the chain alone and accepted a trusted certificate issued for any host.
+  The target goes in through `X509_VERIFY_PARAM_set1_ip_asc()` for an IP literal and `X509_VERIFY_PARAM_set1_host()`
+  otherwise -- what `SSL_set1_host()`, deprecated by OpenSSL 4.0, does -- and a target OpenSSL refuses fails the
+  handshake, as the TCP transport's does. Under OpenSSL 3 every such name was installed and nothing changes. Witness:
+  `QuicHandshakeNativeBackend.VerifiedClientBindsItsServerNameAndFailsClosedOnARefusedOne`, the first QUIC case with
+  `verify_peer` on (it trusts the committed `CN=localhost` certificate through `SSL_CERT_FILE`): on OpenSSL 4.0.3 a
+  client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
+  it is refused both ways.
+
 - **A standalone io object's `dispose()` ends its transport (Huly QB-1060).** `input<>`, `output<>` and
   `io<>` stopped a standalone object's watcher -- a client's, an acceptor's -- and left its transport as it
   was until the object connected again or was destroyed: the peer of a `disconnect()`, or of a connection

@@ -1020,14 +1020,14 @@ private:
         } else {
             if (ngtcp2_crypto_ossl_configure_client_session(_ssl) != 0)
                 throw std::runtime_error("ngtcp2 client TLS session configuration failed");
-            if (!tls.server_name.empty()) {
-                SSL_set_tlsext_host_name(_ssl, tls.server_name.c_str());
-                // Bind hostname verification: SSL_VERIFY_PEER validates the
-                // chain but, without this, accepts any CA-trusted certificate
-                // for any host (MITM). Match the cert against the server name.
-                if (tls.verify_peer) {
+            if (const char *host = tls.server_name.c_str(); !tls.server_name.empty()) {
+                SSL_set_tlsext_host_name(_ssl, host);
+                // Bind hostname verification (the chain alone accepts any CA-trusted certificate for any host): an IP
+                // literal as an IP, else a DNS name. A target OpenSSL refuses (4.0 validates names) fails closed.
+                if (X509_VERIFY_PARAM *param = SSL_get0_param(_ssl); tls.verify_peer) {
                     SSL_set_hostflags(_ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
-                    SSL_set1_host(_ssl, tls.server_name.c_str());
+                    if (X509_VERIFY_PARAM_set1_ip_asc(param, host) != 1 && X509_VERIFY_PARAM_set1_host(param, host, 0) != 1)
+                        SSL_set_verify(_ssl, SSL_VERIFY_PEER, [](int, X509_STORE_CTX *) -> int { return 0; });
                 }
             }
             SSL_set_alpn_protos(_ssl, _wire_alpn.data(), static_cast<unsigned int>(_wire_alpn.size()));
