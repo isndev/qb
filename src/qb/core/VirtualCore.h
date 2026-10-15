@@ -672,6 +672,7 @@ private:
     unsigned int _last_signal_generation =
         0; ///< `Main::_signal_generation` at this core's last signal scan (the pass compares a register copy of it with ONE relaxed
            ///< load); a newer value -- a signal, `Main::stop()` or ~Main's stop request -- sends the core to `__deliver_signals__`.
+           ///< Starts at its engine's `Main::start()` reading (`detail::signal_mark`, Huly QB-364), as `_signal_seen` does.
     bool _stop_delivered = false; ///< One-way latch: whether this core has delivered the cooperative `stop_token`'s synthetic SIGINT (the token
                                   ///< cannot be un-requested).
     /// Monotonic count of event-loop passes; surfaced to callbacks via `qb::LoopEvent::iteration`.

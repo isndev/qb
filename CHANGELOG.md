@@ -653,6 +653,23 @@ policy.
   client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
   it is refused both ways.
 
+- **The signals of an engine's start: handled from before its first core, counted from its own start (Huly
+  QB-1070, QB-364).** `Main::start()` installed its default handlers (SIGINT, SIGTERM, the Windows console bridge)
+  only once every core had passed the start barrier, or just before the caller's core in a synchronous start; an
+  actor's `onInit()` and its first passes run before that, so a SIGTERM raised then met the disposition the process
+  had before the engine -- by default its end, with no teardown -- and a console CTRL_BREAK too (the intermittent
+  `ConsoleBreakLandsAsSigtermViaTheBridge` under load). `start()` also zeroed the process-wide signal counts for its
+  fresh cores, under the cursors of any engine already running: a signal raised before the second start and not yet
+  scanned was erased, and one already delivered was replayed once the counts moved again. `start()` now reads the
+  counts, installs the handlers, then launches its cores, and each core takes that reading as the signals it has
+  delivered (`detail::signal_mark`, carried by `CoreSpawnerParameter`): a signal raised during the start is the
+  first pass's to deliver, every engine delivers each signal raised after its own start once, and nothing is reset.
+  Neither `Main` nor `VirtualCore` changes size; the pass is untouched. Witnesses:
+  `qb-core-test-system-sigterm-shutdown` -- `ASigtermRaisedWhileTheEngineStartsStopsIt` (and the SIGBREAK twin on
+  Windows; raised from an `onInit()`, deterministic), `AnotherEngineStartingDoesNotEraseATerminalSignal` and
+  `AnotherEngineStartingNeitherLosesNorReplaysSignals` (the running engine raises, then holds its pass while the
+  other one starts).
+
 - **A broadcast to a core the engine does not run reaches no actor (Huly QB-268).** Every id outside the engine's
   core set aliases the first core's pipe and mailbox (`CoreSet::resolve` gives it index 0), so an event to such a
   core lands on the first core. A unicast found no actor there and was a `not_found` dead letter, but a

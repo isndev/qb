@@ -848,6 +848,28 @@ public:
     [[nodiscard]] CoreId getNbCore() const noexcept;
 };
 
+namespace detail {
+/**
+ * @struct signal_mark
+ * @brief Internal: the process's signal counts as one engine's `Main::start()` read them.
+ * @details Read by `start()` before it installs its signal handlers and launches its cores, and taken by
+ *          each of those cores as the signals it has already seen: a core delivers every signal raised after
+ *          the reading, once, and none raised before it. The counts are process-wide and never reset -- an
+ *          engine starting while another one runs leaves that one's cursors as they are (Huly QB-364).
+ * @ingroup Engine
+ */
+struct signal_mark {
+#if defined(NSIG)
+    /// One slot per signal number the platform defines (`NSIG`: 65 on Linux, 32 on macOS, 23 on Windows).
+    static constexpr std::size_t slots = NSIG;
+#else
+    static constexpr std::size_t slots = 65;
+#endif
+    unsigned int                    generation = 0; ///< `Main::_signal_generation` at the reading
+    std::array<unsigned int, slots> raised{};       ///< `Main::_signal_raised`, slot by slot, at the reading
+};
+} // namespace detail
+
 /**
  * @struct CoreSpawnerParameter
  * @brief Internal structure for passing parameters to core spawning functions
@@ -880,6 +902,13 @@ struct CoreSpawnerParameter {
      * signal being delivered).
      */
     qb::stop_token stop_token;
+
+    /**
+     * @brief The signal counts `Main::start()` read before it installed its handlers (Huly QB-364, QB-1070).
+     * @details A local of `start()`, which waits for every core to pass the start barrier -- after the core
+     *          has taken it -- before it returns.
+     */
+    detail::signal_mark const &signal_mark;
 };
 
 /*!
@@ -899,12 +928,8 @@ class Main {
     //////// Types
     using Mailbox = lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>;
 
-#if defined(NSIG)
-    /// One slot per signal number the platform defines (`NSIG`: 65 on Linux, 32 on macOS, 23 on Windows).
-    static constexpr std::size_t SignalSlots = NSIG;
-#else
-    static constexpr std::size_t SignalSlots = 65;
-#endif
+    /// One slot per signal number the platform defines (`detail::signal_mark::slots`).
+    static constexpr std::size_t SignalSlots = detail::signal_mark::slots;
     /// One generation per signal number, bumped by `onSignal()` -- and by `stop()` for SIGINT -- each
     /// time that signal is raised (Huly QB-65). A core delivers one `SignalEvent` per signal whose
     /// generation moved since its last scan, in ascending signum order, so two DIFFERENT signals raised
@@ -912,7 +937,8 @@ class Main {
     /// can no longer hide it. The single `_signal_pending` slot this replaces held only the LATEST
     /// signum, so a registered SIGHUP landing after a SIGTERM left every core delivering SIGHUP alone
     /// and the engine running. Repeats of the SAME signal between two passes coalesce into one event,
-    /// as POSIX standard signals do.
+    /// as POSIX standard signals do. Never reset: an engine's cores start from the counts its `start()`
+    /// read (`detail::signal_mark`), so another engine starting leaves running cores as they are (Huly QB-364).
     static std::array<std::atomic<unsigned int>, SignalSlots> _signal_raised;
     /// Bumped (release) after the slot of every raised signal: the ONE value the pass reads (relaxed)
     /// to decide whether to scan the slots at all. Both stay lock-free for signal-handler safety
@@ -922,11 +948,11 @@ class Main {
     std::atomic<uint64_t> _sync_start;
     static void           onSignal(int signal) noexcept;
     static void           start_thread(CoreSpawnerParameter const &params) noexcept;
-    /// Install the documented default signal dispositions at engine start: SIGINT + SIGTERM
-    /// everywhere, plus — on Windows — the console-control bridge (SIGBREAK, i.e. CTRL_BREAK
-    /// and CTRL_CLOSE as the CRT raises them, translated to SIGTERM so cross-platform actor
-    /// code and the default kill path work with no #ifdef). An explicit registerSignal(SIGBREAK)
-    /// still delivers SIGBREAK untranslated.
+    /// Install the documented default signal dispositions at engine start, before the first core is
+    /// launched (Huly QB-1070): SIGINT + SIGTERM everywhere, plus — on Windows — the console-control
+    /// bridge (SIGBREAK, i.e. CTRL_BREAK and CTRL_CLOSE as the CRT raises them, translated to SIGTERM so
+    /// cross-platform actor code and the default kill path work with no #ifdef). An explicit
+    /// registerSignal(SIGBREAK) still delivers SIGBREAK untranslated.
     static void install_default_signals() noexcept;
     static bool __wait__all__cores__ready(std::size_t nb_core, std::atomic<uint64_t> &sync_start) noexcept;
     /// Destroys the engine's SharedCoreCommunication, its mailboxes in the reverse of the order it built them in -- this
@@ -1066,7 +1092,8 @@ public:
      * @ingroup Engine
      * @param signum The signal number (e.g., `SIGUSR1`, `SIGHUP`).
      * @note
-     * `Main::start()` installs `SIGINT` and `SIGTERM` itself — both are treated as terminal by
+     * `Main::start()` installs `SIGINT` and `SIGTERM` itself, before it launches its cores, so a signal raised
+     * while the engine starts -- from an `onInit()`, say -- already shuts it down (Huly QB-1070). Both are treated as terminal by
      * `Actor::on(SignalEvent&)`'s default body, so either one unwinds every actor through the
      * normal `kill()` path. (`SIGTERM` is a standard C signal and is installed on every platform;
      * Windows simply never delivers it outside `std::raise`.)\n
@@ -1074,7 +1101,9 @@ public:
      * terminal — `SIGHUP` / `SIGUSR1` are meant for config reload or a stats dump. Override
      * `on(SignalEvent&)` (re-registering the handler from your derived type in `onInit()`) to act
      * on it, and call `kill()` there if you do want it to stop the actor.\n
-     * This is a static method and affects all `Main` instances if multiple were to exist (though typically only one exists).
+     * This is a static method and affects all `Main` instances if multiple were to exist (though typically only one exists):
+     * every engine running delivers each signal raised after its own `start()` once, and starting another engine
+     * neither loses nor replays any of them (Huly QB-364).
      */
     static void registerSignal(int signum) noexcept;
     /*!

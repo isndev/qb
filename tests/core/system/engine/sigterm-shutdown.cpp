@@ -184,8 +184,8 @@ TEST(SignalShutdown, EngineInstallsTheSigtermHandlerItself) {
     while (!g_running.load(std::memory_order_relaxed) && std::chrono::steady_clock::now() < up_deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
 
-    // `install_default_signals()` runs inside start() and is not ordered against the first loop
-    // turn, so poll for the disposition instead of assuming it is set the moment an actor runs.
+    // `install_default_signals()` runs inside start() before the cores are launched since 3.3 (Huly
+    // QB-1070), so the disposition is set by the first loop turn; the poll stays as a bound.
     bool       installed = false;
     const auto deadline  = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (!(installed = handler_installed(SIGTERM)) && std::chrono::steady_clock::now() < deadline)
@@ -443,6 +443,234 @@ TEST(SignalShutdown, TwoDifferentSignalsInOnePassAreBothDelivered) {
 
     qb::Main::stop();
     EXPECT_TRUE(future.wait_for(std::chrono::seconds(10)) == std::future_status::ready);
+    qb::Main::unregisterSignal(SIGUSR1);
+    qb::Main::unregisterSignal(SIGUSR2);
+}
+#endif // !_WIN32
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-1070 -- a signal raised while the engine starts stops it; it does not meet the disposition
+// the process had before the engine.
+//
+// Main::start() installed its default set only once every core had passed the start barrier (and, in
+// a synchronous start, just before the caller's own core). A core's actors run before that -- an
+// onInit() before the barrier, the first passes right after it -- so a SIGTERM raised then met the
+// disposition in force before the engine: by default it killed the process with no teardown, and so
+// did the Windows bridge's SIGBREAK, which is what made `ConsoleBreakLandsAsSigtermViaTheBridge` fail
+// under load. Raised from an onInit(), the signal lands in that window every time. Its disposition is
+// set to SIG_IGN first, so that the defect shows as an engine that does not stop, not a dead binary.
+// ---------------------------------------------------------------------------------------------
+namespace sigterm_shutdown_test {
+
+std::atomic<bool> g_init_raised{false};
+
+/// Raises `signum` from its onInit(), then stays alive: only that signal can end this engine.
+class RaiseInInit final
+    : public qb::Actor
+    , public qb::ICallback {
+    int const _signum;
+
+public:
+    explicit RaiseInInit(int signum) noexcept
+        : _signum(signum) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        std::raise(_signum);
+        g_init_raised.store(true);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {}
+};
+
+/// Reports whether an engine whose actor raises `signum` from its onInit() stops on its own. A run the
+/// defect left going is stopped by hand afterwards, so the next case starts clean.
+[[nodiscard]] bool
+engine_stops_on_a_signal_raised_in_init(int signum, std::chrono::seconds budget) {
+    qb::Main::ignoreSignal(signum); // the disposition the window exposed: a missed stop, not a killed binary
+    g_init_raised.store(false);
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+    std::thread([done, signum] {
+        qb::Main main;
+        main.addActor<RaiseInInit>(0, signum);
+        main.start();
+        main.join();
+        done->set_value();
+    }).detach();
+    const bool stopped = future.wait_for(budget) == std::future_status::ready;
+    if (!stopped) {
+        qb::Main::stop();
+        (void) future.wait_for(std::chrono::seconds(10));
+    }
+    return stopped;
+}
+
+} // namespace sigterm_shutdown_test
+
+TEST(SignalShutdown, ASigtermRaisedWhileTheEngineStartsStopsIt) {
+    using namespace sigterm_shutdown_test;
+    EXPECT_TRUE(engine_stops_on_a_signal_raised_in_init(SIGTERM, std::chrono::seconds(10)))
+        << "a SIGTERM raised from an onInit() met the disposition the process had before the engine: start() installed "
+           "the engine's handlers only after its cores had run (Huly QB-1070)";
+    EXPECT_TRUE(g_init_raised.load()) << "the actor never ran its onInit()";
+}
+
+#ifdef _WIN32
+// The console-control bridge raised during the start: the intermittent failure of the bridge test above,
+// made deterministic.
+TEST(SignalShutdown, AConsoleBreakRaisedWhileTheEngineStartsStopsIt) {
+    using namespace sigterm_shutdown_test;
+    EXPECT_TRUE(engine_stops_on_a_signal_raised_in_init(SIGBREAK, std::chrono::seconds(10)))
+        << "a SIGBREAK raised from an onInit() was not bridged to SIGTERM: the bridge was installed after the cores "
+           "had run (Huly QB-1070)";
+}
+#endif // _WIN32
+
+// ---------------------------------------------------------------------------------------------
+// Huly QB-364 -- starting another engine neither loses nor replays the signals of one running.
+//
+// Main::start() reset the process-wide signal generations to zero for its fresh cores. The cores of an
+// engine already running compare their own cursors with those counters: a signal raised before the
+// other engine's start and not yet seen by them was erased, and one they had already delivered came
+// back as new once the counters moved again. Here the running engine's actor raises the signal and
+// holds its pass until the second engine has started, so its core's next check comes after that start,
+// every time.
+// ---------------------------------------------------------------------------------------------
+namespace sigterm_shutdown_test {
+
+std::atomic<bool> g_fire_first{false};  // raise the first signal, delivered before the other engine starts
+std::atomic<bool> g_fire_second{false}; // raise the signal the other engine's start must not erase
+std::atomic<bool> g_second_raised{false};
+std::atomic<bool> g_other_started{false};
+std::atomic<int>  g_first_seen{0};
+std::atomic<int>  g_second_seen{0};
+std::atomic<int>  g_first_signum{0};
+std::atomic<int>  g_second_signum{0};
+
+/// Holds its core until the other engine has started -- a deadlock guard bounds it, never an oracle.
+void
+hold_until_the_other_engine_started() {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!g_other_started.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+}
+
+class RaiseThenHold final
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerCallback(*this);
+        registerEvent<qb::SignalEvent>(*this); // rebind the slot to RaiseThenHold::on (see ReloadActor)
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (g_fire_first.exchange(false, std::memory_order_acq_rel))
+            std::raise(g_first_signum.load());
+        if (g_fire_second.exchange(false, std::memory_order_acq_rel)) {
+            std::raise(g_second_signum.load());
+            g_second_raised.store(true, std::memory_order_release);
+            hold_until_the_other_engine_started();
+        }
+    }
+    void
+    on(qb::SignalEvent const &event) noexcept {
+        if (event.signum == g_first_signum.load())
+            g_first_seen.fetch_add(1, std::memory_order_relaxed);
+        if (event.signum == g_second_signum.load())
+            g_second_seen.fetch_add(1, std::memory_order_relaxed);
+        qb::Actor::on(event); // a terminal signal still ends it
+    }
+};
+
+class Bystander final : public qb::Actor {}; // keeps the other engine's core alive
+
+/// Polls `ready` for at most `bound` -- the polls end the wait early, they never decide the verdict.
+template <typename Ready>
+[[nodiscard]] bool
+wait_until(Ready &&ready, std::chrono::seconds bound) {
+    const auto deadline = std::chrono::steady_clock::now() + bound;
+    while (!ready() && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    return ready();
+}
+
+/// Runs the running engine on its own thread; has its actor raise `first` (when non-zero) and waits for
+/// its delivery; then has it raise `second` and hold its pass while another engine starts. Reports whether
+/// `second` then reached the running engine -- for SIGTERM, whether it stopped it -- within `budget`.
+/// Everything is stopped afterwards.
+[[nodiscard]] bool
+second_signal_survives_another_start(int first, int second, std::chrono::seconds budget) {
+    g_first_signum.store(first);
+    g_second_signum.store(second);
+    g_fire_first.store(false);
+    g_fire_second.store(false);
+    g_second_raised.store(false);
+    g_other_started.store(false);
+    g_first_seen.store(0);
+    g_second_seen.store(0);
+    auto done   = std::make_shared<std::promise<void>>();
+    auto future = done->get_future();
+    std::thread([done] {
+        qb::Main main;
+        main.addActor<RaiseThenHold>(0);
+        main.start();
+        main.join();
+        done->set_value();
+    }).detach();
+
+    if (first != 0) {
+        g_fire_first.store(true, std::memory_order_release);
+        if (!wait_until([] { return g_first_seen.load() >= 1; }, std::chrono::seconds(5)))
+            ADD_FAILURE() << "the first signal never reached the running engine";
+    }
+    g_fire_second.store(true, std::memory_order_release);
+    bool delivered = false;
+    if (!wait_until([] { return g_second_raised.load(std::memory_order_acquire); }, std::chrono::seconds(5))) {
+        ADD_FAILURE() << "the running engine never raised the second signal";
+    } else {
+        qb::Main other;
+        other.addActor<Bystander>(0);
+        other.start();
+        g_other_started.store(true, std::memory_order_release);
+        // Delivered, if at all, by the running core's first scan after the other engine's start -- and so is
+        // anything that scan replays, which has therefore shown by then too.
+        if (second == SIGTERM)
+            delivered = future.wait_for(budget) == std::future_status::ready;
+        else
+            delivered = wait_until([] { return g_second_seen.load() >= 1; }, budget);
+        qb::Main::stop(); // the other engine, and the running one unless the second signal ended it
+        other.join();
+    }
+    g_other_started.store(true, std::memory_order_release); // release a held pass, whatever happened
+    qb::Main::stop();
+    (void) future.wait_for(std::chrono::seconds(10));
+    return delivered;
+}
+
+} // namespace sigterm_shutdown_test
+
+TEST(SignalShutdown, AnotherEngineStartingDoesNotEraseATerminalSignal) {
+    using namespace sigterm_shutdown_test;
+    qb::Main::registerSignal(SIGTERM);
+    EXPECT_TRUE(second_signal_survives_another_start(0, SIGTERM, std::chrono::seconds(10)))
+        << "a SIGTERM raised while one engine ran, before another engine started, never stopped the first: the other "
+           "start reset the process-wide signal generations under it (Huly QB-364)";
+}
+
+#ifndef _WIN32
+TEST(SignalShutdown, AnotherEngineStartingNeitherLosesNorReplaysSignals) {
+    using namespace sigterm_shutdown_test;
+    qb::Main::registerSignal(SIGUSR1);
+    qb::Main::registerSignal(SIGUSR2);
+    EXPECT_TRUE(second_signal_survives_another_start(SIGUSR1, SIGUSR2, std::chrono::seconds(5)))
+        << "SIGUSR2, raised before another engine started, never reached the running engine (Huly QB-364)";
+    EXPECT_EQ(g_first_seen.load(), 1) << "SIGUSR1, delivered before the other engine started, was delivered again after it";
+    EXPECT_EQ(g_second_seen.load(), 1);
     qb::Main::unregisterSignal(SIGUSR1);
     qb::Main::unregisterSignal(SIGUSR2);
 }

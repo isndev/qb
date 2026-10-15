@@ -116,6 +116,11 @@ registering just that one leaves the actor unstoppable and `Main::join()` hangin
 Write signal handling against SIGINT/SIGTERM only, on every platform: on Windows the engine's
 console-control bridge delivers CTRL_BREAK and CTRL_CLOSE as SIGTERM (the CRT raises them as
 SIGBREAK; `install_default_signals()` translates), so cross-platform actor code needs no `#ifdef`.
+`start()` reads the process's signal counts and installs those handlers BEFORE it launches a core: a signal raised
+while the engine starts -- from an `onInit()` -- already stops it (until 3.3 it met the process's previous
+disposition, by default its end; Huly QB-1070), and each core delivers every signal raised after its engine's
+`start()` once and none before. The counts are process-wide and never reset, so starting a second engine while one
+runs neither erases nor replays the running one's signals (Huly QB-364). `Main::stop()` is static: it stops them all.
 
 ### Events
 
@@ -427,7 +432,7 @@ task does not keep that core alive, and its loop exits when its last actor dies.
 on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
 `CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1419-1477;
-VirtualCore.h:1732-1743; coroutine-detached.cpp:878-938)_
+VirtualCore.h:1733-1744; coroutine-detached.cpp:878-938)_
 The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1065-1067)_
 
 ```cpp
@@ -627,14 +632,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
   target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
-  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1257-1280;
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1258-1281;
   the inventory table Actor.h:869-913)_
 - **A service tag registers before the cores, or not while they live.** Every tag a program names registers at
   static initialisation, and each core seeds its ordinary-actor ids above the registered tags. A tag whose FIRST
   registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
   ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
   without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
-  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1579-1593; VirtualCore.cpp:1809-1844;
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1580-1594; VirtualCore.cpp:1809-1844;
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
@@ -642,8 +647,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   it can finish afterwards only while another actor keeps the same VirtualCore running);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1477 / VirtualCore.h:1722; `spawn` Actor.h:1514 /
-  VirtualCore.h:1748)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1065-1067)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1477 / VirtualCore.h:1723; `spawn` Actor.h:1514 /
+  VirtualCore.h:1749)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1065-1067)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -652,7 +657,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:721-723, :508-510)_
+  with 0 actors fails startup. _(Main.cpp:732-734, :511-513)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
@@ -660,7 +665,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1065-1077; VirtualCore.cpp:1446-1453)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1066-1078; VirtualCore.cpp:1446-1453)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.

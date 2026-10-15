@@ -475,6 +475,9 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     } thread_context_guard;
     VirtualCore core(initializer.getIndex(), params.shared_com, initializer._next_id);
     stop_notice.resolved_index = core._resolved_index;
+    // The signals raised before this engine's start are not its core's to deliver (Huly QB-364).
+    core._last_signal_generation = params.signal_mark.generation;
+    core._signal_seen            = params.signal_mark.raised;
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.
     core.__set_stop_token__(params.stop_token);
@@ -634,9 +637,18 @@ Main::start(bool async) noexcept {
     }
 
     _is_running = true;
-    for (auto &slot : _signal_raised)
-        slot.store(0, std::memory_order_relaxed);
-    _signal_generation.store(0, std::memory_order_relaxed); // fresh cores start at generation 0
+    // This engine's cores deliver the signals raised from here on, and none before (Huly QB-364). The counts are
+    // read, never reset: the cores of an engine already running compare their own cursors with them, and a reset
+    // under them erased a signal they had not seen yet and replayed one they had. The generation first, then the
+    // slots: a signal whose slot this reading misses moves the generation past it, so the cores scan for it.
+    detail::signal_mark signal_mark; // taken by every core before the start barrier, which this call waits for
+    signal_mark.generation = _signal_generation.load(std::memory_order_acquire);
+    for (std::size_t signum = 0; signum < SignalSlots; ++signum)
+        signal_mark.raised[signum] = _signal_raised[signum].load(std::memory_order_relaxed);
+    // Before the first core is launched (Huly QB-1070): an actor's onInit() runs before the start barrier and the
+    // first passes right after it, both while this call is still under way. A SIGTERM raised then -- or the
+    // console's SIGBREAK on Windows -- met the disposition the process had before the engine: by default, its end.
+    Main::install_default_signals();
 
     release_shared_com(); // a failed start's mailboxes first: their blocks go back to the region cache for these
     _shared_com = std::make_unique<SharedCoreCommunication>(_core_initializers);
@@ -646,19 +658,19 @@ Main::start(bool async) noexcept {
     const auto stop_token = _stop_source.get_token();
     for (auto &it : _core_initializers) {
         if (!async && i == (_core_initializers.size() - 1)) {
-            Main::install_default_signals();
             // Synchronous fallback: the caller becomes the last worker. The
             // stop token is still wired so a `request_stop()` on the source
             // (from destruction or a signal-free stop path) cancels it too.
-            start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token});
+            start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark});
         } else {
             // C++20: `qb::jthread` auto-joins on destruction. The worker is
             // spawned with the stop_token captured by value so the lifetime
             // of the token is tied to each thread — `Main::_stop_source` can
             // request_stop() asynchronously at any moment during `~Main()`
             // or `stop()` without fearing lifetime issues.
-            _cores[i] = qb::jthread(
-                [params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token}] { start_thread(params); });
+            _cores[i] = qb::jthread([params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark}] {
+                start_thread(params);
+            });
         }
         ++i;
     }
@@ -668,7 +680,6 @@ Main::start(bool async) noexcept {
         // while the last core is still initialising, so it must not spin without backing off.
         uint64_t ret = 0;
         wait_sync_start(_sync_start, _cores.size(), ret);
-        Main::install_default_signals();
     }
 
     // A runtime exception can overtake this load after every core passed the
