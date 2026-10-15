@@ -1007,7 +1007,7 @@ public:
      * @brief Stop the engine and all its VirtualCores gracefully.
      * @ingroup Engine
      * @details This is a static method and can be called from any thread, including signal handlers.
-     *          It signals all VirtualCores to shut down. Actors will typically receive a `KillEvent`.
+     *          It signals every VirtualCore of every running engine to stop: each actor receives a `SignalEvent` (SIGINT), never a `KillEvent`.
      * @note Same effect as receiving a SIGINT or SIGTERM signal by default.
      */
     static void stop() noexcept;
