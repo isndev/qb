@@ -112,6 +112,9 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine, Servi
     , _event_buffer(allocator::make_region<EventBuffer>())
     , _pipes(__make_pipes__(_pipe_pool, engine.getNbCore()))
     , _self_pipe(_pipes[_resolved_index]) {
+    // What this thread's io loop has run so far is not this core's: under `start(false)` the loop is the calling
+    // thread's, and it ran the engines before this one (Huly QB-357).
+    _io_events_base = io::async::listener::current.total_events_processed();
     // Every logical core id, member of the set or not, maps to the pipe `resolve()` names for it;
     // `_pipes` never grows after this, so the pointers stay good for the core's lifetime.
     for (std::size_t core = 0; core < MaxCores; ++core)
@@ -1519,8 +1522,8 @@ void
 VirtualCore::__dead_letter__(Event const &event, DeadLetterReason const reason) noexcept {
     if (unlikely(__is_watch_control__(event.getID())))
         return; // the death watch's own bookkeeping, which its protocol answers (Huly QB-51): never a letter
-    const auto n = ++_nb_dead_letters;
     ++_nb_dead_letters_by_reason[static_cast<std::size_t>(reason)];
+    const auto n = __dead_letter_count__();
     // The first 16 of the core, then one line at each power of two: a flood of stale ids leaves a
     // bounded trace with the running count, and no clock is read. `oversize` has its own CRIT at
     // the flush, with the remedy.
@@ -1542,6 +1545,14 @@ VirtualCore::__dead_letter__(Event const &event, DeadLetterReason const reason) 
     }
 }
 
+std::uint64_t
+VirtualCore::__dead_letter_count__() const noexcept {
+    std::uint64_t n = 0;
+    for (auto const by_reason : _nb_dead_letters_by_reason)
+        n += by_reason;
+    return n;
+}
+
 DeadLetterReason
 VirtualCore::__undelivered_reason__(ActorId const dest) const noexcept {
     Actor const *const actor = __actor_slot__(dest);
@@ -1559,11 +1570,12 @@ VirtualCore::getCoreStats() const noexcept {
     s.buckets_sent           = _metrics._nb_bucket_sent;
     s.sends_blocked          = _nb_send_blocked;
     s.events_dropped         = _nb_event_dropped;
-    s.dead_letters           = _nb_dead_letters;
+    s.dead_letters           = __dead_letter_count__();
     s.dead_letters_by_reason = _nb_dead_letters_by_reason;
-    // The loop's own cumulative count, the one the park policy reads: it includes the callbacks an
-    // idle core's park ran.
-    s.io_events = io::async::listener::current.total_events_processed();
+    // The loop's own count, the one the park policy reads -- it includes the callbacks an idle core's park ran --
+    // since this core was built: under `start(false)` the loop is the calling thread's and outlives the engine
+    // (Huly QB-357).
+    s.io_events = io::async::listener::current.total_events_processed() - _io_events_base;
     // Timed cores only (Huly QB-165): the sliding worst case is judged against the clock of the ask.
     if (_pass_timing)
         s.pass_time = _pass_recorder.snapshot(qb::mono_now());

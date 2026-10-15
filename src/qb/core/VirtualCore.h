@@ -696,9 +696,12 @@ private:
     /// `SIZE_MAX` and 0 until a first refusal.
     std::vector<std::size_t>  _peer_seen_read;
     std::vector<std::uint8_t> _peer_stalls;
+    // This thread's io loop's lifetime count when the core was built (Huly QB-357): `getCoreStats().io_events` is the
+    // count since, the loop outliving the core under `start(false)`. In the slot of the dead letters' total, which was
+    // the sum of the array below and is now summed when asked: no member moved.
+    std::uint64_t _io_events_base = 0;
     // The dead letters (Huly QB-163): counted by reason, and handed to the handler the core's
     // `CoreInitializer` installed, if any. Touched only when an event reaches no actor.
-    std::uint64_t                                _nb_dead_letters = 0;
     std::array<std::uint64_t, DeadLetterReasons> _nb_dead_letters_by_reason{};
     // Buckets of the mailbox batch `_event_buffer` holds while it is being routed, 0 between batches:
     // what `~VirtualCore` walks when a handler's exception stopped the core mid-batch (two stores
@@ -863,6 +866,8 @@ private:
     /// Why a unicast found no handler: `unhandled` when a live actor holds the destination id,
     /// `not_found` otherwise (never existed, removed, or killed earlier in the pass).
     [[nodiscard]] QB_NOINLINE QB_COLD DeadLetterReason __undelivered_reason__(ActorId dest) const noexcept;
+    /// Every dead letter of this core, all reasons: the sum `CoreStats::dead_letters` is documented as.
+    [[nodiscard]] QB_NOINLINE QB_COLD std::uint64_t __dead_letter_count__() const noexcept;
     /// Death watch (Huly QB-51), on the watcher's core: open the watch -- one record, answered once
     /// -- and register it with the target's core, directly when it is this one and by a
     /// `detail::WatchRequest` otherwise; answer it at once when no core can hold the target.
@@ -1635,7 +1640,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:734-744`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:737-747`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

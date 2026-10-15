@@ -653,6 +653,15 @@ policy.
   client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
   it is refused both ways.
 
+- **`CoreStats::io_events` counts the core's own io callbacks (Huly QB-357).** It copied the io loop's lifetime
+  count, and a synchronous engine (`start(false)`) runs its last core on the calling thread, whose loop outlives
+  the engine: every engine after the first on a thread reported the io callbacks of those before it. The core
+  now takes the loop's count when it is built and reports the difference; the loop's own counter is not reset,
+  so what a standalone qb-io user reads on that thread is unchanged. The base sits in the slot of the redundant
+  `dead_letters` total, which is now summed from its reasons when asked: no member of `VirtualCore` moved and its
+  size is unchanged. Witness: `qb-core-test-system-core-stats` (`ACoreCountsOnlyItsOwnIoCallbacksOnAReusedThread`:
+  the second synchronous engine on a thread reported its predecessor's callback before running any).
+
 - **`CoreStats::sends_blocked` counts a refused direct publication (Huly QB-356).** A cross-core `send`, `reply`
   or `forward` publishes straight into the peer's ring; when the ring is full the event goes to the outbound pipe
   and the flush delivers it later. That refused attempt met a full mailbox as a refused flush does, yet only the

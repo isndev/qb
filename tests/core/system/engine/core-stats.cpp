@@ -27,8 +27,9 @@
  *   - a QoS-2 burst into a full mailbox loses nothing and reports the backpressure it met;
  *   - a `send`, `forward` or `reply` whose direct publication finds the peer's mailbox full is ONE
  *     blocked attempt, and the event, kept in the pipe, is delivered (Huly QB-356);
- *   - io callbacks are counted (a `defer()`ed one included), and `loop_passes` is the pass
- *     number a `LoopEvent` carries.
+ *   - io callbacks are counted (a `defer()`ed one included), and only the core's own -- not those its
+ *     thread's loop ran for an engine before it (Huly QB-357) -- and `loop_passes` is the pass number
+ *     a `LoopEvent` carries.
  *
  * A counter moves AFTER the event it counts was handled, so a snapshot taken inside the handler
  * of the k-th arrival reads k - 1 received. The snapshots are written to globals and read after
@@ -495,6 +496,26 @@ TEST(CoreStats, IoCallbacksAndPassesAreCounted) {
     EXPECT_GE(g_io_after.io_events, g_io_before.io_events + 1) << "the deferred callback is an io event of this core";
     EXPECT_EQ(g_io_after.loop_passes, g_io_iteration) << "loop_passes is the pass number a LoopEvent carries";
     EXPECT_GT(g_io_after.loop_passes, g_io_before.loop_passes);
+}
+
+// A synchronous engine's last core runs on the calling thread, whose io loop outlives the engine: the
+// loop's lifetime count is the THREAD's history, and until 3.3 `io_events` copied it (Huly QB-357), so
+// every engine after the first on a thread reported the io callbacks of those before it. The count is
+// the core's own: none before its first io callback, whatever the thread ran earlier. The second round
+// is the witness, whatever ran on this thread before the test; the asynchronous round, on a fresh
+// worker thread, is the control that always held.
+TEST(CoreStats, ACoreCountsOnlyItsOwnIoCallbacksOnAReusedThread) {
+    for (int round = 0; round < 3; ++round) {
+        g_deferred_ran.store(false);
+        g_io_before = g_io_after = {};
+        qb::Main main;
+        main.addActor<IoProbe>(0);
+        main.start(round == 2); // the last round on a worker thread
+        main.join();
+        ASSERT_FALSE(main.hasError());
+        EXPECT_EQ(g_io_before.io_events, 0u) << "round " << round << ": a core that has run no io callback yet counts none";
+        EXPECT_GE(g_io_after.io_events, 1u) << "round " << round << ": the deferred callback is counted";
+    }
 }
 
 } // namespace core_stats_test

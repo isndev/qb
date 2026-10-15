@@ -76,9 +76,10 @@ struct CoreStats {
     std::uint64_t dead_letters = 0;
     /// `dead_letters` split by `qb::DeadLetterReason`, indexed by its value.
     std::array<std::uint64_t, DeadLetterReasons> dead_letters_by_reason{};
-    /// qb-io callbacks the core's loop ran: watcher callbacks, deferred callbacks and coroutine
-    /// resumes, including those an idle core's park delivered
-    /// (`qb::io::async::listener::total_events_processed()`).
+    /// qb-io callbacks the core's loop ran since the core started: watcher callbacks, deferred
+    /// callbacks and coroutine resumes, including those an idle core's park delivered. The loop's
+    /// lifetime count (`qb::io::async::listener::total_events_processed()`) less what it had run
+    /// before: under `start(false)` the loop is the calling thread's, and outlives the engine.
     std::uint64_t io_events = 0;
     /// How long the core's passes take, the park excluded: everything a pass runs -- io, flush, receive and the
     /// handlers, callbacks, the reap. Measured only on a core whose `qb::CoreInitializer::setPassTiming()` was set
