@@ -596,10 +596,12 @@ policy.
   whose `strlen` reads past an array without a NUL (`std::string` does the same) -- and so did every other member and
   operator that takes a C string: `compare`, `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains`,
   `==`, `!=`, `<`, `>`, `<=`, `>=` (and `==` / `!=` with the array on the left), `operator+` on either side. Each has a
-  `const char(&)[N]` form now, and its pointer form is a template an array argument cannot win, so every array, a
-  literal included, is read up to its first NUL and never past its end. The length is `__builtin_strnlen(str, N)`,
-  folded to a constant for a literal as `strlen` was; MSVC, which folds `strlen` alone, tests the last element: a NUL
-  there bounds `strlen`, an array without one is read by `strnlen`. A literal `nullptr` operand -- `strlen(nullptr)`, undefined -- no
+  `C (&)[N]` form now -- `C` is `const char` for a literal or a const array, `char` for a buffer -- and its pointer form
+  is a template an array argument cannot win, so every array, a literal included, is read up to its first NUL and never
+  past its end. The length is `__builtin_strnlen(str, N)`, folded to a constant for a literal as `strlen` was. MSVC
+  folds `strlen` alone: a const array, initialised whole by rule, has its last element tested -- a NUL there bounds
+  `strlen`, folded for a literal -- and an array without one, like every mutable buffer (whose tail may never have been
+  written), is read by `strnlen`. A literal `nullptr` operand -- `strlen(nullptr)`, undefined -- no
   longer compiles there (`==` / `!=` excepted, unchanged), and a literal `0`, ambiguous between the pointer and the
   `char` forms of `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains` and `operator+`, now takes the
   `char` form, as `assign` and `operator=` already did. `operator>>` read the

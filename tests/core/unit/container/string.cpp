@@ -35,9 +35,12 @@
 #include <streambuf>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <type_traits>
 
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <new>
@@ -1295,6 +1298,47 @@ static_assert(concatenation_takes<const char (&)[4]> && concatenation_takes<cons
               && concatenation_takes<const char *&> && concatenation_takes<char *&> && concatenation_takes<const S16 &>
               && concatenation_takes<const S8 &> && concatenation_takes<char &>);
 // clang-format on
+
+// Which arrays may have their last element read (the MSVC length tests it to keep a literal's strlen folded): only a
+// const array, a literal included -- initialised whole by rule. A mutable buffer's tail may never have been written,
+// so it is read by strnlen alone. `element_of` has the head and the parameter of every array form of qb::string, so
+// the language deduces here the element type each of them deduces for the same argument.
+template <qb::internal::char_element C, std::size_t N>
+C *element_of(C (&)[N]);
+
+template <typename A>
+constexpr bool reads_last_element_of = qb::internal::reads_last_element<std::remove_pointer_t<decltype(element_of(std::declval<A>()))>>;
+
+static_assert(reads_last_element_of<const char (&)[4]>, "a literal: initialised whole");
+static_assert(reads_last_element_of<const char (&)[32]>, "a const array: initialised whole");
+static_assert(!reads_last_element_of<char (&)[32]>, "a mutable buffer: its last element is never read");
+static_assert(!reads_last_element_of<char (&)[1]>, "a mutable buffer of one");
+
+// A buffer snprintf filled: "key" and its NUL, the rest never written. Every operation reads it up to its NUL, through
+// strnlen (valgrind memcheck reported the last-element test on such a buffer: a branch on an uninitialised value).
+TEST(StringArrayOperand, ABufferWhoseTailWasNeverWrittenIsReadUpToItsNul) {
+    char buffer[32];
+    std::snprintf(buffer, sizeof buffer, "%s", "key");
+    const S16 key("key");
+    EXPECT_TRUE(key == buffer && buffer == key && !(key != buffer) && !(buffer != key));
+    EXPECT_EQ(key.compare(buffer), 0);
+    EXPECT_FALSE(key < buffer || key > buffer);
+    EXPECT_TRUE(key <= buffer && key >= buffer);
+    EXPECT_EQ(S16("a key").find(buffer), 2u);
+    EXPECT_EQ(S16("keykey").rfind(buffer), 3u);
+    EXPECT_TRUE(key.starts_with(buffer) && key.ends_with(buffer) && key.contains(buffer));
+    S16 text(buffer);
+    text.append(buffer);
+    text += buffer;
+    EXPECT_EQ(std::string_view(text), "keykeykey");
+    S16 assigned;
+    assigned = buffer;
+    EXPECT_EQ(std::string_view(assigned), "key");
+    assigned.assign(buffer);
+    EXPECT_EQ(std::string_view(assigned), "key");
+    EXPECT_EQ(std::string_view(key + buffer), "keykey");
+    EXPECT_EQ(std::string_view(buffer + key), "keykey");
+}
 
 TEST(StringArrayOperand, TheUsualCallShapesAnswerAsStdString) {
     const S16         s("abcabc");
