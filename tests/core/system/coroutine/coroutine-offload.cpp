@@ -24,6 +24,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <memory>
+#include <type_traits>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -141,5 +143,82 @@ TEST(CoroutineOffload, AKillEndsTheWaitAtOnceAndTheResultIsDiscardedOnTheCore) {
     EXPECT_EQ(qb::io::async::current_offload_stats().discarded, g_discarded_before.load(std::memory_order_acquire) + 1);
     EXPECT_FALSE(g_continued.load(std::memory_order_acquire)) << "code after the co_await ran for a killed actor";
 }
+
+#if !defined(QB_PRIVATE_OMIT_QB842)
+// QB-842: offload's result only needs construction, not assignment.
+struct MoveConstructProbe {
+    std::atomic<std::thread::id> born_on{};
+    std::atomic<std::thread::id> died_on{};
+    std::atomic<std::thread::id> caller{};
+    std::atomic<bool>            received{false};
+    std::atomic<bool>            unexpected_exception{false};
+};
+
+struct MoveConstructOnly {
+    std::shared_ptr<MoveConstructProbe> probe;
+    int                                 value = 42;
+    explicit MoveConstructOnly(std::shared_ptr<MoveConstructProbe> p)
+        : probe(std::move(p)) {
+        probe->born_on.store(std::this_thread::get_id());
+    }
+    MoveConstructOnly(MoveConstructOnly &&other) noexcept
+        : probe(std::move(other.probe))
+        , value(other.value) {}
+    MoveConstructOnly(const MoveConstructOnly &)            = delete;
+    MoveConstructOnly &operator=(MoveConstructOnly &&)      = delete;
+    MoveConstructOnly &operator=(const MoveConstructOnly &) = delete;
+    ~MoveConstructOnly() {
+        if (probe)
+            probe->died_on.store(std::this_thread::get_id());
+    }
+};
+static_assert(std::is_move_constructible_v<MoveConstructOnly>);
+static_assert(!std::is_move_assignable_v<MoveConstructOnly>);
+
+struct MoveConstructFinished : qb::Event {};
+class MoveConstructWorker : public qb::Actor {
+    std::shared_ptr<MoveConstructProbe> _probe;
+
+public:
+    explicit MoveConstructWorker(std::shared_ptr<MoveConstructProbe> probe)
+        : _probe(std::move(probe)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<MoveConstructFinished>(*this);
+        const auto probe = _probe;
+        spawn([probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            probe->caller.store(std::this_thread::get_id());
+            try {
+                {
+                    const auto result = co_await ctx.offload([probe] { return MoveConstructOnly{probe}; });
+                    probe->received.store(result.value == 42);
+                }
+            } catch (...) {
+                probe->unexpected_exception.store(true);
+            }
+            ctx.push<MoveConstructFinished>();
+        });
+        co_return true;
+    }
+    void
+    on(MoveConstructFinished &) {
+        kill();
+    }
+};
+
+TEST(CoroutineOffload, ScopedResultNeedsMoveConstructionWithoutAssignment) {
+    const auto probe = std::make_shared<MoveConstructProbe>();
+    qb::Main   main;
+    main.addActor<MoveConstructWorker>(0, probe);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(probe->unexpected_exception.load());
+    EXPECT_TRUE(probe->received.load());
+    EXPECT_NE(probe->born_on.load(), probe->caller.load());
+    EXPECT_EQ(probe->died_on.load(), probe->caller.load());
+}
+
+#endif // QB_PRIVATE_OMIT_QB842
 
 } // namespace coroutine_offload_test

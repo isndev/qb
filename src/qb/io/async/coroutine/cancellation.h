@@ -59,6 +59,11 @@ public:
 // Forward declaration
 class cancellation_token;
 
+namespace detail {
+// Internal factory used by ScopedCoroContext; no addition to the public token API.
+inline cancellation_token linked_child_token(const cancellation_token &parent);
+} // namespace detail
+
 /**
  * @brief Tag type to construct an empty (state-less) cancellation_token without allocation.
  * @details
@@ -112,6 +117,8 @@ public:
      *          O(1) pointer splices that touch no allocator. The node must outlive its
      *          registration (unlink before destruction) and `fire` must not throw. Hooks fire
      *          in unspecified order relative to each other and BEFORE the `on_cancel` callbacks.
+     * @note A null fire is reserved for factory-owned internal nodes. Public link requires
+     *       non-null fire/ctx; callers must not manufacture internal propagation nodes.
      */
     struct cancel_hook {
         void (*fire)(void *ctx) noexcept = nullptr; ///< invoked once by `cancel()`, after detach.
@@ -147,6 +154,7 @@ public:
         }
         state(const state &)            = delete;
         state &operator=(const state &) = delete;
+        ~state() noexcept; // detaches hooks before callback members are destroyed
 
         /// Intrusive reference count, deliberately NOT atomic. Every copy of a token lives
         /// and dies on the one thread that owns the state (the rule above, which every other
@@ -163,7 +171,8 @@ public:
         /// increment is one register op.
         std::uint32_t refs{1};
         bool          cancelled{false};
-        bool          firing{false}; ///< `cancel()` is walking `callbacks` in place (see remove_on_cancel).
+        bool          firing{false};       ///< `cancel()` is walking `callbacks` in place (see remove_on_cancel).
+        bool          _child_links{false}; ///< internal deletion discriminator; layout not yet certified
         id_type       next_id{0};
         /// Circular list of `cancel_hook`s, this sentinel included; empty when it points to itself.
         cancel_hook hooks;
@@ -175,6 +184,27 @@ public:
     };
 
 private:
+    friend cancellation_token detail::linked_child_token(const cancellation_token &parent);
+
+    struct child_state final : state {
+        cancel_hook parent_hook{};
+
+        child_state() noexcept {
+            _child_links = true;
+            // Null fire is reserved for this internally-spliced propagation node.
+            // It must NEVER enter public link(), whose cancelled path invokes fire.
+            parent_hook.ctx = this;
+        }
+        ~child_state() noexcept {
+            unlink_parent();
+        }
+
+        void
+        unlink_parent() noexcept {
+            parent_hook.unlink();
+        }
+    };
+
     state *_state{nullptr};
 
     static void
@@ -184,8 +214,136 @@ private:
     }
     static void
     release(state *s) noexcept {
-        if (s && --s->refs == 0)
-            delete s;
+        if (s && --s->refs == 0) {
+            if (s->_child_links)
+                delete static_cast<child_state *>(s);
+            else
+                delete s;
+        }
+    }
+
+    struct state_keep {
+        state *value;
+        explicit state_keep(state *s) noexcept
+            : value(s) {
+            acquire(value);
+        }
+        state_keep(const state_keep &)            = delete;
+        state_keep &operator=(const state_keep &) = delete;
+        ~state_keep() noexcept {
+            release(value);
+        }
+    };
+
+    // No callbacks, allocation or strong cross-state ownership in these splices.
+    static void
+    splice_internal(state *s, cancel_hook &hook) noexcept {
+        cancel_hook &head = s->hooks;
+        hook.prev         = &head;
+        hook.next         = head.next;
+        head.next->prev   = &hook;
+        head.next         = &hook;
+    }
+
+    static void
+    detach_hooks(cancel_hook &head) noexcept {
+        while (head.next != &head) {
+            cancel_hook *const h    = head.next;
+            const auto         fire = h->fire;
+            void *const        ctx  = h->ctx;
+            h->unlink();
+            if (!fire)
+                static_cast<child_state *>(ctx)->unlink_parent();
+            // Detach-only teardown; no node access after its child is disconnected.
+        }
+    }
+    static void
+    detach_state_hooks(state *s) noexcept {
+        detach_hooks(s->hooks);
+    }
+
+    struct cancel_exit {
+        state       *value;
+        cancel_hook &children;
+        ~cancel_exit() noexcept {
+            // This guard dies before the local sentinel and before the state keep.
+            // Pending descendants are disconnected, not universally notified.
+            detach_hooks(children);
+            detach_state_hooks(value);
+        }
+    };
+    struct firing_scope {
+        state *value;
+        bool   previous;
+        explicit firing_scope(state *s) noexcept
+            : value(s)
+            , previous(s->firing) {
+            s->firing = true;
+        }
+        ~firing_scope() noexcept {
+            value->firing = previous;
+        }
+    };
+
+    static void
+    cancel_state(state *snapshot) {
+        if (!snapshot || snapshot->cancelled)
+            return;
+        state_keep  keep(snapshot); // retained before user code, released after both heads are empty
+        cancel_hook children{};     // stack sentinel, never inserted into public state
+        children.next = children.prev = &children;
+        cancel_exit detach{snapshot, children};
+        if (snapshot->_child_links)
+            static_cast<child_state *>(snapshot)->unlink_parent();
+        snapshot->cancelled = true;
+
+        // Partition without callbacks/allocation. A saved next is safe ONLY in
+        // this no-user-code pass; the dispatch loops below always read a fresh head.
+        for (cancel_hook *h = snapshot->hooks.next; h != &snapshot->hooks;) {
+            cancel_hook *const next = h->next;
+            if (!h->fire) {
+                h->unlink();
+                h->prev             = children.prev;
+                h->next             = &children;
+                children.prev->next = h;
+                children.prev       = h;
+            }
+            h = next;
+        }
+
+        // Every still-linked public hook is noexcept and is dispatched before
+        // descendant propagation can throw. A hook may legitimately unlink a
+        // sibling or destroy children now linked into the stable local sentinel.
+        while (snapshot->hooks.next != &snapshot->hooks) {
+            cancel_hook *const h    = snapshot->hooks.next;
+            const auto         fire = h->fire;
+            void *const        ctx  = h->ctx;
+            h->unlink();
+            fire(ctx);
+        }
+        while (children.next != &children) {
+            cancel_hook *const h   = children.next;
+            void *const        ctx = h->ctx;
+            h->unlink();
+            cancel_state(static_cast<child_state *>(ctx));
+            // No h/ctx/sibling use after propagation; a callback may free them.
+        }
+        firing_scope firing(snapshot);
+        for (std::size_t i = 0; i < snapshot->callbacks.size(); ++i) {
+            auto fn = std::move(snapshot->callbacks[i].second);
+            if (fn)
+                fn();
+        }
+        snapshot->callbacks.clear();
+        // On exception, restore firing and detach all pending descendants before
+        // the local sentinel dies; the keep outlives all cleanup and user callbacks.
+    }
+
+    static cancellation_token
+    plain_cancelled() {
+        cancellation_token result;
+        result._state->cancelled = true;
+        return result;
     }
 
 public:
@@ -249,33 +407,9 @@ public:
      */
     void
     cancel() {
-        if (!_state || _state->cancelled)
-            return;
-        // A callback may release the last reference to the token object (`this`); the
-        // shared state must outlive the walk regardless, so hold one reference of our own.
-        state *const keep = _state;
-        acquire(keep);
-        auto &st     = *keep;
-        st.cancelled = true;
-        // Hooks first: each is detached BEFORE it fires, so a hook that unlinks itself or a
-        // sibling (an awaiter torn down by another) leaves the walk a consistent list.
-        while (st.hooks.next != &st.hooks) {
-            cancel_hook *h = st.hooks.next;
-            h->unlink();
-            h->fire(h->ctx);
-        }
-        st.firing = true;
-        // Index loop: `on_cancel` on an already-cancelled token fires inline and never
-        // appends, so the vector cannot reallocate under the walk, and `remove_on_cancel`
-        // nulls an entry rather than erasing it while `firing` is set.
-        for (std::size_t i = 0; i < st.callbacks.size(); ++i) {
-            auto fn = std::move(st.callbacks[i].second);
-            if (fn)
-                fn();
-        }
-        st.firing = false;
-        st.callbacks.clear();
-        release(keep);
+        // Read this object's state once: callbacks may destroy the token object.
+        state *const snapshot = _state;
+        cancel_state(snapshot);
     }
 
     bool
@@ -376,6 +510,37 @@ public:
         return _state;
     }
 };
+
+inline cancellation_token::state::~state() noexcept {
+    cancellation_token::detach_state_hooks(this);
+}
+
+namespace detail {
+
+inline cancellation_token
+linked_child_token(const cancellation_token &parent) {
+    using token                  = cancellation_token;
+    token::state *const snapshot = parent._state;
+    token::state_keep   keep(snapshot); // before allocation/new_handler can re-enter
+    // No read of parent or its handle after this snapshot, including cold fallbacks.
+    if (!snapshot)
+        return token();
+    if (snapshot->cancelled)
+        return token::plain_cancelled();
+
+    std::unique_ptr<token::child_state> child(new token::child_state);
+    if (snapshot->cancelled) { // allocation may cancel/drop the original parent handle
+        child.reset();
+        return token::plain_cancelled();
+    }
+    // No user code, allocation or callbacks between this check and the splice.
+    token::splice_internal(snapshot, child->parent_hook);
+    token result(null_token);
+    result._state = child.release();
+    return result;
+}
+
+} // namespace detail
 
 /**
  * @brief Awaiter that suspends until cancellation is requested
@@ -647,7 +812,7 @@ public:
         static task<void>
         task_runner(std::shared_ptr<shared_state> state) {
             try {
-                state->result = co_await state->inner_task;
+                state->result.emplace(co_await state->inner_task);
             } catch (...) {
                 state->error = std::current_exception();
             }

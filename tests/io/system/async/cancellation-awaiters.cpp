@@ -42,6 +42,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
+#include <stdexcept>
+#include <type_traits>
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
@@ -508,3 +511,161 @@ TEST_F(CancellationAwaiters, CancellableSleepReclaimedWhileParked) {
         co_await sleep(60ms); // the detached timer fires late — must NOT resume the freed frame
     });
 }
+
+namespace cancellation_awaiters_pack_test {
+using namespace qb::io::async;
+
+struct StoredError : std::runtime_error {
+    StoredError()
+        : std::runtime_error("stored task result error") {}
+};
+struct DeliveryObservation {
+    int  entered     = 0;
+    int  exited      = 0;
+    int  completed   = 0;
+    int  value       = 0;
+    int  cancelled   = 0;
+    int  inner_error = 0;
+    int  unexpected  = 0;
+    int  created     = 0;
+    int  destroyed   = 0;
+    bool done        = false;
+};
+struct ProducerLifetime {
+    std::shared_ptr<DeliveryObservation> observation;
+    explicit ProducerLifetime(std::shared_ptr<DeliveryObservation> value)
+        : observation(std::move(value)) {
+        ++observation->entered;
+    }
+    ~ProducerLifetime() {
+        ++observation->exited;
+    }
+};
+
+task<int>
+ready_result(std::shared_ptr<DeliveryObservation> observation, bool fail) {
+    ProducerLifetime lifetime(observation);
+    if (fail)
+        throw StoredError{};
+    co_return 842;
+}
+task<void>
+consume_result(task<int> inner, cancellation_token token, std::shared_ptr<DeliveryObservation> observation, bool throwing) {
+    try {
+        observation->value = co_await make_cancellable(std::move(inner), token, throwing);
+        ++observation->completed;
+    } catch (cancelled_error const &) {
+        ++observation->cancelled;
+    } catch (StoredError const &) {
+        ++observation->inner_error;
+    } catch (...) {
+        ++observation->unexpected;
+    }
+    observation->done = true;
+}
+
+void
+check_stored_result(bool fail, bool cancel_after_store, bool throwing) {
+    SCOPED_TRACE(::testing::Message() << "error=" << fail << " cancel=" << cancel_after_store << " throwing=" << throwing);
+    const auto                            observation = std::make_shared<DeliveryObservation>();
+    cancellation_token                    token;
+    qb::io::test::coroutine_scope_cleanup cleanup;
+    auto                                  inner = ready_result(observation, fail);
+    coro_scheduler().schedule_resume(inner.handle());
+    ASSERT_EQ(coro_scheduler().run_ready(1), 1u);
+    ASSERT_TRUE(inner.handle().done());
+    ASSERT_EQ(observation->entered, 1);
+    ASSERT_EQ(observation->exited, 1);
+    coro_scheduler().spawn(consume_result(std::move(inner), token, observation, throwing));
+    ASSERT_EQ(coro_scheduler().run_ready(1), 1u); // caller parks and schedules the real runner
+    ASSERT_FALSE(observation->done);
+    ASSERT_EQ(coro_scheduler().run_ready(1), 1u); // runner stores the task's value/error
+    ASSERT_FALSE(observation->done);
+    ASSERT_EQ(coro_scheduler().pending_count(), 1u);
+    if (cancel_after_store)
+        token.cancel(); // outside producer/runner, before the queued caller resumes
+    ASSERT_TRUE(qb::io::test::pump_until([observation] { return observation->done; }));
+    const bool cancel_wins = cancel_after_store && throwing;
+    EXPECT_EQ(observation->cancelled, cancel_wins ? 1 : 0);
+    EXPECT_EQ(observation->inner_error, !cancel_wins && fail ? 1 : 0);
+    EXPECT_EQ(observation->completed, !cancel_wins && !fail ? 1 : 0);
+    if (!cancel_wins && !fail)
+        EXPECT_EQ(observation->value, 842);
+    EXPECT_EQ(observation->unexpected, 0);
+    EXPECT_TRUE(token.get_state()->callbacks.empty());
+    EXPECT_EQ(coro_scheduler().pending_count(), 0u);
+}
+
+#if !defined(QB_PRIVATE_OMIT_QB842)
+// QB-842 is a compile witness as well as a first-delivery ownership witness.
+// This existing owner is built separately without the private omission flag on base.
+struct ConstructOnlyResult {
+    std::shared_ptr<DeliveryObservation> owner;
+    explicit ConstructOnlyResult(std::shared_ptr<DeliveryObservation> observation)
+        : owner(std::move(observation)) {
+        ++owner->created;
+    }
+    ConstructOnlyResult(ConstructOnlyResult &&other) noexcept
+        : owner(std::move(other.owner)) {}
+    ConstructOnlyResult(ConstructOnlyResult const &)            = delete;
+    ConstructOnlyResult &operator=(ConstructOnlyResult const &) = delete;
+    ConstructOnlyResult &operator=(ConstructOnlyResult &&)      = delete;
+    ~ConstructOnlyResult() {
+        if (owner)
+            ++owner->destroyed;
+    }
+};
+static_assert(std::is_move_constructible_v<ConstructOnlyResult>);
+static_assert(!std::is_move_assignable_v<ConstructOnlyResult>);
+static_assert(!std::is_copy_constructible_v<ConstructOnlyResult>);
+
+task<ConstructOnlyResult>
+ready_construct_only(std::shared_ptr<DeliveryObservation> observation) {
+    ProducerLifetime lifetime(observation);
+    co_return ConstructOnlyResult(observation);
+}
+task<void>
+consume_construct_only(std::shared_ptr<DeliveryObservation> observation, cancellation_token token, bool throwing) {
+    try {
+        {
+            const auto value   = co_await make_cancellable(ready_construct_only(observation), token, throwing);
+            observation->value = value.owner ? 842 : -1;
+            ++observation->completed;
+        }
+    } catch (...) {
+        ++observation->unexpected;
+    }
+    observation->done = true;
+}
+void
+check_construct_only(bool throwing) {
+    const auto                            observation = std::make_shared<DeliveryObservation>();
+    cancellation_token                    token;
+    qb::io::test::coroutine_scope_cleanup cleanup;
+    coro_scheduler().spawn(consume_construct_only(observation, token, throwing));
+    ASSERT_TRUE(qb::io::test::pump_until([observation] { return observation->done; }));
+    EXPECT_EQ(observation->completed, 1);
+    EXPECT_EQ(observation->value, 842);
+    EXPECT_EQ(observation->unexpected, 0);
+    EXPECT_EQ(observation->entered, 1);
+    EXPECT_EQ(observation->exited, 1);
+    EXPECT_EQ(observation->created, 1);
+    EXPECT_EQ(observation->destroyed, 1);
+    EXPECT_TRUE(token.get_state()->callbacks.empty());
+    EXPECT_EQ(coro_scheduler().pending_count(), 0u);
+}
+#endif // QB_PRIVATE_OMIT_QB842
+} // namespace cancellation_awaiters_pack_test
+
+TEST_F(CancellationAwaiters, QB842StoredValueAndErrorRespectBothCancellationPolicies) {
+    for (bool throwing : {false, true})
+        for (bool fail : {false, true})
+            for (bool cancel_after_store : {false, true})
+                cancellation_awaiters_pack_test::check_stored_result(fail, cancel_after_store, throwing);
+}
+#if !defined(QB_PRIVATE_OMIT_QB842)
+TEST_F(CancellationAwaiters, QB842ConstructOnlyTaskResultNeedsNoAssignmentOnFirstDelivery) {
+    for (bool throwing : {false, true})
+        cancellation_awaiters_pack_test::check_construct_only(throwing);
+}
+#endif // QB_PRIVATE_OMIT_QB842

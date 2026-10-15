@@ -536,6 +536,26 @@ policy.
 
 ### Fixed
 
+- **An activation result now reflects the ID resolved when the waiter resumes (Huly QB-263, QB-363).**
+  `ActorHandle::ready_async` copies the target ID before its lazy coroutine starts and re-resolves it after the
+  activation waiter reports success; destroying the handle while it waits cannot leave a coroutine reading it.
+  This checks current liveness at the ID, not a separate actor incarnation.
+  A cancelled or expired activation remains failed even if its `onInit()` later returns `true`.
+- **Actor startup and activation honor the promised identity and deadline (Huly QB-265, QB-362).**
+  A core reserves all pre-start ordinary actor IDs before any factory runs, so a child created reentrantly through
+  `addRefActor` cannot take a later factory's ID. A child initialized during a constructor is skipped by the
+  startup init sweep. When the core parks, either its mailbox or its I/O loop wait is capped by the nearest
+  activation deadline as well as any request deadline.
+- **Cancellation and failed admission release their registrations at the right boundary (Huly QB-264, QB-267,
+  QB-842).** On a synchronous runtime `onInit()` failure, the actor scope is cancelled before its temporary
+  actor is destroyed. `ScopedCoroContext::child_token()` links to the parent with an internal hook that detaches when the child is
+  cancelled or destroyed; public cancellation hooks fire before child propagation. A cancellable task now
+  constructs a completed value in its result slot, so a movable but non-assignable result works. QB-264 remains
+  partial: the SID consumed by a failed ordinary constructor stays quarantined because an already-queued event
+  may still name it.
+- **`ActorHandle::get() const` only reads the registry (Huly QB-266).** It revalidates the ID on the owning core
+  and does not write through `const` to refresh the reserved pointer field.
+
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

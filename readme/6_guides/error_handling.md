@@ -44,7 +44,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:501-534`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:501-557`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -180,7 +180,7 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:503-513`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:504-514`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
 `kill()` notifies the actor's watchers — each gets one `qb::DownEvent{…, killed}`, after the destructor ran — and nobody else. To tell a supervisor *why*, `push` it a notification *before* calling `kill()` (see [Supervision](#supervision)).
 

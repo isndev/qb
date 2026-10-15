@@ -33,10 +33,12 @@
  * self-terminate and the engine drains, with the ctest TIMEOUT as the only backstop.
  */
 
+#include <array>
 #include <atomic>
 #include <coroutine>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -1071,3 +1073,898 @@ TEST(AddReferencedActor, ASpentIdPoolRefusesTheActorBeforeItsOnInitRuns) {
 }
 
 } // namespace
+
+namespace actor_add_red_witness_test {
+
+// QB-264: observations outlive the failed actor; suspended work captures shared state only.
+class ScopedAdmissionCallbackChild;
+
+struct ScopedAdmissionProbe {
+    qb::io::async::cancellation_token             token{qb::io::async::null_token};
+    qb::ActorId                                   failed_id;
+    qb::ActorId                                   healthy_id;
+    qb::ActorId                                   callback_child_actual;
+    qb::ActorHandle<ScopedAdmissionCallbackChild> callback_child;
+    int                                           callback_child_ctors              = 0;
+    int                                           callback_child_inits              = 0;
+    int                                           callback_child_dtors              = 0;
+    int                                           callback_child_deliveries         = 0;
+    int                                           callback_child_init_sequence      = 0;
+    bool                                          callback_after_destruction        = false;
+    bool                                          callback_child_ready_in_callback  = false;
+    bool                                          callback_child_coherent_at_return = false;
+    bool                                          callback_child_survived_reap      = false;
+    int                                           sequence                          = 0;
+    int                                           cancel_sequence                   = 0;
+    int                                           destructor_sequence               = 0;
+    int                                           failed_ctors                      = 0;
+    int                                           failed_inits                      = 0;
+    int                                           failed_dtors                      = 0;
+    int                                           cancel_calls                      = 0;
+    int                                           scoped_entries                    = 0;
+    int                                           healthy_ctors                     = 0;
+    int                                           healthy_inits                     = 0;
+    int                                           healthy_dtors                     = 0;
+    bool                                          failure_path_reached              = false;
+    bool                                          scoped_spawned                    = false;
+    bool                                          scoped_saw_cancelled              = false;
+    bool                                          cancelled_in_destructor           = false;
+    bool                                          cancelled_at_admission_return     = false;
+    bool                                          failed_handle_valid               = true;
+    bool                                          healthy_admitted                  = false;
+    bool                                          healthy_survived_reap             = false;
+};
+
+struct ScopedAdmissionCallbackEvent : qb::Event {};
+
+class ScopedAdmissionCallbackChild : public qb::Actor {
+    std::shared_ptr<ScopedAdmissionProbe> _probe;
+
+public:
+    explicit ScopedAdmissionCallbackChild(std::shared_ptr<ScopedAdmissionProbe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->callback_child_ctors;
+        _probe->callback_child_actual = id();
+    }
+    ~ScopedAdmissionCallbackChild() override {
+        ++_probe->callback_child_dtors;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->callback_child_inits;
+        _probe->callback_child_init_sequence = ++_probe->sequence;
+        registerEvent<ScopedAdmissionCallbackEvent>(*this);
+        co_return true;
+    }
+    void
+    on(ScopedAdmissionCallbackEvent const &) {
+        ++_probe->callback_child_deliveries;
+    }
+};
+
+class ScopedAdmissionFailure : public qb::Actor {
+    std::shared_ptr<ScopedAdmissionProbe> _probe;
+    bool                                  _throw_in_init;
+    bool                                  _self_kill;
+
+public:
+    ScopedAdmissionFailure(std::shared_ptr<ScopedAdmissionProbe> probe, bool throw_in_init, bool self_kill)
+        : _probe(std::move(probe))
+        , _throw_in_init(throw_in_init)
+        , _self_kill(self_kill) {
+        ++_probe->failed_ctors;
+        _probe->failed_id = id();
+    }
+
+    ~ScopedAdmissionFailure() override {
+        ++_probe->failed_dtors;
+        _probe->destructor_sequence = ++_probe->sequence;
+        // Observed in the derived destructor body, before member/base destruction completes.
+        _probe->cancelled_in_destructor = _probe->token.is_cancelled();
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->failed_inits;
+        ++_probe->sequence;
+        const auto ctx                                 = context();
+        _probe->token                                  = ctx.token();
+        const std::weak_ptr<ScopedAdmissionProbe> weak = _probe;
+        (void) _probe->token.on_cancel([weak, owner = this] {
+            if (const auto probe = weak.lock()) {
+                ++probe->cancel_calls;
+                probe->cancel_sequence = ++probe->sequence;
+                // The first-drive rollback must cancel while this temporary still exists.
+                // Check shared liveness before touching owner, even on a broken control.
+                if (probe->failed_dtors != 0) {
+                    probe->callback_after_destruction = true;
+                    return;
+                }
+                probe->callback_child                   = owner->addRefActor<ScopedAdmissionCallbackChild>(probe);
+                const auto child                        = probe->callback_child;
+                probe->callback_child_ready_in_callback = child.valid() && child.get() != nullptr;
+                if (child.valid())
+                    owner->push<ScopedAdmissionCallbackEvent>(child.id());
+            }
+        });
+        const auto probe = _probe;
+        spawn([probe](qb::ScopedCoroContext work_ctx) -> qb::io::async::task<void> {
+            ++probe->scoped_entries;
+            probe->scoped_saw_cancelled = work_ctx.token().is_cancelled();
+            co_return;
+        });
+        _probe->scoped_spawned = true;
+        // This control is separate from the no-kill failure: kill() must not mask that defect.
+        if (_self_kill)
+            kill();
+        _probe->failure_path_reached = true;
+        if (_throw_in_init)
+            throw std::runtime_error("first dynamic onInit drive failed before suspension");
+        co_return false;
+    }
+};
+
+class ScopedAdmissionHealthy : public qb::Actor {
+    std::shared_ptr<ScopedAdmissionProbe> _probe;
+
+public:
+    explicit ScopedAdmissionHealthy(std::shared_ptr<ScopedAdmissionProbe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->healthy_ctors;
+        _probe->healthy_id = id();
+    }
+    ~ScopedAdmissionHealthy() override {
+        ++_probe->healthy_dtors;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->healthy_inits;
+        co_return true;
+    }
+};
+
+class ScopedAdmissionDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<ScopedAdmissionProbe>   _probe;
+    bool                                    _throw_in_init;
+    bool                                    _self_kill;
+    unsigned                                _ticks = 0;
+    qb::ActorHandle<ScopedAdmissionHealthy> _healthy;
+
+public:
+    ScopedAdmissionDriver(std::shared_ptr<ScopedAdmissionProbe> probe, bool throw_in_init, bool self_kill)
+        : _probe(std::move(probe))
+        , _throw_in_init(throw_in_init)
+        , _self_kill(self_kill) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerCallback(*this);
+        const auto failed                     = addRefActor<ScopedAdmissionFailure>(_probe, _throw_in_init, _self_kill);
+        _probe->failed_handle_valid           = failed.valid();
+        _probe->cancelled_at_admission_return = _probe->token.is_cancelled();
+        auto callback_child                   = _probe->callback_child;
+        if (const auto *live = callback_child.get())
+            _probe->callback_child_coherent_at_return = live->id() == _probe->callback_child_actual;
+        _healthy                 = addRefActor<ScopedAdmissionHealthy>(_probe);
+        _probe->healthy_admitted = _healthy.valid() && _healthy.get() != nullptr;
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        // Any queued self-kill is reaped before the first tick that can get here.
+        if (_ticks == 0) {
+            _probe->healthy_survived_reap        = _healthy.get() != nullptr;
+            auto child                           = _probe->callback_child;
+            _probe->callback_child_survived_reap = child.get() != nullptr;
+        }
+        if (++_ticks >= 2) {
+            if (auto *live = _healthy.get())
+                live->kill();
+            auto child = _probe->callback_child;
+            if (auto *live = child.get())
+                live->kill();
+            kill();
+        }
+    }
+};
+
+void
+check_scoped_admission(bool throw_in_init) {
+    for (bool self_kill : {false, true}) {
+        SCOPED_TRACE(self_kill ? "self-kill rollback control" : "scope failure without self-kill");
+        const auto probe = std::make_shared<ScopedAdmissionProbe>();
+        qb::Main   main;
+        main.addActor<ScopedAdmissionDriver>(0, probe, throw_in_init, self_kill);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+        EXPECT_EQ(probe->failed_ctors, 1);
+        EXPECT_EQ(probe->failed_inits, 1);
+        EXPECT_EQ(probe->failed_dtors, 1);
+        EXPECT_TRUE(probe->failure_path_reached);
+        EXPECT_TRUE(probe->scoped_spawned);
+        EXPECT_FALSE(probe->failed_handle_valid);
+        EXPECT_TRUE(probe->cancelled_in_destructor);
+        EXPECT_TRUE(probe->cancelled_at_admission_return);
+        EXPECT_EQ(probe->cancel_calls, 1);
+        EXPECT_GT(probe->cancel_sequence, 0);
+        EXPECT_LT(probe->cancel_sequence, probe->callback_child_init_sequence);
+        EXPECT_LT(probe->callback_child_init_sequence, probe->destructor_sequence);
+        EXPECT_FALSE(probe->callback_after_destruction);
+        EXPECT_EQ(probe->callback_child_ctors, 1);
+        EXPECT_EQ(probe->callback_child_inits, 1);
+        EXPECT_EQ(probe->callback_child_dtors, 1);
+        EXPECT_EQ(probe->callback_child_deliveries, 1);
+        EXPECT_TRUE(probe->callback_child_ready_in_callback);
+        EXPECT_TRUE(probe->callback_child_coherent_at_return);
+        EXPECT_TRUE(probe->callback_child_survived_reap);
+        EXPECT_EQ(probe->callback_child.id(), probe->callback_child_actual);
+        EXPECT_TRUE(probe->callback_child_actual.is_valid());
+        EXPECT_NE(probe->callback_child_actual, probe->failed_id);
+        EXPECT_NE(probe->callback_child_actual, probe->healthy_id);
+        EXPECT_LE(probe->scoped_entries, 1);
+        if (probe->scoped_entries != 0) {
+            EXPECT_TRUE(probe->scoped_saw_cancelled);
+        }
+        EXPECT_TRUE(probe->healthy_admitted);
+        EXPECT_TRUE(probe->healthy_survived_reap);
+        EXPECT_EQ(probe->healthy_ctors, 1);
+        EXPECT_EQ(probe->healthy_inits, 1);
+        EXPECT_EQ(probe->healthy_dtors, 1);
+        EXPECT_TRUE(probe->failed_id.is_valid());
+        EXPECT_TRUE(probe->healthy_id.is_valid());
+        EXPECT_NE(probe->failed_id, probe->healthy_id);
+    }
+}
+
+TEST(AddReferencedActor, DynamicFalseInitCancelsScopeBeforeDestruction) {
+    check_scoped_admission(false);
+}
+
+TEST(AddReferencedActor, DynamicThrowingInitCancelsScopeBeforeDestruction) {
+    check_scoped_admission(true);
+}
+
+} // namespace actor_add_red_witness_test
+
+namespace actor_add_constructor_gate_test {
+
+// All writes occur on core 0; the test body reads only after start(false)/join().
+// The manual-reset gate owns no actor pointer and outlives every parked init frame.
+struct ConstructorGateProbe {
+    qb::io::async::async_event gate;
+    qb::ActorId                parent_actual;
+    qb::ActorId                peer_actual;
+    qb::ActorId                child_actual;
+    qb::ActorId                child_handle_id;
+    bool                       init_succeeds;
+    bool                       child_valid_in_constructor   = false;
+    bool                       child_hidden_in_constructor  = false;
+    bool                       child_hidden_in_parent_init  = false;
+    bool                       startup_snapshot_observed    = false;
+    bool                       gate_had_one_waiter          = false;
+    bool                       stash_was_pending_at_release = false;
+    bool                       ready_wait_started           = false;
+    bool                       ready_wait_returned          = false;
+    bool                       ready_result                 = false;
+    bool                       ready_lookup_coherent        = false;
+    bool                       drain_correct_at_ready       = false;
+    bool                       phase_limit_reached          = false;
+    int                        sequence                     = 0;
+    int                        release_sequence             = 0;
+    int                        init_complete_sequence       = 0;
+    int                        ready_sequence               = 0;
+    int                        child_destructor_sequence    = 0;
+    int                        parent_ctors                 = 0;
+    int                        parent_inits                 = 0;
+    int                        parent_dtors                 = 0;
+    int                        peer_ctors                   = 0;
+    int                        peer_inits                   = 0;
+    int                        peer_dtors                   = 0;
+    int                        child_ctors                  = 0;
+    int                        child_inits                  = 0;
+    int                        child_completions            = 0;
+    int                        child_dtors                  = 0;
+    int                        payload_ctors                = 0;
+    int                        payload_dtors                = 0;
+    int                        deliveries                   = 0;
+    std::array<unsigned, 2>    delivered_order{};
+
+    explicit ConstructorGateProbe(bool succeeds)
+        : init_succeeds(succeeds) {}
+};
+
+struct ConstructorGatePayload {
+    std::weak_ptr<ConstructorGateProbe> probe;
+
+    explicit ConstructorGatePayload(const std::shared_ptr<ConstructorGateProbe> &observations)
+        : probe(observations) {
+        ++observations->payload_ctors;
+    }
+    ~ConstructorGatePayload() {
+        if (const auto observations = probe.lock())
+            ++observations->payload_dtors;
+    }
+};
+
+struct ConstructorGateWork : qb::Event {
+    std::shared_ptr<ConstructorGatePayload> payload;
+    unsigned                                serial;
+
+    ConstructorGateWork(std::shared_ptr<ConstructorGatePayload> value, unsigned number)
+        : payload(std::move(value))
+        , serial(number) {}
+};
+
+class ConstructorGateChild : public qb::Actor {
+    std::shared_ptr<ConstructorGateProbe> _probe;
+
+public:
+    explicit ConstructorGateChild(std::shared_ptr<ConstructorGateProbe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->child_ctors;
+        _probe->child_actual = id();
+    }
+    ~ConstructorGateChild() override {
+        ++_probe->child_dtors;
+        _probe->child_destructor_sequence = ++_probe->sequence;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        const auto probe = _probe;
+        ++probe->child_inits;
+        registerEvent<ConstructorGateWork>(*this);
+        co_await probe->gate.wait();
+        ++probe->child_completions;
+        probe->init_complete_sequence = ++probe->sequence;
+        co_return probe->init_succeeds;
+    }
+    void
+    on(ConstructorGateWork const &event) {
+        if (_probe->deliveries < static_cast<int>(_probe->delivered_order.size()))
+            _probe->delivered_order[static_cast<std::size_t>(_probe->deliveries)] = event.serial;
+        ++_probe->deliveries;
+    }
+};
+
+class ConstructorGateParent
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<ConstructorGateProbe> _probe;
+    qb::ActorHandle<ConstructorGateChild> _child;
+    unsigned                              _ticks    = 0;
+    bool                                  _released = false;
+
+    void
+    stop_all() {
+        // Wake any surviving init before the kill: cleanup never relies on its deadline.
+        _probe->gate.set();
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        kill();
+    }
+
+public:
+    explicit ConstructorGateParent(std::shared_ptr<ConstructorGateProbe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->parent_ctors;
+        _probe->parent_actual               = id();
+        _child                              = addRefActor<ConstructorGateChild>(_probe);
+        auto child                          = _child;
+        _probe->child_handle_id             = child.id();
+        _probe->child_valid_in_constructor  = child.valid();
+        _probe->child_hidden_in_constructor = child.get() == nullptr && !child.ready();
+    }
+    ~ConstructorGateParent() override {
+        ++_probe->parent_dtors;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->parent_inits;
+        auto child                          = _child;
+        _probe->child_hidden_in_parent_init = child.get() == nullptr && !child.ready();
+        registerCallback(*this);
+        for (unsigned serial : {1u, 2u})
+            push<ConstructorGateWork>(child.id(), std::make_shared<ConstructorGatePayload>(_probe), serial);
+        const auto probe = _probe;
+        spawn([probe, child](qb::ScopedCoroContext ctx) mutable -> qb::io::async::task<void> {
+            probe->ready_wait_started    = true;
+            const bool ready             = co_await child.ready_async(ctx, qb::duration::zero());
+            probe->ready_result          = ready;
+            probe->ready_sequence        = ++probe->sequence;
+            const auto *live             = child.get();
+            probe->ready_lookup_coherent = ready ? live != nullptr && live->id() == probe->child_actual : live == nullptr;
+            if (probe->init_succeeds)
+                probe->drain_correct_at_ready = probe->deliveries == 2 && probe->payload_dtors == 2;
+            else
+                probe->drain_correct_at_ready = probe->deliveries == 0 && probe->payload_dtors == 2 && probe->child_dtors == 1;
+            probe->ready_wait_returned = true;
+        });
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (++_ticks > 64) {
+            _probe->phase_limit_reached = true;
+            stop_all();
+            return;
+        }
+        if (!_released) {
+            // The tick follows startup's complete snapshot walk and the receive phase.
+            // The gate is still closed, so these observations prove a suspended first drive.
+            if (!_probe->ready_wait_started)
+                return;
+            _probe->startup_snapshot_observed    = _probe->parent_inits == 1 && _probe->peer_inits == 1;
+            _probe->gate_had_one_waiter          = _probe->gate.waiters_count() == 1;
+            _probe->stash_was_pending_at_release = _probe->deliveries == 0 && _probe->payload_dtors == 0;
+            _probe->release_sequence             = ++_probe->sequence;
+            _released                            = true;
+            _probe->gate.set();
+            return;
+        }
+        if (_probe->ready_wait_returned)
+            stop_all();
+    }
+};
+
+class ConstructorGatePeer : public qb::Actor {
+    std::shared_ptr<ConstructorGateProbe> _probe;
+
+public:
+    explicit ConstructorGatePeer(std::shared_ptr<ConstructorGateProbe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->peer_ctors;
+        _probe->peer_actual = id();
+    }
+    ~ConstructorGatePeer() override {
+        ++_probe->peer_dtors;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->peer_inits;
+        co_return true;
+    }
+};
+
+TEST(AddActor, ConstructorCreatedSuspendedChildHasOneInitAndCoherentReadiness) {
+    for (bool succeeds : {true, false}) {
+        SCOPED_TRACE(succeeds ? "constructor child activates" : "constructor child fails after release");
+        const auto probe = std::make_shared<ConstructorGateProbe>(succeeds);
+        qb::Main   main;
+        // Both startup factories already own their promises when nested construction runs.
+        const auto parent = main.addActor<ConstructorGateParent>(0, probe);
+        const auto peer   = main.addActor<ConstructorGatePeer>(0, probe);
+        ASSERT_TRUE(parent.is_valid());
+        ASSERT_TRUE(peer.is_valid());
+        main.start(false);
+        main.join();
+
+        EXPECT_FALSE(main.hasError());
+        EXPECT_FALSE(probe->phase_limit_reached);
+        EXPECT_EQ(probe->parent_actual, parent);
+        EXPECT_EQ(probe->peer_actual, peer);
+        EXPECT_NE(probe->child_actual, parent);
+        EXPECT_NE(probe->child_actual, peer);
+        EXPECT_EQ(probe->child_handle_id, probe->child_actual);
+        EXPECT_TRUE(probe->child_valid_in_constructor);
+        EXPECT_TRUE(probe->child_hidden_in_constructor);
+        EXPECT_TRUE(probe->child_hidden_in_parent_init);
+        EXPECT_TRUE(probe->startup_snapshot_observed);
+        EXPECT_TRUE(probe->gate_had_one_waiter);
+        EXPECT_TRUE(probe->stash_was_pending_at_release);
+        EXPECT_TRUE(probe->ready_wait_started);
+        EXPECT_TRUE(probe->ready_wait_returned);
+        EXPECT_EQ(probe->ready_result, succeeds);
+        EXPECT_TRUE(probe->ready_lookup_coherent);
+        EXPECT_TRUE(probe->drain_correct_at_ready);
+        EXPECT_EQ(probe->parent_ctors, 1);
+        EXPECT_EQ(probe->parent_inits, 1);
+        EXPECT_EQ(probe->parent_dtors, 1);
+        EXPECT_EQ(probe->peer_ctors, 1);
+        EXPECT_EQ(probe->peer_inits, 1);
+        EXPECT_EQ(probe->peer_dtors, 1);
+        EXPECT_EQ(probe->child_ctors, 1);
+        EXPECT_EQ(probe->child_inits, 1);
+        EXPECT_EQ(probe->child_completions, 1);
+        EXPECT_EQ(probe->child_dtors, 1);
+        EXPECT_EQ(probe->payload_ctors, 2);
+        EXPECT_EQ(probe->payload_dtors, 2);
+        EXPECT_EQ(probe->deliveries, succeeds ? 2 : 0);
+        EXPECT_LT(probe->release_sequence, probe->init_complete_sequence);
+        EXPECT_LT(probe->init_complete_sequence, probe->ready_sequence);
+        EXPECT_EQ(probe->gate.waiters_count(), 0u);
+        if (succeeds) {
+            EXPECT_EQ(probe->delivered_order[0], 1u);
+            EXPECT_EQ(probe->delivered_order[1], 2u);
+            EXPECT_LT(probe->ready_sequence, probe->child_destructor_sequence);
+        } else {
+            EXPECT_LT(probe->child_destructor_sequence, probe->ready_sequence);
+        }
+    }
+}
+
+} // namespace actor_add_constructor_gate_test
+
+namespace actor_add_const_handle_test {
+struct Observation {
+    bool parent_ran          = false;
+    bool valid_resolved      = false;
+    bool id_preserved        = false;
+    bool empty_resolved_null = false;
+    int  child_inits         = 0;
+    int  child_dtors         = 0;
+};
+class ConstChild : public qb::Actor {
+    std::shared_ptr<Observation> _observation;
+
+public:
+    explicit ConstChild(std::shared_ptr<Observation> observation)
+        : _observation(std::move(observation)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_observation->child_inits;
+        co_return true;
+    }
+    ~ConstChild() override {
+        ++_observation->child_dtors;
+    }
+};
+class ConstParent : public qb::Actor {
+    std::shared_ptr<Observation> _observation;
+
+public:
+    explicit ConstParent(std::shared_ptr<Observation> observation)
+        : _observation(std::move(observation)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        // QB-266 positive API control only. The invalid const store is established by
+        // source review; this test does not manufacture read-only pages or rely on UB.
+        const auto                        child = addRefActor<ConstChild>(_observation);
+        const qb::ActorHandle<ConstChild> empty;
+        _observation->parent_ran          = true;
+        _observation->valid_resolved      = child.valid() && child.get() != nullptr && child.ready();
+        _observation->id_preserved        = child.get() != nullptr && child.get()->id() == child.id();
+        _observation->empty_resolved_null = empty.get() == nullptr && !empty.ready();
+        if (auto *live = child.get())
+            live->kill();
+        kill();
+        co_return true;
+    }
+};
+TEST(AddReferencedActor, QB266ConstHandlesResolveActiveAndEmptyActors) {
+    const auto observation = std::make_shared<Observation>();
+    qb::Main   main;
+    main.addActor<ConstParent>(0, observation);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(observation->parent_ran);
+    EXPECT_TRUE(observation->valid_resolved);
+    EXPECT_TRUE(observation->id_preserved);
+    EXPECT_TRUE(observation->empty_resolved_null);
+    EXPECT_EQ(observation->child_inits, 1);
+    EXPECT_EQ(observation->child_dtors, 1);
+}
+} // namespace actor_add_const_handle_test
+
+namespace actor_add_allocator_factory_test {
+struct Probe;
+class AllocatorParent;
+} // namespace actor_add_allocator_factory_test
+
+namespace qb {
+// TActorFactory stores a decayed shared_ptr and passes its tuple element as an lvalue.
+// Declare this exact specialization before any use can instantiate the default allocator.
+template <>
+actor_add_allocator_factory_test::AllocatorParent *
+allocate_actor<actor_add_allocator_factory_test::AllocatorParent, std::shared_ptr<actor_add_allocator_factory_test::Probe> &>(
+    std::shared_ptr<actor_add_allocator_factory_test::Probe> &probe);
+} // namespace qb
+
+namespace actor_add_allocator_factory_test {
+
+enum class ChildRole : unsigned { service_constructor, refused_before_new, allocator_before_new };
+struct Probe {
+    std::array<qb::ActorId, 4> promised{};
+    std::array<qb::ActorId, 4> actual{};
+    std::array<int, 4>         ctors{};
+    std::array<int, 4>         inits{};
+    std::array<int, 4>         dtors{};
+    std::array<int, 4>         deliveries{};
+    std::array<int, 4>         acknowledgements{};
+    std::array<qb::ActorId, 3> child_actual{};
+    std::array<int, 3>         child_ctors{};
+    std::array<int, 3>         child_inits{};
+    std::array<int, 3>         child_dtors{};
+    std::function<void()>      before_allocate;
+    bool                       attempt_failure                     = false;
+    bool                       false_admission_refused             = false;
+    bool                       healthy_child_resolved              = false;
+    bool                       service_child_resolved              = false;
+    bool                       allocator_saw_live_host             = false;
+    bool                       allocator_before_target_constructor = false;
+    bool                       factory_bindings_observed           = false;
+    bool                       service_lookup_bound                = false;
+    bool                       guard_exhausted                     = false;
+    int                        allocation_calls                    = 0;
+    int                        wrong_delivery                      = 0;
+    int                        sequence                            = 0;
+    int                        service_constructor_sequence        = 0;
+    int                        allocator_begin_sequence            = 0;
+    int                        allocator_end_sequence              = 0;
+    int                        target_constructor_sequence         = 0;
+};
+struct Poke : qb::Event {
+    unsigned expected;
+    explicit Poke(unsigned role)
+        : expected(role) {}
+};
+struct Ack : qb::Event {
+    unsigned role;
+    explicit Ack(unsigned value)
+        : role(value) {}
+};
+
+class NestedChild : public qb::Actor {
+    std::shared_ptr<Probe> _probe;
+    unsigned               _role;
+
+public:
+    NestedChild(std::shared_ptr<Probe> probe, ChildRole role)
+        : _probe(std::move(probe))
+        , _role(static_cast<unsigned>(role)) {
+        ++_probe->child_ctors[_role];
+        _probe->child_actual[_role] = id();
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->child_inits[_role];
+        co_return _role != static_cast<unsigned>(ChildRole::refused_before_new);
+    }
+    ~NestedChild() override {
+        ++_probe->child_dtors[_role];
+    }
+};
+
+struct StartupServiceTag {};
+class StartupService : public qb::ServiceActor<StartupServiceTag> {
+    std::shared_ptr<Probe> _probe;
+
+public:
+    explicit StartupService(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->ctors[1];
+        _probe->actual[1]                    = id();
+        _probe->service_constructor_sequence = ++_probe->sequence;
+        // A service factory is interleaved with ordinary promises. This ordinary
+        // child must not consume any later startup factory's promised identity.
+        auto child                     = addRefActor<NestedChild>(_probe, ChildRole::service_constructor);
+        _probe->service_child_resolved = child.valid() && child.get() != nullptr;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->inits[1];
+        registerEvent<Poke>(*this);
+        co_return true;
+    }
+    void
+    on(Poke const &event) {
+        ++_probe->deliveries[1];
+        _probe->wrong_delivery += event.expected != 1u;
+        push<Ack>(_probe->actual[0], 1u);
+    }
+    ~StartupService() override {
+        ++_probe->dtors[1];
+    }
+};
+
+class AllocatorParent : public qb::Actor {
+    std::shared_ptr<Probe> _probe;
+
+public:
+    explicit AllocatorParent(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->ctors[2];
+        _probe->actual[2]                   = id();
+        _probe->target_constructor_sequence = ++_probe->sequence;
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->inits[2];
+        registerEvent<Poke>(*this);
+        co_return true;
+    }
+    void
+    on(Poke const &event) {
+        ++_probe->deliveries[2];
+        _probe->wrong_delivery += event.expected != 2u;
+        push<Ack>(_probe->actual[0], 2u);
+    }
+    ~AllocatorParent() override {
+        ++_probe->dtors[2];
+    }
+};
+
+class StartupPeer : public qb::Actor {
+    std::shared_ptr<Probe> _probe;
+
+public:
+    explicit StartupPeer(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->ctors[3];
+        _probe->actual[3] = id();
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->inits[3];
+        registerEvent<Poke>(*this);
+        co_return true;
+    }
+    void
+    on(Poke const &event) {
+        ++_probe->deliveries[3];
+        _probe->wrong_delivery += event.expected != 3u;
+        push<Ack>(_probe->actual[0], 3u);
+    }
+    ~StartupPeer() override {
+        ++_probe->dtors[3];
+    }
+};
+
+class StartupHost
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<Probe> _probe;
+    unsigned               _ticks = 0;
+
+public:
+    explicit StartupHost(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->ctors[0];
+        _probe->actual[0]               = id();
+        const std::weak_ptr<Probe> weak = _probe;
+        // The host is already constructed and owned by the core when the later
+        // factory invokes this closure. It contains no suspended coroutine.
+        _probe->before_allocate = [this, weak] {
+            const auto observations = weak.lock();
+            if (!observations || observations->dtors[0] != 0)
+                return;
+            observations->allocator_saw_live_host = true;
+            if (observations->attempt_failure) {
+                auto refused                          = addRefActor<NestedChild>(observations, ChildRole::refused_before_new);
+                observations->false_admission_refused = !refused.valid();
+            }
+            auto child                           = addRefActor<NestedChild>(observations, ChildRole::allocator_before_new);
+            observations->healthy_child_resolved = child.valid() && child.get() != nullptr;
+        };
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        ++_probe->inits[0];
+        registerEvent<Poke>(*this);
+        registerEvent<Ack>(*this);
+        registerCallback(*this);
+        for (unsigned role = 0; role != _probe->promised.size(); ++role)
+            push<Poke>(_probe->promised[role], role);
+        co_return true;
+    }
+    void
+    on(Poke const &event) {
+        ++_probe->deliveries[0];
+        _probe->wrong_delivery += event.expected != 0u;
+        push<Ack>(_probe->actual[0], 0u);
+    }
+    void
+    on(Ack const &event) {
+        if (event.role < _probe->acknowledgements.size())
+            ++_probe->acknowledgements[event.role];
+        else
+            ++_probe->wrong_delivery;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        bool all_received = true;
+        for (unsigned role = 0; role != _probe->promised.size(); ++role)
+            all_received &= _probe->acknowledgements[role] == 1 && _probe->inits[role] == 1;
+        if (all_received) {
+            _probe->factory_bindings_observed = true;
+            auto *service                     = getService<StartupService>();
+            _probe->service_lookup_bound      = service != nullptr && service->id() == _probe->promised[1];
+        } else if (++_ticks < 8) {
+            return;
+        } else {
+            _probe->guard_exhausted = true;
+        }
+        broadcast<qb::KillEvent>();
+        kill();
+    }
+    ~StartupHost() override {
+        _probe->before_allocate = {}; // no closure retains a stale host after teardown
+        ++_probe->dtors[0];
+    }
+};
+} // namespace actor_add_allocator_factory_test
+
+namespace qb {
+template <>
+actor_add_allocator_factory_test::AllocatorParent *
+allocate_actor<actor_add_allocator_factory_test::AllocatorParent, std::shared_ptr<actor_add_allocator_factory_test::Probe> &>(
+    std::shared_ptr<actor_add_allocator_factory_test::Probe> &probe) {
+    ++probe->allocation_calls;
+    probe->allocator_begin_sequence            = ++probe->sequence;
+    probe->allocator_before_target_constructor = probe->ctors[2] == 0;
+    if (probe->before_allocate)
+        probe->before_allocate(); // nested admission precedes the target Actor base constructor
+    probe->allocator_end_sequence = ++probe->sequence;
+    // Ordinary new/delete obey the customization point's default-deleter contract.
+    return new actor_add_allocator_factory_test::AllocatorParent(probe);
+}
+} // namespace qb
+
+namespace actor_add_allocator_factory_test {
+void
+check_allocator_factory_binding(bool attempt_failure) {
+    auto probe             = std::make_shared<Probe>();
+    probe->attempt_failure = attempt_failure;
+    qb::Main main;
+    main.core(0).setLatency(qb::duration::zero());
+    // Keep this order: ordinary host, service, specialized allocator parent, ordinary peer.
+    // Registration returns the promises before any user constructor/allocation hook runs.
+    probe->promised[0] = main.addActor<StartupHost>(0, probe);
+    probe->promised[1] = main.addActor<StartupService>(0, probe);
+    probe->promised[2] = main.addActor<AllocatorParent>(0, probe);
+    probe->promised[3] = main.addActor<StartupPeer>(0, probe);
+    for (auto promised : probe->promised)
+        ASSERT_TRUE(promised.is_valid());
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(probe->allocation_calls, 1);
+    EXPECT_TRUE(probe->allocator_saw_live_host);
+    EXPECT_TRUE(probe->allocator_before_target_constructor);
+    EXPECT_LT(probe->service_constructor_sequence, probe->allocator_begin_sequence);
+    EXPECT_LT(probe->allocator_begin_sequence, probe->allocator_end_sequence);
+    EXPECT_LT(probe->allocator_end_sequence, probe->target_constructor_sequence);
+    EXPECT_EQ(probe->false_admission_refused, attempt_failure);
+    EXPECT_TRUE(probe->service_child_resolved);
+    EXPECT_TRUE(probe->healthy_child_resolved);
+    EXPECT_TRUE(probe->factory_bindings_observed);
+    EXPECT_TRUE(probe->service_lookup_bound);
+    EXPECT_FALSE(probe->guard_exhausted);
+    EXPECT_EQ(probe->wrong_delivery, 0);
+    EXPECT_FALSE(static_cast<bool>(probe->before_allocate));
+    for (unsigned role = 0; role != probe->promised.size(); ++role) {
+        SCOPED_TRACE(::testing::Message() << "startup role=" << role);
+        EXPECT_EQ(probe->actual[role], probe->promised[role]);
+        EXPECT_EQ(probe->ctors[role], 1);
+        EXPECT_EQ(probe->inits[role], 1);
+        EXPECT_EQ(probe->dtors[role], 1);
+        EXPECT_EQ(probe->deliveries[role], 1);
+        EXPECT_EQ(probe->acknowledgements[role], 1);
+    }
+    for (unsigned role = 0; role != probe->child_actual.size(); ++role) {
+        const int expected = role == static_cast<unsigned>(ChildRole::refused_before_new) && !attempt_failure ? 0 : 1;
+        SCOPED_TRACE(::testing::Message() << "nested role=" << role);
+        EXPECT_EQ(probe->child_ctors[role], expected);
+        EXPECT_EQ(probe->child_inits[role], expected);
+        EXPECT_EQ(probe->child_dtors[role], expected);
+        if (expected != 0) {
+            EXPECT_TRUE(probe->child_actual[role].is_valid());
+            for (auto promised : probe->promised)
+                EXPECT_NE(probe->child_actual[role], promised);
+            for (unsigned previous = 0; previous < role; ++previous)
+                if (probe->child_ctors[previous] != 0)
+                    EXPECT_NE(probe->child_actual[role], probe->child_actual[previous]);
+        }
+    }
+}
+TEST(AddActor, QB362AllocatorBeforeConstructorPreservesInterleavedServiceAndOrdinaryPromises) {
+    check_allocator_factory_binding(false);
+}
+TEST(AddActor, QB362RefusedAdmissionInAllocatorPreservesLaterStartupBindings) {
+    check_allocator_factory_binding(true);
+}
+} // namespace actor_add_allocator_factory_test

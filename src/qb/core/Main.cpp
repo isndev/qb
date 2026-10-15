@@ -473,7 +473,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             VirtualCore::_handler = nullptr;
         }
     } thread_context_guard;
-    VirtualCore core(initializer.getIndex(), params.shared_com);
+    VirtualCore core(initializer.getIndex(), params.shared_com, initializer._next_id);
     stop_notice.resolved_index = core._resolved_index;
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.
@@ -508,13 +508,36 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         } else if (core_factory.empty()) {
             QB_LOG_CRIT(core << " Started with 0 Actor");
             params.sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
-        } else if (std::ranges::any_of(
-                       core_factory, [&core](auto const &it) { return !core.appendActor(std::unique_ptr<Actor>(it->create())).is_valid(); })) {
-            QB_LOG_CRIT("Actor at " << core << " failed to init");
-            params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
-        } else if (!core.__init__actors__()) {
-            QB_LOG_CRIT("Actor at " << core << " failed to init");
-            params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
+        } else {
+            // Factories promise ordinary IDs in registration order. The pool begins
+            // above all of them, so a reentrant child cannot steal a later promise.
+            const auto ordinary_count =
+                static_cast<ServiceId>(std::ranges::count_if(core_factory, [](auto const &factory) { return !factory->isService(); }));
+            ServiceId next_promised = static_cast<ServiceId>(initializer._next_id - ordinary_count);
+            bool      failed        = false;
+            for (auto const &factory : core_factory) {
+                const bool service = factory->isService();
+                struct FactoryPromiseScope {
+                    ActorId &slot;
+                    ActorId  previous;
+                    FactoryPromiseScope(ActorId &target, ActorId promised) noexcept
+                        : slot(target)
+                        , previous(target) {
+                        slot = promised;
+                    }
+                    ~FactoryPromiseScope() noexcept {
+                        slot = previous;
+                    }
+                } promise{core._pending_factory_id, service ? ActorId{} : core.__factory_promised_id__(next_promised++)};
+                if (!core.appendActor(std::unique_ptr<Actor>(factory->create())).is_valid()) {
+                    failed = true;
+                    break;
+                }
+            }
+            if (failed || !core.__init__actors__()) {
+                QB_LOG_CRIT("Actor at " << core << " failed to init");
+                params.sync_start.store(VirtualCore::Error::BadActorInit, std::memory_order_release);
+            }
         }
         initializer.clear();
         if (!__wait__all__cores__ready(params.shared_com.getNbCore(), params.sync_start))

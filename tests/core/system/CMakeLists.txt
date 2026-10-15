@@ -145,7 +145,7 @@ qb_add_test(MODULE qb-core TIER system NAME init-service-actor SOURCES init/init
 qb_add_test(MODULE qb-core TIER system NAME init-stash-lifetime SOURCES init/init-stash-lifetime.cpp DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-patterns      SOURCES init/init-patterns.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-multicore     SOURCES init/init-multicore.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine requires-multicore)
-qb_add_test(MODULE qb-core TIER system NAME init-deadline      SOURCES init/init-deadline.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
+qb_add_test(MODULE qb-core TIER system NAME init-deadline      SOURCES init/init-deadline.cpp      DEPENDS ${PROJECT_NAME} LABELS init coroutine slow requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME init-stress        SOURCES init/init-stress.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine slow)
 qb_add_test(MODULE qb-core TIER system NAME init-handle        SOURCES init/init-handle.cpp        DEPENDS ${PROJECT_NAME} LABELS init coroutine)
 qb_add_test(MODULE qb-core TIER system NAME init-ready-async   SOURCES init/init-ready-async.cpp   DEPENDS ${PROJECT_NAME} LABELS init coroutine)
