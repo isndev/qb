@@ -554,6 +554,15 @@ policy.
 
 ### Fixed
 
+- **`QB_ARCH` and its `QB_ARCH_*` definitions name the compiler's target, not the host's processor (Huly QB-1004).**
+  They were read from `CMAKE_SYSTEM_PROCESSOR`, the host's processor unless a toolchain file cross-compiles: a Visual
+  Studio `-A ARM64` configure on an x64 host -- Ninja under an `x64_arm64` prompt, clang-cl
+  `--target=aarch64-pc-windows-msvc` -- built arm64 code as `x64`, without `QB_ARCH_ARM64` (which `cpu-topology.cpp`'s
+  preprocessor check refuses), and an x64 build on an ARM64 Windows host got `QB_ARCH_ARM64`. An MSVC-family
+  compiler's `CMAKE_CXX_COMPILER_ARCHITECTURE_ID` (`x64`, `X86`, `ARM64`, `ARM64EC`, `ARMV7`) now decides; every other
+  toolchain still names its target in `CMAKE_SYSTEM_PROCESSOR`. Pinned by `qb-io-test-unit-target-arch`
+  (`tests/io/unit/build-contracts/target-arch/`), a languageless fixture configured with the toolchain identity
+  fabricated per case. The universal-macOS `-Xarch_*` warning noted on the same ticket is a Mac check, not made here.
 - **A TLS handshake polled through `handshake_status()` no longer makes a socket BIO per poll (Huly QB-1004).**
   `qb::io::ssl::attach_socket` called `SSL_set_fd` every time -- a new socket BIO allocated, the previous one freed --
   and `handshake_status()`, polled until the handshake completes on a client and on an accepted socket alike, attaches

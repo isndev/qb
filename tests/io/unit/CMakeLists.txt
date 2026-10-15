@@ -210,3 +210,22 @@ if(QB_WITH_LOGGING)
                      -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/logger-startup-diagnostic.cmake")
     set_tests_properties(qb-io-test-unit-logger-startup-diagnostic PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 endif()
+# target-arch (Huly QB-1004): QB_ARCH / QB_ARCH_ARM64 and the definitions follow the COMPILER's target -- an MSVC-family
+# compiler's CMAKE_CXX_COMPILER_ARCHITECTURE_ID, else CMAKE_SYSTEM_PROCESSOR -- not the host's processor. A languageless
+# fixture CONFIGURED with the toolchain identity fabricated per case, like find-gperftools: no compiler, no build.
+set(_qb_target_arch_args
+    -S "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/target-arch"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/target-arch"
+    --fresh -G "${CMAKE_GENERATOR}" "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake")
+if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND _qb_target_arch_args -A "${CMAKE_GENERATOR_PLATFORM}")
+endif()
+if(CMAKE_GENERATOR_TOOLSET)
+    list(APPEND _qb_target_arch_args -T "${CMAKE_GENERATOR_TOOLSET}")
+endif()
+if(CMAKE_MAKE_PROGRAM)
+    list(APPEND _qb_target_arch_args "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+endif()
+add_test(NAME qb-io-test-unit-target-arch COMMAND "${CMAKE_COMMAND}" ${_qb_target_arch_args})
+set_tests_properties(qb-io-test-unit-target-arch PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+unset(_qb_target_arch_args)

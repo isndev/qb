@@ -541,7 +541,7 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
   (`qb/cmake/qbDependencies.cmake:502-510`) that names every way out:
 
   ```
-  CMake Error at cmake/qbConfig.cmake:542 (message):
+  CMake Error at cmake/qbConfig.cmake:550 (message):
     [qb] nlohmann_json was not found on the system, so it would be fetched
     (v3.12.0, via QB_USE_SYSTEM_NLOHMANN=AUTO), but QB_INSTALL is ON.
   ```
