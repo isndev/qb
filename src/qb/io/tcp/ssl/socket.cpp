@@ -91,8 +91,8 @@ attach_socket(SSL *ssl, ::socket_type native_socket) {
 
     // Already attached to this descriptor, both ways: nothing to do. SSL_set_fd makes a new socket BIO on every call
     // and frees the one it replaces, and handshake_status() attaches on every poll until the handshake completes --
-    // one BIO per poll, on the client and on the accepted server socket alike (Huly QB-1004). Another descriptor (a
-    // reconnect that kept the SSL object) is attached afresh.
+    // one BIO per poll, on the client and on the accepted server socket alike (Huly QB-1004). A new client connection
+    // starts with no BIO (setup_client_ssl lets the last one go), so a reused descriptor number is attached afresh.
     const int fd = static_cast<int>(native_socket);
     if (SSL_get_rfd(ssl) == fd && SSL_get_wfd(ssl) == fd)
         return true;
@@ -929,6 +929,10 @@ socket::setup_client_ssl(std::string const &hostname) noexcept {
         return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     }
     const auto h_ssl = ssl_handle();
+    // A socket BIO is one connection's: it keeps that connection's end of stream and kernel TLS state. A reconnect
+    // that kept this SSL object may get the descriptor number just closed, which attach_socket() would take for
+    // attached (Huly QB-1004): free the last connection's BIO, and its first attach makes a new one.
+    SSL_set_bio(h_ssl, nullptr, nullptr);
     SSL_set_quiet_shutdown(h_ssl, 1);
     if (!hostname.empty())
         _pending_sni_hostname = hostname;
