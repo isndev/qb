@@ -848,6 +848,50 @@ if (QB_EV_BUILD_TESTS AND TARGET qev AND CMAKE_SYSTEM_NAME STREQUAL "Linux" AND 
     set_tests_properties(linux-internals PROPERTIES TIMEOUT 60)
 endif ()
 
+# The C++ wrapper (ev++.h) and the libevent compatibility layer (event.c) have suites of their own,
+# and only scripts/test-build-matrix.sh ran them -- on Linux and macOS: ctest is all the Windows CI
+# runs (Huly QB-1071). Registered here, they run wherever the library is tested; the matrix keeps
+# its cells, which add what ctest does not (the single-loop profile, a warning-free compile).
+# C++ is enabled for this suite alone: the library stays C, and an embedder reaches this only by
+# turning QB_EV_BUILD_TESTS on (qb cannot: its copy has no tests/).
+# It links the C library, so a sanitizer build hands its flags to CMAKE_CXX_FLAGS as well as to
+# CMAKE_C_FLAGS: g++ pulls the runtime in from C's implicit libraries, clang++ does not.
+if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-cxx.cpp")
+    include(CheckLanguage)
+    check_language(CXX)
+    if (CMAKE_CXX_COMPILER)
+        enable_language(CXX)
+        add_executable(qev-test-cxx tests/test-cxx.cpp)
+        target_link_libraries(qev-test-cxx PRIVATE qev)
+        add_test(NAME cxx COMMAND qev-test-cxx)
+        set_tests_properties(cxx PROPERTIES TIMEOUT 60)
+    else ()
+        message(STATUS "[qev] no C++ compiler found: the ev++.h suite (tests/test-cxx.cpp) is not built")
+    endif ()
+endif ()
+
+# The layer is in the library only with QB_EV_LIBEVENT_COMPAT=ON. Without it -- the default, and
+# every CI configuration but the matrix's opt-in cell -- the suite compiles event.c in itself, and
+# finds <qev/event.h> where the opt-in build stages it, so every build checks the layer.
+if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-event-compat.c")
+    if (QB_EV_LIBEVENT_COMPAT)
+        add_executable(qev-test-event-compat tests/test-event-compat.c)
+    else ()
+        foreach (_qev_compat_header IN ITEMS event.h event_compat.h ev.h)
+            configure_file("${CMAKE_CURRENT_SOURCE_DIR}/${_qev_compat_header}"
+                           "${CMAKE_CURRENT_BINARY_DIR}/test-event-compat/qev/${_qev_compat_header}" COPYONLY)
+        endforeach ()
+        add_executable(qev-test-event-compat tests/test-event-compat.c event.c)
+        target_include_directories(qev-test-event-compat PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/test-event-compat)
+    endif ()
+    target_link_libraries(qev-test-event-compat PRIVATE qev)
+    if (WIN32)
+        target_compile_definitions(qev-test-event-compat PRIVATE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE)
+    endif ()
+    add_test(NAME event-compat COMMAND qev-test-event-compat)
+    set_tests_properties(event-compat PROPERTIES TIMEOUT 60)
+endif ()
+
 if (QB_EV_BUILD_BENCHMARKS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench-backends.c")
     add_executable(qev-bench-backends bench/bench-backends.c)
     target_link_libraries(qev-bench-backends PRIVATE qev)
