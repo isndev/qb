@@ -24,8 +24,10 @@
  */
 
 #include <qb/io/uri.h>
+#include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstdint>
 
 namespace qb::io {
 DISABLE_WARNING_PUSH
@@ -795,13 +797,44 @@ make_string_view(const char *begin, const char *end) {
     return {begin, static_cast<std::size_t>(end - begin)};
 }
 
-// Constructor/Destructor implementations
-uri::uri(uri &&rhs) noexcept {
-    *this = std::forward<uri>(rhs);
+// A view of `from`'s text, re-pointed at the same offset of `to`'s; a view of anything else -- the static "/" of a
+// path-less uri, a default port from the scheme table -- or an unset one is kept as it is. The bounds are compared as
+// integers: comparing pointers into unrelated objects is unspecified.
+inline std::string_view
+rebase_view(std::string_view view, const char *from, std::size_t from_size, const char *to) noexcept {
+    const auto at    = reinterpret_cast<std::uintptr_t>(view.data());
+    const auto first = reinterpret_cast<std::uintptr_t>(from);
+    if (!view.data() || at < first || at + view.size() > first + from_size)
+        return view;
+    return {to + (at - first), view.size()};
 }
 
-uri::uri(uri const &rhs) {
-    *this = rhs;
+// Copies and moves carry the value as it is -- the parsed components, the validity, the family and the query map,
+// edits included -- with every view re-pointed at this object's text (Huly QB-351). They used to re-parse the source
+// text: every edit made through queries() was lost, and the copy paid a whole parse.
+void
+uri::adopt_views(uri const &rhs, const char *rhs_text, std::size_t rhs_size) noexcept {
+    const char *const text = _source.data();
+    _af                    = rhs._af;
+    _valid                 = rhs._valid;
+    _scheme                = rebase_view(rhs._scheme, rhs_text, rhs_size, text);
+    _user_info             = rebase_view(rhs._user_info, rhs_text, rhs_size, text);
+    _host                  = rebase_view(rhs._host, rhs_text, rhs_size, text);
+    _port                  = rebase_view(rhs._port, rhs_text, rhs_size, text);
+    _path                  = rebase_view(rhs._path, rhs_text, rhs_size, text);
+    _raw_queries           = rebase_view(rhs._raw_queries, rhs_text, rhs_size, text);
+    _fragment              = rebase_view(rhs._fragment, rhs_text, rhs_size, text);
+}
+
+// Constructor/Destructor implementations
+uri::uri(uri &&rhs) noexcept {
+    *this = std::move(rhs);
+}
+
+uri::uri(uri const &rhs)
+    : _source(rhs._source)
+    , _queries(rhs._queries) {
+    adopt_views(rhs, rhs._source.data(), rhs._source.size());
 }
 
 uri::uri(std::string const &str, int af)
@@ -934,10 +967,15 @@ uri::parse() noexcept {
                     return false; // Unclosed IPv6 bracket
                 }
 
-                // Check for port after IPv6 (e.g., [::1]:8080)
-                if (ipv6_end + 1 < authority_end && ipv6_end[1] == ':') {
-                    host_end   = ipv6_end + 1; // Include closing bracket
-                    port_begin = ipv6_end + 2; // Skip the colon
+                // The closing bracket ends the host, and the authority holds nothing after it but ":" port
+                // (RFC 3986 3.2.2): any other suffix is rejected, never dropped (Huly QB-352).
+                host_end = ipv6_end + 1; // Include closing bracket
+                if (host_end < authority_end) {
+                    if (*host_end != ':') {
+                        _valid = false;
+                        return false; // Text after the bracket that is not a port
+                    }
+                    port_begin = host_end + 1; // Skip the colon; an empty port is the scheme's default
                     port_end   = authority_end;
 
                     // Validate port (must be all digits)
@@ -947,8 +985,6 @@ uri::parse() noexcept {
                             return false; // Invalid port
                         }
                     }
-                } else {
-                    host_end = ipv6_end + 1; // Include closing bracket
                 }
             } else {
                 // Regular host (not IPv6) - look for port
@@ -966,7 +1002,11 @@ uri::parse() noexcept {
                             }
                         }
 
-                        if (all_digits && colon + 1 < authority_end) {
+                        // An empty port ("host:") is the scheme's default (RFC 3986 3.2.3) unless the colon belongs to
+                        // an unbracketed IPv6 host ("fe80::"), whose colons all stay in the host as before.
+                        const bool empty_port = colon + 1 == authority_end;
+                        const bool bare_ipv6  = std::find(host_begin, colon, ':') != colon;
+                        if (all_digits && !(empty_port && bare_ipv6)) {
                             host_end   = colon;
                             port_begin = colon + 1;
                             port_end   = authority_end;
@@ -1052,7 +1092,7 @@ uri::parse() noexcept {
         }
     }
 
-    if (port_begin) {
+    if (port_begin && port_begin < port_end) {
         _port = make_string_view(port_begin, port_end);
     } else if (!_scheme.empty()) {
         // Keep the common lowercase lookup unchanged. Scheme spelling is retained
@@ -1269,36 +1309,51 @@ uri::operator=(std::string const &str) {
 
 uri &
 uri::operator=(std::string &&str) noexcept {
-    _source = std::move(str);
-    parse();
+    from(std::move(str));
     return *this;
 }
 
 uri &
 uri::operator=(uri const &rhs) {
-    _af     = rhs._af;
-    _source = rhs._source;
-    parse();
+    if (this != &rhs)
+        *this = uri(rhs); // copy, then the noexcept move: an allocation failure leaves *this as it was
     return *this;
 }
 
 uri &
 uri::operator=(uri &&rhs) noexcept {
-    _af     = rhs._af;
-    _source = std::move(rhs._source);
-    parse();
+    if (this == &rhs)
+        return *this;
+    // The text's address before the move: a short text lives in std::string's own buffer, which a move COPIES, so the
+    // views are re-pointed from where the text was to where it is now.
+    const char *const rhs_text = rhs._source.data();
+    const std::size_t rhs_size = rhs._source.size();
+    _source                    = std::move(rhs._source);
+    _queries                   = std::move(rhs._queries);
+    adopt_views(rhs, rhs_text, rhs_size);
+    // The moved-from uri is a default-constructed one: none of its views may name the text it gave away.
+    rhs._source.clear();
+    rhs._queries.clear();
+    rhs._af     = AF_INET;
+    rhs._valid  = true;
+    rhs._scheme = rhs._user_info = rhs._host = rhs._port = rhs._path = rhs._raw_queries = rhs._fragment = {};
     return *this;
 }
 
 // Utility methods
+// A new text is classified from AF_INET, the family a uri constructed from it starts from -- never from the family
+// the previous text left: parse() reads `_af` to know whether the text already said AF_UNIX, so a uri that once held
+// `unix://...` stayed AF_UNIX through `u = "tcp://127.0.0.1:80"` (Huly QB-350).
 bool
 uri::from(std::string const &rhs) noexcept {
+    _af     = AF_INET;
     _source = rhs;
     return parse();
 }
 
 bool
 uri::from(std::string &&rhs) noexcept {
+    _af     = AF_INET;
     _source = std::move(rhs);
     return parse();
 }

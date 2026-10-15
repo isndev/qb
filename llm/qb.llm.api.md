@@ -539,10 +539,12 @@ Unbounded lock-free Michael-Scott MPSC queue.
 
 ### `class qb::io::uri` (`<qb/io/uri.h>`)
 RFC 3986 URI. Parsed on construction.
-*   ctors / assignment from `std::string` (+ optional address family, default `AF_INET`).
+*   ctors / assignment from `std::string` (+ optional address family, default `AF_INET`). Assigning a string gives what constructing from it gives: the family is classified from the new text, never kept from the previous one (3.3, Huly QB-350: a `unix://` uri assigned a `tcp://` text stayed `AF_UNIX`).
+*   Copy and move carry the value as it is — components, `is_valid()`, `af()` and the `queries()` map with its edits — without parsing the text again; a moved-from uri is a default-constructed one (3.3, Huly QB-351: they re-parsed the text and lost every edit made through `queries()`). An edit does not rewrite `source()` / `encoded_queries()`.
+*   Authority: after a bracketed IPv6 host comes the end of the authority or `:port`, any other suffix makes the uri invalid; an empty port (`host:` / `[::1]:`) is the scheme's default (3.3, Huly QB-352).
 *   `static uri parse(const std::string& str, int af = AF_INET) noexcept` — factory.
 *   Accessors: `scheme()`, `user_info()`, `host()`, `port()` (string), `[[nodiscard]] uint16_t u_port()` (numeric; 0 if malformed/>65535), `path()`, `fragment()`, `encoded_queries()`, `queries()`, `source()`, `af()`.
-*   A registered scheme's implicit port is matched without ASCII case (`hTtP` → 80, `HtTpS` → 443); `scheme()` and `source()` retain their original bytes. An explicit port overrides the default; an unregistered scheme without a port has `u_port() == 0` (`uri.cpp:1055-1094`).
+*   A registered scheme's implicit port is matched without ASCII case (`hTtP` → 80, `HtTpS` → 443); `scheme()` and `source()` retain their original bytes. An explicit port overrides the default; an unregistered scheme without a port has `u_port() == 0` (`uri.cpp:1095-1134`).
 *   `[T<T>] const std::string& query(T&& name, std::size_t index = 0) const` — on a miss returns a reference to a static empty string, so the reference is always safe to keep.
 *   `[T<T>] std::string query_or(T&& name, std::string fallback, std::size_t index = 0) const` — the same lookup with a caller-supplied fallback; returns **by value**, so a literal or temporary fallback is safe.
 *   `[[nodiscard]] bool is_valid() const noexcept` — false if last parse rejected input.

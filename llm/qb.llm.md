@@ -280,7 +280,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   `host` is the name TLS presents and verifies. _(tcp/connector.h:136-142, :1043; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
-  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1055-1094; uri.h:473-483)_
+  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1095-1134; uri.h:485-495)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {

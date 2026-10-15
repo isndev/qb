@@ -9,6 +9,10 @@ policy.
 
 ### Changed
 
+- **A `qb::io::uri` with an empty port has the scheme's default (Huly QB-352).** `http://example.com:/` and
+  `https://[::1]:/` now carry the default port of their scheme and the host without the colon (RFC 3986 3.2.3, 6.2.3).
+  A name kept the colon -- host `example.com:`, classified `AF_INET6` for it -- and a bracketed host an empty port
+  (`u_port() == 0`). An unbracketed IPv6 host ending in `:` (`fe80::`) keeps every colon in its host, as before.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -536,6 +540,19 @@ policy.
 
 ### Fixed
 
+- **`qb::io::uri` is a value: copies and moves keep the query map, an assigned text is classified afresh, and a
+  bracketed host takes only a port (Huly QB-350, QB-351, QB-352).** The copy and the move parsed the source text again,
+  so every edit made through the mutable `queries()` -- qbm-http's request validator sanitizes `Request::uri()` that
+  way -- was lost at the next copy or move of the request. They now carry the components, `is_valid()`, `af()` and
+  the map as they are, each view re-pointed at the copy's own text (a short text, which `std::string` keeps in its own
+  buffer and a move copies, included); a moved-from uri is a default-constructed one, and neither parses any more.
+  Assigning a string kept the family the previous text left -- `parse()` reads it to know whether the text said
+  `unix` -- so a uri that once held `unix://...` stayed `AF_UNIX`, and routed to a socket path, after
+  `u = "tcp://127.0.0.1:80"`; the text is now classified from `AF_INET`, as a uri constructed from it is. After `]` the
+  parser dropped any text that was not `:port`: `http://[::1]junk/` was a valid uri of host `::1`, and is now invalid
+  (RFC 3986 3.2.2). Pinned by `UriParse.AssignedTextIsClassifiedLikeAFreshUriOfIt`,
+  `UriParse.CopiesAndMovesKeepTheEditedQueryMap` and `UriParse.ABracketedHostEndsTheAuthorityOrIsFollowedByAPort` in
+  `tests/io/unit/core/uri-parse.cpp`.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

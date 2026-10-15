@@ -223,6 +223,12 @@ class uri {
      */
     void parse_query_parameters(const char *begin, const char *end);
 
+    /**
+     * @brief Takes @p rhs's family, validity and components, each view re-pointed from @p rhs_text (where @p rhs's
+     *        text was) at this object's text; a view of static storage (a default port, the default path) is kept.
+     */
+    void adopt_views(uri const &rhs, const char *rhs_text, std::size_t rhs_size) noexcept;
+
 public:
     /**
      * @brief Default constructor
@@ -231,13 +237,15 @@ public:
 
     /**
      * @brief Move constructor
-     * @param rhs Source URI to move from
+     * @param rhs Source URI to move from; left as a default-constructed uri
+     * @note Copies and moves carry the value as it is -- components, validity, family and the query map with any
+     *       edit made through queries() -- without parsing the text again.
      */
     uri(uri &&rhs) noexcept;
 
     /**
      * @brief Copy constructor
-     * @param rhs Source URI to copy from
+     * @param rhs Source URI to copy from (its query map is copied as it is, edits included)
      */
     uri(uri const &rhs);
 
@@ -374,14 +382,14 @@ public:
 
     /**
      * @brief Copy assignment operator
-     * @param rhs Source URI to copy from
+     * @param rhs Source URI to copy from (its query map is copied as it is, edits included)
      * @return Reference to this URI
      */
     uri &operator=(uri const &rhs);
 
     /**
      * @brief Move assignment operator
-     * @param rhs Source URI to move from
+     * @param rhs Source URI to move from; left as a default-constructed uri
      * @return Reference to this URI
      */
     uri &operator=(uri &&rhs) noexcept;
@@ -390,6 +398,8 @@ public:
      * @brief String assignment operator
      * @param str The source string for the URI
      * @return Reference to this URI
+     * @note The result is what `uri(str)` gives: the text is parsed afresh and its address family classified from
+     *       it, never kept from the previous text (a `unix://` uri assigned a `tcp://` text is AF_INET or AF_INET6).
      */
     uri &operator=(std::string const &str);
 
@@ -397,6 +407,7 @@ public:
      * @brief String move assignment operator
      * @param str The source string for the URI (will be moved)
      * @return Reference to this URI
+     * @note As the copying form: the result is what `uri(std::move(str))` gives.
      */
     uri &operator=(std::string &&str) noexcept;
 
@@ -412,7 +423,8 @@ public:
     /**
      * @brief Whether the source string parsed into a structurally valid URI.
      * @return `false` if the last `parse()` rejected the input (invalid authority,
-     *         path or port character, or an unclosed IPv6 bracket); `true` otherwise.
+     *         path or port character, an unclosed IPv6 bracket, or text after the
+     *         closing bracket that is not `:port`); `true` otherwise.
      * @note The constructors and assignment operators always run `parse()`; this
      *       accessor lets callers detect a malformed URI without re-parsing.
      */
@@ -513,6 +525,8 @@ public:
     /**
      * @brief Returns the parsed query parameters of this URI (non-const version)
      * @return Mutable reference to the query parameters map
+     * @note An edit belongs to this uri's value: query() sees it and a copy or a move carries it. The text --
+     *       source() and encoded_queries() -- is not rewritten by it.
      */
     [[nodiscard]] inline auto &
     queries() {
