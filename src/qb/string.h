@@ -38,6 +38,14 @@
 #ifndef QB_STRING_H_
 #define QB_STRING_H_
 
+// The length of a char array, bounded by its size (qb::string::array_length): __builtin_strnlen where the compiler has
+// it -- folded to a constant for a literal, the C library's vectorised scan for a buffer. Undefined at the end.
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_strnlen)
+#define QB_STRING_BUILTIN_STRNLEN 1
+#endif
+#endif
+
 namespace qb {
 
 namespace internal {
@@ -87,6 +95,20 @@ concept char_pointer = std::is_same_v<P, char const *> || std::is_same_v<P, char
  */
 template <typename T>
 concept char_array = std::is_array_v<T> && std::rank_v<T> == 1 && std::is_same_v<std::remove_cv_t<std::remove_extent_t<T>>, char>;
+
+/**
+ * @brief The element of a char array the bounded array forms of qb::string take: `const char` -- a literal, a const
+ *        array, initialised whole by rule -- or `char`, a mutable buffer whose tail may never have been written.
+ */
+template <typename C>
+concept char_element = std::is_same_v<std::remove_const_t<C>, char>;
+
+/**
+ * @brief Whether the length of an array of `C` may test its last element (the MSVC length, which folds a literal's
+ *        strlen alone): a const array's last element is a value; a mutable buffer's may be indeterminate, never read.
+ */
+template <char_element C>
+inline constexpr bool reads_last_element = std::is_const_v<C>;
 } // namespace internal
 
 /**
@@ -136,19 +158,35 @@ private:
     // matches, and the array forms are the more specialised. A const array used to take the non-template
     // `char const *` forms and their strlen, which reads past an array with no NUL (Huly QB-1002); a buffer took
     // `N - 1` characters, its tail of NULs included (Huly QB-386). The (pointer, length) forms keep interior NULs.
-    template <std::size_t N>
+    // Every array form is a template on its element type C: `const char` for a literal or a const array, `char` for a
+    // mutable buffer -- what the MSVC length below needs to know before it reads a last element.
+    template <internal::char_element C, std::size_t N>
     [[nodiscard]] static constexpr std::size_t
-    array_length(const char (&str)[N]) noexcept {
-        // char_traits::find is memchr bounded by N at run time -- folded to a constant for a literal, as strlen was, and
-        // vectorised for a buffer -- and a plain loop in a constant expression.
-        const char *const nul = std::char_traits<char>::find(str, N, '\0');
-        return nul ? static_cast<std::size_t>(nul - str) : N;
+    array_length(C (&str)[N]) noexcept {
+        if (std::is_constant_evaluated()) {
+            std::size_t len = 0;
+            while (len < N && str[len] != '\0')
+                ++len;
+            return len;
+        }
+#ifdef QB_STRING_BUILTIN_STRNLEN
+        // A literal's length is folded to a constant, as strlen's was; a buffer's is the C library's strnlen.
+        return __builtin_strnlen(str, N);
+#else
+        // MSVC folds neither memchr nor strnlen, only strlen. A const array -- a literal included -- is initialised whole:
+        // a NUL in its last element bounds strlen (folded for a literal), an array without one is read by strnlen. A
+        // mutable buffer's tail may never have been written: its last element is not read, strnlen bounds it.
+        if constexpr (internal::reads_last_element<C>)
+            return str[N - 1] == '\0' ? std::strlen(str) : strnlen(str, N);
+        else
+            return strnlen(str, N);
+#endif
     }
 
     // The same characters as a view: what the searches and comparisons read of a char array (Huly QB-1002).
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     [[nodiscard]] static constexpr std::string_view
-    array_view(const char (&str)[N]) noexcept {
+    array_view(C (&str)[N]) noexcept {
         return {str, array_length(str)};
     }
 
@@ -169,8 +207,8 @@ public:
      * @tparam N Size of the array
      * @param str The array to copy
      */
-    template <std::size_t N>
-    constexpr string(const char (&str)[N]) noexcept {
+    template <internal::char_element C, std::size_t N>
+    constexpr string(C (&str)[N]) noexcept {
         assign(str, array_length(str));
     }
 
@@ -267,9 +305,9 @@ public:
      * @param str The array to copy
      * @return Reference to this string
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     constexpr string &
-    assign(const char (&str)[N]) noexcept {
+    assign(C (&str)[N]) noexcept {
         return assign(str, array_length(str));
     }
 
@@ -324,9 +362,9 @@ public:
      * @param str The array to assign
      * @return Reference to this string
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     constexpr string &
-    operator=(const char (&str)[N]) noexcept {
+    operator=(C (&str)[N]) noexcept {
         return assign(str, array_length(str));
     }
 
@@ -706,9 +744,9 @@ public:
      * @param str The array to compare with
      * @return Negative if this < str, 0 if equal, positive if this > str
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     int
-    compare(const char (&str)[N]) const noexcept {
+    compare(C (&str)[N]) const noexcept {
         return std::string_view(*this).compare(array_view(str));
     }
 
@@ -761,9 +799,9 @@ public:
      * @param pos Starting position
      * @return Position of first occurrence or npos if not found
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     std::size_t
-    find(const char (&str)[N], std::size_t pos = 0) const noexcept {
+    find(C (&str)[N], std::size_t pos = 0) const noexcept {
         return std::string_view(*this).find(array_view(str), pos);
     }
 
@@ -812,9 +850,9 @@ public:
      * @param pos Starting position (searches backwards from here)
      * @return Position of last occurrence or npos if not found
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     std::size_t
-    rfind(const char (&str)[N], std::size_t pos = npos) const noexcept {
+    rfind(C (&str)[N], std::size_t pos = npos) const noexcept {
         return std::string_view(*this).rfind(array_view(str), pos);
     }
 
@@ -873,9 +911,9 @@ public:
      * @param str The array to append
      * @return Reference to this string
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     string &
-    append(const char (&str)[N]) noexcept {
+    append(C (&str)[N]) noexcept {
         return append(str, array_length(str));
     }
 
@@ -991,9 +1029,9 @@ public:
      * @param str The array to append
      * @return Reference to this string
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     string &
-    operator+=(const char (&str)[N]) noexcept {
+    operator+=(C (&str)[N]) noexcept {
         return append(str);
     }
 
@@ -1030,9 +1068,9 @@ public:
      * @param prefix Prefix to check
      * @return true if string starts with prefix, false otherwise
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    starts_with(const char (&prefix)[N]) const noexcept {
+    starts_with(C (&prefix)[N]) const noexcept {
         return std::string_view(*this).starts_with(array_view(prefix));
     }
 
@@ -1078,9 +1116,9 @@ public:
      * @param suffix Suffix to check
      * @return true if string ends with suffix, false otherwise
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    ends_with(const char (&suffix)[N]) const noexcept {
+    ends_with(C (&suffix)[N]) const noexcept {
         return std::string_view(*this).ends_with(array_view(suffix));
     }
 
@@ -1126,9 +1164,9 @@ public:
      * @param str Substring to find
      * @return true if string contains substring, false otherwise
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    contains(const char (&str)[N]) const noexcept {
+    contains(C (&str)[N]) const noexcept {
         return find(str) != npos;
     }
 
@@ -1194,9 +1232,9 @@ public:
      * @param rhs The array to compare with
      * @return true if strings are equal, false otherwise
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator==(const char (&rhs)[N]) const noexcept {
+    operator==(C (&rhs)[N]) const noexcept {
         return std::string_view(*this) == array_view(rhs);
     }
 
@@ -1243,9 +1281,9 @@ public:
      * @param rhs The array to compare with
      * @return true if strings are not equal, false otherwise
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator!=(const char (&rhs)[N]) const noexcept {
+    operator!=(C (&rhs)[N]) const noexcept {
         return !(*this == rhs);
     }
 
@@ -1280,9 +1318,9 @@ public:
      * @param rhs The array to compare with
      * @return true if this string is lexicographically less than rhs
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator<(const char (&rhs)[N]) const noexcept {
+    operator<(C (&rhs)[N]) const noexcept {
         return compare(rhs) < 0;
     }
 
@@ -1317,9 +1355,9 @@ public:
      * @param rhs The array to compare with
      * @return true if this string is lexicographically greater than rhs
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator>(const char (&rhs)[N]) const noexcept {
+    operator>(C (&rhs)[N]) const noexcept {
         return compare(rhs) > 0;
     }
 
@@ -1354,9 +1392,9 @@ public:
      * @param rhs The array to compare with
      * @return true if this string is lexicographically less than or equal to rhs
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator<=(const char (&rhs)[N]) const noexcept {
+    operator<=(C (&rhs)[N]) const noexcept {
         return compare(rhs) <= 0;
     }
 
@@ -1391,9 +1429,9 @@ public:
      * @param rhs The array to compare with
      * @return true if this string is lexicographically greater than or equal to rhs
      */
-    template <std::size_t N>
+    template <internal::char_element C, std::size_t N>
     bool
-    operator>=(const char (&rhs)[N]) const noexcept {
+    operator>=(C (&rhs)[N]) const noexcept {
         return compare(rhs) >= 0;
     }
 
@@ -1439,9 +1477,9 @@ operator+(const string<_Size1> &lhs, const string<_Size2> &rhs) noexcept {
  * @param rhs The array
  * @return New string containing concatenated result
  */
-template <std::size_t _Size, std::size_t N>
+template <std::size_t _Size, internal::char_element C, std::size_t N>
 string<_Size>
-operator+(const string<_Size> &lhs, const char (&rhs)[N]) noexcept {
+operator+(const string<_Size> &lhs, C (&rhs)[N]) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1473,9 +1511,9 @@ operator+(const string<_Size> &lhs, P rhs) noexcept {
  * @param rhs String
  * @return New string containing concatenated result
  */
-template <std::size_t _Size, std::size_t N>
+template <std::size_t _Size, internal::char_element C, std::size_t N>
 string<_Size>
-operator+(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
+operator+(C (&lhs)[N], const string<_Size> &rhs) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1629,9 +1667,9 @@ operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
 
 // Equality operators for reverse comparisons: a char array on the left is read up to its first NUL, never past it;
 // the `char const *` forms are templates deduced from a pointer, so an array takes the array form (Huly QB-1002).
-template <std::size_t _Size, std::size_t N>
+template <std::size_t _Size, internal::char_element C, std::size_t N>
 bool
-operator==(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
+operator==(C (&lhs)[N], const string<_Size> &rhs) noexcept {
     return rhs == lhs;
 }
 
@@ -1641,9 +1679,9 @@ operator==(P lhs, const string<_Size> &rhs) noexcept {
     return rhs == lhs;
 }
 
-template <std::size_t _Size, std::size_t N>
+template <std::size_t _Size, internal::char_element C, std::size_t N>
 bool
-operator!=(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
+operator!=(C (&lhs)[N], const string<_Size> &rhs) noexcept {
     return rhs != lhs;
 }
 
@@ -1654,5 +1692,7 @@ operator!=(P lhs, const string<_Size> &rhs) noexcept {
 }
 
 } // namespace qb
+
+#undef QB_STRING_BUILTIN_STRNLEN
 
 #endif // QB_STRING_H_
