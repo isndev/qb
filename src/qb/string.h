@@ -93,8 +93,8 @@ concept char_pointer = std::is_same_v<P, char const *> || std::is_same_v<P, char
  * The value is its first `size()` characters, NOT the bytes up to the first NUL: `assign(ptr, len)` keeps an
  * interior '\0', and every comparison, search and stream insertion works on the whole length, as std::string's
  * do (a "a\0b" is neither equal to "a" nor to "a\0c"; Huly QB-386). An operand given as `char const *` is read up
- * to its NUL, as std::string reads one. `c_str()` stays NUL-terminated for C interfaces, which see the string up
- * to its first interior NUL.
+ * to its NUL, as std::string reads one -- an array too, except by the constructor, assign() and operator=, which
+ * never read past it. `c_str()` stays NUL-terminated for C interfaces, which see the string up to its first NUL.
  *
  * @tparam _Size Maximum size of the string (default: 30)
  */
