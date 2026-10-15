@@ -2392,22 +2392,53 @@ ev_win32_fd_init(void) {
     return 0;
 }
 
+/* qev (Huly QB-315): the ONE place the registry allocates. Both tables grow here, together and
+ * geometrically: by_fd to hold the index about to be issued, and the free list to the same size --
+ * it can then record every index ever issued, so returning one (ev_win32_fd_push_free_unlocked,
+ * on a release or a failed acquire) never allocates and cannot fail. Each capacity is committed
+ * only after its realloc succeeded: a failure leaves every announced size backed by the storage
+ * behind it. The free list grows first, so a failure between the two leaves it the larger, which
+ * is the direction the invariant needs. It used to grow on the release, announcing its new size
+ * before a realloc whose failure the release ignored -- and the next release wrote through the
+ * old block, or through NULL on the first growth. */
 static int
 ev_win32_fd_reserve(int fd) {
     ev_win32_fd_entry **by_fd;
+    int                *freefds;
+    int                 newmax;
 
     if (fd < ev_win32_fd_by_fdmax)
         return 0;
 
-    by_fd = (ev_win32_fd_entry **) realloc(ev_win32_fd_by_fd, (size_t) (fd + 1) * sizeof(*by_fd));
+    if (ecb_expect_false(fd == INT_MAX)) {
+        errno = ENFILE;
+        return -1;
+    }
+
+    newmax = ev_win32_fd_by_fdmax ? ev_win32_fd_by_fdmax : 64;
+    while (newmax <= fd)
+        newmax = newmax > INT_MAX / 2 ? INT_MAX : newmax * 2;
+
+    if (ev_win32_fd_freemax < newmax) {
+        freefds = (int *) realloc(ev_win32_fd_free, (size_t) newmax * sizeof(*freefds));
+        if (!freefds) {
+            errno = ENOMEM;
+            return -1;
+        }
+
+        ev_win32_fd_free    = freefds;
+        ev_win32_fd_freemax = newmax;
+    }
+
+    by_fd = (ev_win32_fd_entry **) realloc(ev_win32_fd_by_fd, (size_t) newmax * sizeof(*by_fd));
     if (!by_fd) {
         errno = ENOMEM;
         return -1;
     }
 
-    memset(by_fd + ev_win32_fd_by_fdmax, 0, (size_t) (fd + 1 - ev_win32_fd_by_fdmax) * sizeof(*by_fd));
+    memset(by_fd + ev_win32_fd_by_fdmax, 0, (size_t) (newmax - ev_win32_fd_by_fdmax) * sizeof(*by_fd));
     ev_win32_fd_by_fd    = by_fd;
-    ev_win32_fd_by_fdmax = fd + 1;
+    ev_win32_fd_by_fdmax = newmax;
 
     return 0;
 }
@@ -2439,25 +2470,12 @@ ev_win32_fd_alloc_unlocked(void) {
     return ev_win32_fd_next++;
 }
 
-static int
+/* An issued index going back: the free list holds every index ever issued (ev_win32_fd_reserve),
+ * so this always fits and never allocates. */
+static void
 ev_win32_fd_push_free_unlocked(int fd) {
-    int *freefds;
-
-    if (ev_win32_fd_freecnt < ev_win32_fd_freemax) {
-        ev_win32_fd_free[ev_win32_fd_freecnt++] = fd;
-        return 0;
-    }
-
-    ev_win32_fd_freemax = ev_win32_fd_freemax ? ev_win32_fd_freemax * 2 : 64;
-    freefds             = (int *) realloc(ev_win32_fd_free, (size_t) ev_win32_fd_freemax * sizeof(*freefds));
-    if (!freefds) {
-        errno = ENOMEM;
-        return -1;
-    }
-
-    ev_win32_fd_free                        = freefds;
+    EV_ASSERT_MSG(ev_win32_fd_freecnt < ev_win32_fd_freemax, "libev: win32 fd free list cannot hold a released index");
     ev_win32_fd_free[ev_win32_fd_freecnt++] = fd;
-    return 0;
 }
 
 static int
@@ -2483,12 +2501,14 @@ ev_win32_fd_acquire(SOCKET handle, int owned) {
         return ent->fd;
     }
 
-    fd = ev_win32_fd_alloc_unlocked();
-    if (ev_win32_fd_reserve(fd) < 0) {
+    /* a recycled index is already reserved; a new one is issued only once both tables can hold it,
+     * so a failed growth consumes nothing */
+    if (!ev_win32_fd_freecnt && ev_win32_fd_reserve(ev_win32_fd_next) < 0) {
         LeaveCriticalSection(&ev_win32_fd_lock);
         return -1;
     }
 
+    fd  = ev_win32_fd_alloc_unlocked();
     ent = (ev_win32_fd_entry *) calloc(1, sizeof(*ent));
     if (!ent) {
         ev_win32_fd_push_free_unlocked(fd);
@@ -4083,6 +4103,8 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
     }
 }
 
+static void once_reclaim(EV_P);
+
 /* free up a loop structure */
 ecb_cold void
 ev_loop_destroy(EV_P) {
@@ -4101,6 +4123,9 @@ ev_loop_destroy(EV_P) {
         EV_INVOKE_PENDING;
     }
 #endif
+
+    /* the ev_once objects still waiting: freed, never invoked (Huly QB-736) */
+    once_reclaim(EV_A);
 
 #if EV_CHILD_ENABLE
     if (ev_is_default_loop(EV_A) && ev_is_active(&childev)) {
@@ -5046,14 +5071,41 @@ ev_now_update(EV_P) EV_NOEXCEPT {
     time_update(EV_A_ EV_TSTAMP_HUGE);
 }
 
+#if EV_USE_MONOTONIC
+/* The refresh, out of line: the offset it compares must survive the ev_time call, and inline
+ * that kept a callee-saved register live on ev_now_set's every pass (MSVC does not shrink-wrap). */
+ecb_noinline ecb_cold static void
+now_set_refresh(EV_P) {
+#if EV_PERIODIC_ENABLE
+    ev_tstamp odiff = rtmn_diff; /* the realtime - monotonic offset before this read */
+#endif
+
+    now_floor = mn_now;
+    ev_rt_now = ev_time();
+    rtmn_diff = ev_rt_now - mn_now;
+#if EV_PERIODIC_ENABLE
+    {
+        /* the jump test of time_update: the offset moved by MIN_TIMEJUMP or more */
+        ev_tstamp diff = odiff - rtmn_diff;
+
+        if (ecb_expect_false((diff < EV_TS_CONST(0.) ? -diff : diff) >= EV_TS_CONST(MIN_TIMEJUMP)))
+            periodics_reschedule(EV_A);
+    }
+#endif
+}
+#endif
+
 /* qev: the embedder hands the loop a reading of ev_clock_now () it already made, and the
  * next EVRUN_NOWAIT pass reads no clock of its own -- its tail time_update, the one read a
  * non-blocking pass still made after QB-188, stands down for that ONE pass (a pass that
  * blocks always re-reads: it slept). The realtime clock follows the way time_update's fast
  * path derives it, by the cached offset while the sample is within MIN_TIMEJUMP/2 of the last
- * realtime read, else by a real read (and periodics are rescheduled, as there). A sample
- * older than the loop's time is ignored: the loop's clock never steps back, whatever the
- * embedder read. Without a monotonic clock there is nothing to supply: a plain update. */
+ * realtime read, else by a real read -- and periodics are rescheduled, as there, only when that
+ * read shows the wall clock JUMPED against the monotonic one (Huly QB-316: rescheduled on every
+ * refresh, an interval or rescheduled periodic that fell due within the half second had its
+ * deadline recomputed past ev_rt_now before this pass could deliver it). A sample older than
+ * the loop's time is ignored: the loop's clock never steps back, whatever the embedder read.
+ * Without a monotonic clock there is nothing to supply: a plain update. */
 void
 ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
 #if EV_USE_MONOTONIC
@@ -5063,14 +5115,8 @@ ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
 
         if (ecb_expect_true(mn_now - now_floor < EV_TS_CONST(MIN_TIMEJUMP * .5)))
             ev_rt_now = rtmn_diff + mn_now;
-        else {
-            now_floor = mn_now;
-            ev_rt_now = ev_time();
-            rtmn_diff = ev_rt_now - mn_now;
-#if EV_PERIODIC_ENABLE
-            periodics_reschedule(EV_A);
-#endif
-        }
+        else
+            now_set_refresh(EV_A);
 
         now_set = 1;
         return;
@@ -5279,12 +5325,24 @@ ev_io_stop(EV_P_ ev_io *w) EV_NOEXCEPT {
 
     EV_FREQUENT_CHECK;
 #if defined(_WIN32) && EV_USE_EPOLL
-    if (backend == EVBACKEND_EPOLL) {
+    /* qev (Huly QB-317): wepoll keys its registration by SOCKET, and the registry may hand this
+     * int fd to another socket once its last reference goes -- so the LAST watcher on a socket
+     * removes the registration now rather than at the next fd_reify (a socket closed and its
+     * handle reused in between must not inherit it). The fd's recorded kernel state goes with it,
+     * as in fd_rearm_all: a watcher started on it again, set or not, is then ADDed by the next
+     * fd_reify instead of being judged unchanged against a mask wepoll no longer has. A watcher
+     * that leaves others on the fd does not touch the registration: theirs is fd_reify's to keep
+     * (the aggregate unchanged) or to MOD (narrower). Deleted here, they stayed armed in the loop
+     * and unknown to wepoll -- no event, ever. */
+    if (backend == EVBACKEND_EPOLL && !anfds[w->fd].head) {
+        ANFD              *anfd = anfds + w->fd;
         struct epoll_event ev;
         memset(&ev, 0, sizeof ev);
         /* Use the stored handle to avoid narrowing-conversion artifacts on x64. */
-        SOCKET sock = (w->fd >= 0 && w->fd < anfdmax) ? anfds[w->fd].handle : EV_FD_TO_WIN32_HANDLE(w->fd);
+        SOCKET sock = (w->fd >= 0 && w->fd < anfdmax) ? anfd->handle : EV_FD_TO_WIN32_HANDLE(w->fd);
         epoll_ctl((HANDLE) (void *) backend_fd, EPOLL_CTL_DEL, sock, &ev);
+        anfd->events = 0;
+        anfd->emask  = 0;
     }
 #endif
 
@@ -5484,7 +5542,10 @@ ev_signal_start(EV_P_ ev_signal *w) EV_NOEXCEPT {
     if (sigfd >= 0) {
         /* TODO: check .head */
         sigaddset(&sigfd_set, w->signum);
-        sigprocmask(SIG_BLOCK, &sigfd_set, 0);
+        /* signalfd only receives blocked signals; under EVFLAG_NOSIGMASK the caller keeps them
+         * blocked itself (Huly QB-713) */
+        if (!(origflags & EVFLAG_NOSIGMASK))
+            sigprocmask(SIG_BLOCK, &sigfd_set, 0);
 
         signalfd(sigfd, &sigfd_set, 0);
     }
@@ -5512,7 +5573,11 @@ ev_signal_start(EV_P_ ev_signal *w) EV_NOEXCEPT {
         sa.sa_flags = SA_RESTART; /* if restarting works we save one iteration */
         sigaction(w->signum, &sa, 0);
 
-        if (origflags & EVFLAG_NOSIGMASK) {
+        /* qev (Huly QB-713): the signal is unblocked so that it can arrive -- unless the loop was
+         * told to leave the mask alone. The test was inverted, as in upstream libev until its CVS
+         * reversed it ("the behaviour of EV_NOSIGMASK was reversed"): the flag unblocked a signal
+         * its caller kept blocked on purpose, and the default never unblocked one. */
+        if (!(origflags & EVFLAG_NOSIGMASK)) {
             sigemptyset(&sa.sa_mask);
             sigaddset(&sa.sa_mask, w->signum);
             sigprocmask(SIG_UNBLOCK, &sa.sa_mask, 0);
@@ -5547,7 +5612,8 @@ ev_signal_stop(EV_P_ ev_signal *w) EV_NOEXCEPT {
             sigdelset(&sigfd_set, w->signum);
 
             signalfd(sigfd, &sigfd_set, 0);
-            sigprocmask(SIG_UNBLOCK, &ss, 0);
+            if (!(origflags & EVFLAG_NOSIGMASK)) /* the caller's block stays (Huly QB-713) */
+                sigprocmask(SIG_UNBLOCK, &ss, 0);
         } else
 #endif
             signal(w->signum, SIG_DFL);
@@ -6294,7 +6360,8 @@ struct ev_once {
     ev_io    io;
     ev_timer to;
     void (*cb)(int revents, void *arg);
-    void *arg;
+    void           *arg;
+    struct ev_once *reclaim; /* once_reclaim's list at loop destruction (self at its tail); 0 while live */
 };
 
 static void
@@ -6323,6 +6390,58 @@ once_cb_to(EV_P_ ev_timer *w, int revents) {
     once_cb(EV_A_ once, revents | ev_clear_pending(EV_A_ & once->io));
 }
 
+/* the ev_once a watcher belongs to, added to `list` the first time it is seen */
+inline_size void
+once_collect(struct ev_once **list, W w) {
+    struct ev_once *once;
+
+    if (ev_cb((ev_io *) w) == once_cb_io)
+        once = EV_CONTAINER_OF(w, struct ev_once, io);
+    else if (ev_cb((ev_timer *) w) == once_cb_to)
+        once = EV_CONTAINER_OF(w, struct ev_once, to);
+    else
+        return;
+
+    if (!once->reclaim) {
+        once->reclaim = *list ? *list : once;
+        *list         = once;
+    }
+}
+
+/* qev (Huly QB-736): what ev_once allocates is private -- its caller gets no handle on it -- and
+ * only once_cb frees it, so a loop destroyed first (a timeout still ahead, an event queued but not
+ * yet invoked) kept it. ev_loop_destroy calls this before freeing the arrays that lead to it. A
+ * live ev_once is reachable through the loop's own structures -- its io on its fd's list, its timer
+ * in the heap, either half on a pending queue -- and is recognised by its callbacks, the way
+ * ev_walk recognises the loop's internal watchers (a pending or active watcher is valid memory by
+ * libev's contract: ev_invoke_pending and ev_verify read the same ones). Reachable twice, it is
+ * collected once, and freed after the walk; nothing is invoked: a loop being destroyed delivers no
+ * ev_once callback. */
+ecb_noinline ecb_cold static void
+once_reclaim(EV_P) {
+    struct ev_once *list = 0;
+    int             i, pri;
+    WL              wl;
+
+    for (pri = NUMPRI; pri--;)
+        for (i = pendingcnt[pri]; i--;)
+            once_collect(&list, pendings[pri][i].w);
+
+    for (i = 0; i < anfdmax; ++i)
+        for (wl = anfds[i].head; wl; wl = wl->next)
+            once_collect(&list, (W) wl);
+
+    for (i = timercnt + HEAP0; i-- > HEAP0;)
+        once_collect(&list, (W) ANHE_w(timers[i]));
+
+    while (list) {
+        struct ev_once *once = list;
+
+        list = once->reclaim == once ? 0 : once->reclaim;
+        ev_free(once);
+    }
+}
+
 /* See ev.h: no-op when cb is NULL, or when fd < 0 and timeout < 0. (nothing could fire). */
 void
 ev_once(EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, void *arg), void *arg) EV_NOEXCEPT {
@@ -6338,8 +6457,9 @@ ev_once(EV_P_ int fd, int events, ev_tstamp timeout, void (*cb)(int revents, voi
 
     once = (struct ev_once *) ev_malloc(sizeof(struct ev_once));
 
-    once->cb  = cb;
-    once->arg = arg;
+    once->cb      = cb;
+    once->arg     = arg;
+    once->reclaim = 0;
 
     ev_init(&once->io, once_cb_io);
     if (fd >= 0 && events) {

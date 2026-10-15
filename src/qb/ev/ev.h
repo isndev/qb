@@ -485,7 +485,7 @@ typedef struct stat ev_statdata;
         EV_ATOMIC_T sent; /* private */
     } ev_async;
 
-#define ev_async_pending(w) (+(w)->sent)
+#define ev_async_pending(w) (+EV_ASYNC_SENT_LOAD_(&(w)->sent)) /* an acquire load: see EV_ASYNC_SENT_LOAD_ */
 #endif
 
     /* the presence of this union forces similar struct layout */
@@ -1026,5 +1026,18 @@ ev_is_default_loop (void) EV_NOEXCEPT
 
 EV_CPP(
 })
+
+/* qev (Huly QB-724): the load behind ev_async_pending (defined with ev_async; a macro expands where
+ * it is used, so its helper may follow it). `sent` is set by ev_async_send from any thread with a
+ * release store, so the owner's quick check reads it with the matching acquire -- the access
+ * ev.c's EV_WAKE_LOAD makes, under the same opt-out (EV_NO_ATOMIC_BUILTINS) and on the same
+ * compilers; elsewhere the plain read it always was. It used to be that plain read everywhere,
+ * which ThreadSanitizer reports against the sender's store. The layout of ev_async and the C99
+ * floor do not change. */
+#if (defined(__GNUC__) || defined(__clang__)) && !defined(EV_NO_ATOMIC_BUILTINS)
+#define EV_ASYNC_SENT_LOAD_(p) __atomic_load_n((p), __ATOMIC_ACQUIRE)
+#else
+#define EV_ASYNC_SENT_LOAD_(p) (*(p))
+#endif
 
 #endif

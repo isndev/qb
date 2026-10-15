@@ -9,6 +9,13 @@ policy.
 
 ### Changed
 
+- **The embedded loop's `EVFLAG_NOSIGMASK` leaves the signal mask alone, and without it a watched
+  signal is unblocked (qev, Huly QB-713).** The test was inverted, as in libev 4.33 (reversed in
+  libev's CVS since): the flag unblocked a signal its caller kept blocked, and the default never
+  unblocked one, against the manual. With the flag no `sigprocmask` is made, the signalfd path
+  included; without it the first watcher's start unblocks its signal. qb itself never passes the
+  flag and blocks no signal.
+
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -536,6 +543,22 @@ policy.
 
 ### Fixed
 
+- **The embedded event loop: seven defects of the loop and of its Windows backend (qev, Huly
+  QB-315, QB-316, QB-317, QB-337, QB-340, QB-724, QB-736).** Windows: the `SOCKET <-> fd`
+  registry grows its free list with its fd table, committing each size after its `realloc`
+  succeeded, so a release never allocates and an allocation failure can no longer leave a
+  capacity with no storage behind it (the next release wrote through it); stopping one of several
+  watchers on a socket no longer deletes the wepoll registration the others still need (only the
+  last watcher deletes it, and a watcher restarted on the fd before the next pass is registered
+  again); the clock caches of `ev_win32.c` are initialised once under `InitOnceExecuteOnce` and
+  read with acquire loads, and wepoll's "initialised" flag is an acquire/release pair. Everywhere:
+  `ev_now_set`'s realtime refresh recomputes the periodics only on a real wall-clock jump, as the
+  loop's own update does; `ev_async_pending` is an acquire load; an `ev_once` still waiting when its
+  loop is destroyed is freed, without its callback. Hot paths: on MSVC x64 `ev_run` and
+  `ev_now_set`'s per-pass path compile to the same instructions, and the QPC clock read is two
+  instructions shorter (an integer test replaces the FP compare and its parity branch). Witnesses
+  in qev's suites (`test-win32-internals`, `test-wepoll`, `test-loops`, `test-watchers`), each red
+  before.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior
