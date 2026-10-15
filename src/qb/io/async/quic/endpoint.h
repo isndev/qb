@@ -6,6 +6,7 @@
 #ifndef QB_IO_ASYNC_QUIC_ENDPOINT_H_
 #define QB_IO_ASYNC_QUIC_ENDPOINT_H_
 
+#include <algorithm>
 #include <array>
 #include <deque>
 #include <initializer_list>
@@ -52,6 +53,9 @@ private:
     bool _draining_events        = false;
     bool _drain_events_again     = false;
     bool _credit_packets_pending = false;
+    // Server role: the connections that reported `connected` and have not closed, so connection id 0
+    // -- what the single-argument forms pass -- can address the sole one by its real id.
+    std::vector<std::uint64_t> _connected_peers;
 
 protected:
     virtual void
@@ -80,6 +84,15 @@ protected:
     stream_origin(std::uint64_t id) const noexcept {
         const bool server_initiated = (id & 0x1u) != 0;
         return server_initiated == _server_role ? qb::io::quic::stream_origin::local : qb::io::quic::stream_origin::remote;
+    }
+
+    // Connection id 0 is "the" connection. A client's backend takes it as is; on a server it is the sole
+    // connected peer, or 0 again -- no connection -- when there is none or several.
+    [[nodiscard]] std::uint64_t
+    connection_for(std::uint64_t connection_id) const noexcept {
+        if (connection_id != 0 || !_server_role) [[likely]]
+            return connection_id;
+        return _connected_peers.size() == 1 ? _connected_peers.front() : 0;
     }
 
     void
@@ -168,6 +181,7 @@ protected:
             _socket.close();
         _state = state::closed;
         _open  = false;
+        _connected_peers.clear();
         dispatch(qb::io::async::quic::event::connection_closed{
             0, qb::io::quic::disconnect_reason::transport_error, error_code, std::string(reason)
         });
@@ -284,14 +298,19 @@ protected:
             for (auto const &event : _backend->drain_events()) {
                 if (event.type == qb::io::quic::backend_event::kind::connected) {
                     _state = state::connected;
+                    if (_server_role && event.connection_id != 0
+                        && std::find(_connected_peers.begin(), _connected_peers.end(), event.connection_id) == _connected_peers.end())
+                        _connected_peers.push_back(event.connection_id);
                     dispatch(qb::io::async::quic::event::connected{event.connection_id, event.text});
                 } else if (event.type == qb::io::quic::backend_event::kind::connection_closed) {
                     if (!_server_role || event.connection_id == 0) {
                         _state = state::closed;
                         _open  = false;
+                        _connected_peers.clear();
                     } else {
                         _state = _backend->current_stats().active_connections > 0 ? state::connected : state::listening;
                         _open  = true;
+                        std::erase(_connected_peers, event.connection_id);
                     }
                     dispatch(qb::io::async::quic::event::connection_closed{
                         event.connection_id,
@@ -393,6 +412,7 @@ public:
         _credit_packets_pending = false;
         _backend                = std::move(backend);
         _native_backend_owned   = false;
+        _connected_peers.clear();
     }
 
     void
@@ -494,10 +514,7 @@ public:
 
     stream
     open_bidirectional_stream(std::uint64_t connection_id) {
-        ensure_backend();
-        const auto id = _backend->open_stream(connection_id, qb::io::quic::stream_direction::bidirectional);
-        _stats        = _backend->current_stats();
-        return {connection_id, id, qb::io::quic::stream_direction::bidirectional, qb::io::quic::stream_origin::local};
+        return open_stream(connection_id, qb::io::quic::stream_direction::bidirectional);
     }
 
     stream
@@ -507,10 +524,7 @@ public:
 
     stream
     open_unidirectional_stream(std::uint64_t connection_id) {
-        ensure_backend();
-        const auto id = _backend->open_stream(connection_id, qb::io::quic::stream_direction::unidirectional);
-        _stats        = _backend->current_stats();
-        return {connection_id, id, qb::io::quic::stream_direction::unidirectional, qb::io::quic::stream_origin::local};
+        return open_stream(connection_id, qb::io::quic::stream_direction::unidirectional);
     }
 
     void
@@ -521,7 +535,7 @@ public:
     void
     send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id, std::span<const std::byte> data, bool fin = false) {
         ensure_backend();
-        _backend->send_stream_data(connection_id, stream_id, data, fin);
+        _backend->send_stream_data(connection_for(connection_id), stream_id, data, fin);
         drain_backend_packets();
         drain_backend_events();
     }
@@ -541,7 +555,7 @@ public:
     extend_stream_credit(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t bytes) {
         if (!_backend || bytes == 0)
             return;
-        _backend->extend_stream_credit(connection_id, stream_id, bytes);
+        _backend->extend_stream_credit(connection_for(connection_id), stream_id, bytes);
         _credit_packets_pending = true;
         if (_draining_events) {
             _drain_events_again = true;
@@ -561,7 +575,7 @@ public:
     void
     reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t application_error_code) {
         ensure_backend();
-        _backend->reset_stream(connection_id, stream_id, application_error_code);
+        _backend->reset_stream(connection_for(connection_id), stream_id, application_error_code);
         drain_backend_packets();
         drain_backend_events();
     }
@@ -574,7 +588,7 @@ public:
     void
     stop_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t application_error_code) {
         ensure_backend();
-        _backend->stop_stream(connection_id, stream_id, application_error_code);
+        _backend->stop_stream(connection_for(connection_id), stream_id, application_error_code);
         drain_backend_packets();
         drain_backend_events();
     }
@@ -587,7 +601,7 @@ public:
     void
     send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) {
         ensure_backend();
-        _backend->send_datagram(connection_id, data);
+        _backend->send_datagram(connection_for(connection_id), data);
         drain_backend_packets();
         drain_backend_events();
     }
@@ -606,7 +620,7 @@ public:
     close_connection(std::uint64_t connection_id, std::uint64_t application_error_code = 0, std::string_view reason = {}) {
         if (!_backend)
             return;
-        _backend->close_connection(connection_id, application_error_code, reason);
+        _backend->close_connection(connection_for(connection_id), application_error_code, reason);
         drain_backend_packets();
         drain_backend_events();
     }
@@ -626,6 +640,7 @@ public:
             _socket.close();
         _state = state::closed;
         _open  = false;
+        _connected_peers.clear();
     }
 
     void
@@ -676,6 +691,20 @@ public:
     }
 
 private:
+    // The handle carries the connection the backend opened on: on a server, connection 0 is resolved to
+    // the sole connected peer first, and an open with no such peer has nothing to return but an error.
+    stream
+    open_stream(std::uint64_t connection_id, qb::io::quic::stream_direction direction) {
+        ensure_backend();
+        const auto target = connection_for(connection_id);
+        if (target == 0 && _server_role)
+            throw std::runtime_error(_connected_peers.empty() ? "Cannot open a QUIC stream: the server has no connected peer"
+                                                              : "Cannot open a QUIC stream on connection 0: the server has several peers");
+        const auto id = _backend->open_stream(target, direction);
+        _stats        = _backend->current_stats();
+        return {target, id, direction, qb::io::quic::stream_origin::local};
+    }
+
     bool _native_backend_owned = false;
 };
 

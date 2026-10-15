@@ -595,6 +595,86 @@ policy.
   teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
   witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
   one completion per pass and one fewer per extra completion (callgrind).
+- **The native QUIC writer no longer zero-fills its packet buffer before every write (Huly QB-1057).**
+  `drain_transport` value-initialised its 1200-byte `NGTCP2_MAX_UDP_PAYLOAD_SIZE` buffer on each writer
+  iteration (an inline 150-qword `rep stos`), although ngtcp2 writes every byte it reports as written and
+  the writer copies exactly those bytes out. The buffer is now left uninitialised. Callgrind, WSL2 g++-14
+  Release, one stream and 300 sends, runs moving the same data: 9,342 instructions per send before
+  (A/A 0), 8,883-8,891 after (A/A 0.09 %), -4.9 %; the writer's own cost per call drops from 215 to 99.
+  Valgrind memcheck reports the same single pre-existing ngtcp2-internal context before and after, while a
+  control copying 8 unwritten bytes is caught at `sendto`; clang-analyzer finds nothing.
+- **The QUIC stream-session cap refuses new streams, never one it already admitted (Huly QB-329).**
+  `io_handler` tested `set_max_sessions()` before looking the `{connection_id, stream_id}` pair up, so
+  once the registry was full every later chunk of an admitted stream -- one opened by `stream_started`
+  before its first byte included -- was refused and the facade reset it with code `1`. The lookup now
+  comes first: an admitted pair resolves whatever the cap says, and lowering the cap evicts nothing.
+  Pinned in `tests/io/unit/quic/quic-adapter.cpp` (`ExistingSessionLookupAndSessionCapRejection`,
+  `StreamSessionCapRejectsExtraRemoteStreamsAndResetsStream`), both red before the fix.
+- **A QUIC creation hook that removes its new session refuses the stream instead of crashing the feed
+  (Huly QB-331).** `registerSession` returned the session it had just created even when the
+  `on(StreamSession&)` hook had unregistered it or cleared the registry -- a pointer to a session freed
+  as the call returned -- and the data path then looked the session up again and dereferenced the empty
+  result. Registration now reports what the registry holds once the hook returns: `nullptr` after a
+  removal (the facade resets the stream with code `1`, as for a capped stream), the replacement when the
+  hook installed another session under the same pair. The data path admits once and keeps that owner
+  alive across the protocol handlers, one hash lookup fewer per chunk. Pinned by
+  `CreationHookRemovalMakesRegistrationReportNoSession` and
+  `CreationHookRemovalRefusesStreamDataInsteadOfFeedingAMissingSession`; the second crashed with
+  SIGSEGV before the fix.
+- **A QUIC server stream opened on the default connection carries its real connection id (Huly QB-330).**
+  The single-argument forms pass connection id `0`, documented as "the sole/current connection". On a
+  server the native backend opened on its only child, but the endpoint handed back a stream (and the
+  facade keyed a session) with the caller's `0`; every later flush or send then addressed connection
+  `0`, which the native server does not have, and its output was consumed and dropped. The endpoint now
+  tracks its connected peers from `connected` / `connection_closed` and resolves `0` to the sole one
+  before calling the backend: the handle and the session carry the real id, and single-argument sends,
+  resets, stops, credit and closes reach that peer. Behaviour decision: opening on `0` throws
+  `std::runtime_error` when the server has no connected peer or several, instead of guessing; an
+  explicit id is unchanged, and a mutator addressed to `0` with no sole peer still reaches no
+  connection. Pinned by `DefaultConnectionAddressesTheSoleConnectedPeerByItsRealId` and the
+  `SolePeerConnection` case of `QuicServerInitiatedStreamTest.ReachesClient` (the client never received
+  the server's bytes before the fix; the `ExplicitConnection` case is the control).
+- **A QUIC stream reset with application error code 0 closes as a reset, not as a clean finish (Huly QB-335).**
+  The native `stream_close` callback took `app_error_code == 0` for a clean close and ignored the
+  `NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET` flag that says a code was set, so a reset or stop with the
+  valid code `0` reached both peers as `stream_close_reason::finished`, each preceded by a synthesised FIN
+  nobody sent (the `server` / `connector` facades, which drop a stream's session on its reset event, would
+  admit a new one for that FIN). The
+  flag now decides: a set code, `0` included, closes as `reset` with that code, and only a clean close may
+  synthesise a FIN. Pinned by the `ApplicationCodeZero` case of
+  `QuicStreamResetTest.PeerObservesStreamResetFromServer`, which now pumps until both peers' full close
+  (`ApplicationCode0x42` and `CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf` are the controls).
+- **A QUIC stream without flow-control credit no longer holds back other sends or keeps the writer spinning
+  (Huly QB-333).** The native writer only ever offered ngtcp2 the oldest queued chunk: when that stream's
+  credit was spent it stopped the whole pass, so other streams and the DATAGRAMs waited behind it, and with
+  the connection's credit spent the DATAGRAMs (never flow controlled) waited too. And `wants_write()`
+  reported any queued data, so an endpoint kept `EV_WRITE` armed on the always-writable UDP socket and
+  re-ran the writer on every loop pass until credit arrived. A stream refused for lack of its own credit is
+  now set aside with its later chunks, in order, until the peer's `MAX_STREAM_DATA` reaches ngtcp2's
+  `extend_max_stream_data` callback; a spent connection credit still lets DATAGRAMs and control frames
+  out; and `wants_write()` reports only a due attempt (a read, a credit grant, encoded packets), never
+  refused data. Measured with callgrind on WSL2 g++-14 Release (deterministic instruction counts, three
+  runs a side): an endpoint idling 1000 loop passes with only refused data queued made 1001 writer
+  attempts and executed 3.10 M instructions before, 2 attempts and 0.54 M after; on the common send path
+  (one stream, ACKs flowing) the writer costs about 4 instructions more per call and `send_stream_data` 6,
+  roughly 12 per send of some 9,300 (the parking path is out of line and cold). Pinned by
+  `QuicCreditBlockedHeadTest.BlockedHeadLeavesOtherWorkSendableAndTheWriterIdle` (per-stream and
+  connection credit) and `QuicEndpointLoop.CreditBlockedStreamLeavesTheWriterIdle`, red before the fix;
+  `TxBatchBudgetFlushesLargePayloadAcrossPolls` (congestion-limited, ACK-driven) is the control.
+  `CreditBlockedStreamParksBehindQueuedWorkInOrder` covers a refusal with another stream queued behind
+  the head and bytes sent to a parked stream; `ResetOfACreditBlockedStreamReleasesItsQueuedData` proves a
+  reset releases the parked chunks from the send caps (red with that release removed).
+  `EnforcesPreConnectionSendQueueLimits` no longer expects a backend with no connection to report
+  `wants_write()` for queued data.
+- **A CSPRNG failure no longer leaves a QUIC listener's Retry secret zeroed for good (Huly QB-334).**
+  `ensure_retry_secret()` ignored `fill_random()`'s result and marked the secret ready anyway; the fill
+  zeroes the buffer on failure, so one failed `RAND_bytes` made every Retry token of that listener minted
+  and verified under an all-zero key for the rest of its life, and a later successful RNG never replaced
+  it. The secret is now ready only after a successful fill; while it is missing an Initial is dropped
+  (fail closed: no Retry, no unvalidated admission) and the next Initial draws again. Pinned by
+  `StatelessRetrySecretFailureFailsClosedThenRecovers` in `tests/io/system/quic/quic-handshake.cpp`,
+  through a test-build-only failure hook in `fill_random()` (`QB_IO_QUIC_TEST_HOOKS`, absent from
+  installable builds); before the fix the failed fill left a ready, zeroed secret that minted a Retry.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

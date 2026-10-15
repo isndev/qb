@@ -942,6 +942,61 @@ TEST(QuicAdapterServer, LocalStreamSessionCanPublishAndFlush) {
 }
 
 /**
+ * @test Connection id 0 on a server addresses the sole connected peer, by its real id
+ * @brief The single-argument forms pass connection 0. On a server with exactly one connected peer, the
+ *        stream handle and its session carry that peer's id (7), so the flush, a raw single-argument
+ *        send and the backend open all address connection 7. With two peers 0 is ambiguous and opening
+ *        throws while an explicit id still opens; after a close the survivor is the sole peer again; with
+ *        none, opening throws (Huly QB-330: the handle kept the caller's 0, the session was keyed by it,
+ *        and the native backend dropped every send to connection 0).
+ */
+TEST(QuicAdapterServer, DefaultConnectionAddressesTheSoleConnectedPeerByItsRealId) {
+    FakeQuicBackend   *raw = nullptr;
+    CallbackQuicServer server{make_fake(raw)};
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    const auto connected = [&](std::uint64_t id) {
+        raw->queued_events.push_back({qb::io::quic::backend_event::kind::connected, id, 0, 0, "h3", {}});
+        server.poll();
+    };
+    const auto closed = [&](std::uint64_t id) {
+        raw->stats.active_connections = 1;
+        raw->queued_events.push_back(
+            {qb::io::quic::backend_event::kind::connection_closed, id, 0, 0, "bye", {}, qb::io::quic::disconnect_reason::application_close});
+        server.poll();
+    };
+
+    connected(7);
+    auto *session = server.open_bidirectional_stream_session();
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(raw->last_open_connection_id, 7u) << "the backend must open on the real connection";
+    EXPECT_EQ(session->connection_id(), 7u) << "the session must be keyed by the real connection id";
+    EXPECT_EQ(server.stream_session(7, session->id()), session);
+    session->publish(std::string_view{"hello", 5});
+    server.flush_stream_session(*session);
+    EXPECT_EQ(raw->sent_connection_id, 7u);
+    EXPECT_EQ(raw->sent_stream_bytes, 5u);
+    const auto handle = server.open_unidirectional_stream();
+    EXPECT_EQ(handle.connection_id(), 7u);
+    server.send_stream_data(handle.id(), std::string_view{"raw"});
+    EXPECT_EQ(raw->sent_connection_id, 7u) << "a single-argument send addresses the sole peer";
+    EXPECT_EQ(raw->sent_stream_bytes, 8u);
+
+    connected(9);
+    EXPECT_THROW((void) server.open_bidirectional_stream_session(), std::runtime_error) << "two peers: connection 0 is ambiguous";
+    auto *explicit_session = server.open_bidirectional_stream_session(9);
+    ASSERT_NE(explicit_session, nullptr);
+    EXPECT_EQ(raw->last_open_connection_id, 9u);
+    EXPECT_EQ(explicit_session->connection_id(), 9u);
+
+    closed(7);
+    EXPECT_EQ(server.open_unidirectional_stream().connection_id(), 9u) << "the survivor is the sole peer again";
+    closed(9);
+    EXPECT_THROW((void) server.open_unidirectional_stream(), std::runtime_error) << "no connected peer to open on";
+    EXPECT_TRUE(server.is_open());
+}
+
+/**
  * @test A connector local stream session can publish and flush (unidirectional)
  * @brief Same publish/flush contract on the connector role with a unidirectional stream.
  */
@@ -1114,9 +1169,11 @@ TEST(QuicAdapterServer, AmbiguousStreamIdLookupReturnsNullUntilConnectionIsSpeci
 }
 
 /**
- * @test Re-registering an existing session is idempotent and the session cap rejects extras
- * @brief register_stream_session of an existing key returns the same pointer; once the cap is hit a new
- *        key is rejected (null).
+ * @test Re-registering an existing session is idempotent, also at or above the session cap
+ * @brief register_stream_session of an existing key returns the same pointer before AND after the cap
+ *        is reached or lowered below the map size; only a NEW key is rejected (null), and a lookup never
+ *        re-runs the creation hook. The cap admits streams; it never refuses one it already admitted
+ *        (Huly QB-329: the size test used to run before the existing-key lookup).
  */
 TEST(QuicAdapterServer, ExistingSessionLookupAndSessionCapRejection) {
     FakeQuicBackend   *raw = nullptr;
@@ -1124,12 +1181,20 @@ TEST(QuicAdapterServer, ExistingSessionLookupAndSessionCapRejection) {
 
     ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
 
-    auto *first = server.register_stream_session(3, 12);
+    auto *first  = server.register_stream_session(3, 12);
+    auto *second = server.register_stream_session(3, 16);
     ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
 
     EXPECT_EQ(server.register_stream_session(3, 12), first) << "re-registering an existing key is idempotent";
-    server.set_max_sessions(1);
+    server.set_max_sessions(2);
+    EXPECT_EQ(server.register_stream_session(3, 12), first) << "a full session map still resolves an admitted key";
     EXPECT_EQ(server.register_stream_session(3, 13), nullptr) << "a full session map rejects new keys";
+    server.set_max_sessions(1);
+    EXPECT_EQ(server.register_stream_session(3, 16), second) << "a cap lowered below the map size keeps admitted keys";
+    EXPECT_EQ(server.register_stream_session(3, 13), nullptr);
+    EXPECT_EQ(server.session_count(), 2u);
+    EXPECT_EQ(server.stream_sessions, 2) << "a lookup must not run the creation hook again";
     EXPECT_EQ(server.max_sessions(), 1u);
 }
 
@@ -1281,10 +1346,12 @@ TEST(QuicAdapterServer, RemoteStreamFinIsDeliveredAndThenSessionIsUnregistered) 
 }
 
 /**
- * @test The session cap rejects extra remote streams and resets them
- * @brief With set_max_sessions(1), the first remote stream registers but the second is rejected and
- *        reset (the handler calls backend::reset_stream with the rejection code) and never appears in
- *        the map.
+ * @test The session cap resets an extra remote stream, never a stream it already admitted
+ * @brief With set_max_sessions(1), a client-initiated stream admitted by stream_started fills the single
+ *        slot before its first byte; each of its later chunks still reaches the same session (no reset),
+ *        while a second remote stream is rejected, reset with the rejection code 1 and kept out of the map
+ *        (Huly QB-329: every chunk of an admitted stream used to be refused, then reset, once the map was
+ *        full).
  */
 TEST(QuicAdapterServer, StreamSessionCapRejectsExtraRemoteStreamsAndResetsStream) {
     FakeQuicBackend   *raw = nullptr;
@@ -1293,28 +1360,170 @@ TEST(QuicAdapterServer, StreamSessionCapRejectsExtraRemoteStreamsAndResetsStream
     server.set_max_sessions(1);
     ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
 
-    qb::io::quic::backend_event first;
-    first.type          = qb::io::quic::backend_event::kind::stream_data;
-    first.connection_id = 7;
-    first.stream_id     = 1;
-    first.payload.push_back(std::byte{'a'});
-    raw->queued_events.push_back(std::move(first));
-
-    qb::io::quic::backend_event second;
-    second.type          = qb::io::quic::backend_event::kind::stream_data;
-    second.connection_id = 7;
-    second.stream_id     = 5;
-    second.payload.push_back(std::byte{'b'});
-    raw->queued_events.push_back(std::move(second));
+    // Stream 0 is client-initiated, so remote for the server: stream_started admits it.
+    raw->queued_events.push_back({qb::io::quic::backend_event::kind::stream_started, 7, 0, 0, {}, {}});
+    const auto chunk = [&](std::uint64_t stream_id, char byte) {
+        qb::io::quic::backend_event data;
+        data.type          = qb::io::quic::backend_event::kind::stream_data;
+        data.connection_id = 7;
+        data.stream_id     = stream_id;
+        data.payload.push_back(static_cast<std::byte>(byte));
+        raw->queued_events.push_back(std::move(data));
+    };
+    chunk(0, 'a');
+    chunk(0, 'b');
+    chunk(4, 'x');
+    chunk(0, 'c');
 
     server.poll();
 
+    EXPECT_EQ(server.stream_started, 1);
+    EXPECT_EQ(server.stream_sessions, 1);
+    EXPECT_EQ(server.received, "abc") << "every chunk of the admitted stream must reach the server";
     EXPECT_EQ(server.session_count(), 1u);
-    EXPECT_NE(server.stream_session(7, 1), nullptr);
-    EXPECT_EQ(server.stream_session(7, 5), nullptr);
-    EXPECT_EQ(raw->reset_stream_calls, 1);
-    EXPECT_EQ(raw->reset_stream_id, 5u);
+    auto *admitted = server.stream_session(7, 0);
+    ASSERT_NE(admitted, nullptr);
+    EXPECT_EQ(admitted->pendingRead(), 3u);
+    EXPECT_EQ(server.stream_session(7, 4), nullptr);
+    EXPECT_EQ(raw->reset_stream_calls, 1) << "only the stream the cap refused is reset";
+    EXPECT_EQ(raw->reset_stream_id, 4u);
     EXPECT_EQ(raw->reset_stream_code, 1u);
+}
+
+namespace quic_adapter_test {
+
+// A server whose stream-session creation hook is user code with the registry's whole owner-thread
+// API: it can refuse the session it is handed (unregister it, or clear the registry) or remove an
+// unrelated one (Huly QB-331).
+class RemovingHookQuicServer : public qb::io::async::quic::server<RemovingHookQuicServer, qb::io::test::DummyQuicStreamSession> {
+public:
+    using server::server;
+
+    enum class action { keep, unregister_self, clear_all, unregister_other, replace_self };
+
+    action                                              on_create           = action::keep;
+    std::uint64_t                                       other_connection_id = 0;
+    std::uint64_t                                       other_stream_id     = 0;
+    int                                                 created             = 0;
+    std::vector<qb::io::test::DummyQuicStreamSession *> seen;
+    std::string                                         received;
+
+    void
+    on(qb::io::test::DummyQuicStreamSession &session) {
+        ++created;
+        seen.push_back(&session);
+        if (on_create == action::unregister_self)
+            unregisterSession(session.connection_id(), session.id());
+        else if (on_create == action::clear_all)
+            clearSessions();
+        else if (on_create == action::unregister_other)
+            unregisterSession(other_connection_id, other_stream_id);
+        else if (on_create == action::replace_self) {
+            on_create = action::keep;
+            unregisterSession(session.connection_id(), session.id());
+            (void) register_stream_session(session.connection_id(), session.id());
+        }
+    }
+    void
+    on(qb::io::async::quic::event::stream_data const &ev) {
+        received.append(ev.payload.data(), ev.payload.size());
+    }
+};
+
+} // namespace quic_adapter_test
+
+/**
+ * @test A creation hook that removes its new session makes registration report no session
+ * @brief register_stream_session and open_*_stream_session return what the registry holds once the
+ *        hook returns: nullptr when the hook unregistered the new session or cleared the registry
+ *        (never a pointer to the local owner about to be destroyed), the live session when the hook
+ *        kept it or removed an unrelated one, and the replacement when the hook installed another
+ *        session under the same key (Huly QB-331).
+ */
+TEST(QuicAdapterServer, CreationHookRemovalMakesRegistrationReportNoSession) {
+    using Server         = quic_adapter_test::RemovingHookQuicServer;
+    FakeQuicBackend *raw = nullptr;
+    Server           server{make_fake(raw)};
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    server.on_create = Server::action::unregister_self;
+    EXPECT_EQ(server.register_stream_session(5, 0), nullptr) << "a refused session must not be reported as registered";
+    EXPECT_EQ(server.open_bidirectional_stream_session(42), nullptr);
+    server.on_create = Server::action::clear_all;
+    EXPECT_EQ(server.register_stream_session(5, 4), nullptr);
+    EXPECT_EQ(server.session_count(), 0u);
+
+    server.on_create = Server::action::keep;
+    auto *kept       = server.register_stream_session(9, 4);
+    ASSERT_NE(kept, nullptr);
+    server.on_create           = Server::action::unregister_other;
+    server.other_connection_id = 9;
+    server.other_stream_id     = 4;
+    auto *admitted             = server.register_stream_session(5, 8);
+    ASSERT_NE(admitted, nullptr) << "removing an unrelated session leaves the new one admitted";
+    EXPECT_EQ(server.stream_session(5, 8), admitted);
+    EXPECT_EQ(admitted->connection_id(), 5u);
+    EXPECT_EQ(server.stream_session(9, 4), nullptr);
+    EXPECT_EQ(server.session_count(), 1u);
+
+    server.on_create  = Server::action::replace_self;
+    auto *replacement = server.register_stream_session(5, 12);
+    ASSERT_EQ(server.seen.size(), 7u);
+    EXPECT_EQ(replacement, server.seen.back()) << "the session installed by the hook is the stream's session";
+    EXPECT_EQ(server.stream_session(5, 12), replacement);
+    EXPECT_EQ(server.session_count(), 2u);
+    EXPECT_EQ(server.created, 7);
+}
+
+/**
+ * @test Stream data whose session the creation hook removed is refused, never fed to a missing session
+ * @brief The remote data path admits a session, runs the hook, then feeds it. A hook that unregisters
+ *        the new session or clears the registry refuses the stream: it is reset with the rejection
+ *        code 1 and no data is delivered, exactly as for a capped stream. A hook that removes an
+ *        unrelated session leaves the new one fed (Huly QB-331: the feed used to re-look the session up
+ *        after the hook and dereference the empty result).
+ */
+TEST(QuicAdapterServer, CreationHookRemovalRefusesStreamDataInsteadOfFeedingAMissingSession) {
+    using Server         = quic_adapter_test::RemovingHookQuicServer;
+    FakeQuicBackend *raw = nullptr;
+    Server           server{make_fake(raw)};
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    const auto data = [&](std::uint64_t connection_id, std::uint64_t stream_id, char byte) {
+        qb::io::quic::backend_event event;
+        event.type          = qb::io::quic::backend_event::kind::stream_data;
+        event.connection_id = connection_id;
+        event.stream_id     = stream_id;
+        event.payload.push_back(static_cast<std::byte>(byte));
+        raw->queued_events.push_back(std::move(event));
+        server.poll();
+    };
+
+    server.on_create = Server::action::unregister_self;
+    data(5, 0, 'a');
+    EXPECT_EQ(raw->reset_stream_calls, 1);
+    EXPECT_EQ(raw->reset_stream_id, 0u);
+    EXPECT_EQ(raw->reset_stream_code, 1u);
+
+    server.on_create = Server::action::clear_all;
+    data(5, 4, 'b');
+    EXPECT_EQ(raw->reset_stream_calls, 2);
+    EXPECT_EQ(raw->reset_stream_id, 4u);
+    EXPECT_EQ(server.received, "") << "a refused stream delivers nothing";
+    EXPECT_EQ(server.session_count(), 0u);
+
+    server.on_create = Server::action::keep;
+    ASSERT_NE(server.register_stream_session(9, 4), nullptr);
+    server.on_create           = Server::action::unregister_other;
+    server.other_connection_id = 9;
+    server.other_stream_id     = 4;
+    data(5, 8, 'c');
+    EXPECT_EQ(raw->reset_stream_calls, 2) << "removing an unrelated session must not refuse the new stream";
+    EXPECT_EQ(server.received, "c");
+    auto *fed = server.stream_session(5, 8);
+    ASSERT_NE(fed, nullptr);
+    EXPECT_EQ(fed->pendingRead(), 1u);
+    EXPECT_EQ(server.stream_session(9, 4), nullptr);
 }
 
 // =============================================================================

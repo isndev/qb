@@ -16,7 +16,7 @@
  * quic-handshake.cpp` proves the happy-path loopback handshake end-to-end. What neither covers — and
  * what this file targets — are the `endpoint`'s own *event-loop body* branches that only execute when
  * a REAL libngtcp2 backend produces real packets/timeouts AND the framework's libev watchers actually
- * fire (`endpoint.h:146-159,176-241,631-676`):
+ * fire (`endpoint.h:159-172,190-255,646-691`):
  *
  *   - the `on(event::io)` EV_READ receive loop bounded by `settings.udp_rx_batch_size` — the
  *     budget-limited datagram drain (the live handshake leaves the budget unlimited, so the
@@ -55,9 +55,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -108,7 +110,7 @@ establish_loopback(Server &server, Client &client, std::vector<std::string> cons
 /**
  * @test A tiny udp_rx_batch_size still delivers a multi-packet payload across several poll cycles
  * @brief `on(event::io)` reads at most `settings.udp_rx_batch_size` datagrams per EV_READ wakeup
- *        (endpoint.h:635-661). With the budget pinned to 1 on the server, a client payload that the
+ *        (endpoint.h:650-676). With the budget pinned to 1 on the server, a client payload that the
  *        backend fragments across multiple QUIC packets cannot all be consumed in a single readable
  *        wakeup — the loop hits the `budget-- > 0` ceiling and yields, and the framework re-arms
  *        EV_READ so the remainder is drained on subsequent wakeups. Driving a payload to the server
@@ -153,10 +155,10 @@ TEST(QuicEndpointLoop, RxBatchBudgetDeliversMultiPacketPayloadAcrossPolls) {
 /**
  * @test A tiny udp_tx_batch_size still flushes a large response across several poll cycles
  * @brief `flush_udp_packets` sends at most `settings.udp_tx_batch_size` datagrams per call before
- *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:176-203). With the budget
+ *        leaving the remainder queued for the next EV_WRITE/poll (endpoint.h:190-217). With the budget
  *        pinned to 1 on the server, a large server-initiated payload cannot drain in a single flush:
  *        `drain_backend_packets` must observe the still-non-empty pending queue, arm EV_WRITE
- *        (endpoint.h:234-240), and the subsequent writable wakeups must flush the rest. The client
+ *        (endpoint.h:248-254), and the subsequent writable wakeups must flush the rest. The client
  *        receiving the whole payload proves the throttled multi-poll flush over the REAL socket (the
  *        unit test only throttles the mock backend; here the bytes travel a live loopback datagram
  *        path and the EV_WRITE re-arm is genuinely taken).
@@ -215,7 +217,7 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
 /**
  * @test The endpoint's timer watcher tears down an idle connection without any inbound packet
  * @brief `arm_timer` programs the libev timer from `backend::next_timeout()` and `on(event::timer&)`
- *        feeds `backend::on_timeout(now)` (endpoint.h:146-159,669-676). With a very short idle_timeout
+ *        feeds `backend::on_timeout(now)` (endpoint.h:159-172,684-691). With a very short idle_timeout
  *        on the client and the server then stopped (no more packets ever arrive), the ONLY thing that
  *        can close the client is its own timer firing: the connection must transition to `closed`
  *        purely through the timer path. This is the one teardown the packet-driven tests never reach
@@ -305,7 +307,7 @@ TEST(QuicEndpointLoop, ReconnectAfterCloseRearmsIoWatcherOnNewSocket) {
 
 /**
  * @test Destroying a still-connected live endpoint closes it and drops its watchers cleanly
- * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:357-360). The
+ * @brief The endpoint destructor runs `close()` then `unregister_watchers()` (endpoint.h:376-379). The
  *        unit-tier ListenerClearDoesNotDangleEndpointWatchers proves this for a MOCK-backed endpoint
  *        torn down by an explicit listener clear; here a NATIVE-backed client is brought to `connected`
  *        over the live loopback and then destroyed while still open, so the destructor's close() runs
@@ -387,6 +389,158 @@ TEST(QuicEndpointLoop, RemoteUnidirectionalStreamQuotaRenewsAfterClose) {
     EXPECT_EQ(server.last_stream_direction, qb::io::quic::stream_direction::unidirectional);
     EXPECT_EQ(server.last_stream_origin, qb::io::quic::stream_origin::remote);
     EXPECT_EQ(server.connected, 1);
+
+    client.close();
+    server.close();
+    qb::io::async::listener::current.clear();
+}
+
+namespace quic_endpoint_loop_test {
+
+// The native backend behind a counter of the endpoint's writer attempts (`drain_packets` calls).
+class CountingNativeBackend final : public qb::io::quic::backend {
+    std::unique_ptr<qb::io::quic::backend> _native = qb::io::quic::make_native_backend();
+
+public:
+    std::size_t writer_attempts = 0;
+
+    void
+    configure(qb::io::quic::settings const &config) override {
+        _native->configure(config);
+    }
+    void
+    start_server(qb::io::endpoint const &local, std::vector<std::string> const &alpn, qb::io::quic::tls_config const &tls) override {
+        _native->start_server(local, alpn, tls);
+    }
+    void
+    start_client(qb::io::endpoint const &local, qb::io::endpoint const &remote, std::vector<std::string> const &alpn,
+                 qb::io::quic::tls_config const &tls) override {
+        _native->start_client(local, remote, alpn, tls);
+    }
+    void
+    on_udp_datagram(qb::io::quic::packet_view datagram) override {
+        _native->on_udp_datagram(datagram);
+    }
+    void
+    on_timeout(std::chrono::steady_clock::time_point now) override {
+        _native->on_timeout(now);
+    }
+    [[nodiscard]] std::chrono::steady_clock::time_point
+    next_timeout() const override {
+        return _native->next_timeout();
+    }
+    [[nodiscard]] bool
+    wants_write() const noexcept override {
+        return _native->wants_write();
+    }
+    std::vector<qb::io::quic::packet>
+    drain_packets() override {
+        ++writer_attempts;
+        return _native->drain_packets();
+    }
+    std::vector<qb::io::quic::backend_event>
+    drain_events() override {
+        return _native->drain_events();
+    }
+    [[nodiscard]] std::uint64_t
+    open_stream(qb::io::quic::stream_direction direction) override {
+        return _native->open_stream(direction);
+    }
+    [[nodiscard]] std::uint64_t
+    open_stream(std::uint64_t connection_id, qb::io::quic::stream_direction direction) override {
+        return _native->open_stream(connection_id, direction);
+    }
+    void
+    send_stream_data(std::uint64_t connection_id, std::uint64_t stream_id, std::span<const std::byte> data, bool fin) override {
+        _native->send_stream_data(connection_id, stream_id, data, fin);
+    }
+    void
+    extend_stream_credit(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t bytes) override {
+        _native->extend_stream_credit(connection_id, stream_id, bytes);
+    }
+    void
+    reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t code) override {
+        _native->reset_stream(connection_id, stream_id, code);
+    }
+    void
+    stop_stream(std::uint64_t connection_id, std::uint64_t stream_id, std::uint64_t code) override {
+        _native->stop_stream(connection_id, stream_id, code);
+    }
+    void
+    send_datagram(std::uint64_t connection_id, std::span<const std::byte> data) override {
+        _native->send_datagram(connection_id, data);
+    }
+    void
+    close_connection(std::uint64_t connection_id, std::uint64_t code, std::string_view reason) override {
+        _native->close_connection(connection_id, code, reason);
+    }
+    void
+    close(std::uint64_t code, std::string_view reason) override {
+        _native->close(code, reason);
+    }
+    [[nodiscard]] qb::io::quic::stats
+    current_stats() const noexcept override {
+        return _native->current_stats();
+    }
+};
+
+} // namespace quic_endpoint_loop_test
+
+/**
+ * @test A stream without flow-control credit does not keep the endpoint's writer spinning
+ * @brief The server grants 16 bytes per client stream and never more on its own. The client queues 64
+ *        bytes: 16 go out, the rest waits for credit. An idle endpoint must then make no writer attempt
+ *        per loop pass: over 1000 non-blocking passes the client's backend may be drained only for the
+ *        few packets or timers that really arrive, never once per pass for the UDP socket's permanent
+ *        writability. When the server grants credit the remaining 48 bytes follow (Huly QB-333: the
+ *        refused data kept `wants_write()` true, so EV_WRITE stayed armed and every pass re-ran the
+ *        writer for nothing).
+ */
+TEST(QuicEndpointLoop, CreditBlockedStreamLeavesTheWriterIdle) {
+    ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
+    qb::io::async::init();
+
+    struct CreditServer : qb::io::async::quic::server<CreditServer, qb::io::test::DummyQuicStreamSession> {
+        std::uint64_t connection_id = 0;
+        std::string   received;
+        void
+        on(qb::io::async::quic::event::connected const &ev) {
+            connection_id = ev.connection_id;
+        }
+        void
+        on(qb::io::async::quic::event::stream_data const &ev) {
+            received.append(ev.payload.data(), ev.payload.size());
+        }
+    };
+
+    qb::io::quic::settings server_settings;
+    server_settings.max_stream_data_bidi_remote = 16;
+    CreditServer server;
+    server.set_settings(server_settings);
+    auto               counting = std::make_unique<quic_endpoint_loop_test::CountingNativeBackend>();
+    auto              *probe    = counting.get();
+    CallbackQuicClient client{std::move(counting)};
+    establish_loopback(server, client);
+    ASSERT_TRUE(pump_until([&] { return server.connection_id != 0; }, std::chrono::seconds(5)));
+
+    const std::string payload(64, 'b');
+    auto              stream = client.open_bidirectional_stream();
+    client.send_stream_data(stream.id(), std::string_view{payload});
+    ASSERT_TRUE(pump_until([&] { return server.received.size() == 16; }, std::chrono::seconds(5))) << "the stream's 16 bytes of credit";
+
+    constexpr std::size_t passes = 1000;
+    const auto            before = probe->writer_attempts;
+    for (std::size_t i = 0; i < passes; ++i)
+        qb::io::async::run(EVRUN_NOWAIT);
+    const auto attempts = probe->writer_attempts - before;
+    RecordProperty("writer_attempts_in_idle_passes", std::to_string(attempts) + "/" + std::to_string(passes));
+    EXPECT_LT(attempts, passes / 10) << attempts << " writer attempts in " << passes << " idle passes with only credit-refused data queued";
+    EXPECT_EQ(server.received.size(), 16u);
+
+    server.extend_stream_credit(server.connection_id, stream.id(), payload.size());
+    EXPECT_TRUE(pump_until([&] { return server.received.size() == payload.size(); }, std::chrono::seconds(5)))
+        << "credit must resume the stream";
+    EXPECT_EQ(server.received, payload);
 
     client.close();
     server.close();

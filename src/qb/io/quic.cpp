@@ -14,6 +14,7 @@
 #include <limits>
 #include <memory>
 #include <qb/system/container/unordered_map.h>
+#include <qb/utility/branch_hints.h>
 #include <stdexcept>
 
 #ifdef QB_HAS_QUIC
@@ -50,6 +51,21 @@ make_wire_alpn(std::vector<std::string> const &protocols) {
     return out;
 }
 
+#ifdef QB_IO_QUIC_TEST_HOOKS
+// Test hook: the next `failing_random_fills` fills fail exactly as a failing RAND_bytes does.
+std::size_t failing_random_fills = 0;
+
+bool
+injected_random_failure() noexcept {
+    return failing_random_fills > 0 && (--failing_random_fills, true);
+}
+#else
+constexpr bool
+injected_random_failure() noexcept {
+    return false;
+}
+#endif
+
 // Returns true when `dest` was filled with CSPRNG bytes. On RAND_bytes failure
 // the buffer is zeroed (defensive) and false is returned so security-critical
 // callers can fail closed instead of proceeding with predictable bytes.
@@ -57,7 +73,7 @@ bool
 fill_random(uint8_t *dest, size_t len) {
     if (len == 0)
         return true;
-    if (RAND_bytes(dest, static_cast<int>(len)) != 1) {
+    if (injected_random_failure() || RAND_bytes(dest, static_cast<int>(len)) != 1) {
         std::memset(dest, 0, len);
         return false;
     }
@@ -149,7 +165,7 @@ get_conn_cb(ngtcp2_crypto_conn_ref *ref) {
     return *static_cast<ngtcp2_conn **>(ref->user_data);
 }
 
-// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid` and `ngtcp2_conn_get_expiry` in favour of the
+// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid`, `_get_expiry` and `_get_max_data_left` in favour of the
 // const-correct `*2` spellings (identical semantics; only the `conn` parameter gained `const`).
 // qb's FindNgtcp2 does not pin a minimum version, so select at COMPILE TIME rather than dropping
 // support for pre-1.23 releases — an unconditional switch would simply fail to build there.
@@ -163,6 +179,10 @@ inline ngtcp2_tstamp
 conn_get_expiry(const ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_expiry2(conn);
 }
+inline std::uint64_t
+conn_get_max_data_left(const ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_max_data_left2(conn);
+}
 #else
 inline std::size_t
 conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
@@ -171,6 +191,10 @@ conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
 inline ngtcp2_tstamp
 conn_get_expiry(ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_expiry(conn);
+}
+inline std::uint64_t
+conn_get_max_data_left(ngtcp2_conn *conn) noexcept {
+    return ngtcp2_conn_get_max_data_left(conn);
 }
 #endif
 
@@ -251,6 +275,9 @@ class native_backend final : public backend {
     bool                                  _close_event_queued = false;
     // A read- or credit-triggered writer attempt is due; this does not promise positive output.
     bool _transport_pending = false;
+    // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
+    // out of the writer's way until extend_max_stream_data_cb reports the peer raised that credit.
+    qb::unordered_map<std::uint64_t, std::deque<queued_stream>> _credit_blocked_streams;
 
     [[nodiscard]] std::string
     negotiated_alpn() const {
@@ -401,7 +428,10 @@ public:
             }
             return false;
         }
-        return _transport_pending || !_packets.empty() || !_pending_streams.empty() || !_pending_datagrams.empty();
+        // Queued data is not a reason to write: every queue was offered to ngtcp2 when it was filled,
+        // and what is left waits for credit, the congestion window or pacing -- a read, a credit grant
+        // or the timer makes the next attempt due.
+        return _transport_pending || !_packets.empty();
     }
 
     std::vector<packet>
@@ -539,6 +569,12 @@ public:
         next_offset += item.data.size();
         _queued_stream_bytes += item.data.size();
         ++_queued_stream_frames;
+        if (!_credit_blocked_streams.empty()) [[unlikely]] {
+            if (auto parked = _credit_blocked_streams.find(stream_id); parked != _credit_blocked_streams.end()) {
+                parked->second.push_back(std::move(item)); // behind its stream's refused chunks
+                return;
+            }
+        }
         _pending_streams.push_back(std::move(item));
         drain_transport();
     }
@@ -723,14 +759,14 @@ private:
         return it == _server_connections.end() || is_deferred_closed_connection(connection_id) ? nullptr : it->second.get();
     }
 
-    void
+    // The secret keys every Retry token this listener mints and verifies. Only a successful CSPRNG
+    // fill makes it ready: a failure (fill_random zeroes the buffer) is retried on the next Initial,
+    // never cached as a predictable key for the life of the listener.
+    [[nodiscard]] bool
     ensure_retry_secret() {
-        if (!_retry_secret_ready) {
-            // A failed CSPRNG here only weakens Retry to "tokens we minted this run" (still
-            // unforgeable by an off-path attacker who never saw them); it is never a safety issue.
-            fill_random(_retry_secret.data(), _retry_secret.size());
-            _retry_secret_ready = true;
-        }
+        if (!_retry_secret_ready)
+            _retry_secret_ready = fill_random(_retry_secret.data(), _retry_secret.size());
+        return _retry_secret_ready;
     }
 
     // Send a Retry (address-validation challenge) for an untokened Initial: mint a fresh SCID, bind a
@@ -738,9 +774,9 @@ private:
     // listener's own packet vector. NO connection state is created — the client must re-send its
     // Initial carrying the token, proving it can receive at its claimed address, before we spend a
     // full handshake (ngtcp2_conn + SSL) on it. This is the anti-spoofed-Initial-flood defense.
+    // Precondition: ensure_retry_secret() succeeded (its one caller drops the Initial otherwise).
     void
     send_retry(packet_view datagram, ngtcp2_pkt_hd const &hd) {
-        ensure_retry_secret();
         std::uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
         if (!fill_random(scidbuf, sizeof(scidbuf)))
             return;
@@ -867,7 +903,10 @@ private:
         if (_config.enable_stateless_retry) {
             ngtcp2_pkt_hd hd = {};
             if (ngtcp2_accept(&hd, reinterpret_cast<const uint8_t *>(datagram.payload.data()), datagram.payload.size()) == 0) {
-                ensure_retry_secret();
+                // Without the secret no token can be minted or verified: drop the Initial (fail
+                // closed) rather than admit it unvalidated; the client's retransmission retries.
+                if (!ensure_retry_secret())
+                    return nullptr;
                 if (hd.tokenlen == 0) {
                     // First contact: answer with a Retry challenge and create no state.
                     send_retry(datagram, hd);
@@ -1064,6 +1103,7 @@ private:
         // and never throw; rand/new_connection_id fill fixed buffers and already fail closed.)
         callbacks.recv_stream_data         = &guarded<recv_stream_data_cb>::call;
         callbacks.acked_stream_data_offset = &guarded<acked_stream_data_offset_cb>::call;
+        callbacks.extend_max_stream_data   = &guarded<extend_max_stream_data_cb>::call;
         callbacks.stream_open              = &guarded<stream_open_cb>::call;
         callbacks.stream_close             = &guarded<stream_close_cb>::call;
         callbacks.stream_reset             = &guarded<stream_reset_cb>::call;
@@ -1186,8 +1226,11 @@ private:
         _transport_pending = false;
         if (!_conn || !_started)
             return;
+        // Set once the connection's own credit is spent: stream data waits for MAX_DATA, which only a
+        // read can bring, while DATAGRAMs (never flow controlled) and control frames still go out.
+        bool connection_credit_spent = false;
         for (;;) {
-            std::array<uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf{};
+            std::array<uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf; // not zeroed: ngtcp2 writes every byte it reports written
             ngtcp2_path_storage                              ps;
             ngtcp2_path_storage_zero(&ps);
             ngtcp2_pkt_info  pi{};
@@ -1197,7 +1240,7 @@ private:
             ngtcp2_vec       vec{};
             queued_datagram *datagram = nullptr;
 
-            if (!_pending_streams.empty()) {
+            if (!_pending_streams.empty() && !connection_credit_spent) {
                 auto &item = _pending_streams.front();
                 stream_id  = static_cast<int64_t>(item.stream_id);
                 vec.len    = item.data.size() - item.sent_offset;
@@ -1217,8 +1260,15 @@ private:
                                           : ngtcp2_conn_writev_stream(_conn, &ps.path, &pi, buf.data(), buf.size(), &datalen, flags, stream_id,
                                                                       vec.len > 0 ? &vec : nullptr, vec.len > 0 ? 1 : 0, now);
 
-            if (written == 0)
+            if (written == 0) {
+                // Congestion, pacing or nothing left: nothing else fits either. A stream refused by the
+                // connection's spent credit is the one case that leaves other work to try.
+                if (stream_id >= 0 && conn_get_max_data_left(_conn) == 0) {
+                    connection_credit_spent = true;
+                    continue;
+                }
                 break;
+            }
             if (written < 0) {
                 if (datagram) {
                     if (written == NGTCP2_ERR_INVALID_STATE || written == NGTCP2_ERR_INVALID_ARGUMENT) {
@@ -1229,8 +1279,13 @@ private:
                                       "QUIC DATAGRAM packet write failed");
                     break;
                 }
-                if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED)
-                    break;
+                if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+                    // The stream's own credit is spent (ngtcp2 reports it only while the connection
+                    // still has some): park its chunks so the next stream, the DATAGRAMs and the control
+                    // frames are not held behind it. The peer's MAX_STREAM_DATA brings them back.
+                    park_credit_blocked_stream(static_cast<std::uint64_t>(stream_id));
+                    continue;
+                }
                 if (written == NGTCP2_ERR_CLOSING || written == NGTCP2_ERR_DRAINING)
                     break;
                 if (written == NGTCP2_ERR_STREAM_NOT_FOUND || written == NGTCP2_ERR_STREAM_SHUT_WR) {
@@ -1368,8 +1423,44 @@ private:
         _events.push_back(std::move(event));
     }
 
+    // Move every pending chunk of `id`, in order, out of the writer's queue; the other streams keep
+    // theirs. Runs once per refusal, never per writer pass: out of the writer's line.
+    QB_NOINLINE QB_COLD void
+    park_credit_blocked_stream(std::uint64_t id) {
+        auto &parked = _credit_blocked_streams[id];
+        auto  kept   = _pending_streams.begin();
+        for (auto it = _pending_streams.begin(); it != _pending_streams.end(); ++it) {
+            if (it->stream_id == id) {
+                parked.push_back(std::move(*it));
+                continue;
+            }
+            if (kept != it)
+                *kept = std::move(*it);
+            ++kept;
+        }
+        _pending_streams.erase(kept, _pending_streams.end());
+    }
+
+    // The peer raised the stream's credit: its chunks rejoin the writer's queue, behind the others.
+    void
+    unpark_credit_blocked_stream(std::uint64_t id) {
+        auto parked = _credit_blocked_streams.find(id);
+        if (parked == _credit_blocked_streams.end())
+            return;
+        std::move(parked->second.begin(), parked->second.end(), std::back_inserter(_pending_streams));
+        _credit_blocked_streams.erase(parked);
+    }
+
     void
     erase_queued_stream_data(std::uint64_t id) {
+        if (auto parked = _credit_blocked_streams.find(id); parked != _credit_blocked_streams.end()) {
+            for (auto const &chunk : parked->second) {
+                _queued_stream_bytes -= std::min<std::uint64_t>(_queued_stream_bytes, chunk.data.size());
+                if (_queued_stream_frames > 0)
+                    --_queued_stream_frames;
+            }
+            _credit_blocked_streams.erase(parked);
+        }
         for (auto it = _pending_streams.begin(); it != _pending_streams.end();) {
             if (it->stream_id == id) {
                 _queued_stream_bytes -= std::min<std::uint64_t>(_queued_stream_bytes, it->data.size());
@@ -1465,6 +1556,13 @@ private:
     }
 
     static int
+    extend_max_stream_data_cb(ngtcp2_conn *, int64_t stream_id, uint64_t, void *user_data, void *) {
+        // Called while a packet is read; the endpoint's drain after the read sends what this releases.
+        static_cast<native_backend *>(user_data)->unpark_credit_blocked_stream(static_cast<std::uint64_t>(stream_id));
+        return 0;
+    }
+
+    static int
     stream_open_cb(ngtcp2_conn *conn, int64_t stream_id, void *user_data) {
         auto *self = static_cast<native_backend *>(user_data);
         // Mark only streams for which ngtcp2 called stream_open. It replenishes
@@ -1478,7 +1576,7 @@ private:
     }
 
     static int
-    stream_close_cb(ngtcp2_conn *conn, uint32_t, int64_t stream_id, uint64_t app_error_code, void *user_data, void *stream_user_data) {
+    stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id, uint64_t app_error_code, void *user_data, void *stream_user_data) {
         auto *self = static_cast<native_backend *>(user_data);
         if (self->_stats.active_streams > 0)
             --self->_stats.active_streams;
@@ -1492,13 +1590,16 @@ private:
             else
                 ngtcp2_conn_extend_max_streams_uni(conn, 1);
         }
+        // A reset or a stop sets the application error code, 0 included; only an unflagged close is a
+        // clean finish, and only a clean finish may synthesise the FIN below.
+        const bool reset = (flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET) != 0;
         // Non-inserting lookup: operator[] would default-insert a `false` entry
         // for `id` only to erase it again on the line below. find() avoids the
         // transient insert while preserving the "absent == not-yet-seen-FIN"
         // semantics that drives the synthetic FIN event.
         const auto fin_it           = self->_stream_fin_seen.find(id);
         const bool fin_already_seen = fin_it != self->_stream_fin_seen.end() && fin_it->second;
-        if (app_error_code == 0 && !fin_already_seen) {
+        if (!reset && !fin_already_seen) {
             backend_event fin_event;
             fin_event.type          = backend_event::kind::stream_data;
             fin_event.connection_id = self->_connection_id;
@@ -1510,7 +1611,7 @@ private:
         self->erase_queued_stream_data(id);
         self->_next_stream_offsets.erase(id);
         self->queue_stream_close_event(static_cast<std::uint64_t>(stream_id),
-                                       app_error_code == 0 ? stream_close_reason::finished : stream_close_reason::reset, app_error_code, {});
+                                       reset ? stream_close_reason::reset : stream_close_reason::finished, app_error_code, {});
         return 0;
     }
 
@@ -1579,6 +1680,16 @@ public:
         if (!_conn || ngtcp2_conn_shutdown_stream_write(_conn, 0, static_cast<int64_t>(stream_id), application_error_code) != 0)
             throw std::runtime_error("test peer write-half reset failed");
     }
+
+    [[nodiscard]] bool
+    retry_secret_ready_for_test() const noexcept {
+        return _retry_secret_ready;
+    }
+
+    [[nodiscard]] bool
+    retry_secret_zeroed_for_test() const noexcept {
+        return std::all_of(_retry_secret.begin(), _retry_secret.end(), [](std::uint8_t byte) { return byte == 0; });
+    }
 #endif
 };
 
@@ -1612,12 +1723,34 @@ make_native_backend() {
 
 #ifdef QB_IO_QUIC_TEST_HOOKS
 namespace test {
+namespace {
+native_backend &
+native(backend &peer) {
+    auto *found = dynamic_cast<native_backend *>(&peer);
+    if (!found)
+        throw std::invalid_argument("test peer must use the native QUIC backend");
+    return *found;
+}
+} // namespace
+
 void
 reset_stream_write(backend &peer, std::uint64_t stream_id, std::uint64_t application_error_code) {
-    auto *native = dynamic_cast<native_backend *>(&peer);
-    if (!native)
-        throw std::invalid_argument("test peer must use the native QUIC backend");
-    native->reset_stream_write_for_test(stream_id, application_error_code);
+    native(peer).reset_stream_write_for_test(stream_id, application_error_code);
+}
+
+void
+fail_next_random_fills(std::size_t count) {
+    failing_random_fills = count;
+}
+
+bool
+retry_secret_ready(backend &server) {
+    return native(server).retry_secret_ready_for_test();
+}
+
+bool
+retry_secret_zeroed(backend &server) {
+    return native(server).retry_secret_zeroed_for_test();
 }
 } // namespace test
 #endif

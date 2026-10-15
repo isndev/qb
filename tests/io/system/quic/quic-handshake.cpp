@@ -57,9 +57,12 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
@@ -279,7 +282,8 @@ TEST(QuicHandshakeNativeBackend, EnforcesPreConnectionSendQueueLimits) {
         settings.max_pending_stream_bytes  = 64;
         backend->configure(settings);
         backend->send_stream_data(0, 1, std::span<const std::byte>{payload}, false);
-        EXPECT_TRUE(backend->wants_write());
+        EXPECT_TRUE(backend->drain_events().empty()) << "the first frame fits the queue";
+        EXPECT_FALSE(backend->wants_write()) << "queued data with no connection to carry it is not a due writer attempt";
 
         settings.max_pending_stream_frames = 1;
         backend->configure(settings);
@@ -540,6 +544,63 @@ TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnect
     EXPECT_NE(server_connection_id, 0u);
     EXPECT_EQ(server->current_stats().active_connections, 1u);
 }
+
+#ifdef QB_IO_QUIC_TEST_HOOKS
+/**
+ * @test A CSPRNG failure while generating the Retry secret fails closed, then recovers
+ * @brief The listener's Retry secret keys every token it mints and verifies. With the first CSPRNG fill
+ *        failing, the first Initial datagram must leave the secret NOT ready (never a zeroed key
+ *        cached as valid), produce no Retry and admit no connection. Once the CSPRNG works again, the
+ *        same Initial meets a freshly generated, non-zero secret, a Retry goes out and the handshake
+ *        completes (Huly QB-334: the zeroed secret was marked ready for the life of the listener).
+ */
+TEST(QuicHandshakeNativeBackend, StatelessRetrySecretFailureFailsClosedThenRecovers) {
+    ASSERT_TRUE(require_ssl_files());
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+
+    const qb::io::endpoint   server_endpoint{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_endpoint{"127.0.0.1", 54321};
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(server_endpoint, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
+
+    ASSERT_TRUE(client->wants_write());
+    const auto initial = client->drain_packets();
+    ASSERT_FALSE(initial.empty());
+    const auto deliver = [&](qb::io::quic::packet const &datagram) {
+        server->on_udp_datagram(
+            {datagram.remote, datagram.local, std::span<const std::byte>{datagram.payload.data(), datagram.payload.size()}});
+    };
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_ready(*server));
+
+    // The first fill of the first datagram is the secret's.
+    qb::io::quic::test::fail_next_random_fills(1);
+    deliver(initial.front());
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_ready(*server)) << "a failed CSPRNG fill must not leave a secret ready";
+    EXPECT_FALSE(server->wants_write()) << "no Retry may be minted without a secret";
+    EXPECT_TRUE(server->drain_packets().empty());
+    EXPECT_EQ(server->current_stats().active_connections, 0u) << "an Initial must not be admitted unvalidated either";
+
+    for (auto const &datagram : initial)
+        deliver(datagram);
+    EXPECT_TRUE(qb::io::quic::test::retry_secret_ready(*server));
+    EXPECT_FALSE(qb::io::quic::test::retry_secret_zeroed(*server)) << "the recovered secret must be fresh CSPRNG output";
+    ASSERT_TRUE(server->wants_write()) << "the recovered listener answers with a Retry";
+
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    EXPECT_TRUE(client_connected) << "the Retry round-trip with the recovered secret must complete the handshake";
+    EXPECT_NE(server_connection_id, 0u);
+}
+#endif
 
 TEST(QuicHandshakeNativeBackend, DisabledStatelessRetryAcceptsInitialWithoutChallenge) {
     ASSERT_TRUE(require_ssl_files());
@@ -865,14 +926,20 @@ TEST(QuicHandshakeLoopback, ClosingOneConnectionLeavesTheSurvivorsRoutable) {
     qb::io::async::listener::current.clear();
 }
 
+enum class QuicServerStreamConnection { explicit_id, sole_peer };
+
+class QuicServerInitiatedStreamTest : public ::testing::TestWithParam<QuicServerStreamConnection> {};
+
 /**
  * @test A server-initiated stream is delivered to the client over the live loopback (ADDED — dossier §"Missing")
  * @brief After the handshake, the SERVER opens a bidirectional stream session on the connection and pushes
  *        "from-server\n"; the client (a connector carrying HandshakeStreamSession) registers the inbound
  *        stream and receives the bytes. The prior native tests only pushed client→server — this proves the
- *        reverse direction end-to-end.
+ *        reverse direction end-to-end. The session is opened with the connection id from `connected`, and
+ *        with the default connection 0, which must address the sole peer by its real id (Huly QB-330: the
+ *        session kept the id 0, and the native backend dropped its output).
  */
-TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
+TEST_P(QuicServerInitiatedStreamTest, ReachesClient) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     qb::io::async::init();
@@ -901,10 +968,12 @@ TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
 
     ASSERT_TRUE(pump_until([&] { return server.connection_id != 0; }, std::chrono::seconds(5))) << "server never learned the connection id";
 
-    auto *session = server.open_bidirectional_stream_session(server.connection_id);
+    auto *session = GetParam() == QuicServerStreamConnection::explicit_id ? server.open_bidirectional_stream_session(server.connection_id)
+                                                                          : server.open_bidirectional_stream_session();
     ASSERT_NE(session, nullptr);
+    EXPECT_EQ(session->connection_id(), server.connection_id) << "the session must carry the real connection id";
     session->publish(std::string_view{"from-server\n", 12});
-    ASSERT_TRUE(server.flush_stream_session(server.connection_id, session->id()));
+    server.flush_stream_session(*session);
 
     EXPECT_TRUE(pump_until([&] { return client.received.find("from-server") != std::string::npos; }, std::chrono::seconds(5)))
         << "client never received the server-initiated stream data";
@@ -913,6 +982,13 @@ TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
     server.close();
     qb::io::async::listener::current.clear();
 }
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeLoopback, QuicServerInitiatedStreamTest,
+                         ::testing::Values(QuicServerStreamConnection::explicit_id, QuicServerStreamConnection::sole_peer),
+                         [](::testing::TestParamInfo<QuicServerStreamConnection> const &info) {
+                             return info.param == QuicServerStreamConnection::explicit_id ? std::string{"ExplicitConnection"}
+                                                                                          : std::string{"SolePeerConnection"};
+                         });
 
 /**
  * @test A graceful server close is observed end-to-end with a typed disconnect reason (ADDED — dossier §"Missing")
@@ -1168,7 +1244,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
  * @brief After a direct handshake the server sends a bidirectional stream payload; pumping in both
  *        directions delivers the bytes to the client (recv_stream_data_cb -> stream_data event) and
  *        carries the client's ACK back so the server fires acked_stream_data_offset_cb, emitting a
- *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1439-1465.
+ *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1530-1556.
  */
 TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1229,7 +1305,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  * @brief With DATAGRAM enabled on both ends, the server sends a datagram after the handshake; pumping
  *        delivers it to the client (recv_datagram_cb increments datagrams_received) and carries the
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
- *        incrementing datagrams_acked. Covers quic.cpp:1408-1421 (acked branch) + 1548-1553.
+ *        incrementing datagrams_acked. Covers quic.cpp:1499-1512 (acked branch) + 1551-1556.
  */
 TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1281,13 +1357,257 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     EXPECT_GE(server->current_stats().datagrams_acked, 1u) << "server never saw the datagram ACK (ack_datagram_cb did not fire)";
 }
 
+enum class QuicTxCredit { stream, connection };
+
+class QuicCreditBlockedHeadTest : public ::testing::TestWithParam<QuicTxCredit> {};
+
 /**
- * @test The peer observes a RESET_STREAM frame, driving stream_reset_cb
+ * @test A head stream without flow-control credit holds back neither other work nor the writer
+ * @brief The server advertises 16 bytes of credit: per stream, or for the whole connection. The client
+ *        queues 64 bytes on a head stream, then 6 bytes on a second stream and a DATAGRAM. The head sends
+ *        its 16 bytes and stops; the DATAGRAM (never flow controlled) must still arrive, and with
+ *        per-stream credit so must the second stream's bytes. Once only refused data is left, the client
+ *        must not report itself writable: a writer attempt would produce nothing until credit arrives,
+ *        and an endpoint would keep EV_WRITE armed on it. When the server grants credit, the rest of
+ *        the head and the second stream follow (Huly QB-333: the writer only ever tried the head chunk,
+ *        broke out on its refusal, and wants_write() stayed true while any data was queued).
+ */
+TEST_P(QuicCreditBlockedHeadTest, BlockedHeadLeavesOtherWorkSendableAndTheWriterIdle) {
+    ASSERT_TRUE(require_ssl_files());
+
+    const bool             per_stream = GetParam() == QuicTxCredit::stream;
+    qb::io::quic::settings server_settings;
+    qb::io::quic::settings client_settings;
+    server_settings.enable_datagrams = client_settings.enable_datagrams = true;
+    server_settings.max_datagram_frame_size = client_settings.max_datagram_frame_size = 1200;
+    if (per_stream)
+        server_settings.max_stream_data_bidi_remote = 16;
+    else
+        server_settings.connection_recv_window = 16;
+
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->configure(server_settings);
+    client->configure(client_settings);
+    qb::io::quic::tls_config server_tls;
+    server_tls.certificate_file = ssl_resource_path("cert.pem");
+    server_tls.private_key_file = ssl_resource_path("key.pem");
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+    qb::io::quic::tls_config client_tls;
+    client_tls.server_name = "localhost";
+    client_tls.verify_peer = false;
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+    bool       client_connected     = false;
+    const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    ASSERT_TRUE(client_connected);
+    ASSERT_NE(server_connection_id, 0u);
+
+    const auto bytes = [](std::string const &text) {
+        return std::span<const std::byte>{reinterpret_cast<const std::byte *>(text.data()), text.size()};
+    };
+    const std::string head_payload(64, 'h');
+    const std::string other_payload = "other!";
+    const auto        head          = client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    client->send_stream_data(0, head, bytes(head_payload), false);
+    const auto other = client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    client->send_stream_data(0, other, bytes(other_payload), false);
+    client->send_datagram(0, bytes("dgram"));
+
+    std::size_t head_bytes  = 0;
+    std::size_t other_bytes = 0;
+    std::size_t stray_bytes = 0;
+    std::string datagrams;
+    const auto  pump = [&](auto &&done) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!done() && std::chrono::steady_clock::now() < deadline) {
+            deliver_ready_quic_packets(*client, *server);
+            deliver_ready_quic_packets(*server, *client);
+            (void) client->drain_events();
+            for (auto const &event : server->drain_events()) {
+                if (event.type == qb::io::quic::backend_event::kind::stream_data)
+                    (event.stream_id == head ? head_bytes : event.stream_id == other ? other_bytes : stray_bytes) += event.payload.size();
+                else if (event.type == qb::io::quic::backend_event::kind::datagram)
+                    datagrams.append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
+            }
+        }
+    };
+
+    pump([&] { return head_bytes == 16 && datagrams == "dgram" && (!per_stream || other_bytes == other_payload.size()); });
+    EXPECT_EQ(head_bytes, 16u) << "the head sends exactly its credit";
+    EXPECT_EQ(datagrams, "dgram") << "a DATAGRAM must not wait behind a stream without credit";
+    EXPECT_EQ(other_bytes, per_stream ? other_payload.size() : 0u) << "another stream with credit must not wait behind the head";
+
+    // Drain the attempt the last read made due: then only refused data is left, and only a read, a
+    // credit grant or the SDK timer (next_timeout) can make another attempt due.
+    deliver_quic_packets(*client, *server);
+    EXPECT_FALSE(client->wants_write()) << "data refused for lack of credit must not keep the writer due";
+
+    server->extend_stream_credit(server_connection_id, head, head_payload.size());
+    pump([&] { return head_bytes == head_payload.size() && other_bytes == other_payload.size(); });
+    EXPECT_EQ(head_bytes, head_payload.size()) << "credit must resume the head stream";
+    EXPECT_EQ(other_bytes, other_payload.size());
+    EXPECT_EQ(stray_bytes, 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicCreditBlockedHeadTest,
+                         ::testing::Values(QuicTxCredit::stream, QuicTxCredit::connection),
+                         [](::testing::TestParamInfo<QuicTxCredit> const &info) {
+                             return info.param == QuicTxCredit::stream ? std::string{"StreamCredit"} : std::string{"ConnectionCredit"};
+                         });
+
+namespace quic_handshake_credit_test {
+
+// A connected native client/server pair whose server grants `stream_window` bytes per client stream and
+// `connection_window` bytes per connection, with a pump that collects the server's bytes per stream.
+struct CreditPair {
+    std::unique_ptr<qb::io::quic::backend>   server        = qb::io::quic::make_native_backend();
+    std::unique_ptr<qb::io::quic::backend>   client        = qb::io::quic::make_native_backend();
+    std::uint64_t                            connection_id = 0;
+    std::map<std::uint64_t, std::string>     received;
+    std::vector<qb::io::quic::backend_event> client_events;
+
+    CreditPair(std::uint64_t stream_window, std::uint64_t connection_window, qb::io::quic::settings client_settings = {}) {
+        qb::io::quic::settings server_settings;
+        server_settings.max_stream_data_bidi_remote = stream_window;
+        server_settings.connection_recv_window      = connection_window;
+        server->configure(server_settings);
+        client->configure(client_settings);
+        qb::io::quic::tls_config server_tls;
+        server_tls.certificate_file = ssl_resource_path("cert.pem");
+        server_tls.private_key_file = ssl_resource_path("key.pem");
+        server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, server_tls);
+        qb::io::quic::tls_config client_tls;
+        client_tls.server_name = "localhost";
+        client_tls.verify_peer = false;
+        client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
+        bool client_connected = false;
+        connection_id         = direct_handshake(*client, *server, client_connected);
+    }
+
+    void
+    send(std::uint64_t stream, std::string const &text) {
+        client->send_stream_data(0, stream, std::span<const std::byte>{reinterpret_cast<const std::byte *>(text.data()), text.size()}, false);
+    }
+
+    void
+    step() {
+        deliver_ready_quic_packets(*client, *server);
+        deliver_ready_quic_packets(*server, *client);
+        for (auto &event : client->drain_events())
+            client_events.push_back(std::move(event));
+        for (auto const &event : server->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::stream_data)
+                received[event.stream_id].append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
+    }
+
+    // Enough exchanges for anything sendable to arrive and be acknowledged.
+    void
+    rounds(int count) {
+        for (int i = 0; i < count; ++i)
+            step();
+    }
+
+    template <typename Done>
+    bool
+    pump(Done &&done) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!done() && std::chrono::steady_clock::now() < deadline)
+            step();
+        return done();
+    }
+};
+
+} // namespace quic_handshake_credit_test
+
+/**
+ * @test A stream refused for its own credit with another stream queued behind it parks, in order
+ * @brief The server grants 16 bytes per stream and 17 for the whole connection. A grant stream takes 1
+ *        byte and the head 16, which spends both credits at once: the next attempt is refused for the
+ *        CONNECTION and nothing is parked, so a second stream's 6 bytes queue behind the head. Crediting
+ *        the grant stream returns connection credit only: the head is now refused for its OWN credit
+ *        with the second stream behind it, so parking moves the head out from in front of it and the
+ *        second stream's bytes go out at once. Bytes sent on the parked head wait behind its refused
+ *        ones; once the head is credited, all of them arrive in order (Huly QB-333).
+ */
+TEST(QuicHandshakeNativeBackend, CreditBlockedStreamParksBehindQueuedWorkInOrder) {
+    ASSERT_TRUE(require_ssl_files());
+    quic_handshake_credit_test::CreditPair pair{16, 17};
+    ASSERT_NE(pair.connection_id, 0u);
+    auto &received = pair.received;
+
+    const auto grant = pair.client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    pair.send(grant, "g");
+    ASSERT_TRUE(pair.pump([&] { return received[grant] == "g"; }));
+
+    const std::string head_payload(64, 'h');
+    const auto        head = pair.client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    pair.send(head, head_payload);
+    ASSERT_TRUE(pair.pump([&] { return received[head].size() == 16; })) << "16 bytes of stream (and connection) credit";
+    const auto other = pair.client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    pair.send(other, "other!");
+    pair.rounds(20);
+    EXPECT_TRUE(received[other].empty()) << "no connection credit is left for the second stream";
+
+    pair.server->extend_stream_credit(pair.connection_id, grant, 8);
+    ASSERT_TRUE(pair.pump([&] { return received[other] == "other!"; }))
+        << "the returned connection credit must reach the second stream past the head refused for its own credit";
+    EXPECT_EQ(received[head].size(), 16u);
+
+    pair.send(head, "TAIL");
+    pair.rounds(20);
+    EXPECT_EQ(received[head].size(), 16u) << "bytes sent on a parked stream wait behind its refused ones";
+
+    pair.server->extend_stream_credit(pair.connection_id, head, head_payload.size());
+    ASSERT_TRUE(pair.pump([&] { return received[head].size() == head_payload.size() + 4; }));
+    EXPECT_EQ(received[head], head_payload + "TAIL") << "the parked stream must resume in order";
+    for (auto const &event : pair.client_events)
+        EXPECT_NE(event.type, qb::io::quic::backend_event::kind::connection_closed) << event.text;
+}
+
+/**
+ * @test Resetting a stream parked for lack of credit releases its queued data from the send caps
+ * @brief The client may queue 3 frames. A stream refused for its own credit is parked with its first
+ *        chunk and two more; a reset must drop all three from the queue accounting, so three new frames
+ *        on another stream are accepted (no buffer_overflow close) and delivered (Huly QB-333).
+ */
+TEST(QuicHandshakeNativeBackend, ResetOfACreditBlockedStreamReleasesItsQueuedData) {
+    ASSERT_TRUE(require_ssl_files());
+    qb::io::quic::settings client_settings;
+    client_settings.max_pending_stream_frames = 3;
+    quic_handshake_credit_test::CreditPair pair{16, 1024 * 1024, client_settings};
+    ASSERT_NE(pair.connection_id, 0u);
+    auto &received = pair.received;
+
+    const auto head = pair.client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    pair.send(head, std::string(64, 'h'));
+    ASSERT_TRUE(pair.pump([&] { return received[head].size() == 16; }));
+    pair.send(head, "more");
+    pair.send(head, "most");
+    pair.client->reset_stream(0, head, 0x7);
+    pair.rounds(20);
+
+    const auto next = pair.client->open_stream(0, qb::io::quic::stream_direction::bidirectional);
+    pair.send(next, "a");
+    pair.send(next, "b");
+    pair.send(next, "c");
+    ASSERT_TRUE(pair.pump([&] { return received[next] == "abc"; })) << "the reset stream's frames must no longer count against the cap";
+    for (auto const &event : pair.client_events)
+        EXPECT_NE(event.connection_reason, qb::io::quic::disconnect_reason::buffer_overflow) << event.text;
+    EXPECT_EQ(received[head].size(), 16u) << "nothing of the reset stream may be sent after the reset";
+}
+
+class QuicStreamResetTest : public ::testing::TestWithParam<std::uint64_t> {};
+
+/**
+ * @test The peer observes a RESET_STREAM frame, and both full closes keep it a reset
  * @brief The server opens a stream, sends data, then resets it; pumping carries the RESET_STREAM frame
  *        to the client whose stream_reset_cb fires and queues a stream_closed event with
- *        stream_close_reason::reset and the application error code. Covers quic.cpp:1517-1525.
+ *        stream_close_reason::reset and the application error code. Pumping on until ngtcp2 closes the
+ *        stream on BOTH peers, each stream_close_cb must report reset with that code and neither may
+ *        synthesise a FIN nobody sent. Application error code 0 is a valid reset code: ngtcp2 flags it
+ *        as set, and it must not read as a clean finish (Huly QB-335; the 0x42 case is the control).
  */
-TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
+TEST_P(QuicStreamResetTest, PeerObservesStreamResetFromServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     auto server = qb::io::quic::make_native_backend();
@@ -1329,37 +1649,69 @@ TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
     }
     ASSERT_TRUE(client_saw_stream) << "peer never saw the server stream open";
 
-    server->reset_stream(server_connection_id, stream, 0x42);
+    const std::uint64_t code = GetParam();
+    server->reset_stream(server_connection_id, stream, code);
 
-    bool                              client_saw_reset = false;
-    qb::io::quic::stream_close_reason observed_reason  = qb::io::quic::stream_close_reason::none;
-    std::uint64_t                     observed_error   = 0;
-    const auto                        reset_deadline   = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (!client_saw_reset && std::chrono::steady_clock::now() < reset_deadline) {
-        deliver_quic_packets(*client, *server);
-        deliver_quic_packets(*server, *client);
-        for (auto const &event : client->drain_events()) {
-            if (event.type == qb::io::quic::backend_event::kind::stream_closed
-                && event.stream_reason == qb::io::quic::stream_close_reason::reset) {
-                client_saw_reset = true;
-                observed_reason  = event.stream_reason;
-                observed_error   = event.error_code;
+    // stream_reset_cb's event carries a text; stream_close_cb's, the full close, carries none.
+    struct Observed {
+        bool                              peer_reset      = false;
+        std::uint64_t                     peer_reset_code = ~std::uint64_t{0};
+        bool                              closed          = false;
+        qb::io::quic::stream_close_reason close_reason    = qb::io::quic::stream_close_reason::none;
+        std::uint64_t                     close_code      = ~std::uint64_t{0};
+        int                               fins            = 0;
+    };
+    const auto observe = [stream](qb::io::quic::backend &backend, Observed &seen) {
+        for (auto const &event : backend.drain_events()) {
+            if (event.stream_id != stream)
+                continue;
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.error_code == 1)
+                ++seen.fins;
+            if (event.type != qb::io::quic::backend_event::kind::stream_closed)
+                continue;
+            if (event.text == "stream reset by peer") {
+                seen.peer_reset      = true;
+                seen.peer_reset_code = event.error_code;
+            } else if (event.text.empty()) {
+                seen.closed       = true;
+                seen.close_reason = event.stream_reason;
+                seen.close_code   = event.error_code;
             }
         }
-        (void) server->drain_events();
+    };
+    Observed   client_seen;
+    Observed   server_seen;
+    const auto reset_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ((!client_seen.closed || !server_seen.closed) && std::chrono::steady_clock::now() < reset_deadline) {
+        deliver_ready_quic_packets(*server, *client);
+        deliver_ready_quic_packets(*client, *server);
+        observe(*client, client_seen);
+        observe(*server, server_seen);
     }
 
-    ASSERT_TRUE(client_saw_reset) << "peer never observed the RESET_STREAM (stream_reset_cb did not fire)";
-    EXPECT_EQ(observed_reason, qb::io::quic::stream_close_reason::reset);
-    EXPECT_EQ(observed_error, 0x42u);
+    ASSERT_TRUE(client_seen.peer_reset) << "peer never observed the RESET_STREAM (stream_reset_cb did not fire)";
+    EXPECT_EQ(client_seen.peer_reset_code, code);
+    ASSERT_TRUE(client_seen.closed) << "the client never fully closed the reset stream";
+    EXPECT_EQ(client_seen.close_reason, qb::io::quic::stream_close_reason::reset) << "a reset must not close as finished";
+    EXPECT_EQ(client_seen.close_code, code);
+    EXPECT_EQ(client_seen.fins, 0) << "the server never sent a FIN: none may be synthesised";
+    ASSERT_TRUE(server_seen.closed) << "the server never fully closed the stream it reset";
+    EXPECT_EQ(server_seen.close_reason, qb::io::quic::stream_close_reason::reset);
+    EXPECT_EQ(server_seen.close_code, code);
+    EXPECT_EQ(server_seen.fins, 0);
 }
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::testing::Values(std::uint64_t{0x42}, std::uint64_t{0}),
+                         [](::testing::TestParamInfo<std::uint64_t> const &info) {
+                             return info.param == 0 ? std::string{"ApplicationCodeZero"} : std::string{"ApplicationCode0x42"};
+                         });
 
 /**
  * @test A malformed UDP datagram against a started parent server is rejected, not accepted
  * @brief A non-QUIC payload delivered to a freshly started server parent fails ngtcp2_accept inside
  *        accept_server_connection, which queues a handshake_failed close event rather than spinning up
  *        a child connection; the parent fans that child event up with no connection added. The parent
- *        stays open with zero active connections. Covers quic.cpp:1105-1117 (the accept-rejection arm).
+ *        stays open with zero active connections. Covers quic.cpp:1145-1157 (the accept-rejection arm).
  */
 TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1403,8 +1755,8 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
 /**
  * @test The server observes its own STOP_SENDING when it stops reading a stream (stream_stop_sending_cb).
  * @brief The client opens a bidi stream and writes; the server stops reading it via stop_stream()
- *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:580-590 (the synchronous stop_sending
- *        event queued by stop_stream) AND quic.cpp:1527-1534 (stream_stop_sending_cb, fired by
+ *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:616-626 (the synchronous stop_sending
+ *        event queued by stop_stream) AND quic.cpp:1628-1635 (stream_stop_sending_cb, fired by
  *        ngtcp2 when the local endpoint drains its transport after shutting down the read side).
  *
  * QUIC/ngtcp2 SEMANTICS — important correction over the prior version of this test, which expected
@@ -1464,8 +1816,8 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     constexpr std::uint64_t app_error = 0x9;
     server->stop_stream(server_connection_id, server_stream_id, app_error);
 
-    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:589) and arms
-    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1528)
+    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:625) and arms
+    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1629)
     // for the SAME stream/reason. Pump a bounded number of times and collect every stop_sending event
     // the server observes.
     int                               server_stop_sending_count = 0;
@@ -1497,7 +1849,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
  * @brief The parent server is configured with max_connections == 1. A first client completes the
  *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
  *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
- *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:845-858) which DROPS the
+ *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:881-894) which DROPS the
  *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
  *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
  *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
@@ -1579,9 +1931,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
  *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1499-1508) and emits a trailing stream_data carrying error_code == 1
+ *        SYNTHESIS arm (quic.cpp:1600-1609) and emits a trailing stream_data carrying error_code == 1
  *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1509-1513), then queues stream_closed(finished).
+ *        (quic.cpp:1610-1614), then queues stream_closed(finished).
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -1646,7 +1998,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
     // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1499-1513) and emits a trailing
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1600-1614) and emits a trailing
     // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL
