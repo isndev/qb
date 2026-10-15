@@ -308,8 +308,9 @@ public:
     /** @brief Copy constructor */
     icase_basic_map(icase_basic_map const &) = default;
 
-    /** @brief Move constructor */
-    icase_basic_map(icase_basic_map &&) noexcept = default;
+    /** @brief Move constructor: as nothrow as the base map's own -- MSVC's `std::map` allocates its sentinel in its
+     *         move constructor, and a move that cannot throw would terminate on a full heap (Huly QB-1074). */
+    icase_basic_map(icase_basic_map &&) noexcept(std::is_nothrow_move_constructible_v<_Map>) = default;
 
     /**
      * @brief Initializer list constructor
@@ -324,8 +325,8 @@ public:
     /** @brief Copy assignment operator */
     icase_basic_map &operator=(icase_basic_map const &) = default;
 
-    /** @brief Move assignment operator */
-    icase_basic_map &operator=(icase_basic_map &&) noexcept = default;
+    /** @brief Move assignment operator: as nothrow as the base map's own (Huly QB-1074). */
+    icase_basic_map &operator=(icase_basic_map &&) noexcept(std::is_nothrow_move_assignable_v<_Map>) = default;
 
     /**
      * @brief Emplace a new key-value pair with the key converted to lowercase
@@ -509,10 +510,14 @@ public:
      * @tparam T Key type
      * @param key The key to convert
      * @return std::string The lowercase version of the key
+     * @throws std::bad_alloc (or whatever `_Trait::convert` throws) when the folded `std::string` cannot be
+     *         allocated. Not `noexcept`: it was until 3.3, which turned that failure into `std::terminate()` (Huly
+     *         QB-1074). A caller that must not allocate folds into its own buffer, as a lookup does
+     *         (`lookup_fold_capacity`).
      */
     template <typename T>
     static std::string
-    convert_key(T &&key) noexcept {
+    convert_key(T &&key) {
         return _Trait::convert(std::forward<T>(key));
     }
 

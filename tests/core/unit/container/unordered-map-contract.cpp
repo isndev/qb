@@ -66,7 +66,9 @@
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
+#include <new>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -1081,4 +1083,74 @@ TYPED_TEST(IcaseMapLookup, TheLookupFoldCapacityIsTheLongestKeyFoldedOnTheStack)
     EXPECT_EQ(map.find(std::string(cap + 1, 'k'))->second, 2);
     EXPECT_EQ(counting_fold_trait::converts, 1) << "one byte more converts";
     EXPECT_EQ(counting_fold_trait::folds, 0);
+}
+
+// --- 8. noexcept only where nothing can throw (Huly QB-1074) --------------------------------------
+// `convert_key` returns the folded key as a std::string, built by the trait, so an exhausted heap
+// throws std::bad_alloc out of it; it was declared noexcept, which turned that exception into
+// std::terminate(). The defaulted move members were declared noexcept whatever the base map's
+// move does: MSVC's std::map allocates its sentinel node in its move constructor, so an icase_map
+// moved on a full heap terminated there too. Each is now as nothrow as what it runs. The failure
+// is injected the way an allocation fails -- std::bad_alloc out of the conversion, out of the
+// base's move -- since a test cannot exhaust the heap at a chosen allocation.
+
+namespace unordered_map_contract_test {
+
+/// A trait whose conversion fails as the std::string it builds would on an exhausted heap.
+struct failing_convert_trait {
+    template <std::size_t N>
+    static std::string
+    convert(const char (&)[N]) {
+        throw std::bad_alloc();
+    }
+    static std::string
+    convert(std::string const &) {
+        throw std::bad_alloc();
+    }
+    static std::string
+    convert(std::string_view const &) {
+        throw std::bad_alloc();
+    }
+};
+
+/// The base map an MSVC std::map is to a move on an exhausted heap: its move members allocate.
+struct allocating_move_map : std::map<std::string, int, std::less<>> {
+    allocating_move_map() = default;
+    allocating_move_map(allocating_move_map &&) {
+        throw std::bad_alloc();
+    }
+    allocating_move_map &
+    operator=(allocating_move_map &&) {
+        throw std::bad_alloc();
+    }
+};
+
+} // namespace unordered_map_contract_test
+
+TEST(IcaseMapNoexcept, ConvertKeyReportsAFailedAllocationInsteadOfTerminating) {
+    using unordered_map_contract_test::failing_convert_trait;
+    using Map = qb::icase_basic_map<qb::unordered_map<std::string, int, qb::string_hash, std::equal_to<>>, failing_convert_trait>;
+    EXPECT_FALSE(noexcept(qb::icase_unordered_map<int>::convert_key(std::string_view{"Key"})))
+        << "convert_key builds a std::string: it can throw std::bad_alloc";
+    EXPECT_FALSE(noexcept(qb::icase_map<int>::convert_key("Key")));
+    EXPECT_THROW((void) Map::convert_key(std::string_view{"Key"}), std::bad_alloc);
+    EXPECT_THROW((void) Map::convert_key("Key"), std::bad_alloc);
+    EXPECT_EQ(qb::icase_unordered_map<int>::convert_key(std::string("Content-Type")), "content-type");
+}
+
+TEST(IcaseMapNoexcept, TheMoveMembersAreAsNothrowAsTheBaseMapsOwn) {
+    using unordered_map_contract_test::allocating_move_map;
+    using Base = std::map<std::string, int, std::less<>>;
+    using Flat = qb::unordered_map<std::string, int, qb::string_hash, std::equal_to<>>;
+    EXPECT_EQ(std::is_nothrow_move_constructible_v<qb::icase_map<int>>, std::is_nothrow_move_constructible_v<Base>);
+    EXPECT_EQ(std::is_nothrow_move_assignable_v<qb::icase_map<int>>, std::is_nothrow_move_assignable_v<Base>);
+    EXPECT_EQ(std::is_nothrow_move_constructible_v<qb::icase_unordered_map<int>>, std::is_nothrow_move_constructible_v<Flat>);
+    EXPECT_EQ(std::is_nothrow_move_assignable_v<qb::icase_unordered_map<int>>, std::is_nothrow_move_assignable_v<Flat>);
+
+    using Map = qb::icase_basic_map<allocating_move_map>;
+    EXPECT_FALSE(std::is_nothrow_move_constructible_v<Map>);
+    Map source;
+    EXPECT_THROW(Map moved(std::move(source)), std::bad_alloc) << "a move that allocates must report its failure";
+    Map target;
+    EXPECT_THROW(target = std::move(source), std::bad_alloc);
 }

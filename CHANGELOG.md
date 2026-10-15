@@ -642,6 +642,16 @@ policy.
   client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
   it is refused both ways.
 
+- **`icase_basic_map::convert_key` and the map's move members are `noexcept` only when what they run is (Huly
+  QB-1074).** `convert_key` builds the folded key as a `std::string`, so an exhausted heap throws `std::bad_alloc`
+  out of it, and its `noexcept` turned that into `std::terminate()`; it is no longer `noexcept` (no caller in qb or
+  the modules relied on it). The defaulted move constructor and move assignment were declared `noexcept` whatever
+  the base map's move does -- MSVC's `std::map` allocates its sentinel in its move constructor -- and are now
+  `noexcept(std::is_nothrow_move_constructible_v<_Map>)` / `..._assignable_v<_Map>`: `qb::icase_unordered_map`
+  keeps its `noexcept` move, an `icase_map` is as nothrow as the standard library's `std::map`. Witness:
+  `qb-core-test-unit-unordered-map-contract` (`IcaseMapNoexcept.*`: an injected `std::bad_alloc` out of the
+  conversion and out of the base's move, which terminated before).
+
 - **A standalone io object's `dispose()` ends its transport (Huly QB-1060).** `input<>`, `output<>` and
   `io<>` stopped a standalone object's watcher -- a client's, an acceptor's -- and left its transport as it
   was until the object connected again or was destroyed: the peer of a `disconnect()`, or of a connection
