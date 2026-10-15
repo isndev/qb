@@ -130,7 +130,7 @@ Four things to know about it:
 template <std::size_t _Size = 30>
 class string : public std::array<char, _Size + 1> { … };
 ```
-<!-- src: qb/src/qb/string.h:108-109 -->
+<!-- src: qb/src/qb/string.h:116-117 -->
 
 An inline, `std::array`-backed string with a compile-time capacity and a length field. No heap allocation, no pointer, and — the property that matters most — **no pointer into itself**.
 
@@ -148,7 +148,7 @@ name.capacity();                    // 32 — the compile-time maximum, == max_s
 
 ### Layout
 
-The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t`, `uint16_t`, or `std::size_t` (`qb/src/qb/string.h:55-75`, `:113`). Measured sizes on this checkout:
+The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t`, `uint16_t`, or `std::size_t` (`qb/src/qb/string.h:63-83`, `:121`). Measured sizes on this checkout:
 
 | Type | `sizeof` | Why |
 |---|---|---|
@@ -158,7 +158,7 @@ The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t
 | `qb::string<300>` | 304 | 301 + `uint16_t` + padding |
 | `qb::string<70000>` | 70016 | 70001 + `std::size_t` + padding |
 
-The `+ 1` is the NUL terminator, which is always written and never counted by `size()`. `capacity()` and `max_size()` both return `N` — the usable character count, excluding the terminator (`qb/src/qb/string.h:609-622`).
+The `+ 1` is the NUL terminator, which is always written and never counted by `size()`. `capacity()` and `max_size()` both return `N` — the usable character count, excluding the terminator (`qb/src/qb/string.h:627-640`).
 
 ### It truncates, it never throws and it never grows
 
@@ -170,25 +170,25 @@ s.c_str();                          // "abcdefgh"
 s.size();                           // 8
 ```
 
-`assign` clamps the copy length with `std::min(size, _Size)` (`qb/src/qb/string.h:249-259`).
+`assign` clamps the copy length with `std::min(size, _Size)` (`qb/src/qb/string.h:267-277`).
 
-Both `append` overloads clamp on the *free room* rather than on `_size + len` — deliberately, because the sum wraps for a hostile length and the wrapped difference would overrun the fixed buffer (`qb/src/qb/string.h:902-917`, `:937-949`).
+Both `append` overloads clamp on the *free room* rather than on `_size + len` — deliberately, because the sum wraps for a hostile length and the wrapped difference would overrun the fixed buffer (`qb/src/qb/string.h:920-935`, `:955-967`).
 
-`push_back` is a no-op at capacity (`qb/src/qb/string.h:956-963`).
+`push_back` is a no-op at capacity (`qb/src/qb/string.h:974-981`).
 
 There is no signal. Size the capacity to your worst case, and if truncation would be a correctness bug, check the length before assigning.
 
 ### The rest of the surface
 
-Familiar `std::string` shape: `at` (bounds-checked, throws `std::out_of_range`), `operator[]` (unchecked), `front`, `back`, `data`, `c_str`, iterators, `substr`, `compare`, `find`/`rfind`, `starts_with`/`ends_with`/`contains`, `operator+`/`+=`, and stream `<<`/`>>`. Two implicit conversions make it interoperate with the standard library without a cast: to `std::string` and to `std::string_view` (`qb/src/qb/string.h:376-387`).
+Familiar `std::string` shape: `at` (bounds-checked, throws `std::out_of_range`), `operator[]` (unchecked), `front`, `back`, `data`, `c_str`, iterators, `substr`, `compare`, `find`/`rfind`, `starts_with`/`ends_with`/`contains`, `operator+`/`+=`, and stream `<<`/`>>`. Two implicit conversions make it interoperate with the standard library without a cast: to `std::string` and to `std::string_view` (`qb/src/qb/string.h:394-405`).
 
-The value is the first `size()` characters, not the bytes up to the first NUL: `assign(ptr, len)` keeps an interior `'\0'`, and every comparison, search and stream insertion works on the whole length, as `std::string`'s do — `"a\0b"` (three characters) equals neither `"a"` nor `"a\0c"`, and `find` sees past the `'\0'`. An operand given as `const char*` is read up to its NUL, as `std::string` reads one, and so is any char array — a literal, a const array or a buffer — but never past the array, by every member and operator that takes a C string: the constructor, `assign`, `operator=`, `compare`, `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains`, the six comparisons with the array on either side, and `operator+` on either side. `char buf[32] = "abc"` is the three characters `abc`, and an array without a NUL is read whole: each takes it in a bounded array form, where it used to take the `const char*` form and its `strlen`, which read on past it (Huly QB-1002). `c_str()` stays NUL-terminated for C interfaces, which see the string only up to its first interior NUL (`qb/src/qb/string.h:100-104`).
+The value is the first `size()` characters, not the bytes up to the first NUL: `assign(ptr, len)` keeps an interior `'\0'`, and every comparison, search and stream insertion works on the whole length, as `std::string`'s do — `"a\0b"` (three characters) equals neither `"a"` nor `"a\0c"`, and `find` sees past the `'\0'`. An operand given as `const char*` is read up to its NUL, as `std::string` reads one, and so is any char array — a literal, a const array or a buffer — but never past the array, by every member and operator that takes a C string: the constructor, `assign`, `operator=`, `compare`, `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains`, the six comparisons with the array on either side, and `operator+` on either side. `char buf[32] = "abc"` is the three characters `abc`, and an array without a NUL is read whole: each takes it in a bounded array form, where it used to take the `const char*` form and its `strlen`, which read on past it (Huly QB-1002). `c_str()` stays NUL-terminated for C interfaces, which see the string only up to its first interior NUL (`qb/src/qb/string.h:108-112`).
 
 `find` answers what `std::string::find` answers, an empty needle included: it is found at every position up to `size()`, so an empty string `contains("")`. `operator>>` reads one word as `std::string`'s does — leading white space skipped, `width()` honoured and reset — and keeps its first `N` characters, dropping the rest of the word as it reads it: a long token is never buffered whole (Huly QB-1002). It sets the string as `std::string`'s extraction does: left as it was when nothing but white space is left (`failbit`), else what was read — nothing at a white space a `noskipws` stream cannot skip (`failbit`). Both stream operators are `noexcept`: a stream whose `exceptions()` asked for a throw keeps the failure in its state, and its next operation throws.
 
-`operator+` on two `qb::string`s returns a `string<std::max(_Size1, _Size2)>` (`qb/src/qb/string.h:1425-1431`) — so concatenating two full strings of the same capacity truncates. Build with `append` into a big enough target when the result must be complete.
+`operator+` on two `qb::string`s returns a `string<std::max(_Size1, _Size2)>` (`qb/src/qb/string.h:1443-1449`) — so concatenating two full strings of the same capacity truncates. Build with `append` into a big enough target when the result must be complete.
 
-One implementation detail is worth knowing because it is a real hazard elsewhere: `find(char)` uses `std::memchr`, bounded by `_size`, rather than `strchr`. `strchr` is unbounded and needs a terminator, so it can scan past the live characters into the rest of the fixed buffer *before* the result is range-checked — the over-read has already happened by then (`qb/src/qb/string.h:793-805`).
+One implementation detail is worth knowing because it is a real hazard elsewhere: `find(char)` uses `std::memchr`, bounded by `_size`, rather than `strchr`. `strchr` is unbounded and needs a terminator, so it can scan past the live characters into the rest of the fixed buffer *before* the result is range-checked — the over-read has already happened by then (`qb/src/qb/string.h:811-823`).
 
 ## `qb::ring_buffer<T, N, Overwrite>`
 
@@ -222,8 +222,8 @@ A growable single-thread FIFO: a power-of-two buffer over storage aligned for `T
 
 ## Pitfalls
 
-- **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:249-259`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
-- **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1425-1431`).
+- **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:267-277`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
+- **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1443-1449`).
 - **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:267-271`).
 - **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:116-119`). Correct for HTTP field names; not a Unicode case-folding.
 - **Node stability is not reentrancy safety.** A reference into a `qb::unordered_map` survives a rehash and does *not* survive an `erase` of that entry from a callback you invoked while holding it.

@@ -38,6 +38,14 @@
 #ifndef QB_STRING_H_
 #define QB_STRING_H_
 
+// The length of a char array, bounded by its size (qb::string::array_length): __builtin_strnlen where the compiler has
+// it -- folded to a constant for a literal, the C library's vectorised scan for a buffer. Undefined at the end.
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_strnlen)
+#define QB_STRING_BUILTIN_STRNLEN 1
+#endif
+#endif
+
 namespace qb {
 
 namespace internal {
@@ -139,10 +147,20 @@ private:
     template <std::size_t N>
     [[nodiscard]] static constexpr std::size_t
     array_length(const char (&str)[N]) noexcept {
-        // char_traits::find is memchr bounded by N at run time -- folded to a constant for a literal, as strlen was, and
-        // vectorised for a buffer -- and a plain loop in a constant expression.
-        const char *const nul = std::char_traits<char>::find(str, N, '\0');
-        return nul ? static_cast<std::size_t>(nul - str) : N;
+        if (std::is_constant_evaluated()) {
+            std::size_t len = 0;
+            while (len < N && str[len] != '\0')
+                ++len;
+            return len;
+        }
+#ifdef QB_STRING_BUILTIN_STRNLEN
+        // A literal's length is folded to a constant, as strlen's was; a buffer's is the C library's strnlen.
+        return __builtin_strnlen(str, N);
+#else
+        // MSVC folds neither memchr nor strnlen, only strlen: a NUL in the last element bounds strlen -- folded for a
+        // literal, the C library's scan for a buffer -- and an array without one is read by strnlen, bounded by N.
+        return str[N - 1] == '\0' ? std::strlen(str) : strnlen(str, N);
+#endif
     }
 
     // The same characters as a view: what the searches and comparisons read of a char array (Huly QB-1002).
@@ -1654,5 +1672,7 @@ operator!=(P lhs, const string<_Size> &rhs) noexcept {
 }
 
 } // namespace qb
+
+#undef QB_STRING_BUILTIN_STRNLEN
 
 #endif // QB_STRING_H_
