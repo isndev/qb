@@ -752,8 +752,23 @@ err_check_socket(SOCKET socket) {
 WEPOLL_INTERNAL int    ws_global_init(void);
 WEPOLL_INTERNAL SOCKET ws_get_base_socket(SOCKET socket);
 
-static bool      init__done = false;
-static INIT_ONCE init__once = INIT_ONCE_STATIC_INIT;
+/* qev (Huly QB-340): every epoll_* entry point calls init(), which skips InitOnceExecuteOnce once
+ * this flag says the initialisation completed -- so the flag IS the publication of what the
+ * callback set up (WSAStartup, the ntdll entry points, the keyed event, the handle tree): a release
+ * store as the callback's last write, an acquire load in init(). A plain bool there gave a thread
+ * that saw it set no happens-before with any of that (on arm64 the loads behind it may be satisfied
+ * first); on x86-64 both are the plain mov they were (MSVC's volatile access, __atomic on
+ * clang/gcc). */
+#if defined(__GNUC__) || defined(__clang__)
+#define WEPOLL_LOAD_ACQ(p) __atomic_load_n((p), __ATOMIC_ACQUIRE)
+#define WEPOLL_STORE_REL(p, v) __atomic_store_n((p), (v), __ATOMIC_RELEASE)
+#else
+#define WEPOLL_LOAD_ACQ(p) ReadAcquire(p)
+#define WEPOLL_STORE_REL(p, v) WriteRelease((p), (v))
+#endif
+
+static LONG volatile init__done = 0;
+static INIT_ONCE     init__once = INIT_ONCE_STATIC_INIT;
 
 static BOOL CALLBACK
 init__once_callback(INIT_ONCE *once, void *parameter, void **context) {
@@ -765,13 +780,13 @@ init__once_callback(INIT_ONCE *once, void *parameter, void **context) {
     if (ws_global_init() < 0 || nt_global_init() < 0 || reflock_global_init() < 0 || epoll_global_init() < 0)
         return FALSE;
 
-    init__done = true;
+    WEPOLL_STORE_REL(&init__done, 1);
     return TRUE;
 }
 
 int
 init(void) {
-    if (!init__done && !InitOnceExecuteOnce(&init__once, init__once_callback, NULL, NULL))
+    if (!WEPOLL_LOAD_ACQ(&init__done) && !InitOnceExecuteOnce(&init__once, init__once_callback, NULL, NULL))
         /* `InitOnceExecuteOnce()` itself is infallible, and it doesn't set any
          * error code when the once-callback returns FALSE. We return -1 here to
          * indicate that global initialization failed; the failing init function is
