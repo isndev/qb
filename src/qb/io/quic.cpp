@@ -219,14 +219,11 @@ class native_backend final : public backend {
         std::vector<std::byte> data;
     };
 
-    settings                   _config;
-    stats                      _stats;
-    std::vector<std::string>   _alpn;
-    std::vector<unsigned char> _wire_alpn;
-    std::deque<queued_stream>  _pending_streams;
-    // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
-    // out of the writer's way until extend_max_stream_data_cb reports the peer raised that credit.
-    qb::unordered_map<std::uint64_t, std::deque<queued_stream>>       _credit_blocked_streams;
+    settings                                                          _config;
+    stats                                                             _stats;
+    std::vector<std::string>                                          _alpn;
+    std::vector<unsigned char>                                        _wire_alpn;
+    std::deque<queued_stream>                                         _pending_streams;
     std::deque<queued_stream>                                         _inflight_streams;
     std::deque<queued_datagram>                                       _pending_datagrams;
     qb::unordered_map<std::uint64_t, std::uint64_t>                   _inflight_datagrams;
@@ -278,6 +275,9 @@ class native_backend final : public backend {
     bool                                  _close_event_queued = false;
     // A read- or credit-triggered writer attempt is due; this does not promise positive output.
     bool _transport_pending = false;
+    // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
+    // out of the writer's way until extend_max_stream_data_cb reports the peer raised that credit.
+    qb::unordered_map<std::uint64_t, std::deque<queued_stream>> _credit_blocked_streams;
 
     [[nodiscard]] std::string
     negotiated_alpn() const {
@@ -1727,10 +1727,10 @@ namespace test {
 namespace {
 native_backend &
 native(backend &peer) {
-    auto *native = dynamic_cast<native_backend *>(&peer);
-    if (!native)
+    auto *found = dynamic_cast<native_backend *>(&peer);
+    if (!found)
         throw std::invalid_argument("test peer must use the native QUIC backend");
-    return *native;
+    return *found;
 }
 } // namespace
 
