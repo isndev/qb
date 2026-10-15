@@ -400,9 +400,9 @@ namespace detail {
 
 /**
  * @brief The largest byte count zlib's `avail_in` / `avail_out` hold: they are `uInt`, 32 bits wide on every target.
- * @details A one-shot compress or uncompress hands zlib its input in slices of at most this many bytes and gives it
- *          output windows no wider, so a `std::size_t` length past 4 GiB is processed whole instead of wrapping
- *          modulo 2^32 -- which compressed only the remainder and returned a valid stream of it (Huly QB-353).
+ * @details A one-shot hands zlib its input in slices of at most this many bytes and output windows no wider, so a length
+ *          past 4 GiB is processed whole instead of wrapping modulo 2^32 (Huly QB-353); a gzip / deflate provider takes
+ *          at most this much of a call's input and window, and reports what it took (Huly QB-1004).
  */
 inline constexpr std::size_t zlib_max_chunk = (std::numeric_limits<uInt>::max)();
 

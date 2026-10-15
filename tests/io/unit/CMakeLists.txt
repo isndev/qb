@@ -190,3 +190,42 @@ unset(_qb_multi_config)
 # oldest region of a size, a table of 200 sizes. A reserved region (QB-203) is lent again as one with what was committed
 # in it, and on Windows never for a committed request nor a committed region for a reserved one.
 qb_add_test(MODULE qb-io TIER unit NAME region-cache SOURCES core/region-cache.cpp DEPENDS ${PROJECT_NAME})
+# uuid-codec pins the stduuid fork's text and name codecs (Huly QB-382, QB-383): operator<< writes the canonical text
+# whatever the stream's formatting state and leaves that state as it found it, and the SHA-1 behind UUIDv5 encodes the
+# message length on 64 bits -- the 2^29-byte boundary case runs in optimised builds only (see the source).
+qb_add_test(MODULE qb-io TIER unit NAME uuid-codec SOURCES core/uuid-codec.cpp DEPENDS ${PROJECT_NAME})
+# nanolog-record pins nanolog's record and its NonGuaranteedLogger ring (Huly QB-366, QB-367, QB-368): a char array is
+# copied into the record, a text field keeps its whole length, a ring its 32-bit indices cannot count is refused. Like
+# guaranteed-logger-buffer it compiles nanolog.cpp privately, with abi.cpp for the fingerprint symbols.
+qb_add_test(MODULE qb-io TIER unit NAME nanolog-record
+            SOURCES core/nanolog-record.cpp ${QB_SOURCE_DIR}/io/abi.cpp
+            INCLUDES ${QB_INCLUDE_DIR})
+# logger-startup-diagnostic (Huly QB-327): the default logger's static initialiser warns when ./qb.1.log could not be
+# OPENED -- not when the path is missing. Any qb-io executable is a probe; it is started fresh in prepared working
+# directories (writable, qb.1.log obstructed by a directory, read-only on an unprivileged POSIX host).
+if(QB_WITH_LOGGING)
+    add_test(NAME qb-io-test-unit-logger-startup-diagnostic
+             COMMAND "${CMAKE_COMMAND}" "-DPROBE=$<TARGET_FILE:qb-io-test-unit-uri-parse>"
+                     "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/logger-startup-diagnostic"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/logger-startup-diagnostic.cmake")
+    set_tests_properties(qb-io-test-unit-logger-startup-diagnostic PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+endif()
+# target-arch (Huly QB-1004): QB_ARCH / QB_ARCH_ARM64 and the definitions follow the COMPILER's target -- an MSVC-family
+# compiler's CMAKE_CXX_COMPILER_ARCHITECTURE_ID, else CMAKE_SYSTEM_PROCESSOR -- not the host's processor. A languageless
+# fixture CONFIGURED with the toolchain identity fabricated per case, like find-gperftools: no compiler, no build.
+set(_qb_target_arch_args
+    -S "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/target-arch"
+    -B "${CMAKE_CURRENT_BINARY_DIR}/target-arch"
+    --fresh -G "${CMAKE_GENERATOR}" "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake")
+if(CMAKE_GENERATOR_PLATFORM)
+    list(APPEND _qb_target_arch_args -A "${CMAKE_GENERATOR_PLATFORM}")
+endif()
+if(CMAKE_GENERATOR_TOOLSET)
+    list(APPEND _qb_target_arch_args -T "${CMAKE_GENERATOR_TOOLSET}")
+endif()
+if(CMAKE_MAKE_PROGRAM)
+    list(APPEND _qb_target_arch_args "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+endif()
+add_test(NAME qb-io-test-unit-target-arch COMMAND "${CMAKE_COMMAND}" ${_qb_target_arch_args})
+set_tests_properties(qb-io-test-unit-target-arch PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+unset(_qb_target_arch_args)

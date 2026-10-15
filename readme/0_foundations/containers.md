@@ -54,21 +54,21 @@ So when auditing engine-adjacent code that indexes a `qb::unordered_map`, the qu
 
 The reason is that this is a **public type used as a data member of public classes** — `qb::VirtualCore`, `qb::Main`, `qb::router::*`, and qbm's own headers. A macro-selected implementation would make `sizeof(qb::unordered_map<int,int>)` differ between two translation units (measured: 32 against 40), so a consumer compiled one way against a library compiled the other reads one map's storage through the other's layout. The observed symptom is a runtime abort far from the cause — `std::overflow_error: __next_prime overflow` — with no diagnostic from the compiler or the linker, because each translation unit is internally consistent and vague linkage merges the bodies silently.
 
-The invariant has a configure-time guard: qb publishes the implementation as a token, `set(QB_ABI_UNORDERED_MAP "ska" CACHE INTERNAL ...)` (`qb/cmake/qbConfig.cmake:647`), each installed module records the token it was built against (its `qbm-<mod>Config.cmake` is generated from `qb/cmake/qbmModuleConfig.cmake.in`), and a mismatch fails at `find_package()` rather than at run time. That is the same family of protection as the [link-time ABI fingerprint](./abi_and_build_fingerprint.md), one layer up in the build system.
+The invariant has a configure-time guard: qb publishes the implementation as a token, `set(QB_ABI_UNORDERED_MAP "ska" CACHE INTERNAL ...)` (`qb/cmake/qbConfig.cmake:655`), each installed module records the token it was built against (its `qbm-<mod>Config.cmake` is generated from `qb/cmake/qbmModuleConfig.cmake.in`), and a mismatch fails at `find_package()` rather than at run time. That is the same family of protection as the [link-time ABI fingerprint](./abi_and_build_fingerprint.md), one layer up in the build system.
 
 ### The standard members the fork had wrong
 
 Upstream `ska_hash` predates C++20 and is no longer maintained. qb's copy is a declared fork, and every local change carries a `qb local modification` comment in the source. Besides `contains()`, 3.3 brought five members to the standard's contract (Huly QB-369 to QB-373):
 
 - **`try_emplace(k, args...)`** builds the mapped value from all of `args` (zero, one or several), and constructs nothing when `k` is present; its arguments are then not moved from. Upstream passed `k, args...` to the pair's constructor, so only the one-argument form compiled. The node map builds the element in place. The flat map builds a pair and moves it into its slot, because its robin-hood displacement moves elements anyway.
-- **`unordered_map::merge(src)`** (lvalue and rvalue) moves every element whose key is absent and leaves the others in `src`. Upstream copied everything and left `src` whole. `unordered_flat_map` has no `merge`.
-- **`bucket(k)`** compiles on the node map and set, and is below `bucket_count()` even on an empty table, which counts one bucket. Upstream called a member template that does not exist.
+- **`merge(src)`** (lvalue and rvalue) takes every element whose key is absent and leaves the others in `src`. Upstream copied everything and left `src` whole. On the node set, and on the node map from a source of the same key, mapped and allocator types, it relinks the element's node, as `std::unordered_map::merge` does: nothing is allocated, built or freed, and a pointer or reference to a merged element stays valid, now into the destination (Huly QB-1004; QB-372's first version still rebuilt every element in a new node). A node map of other types moves each element. The flat map and set, which had no `merge`, move each element in: a flat table relocates its elements anyway, so no pointer into one survives an insertion. A set merges from a set of its own element type, as `std::unordered_set::merge` does.
+- **`bucket(k)`** compiles on the node map and set, and is below `bucket_count()` on every table, an empty one included: an empty table counts one bucket, node or flat. Upstream called a member template that does not exist, and an empty flat table counted no bucket while `bucket(k)` answered 0 or 1 (Huly QB-1004).
 - **Moves across unequal allocators.** Two members can meet an allocator that does not compare equal to the source's: the allocator-extended move constructor, and a move assignment whose allocator does not propagate. Each now moves the elements one by one into storage the destination's allocator owns. The assignment also installs the source's hasher and equality before it re-inserts. Upstream stole the storage anyway and later freed it through the wrong allocator, and it re-inserted with the old hasher, so keys could not be found. Both members are `noexcept` only when that path cannot be taken. With `std::allocator`, which is always equal, they are the same pointer steal as before.
 
 Upstream's third table, `bytell_hash_map.hpp`, is no longer shipped. qb never used it, and it placed over-aligned value types in storage aligned only for `unsigned char`.
 
-<!-- src: qb/src/qb/vendor/ska_hash/unordered_map.hpp:171-201, :226-262, :431-456, :883-905, :932-943 -->
-<!-- src: qb/src/qb/vendor/ska_hash/flat_hash_map.hpp:399-426, :446-477, :2298-2312 -->
+<!-- src: qb/src/qb/vendor/ska_hash/unordered_map.hpp:171-201, :226-262, :431-456, :658-705, :936-964, :991-1002, :1044-1056 -->
+<!-- src: qb/src/qb/vendor/ska_hash/flat_hash_map.hpp:399-426, :446-477, :792-807, :2277-2299, :2326-2340, :2378-2398 -->
 
 ### Custom keys
 
@@ -130,7 +130,7 @@ Four things to know about it:
 template <std::size_t _Size = 30>
 class string : public std::array<char, _Size + 1> { … };
 ```
-<!-- src: qb/src/qb/string.h:93-94 -->
+<!-- src: qb/src/qb/string.h:101-102 -->
 
 An inline, `std::array`-backed string with a compile-time capacity and a length field. No heap allocation, no pointer, and — the property that matters most — **no pointer into itself**.
 
@@ -148,7 +148,7 @@ name.capacity();                    // 32 — the compile-time maximum, == max_s
 
 ### Layout
 
-The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t`, `uint16_t`, or `std::size_t` (`qb/src/qb/string.h:54-74`, `:98`). Measured sizes on this checkout:
+The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t`, `uint16_t`, or `std::size_t` (`qb/src/qb/string.h:55-75`, `:106`). Measured sizes on this checkout:
 
 | Type | `sizeof` | Why |
 |---|---|---|
@@ -158,7 +158,7 @@ The length field uses the smallest unsigned type that can hold `N + 1`: `uint8_t
 | `qb::string<300>` | 304 | 301 + `uint16_t` + padding |
 | `qb::string<70000>` | 70016 | 70001 + `std::size_t` + padding |
 
-The `+ 1` is the NUL terminator, which is always written and never counted by `size()`. `capacity()` and `max_size()` both return `N` — the usable character count, excluding the terminator (`qb/src/qb/string.h:578-591`).
+The `+ 1` is the NUL terminator, which is always written and never counted by `size()`. `capacity()` and `max_size()` both return `N` — the usable character count, excluding the terminator (`qb/src/qb/string.h:595-608`).
 
 ### It truncates, it never throws and it never grows
 
@@ -170,23 +170,25 @@ s.c_str();                          // "abcdefgh"
 s.size();                           // 8
 ```
 
-`assign` clamps the copy length with `std::min(size, _Size)` (`qb/src/qb/string.h:224-234`).
+`assign` clamps the copy length with `std::min(size, _Size)` (`qb/src/qb/string.h:235-245`).
 
-Both `append` overloads clamp on the *free room* rather than on `_size + len` — deliberately, because the sum wraps for a hostile length and the wrapped difference would overrun the fixed buffer (`qb/src/qb/string.h:810-825`, `:845-857`).
+Both `append` overloads clamp on the *free room* rather than on `_size + len` — deliberately, because the sum wraps for a hostile length and the wrapped difference would overrun the fixed buffer (`qb/src/qb/string.h:826-841`, `:861-873`).
 
-`push_back` is a no-op at capacity (`qb/src/qb/string.h:864-871`).
+`push_back` is a no-op at capacity (`qb/src/qb/string.h:880-887`).
 
 There is no signal. Size the capacity to your worst case, and if truncation would be a correctness bug, check the length before assigning.
 
 ### The rest of the surface
 
-Familiar `std::string` shape: `at` (bounds-checked, throws `std::out_of_range`), `operator[]` (unchecked), `front`, `back`, `data`, `c_str`, iterators, `substr`, `compare`, `find`/`rfind`, `starts_with`/`ends_with`/`contains`, `operator+`/`+=`, and stream `<<`/`>>`. Two implicit conversions make it interoperate with the standard library without a cast: to `std::string` and to `std::string_view` (`qb/src/qb/string.h:345-356`).
+Familiar `std::string` shape: `at` (bounds-checked, throws `std::out_of_range`), `operator[]` (unchecked), `front`, `back`, `data`, `c_str`, iterators, `substr`, `compare`, `find`/`rfind`, `starts_with`/`ends_with`/`contains`, `operator+`/`+=`, and stream `<<`/`>>`. Two implicit conversions make it interoperate with the standard library without a cast: to `std::string` and to `std::string_view` (`qb/src/qb/string.h:362-373`).
 
-The value is the first `size()` characters, not the bytes up to the first NUL: `assign(ptr, len)` keeps an interior `'\0'`, and every comparison, search and stream insertion works on the whole length, as `std::string`'s do — `"a\0b"` (three characters) equals neither `"a"` nor `"a\0c"`, and `find` sees past the `'\0'`. An operand given as `const char*` is read up to its NUL, as `std::string` reads one, and so is a char buffer handed to the constructor, `assign` or `operator=` — `char buf[32] = "abc"` gives a three-character string, never more than the array; `c_str()` stays NUL-terminated for C interfaces, which see the string only up to its first interior NUL (`qb/src/qb/string.h:85-89`).
+The value is the first `size()` characters, not the bytes up to the first NUL: `assign(ptr, len)` keeps an interior `'\0'`, and every comparison, search and stream insertion works on the whole length, as `std::string`'s do — `"a\0b"` (three characters) equals neither `"a"` nor `"a\0c"`, and `find` sees past the `'\0'`. An operand given as `const char*` is read up to its NUL, as `std::string` reads one, and so is any char array handed to the constructor, `assign` or `operator=` — a literal, a const array or a buffer — but never past the array: `char buf[32] = "abc"` gives a three-character string, and an array without a NUL is read whole (a const one used to take the `const char*` form and its `strlen`, which read on past it, Huly QB-1002). Every other member that takes a `const char*` — `append`, `+=`, `compare`, `find`, `starts_with`, `ends_with`, `contains`, the comparisons, `operator+` — takes an array as that pointer and reads it up to its NUL, as `std::string`'s do, so an unterminated array does not belong there (append it with its length, `append(ptr, len)`, or compare `std::string_view`s); `c_str()` stays NUL-terminated for C interfaces, which see the string only up to its first interior NUL (`qb/src/qb/string.h:93-97`).
 
-`operator+` on two `qb::string`s returns a `string<std::max(_Size1, _Size2)>` (`qb/src/qb/string.h:1182-1188`) — so concatenating two full strings of the same capacity truncates. Build with `append` into a big enough target when the result must be complete.
+`find` answers what `std::string::find` answers, an empty needle included: it is found at every position up to `size()`, so an empty string `contains("")`. `operator>>` reads one word as `std::string`'s does — leading white space skipped, `width()` honoured and reset — and keeps its first `N` characters, dropping the rest of the word as it reads it: a long token is never buffered whole (Huly QB-1002). It sets the string as `std::string`'s extraction does: left as it was when nothing but white space is left (`failbit`), else what was read — nothing at a white space a `noskipws` stream cannot skip (`failbit`). Both stream operators are `noexcept`: a stream whose `exceptions()` asked for a throw keeps the failure in its state, and its next operation throws.
 
-One implementation detail is worth knowing because it is a real hazard elsewhere: `find(char)` uses `std::memchr`, bounded by `_size`, rather than `strchr`. `strchr` is unbounded and needs a terminator, so it can scan past the live characters into the rest of the fixed buffer *before* the result is range-checked — the over-read has already happened by then (`qb/src/qb/string.h:732-744`).
+`operator+` on two `qb::string`s returns a `string<std::max(_Size1, _Size2)>` (`qb/src/qb/string.h:1198-1204`) — so concatenating two full strings of the same capacity truncates. Build with `append` into a big enough target when the result must be complete.
+
+One implementation detail is worth knowing because it is a real hazard elsewhere: `find(char)` uses `std::memchr`, bounded by `_size`, rather than `strchr`. `strchr` is unbounded and needs a terminator, so it can scan past the live characters into the rest of the fixed buffer *before* the result is range-checked — the over-read has already happened by then (`qb/src/qb/string.h:748-760`).
 
 ## `qb::ring_buffer<T, N, Overwrite>`
 
@@ -220,8 +222,8 @@ A growable single-thread FIFO: a power-of-two buffer over storage aligned for `T
 
 ## Pitfalls
 
-- **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:224-234`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
-- **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1182-1188`).
+- **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:235-245`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
+- **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1198-1204`).
 - **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:267-271`).
 - **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:116-119`). Correct for HTTP field names; not a Unicode case-folding.
 - **Node stability is not reentrancy safety.** A reference into a `qb::unordered_map` survives a rehash and does *not* survive an `erase` of that entry from a callback you invoked while holding it.

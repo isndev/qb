@@ -159,7 +159,7 @@ public:
 // The socket is flipped NON-BLOCKING first, and that is what makes `deadline` a
 // deadline. Both helpers were written for a non-blocking socket — the `ret == 0`
 // arm below is `ssl::socket::read()` mapping SSL_ERROR_WANT_READ/WANT_WRITE to 0
-// ("no data ready; not an error", ssl/socket.cpp:1004-1010), and NonBlockingReadWithNoDataReportsWouldBlock
+// ("no data ready; not an error", ssl/socket.cpp:1015-1021), and NonBlockingReadWithNoDataReportsWouldBlock
 // pins exactly that return. On a blocking socket that arm is unreachable, so the
 // loop parked inside SSL_read and re-checked `deadline` only between reads it
 // could never return from: a peer that stopped writing without sending
@@ -204,7 +204,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
 }
 
 // Same contract, same reason for the flip: `ssl::socket::write()` maps WANT_WRITE /
-// WANT_READ to 0 (ssl/socket.cpp:1031-1039), so the `ret == 0` arm below is the
+// WANT_READ to 0 (ssl/socket.cpp:1042-1050), so the `ret == 0` arm below is the
 // would-block retry — dead on a blocking socket, which is where this loop's deadline
 // went. Read and write agree on the mode, so neither has to restore it.
 ::testing::AssertionResult
@@ -748,21 +748,114 @@ TEST(SSLSocketLoopback, DriveNonBlockingConnectToCompletion) {
         << "unexpected n_connect_v4 result=" << ret << " errno=" << err;
     EXPECT_NE(client.ssl_handle(), nullptr);
 
-    // Pump the client-side handshake to completion under a deadline.
-    const auto deadline = std::chrono::steady_clock::now() + 5s;
-    int        status   = client.handshake_status();
+    // Pump the client-side handshake to completion under a deadline. The first poll attaches the descriptor to the
+    // SSL object; every later one finds it attached and leaves the BIO alone -- it used to call SSL_set_fd again,
+    // allocating a new socket BIO and freeing the last one, once per poll (Huly QB-1004).
+    const auto deadline  = std::chrono::steady_clock::now() + 5s;
+    int        status    = client.handshake_status();
+    BIO *const first_bio = SSL_get_rbio(client.ssl_handle());
+    int        bio_swaps = 0;
+    int        polls     = 1;
+    ASSERT_NE(first_bio, nullptr) << "the first handshake_status() attaches the descriptor";
     while (status == 0 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::sleep_for(1ms);
         status = client.handshake_status();
+        ++polls;
+        bio_swaps += SSL_get_rbio(client.ssl_handle()) != first_bio;
     }
     EXPECT_EQ(status, 1) << "non-blocking TLS handshake never completed; last status=" << status;
     EXPECT_TRUE(client.handshake_complete());
+    EXPECT_EQ(client.handshake_status(), 1) << "a completed handshake polls as complete";
+    bio_swaps += SSL_get_rbio(client.ssl_handle()) != first_bio;
+    EXPECT_EQ(bio_swaps, 0) << "handshake_status() replaced the socket BIO on " << bio_swaps << " of " << polls << " later polls";
+    EXPECT_EQ(SSL_get_fd(client.ssl_handle()), static_cast<int>(client.native_handle()));
     EXPECT_FALSE(client.get_negotiated_tls_version().empty());
     // TLS 1.3 completes asymmetrically: the client finishes on SENDING Finished, the
     // server only after READING it — so tearing down here can land inside the server's
     // handshake poll as an EOF/reset, which drive_server_handshake reports as fatal.
     EXPECT_TRUE(rv.wait_server()) << "server handshake never completed";
     rv.client_done(); // the server may now let its socket go
+    client.disconnect();
+}
+
+// A socket BIO belongs to ONE connection: it carries that connection's state -- the end-of-file it read, the kernel TLS
+// it was handed. A client reconnecting with the same socket object keeps its SSL object (ensure_client_ssl_ mints one
+// only when it has none), and POSIX gives the new connection the lowest free descriptor, often the number just closed:
+// handshake_status() attaches a descriptor once (Huly QB-1004), so the client setup lets the last connection's BIO go
+// and the first poll of the new one attaches a fresh BIO, whatever number it gets.
+TEST(SSLSocketLoopback, AReconnectAttachesAFreshSocketBio) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::tcp::ssl::listener listener;
+    listener.init(make_server_context());
+    ASSERT_NE(listener.ssl_handle(), nullptr);
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), 0);
+    const auto port = listener.local_endpoint().port();
+    ASSERT_NE(port, 0);
+
+    qb::io::test::teardown_rendezvous rv;
+    std::thread                       server_thread([&] {
+        {
+            // The first connection: shaken hands, then closed by the server -- the client reads its end.
+            qb::io::tcp::ssl::socket first;
+            ASSERT_TRUE(qb::io::test::accept_within(listener, first));
+            drive_server_handshake(first);
+            first.disconnect();
+        }
+        qb::io::tcp::ssl::socket second;
+        ASSERT_TRUE(qb::io::test::accept_within(listener, second));
+        drive_server_handshake(second);
+        rv.server_done();
+        (void) rv.wait_client();
+    });
+    thread_join_guard                 server_join(server_thread, [&] {
+        rv.release_all();
+        listener.disconnect();
+    });
+
+    const auto drive_client = [](qb::io::tcp::ssl::socket &client) {
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        int        status   = client.handshake_status();
+        while (status == 0 && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(1ms);
+            status = client.handshake_status();
+        }
+        return status;
+    };
+
+    qb::io::tcp::ssl::socket client;
+    client.set_insecure();
+    int ret = client.n_connect_v4("127.0.0.1", port);
+    ASSERT_TRUE(ret == 0 || qb::io::socket::get_last_errno() == EINPROGRESS
+                || qb::io::socket::not_send_error(qb::io::socket::get_last_errno()));
+    ASSERT_EQ(drive_client(client), 1) << "the first handshake never completed";
+
+    // Read to the server's close: the first connection's BIO records the end of its stream.
+    char       byte     = 0;
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (client.read(&byte, 1) >= 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    BIO *const first_bio = SSL_get_rbio(client.ssl_handle());
+    ASSERT_NE(first_bio, nullptr);
+    ASSERT_NE(BIO_test_flags(first_bio, BIO_FLAGS_IN_EOF), 0) << "the first connection never read the server's close";
+    const auto first_fd = client.native_handle();
+    client.disconnect(); // the TLS session ends ...
+    client.close();      // ... and the descriptor with it: the next connect opens its own
+
+    ret = client.n_connect_v4("127.0.0.1", port);
+    ASSERT_TRUE(ret == 0 || qb::io::socket::get_last_errno() == EINPROGRESS
+                || qb::io::socket::not_send_error(qb::io::socket::get_last_errno()));
+    const bool same_number = client.native_handle() == first_fd; // the case the attach-once could get wrong
+    RecordProperty("descriptor_reused", same_number ? "yes" : "no");
+    const int  status = client.handshake_status();
+    BIO *const bio    = SSL_get_rbio(client.ssl_handle());
+    ASSERT_NE(bio, nullptr) << "the first poll of the new connection attaches its descriptor";
+    EXPECT_EQ(BIO_test_flags(bio, BIO_FLAGS_IN_EOF), 0)
+        << "the new connection reads through the last one's BIO (descriptor " << (same_number ? "reused" : "new") << ")";
+    EXPECT_EQ(SSL_get_fd(client.ssl_handle()), static_cast<int>(client.native_handle()));
+    EXPECT_EQ(status == 1 ? 1 : drive_client(client), 1) << "the handshake of the reconnect never completed";
+    EXPECT_TRUE(rv.wait_server()) << "server handshake never completed";
+    rv.client_done();
     client.disconnect();
 }
 

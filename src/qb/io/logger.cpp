@@ -32,9 +32,35 @@
 #include <qb/io/async/coroutine/cancellation.h> // cancelled_error — the one exception NOT reported
 #include <qb/io/async/coroutine/task.h>         // declares report_detached_coroutine_exception
 #ifdef QB_WITH_LOGGING
+namespace {
+// nanolog writes every line to a file it may have failed to open, and says nothing: the lines are discarded in
+// silence. Whether the open SUCCEEDED is nanolog's answer (nanolog::log_file_opened(), the vendor's one status hook)
+// -- that the path exists is not the question: a directory of that name exists and cannot be opened (Huly QB-327).
+// One line on qb::io::cerr when it failed; `QB_LOG_*` would route the complaint into the log that is not working.
+bool
+open_log(std::string const &file_path, uint32_t const roll_MB) {
+    nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
+    return nanolog::log_file_opened();
+}
+
+void
+warn_log_not_opened(std::string const &first_roll, char const *const subject, char const *const advice) noexcept {
+    try {
+        std::error_code cwd_ec;
+        const auto      cwd = std::filesystem::current_path(cwd_ec);
+        qb::io::cerr() << "WARNING: qb logging is enabled (QB_WITH_LOGGING) but " << subject << " '" << first_roll
+                       << "' could not be opened in '" << (cwd_ec ? std::string{"<unknown cwd>"} : cwd.string())
+                       << "' -- every log line is DISCARDED until qb::io::log::init() names a file that opens." << advice << std::endl;
+    } catch (...) {
+        // Reporting must never become the failure.
+    }
+}
+} // namespace
+
 void
 qb::io::log::init(std::string const &file_path, uint32_t const roll_MB) {
-    nanolog::initialize(nanolog::GuaranteedLogger(), file_path, roll_MB);
+    if (!open_log(file_path, roll_MB))
+        warn_log_not_opened(file_path + ".1.log", "the log file qb::io::log::init named", "");
 }
 
 void
@@ -147,50 +173,34 @@ qb::io::async::abandoned_coroutine_frames_total() noexcept {
 // deliberate:
 //
 //   * a log file is created in the process's CURRENT WORKING DIRECTORY. The path is the fixed
-//     relative `"./qb"`, to which nanolog appends `.<n>.log` (nanolog.cpp:616-620), so the file
-//     is `./qb.1.log`. It is opened with `trunc`.
-//   * nanolog's writer THREAD is started, from the NanoLogger constructor (nanolog.cpp:633-645).
+//     relative `"./qb"`, to which nanolog appends `.<n>.log` (`FileWriter::roll_file` in
+//     nanolog.cpp), so the file is `./qb.1.log`. It is opened with `trunc`.
+//   * nanolog's writer THREAD is started, from the NanoLogger constructor.
 //
 // Both happen whether or not the program ever logs a line. Calling `qb::io::log::init()` later
 // with your own path does not undo them — this file already exists by the time `main()` begins.
 //
 // THE SILENT FAILURE, MADE LOUD
 // -----------------------------
-// `FileWriter::roll_file` does `m_os->open(...)` and never checks the result (nanolog.cpp:620),
-// so in a read-only or non-existent working directory logging is simply discarded, with no
-// diagnostic anywhere and no failure at any later call. That file is VENDORED — the header
-// promises it is upstream's — so the check belongs here, on qb's side of the boundary, and this
-// is the only place that knows both the path that was requested and that nothing has verified it.
-//
-// One `stat` at static-init time, and a single line on `qb::io::cerr` when it fails.
-// `QB_LOG_*` is not usable for this: it would route the complaint into the log that is not
-// working. `std::filesystem` throws nothing here (the `error_code` overloads), and the
-// constructor stays `noexcept`.
+// nanolog writes to a file it may have failed to open, so in a read-only working directory -- or
+// one holding a DIRECTORY named qb.1.log -- logging is simply discarded. The warning follows the
+// OPEN, as nanolog reports it (`open_log` above), never the existence of the path: until 3.3 it
+// asked whether `./qb.1.log` existed, and a directory of that name does (Huly QB-327). One line
+// on `qb::io::cerr` when the open failed; the constructor stays `noexcept`.
 struct LogInitializer {
     static LogInitializer initializer;
     LogInitializer() noexcept {
         constexpr char const *kLogBase = "./qb";
-        qb::io::log::init(kLogBase, 512);
+        const bool            opened   = open_log(kLogBase, 512);
 #ifdef NDEBUG
         qb::io::log::setLevel(qb::io::log::Level::INFO);
 #else
         qb::io::log::setLevel(qb::io::log::Level::DEBUG);
 #endif
-        // nanolog names the first roll `<base>.1.log`; if it is not there, the open failed and
-        // every line logged by this process would be dropped in silence.
-        std::error_code   ec;
-        const std::string first_roll = std::string{kLogBase} + ".1.log";
-        const bool        present    = std::filesystem::exists(first_roll, ec);
-        if (!ec && present)
-            return;
-        std::error_code cwd_ec;
-        const auto      cwd = std::filesystem::current_path(cwd_ec);
-        qb::io::cerr() << "WARNING: qb logging is enabled (QB_WITH_LOGGING) but its log file '" << first_roll << "' could not be created in '"
-                       << (cwd_ec ? std::string{"<unknown cwd>"} : cwd.string())
-                       << "' -- every log line from this process will be DISCARDED. qb opens this file during static "
-                          "initialisation, before main(), so run from a writable directory or build with "
-                          "QB_WITH_LOGGING=OFF."
-                       << std::endl;
+        if (!opened)
+            warn_log_not_opened(std::string{kLogBase} + ".1.log", "its log file",
+                                " qb opens this file during static initialisation, before main(), so run from a writable "
+                                "directory or build with QB_WITH_LOGGING=OFF.");
     }
 };
 

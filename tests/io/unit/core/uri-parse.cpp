@@ -755,3 +755,185 @@ TEST(UriParse, PunycodeIdnHostIsCarriedVerbatim) {
     EXPECT_EQ(u.query("lang"), "de");
     EXPECT_EQ(u.af(), AF_INET) << "a punycoded DNS host is an ordinary IPv4-family authority";
 }
+
+// =============================================================================
+// RE-ASSIGNED TEXT, COPIED VALUE, BRACKETED AUTHORITY (Huly QB-350, QB-351, QB-352)
+// =============================================================================
+
+/**
+ * @test Assigning new text to a uri classifies its family from that text, exactly as a fresh uri of it does.
+ * @brief Huly QB-350: the classifier read the family the previous text left (`_af`) and never left AF_UNIX, so a
+ *        uri that once held `unix://...` kept routing to a socket path after `= "tcp://127.0.0.1:4242"`.
+ */
+TEST(UriParse, AssignedTextIsClassifiedLikeAFreshUriOfIt) {
+    for (const char *text : {"tcp://127.0.0.1:4242/p?a=1", "tcp://[::1]:4242/p", "tcp://example.com:4242/p", "/relative/only"}) {
+        const uri fresh(text);
+
+        uri moved_in("unix:///tmp/qb.sock");
+        ASSERT_EQ(moved_in.af(), AF_UNIX);
+        moved_in = std::string(text); // operator=(std::string &&)
+
+        uri               copied_in("unix:///tmp/qb.sock");
+        const std::string source(text);
+        copied_in = source; // operator=(std::string const &)
+
+        for (const uri *u : {&moved_in, &copied_in}) {
+            EXPECT_EQ(u->af(), fresh.af()) << text << ": the family of the previous text survived the assignment";
+            EXPECT_EQ(u->scheme(), fresh.scheme()) << text;
+            EXPECT_EQ(u->host(), fresh.host()) << text;
+            EXPECT_EQ(u->port(), fresh.port()) << text;
+            EXPECT_EQ(u->path(), fresh.path()) << text;
+            EXPECT_EQ(u->query("a"), fresh.query("a")) << text;
+        }
+    }
+
+    // The other way round, and between the two IP families: the text decides every time.
+    uri u("tcp://[::1]:80/");
+    ASSERT_EQ(u.af(), AF_INET6);
+    u = std::string("unix:///var/run/app.sock");
+    EXPECT_EQ(u.af(), AF_UNIX);
+    EXPECT_EQ(u.path(), "/var/run/app.sock");
+    u = std::string("tcp://10.0.0.1:80/");
+    EXPECT_EQ(u.af(), AF_INET);
+    u = std::string("tcp://[::1]:80/");
+    EXPECT_EQ(u.af(), AF_INET6);
+
+    // A family given to the CONSTRUCTOR is the caller's hint for text that names none; the assignment of a new text
+    // drops it, as constructing a uri from that text does.
+    uri hinted("/tmp/x.sock", AF_UNIX);
+    ASSERT_EQ(hinted.af(), AF_UNIX);
+    hinted = std::string("tcp://127.0.0.1:80/");
+    EXPECT_EQ(hinted.af(), uri("tcp://127.0.0.1:80/").af());
+}
+
+/**
+ * @test Copies and moves of a uri carry the query map as it is, edits included, and never point into the source.
+ * @brief Huly QB-351: `queries()` hands out the map mutably (the qbm-http validator edits it in place), and the copy and
+ *        move operations re-parsed the source TEXT -- every edit (replaced, removed, added parameter) was lost.
+ */
+TEST(UriParse, CopiesAndMovesKeepTheEditedQueryMap) {
+    const auto edited = [] {
+        uri u("http://user@host.example:8081/a/b?k=orig&drop=1&multi=x#frag");
+        u.queries()["k"] = {"edited"};
+        u.queries().erase("drop");
+        u.queries()["added"] = {"a1", "a2"};
+        return u;
+    };
+    const auto expect_edited = [](uri const &u, const char *how) {
+        EXPECT_EQ(u.query("k"), "edited") << how << ": a replaced value came back";
+        EXPECT_FALSE(u.queries().has("drop")) << how << ": a removed parameter came back";
+        EXPECT_EQ(u.query("added", 1), "a2") << how << ": an added parameter was lost";
+        EXPECT_EQ(u.query("multi"), "x") << how;
+        EXPECT_EQ(u.scheme(), "http") << how;
+        EXPECT_EQ(u.user_info(), "user") << how;
+        EXPECT_EQ(u.host(), "host.example") << how;
+        EXPECT_EQ(u.u_port(), 8081u) << how;
+        EXPECT_EQ(u.path(), "/a/b") << how;
+        EXPECT_EQ(u.fragment(), "frag") << how;
+        EXPECT_TRUE(u.is_valid()) << how;
+        // The views name this object's own text: none of them may outlive a source that is gone.
+        const char *const begin = u.source().data();
+        const char *const end   = begin + u.source().size();
+        for (std::string_view const part : {u.scheme(), u.user_info(), u.host(), u.path(), u.encoded_queries(), u.fragment()})
+            EXPECT_TRUE(part.data() >= begin && part.data() + part.size() <= end) << how << ": a view points outside the text";
+    };
+
+    const uri source = edited();
+    expect_edited(uri(source), "copy-construct");
+    uri copy_assigned("ftp://other/");
+    copy_assigned = source;
+    expect_edited(copy_assigned, "copy-assign");
+
+    uri       to_move = edited();
+    const uri moved(std::move(to_move));
+    expect_edited(moved, "move-construct");
+    uri to_move_assign = edited();
+    uri move_assigned("ftp://other/");
+    move_assigned = std::move(to_move_assign);
+    expect_edited(move_assigned, "move-assign");
+
+    // The source is destroyed before the copy is read: nothing may point into it.
+    uri survivor;
+    {
+        uri scoped = edited();
+        survivor   = scoped;
+    }
+    expect_edited(survivor, "copy of a destroyed source");
+    uri moved_survivor;
+    {
+        uri scoped     = edited();
+        moved_survivor = std::move(scoped);
+    }
+    expect_edited(moved_survivor, "move of a destroyed source");
+
+    // A short text lives inside std::string's own buffer, which a move copies: the views follow the new buffer.
+    uri small("h://a/b?q=1");
+    small.queries()["q"] = {"2"};
+    const uri small_moved(std::move(small));
+    EXPECT_EQ(small_moved.host(), "a");
+    EXPECT_EQ(small_moved.path(), "/b");
+    EXPECT_EQ(small_moved.query("q"), "2");
+    EXPECT_EQ(small_moved.source().data(), small_moved.host().data() - 4) << "the host view does not name the moved text";
+
+    // An invalid uri copies as invalid, and a default port (static storage, not the text) survives the copy.
+    const uri invalid("http://exa mple.com/");
+    EXPECT_FALSE(uri(invalid).is_valid());
+    const uri defaulted("https://host/");
+    const uri defaulted_copy(defaulted);
+    EXPECT_EQ(defaulted_copy.port(), "443");
+}
+
+/**
+ * @test After a bracketed host the authority ends, or continues with `:` and a port; anything else is rejected.
+ * @brief Huly QB-352: text after `]` that was not a `:port` was silently dropped, so `http://[::1]junk/` parsed as a
+ *        valid uri of host `::1`. RFC 3986 3.2.2: IP-literal = "[" ... "]", followed only by [ ":" port ].
+ *        An empty port is the scheme's default (RFC 3986 3.2.3 and 6.2.3), after a bracketed host and after a name
+ *        alike: a name used to keep the colon (`example.com:`, classified AF_INET6 for it).
+ */
+TEST(UriParse, ABracketedHostEndsTheAuthorityOrIsFollowedByAPort) {
+    // Valid: the host alone, with a port, up to a path / query / fragment boundary, a zone identifier.
+    struct Valid {
+        const char *text;
+        const char *host;
+        unsigned    port;
+        const char *path;
+    };
+    for (const Valid &c :
+         {Valid{"http://[::1]/p", "::1", 80, "/p"}, Valid{"http://[::1]:8080/p", "::1", 8080, "/p"}, Valid{"http://[::1]", "::1", 80, "/"},
+          Valid{"http://[::1]?q=1", "::1", 80, "/"}, Valid{"http://[::1]:81#f", "::1", 81, "/"},
+          Valid{"https://[fe80::1%25eth0]:8443/x", "fe80::1%25eth0", 8443, "/x"},
+          Valid{"https://user@[2001:db8::1]:9/x", "2001:db8::1", 9, "/x"}}) {
+        const uri u(c.text);
+        ASSERT_TRUE(u.is_valid()) << c.text;
+        EXPECT_EQ(u.host(), c.host) << c.text;
+        EXPECT_EQ(u.u_port(), c.port) << c.text;
+        EXPECT_EQ(u.path(), c.path) << c.text;
+        EXPECT_EQ(u.af(), AF_INET6) << c.text;
+    }
+
+    // A suffix after the bracket that is not ":port" is not part of any authority: the uri is invalid.
+    for (const char *text : {"http://[::1]junk/p", "http://[::1]junk:80/p", "http://[::1]]/p", "http://[::1][::2]/p", "http://[::1]x"})
+        EXPECT_FALSE(uri(text).is_valid()) << text << ": the text after ']' was dropped instead of rejected";
+
+    // The port itself: digits only (an out-of-range one parses, and u_port() refuses it), and the bracket must close.
+    EXPECT_FALSE(uri("http://[::1]:8a/p").is_valid());
+    EXPECT_FALSE(uri("http://[::1:80/p").is_valid());
+    const uri out_of_range("http://[::1]:99999/");
+    EXPECT_TRUE(out_of_range.is_valid());
+    EXPECT_EQ(out_of_range.u_port(), 0u);
+
+    // An empty port is the scheme's default, after a bracket and after a name.
+    const uri empty_v6("https://[::1]:/p");
+    ASSERT_TRUE(empty_v6.is_valid());
+    EXPECT_EQ(empty_v6.host(), "::1");
+    EXPECT_EQ(empty_v6.port(), "443") << "an empty port is the scheme's default";
+    EXPECT_EQ(empty_v6.path(), "/p");
+    const uri empty_name("http://example.com:/p");
+    ASSERT_TRUE(empty_name.is_valid());
+    EXPECT_EQ(empty_name.host(), "example.com") << "the ':' of an empty port is not part of the host";
+    EXPECT_EQ(empty_name.u_port(), 80u);
+    EXPECT_EQ(empty_name.af(), AF_INET) << "a name is not an IPv6 literal because of the ':' of an empty port";
+    const uri empty_unknown("x-custom://example.com:/p");
+    EXPECT_EQ(empty_unknown.host(), "example.com");
+    EXPECT_TRUE(empty_unknown.port().empty()) << "no default to fall back on";
+}

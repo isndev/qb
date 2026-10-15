@@ -26,6 +26,30 @@ policy.
   `EFAULT`, `ENAMETOOLONG` and `ENOTEMPTY` keep the C runtime's: every translation unit that includes a
   qb socket header compared a C runtime errno with a WSA value -- `errno == EBADF` was 9 == 10009. No qb
   path compared a socket error with any of the five.
+- **`qb::string`'s `operator>>` sets its target as `std::string`'s extraction does (Huly QB-1002).** A stream with
+  nothing but white space left fails its sentry and leaves the target as it was -- it emptied it; past the sentry the
+  target holds what was read: nothing at a white space a `noskipws` stream cannot skip, the word before a throw the
+  stream's `exceptions()` asked for. The two stream operators keep their `noexcept`: 3.x keeps the signatures 3.0
+  shipped (VERSIONING.md), so that throw is contained, the failure stays in the stream's state and its next operation
+  throws -- removing `noexcept`, `std::string`'s behaviour, is a 4.0 change.
+- **`qb::io::log::init()` says when its file cannot be opened (Huly QB-327).** It prints the one-line `WARNING` the
+  load-time default prints, naming the file: every log line is discarded until a later `init()` names a file that
+  opens. It was silent.
+- **A log record's fields are written inline, by the logging statement itself (Huly QB-1004, after QB-366).** Owning
+  the text (QB-366) had cost the producer a call into nanolog.cpp and a `memcpy` per literal field: +21 % on a record
+  with four literal fields over the pointer it used to borrow. A field is now written in the caller -- a capacity
+  check, the tag, the value -- so for a literal the compiler folds the length and the copy into a few stores (g++-14
+  and MSVC 19.51 alike; MSVC does not fold `char_traits::find`, so a literal is measured by `strlen`, bounded by the
+  array's NUL); the record's header goes straight into its stack buffer; scalars, `std::string`, `std::string_view`
+  and C strings take the same inline path. The wire format and the ownership contract are unchanged. Callgrind
+  (WSL2 Debian, g++-14.2, qb's release flags), instructions per record on the logging thread, before the fix / after
+  it / now: four literal fields and three scalars 441 / 536 / 188; the whole `QB_LOG_INFO` of it, level check, record
+  and push, 531 / 626 / 261; a `std::string` and a `std::string_view` 319 / 327 / 144. The writer thread is unchanged
+  (8 282 to format the four-literal record), and so is a statement whose level is off.
+- **A `qb::io::uri` with an empty port has the scheme's default (Huly QB-352).** `http://example.com:/` and
+  `https://[::1]:/` now carry the default port of their scheme and the host without the colon (RFC 3986 3.2.3, 6.2.3).
+  A name kept the colon -- host `example.com:`, classified `AF_INET6` for it -- and a bracketed host an empty port
+  (`u_port() == 0`). An unbracketed IPv6 host ending in `:` (`fe80::`) keeps every colon in its host, as before.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -41,6 +65,14 @@ policy.
   `ev_timer_count_addr`, for a listener gate that must see a loop holding periodics and no timer.
   `ev_run` and every other loop function compile to the same instructions. qb's `qb-ev` archive
   exports 73 `ev_*` on Linux and 74 on Windows (`ev_default_loop_ptr` included).
+- **`merge()` on `qb::unordered_set`, `qb::unordered_flat_map` and `qb::unordered_flat_set` (Huly QB-1004).** The node
+  set relinks its nodes as the node map does; the flat tables move each element whose key is absent (a flat table
+  relocates its elements, so no pointer into one survives an insertion anyway). A set merges from a set of its own
+  element type, as `std::unordered_set::merge` does. Pinned by
+  `UnorderedMapContract.TheFlatMapMergesAsTheNodeMapDoes` and `UnorderedMapContract.TheNodeSetMergesByRelinkingToo`.
+- **`nanolog::log_file_opened()` and `NanoLogLine::operator<<(string_literal_t)` (Huly QB-327, QB-366).** The first
+  says whether the last `nanolog::initialize()` opened its file; the second borrows static text explicitly -- the
+  pointer a char array is no longer stored as.
 - **`Actor::push_reply(event)` and `Actor::push_forward(dest, event)`: the push-family answers (Huly QB-976).**
   `reply()` and `forward()` are eager: across cores `VirtualCore::send(Event const&)` publishes the answer straight
   into the peer's mailbox, ahead of whatever the handler pushed to that peer earlier -- the documented `send`-family,
@@ -740,6 +772,97 @@ policy.
   now reads qev's periodic count (`ev_periodic_count_addr`, through the new `ev::loop_ref::periodic_count_addr()`)
   beside the timer count and judges the earliest deadline of either through `ev_timer_next`, as it judges
   a timer's. A far periodic still costs no loop pass.
+- **`QB_ARCH` and its `QB_ARCH_*` definitions name the compiler's target, not the host's processor (Huly QB-1004).**
+  They were read from `CMAKE_SYSTEM_PROCESSOR`, the host's processor unless a toolchain file cross-compiles: a Visual
+  Studio `-A ARM64` configure on an x64 host -- Ninja under an `x64_arm64` prompt, clang-cl
+  `--target=aarch64-pc-windows-msvc` -- built arm64 code as `x64`, without `QB_ARCH_ARM64` (which `cpu-topology.cpp`'s
+  preprocessor check refuses), and an x64 build on an ARM64 Windows host got `QB_ARCH_ARM64`. An MSVC-family
+  compiler's `CMAKE_CXX_COMPILER_ARCHITECTURE_ID` (`x64`, `X86`, `ARM64`, `ARM64EC`, `ARMV7`) now decides; every other
+  toolchain still names its target in `CMAKE_SYSTEM_PROCESSOR`. Pinned by `qb-io-test-unit-target-arch`
+  (`tests/io/unit/build-contracts/target-arch/`), a languageless fixture configured with the toolchain identity
+  fabricated per case. The universal-macOS `-Xarch_*` warning noted on the same ticket is a Mac check, not made here.
+  With `QB_ENABLE_NATIVE_ARCH`, an MSVC-family compiler got `/arch:AVX2` on any 64-bit target, an ARM64 one included
+  (now reachable from an x64 host); it is given to an x64 target only.
+- **A TLS handshake polled through `handshake_status()` no longer makes a socket BIO per poll (Huly QB-1004).**
+  `qb::io::ssl::attach_socket` called `SSL_set_fd` every time -- a new socket BIO allocated, the previous one freed --
+  and `handshake_status()`, polled until the handshake completes on a client and on an accepted socket alike, attaches
+  on every call. A descriptor already attached both ways is now left as it is; another descriptor is attached afresh.
+  A client connection's setup frees the last connection's BIO, which keeps that connection's end of stream: a client
+  reconnecting with the same socket object often gets the descriptor number just closed. Pinned in
+  `SSLSocketLoopback.DriveNonBlockingConnectToCompletion` (the read BIO after every poll is the first one) and
+  `SSLSocketLoopback.AReconnectAttachesAFreshSocketBio` (`tests/io/system/tcp/ssl-socket-loopback.cpp`).
+- **`qb::unordered_map::merge` relinks the nodes it takes, and an empty flat table counts a bucket (Huly QB-1004).**
+  `merge` built every element it took again, in a new node, and freed the source's: a pointer or reference to a merged
+  element dangled, where `std::unordered_map::merge` keeps it valid -- the stability `qb::unordered_map` documents. A
+  source of the same key, mapped and allocator types now gives its nodes, nothing allocated, built or freed (unequal
+  stateful allocators still move the elements one by one). An empty `unordered_flat_map` / `unordered_flat_set`
+  counted no bucket while `bucket(k)` answered 0 or 1, past the table; it counts one, as the node tables do. Pinned by
+  `UnorderedMapContract.MergeRelinksTheNodesItTakes` and `UnorderedMapContract.BucketOfAKeyNamesABucketOfTheTable` in
+  `tests/core/unit/container/unordered-map-contract.cpp`.
+- **The gzip / deflate streaming providers take an input or a window past 4 GiB (Huly QB-1004).** zlib counts a call
+  in a 32-bit `uInt`, and `compress` / `decompress` threw `std::runtime_error` past it, where their contract lets a
+  call take part of its input and fill part of its window. They now hand zlib at most `detail::zlib_max_chunk` of each
+  and report what was taken; an `is_last` call whose input was cut flushes as a non-final one -- `Z_FINISH` would have
+  ended the stream on part of its input -- and the call that sees the rest finishes. Pinned by `CompressionProvider.*`
+  in `tests/io/unit/compression/compression-codec.cpp`, over 4 GiB of reserved address space of which only the first
+  MiBs are backed.
+- **`qb::string` closes three gaps with `std::string` (Huly QB-1002).** A const char array --
+  `const char raw[3] = {'x','y','z'}` -- took the non-template `const char*` constructor, `assign` and `operator=`,
+  whose `strlen` reads past an array without a NUL (`std::string` does the same); the pointer forms are now templates
+  an array argument cannot win, so every array, a literal included, takes the bounded array form. `operator>>` read the
+  whole word into a temporary `std::string` before keeping what fitted, so a long token allocated its whole length; it
+  now reads as `std::string`'s extraction does -- leading white space skipped, `width()` honoured and reset, the word
+  consumed whole -- keeping the first `_Size` characters and dropping the rest as it reads, with no allocation.
+  `find(needle, pos)` answered `npos` at `pos == size()` whatever the needle, and `contains("")` was false on an empty
+  string; both now answer as `std::string` does. Pinned by `StringTest.AConstCharArrayIsReadWithinItsBounds`,
+  `StringTest.ExtractionKeepsTheCapacityAndNeverBuffersTheWord` and `StringAlgorithmTest.AnEmptyNeedleIsFoundUpToTheSize`
+  in `tests/core/unit/container/string.cpp`.
+- **The startup log diagnostic follows the open, not the path (Huly QB-327).** The default `LogInitializer` warned when
+  `./qb.1.log` did not EXIST: a directory of that name exists, nanolog's open of it fails, and every log line was
+  discarded with no word. The answer is now nanolog's own, `nanolog::log_file_opened()`, taken from the first file's
+  open before the writer thread starts. Pinned by `qb-io-test-unit-logger-startup-diagnostic`
+  (`tests/io/unit/build-contracts/logger-startup-diagnostic.cmake`): a fresh process in a writable directory, in one
+  where `qb.1.log` is a directory, and in a read-only one (POSIX, unprivileged).
+- **nanolog's records own their text, keep its whole length, and a NonGuaranteedLogger ring is never empty (Huly
+  QB-366, QB-367, QB-368).** Every `const char (&)[N]` was stored in the record as a pointer -- the form meant for string
+  literals, which the type cannot tell from a char buffer filled by `snprintf`, a const local array or an array member
+  -- and the writer thread read it later, after the code had changed or freed it. An array is now copied, up to its
+  first NUL and never past its end; borrowing static text is explicit (`NanoLogLine::string_literal_t`). A text field
+  was written NUL-terminated and read up to its first NUL, so a `std::string` holding one cut the record and the rest
+  of its bytes were decoded as type tags; a field is now its 32-bit length and its bytes, written out whole (one
+  `write`, no longer a byte at a time). `NonGuaranteedLogger(mb)`'s ring of `mb * 4096` items was computed in 32 bits
+  and wrapped to an empty ring at 1048576 MB, whose writer thread computed `index % 0` (SIGFPE on x86-64); the
+  capacity is computed on 64 bits, and a ring its 32-bit indices cannot count is refused with `std::length_error`
+  before its slots are allocated or its writer started. qb's own logger is a `GuaranteedLogger`. Pinned by
+  `tests/io/unit/core/nanolog-record.cpp` (new, `qb-io-test-unit-nanolog-record`, a private compile of nanolog.cpp as
+  `guaranteed-logger-buffer` is).
+- **`qb::uuid`'s inserter writes the identifier whatever the stream's format, and UUIDv5 hashes long names as SHA-1
+  does (Huly QB-382, QB-383).** `operator<<` wrote each byte with `std::hex`, fill `'0'` and `setw(2)` but kept the
+  caller's adjustfield and showbase: on a `std::left` stream the byte `0x04` came out as `"40"` -- the text named
+  another identifier -- `showbase` printed `0x` prefixes, and the fill `'0'` stayed set after the insertion. The
+  canonical text is now built first and inserted as ONE formatted string: flags and fill are left as they were,
+  `width()` pads the whole identifier as for a `std::string` and is reset (the first byte's `setw(2)` replaced it), and
+  `uppercase` still writes upper-case digits. `uuids::to_string` builds that text without a `std::stringstream`, so
+  `std::hash<qb::uuid>`, which hashes it, no longer builds a stream per call -- an `io_handler` session table hashes
+  one per lookup. The SHA-1 behind `uuid_name_generator` wrote four zero bytes and then the low 32 bits of the
+  message's bit length: from 2^29 bytes hashed -- namespace and name together reaching 512 MiB -- the length wrapped
+  and the digest, hence the UUID, was another message's; the length is now written on 64 bits, from a 64-bit byte
+  count. Pinned by `tests/io/unit/core/uuid-codec.cpp` (new, `qb-io-test-unit-uuid-codec`): every stream format
+  against the canonical text and its parse, the state left behind, FIPS 180 and RFC 9562 known answers, and SHA-1
+  on both sides of 2^29 bytes (in optimised builds, see the source).
+- **`qb::io::uri` is a value: copies and moves keep the query map, an assigned text is classified afresh, and a
+  bracketed host takes only a port (Huly QB-350, QB-351, QB-352).** The copy and the move parsed the source text again,
+  so every edit made through the mutable `queries()` -- qbm-http's request validator sanitizes `Request::uri()` that
+  way -- was lost at the next copy or move of the request. They now carry the components, `is_valid()`, `af()` and
+  the map as they are, each view re-pointed at the copy's own text (a short text, which `std::string` keeps in its own
+  buffer and a move copies, included); a moved-from uri is a default-constructed one, and neither parses any more.
+  Assigning a string kept the family the previous text left -- `parse()` reads it to know whether the text said
+  `unix` -- so a uri that once held `unix://...` stayed `AF_UNIX`, and routed to a socket path, after
+  `u = "tcp://127.0.0.1:80"`; the text is now classified from `AF_INET`, as a uri constructed from it is. After `]` the
+  parser dropped any text that was not `:port`: `http://[::1]junk/` was a valid uri of host `::1`, and is now invalid
+  (RFC 3986 3.2.2). Pinned by `UriParse.AssignedTextIsClassifiedLikeAFreshUriOfIt`,
+  `UriParse.CopiesAndMovesKeepTheEditedQueryMap` and `UriParse.ABracketedHostEndsTheAuthorityOrIsFollowedByAPort` in
+  `tests/io/unit/core/uri-parse.cpp`.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

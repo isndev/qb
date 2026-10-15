@@ -541,7 +541,7 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
   (`qb/cmake/qbDependencies.cmake:502-510`) that names every way out:
 
   ```
-  CMake Error at cmake/qbConfig.cmake:542 (message):
+  CMake Error at cmake/qbConfig.cmake:550 (message):
     [qb] nlohmann_json was not found on the system, so it would be fetched
     (v3.12.0, via QB_USE_SYSTEM_NLOHMANN=AUTO), but QB_INSTALL is ON.
   ```
@@ -653,7 +653,7 @@ std::string s = std::to_string(id);    std::string s = uuids::to_string(id);
                                        std::string s = to_string(id);
 ```
 
-`uuids::to_string` is at `qb/src/qb/vendor/uuid/include/uuid.h:547-549`, and `qb::uuid` is
+`uuids::to_string` is at `qb/src/qb/vendor/uuid/include/uuid.h:565-567`, and `qb::uuid` is
 `::uuids::uuid` (`qb/src/qb/uuid.h:45`), so the unqualified call resolves by argument-dependent lookup.
 `std::hash<uuids::uuid>` is untouched — a `qb::uuid` still works as a map key.
 

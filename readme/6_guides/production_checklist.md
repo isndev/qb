@@ -14,7 +14,7 @@ Defaults are tuned for *development on the build host*. The most common producti
 
 ## 1. Build a portable binary
 
-`QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
+`QB_ENABLE_NATIVE_ARCH` is **`OFF`** by default, so a default build is already portable. Turning it **on** adds `-march=native` (or `-mcpu=native` where `-march=native` is unsupported, e.g. older Apple Clang on arm64; MSVC targeting x64 uses `/arch:AVX2`), and a binary built that way may execute illegal instructions on an older or different CPU. Check it explicitly before shipping: the `release-native` and `benchmarks` presets turn it on.
 
 <!-- src: qb/cmake/qbConfig.cmake:144-152 (QB_ENABLE_NATIVE_ARCH declared OFF, with the rationale), qb/cmake/qbCompiler.cmake:366-367 (MSVC /arch:AVX2), :395-409 (-march=native, -mcpu=native fallback) -->
 
@@ -79,7 +79,7 @@ TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by 
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions — since 3.2 that definition is emitted after the OpenSSL probe, so it agrees with the banner (until then a host without OpenSSL compiled with `QB_WITH_SSL=1` while the banner said `SSL: OFF`).
 
-<!-- src: qb/cmake/qbDependencies.cmake:666-668 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:573-605 (configuration banner; the SSL line is :600) -->
+<!-- src: qb/cmake/qbDependencies.cmake:666-668 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:581-613 (configuration banner; the SSL line is :608) -->
 
 ### Client connections are secure by default
 
@@ -96,7 +96,7 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. qb passes a null callback while setting that mode; by the OpenSSL `SSL_set_verify` contract, this retains any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:638-646 (adoption), :705-723 (policy branches), :932-936 (connect-time application), :572-575 (null callback) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:645-653 (adoption), :712-730 (policy branches), :943-947 (connect-time application), :579-582 (null callback) -->
 
 ### Server contexts
 
@@ -198,7 +198,7 @@ For a busy server every active core at zero latency pins a CPU; on a shared or o
 
 Logging is gated by `QB_WITH_LOGGING` (default **`ON`**), which defines `QB_WITH_LOGGING=1` and compiles in the nanolog-backed `qb::io::log` API. When the option is off, the `qb::io::log` namespace (init/setLevel/Level) is not available. The `LOG_*` macros remain defined — as a `qb::io::cout()` fallback when `QB_STDOUT_LOGGING` is set, otherwise as no-ops.
 
-<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:498-500 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
+<!-- src: qb/cmake/qbConfig.cmake:159 (QB_WITH_LOGGING option), qb/cmake/qbConfig.cmake:506-508 (QB_WITH_LOGGING=1 compile def), qb/src/qb/io.h:39-86 (the QB_WITH_LOGGING-guarded qb::io::log namespace) -->
 
 Initialize logging once at startup, before any logging call. `init` takes the log-file path and a roll size in megabytes (default 128):
 
@@ -221,7 +221,7 @@ int main() {
 
 Two related options affect diagnostics rather than the file logger: `QB_STDOUT_LOGGING` (default **OFF**) enables a stdout fallback, and `QB_DEBUG_ACTOR` (default **OFF**) enables actor debugging output. Leave both off in production unless you are actively debugging.
 
-<!-- src: qb/cmake/qbConfig.cmake:198-199 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :510-515 (compile defs) -->
+<!-- src: qb/cmake/qbConfig.cmake:198-199 (QB_DEBUG_ACTOR / QB_STDOUT_LOGGING options), :518-523 (compile defs) -->
 
 `qb::io::cout()` is a thread-safe console wrapper, but the header itself notes that production code should prefer the logging system over direct console output.
 

@@ -36,10 +36,60 @@
 #include <string>
 #include <string_view>
 
+#include <atomic>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <gtest/gtest.h>
 #include <qb/string.h>
+
+// The bytes the program asks the global allocator for while `string_alloc_probe::counting` is set: the oracle of the
+// bounded extraction (Huly QB-1002). The replacement is the standard's own -- malloc / free underneath -- and counts
+// nothing outside the window a test opens. EVERY scalar form is replaced, the nothrow pair included: a sanitizer
+// runtime supplies its own of each form, and a block taken by one family and given back to the other is an
+// alloc-dealloc mismatch (gtest's stable_sort takes its buffer with the nothrow form and frees it with the sized one).
+// The array and aligned forms are left whole to one family -- the runtime's, or the library's, which call these.
+namespace string_alloc_probe {
+std::atomic<bool>        counting{false};
+std::atomic<std::size_t> bytes{0};
+
+inline void *
+allocate(std::size_t size) noexcept {
+    if (counting.load(std::memory_order_relaxed))
+        bytes.fetch_add(size, std::memory_order_relaxed);
+    return std::malloc(size ? size : 1);
+}
+} // namespace string_alloc_probe
+
+void *
+operator new(std::size_t size) {
+    if (void *p = string_alloc_probe::allocate(size))
+        return p;
+    throw std::bad_alloc();
+}
+
+void *
+operator new(std::size_t size, std::nothrow_t const &) noexcept {
+    return string_alloc_probe::allocate(size);
+}
+
+void
+operator delete(void *p) noexcept {
+    std::free(p);
+}
+
+void
+operator delete(void *p, std::nothrow_t const &) noexcept {
+    std::free(p);
+}
+
+#if defined(__cpp_sized_deallocation)
+void
+operator delete(void *p, std::size_t) noexcept {
+    std::free(p);
+}
+#endif
 
 namespace {
 
@@ -863,8 +913,8 @@ TEST_F(StringTest, ACharBufferIsReadUpToItsFirstNul) {
     char          raw[3] = {'x', 'y', 'z'};
     qb::string<8> unterminated(raw);
     EXPECT_EQ(std::string_view(unterminated), "xyz") << "the last character of an unterminated buffer was dropped";
-    // Controls. A string LITERAL takes the `const char *` overload and its strlen, so it was never affected: all its
-    // characters, or those before an inner NUL, as std::string reads it.
+    // Controls. A string LITERAL is read the same either way -- the array form since Huly QB-1002, the `const char *`
+    // form and its strlen before: all its characters, or those before an inner NUL, as std::string reads it.
     EXPECT_EQ(qb::string<16>("hello").size(), 5u);
     EXPECT_EQ(qb::string<16>("a\0b").size(), 1u);
     // The (pointer, length) forms keep interior NULs.
@@ -904,6 +954,137 @@ TEST(StringStreamDeathTest, AStreamThatThrowsNeverTerminatesTheInsertionOrTheExt
             std::_Exit(out.bad() && in.fail() && std::string_view(target) == "kept" ? 0 : 1);
         },
         ::testing::ExitedWithCode(0), "");
+}
+
+// Huly QB-1002 (1): a CONST char array -- a string literal is one -- took the `char const *` overloads of the
+// constructor, assign() and operator=, whose strlen reads past an array with no NUL (std::string does the same). Every
+// array now takes the bounded array forms: up to its first NUL, never past its end. The arrays sit in one object so
+// the over-read is deterministic: it reads on into `after`.
+TEST_F(StringTest, AConstCharArrayIsReadWithinItsBounds) {
+    struct Adjacent {
+        const char raw[3];
+        const char after[5];
+    };
+    static_assert(sizeof(Adjacent) == 8, "the two arrays must be contiguous for the over-read to be deterministic");
+    const Adjacent adjacent{{'x', 'y', 'z'}, {'Q', 'Q', 'Q', 'Q', '\0'}};
+
+    const qb::string<16> constructed(adjacent.raw);
+    EXPECT_EQ(std::string_view(constructed), "xyz") << "strlen read past the array, into the next one";
+    qb::string<16> assigned;
+    assigned.assign(adjacent.raw);
+    EXPECT_EQ(std::string_view(assigned), "xyz");
+    qb::string<16> operated;
+    operated = adjacent.raw;
+    EXPECT_EQ(std::string_view(operated), "xyz");
+
+    // A literal is a terminated const array: read up to its (first) NUL, as before, as std::string reads it.
+    EXPECT_EQ(std::string_view(qb::string<16>("hello")), "hello");
+    EXPECT_EQ(qb::string<16>("a\0b").size(), 1u);
+    qb::string<16> literal_assigned;
+    literal_assigned = "world";
+    EXPECT_EQ(std::string_view(literal_assigned), "world");
+    // A pointer is still read up to its NUL, a string-like object over its size.
+    const char *pointer = "pointer";
+    EXPECT_EQ(std::string_view(qb::string<16>(pointer)), "pointer");
+    EXPECT_EQ(qb::string<16>(std::string("s\0z", 3)).size(), 3u);
+}
+
+// Huly QB-1002 (2): extraction read the whole word into a std::string, then kept what fitted -- a long token allocated
+// its whole length. It now keeps the first characters as it reads and drops the rest: the word is consumed whole,
+// as for std::string, and nothing is buffered.
+TEST_F(StringTest, ExtractionKeepsTheCapacityAndNeverBuffersTheWord) {
+    std::istringstream in("  abcdefgh next");
+    qb::string<4>      word("old");
+    in >> word;
+    EXPECT_EQ(std::string_view(word), "abcd");
+    std::string rest;
+    in >> rest;
+    EXPECT_EQ(rest, "next") << "the rest of the long word was not consumed with it";
+
+    // width() bounds the word as it bounds a std::string, and is reset.
+    std::istringstream bounded("abcdefgh");
+    bounded.width(3);
+    qb::string<8> head;
+    bounded >> head;
+    EXPECT_EQ(std::string_view(head), "abc");
+    EXPECT_EQ(bounded.width(), 0);
+    bounded >> rest;
+    EXPECT_EQ(rest, "defgh");
+
+    // End of stream: eofbit after a word; failbit with nothing to read, the string left as it was (as std::string's).
+    std::istringstream last("tail");
+    qb::string<8>      tail;
+    last >> tail;
+    EXPECT_EQ(std::string_view(tail), "tail");
+    EXPECT_TRUE(last.eof());
+    EXPECT_FALSE(last.fail());
+    std::string        reference("kept");
+    std::istringstream nothing("   ");
+    nothing >> reference;
+    EXPECT_TRUE(nothing.fail());
+    EXPECT_EQ(reference, "kept") << "the std::string behaviour this mirrors";
+    std::istringstream nothing_again("   ");
+    nothing_again >> tail;
+    EXPECT_TRUE(nothing_again.fail());
+    EXPECT_EQ(std::string_view(tail), "tail") << "a read that found no word changed the string";
+
+    // Past the sentry the target holds what was read, as std::string's: nothing at a white space a noskipws stream
+    // cannot skip, and the word before a throw the stream asked for (contained here, the stream keeps the failure).
+    std::istringstream at_space_reference(" word");
+    std::string        emptied("kept");
+    at_space_reference >> std::noskipws >> emptied;
+    EXPECT_TRUE(at_space_reference.fail());
+    EXPECT_EQ(emptied, "") << "the std::string behaviour this mirrors";
+    std::istringstream at_space(" word");
+    qb::string<8>      at_space_word("kept");
+    at_space >> std::noskipws >> at_space_word;
+    EXPECT_TRUE(at_space.fail());
+    EXPECT_TRUE(at_space_word.empty()) << "a read stopped at a white space kept the old word";
+    std::istringstream throwing_reference("last");
+    throwing_reference.exceptions(std::ios::eofbit);
+    std::string read_before_throw;
+    EXPECT_ANY_THROW(throwing_reference >> read_before_throw);
+    EXPECT_EQ(read_before_throw, "last") << "the std::string behaviour this mirrors";
+    std::istringstream throwing("last");
+    throwing.exceptions(std::ios::eofbit);
+    qb::string<8> last_word("kept");
+    throwing >> last_word;
+    EXPECT_TRUE(throwing.eof());
+    EXPECT_EQ(std::string_view(last_word), "last") << "the word read before the eofbit throw was dropped";
+
+    // The bound: a one-MiB word leaves the allocator alone.
+    std::istringstream huge(std::string(1u << 20, 'w') + " after");
+    qb::string<8>      kept;
+    string_alloc_probe::bytes.store(0);
+    string_alloc_probe::counting.store(true);
+    huge >> kept;
+    string_alloc_probe::counting.store(false);
+    EXPECT_LT(string_alloc_probe::bytes.load(), std::size_t{4096}) << "the word was buffered before it was cut";
+    EXPECT_EQ(std::string_view(kept), "wwwwwwww");
+    huge >> rest;
+    EXPECT_EQ(rest, "after");
+}
+
+// Huly QB-1002 (3): find(needle, pos) answered npos for pos == size() whatever the needle -- an empty needle is found
+// at every position up to size(), as std::string finds it -- so an empty string did not contain "".
+TEST_F(StringAlgorithmTest, AnEmptyNeedleIsFoundUpToTheSize) {
+    const std::string mirror(test_str_);
+    const auto        size = test_str_.size();
+    EXPECT_EQ(test_str_.find("", size), size) << "an empty needle is found at size()";
+    EXPECT_EQ(test_str_.find(qb::string<4>(), size), size);
+    for (std::size_t pos = 0; pos <= size + 2; ++pos) {
+        EXPECT_EQ(test_str_.find("", pos), mirror.find("", pos)) << pos;
+        EXPECT_EQ(test_str_.find("ing", pos), mirror.find("ing", pos)) << pos;
+        EXPECT_EQ(test_str_.find(qb::string<4>("is"), pos), mirror.find("is", pos)) << pos;
+        EXPECT_EQ(test_str_.find('.', pos), mirror.find('.', pos)) << pos;
+    }
+
+    qb::string<8> empty;
+    EXPECT_EQ(empty.find(""), 0u);
+    EXPECT_TRUE(empty.contains("")) << "std::string(\"\").find(\"\") is 0";
+    EXPECT_TRUE(empty.contains(qb::string<8>()));
+    EXPECT_TRUE(empty_str_.contains(""));
+    EXPECT_FALSE(empty.contains("x"));
 }
 
 // Edge cases and error handling

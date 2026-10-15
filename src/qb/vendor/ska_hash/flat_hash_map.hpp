@@ -789,9 +789,13 @@ public:
     max_size() const {
         return (AllocatorTraits::max_size(*this)) / sizeof(Entry);
     }
+    // qb local modification (Huly QB-1004): an empty table counts ONE bucket, the one bucket(key) names, as the node
+    // table counts (unordered_map.hpp) and as libstdc++'s std::unordered_map does. It counted none while bucket(key)
+    // answered 0 or 1 (fibonacci: shift 63 over the empty sentinel) -- a bucket past the table -- and the two qb
+    // families disagreed on what an empty table holds.
     size_t
     bucket_count() const {
-        return num_slots_minus_one ? num_slots_minus_one + 1 : 0;
+        return num_slots_minus_one + 1;
     }
     size_type
     max_bucket_count() const {
@@ -799,7 +803,7 @@ public:
     }
     size_t
     bucket(const FindKey &key) const {
-        return hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        return num_slots_minus_one ? hash_policy.index_for_hash(hash_object(key), num_slots_minus_one) : 0;
     }
     float
     load_factor() const {
@@ -2270,6 +2274,30 @@ public:
         return try_emplace(std::forward<key_type>(key), std::forward<Args>(args)...).first;
     }
 
+    // qb local modification (Huly QB-1004): std::unordered_map::merge for the open-addressing map, which had none. An
+    // element whose key is absent here MOVES in and leaves `source`; one whose key is already here stays in `source`,
+    // untouched -- the node map's contract (unordered_map.hpp), minus the node: a flat table relocates its elements
+    // (growth, robin-hood displacement), so a pointer to a merged element does not survive, as no flat-table insertion
+    // keeps one. One lookup per element: emplace() only reads its arguments on a hit, and moves them only on a miss.
+    template <typename K2, typename V2, typename H2, typename E2, typename A2>
+    void
+    merge(flat_hash_map<K2, V2, H2, E2, A2> &source) {
+        if (static_cast<const void *>(&source) == static_cast<const void *>(this))
+            return; // every key of a map is already in it
+        for (auto it = source.begin(); it != source.end();) {
+            if (this->emplace(std::move(it->first), std::move(it->second)).second)
+                it = source.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    template <typename K2, typename V2, typename H2, typename E2, typename A2>
+    void
+    merge(flat_hash_map<K2, V2, H2, E2, A2> &&source) {
+        merge(source);
+    }
+
     friend bool
     operator==(const flat_hash_map &lhs, const flat_hash_map &rhs) {
         if (lhs.size() != rhs.size())
@@ -2345,6 +2373,28 @@ public:
     std::pair<typename Table::iterator, bool>
     emplace(key_type &&arg) {
         return Table::emplace(std::move(arg));
+    }
+
+    // qb local modification (Huly QB-1004): std::unordered_set::merge for the open-addressing set, which had none --
+    // the keys absent here move in and leave `source`, the others stay (see flat_hash_map::merge). The source holds the
+    // same element type, as std's does: emplace() of another type builds a T before its lookup, emptying a kept one.
+    template <typename H2, typename E2, typename A2>
+    void
+    merge(flat_hash_set<T, H2, E2, A2> &source) {
+        if (static_cast<const void *>(&source) == static_cast<const void *>(this))
+            return;
+        for (auto it = source.begin(); it != source.end();) {
+            if (this->emplace(std::move(*it)).second)
+                it = source.erase(it);
+            else
+                ++it;
+        }
+    }
+
+    template <typename H2, typename E2, typename A2>
+    void
+    merge(flat_hash_set<T, H2, E2, A2> &&source) {
+        merge(source);
     }
 
     friend bool

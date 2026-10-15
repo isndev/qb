@@ -280,7 +280,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:100-107)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
-  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1055-1094; uri.h:473-483)_
+  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1095-1134; uri.h:485-495)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {
@@ -695,7 +695,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
   never emit them. _(time.h:8-25, aliases :93, :96, :99)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range
-  `substr` throw). _(string.h:226)_ Its value is its `size()` characters: comparisons, searches and
+  `substr` throw). _(string.h:237)_ Its value is its `size()` characters: comparisons, searches and
   `operator<<` span that whole length, an interior `'\0'` included, as `std::string`'s do. A char
   buffer is read up to its first NUL; only `(ptr, len)` keeps interior NULs.
 - **DoS bounds are enforced:** read/write buffers cap at 200 MB (`QB_MAX_READ/WRITE_BUFFER_SIZE`), a

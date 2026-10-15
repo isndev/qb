@@ -28,6 +28,7 @@
 #include <cstring>
 #include <iostream>
 #include <limits>
+#include <locale>
 #include <qb/utility/build_macros.h>
 #include <string>
 #include <string_view>
@@ -72,6 +73,13 @@ template <std::size_t _Size>
 struct best_size<_Size, false, true> {
     using type = uint16_t;
 };
+
+/**
+ * @brief A pointer to characters: what the `char const *` forms of qb::string take, deduced so that an ARRAY never
+ *        takes them -- an array argument deduces this pointer too, and the bounded array forms are more specialised.
+ */
+template <typename P>
+concept char_pointer = std::is_same_v<P, char const *> || std::is_same_v<P, char *>;
 } // namespace internal
 
 /**
@@ -85,8 +93,8 @@ struct best_size<_Size, false, true> {
  * The value is its first `size()` characters, NOT the bytes up to the first NUL: `assign(ptr, len)` keeps an
  * interior '\0', and every comparison, search and stream insertion works on the whole length, as std::string's
  * do (a "a\0b" is neither equal to "a" nor to "a\0c"; Huly QB-386). An operand given as `char const *` is read up
- * to its NUL, as std::string reads one. `c_str()` stays NUL-terminated for C interfaces, which see the string up
- * to its first interior NUL.
+ * to its NUL, as std::string reads one -- an array too, except by the constructor, assign() and operator=, which
+ * never read past it. `c_str()` stays NUL-terminated for C interfaces, which see the string up to its first NUL.
  *
  * @tparam _Size Maximum size of the string (default: 30)
  */
@@ -116,11 +124,11 @@ private:
     size_type _size = 0;
 
     // The characters a char ARRAY holds, read as std::string reads one: up to its first NUL -- and, unlike strlen,
-    // never past the array. Overload resolution sends a string LITERAL (a const array) to the `char const *` forms,
-    // which use strlen; the array forms are what a non-const array, a buffer, reaches -- and they took `N - 1`
-    // characters of it: `char buf[32] = "abc"` gave a size() of 31, its tail of NULs included, which no longer
-    // equals "abc" now that comparisons span the whole length (Huly QB-386). The (pointer, length) forms are the
-    // ones that keep interior NULs.
+    // never past the array. Every array reaches the array forms of the constructor, assign() and operator=, a const
+    // one and a string literal included: the `char const *` forms are templates deduced from a pointer, which an array
+    // also matches, and the array forms are the more specialised. A const array used to take the non-template
+    // `char const *` forms and their strlen, which reads past an array with no NUL (Huly QB-1002); a buffer took
+    // `N - 1` characters, its tail of NULs included (Huly QB-386). The (pointer, length) forms keep interior NULs.
     template <std::size_t N>
     [[nodiscard]] static constexpr std::size_t
     array_length(const char (&str)[N]) noexcept {
@@ -140,7 +148,7 @@ public:
         : base_t{'\0'} {}
 
     /**
-     * @brief Constructor from a char array (a buffer: a string literal takes the `const char *` overload)
+     * @brief Constructor from a char array -- a string literal, a const array or a buffer
      *
      * Reads the array as std::string reads one: up to its first NUL, never past the array (see array_length).
      *
@@ -155,10 +163,11 @@ public:
     /**
      * @brief Constructor from string-like object
      *
-     * @tparam T Type with c_str() and size() methods (e.g., std::string)
+     * @tparam T Type with data() and size() methods (e.g., std::string)
      * @param rhs String-like object to copy
      */
     template <typename T>
+    requires(!internal::char_pointer<T>)
     string(T const &rhs) noexcept {
         assign(rhs);
     }
@@ -176,9 +185,11 @@ public:
     /**
      * @brief Constructor from C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str Null-terminated C-style string
      */
-    string(const char *str) noexcept {
+    template <internal::char_pointer P>
+    string(P str) noexcept {
         assign(str);
     }
 
@@ -234,7 +245,7 @@ public:
     }
 
     /**
-     * @brief Assign from a char array (a buffer: a string literal takes the `const char *` overload)
+     * @brief Assign from a char array -- a string literal, a const array or a buffer
      *
      * Reads the array up to its first NUL, never past the array (see array_length).
      *
@@ -251,11 +262,12 @@ public:
     /**
      * @brief Assign from string-like object
      *
-     * @tparam T Type with c_str() and size() methods
+     * @tparam T Type with data() and size() methods
      * @param rhs String-like object to copy
      * @return Reference to this string
      */
     template <typename T>
+    requires(!internal::char_pointer<T>)
     string &
     assign(T const &rhs) noexcept {
         return assign(rhs.data(), rhs.size());
@@ -264,11 +276,13 @@ public:
     /**
      * @brief Assign from C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs Null-terminated C-style string
      * @return Reference to this string
      */
+    template <internal::char_pointer P>
     string &
-    assign(char const *rhs) noexcept {
+    assign(P rhs) noexcept {
         return assign(rhs, std::strlen(rhs));
     }
 
@@ -288,7 +302,7 @@ public:
     }
 
     /**
-     * @brief Assignment operator for a char array (a buffer: a string literal takes the `const char *` overload)
+     * @brief Assignment operator for a char array -- a string literal, a const array or a buffer
      *
      * Reads the array up to its first NUL, never past the array (see array_length).
      *
@@ -305,11 +319,12 @@ public:
     /**
      * @brief Assignment operator for string-like objects
      *
-     * @tparam T Type with c_str() and size() methods
+     * @tparam T Type with data() and size() methods
      * @param rhs String-like object to assign
      * @return Reference to this string
      */
     template <typename T>
+    requires(!internal::char_pointer<T>)
     string &
     operator=(T const &rhs) noexcept {
         return assign(rhs);
@@ -318,11 +333,13 @@ public:
     /**
      * @brief Assignment operator for C-style strings
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs Null-terminated C-style string to assign
      * @return Reference to this string
      */
+    template <internal::char_pointer P>
     string &
-    operator=(char const *rhs) noexcept {
+    operator=(P rhs) noexcept {
         return assign(rhs);
     }
 
@@ -702,8 +719,8 @@ public:
      */
     std::size_t
     find(const string &str, std::size_t pos = 0) const noexcept {
-        if (pos >= _size)
-            return npos;
+        // std::string_view's answer, as std::string's: an empty needle is found at every pos up to size() -- a
+        // `pos >= size()` guard answered npos for it at size() (Huly QB-1002).
         return std::string_view(*this).find(std::string_view(str), pos);
     }
 
@@ -716,9 +733,8 @@ public:
      */
     std::size_t
     find(const char *str, std::size_t pos = 0) const noexcept {
-        if (pos >= _size)
-            return npos;
-        // Over the whole length, not up to this string's first interior NUL as strstr searched (Huly QB-386).
+        // Over the whole length, not up to this string's first interior NUL as strstr searched (Huly QB-386); an empty
+        // needle is found at every pos up to size(), as by std::string (Huly QB-1002).
         return std::string_view(*this).find(str, pos);
     }
 
@@ -1269,7 +1285,8 @@ swap(string<_Size> &lhs, string<_Size> &rhs) noexcept {
  *
  * Writes the whole length, as for a std::string. It is noexcept, so a stream whose exceptions() the program
  * enabled does not throw out of it: the failure is left where the caller reads it, in the stream's state, which
- * the failed write has already set (badbit) -- the next operation on that stream throws.
+ * the failed write has already set (badbit) -- the next operation on that stream throws. (A std::string's inserter
+ * throws at once; the noexcept is part of this signature since 3.0, and 3.x keeps its signatures: Huly QB-1002.)
  *
  * @tparam _Size Maximum size of the string
  * @param os Output stream
@@ -1291,9 +1308,14 @@ operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
 /**
  * @brief Input stream operator for qb::string
  *
- * Reads one whitespace-delimited word, as for a std::string, truncated to the capacity. It is noexcept: with the
- * stream's exceptions() enabled, a failed read leaves @p str unchanged and its failure in the stream's state
- * (failbit / badbit), the next operation on that stream throws.
+ * Reads one whitespace-delimited word as for a std::string -- leading white space skipped (unless noskipws), then up
+ * to white space, the end of the stream or width() characters, width() reset to 0 -- and keeps its first `_Size`
+ * characters: the rest of the word is consumed and dropped as it is read, never buffered (Huly QB-1002: it was read
+ * whole into a std::string first, a long token allocating its whole length). @p str ends as a std::string would: left
+ * as it was when the sentry fails (nothing but white space left: failbit), else holding what was read -- nothing at a
+ * white space a noskipws stream cannot skip (failbit), the characters taken before a stream buffer threw (badbit). It
+ * is noexcept: with the stream's exceptions() enabled, the throw is contained, the failure stays in the stream's state
+ * (eofbit / failbit / badbit) and the next operation on that stream throws.
  *
  * @tparam _Size Maximum size of the string
  * @param is Input stream
@@ -1303,13 +1325,41 @@ operator<<(std::ostream &os, qb::string<_Size> const &str) noexcept {
 template <std::size_t _Size>
 std::istream &
 operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
+    using traits = std::istream::traits_type;
     // A throw out of a noexcept function is std::terminate (the class of Huly QB-388): contained here.
     try {
-        std::string temp;
-        is >> temp;
-        str = temp;
+        const std::istream::sentry ready(is); // skips the leading white space; sets failbit when nothing is left
+        if (!ready)
+            return is;
+        qb::string<_Size>       word;
+        std::ios_base::iostate  state     = std::ios_base::goodbit;
+        std::streamsize const   width     = is.width();
+        std::size_t const       limit     = width > 0 ? static_cast<std::size_t>(width) : std::numeric_limits<std::size_t>::max();
+        std::size_t             extracted = 0;
+        std::ctype<char> const &ctype     = std::use_facet<std::ctype<char>>(is.getloc());
+        try {
+            std::streambuf *const buffer = is.rdbuf();
+            for (traits::int_type c = buffer->sgetc(); extracted < limit; c = buffer->snextc(), ++extracted) {
+                if (traits::eq_int_type(c, traits::eof())) {
+                    state |= std::ios_base::eofbit;
+                    break;
+                }
+                const char ch = traits::to_char_type(c);
+                if (ctype.is(std::ctype_base::space, ch))
+                    break;
+                word.push_back(ch); // past the capacity, a no-op: the character is consumed and dropped
+            }
+        } catch (...) {
+            state |= std::ios_base::badbit; // the stream buffer threw, as std::string's extraction reports it
+        }
+        is.width(0);
+        str = word; // what was read, even nothing: std::string's extraction empties its target once the sentry passes
+        if (!extracted)
+            state |= std::ios_base::failbit;
+        if (state)
+            is.setstate(state); // throws when the stream asked for it, contained below
     } catch (...) {
-        // the stream's state already records the failure; str is left as it was
+        // the stream's state already records the failure
     }
     return is;
 }

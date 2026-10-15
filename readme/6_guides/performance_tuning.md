@@ -230,7 +230,7 @@ Both flags are CMake configure-time options, owned by [CMake options](./../7_ref
 
 | Option | Default | Effect |
 | --- | --- | --- |
-| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tunes codegen for the build-host CPU: tries `-march=native`, falls back to `-mcpu=native` (older Apple Clang on arm64), then to the compiler default; `/arch:AVX2` on MSVC. |
+| `QB_ENABLE_NATIVE_ARCH` | `OFF` | Tunes codegen for the build-host CPU: tries `-march=native`, falls back to `-mcpu=native` (older Apple Clang on arm64), then to the compiler default; `/arch:AVX2` on MSVC targeting x64. |
 | `QB_ENABLE_LTO` | `OFF` | Link-Time Optimization: `-flto` on GCC/Clang, `/GL` + `/LTCG` on MSVC. Enables cross-translation-unit inlining at the cost of longer link times. |
 
 `QB_ENABLE_NATIVE_ARCH=ON` produces a **non-portable binary** tuned for the machine that built it. The binary may use instructions absent on an older CPU and fault there. It is **`OFF` by default** precisely for that reason, so you have to ask for it: `-DQB_ENABLE_NATIVE_ARCH=ON`, or the `release-native` / `benchmarks` presets. With it off (the default), qb selects a conservative baseline target (`-march=x86-64` on x86-64, generic `armv8-a` on non-Apple ARM64; Apple Silicon keeps its native target either way).

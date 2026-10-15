@@ -362,8 +362,8 @@ if(QB_ENABLE_OPTIMIZATIONS)
             list(APPEND QB_CXX_FLAGS_RELEASE "/fp:fast")
         endif()
         
-        # ISA-specific intrinsics only when targeting the host CPU
-        if(QB_ENABLE_NATIVE_ARCH AND QB_ARCH_64)
+        # ISA-specific intrinsics only when targeting the host CPU -- an x86 one: /arch:AVX2 names no ARM64 ISA
+        if(QB_ENABLE_NATIVE_ARCH AND QB_ARCH_64 AND NOT QB_ARCH_ARM)
             list(APPEND QB_CXX_FLAGS_RELEASE "/arch:AVX2")
         endif()
         

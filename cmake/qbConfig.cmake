@@ -394,6 +394,14 @@ macro(qb_initialize_project_configuration)
     set(QB_OSX_UNIVERSAL FALSE)
     set(QB_ARCH_SLICE_OPTIONS "")
     set(_qb_system_processor "${CMAKE_SYSTEM_PROCESSOR}")
+    # The COMPILER's target, not the host's (Huly QB-1004). CMAKE_SYSTEM_PROCESSOR is the host's processor unless a
+    # toolchain file cross-compiles, so a Visual Studio `-A ARM64` configure on an x64 host -- or Ninja under an
+    # x64_arm64 prompt -- built arm64 code as "x64", without QB_ARCH_ARM64. An MSVC-family compiler (cl, clang-cl) names
+    # its target in CMAKE_CXX_COMPILER_ARCHITECTURE_ID (x64, X86, ARM64, ARM64EC, ARMV7: the value CMake's own MSVC
+    # rules derive /machine from); every other toolchain names it in CMAKE_SYSTEM_PROCESSOR.
+    if(MSVC AND CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+        set(_qb_system_processor "${CMAKE_CXX_COMPILER_ARCHITECTURE_ID}")
+    endif()
     if(APPLE AND CMAKE_OSX_ARCHITECTURES)
         list(LENGTH CMAKE_OSX_ARCHITECTURES _qb_osx_slices)
         if(_qb_osx_slices GREATER 1)
@@ -420,7 +428,7 @@ macro(qb_initialize_project_configuration)
     elseif(_qb_system_processor MATCHES "^(arm64|aarch64|ARM64)$")
         set(QB_ARCH_ARM TRUE)
         set(QB_ARCH_ARM64 TRUE)
-    elseif(_qb_system_processor MATCHES "^(arm|armv[0-9].*|aarch32|ARM)$")
+    elseif(_qb_system_processor MATCHES "^(arm|armv[0-9].*|ARMV[0-9].*|aarch32|ARM)$")
         set(QB_ARCH_ARM TRUE)
         set(QB_ARCH_ARM32 TRUE)
     endif()

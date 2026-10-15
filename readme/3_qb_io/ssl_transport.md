@@ -122,7 +122,7 @@ three read the leaf only, so a certificate an intermediate issued failed every v
 not already hold that intermediate (Huly QB-611); a file that holds only the leaf is served as before,
 and the verification itself is unchanged.
 
-<!-- src: qb/src/qb/io/tcp/ssl/context.cpp:463-464 (identity loads the chain), qb/src/qb/io/tcp/ssl/socket.cpp:196 (create_server_context), :297 (configure_client_certificate) -->
+<!-- src: qb/src/qb/io/tcp/ssl/context.cpp:463-464 (identity loads the chain), qb/src/qb/io/tcp/ssl/socket.cpp:203 (create_server_context), :304 (configure_client_certificate) -->
 
 Configuration is a fluent chain (`min_version`/`max_version`, `verify`, `trust`/`trust_system`,
 `identity`, `alpn`, `ciphers`/`ciphersuites`/`curves`, `dh_params`, `session_cache`/
@@ -249,7 +249,7 @@ Key behaviors verified in the header:
   nothing in qb; to tell a verification failure apart, read `SSL_get_verify_result()` or
   the OpenSSL error queue.
   <!-- src: qb/src/qb/io/system/sys__socket.h:1620-1624 (SocketStatus enumerators) -->
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:824-835 (connect return gate), :948-967 (n_connect), :726-752 (handCheck) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:831-842 (connect return gate), :959-978 (n_connect), :733-759 (handCheck) -->
 - **Handshake progress.** `handshake_status()` returns `1` when the TLS handshake is
   complete, `0` when OpenSSL needs more socket readiness (`WANT_READ`/`WANT_WRITE`), and
   `-1` on a fatal error. `handshake_complete()` reports whether it finished successfully.
@@ -262,7 +262,7 @@ Key behaviors verified in the header:
   do exactly that on all three paths (a direct connect, the turn that completes an
   in-progress one, a STARTTLS upgrade); until 3.3 they watched both, and every client
   handshake spun the loop for a round trip (Huly QB-301).
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:991-994 (handshake_wants_write); qb/src/qb/io/async/tcp/connector.h:328-335 (pending_handshake_events), :431, :582, :724 (the three paths) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1002-1005 (handshake_wants_write); qb/src/qb/io/async/tcp/connector.h:328-335 (pending_handshake_events), :431, :582, :724 (the three paths) -->
 - **`read()`'s return convention is not the plain socket's.** It returns the number of
   decrypted bytes on success; **`-1` on an orderly peer shutdown** (OpenSSL's
   `SSL_ERROR_ZERO_RETURN` — the peer sent `close_notify`), so the framework's error path
@@ -270,7 +270,7 @@ Key behaviors verified in the header:
   (`WANT_READ` / `WANT_WRITE`) or the handshake is still in progress. That is the inverse of
   `tcp::socket::read`, which also reports peer close as `-1` but leaves the system error at zero. The header's `@return` block says
   otherwise and is wrong.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1048-1053 (orderly shutdown returns -1), :1058-1060 (WANT_* returns 0), :1065 (handshake in progress returns 0) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1059-1064 (orderly shutdown returns -1), :1069-1071 (WANT_* returns 0), :1076 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted
   application data internally, generic streaming code should use `transport::stcp`, which
   handles `SSL_pending()` for you (see [The stcp transport](#the-stcp-transport)).
@@ -279,7 +279,7 @@ Key behaviors verified in the header:
   auto-created client context is put into quiet-shutdown mode at connect time
   (`SSL_set_quiet_shutdown`), which makes that the deliberate behaviour rather than an
   omission — but a peer that requires a graceful TLS closure will see an abrupt one.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1030-1034 (disconnect), :925 (SSL_set_quiet_shutdown) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1041-1045 (disconnect), :936 (SSL_set_quiet_shutdown) -->
 
 #### Secure by default
 
@@ -309,7 +309,7 @@ int rc = c.connect_v4("127.0.0.1", 64388);
 
 To keep an `init(SSL*)` handle unverified — the shape every SSL test in the suite uses for a self-signed fixture — call `set_insecure()` before connecting. To keep *your own* verification policy, build a `qb::io::ssl::Context` and pass that instead: the `Context` path is honoured as written.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:935 (apply_client_verification_ is unconditional), :705-724 (the branch is keyed on _ctx.native() == nullptr), :574-575 (SSL_VERIFY_PEER + hostname on the auto path), :925 (quiet shutdown), :936 (connect state); qb/src/qb/io/tcp/ssl/socket.h:521-528 (init takes ownership of the SSL) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:946 (apply_client_verification_ is unconditional), :712-731 (the branch is keyed on _ctx.native() == nullptr), :581-582 (SSL_VERIFY_PEER + hostname on the auto path), :936 (quiet shutdown), :947 (connect state); qb/src/qb/io/tcp/ssl/socket.h:521-528 (init takes ownership of the SSL) -->
 
 #### Pre-handshake configuration
 
@@ -332,7 +332,7 @@ handle and are silent no-ops without one, which is the trap on this table:
 
 `disable_session_resumption()` and `set_session()` are mutually exclusive when deferred; the last call wins.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1365-1371 (set_verify_callback needs a handle), :1373-1379 (set_verify_depth), :1353 (sni deferred), :1362 (alpn deferred), :1191-1192 (resumption deferred, drops the session), :1210 (ocsp deferred), :1322-1323 (session deferred), :1184 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :923 (set_insecure) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1376-1382 (set_verify_callback needs a handle), :1384-1390 (set_verify_depth), :1364 (sni deferred), :1373 (alpn deferred), :1202-1203 (resumption deferred, drops the session), :1221 (ocsp deferred), :1333-1334 (session deferred), :1195 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :923 (set_insecure) -->
 
 #### Introspection and sessions
 
@@ -342,7 +342,7 @@ After a successful handshake the socket exposes `get_negotiated_cipher_suite()`,
 connected flag and return nothing before that. `get_last_ssl_error_string()` does **not**:
 it needs only an `SSL` handle, which is what makes it the accessor to reach for after a
 *failed* handshake.
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1105 (cipher suite gates on _connected), :1137, :1146, :1155, :1217, :1168-1170 (error string gates only on the handle) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1116 (cipher suite gates on _connected), :1148, :1157, :1166, :1228, :1179-1181 (error string gates only on the handle) -->
 
 `get_session()` returns a `qb::io::ssl::Session` for client-side resumption. The caller
 owns it and must release it with `qb::io::ssl::free_session()`. Setting a session does not
@@ -486,7 +486,7 @@ working directory first and then against the running executable's own directory.
 shipped next to its `cert.pem` / `key.pem` therefore loads them regardless of the cwd it is
 launched from.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:185-205 (create_server_context), :207-310 (the four CA/client-cert helpers), :208 (load_ca_certificates), :221 (load_ca_directory), :274 (configure_mtls_server_context), :292 (configure_client_certificate), :415-420 (configure_dh_parameters_server) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:192-212 (create_server_context), :214-317 (the four CA/client-cert helpers), :215 (load_ca_certificates), :228 (load_ca_directory), :281 (configure_mtls_server_context), :299 (configure_client_certificate), :422-427 (configure_dh_parameters_server) -->
 
 ## Building an SSL server
 
@@ -655,7 +655,7 @@ if (SocketStatus::Done != client.transport().connect_v4("api.example.com", 443))
 empty, and the Unix-domain entry points. Those are the connections where the chain is
 validated but the **name is not**, so set it explicitly before connecting — or pass the
 hostname to the overload that takes one.
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:926-927 (the cached SNI is overwritten with the connect hostname), :803-809 (connect_in), :760-778 (connect(endpoints, hostname)), :852-863 (connect(uri) supplies u.host()); qb/src/qb/io/tcp/ssl/socket.h:547 (the endpoint overload's empty default), :872 (set_sni_hostname) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:937-938 (the cached SNI is overwritten with the connect hostname), :810-816 (connect_in), :767-785 (connect(endpoints, hostname)), :859-870 (connect(uri) supplies u.host()); qb/src/qb/io/tcp/ssl/socket.h:547 (the endpoint overload's empty default), :872 (set_sni_hostname) -->
 
 ## Generating a test certificate
 
@@ -698,7 +698,7 @@ A self-signed certificate is rejected by a default (verifying) client; pair it w
 - **Timed connect does not bound the handshake.** The timed `connect(ep, hostname, wtimeout)`
   overloads bound only the underlying TCP connect phase; the TLS handshake itself is not
   separately timed.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:552, :578 (timed connect overloads); qb/src/qb/io/tcp/ssl/socket.cpp:781-800 (the timed connect over the addresses), :825-835 (the handshake, untimed) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.h:552, :578 (timed connect overloads); qb/src/qb/io/tcp/ssl/socket.cpp:788-807 (the timed connect over the addresses), :832-842 (the handshake, untimed) -->
 - **`SSL_CTX` ownership splits by path.** A context from `create_*_context` is caller-owned
   and must be `SSL_CTX_free`d — unless it is passed to `listener::init()`, which then owns
   and frees it. A `Session` from `get_session()` is always caller-owned; release it with
