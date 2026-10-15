@@ -1041,7 +1041,7 @@ TEST(StringToLower, FoldAgreesWithTheByteWiseReferenceAtEveryLengthAndWordBounda
         }
     }
     EXPECT_EQ(qb::string_to_lower::convert("Content-Type"), "content-type");
-    EXPECT_EQ(qb::string_to_lower::convert(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`")), "abcdefghijklmnopqrstuvwxyz[\]^_`");
+    EXPECT_EQ(qb::string_to_lower::convert(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`")), "abcdefghijklmnopqrstuvwxyz[\\]^_`");
     EXPECT_EQ(qb::string_to_lower::convert(std::string_view("\x80\xC1\xDA\xFF"
                                                             "AZ")),
               std::string("\x80\xC1\xDA\xFF"
