@@ -24,7 +24,8 @@
  *   - a watcher that dies first is never notified -- its watch is withdrawn, so the watched
  *     actor's core reports no dead letter when it later dies -- on the same core and across cores;
  *   - a watch reaches a target still in its `onInit()`, on another core, and is answered when that
- *     init fails; an answer reaching a watcher still in its own `onInit()` waits for its activation,
+ *     init fails -- and one still on its way when the target's core stops is answered `core_stopped`
+ *     (Huly QB-1072); an answer reaching a watcher still in its own `onInit()` waits for its activation,
  *     and dies with it, unreported, when that init fails;
  *   - a recycled id can be watched again after its `DownEvent`; and unwatched, then watched again
  *     as its next holder's while the answer about its previous one is still on its way, it waits
@@ -530,27 +531,46 @@ TEST(DeathWatch, AWatchOfAReusedIdWaitsForItsNewHolder) {
 
 // --- activation, on either side --------------------------------------------------------------------
 
-class SlowFailsInit : public qb::Actor {
+struct Release : qb::Event {};
+
+// Fails its onInit(), but only once released. `Release` is a broadcast, which passes the activation gate, and its
+// watcher sends it behind its watch request through the same ordered pipe: the watch is registered on this core
+// while this actor is still activating, whatever the schedule. Its first form failed after a 50 ms sleep, and a
+// watcher's core that ran its first pass later than that -- an MSVC run on a loaded host -- found the target's core
+// stopped and was answered `core_stopped`, rightly (Huly QB-1072; the schedule is pinned below).
+class ReleasedFailsInit : public qb::Actor {
+    qb::io::async::async_event _released;
+
 public:
     qb::io::async::task<bool>
     onInit() override {
-        co_await context().sleep(50ms); // still activating when the watch arrives
+        registerEvent<Release>(*this);
+        co_await _released.wait(); // still activating when the watch arrives
         co_return false;
+    }
+    void
+    on(Release const &) {
+        _released.set();
     }
 };
 
-// Watches `target`, with a deadline: an unanswered watch fails the test instead of hanging it.
+// Watches `target` -- and releases it, when asked to -- with a deadline: an unanswered watch fails the test instead
+// of hanging it.
 class PatientWatcher : public qb::Actor {
     const qb::ActorId _target;
+    const bool        _release;
 
 public:
-    explicit PatientWatcher(qb::ActorId target)
-        : _target(target) {}
+    explicit PatientWatcher(qb::ActorId target, bool release = false)
+        : _target(target)
+        , _release(release) {}
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<qb::DownEvent>(*this);
         registerEvent<Go>(*this);
         watch(_target);
+        if (_release)
+            push<Release>(qb::BroadcastId(_target.index())); // behind the watch request: one ordered pipe
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(5s);
             ctx.push<Go>();
@@ -573,8 +593,8 @@ public:
 TEST(DeathWatch, AWatchReachesATargetStillInItsInitAcrossCores) {
     reset();
     qb::Main   engine;
-    const auto target = engine.addActor<SlowFailsInit>(1);
-    engine.addActor<PatientWatcher>(0, target);
+    const auto target = engine.addActor<ReleasedFailsInit>(1);
+    engine.addActor<PatientWatcher>(0, target, true);
     engine.start();
     engine.join();
     ASSERT_EQ(g_seen.size(), 1u) << "the watch reached the activating target, and its failure answered it";
@@ -1238,6 +1258,78 @@ TEST(DeathWatch, AStoppingCoreTellsTheCoresThatWatchedItAndNoOther) {
         EXPECT_EQ(received[core], 0u) << "core " << core << " watched nothing and nobody sends to it, yet it took in " << received[core]
                                       << " event(s) once core 1 had stopped: a stopping core told a core that never watched it "
                                          "(Huly QB-203)";
+}
+
+// --- a watch still on its way when its target's core stops (Huly QB-1072) --------------------------------------------------
+// The schedule that answered `AWatchReachesATargetStillInItsInitAcrossCores` with `core_stopped` on a loaded MSVC host,
+// when its target failed its init after a 50 ms sleep: the watcher's core ran its first pass -- the one that flushes the
+// watch request -- after the target's core had already stopped. Forced here: the watcher's core holds that pass, in an io
+// callback (the io phase runs before the flush), until the target's core thread has exited. The target failed its init
+// meanwhile with no watch registered on its core; the request then reaches a stopped core, and the stop notice that core
+// sent -- the watcher's core had set its bit in watch() -- answers the watch: `core_stopped`. Right, and deterministic:
+// the watched actor's own end was never seen by the watch.
+
+// Fails its onInit() after one wait, and marks its core thread so that the thread's exit can be awaited.
+class ExitingFailsInit : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        arm_core_exit_sentinel();
+        co_await context().sleep(1ms);
+        co_return false;
+    }
+};
+
+// Watches `target`, then holds its core's first pass until the target's core thread has exited; with a deadline.
+class HeldWatcher : public qb::Actor {
+    const qb::ActorId _target;
+
+public:
+    explicit HeldWatcher(qb::ActorId target)
+        : _target(target) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::DownEvent>(*this);
+        registerEvent<Go>(*this);
+        watch(_target);
+        // Captures nothing the actor owns. The poll ends the hold early; the deadline only bounds a broken run.
+        qb::io::async::defer([] {
+            const auto deadline = std::chrono::steady_clock::now() + 30s;
+            while (!g_target_core_exited.load() && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::sleep_for(100us);
+        });
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(35s);
+            ctx.push<Go>();
+        });
+        co_return true;
+    }
+    void
+    on(qb::DownEvent const &e) {
+        g_seen.push_back({e.watched, e.reason, g_target_core_exited.load()});
+        qb::Main::stop();
+        kill();
+    }
+    void
+    on(Go const &) { // the deadline: no answer
+        qb::Main::stop();
+        kill();
+    }
+};
+
+TEST(DeathWatch, AWatchStillOnItsWayWhenItsTargetsCoreStopsIsAnsweredCoreStopped) {
+    reset();
+    g_target_core_exited = false;
+    qb::Main   engine;
+    const auto target = engine.addActor<ExitingFailsInit>(1);
+    engine.addActor<HeldWatcher>(0, target);
+    engine.start();
+    engine.join();
+    ASSERT_EQ(g_seen.size(), 1u) << "the watch went unanswered";
+    EXPECT_EQ(g_seen[0].watched, target);
+    EXPECT_EQ(g_seen[0].reason, qb::DownReason::core_stopped)
+        << "the request reached a stopped core, whose stop notice answers it: " << qb::down_reason_name(g_seen[0].reason);
+    EXPECT_TRUE(g_seen[0].target_destroyed_first) << "answered once the target's core had exited, as forced";
 }
 
 } // namespace death_watch_test

@@ -690,8 +690,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   _(DeadLetter.h:42-61)_
 - **A watch is answered exactly once; target-down answers follow that actor's destructor** — `killed` /
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
-  core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
-  register is an `unhandled` dead letter; internal watch events never are.
+  core require no target destructor. A watch takes effect when it reaches the target's core: one still on its way
+  when that core stops is answered `core_stopped`, whatever ended the target meanwhile -- a test that expects the
+  target's own reason must hold the target until the watch is registered (Huly QB-1072). Nothing follows `unwatch()`.
+  A `DownEvent` whose type the watcher did not register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1319-1333, :1635-1650, :1694-1724, :1760-1787)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:77-82, :97-98, :106-110)_
