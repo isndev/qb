@@ -80,6 +80,13 @@ struct best_size<_Size, false, true> {
  */
 template <typename P>
 concept char_pointer = std::is_same_v<P, char const *> || std::is_same_v<P, char *>;
+
+/**
+ * @brief An array of char -- a string literal, a const array, a buffer: what the bounded array forms of qb::string
+ *        take, never read past its end.
+ */
+template <typename T>
+concept char_array = std::is_array_v<T> && std::rank_v<T> == 1 && std::is_same_v<std::remove_cv_t<std::remove_extent_t<T>>, char>;
 } // namespace internal
 
 /**
@@ -93,8 +100,8 @@ concept char_pointer = std::is_same_v<P, char const *> || std::is_same_v<P, char
  * The value is its first `size()` characters, NOT the bytes up to the first NUL: `assign(ptr, len)` keeps an
  * interior '\0', and every comparison, search and stream insertion works on the whole length, as std::string's
  * do (a "a\0b" is neither equal to "a" nor to "a\0c"; Huly QB-386). An operand given as `char const *` is read up
- * to its NUL, as std::string reads one -- an array too, except by the constructor, assign() and operator=, which
- * never read past it. `c_str()` stays NUL-terminated for C interfaces, which see the string up to its first NUL.
+ * to its NUL, as std::string reads one; a char ARRAY (a literal, a const array, a buffer) is read up to its first
+ * NUL and never past its end, by every member. C interfaces see `c_str()` (NUL-terminated) up to its first NUL.
  *
  * @tparam _Size Maximum size of the string (default: 30)
  */
@@ -124,18 +131,25 @@ private:
     size_type _size = 0;
 
     // The characters a char ARRAY holds, read as std::string reads one: up to its first NUL -- and, unlike strlen,
-    // never past the array. Every array reaches the array forms of the constructor, assign() and operator=, a const
-    // one and a string literal included: the `char const *` forms are templates deduced from a pointer, which an array
-    // also matches, and the array forms are the more specialised. A const array used to take the non-template
+    // never past the array. Every array reaches the array form of every member that takes a C string, a const one and a
+    // string literal included: the `char const *` forms are templates deduced from a pointer, which an array also
+    // matches, and the array forms are the more specialised. A const array used to take the non-template
     // `char const *` forms and their strlen, which reads past an array with no NUL (Huly QB-1002); a buffer took
     // `N - 1` characters, its tail of NULs included (Huly QB-386). The (pointer, length) forms keep interior NULs.
     template <std::size_t N>
     [[nodiscard]] static constexpr std::size_t
     array_length(const char (&str)[N]) noexcept {
-        std::size_t len = 0;
-        while (len < N && str[len] != '\0')
-            ++len;
-        return len;
+        // char_traits::find is memchr bounded by N at run time -- folded to a constant for a literal, as strlen was, and
+        // vectorised for a buffer -- and a plain loop in a constant expression.
+        const char *const nul = std::char_traits<char>::find(str, N, '\0');
+        return nul ? static_cast<std::size_t>(nul - str) : N;
+    }
+
+    // The same characters as a view: what the searches and comparisons read of a char array (Huly QB-1002).
+    template <std::size_t N>
+    [[nodiscard]] static constexpr std::string_view
+    array_view(const char (&str)[N]) noexcept {
+        return {str, array_length(str)};
     }
 
 public:
@@ -686,13 +700,28 @@ public:
     }
 
     /**
+     * @brief Compare with a char array -- read up to its first NUL, never past it (see array_view)
+     *
+     * @tparam N Size of the array
+     * @param str The array to compare with
+     * @return Negative if this < str, 0 if equal, positive if this > str
+     */
+    template <std::size_t N>
+    int
+    compare(const char (&str)[N]) const noexcept {
+        return std::string_view(*this).compare(array_view(str));
+    }
+
+    /**
      * @brief Compare with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str C-style string to compare with
      * @return Negative if this < str, 0 if equal, positive if this > str
      */
+    template <internal::char_pointer P>
     int
-    compare(const char *str) const noexcept {
+    compare(P str) const noexcept {
         return std::string_view(*this).compare(str);
     }
 
@@ -725,14 +754,30 @@ public:
     }
 
     /**
+     * @brief Find a char array -- read up to its first NUL, never past it (see array_view)
+     *
+     * @tparam N Size of the array
+     * @param str The array to find
+     * @param pos Starting position
+     * @return Position of first occurrence or npos if not found
+     */
+    template <std::size_t N>
+    std::size_t
+    find(const char (&str)[N], std::size_t pos = 0) const noexcept {
+        return std::string_view(*this).find(array_view(str), pos);
+    }
+
+    /**
      * @brief Find C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str C-style string to find
      * @param pos Starting position
      * @return Position of first occurrence or npos if not found
      */
+    template <internal::char_pointer P>
     std::size_t
-    find(const char *str, std::size_t pos = 0) const noexcept {
+    find(P str, std::size_t pos = 0) const noexcept {
         // Over the whole length, not up to this string's first interior NUL as strstr searched (Huly QB-386); an empty
         // needle is found at every pos up to size(), as by std::string (Huly QB-1002).
         return std::string_view(*this).find(str, pos);
@@ -760,14 +805,30 @@ public:
     }
 
     /**
+     * @brief Find the last occurrence of a char array -- read up to its first NUL, never past it (see array_view)
+     *
+     * @tparam N Size of the array
+     * @param str The array to find
+     * @param pos Starting position (searches backwards from here)
+     * @return Position of last occurrence or npos if not found
+     */
+    template <std::size_t N>
+    std::size_t
+    rfind(const char (&str)[N], std::size_t pos = npos) const noexcept {
+        return std::string_view(*this).rfind(array_view(str), pos);
+    }
+
+    /**
      * @brief Find last occurrence of substring
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str Substring to find
      * @param pos Starting position (searches backwards from here)
      * @return Position of last occurrence or npos if not found
      */
+    template <internal::char_pointer P>
     std::size_t
-    rfind(const char *str, std::size_t pos = npos) const noexcept {
+    rfind(P str, std::size_t pos = npos) const noexcept {
         return std::string_view(*this).rfind(str, pos);
     }
 
@@ -806,13 +867,28 @@ public:
     }
 
     /**
+     * @brief Append a char array -- read up to its first NUL, never past it (see array_length)
+     *
+     * @tparam N Size of the array
+     * @param str The array to append
+     * @return Reference to this string
+     */
+    template <std::size_t N>
+    string &
+    append(const char (&str)[N]) noexcept {
+        return append(str, array_length(str));
+    }
+
+    /**
      * @brief Append C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str C-style string to append
      * @return Reference to this string
      */
+    template <internal::char_pointer P>
     string &
-    append(const char *str) noexcept {
+    append(P str) noexcept {
         return append(str, std::strlen(str));
     }
 
@@ -909,13 +985,28 @@ public:
     }
 
     /**
+     * @brief Append operator for a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param str The array to append
+     * @return Reference to this string
+     */
+    template <std::size_t N>
+    string &
+    operator+=(const char (&str)[N]) noexcept {
+        return append(str);
+    }
+
+    /**
      * @brief Append operator for C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param str C-style string to append
      * @return Reference to this string
      */
+    template <internal::char_pointer P>
     string &
-    operator+=(const char *str) noexcept {
+    operator+=(P str) noexcept {
         return append(str);
     }
 
@@ -933,13 +1024,28 @@ public:
 
     // C++20 features
     /**
-     * @brief Check if string starts with given prefix
+     * @brief Check if string starts with a char array -- read up to its first NUL, never past it
      *
+     * @tparam N Size of the array
      * @param prefix Prefix to check
      * @return true if string starts with prefix, false otherwise
      */
+    template <std::size_t N>
     bool
-    starts_with(const char *prefix) const noexcept {
+    starts_with(const char (&prefix)[N]) const noexcept {
+        return std::string_view(*this).starts_with(array_view(prefix));
+    }
+
+    /**
+     * @brief Check if string starts with given prefix
+     *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
+     * @param prefix Prefix to check
+     * @return true if string starts with prefix, false otherwise
+     */
+    template <internal::char_pointer P>
+    bool
+    starts_with(P prefix) const noexcept {
         return std::string_view(*this).starts_with(prefix);
     }
 
@@ -966,13 +1072,28 @@ public:
     }
 
     /**
-     * @brief Check if string ends with given suffix
+     * @brief Check if string ends with a char array -- read up to its first NUL, never past it
      *
+     * @tparam N Size of the array
      * @param suffix Suffix to check
      * @return true if string ends with suffix, false otherwise
      */
+    template <std::size_t N>
     bool
-    ends_with(const char *suffix) const noexcept {
+    ends_with(const char (&suffix)[N]) const noexcept {
+        return std::string_view(*this).ends_with(array_view(suffix));
+    }
+
+    /**
+     * @brief Check if string ends with given suffix
+     *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
+     * @param suffix Suffix to check
+     * @return true if string ends with suffix, false otherwise
+     */
+    template <internal::char_pointer P>
+    bool
+    ends_with(P suffix) const noexcept {
         return std::string_view(*this).ends_with(suffix);
     }
 
@@ -999,13 +1120,28 @@ public:
     }
 
     /**
-     * @brief Check if string contains given substring
+     * @brief Check if string contains a char array -- read up to its first NUL, never past it
      *
+     * @tparam N Size of the array
      * @param str Substring to find
      * @return true if string contains substring, false otherwise
      */
+    template <std::size_t N>
     bool
-    contains(const char *str) const noexcept {
+    contains(const char (&str)[N]) const noexcept {
+        return find(str) != npos;
+    }
+
+    /**
+     * @brief Check if string contains given substring
+     *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
+     * @param str Substring to find
+     * @return true if string contains substring, false otherwise
+     */
+    template <internal::char_pointer P>
+    bool
+    contains(P str) const noexcept {
         return find(str) != npos;
     }
 
@@ -1035,11 +1171,12 @@ public:
     /**
      * @brief Equality comparison with string-like object
      *
-     * @tparam T Type with operator== for C-style strings
+     * @tparam T Type with operator== for C-style strings -- not a char pointer nor a char array, which have their forms
      * @param rhs String-like object to compare with
      * @return true if strings are equal, false otherwise
      */
     template <typename T>
+    requires(!internal::char_pointer<T> && !internal::char_array<T>)
     bool
     operator==(T const &rhs) const noexcept {
         // A string-like operand (std::string, std::string_view, a qb::string of another capacity) is compared over
@@ -1051,13 +1188,28 @@ public:
     }
 
     /**
+     * @brief Equality comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if strings are equal, false otherwise
+     */
+    template <std::size_t N>
+    bool
+    operator==(const char (&rhs)[N]) const noexcept {
+        return std::string_view(*this) == array_view(rhs);
+    }
+
+    /**
      * @brief Equality comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if strings are equal, false otherwise
      */
+    template <internal::char_pointer P>
     bool
-    operator==(char const *rhs) const noexcept {
+    operator==(P rhs) const noexcept {
         return std::string_view(*this) == std::string_view(rhs);
     }
 
@@ -1085,13 +1237,28 @@ public:
     }
 
     /**
+     * @brief Inequality comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if strings are not equal, false otherwise
+     */
+    template <std::size_t N>
+    bool
+    operator!=(const char (&rhs)[N]) const noexcept {
+        return !(*this == rhs);
+    }
+
+    /**
      * @brief Inequality comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if strings are not equal, false otherwise
      */
+    template <internal::char_pointer P>
     bool
-    operator!=(const char *rhs) const noexcept {
+    operator!=(P rhs) const noexcept {
         return !(*this == rhs);
     }
 
@@ -1107,13 +1274,28 @@ public:
     }
 
     /**
+     * @brief Less than comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if this string is lexicographically less than rhs
+     */
+    template <std::size_t N>
+    bool
+    operator<(const char (&rhs)[N]) const noexcept {
+        return compare(rhs) < 0;
+    }
+
+    /**
      * @brief Less than comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically less than rhs
      */
+    template <internal::char_pointer P>
     bool
-    operator<(const char *rhs) const noexcept {
+    operator<(P rhs) const noexcept {
         return compare(rhs) < 0;
     }
 
@@ -1129,13 +1311,28 @@ public:
     }
 
     /**
+     * @brief Greater than comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if this string is lexicographically greater than rhs
+     */
+    template <std::size_t N>
+    bool
+    operator>(const char (&rhs)[N]) const noexcept {
+        return compare(rhs) > 0;
+    }
+
+    /**
      * @brief Greater than comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically greater than rhs
      */
+    template <internal::char_pointer P>
     bool
-    operator>(const char *rhs) const noexcept {
+    operator>(P rhs) const noexcept {
         return compare(rhs) > 0;
     }
 
@@ -1151,13 +1348,28 @@ public:
     }
 
     /**
+     * @brief Less than or equal comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if this string is lexicographically less than or equal to rhs
+     */
+    template <std::size_t N>
+    bool
+    operator<=(const char (&rhs)[N]) const noexcept {
+        return compare(rhs) <= 0;
+    }
+
+    /**
      * @brief Less than or equal comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically less than or equal to rhs
      */
+    template <internal::char_pointer P>
     bool
-    operator<=(const char *rhs) const noexcept {
+    operator<=(P rhs) const noexcept {
         return compare(rhs) <= 0;
     }
 
@@ -1173,13 +1385,28 @@ public:
     }
 
     /**
+     * @brief Greater than or equal comparison with a char array -- read up to its first NUL, never past it
+     *
+     * @tparam N Size of the array
+     * @param rhs The array to compare with
+     * @return true if this string is lexicographically greater than or equal to rhs
+     */
+    template <std::size_t N>
+    bool
+    operator>=(const char (&rhs)[N]) const noexcept {
+        return compare(rhs) >= 0;
+    }
+
+    /**
      * @brief Greater than or equal comparison with C-style string
      *
+     * @tparam P `char const *` or `char *` (an array takes the array form)
      * @param rhs C-style string to compare with
      * @return true if this string is lexicographically greater than or equal to rhs
      */
+    template <internal::char_pointer P>
     bool
-    operator>=(const char *rhs) const noexcept {
+    operator>=(P rhs) const noexcept {
         return compare(rhs) >= 0;
     }
 };
@@ -1204,16 +1431,51 @@ operator+(const string<_Size1> &lhs, const string<_Size2> &rhs) noexcept {
 }
 
 /**
+ * @brief Concatenation operator with a char array -- read up to its first NUL, never past it
+ *
+ * @tparam _Size Size of the string
+ * @tparam N Size of the array
+ * @param lhs String
+ * @param rhs The array
+ * @return New string containing concatenated result
+ */
+template <std::size_t _Size, std::size_t N>
+string<_Size>
+operator+(const string<_Size> &lhs, const char (&rhs)[N]) noexcept {
+    string<_Size> result(lhs);
+    result.append(rhs);
+    return result;
+}
+
+/**
  * @brief Concatenation operator with C-style string
  *
  * @tparam _Size Size of the string
+ * @tparam P `char const *` or `char *` (an array takes the array form)
  * @param lhs String
  * @param rhs C-style string
  * @return New string containing concatenated result
  */
-template <std::size_t _Size>
+template <std::size_t _Size, internal::char_pointer P>
 string<_Size>
-operator+(const string<_Size> &lhs, const char *rhs) noexcept {
+operator+(const string<_Size> &lhs, P rhs) noexcept {
+    string<_Size> result(lhs);
+    result.append(rhs);
+    return result;
+}
+
+/**
+ * @brief Concatenation operator with a char array on the left -- read up to its first NUL, never past it
+ *
+ * @tparam _Size Size of the string
+ * @tparam N Size of the array
+ * @param lhs The array
+ * @param rhs String
+ * @return New string containing concatenated result
+ */
+template <std::size_t _Size, std::size_t N>
+string<_Size>
+operator+(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1223,13 +1485,14 @@ operator+(const string<_Size> &lhs, const char *rhs) noexcept {
  * @brief Concatenation operator with C-style string on left
  *
  * @tparam _Size Size of the string
+ * @tparam P `char const *` or `char *` (an array takes the array form)
  * @param lhs C-style string
  * @param rhs String
  * @return New string containing concatenated result
  */
-template <std::size_t _Size>
+template <std::size_t _Size, internal::char_pointer P>
 string<_Size>
-operator+(const char *lhs, const string<_Size> &rhs) noexcept {
+operator+(P lhs, const string<_Size> &rhs) noexcept {
     string<_Size> result(lhs);
     result.append(rhs);
     return result;
@@ -1364,16 +1627,29 @@ operator>>(std::istream &is, qb::string<_Size> &str) noexcept {
     return is;
 }
 
-// Equality operators for reverse comparisons
-template <std::size_t _Size>
+// Equality operators for reverse comparisons: a char array on the left is read up to its first NUL, never past it;
+// the `char const *` forms are templates deduced from a pointer, so an array takes the array form (Huly QB-1002).
+template <std::size_t _Size, std::size_t N>
 bool
-operator==(const char *lhs, const string<_Size> &rhs) noexcept {
+operator==(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
     return rhs == lhs;
 }
 
-template <std::size_t _Size>
+template <std::size_t _Size, internal::char_pointer P>
 bool
-operator!=(const char *lhs, const string<_Size> &rhs) noexcept {
+operator==(P lhs, const string<_Size> &rhs) noexcept {
+    return rhs == lhs;
+}
+
+template <std::size_t _Size, std::size_t N>
+bool
+operator!=(const char (&lhs)[N], const string<_Size> &rhs) noexcept {
+    return rhs != lhs;
+}
+
+template <std::size_t _Size, internal::char_pointer P>
+bool
+operator!=(P lhs, const string<_Size> &rhs) noexcept {
     return rhs != lhs;
 }
 
