@@ -536,6 +536,18 @@ policy.
 
 ### Fixed
 
+- **The embedded loop's io_uring backend watches descriptor 0 and keeps a loop handed between
+  threads working; its Linux aio backend frees its arrays (qev, Huly QB-336, QB-744, QB-338).**
+  Under `QB_EV_BACKEND=iouring` a watcher on fd 0 never fired: its first poll is tagged 0, which
+  the completion drain skipped as a sentinel. The ring was created `IORING_SETUP_SINGLE_ISSUER`, so
+  a loop called from a second thread -- one at a time, as qev's contract allows -- aborted through
+  `ev_syserr` on that thread's first submission (`EEXIST`); and a poll whose submitting thread had
+  exited, which the kernel completes `-ECANCELED`, was dropped without a re-arm. qb's cores keep one
+  loop per thread for life, so those two are reachable only by code that moves a loop itself. The
+  aio backend (`QB_EV_USE_LINUXAIO`, OFF here) kept its iocb table and submission batch past its
+  teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
+  witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
+  one completion per pass and one fewer per extra completion (callgrind).
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

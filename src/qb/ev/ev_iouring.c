@@ -2,14 +2,15 @@
  * qb-io libev backend: Linux io_uring (POLL_ADD / POLL_REMOVE) + timerfd sleep.
  *
  * Goals vs. a minimal upstream-style uring glue:
- * - One libev loop / one OS thread: IORING_SETUP_SINGLE_ISSUER (+ COOP_TASKRUN | TASKRUN_FLAG when supported),
- *   with automatic fallback if io_uring_setup rejects those flags.
+ * - COOP_TASKRUN | TASKRUN_FLAG when supported, with automatic fallback if io_uring_setup rejects them;
+ *   never SINGLE_ISSUER, so a loop may move between threads between calls, as libev allows.
  * - No silent loss of SQEs when the submission ring is full: flush to the kernel, then retry.
  * - Correct iouring_to_submit accounting across enter / fd_event (no blanket zero at poll end).
  * - Blocking: poll(2) on the uring fd (aligned with timerfd absolute deadline when armed), EINTR-safe.
  * - mmap: MAP_POPULATE first, fallback without; EINTR retry; total ring size bounds + overflow checks.
  * - Memory fences on SQ tail, CQ head/tail visibility; POLL_ADD one-shot re-arm via fd_change like linuxaio.
- * - CQEs: ignore -ECANCELED/-EINTR/-ENOENT from poll races; res==0 forces re-arm; mmap offsets sanity-checked.
+ * - CQEs: a stale generation is ignored; a current poll that ended without an event (res 0,
+ *   -ECANCELED/-EINTR/-ENOENT) is re-armed; mmap offsets sanity-checked.
  * - timerfd: drain expirations with EINTR retry; EAGAIN ignored; other read errors -> ev_syserr.
  * - loop_destroy skips close(backend_fd) before iouring_destroy (see ev.c) to avoid double-close.
  *
@@ -54,9 +55,6 @@
 /* UAPI flags not present in every distro linux/io_uring.h (kernel may still support them). */
 #ifndef IORING_SETUP_COOP_TASKRUN
 #define IORING_SETUP_COOP_TASKRUN (1U << 8)
-#endif
-#ifndef IORING_SETUP_SINGLE_ISSUER
-#define IORING_SETUP_SINGLE_ISSUER (1U << 12)
 #endif
 #ifndef IORING_SETUP_TASKRUN_FLAG
 #define IORING_SETUP_TASKRUN_FLAG (1U << 9)
@@ -309,7 +307,11 @@ iouring_cq_drain(EV_P) {
         struct io_uring_cqe *cqe       = &((struct io_uring_cqe *) (void *) ((char *) iouring_cq_ring + iouring_cq_cqes))[head & mask];
         uint64_t             user_data = cqe->user_data;
 
-        if (user_data == USERDATA_REMOVE || user_data == 0)
+        /* The one reserved tag is a POLL_REMOVE's own completion: its low half, 0xfffffffe, is no
+         * descriptor. Every other tag is fd | generation << 32, 0 included -- descriptor 0 at
+         * generation 0, i.e. its first registration, which must be delivered and re-armed like
+         * any other (qev QB-336: it was skipped, and a watcher on fd 0 never fired). */
+        if (user_data == USERDATA_REMOVE)
             goto skip;
 
         int fd = (int) (uint32_t) (user_data & 0xffffffffU);
@@ -321,23 +323,23 @@ iouring_cq_drain(EV_P) {
             goto skip;
 
         int res = cqe->res;
-        if (res < 0) {
-            /* POLL_REMOVE races, cancellation, or stale poll after fd_kill. */
+        if (ecb_expect_false(res <= 0)) {
+            /* The generation matched, so this poll ended without being asked to: a POLL_REMOVE of
+             * ours bumps the generation before the poll it cancels completes. */
             if (res == -EBADF)
                 fd_kill(EV_A_ fd);
-            else if (res == -ECANCELED || res == -EINTR || res == -ENOENT)
-                ;
-            else {
+            else if (res == 0 || res == -ECANCELED || res == -EINTR || res == -ENOENT) {
+                /* Ended without an event -- an empty mask (some kernels), or cancelled by the
+                 * kernel, which does that to a poll whose submitting thread has exited when it
+                 * fires (qev QB-744: a loop handed to another thread). Dropping it left the
+                 * watcher silent for good; re-armed, fd_reify submits it again from the thread
+                 * running the loop now. */
+                anfds[fd].events = 0;
+                fd_change(EV_A_ fd, EV_ANFD_REIFY);
+            } else {
                 errno = -res;
                 ev_syserr("(libev) io_uring poll error");
             }
-            goto skip;
-        }
-
-        /* POLL_ADD one-shot with empty mask: re-arm so fd_reify re-submits (matches edge kernels). */
-        if (ecb_expect_false(res == 0)) {
-            anfds[fd].events = 0;
-            fd_change(EV_A_ fd, EV_ANFD_REIFY);
             goto skip;
         }
 
@@ -487,16 +489,23 @@ iouring_init(EV_P_ int flags) {
     (void) flags;
 
     memset(&p, 0, sizeof(p));
-    /* libev runs one thread per loop; tell the kernel when supported (fails with EINVAL on old kernels).
-     * COOP_TASKRUN defers the kernel's completion work to the next time THIS task enters the kernel
-     * -- no IPI into a loop that is busy -- so a loop that never makes a syscall (qev QB-81: a quiet
-     * non-blocking pass makes none) would see a ready fd only at the scheduler tick (measured: wake
-     * p50 2.0 ms, p99 4.0 ms against epoll's 4 / 15 us). TASKRUN_FLAG is its companion: the kernel
-     * raises IORING_SQ_TASKRUN in the SQ ring when such work is pending, and iouring_poll enters
-     * (GETEVENTS) exactly then -- a memory read when quiet, one syscall when something completed.
-     * Both flags or neither: the fallback below drops the whole set, back to prompt IPI delivery. */
-    p.flags = (unsigned) IORING_SETUP_SINGLE_ISSUER | (unsigned) IORING_SETUP_COOP_TASKRUN
-            | (unsigned) IORING_SETUP_TASKRUN_FLAG;
+    /* COOP_TASKRUN defers the kernel's completion work to the next time the submitting task enters
+     * the kernel -- no IPI into a loop that is busy -- so a loop that never makes a syscall (qev
+     * QB-81: a quiet non-blocking pass makes none) would see a ready fd only at the scheduler tick
+     * (measured: wake p50 2.0 ms, p99 4.0 ms against epoll's 4 / 15 us). TASKRUN_FLAG is its
+     * companion: the kernel raises IORING_SQ_TASKRUN in the SQ ring when such work is pending, and
+     * iouring_poll enters (GETEVENTS) exactly then -- a memory read when quiet, one syscall when
+     * something completed. Both flags or neither (they need Linux 5.19): the fallback below drops
+     * the set, back to prompt IPI delivery.
+     * NOT IORING_SETUP_SINGLE_ISSUER (qev QB-744): it binds submission to the creating thread, and a
+     * loop may be called from any thread as long as the calls never overlap (docs/ev.pod, THREADS)
+     * -- a loop handed to another thread got EEXIST on its first SQE, and ev_syserr. Without
+     * DEFER_TASKRUN, which needs it, the flag only stored and checked that thread (Linux 6.6), so
+     * it bought this backend nothing. After a hand-off, a poll the previous thread armed completes
+     * through that thread's task work: a sleeping thread is woken for it, a running one runs it on
+     * its next return from the kernel, an exited one through a kernel worker; the loop's one-shot
+     * re-arms move each poll to the new thread after one event. */
+    p.flags = (unsigned) IORING_SETUP_COOP_TASKRUN | (unsigned) IORING_SETUP_TASKRUN_FLAG;
 
     iouring_fd = sys_io_uring_setup(IOURING_QUEUE_DEPTH, &p);
     if (iouring_fd < 0 && (errno == EINVAL || errno == EPERM)) {
