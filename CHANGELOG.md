@@ -18,6 +18,17 @@ policy.
 - **`qb::io::log::init()` says when its file cannot be opened (Huly QB-327).** It prints the one-line `WARNING` the
   load-time default prints, naming the file: every log line is discarded until a later `init()` names a file that
   opens. It was silent.
+- **A log record's fields are written inline, by the logging statement itself (Huly QB-1004, after QB-366).** Owning
+  the text (QB-366) had cost the producer a call into nanolog.cpp and a `memcpy` per literal field: +21 % on a record
+  with four literal fields over the pointer it used to borrow. A field is now written in the caller -- a capacity
+  check, the tag, the value -- so for a literal the compiler folds the length and the copy into a few stores (g++-14
+  and MSVC 19.51 alike; MSVC does not fold `char_traits::find`, so a literal is measured by `strlen`, bounded by the
+  array's NUL); the record's header goes straight into its stack buffer; scalars, `std::string`, `std::string_view`
+  and C strings take the same inline path. The wire format and the ownership contract are unchanged. Callgrind
+  (WSL2 Debian, g++-14.2, qb's release flags), instructions per record on the logging thread, before the fix / after
+  it / now: four literal fields and three scalars 441 / 536 / 188; the whole `QB_LOG_INFO` of it, level check, record
+  and push, 531 / 626 / 261; a `std::string` and a `std::string_view` 319 / 327 / 144. The writer thread is unchanged
+  (8 282 to format the four-literal record), and so is a statement whose level is off.
 - **A `qb::io::uri` with an empty port has the scheme's default (Huly QB-352).** `http://example.com:/` and
   `https://[::1]:/` now carry the default port of their scheme and the host without the colon (RFC 3986 3.2.3, 6.2.3).
   A name kept the colon -- host `example.com:`, classified `AF_INET6` for it -- and a bracketed host an empty port

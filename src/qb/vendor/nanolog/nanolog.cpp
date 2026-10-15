@@ -115,33 +115,32 @@ to_string(LogLevel loglevel) {
     return "XXXX";
 }
 
-template <typename Arg>
-void
-NanoLogLine::encode(Arg arg) {
-    std::memcpy(buffer(), &arg, sizeof(Arg));
-    m_bytes_used += sizeof(Arg);
+namespace {
+template <typename T>
+char *
+put(char *b, T const &value) {
+    std::memcpy(b, &value, sizeof(T));
+    return b + sizeof(T);
 }
-
-template <typename Arg>
-void
-NanoLogLine::encode(Arg arg, uint8_t type_id) {
-    resize_buffer_if_needed(sizeof(Arg) + sizeof(uint8_t));
-    encode<uint8_t>(type_id);
-    encode<Arg>(arg);
-}
+} // namespace
 
 NanoLogLine::NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line)
     : m_bytes_used(0)
     , m_buffer_size(sizeof(m_stack_buffer)) {
-    encode<uint64_t>(timestamp_now());
-    encode<std::thread::id>(this_thread_id());
-    encode<string_literal_t>(string_literal_t(file));
-    encode<string_literal_t>(string_literal_t(function));
-    encode<uint32_t>(line);
-    encode<LogLevel>(level);
+    // The header, straight into the stack buffer -- a new record has no heap buffer, and the header always fits -- in
+    // the order stringify(std::ostream &) reads it back (Huly QB-1004: it was six encodes, each selecting the buffer).
+    static_assert(sizeof(uint64_t) + sizeof(std::thread::id) + 2 * sizeof(string_literal_t) + sizeof(uint32_t) + sizeof(LogLevel)
+                      <= sizeof(m_stack_buffer),
+                  "the record header fits the stack buffer");
+    char *b      = m_stack_buffer;
+    b            = put(b, timestamp_now());
+    b            = put(b, this_thread_id());
+    b            = put(b, string_literal_t(file));
+    b            = put(b, string_literal_t(function));
+    b            = put(b, line);
+    b            = put(b, level);
+    m_bytes_used = static_cast<size_t>(b - m_stack_buffer);
 }
-
-NanoLogLine::~NanoLogLine() = default;
 
 void
 NanoLogLine::stringify(std::ostream &os) {
@@ -245,11 +244,6 @@ NanoLogLine::stringify(std::ostream &os, char *start, char const *const end) {
     }
 }
 
-char *
-NanoLogLine::buffer() {
-    return !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &(m_heap_buffer.get())[m_bytes_used];
-}
-
 void
 NanoLogLine::resize_buffer_if_needed(size_t additional_bytes) {
     size_t const required_size = m_bytes_used + additional_bytes;
@@ -270,32 +264,38 @@ NanoLogLine::resize_buffer_if_needed(size_t additional_bytes) {
     }
 }
 
+// The out-of-line writer of a scalar field: the buffer could not hold it (append_scalar, nanolog.h).
 void
-NanoLogLine::encode(char const *arg) {
-    if (arg != nullptr)
-        encode_c_string(arg, strlen(arg));
-}
-
-void
-NanoLogLine::encode(char *arg) {
-    if (arg != nullptr)
-        encode_c_string(arg, strlen(arg));
+NanoLogLine::encode_scalar(void const *value, size_t size, Tag tag) {
+    // The header's tags are the indices of SupportedTypes, which stringify() switches on.
+    static_assert(TupleIndex<char, SupportedTypes>::value == tag_char, "tag_char");
+    static_assert(TupleIndex<uint32_t, SupportedTypes>::value == tag_uint32, "tag_uint32");
+    static_assert(TupleIndex<uint64_t, SupportedTypes>::value == tag_uint64, "tag_uint64");
+    static_assert(TupleIndex<int32_t, SupportedTypes>::value == tag_int32, "tag_int32");
+    static_assert(TupleIndex<int64_t, SupportedTypes>::value == tag_int64, "tag_int64");
+    static_assert(TupleIndex<double, SupportedTypes>::value == tag_double, "tag_double");
+    static_assert(TupleIndex<string_literal_t, SupportedTypes>::value == tag_literal, "tag_literal");
+    static_assert(TupleIndex<char *, SupportedTypes>::value == tag_text, "tag_text");
+    resize_buffer_if_needed(1 + size);
+    char *const b = cursor();
+    b[0]          = static_cast<char>(tag);
+    std::memcpy(b + 1, value, size);
+    m_bytes_used += 1 + size;
 }
 
 // qb fork (Huly QB-367): a text field is its type tag, its length on 32 bits, then its bytes -- all of them, NUL bytes
 // included. It was NUL-terminated and decoded up to the first NUL, so a std::string holding one cut the record there
 // and the decoder read the rest of the text as type tags. A text past 4 GiB is written as consecutive fields, which
-// read back as the same bytes.
+// read back as the same bytes. Out of line: the buffer could not hold the field (append_text, nanolog.h).
 void
 NanoLogLine::encode_c_string(char const *arg, size_t length) {
-    static_assert(TupleIndex<char *, SupportedTypes>::value == text_type_id, "the inline writer's tag is the text tag");
     for (;;) {
         auto const field = static_cast<uint32_t>(length < max_text_field ? length : max_text_field);
         if (!field)
             return;
         resize_buffer_if_needed(text_field_overhead + field);
-        char *const b = !m_heap_buffer ? &m_stack_buffer[m_bytes_used] : &m_heap_buffer[m_bytes_used];
-        b[0]          = static_cast<char>(text_type_id);
+        char *const b = cursor();
+        b[0]          = static_cast<char>(tag_text);
         std::memcpy(b + 1, &field, sizeof(field));
         std::memcpy(b + text_field_overhead, arg, field);
         m_bytes_used += text_field_overhead + field;
@@ -304,65 +304,6 @@ NanoLogLine::encode_c_string(char const *arg, size_t length) {
         arg += field;
         length -= field;
     }
-}
-
-void
-NanoLogLine::encode(string_literal_t arg) {
-    encode<string_literal_t>(arg, TupleIndex<string_literal_t, SupportedTypes>::value);
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <std::string>(std::string const &arg) {
-    encode_c_string(arg.c_str(), arg.length());
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <std::string_view>(std::string_view const &arg) {
-    encode_c_string(arg.data(), arg.length());
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <int32_t>(int32_t const &arg) {
-    encode<int32_t>(arg, TupleIndex<int32_t, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <uint32_t>(uint32_t const &arg) {
-    encode<uint32_t>(arg, TupleIndex<uint32_t, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <int64_t>(int64_t const &arg) {
-    encode<int64_t>(arg, TupleIndex<int64_t, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <uint64_t>(uint64_t const &arg) {
-    encode<uint64_t>(arg, TupleIndex<uint64_t, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <double>(double const &arg) {
-    encode<double>(arg, TupleIndex<double, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <char>(char const &arg) {
-    encode<char>(arg, TupleIndex<char, SupportedTypes>::value);
-    return *this;
-}
-
-template <>
-NanoLogLine &NanoLogLine::operator<< <char const *>(char const *const &arg) {
-    encode(arg);
-    return *this;
 }
 
 struct BufferBase {

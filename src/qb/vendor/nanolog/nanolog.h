@@ -42,7 +42,7 @@ enum class LogLevel : uint8_t { DEBUG, VERBOSE, INFO, WARN, CRIT };
 class NanoLogLine {
 public:
     NanoLogLine(LogLevel level, char const *file, char const *function, uint32_t line);
-    ~NanoLogLine();
+    ~NanoLogLine() = default;
 
     NanoLogLine(NanoLogLine &&)            = default;
     NanoLogLine &operator=(NanoLogLine &&) = default;
@@ -93,43 +93,55 @@ public:
 
     NanoLogLine &
     operator<<(string_literal_t arg) {
-        encode(arg);
+        append_scalar(arg, tag_literal);
         return *this;
     }
 
 private:
-    char *buffer();
+    // A field on the wire is its type tag, then its value: the tag is the index of the type in nanolog.cpp's
+    // SupportedTypes (asserted there), which stringify() switches on when the writer thread decodes the record. A text
+    // field (Huly QB-367) is tag_text, its length on 32 bits, then exactly that many bytes.
+    enum Tag : uint8_t { tag_char = 0, tag_uint32 = 1, tag_uint64 = 2, tag_int32 = 3, tag_int64 = 4, tag_double = 5, tag_literal = 6, tag_text = 7 };
+    static constexpr size_t text_field_overhead = 1 + sizeof(uint32_t);
+    static constexpr size_t max_text_field      = std::numeric_limits<uint32_t>::max();
 
-    template <typename Arg>
-    void encode(Arg arg);
-
-    template <typename Arg>
-    void encode(Arg arg, uint8_t type_id);
-
-    void encode(char *arg);
-    void encode(char const *arg);
-    void encode(string_literal_t arg);
+    // Out of line, in nanolog.cpp: the two writers that grow the buffer first, and the decoder.
+    void encode_scalar(void const *value, size_t size, Tag tag);
     void encode_c_string(char const *arg, size_t length);
     void resize_buffer_if_needed(size_t additional_bytes);
     void stringify(std::ostream &os, char *start, char const *const end);
 
-    // A text field on the wire (Huly QB-367): its type tag, its length on 32 bits, then exactly that many bytes. The tag
-    // is the index of `char *` in nanolog.cpp's SupportedTypes, asserted there.
-    static constexpr uint8_t text_type_id        = 7;
-    static constexpr size_t  text_field_overhead = 1 + sizeof(uint32_t);
-    static constexpr size_t  max_text_field      = std::numeric_limits<uint32_t>::max();
+    char *
+    cursor() noexcept {
+        return (m_heap_buffer ? m_heap_buffer.get() : m_stack_buffer) + m_bytes_used;
+    }
 
-    // The fast path of a text field (Huly QB-1004): a field that fits the buffer is written here, inline in the caller
-    // -- the tag, the length, the bytes -- so a literal's copy is a handful of stores. A field the buffer cannot hold,
-    // and a text past 4 GiB, go through encode_c_string, out of line. An empty text writes no field, as there.
+    // The fast paths (Huly QB-1004): a field the buffer holds is written here, inline in the caller -- a capacity
+    // check, the tag, the value -- so a scalar is a few stores and a literal's copy a few more (the compiler knows its
+    // length and its bytes). A field the buffer cannot hold goes out of line, where the buffer grows; so does a text
+    // past 4 GiB, written as consecutive fields. An empty text writes no field, as there.
+    template <typename Arg>
+    void
+    append_scalar(Arg const &arg, Tag tag) {
+        static_assert(std::is_trivially_copyable_v<Arg>, "a scalar field is its bytes");
+        if (m_bytes_used + 1 + sizeof(Arg) <= m_buffer_size) [[likely]] {
+            char *const b = cursor();
+            b[0]          = static_cast<char>(tag);
+            std::memcpy(b + 1, &arg, sizeof(Arg));
+            m_bytes_used += 1 + sizeof(Arg);
+        } else {
+            encode_scalar(&arg, sizeof(Arg), tag);
+        }
+    }
+
     void
     append_text(char const *text, size_t length) {
         if (length == 0)
             return;
         if (length <= max_text_field && m_bytes_used + text_field_overhead + length <= m_buffer_size) [[likely]] {
-            char *const    b     = (m_heap_buffer ? m_heap_buffer.get() : m_stack_buffer) + m_bytes_used;
+            char *const    b     = cursor();
             uint32_t const field = static_cast<uint32_t>(length);
-            b[0]                 = static_cast<char>(text_type_id);
+            b[0]                 = static_cast<char>(tag_text);
             std::memcpy(b + 1, &field, sizeof(field));
             std::memcpy(b + text_field_overhead, text, length);
             m_bytes_used += text_field_overhead + length;
@@ -145,24 +157,71 @@ private:
     char                    m_stack_buffer[256 - 2 * sizeof(size_t) - sizeof(decltype(m_heap_buffer)) - 8 /* Reserved */];
 };
 
+// The fields the record encodes directly -- the rest go through the ostringstream of the primary template. Inline, so
+// that a field is written in the caller (Huly QB-1004); they were defined in nanolog.cpp, a call per field.
 template <>
-NanoLogLine &NanoLogLine::operator<< <char>(char const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <char>(char const &arg) {
+    append_scalar(arg, tag_char);
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <char const *>(char const *const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <int32_t>(int32_t const &arg) {
+    append_scalar(arg, tag_int32);
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <int32_t>(int32_t const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <uint32_t>(uint32_t const &arg) {
+    append_scalar(arg, tag_uint32);
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <uint32_t>(uint32_t const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <int64_t>(int64_t const &arg) {
+    append_scalar(arg, tag_int64);
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <int64_t>(int64_t const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <uint64_t>(uint64_t const &arg) {
+    append_scalar(arg, tag_uint64);
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <uint64_t>(uint64_t const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <double>(double const &arg) {
+    append_scalar(arg, tag_double);
+    return *this;
+}
+// A C string is copied up to its NUL; a null pointer writes nothing.
 template <>
-NanoLogLine &NanoLogLine::operator<< <double>(double const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <char const *>(char const *const &arg) {
+    if (arg != nullptr)
+        append_text(arg, std::strlen(arg));
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <std::string>(std::string const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <char *>(char *const &arg) {
+    if (arg != nullptr)
+        append_text(arg, std::strlen(arg));
+    return *this;
+}
 template <>
-NanoLogLine &NanoLogLine::operator<< <std::string_view>(std::string_view const &arg);
+inline NanoLogLine &
+NanoLogLine::operator<< <std::string>(std::string const &arg) {
+    append_text(arg.data(), arg.size());
+    return *this;
+}
+template <>
+inline NanoLogLine &
+NanoLogLine::operator<< <std::string_view>(std::string_view const &arg) {
+    append_text(arg.data(), arg.size());
+    return *this;
+}
 
 struct NanoLog {
     /*
