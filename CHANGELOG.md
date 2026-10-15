@@ -536,6 +536,11 @@ policy.
 
 ### Fixed
 
+- **The embedded loop's libevent layer: `event_del` cancels an activation still pending (qev, Huly
+  QB-712).** A timeout made pending by `event_active` ran its callback after `event_del`, which
+  stopped the timer only when it was active; the io watcher of an event with no fd interest had
+  the same hole. Both are stopped unconditionally now. `src/qb/ev/event.c` is compiled only with
+  `QB_EV_LIBEVENT_COMPAT=ON`, OFF in qb; witness in qev's `tests/test-event-compat.c`.
 - **`<qb/ev/ev++.h>`: a direct call `w (revents)` compiles and hands the callback its loop (qev,
   Huly QB-312).** It passed the watcher where libev's callback takes the loop, so any use failed
   to compile; it now invokes the callback as `ev_invoke` would. The same shared header carries two
