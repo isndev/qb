@@ -261,6 +261,32 @@ TEST_F(CallbackDispatchTest, DeferIsDrainedFromInsideABlockingRun) {
     EXPECT_EQ(order, (std::vector<int>{1, 2})) << "defer() must be drained inside the blocking run, not only after it returns";
 }
 
+// The other half of the blocking contract (Huly QB-448): under a blocking run the in-loop drain
+// serves the queue, and a defer queued by a deferred callback is re-armed for the loop's next
+// iteration. A blocking call that returns before that re-arm fires (EVRUN_ONCE) leaves it to the next
+// call -- its own drain after the loop does not take it -- and a non-blocking call then runs it: the
+// re-arm fires there, the hook stands down (a non-blocking turn drains at its tail), the tail drain
+// takes it.
+TEST_F(CallbackDispatchTest, ABlockingTurnLeavesANestedDeferToTheNextCall) {
+    std::atomic<int> stage{0};
+    async::callback(
+        [&] {
+            async::defer([&] {
+                stage.store(1);
+                async::defer([&] { stage.store(2); });
+            });
+        },
+        1ms);
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while (stage.load() == 0 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.run(EVRUN_ONCE); // blocks until the timer fires
+    ASSERT_EQ(stage.load(), 1) << "the blocking run() call that ran the deferred callback also ran the defer it queued";
+    EXPECT_TRUE(async::listener::current.has_deferred()) << "the nested defer was lost";
+    while (stage.load() != 2 && std::chrono::steady_clock::now() < deadline)
+        async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(stage.load(), 2) << "the nested defer never ran on a later call";
+}
+
 TEST_F(CallbackDispatchTest, PendingDeferIsDroppedOnListenerClear) {
     // Teardown drops pending deferred callbacks WITHOUT running them; each captured
     // shared_ptr is released (the std::function destructor runs), so `ran` stays false
