@@ -741,12 +741,14 @@ TEST(CompressionBeyondUIntMax, DISABLED_UncompressWindowsPast4GiB) {
 namespace compression_codec_test {
 
 // `size` bytes of address space, the first `backed` of them usable (Windows commits only those; POSIX maps the whole
-// range lazily). qb's own reserved regions (qb/system/allocator/region.h), so no platform code is repeated here.
+// range lazily). qb's own reserved regions (qb/system/allocator/region.h), so no platform code is repeated here. Null
+// when the host refuses: a POSIX mapping is writable, so strict overcommit or an address-space limit (RLIMIT_AS, a
+// sanitizer's) can refuse 4 GiB of it, and Windows can refuse the commit.
 class ReservedBytes {
 public:
     ReservedBytes(std::size_t size, std::size_t backed)
         : _size(size)
-        , _bytes(static_cast<std::uint8_t *>(qb::allocator::detail::region_acquire_reserved(size))) {
+        , _bytes(acquire(size)) {
         if (_bytes && !qb::allocator::detail::region_commit(_bytes, backed)) {
             qb::allocator::detail::region_release_reserved(_bytes, _size);
             _bytes = nullptr;
@@ -765,10 +767,21 @@ public:
     }
 
 private:
+    static std::uint8_t *
+    acquire(std::size_t size) noexcept {
+        try {
+            return static_cast<std::uint8_t *>(qb::allocator::detail::region_acquire_reserved(size));
+        } catch (std::bad_alloc const &) {
+            return nullptr;
+        }
+    }
+
     std::size_t   _size;
     std::uint8_t *_bytes;
 };
 
+constexpr char        refused[]     = "this host refuses 4 GiB of address space (strict overcommit, RLIMIT_AS, or the commit limit): "
+                                      "the case needs a length zlib cannot count";
 constexpr std::size_t past_uint_max = (std::size_t{1} << 32) + 4096; // one length zlib cannot count
 constexpr std::size_t backed_bytes  = std::size_t{4} << 20;
 
@@ -779,7 +792,8 @@ TEST(CompressionProvider, ZlibTakesPartOfAnInputItCannotCountAndNeverEndsTheStre
     using compression_codec_test::backed_bytes;
     using compression_codec_test::past_uint_max;
     compression_codec_test::ReservedBytes input(past_uint_max, backed_bytes);
-    ASSERT_NE(input.data(), nullptr) << "could not reserve 4 GiB of address space";
+    if (input.data() == nullptr)
+        GTEST_SKIP() << compression_codec_test::refused;
     const std::string noise = qb::io::test::codec_contract::random_bytes(backed_bytes, 9);
     std::memcpy(input.data(), noise.data(), noise.size());
 
@@ -817,7 +831,8 @@ TEST(CompressionProvider, ZlibWritesIntoAWindowItCannotCount) {
     using compression_codec_test::backed_bytes;
     using compression_codec_test::past_uint_max;
     compression_codec_test::ReservedBytes window(past_uint_max, backed_bytes);
-    ASSERT_NE(window.data(), nullptr) << "could not reserve 4 GiB of address space";
+    if (window.data() == nullptr)
+        GTEST_SKIP() << compression_codec_test::refused;
     const std::string body = qb::io::test::codec_contract::random_bytes(100000, 4) + std::string(100000, 'w');
 
     for (const char *algorithm : {"gzip", "deflate"}) {
