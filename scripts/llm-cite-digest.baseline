@@ -74,7 +74,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1544-1557	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1548-1561	31584ba4b550	inline void
 llm/qb.llm.api.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.api.md	offload.h:124-124	f009c11da3b1	bool set_offload_threads(std::size_t n) noexcept;
 llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : public awaiter_base {
@@ -184,7 +184,7 @@ llm/qb.llm.md	crypto.h:122-127	d1e0d208ae9b	inline int
 llm/qb.llm.md	crypto.h:33-44	0e90de8e08fe	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
 llm/qb.llm.md	crypto.h:666-668	951a022022dd	* @return Vector containing the decrypted data or empty if authentica...
 llm/qb.llm.md	crypto.h:908-914	225ca9a0d77c	* Returns an empty string if the token is invalid or expired.
-llm/qb.llm.md	ev++.h:772-772	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
+llm/qb.llm.md	ev++.h:780-780	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
 llm/qb.llm.md	file.h:115-115	b1f6c4d76864	explicit file(std::filesystem::path const &fname, int flags = O_RDWR)...
 llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &fname, int flags = O_RDWR, int ...
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
@@ -194,9 +194,9 @@ llm/qb.llm.md	io.h:3136-3140	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:368-404	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
 llm/qb.llm.md	io.h:373-413	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:624-627	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1529-1541	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1544-1557	31584ba4b550	inline void
-llm/qb.llm.md	listener.h:1596-1596	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1533-1545	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1548-1561	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1600-1600	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.md	offload.h:202-213	2f7b9e7ef6cd	run() noexcept override {
 llm/qb.llm.md	offload.h:24-40	d6f92fe8755f	* THE CONTRACT, IN FOUR RULES

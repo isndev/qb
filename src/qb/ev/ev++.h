@@ -269,6 +269,14 @@ struct loop_ref {
         return ev_timer_count_addr(EV_AX);
     }
 
+#if EV_PERIODIC_ENABLE
+    /* qev: the number of active periodics, read inline (see ev_periodic_count_addr) */
+    const int *
+    periodic_count_addr() const EV_NOEXCEPT {
+        return ev_periodic_count_addr(EV_AX);
+    }
+#endif
+
     /* qev: the earliest timer deadline on the loop's clock, EV_TSTAMP_HUGE when none (see ev_timer_next) */
     tstamp
     timer_next() const EV_NOEXCEPT {

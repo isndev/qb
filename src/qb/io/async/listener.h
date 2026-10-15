@@ -307,9 +307,9 @@ private:
     // a keep-alive) or one quiet socket. The loop has nothing to do on such a pass, and it can
     // now be asked, inline: `*_pending_count` (an event fed since the last pass), the wake flag
     // (`ev_wake_pending_addr`: an `ev_async_send` from another thread that found no park to
-    // write to), `*_timer_count` and `ev_timer_next()` (the earliest deadline, on the loop's
-    // clock). A pass that has no event pending, no wake, no poll to make and no timer within
-    // reach does not call the loop at all. "Within reach" is judged on the CPU's counter, as
+    // write to), `*_timer_count` / `*_periodic_count` and `ev_timer_next()` (the earliest deadline
+    // of either, on the loop's clock). A pass that has no event pending, no wake, no poll to make
+    // and no timer within reach does not call the loop at all. "Within reach" is judged on the CPU's counter, as
     // the io cadence is: the listener anchors a reading of the loop's clock (`ev_clock_now`)
     // against `tsc_ticks()` whenever it makes one, and estimates now as the anchor plus the
     // counter's advance -- with a rate margin of 0.1 % for the calibration and the kernel's
@@ -327,9 +327,8 @@ private:
 
     /// Whether the earliest timer is due, on a real reading of the loop's clock -- made only when
     /// the counter-based estimate says the deadline is within reach (see the block above). A
-    /// reading made here is kept for the loop (`_supply`). Called with a timer active, or on a loop
-    /// without an fd whose active watcher may be a periodic: `ev_timer_next` covers both heaps, and
-    /// answers `EV_TSTAMP_HUGE`, never due, when neither holds one (Huly QB-275).
+    /// reading made here is kept for the loop (`_supply`). Called with a timer or a periodic active:
+    /// `ev_timer_next` reads both heaps (Huly QB-275).
     [[nodiscard]] bool
     _timer_due(std::uint64_t const tsc) noexcept {
         const double next = _loop.timer_next();
@@ -360,9 +359,8 @@ private:
         // when hot or due; `EVRUN_NOPOLL` keeps everything else of the pass. A hot pass stamps its
         // poll too, so the interval counts from the LAST poll, whichever rule ran it. One counter
         // read serves the cadence and the timer gate.
-        std::uint64_t tsc    = 0;
-        const bool    has_io = *_io_count > 0;
-        bool          poll   = has_io;
+        std::uint64_t tsc  = 0;
+        bool          poll = *_io_count > 0;
         if (poll && _poll_every_tsc != 0) {
             tsc = qb::tsc_ticks();
             if (_io_hot)
@@ -379,12 +377,10 @@ private:
         // instead of making its own.
         if (poll || pending || _wake_is_pending() != 0)
             return true;
-        // No timer beside an fd: nothing to fire before the cadence's next poll, whose pass reifies the
-        // periodics too. Without an fd the loop still holds a referenced active watcher (the caller
-        // tested it), and `*_timer_count` counts ev_timers only: a periodic is in a heap of its own,
-        // which `ev_timer_next` reads too, so the deadline is judged below like a timer's -- a periodic
-        // alone on the loop was never fired by a non-blocking pass (Huly QB-275).
-        if (*_timer_count == 0 && has_io)
+        // A deadline is a timer's or a periodic's, in two heaps `ev_timer_next` reads both of: the
+        // gate counted timers only, so a periodic alone on the loop never fired under non-blocking
+        // passes, and one beside a quiet socket fired at the cadence's next poll (Huly QB-275).
+        if ((*_timer_count | *_periodic_count) == 0)
             return false;
         if (_tsc_per_ns <= 0.) // no usable counter: the loop's own read is the cheaper judge
             return true;
@@ -576,13 +572,16 @@ private:
     //      on purpose: `has_work()` reads `_deferred` and `_coro_scheduler` on every pass of every
     //      core, and 48 bytes inserted before them read +2 ns on MSVC's `push` (measured, five
     //      alternations, fully separated); after them, level.
-    const int         *_timer_count;  ///< `&timercnt` of `_loop`
-    const EV_ATOMIC_T *_wake_pending; ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
+    const int         *_timer_count;    ///< `&timercnt` of `_loop`
+    const int         *_periodic_count; ///< `&periodiccnt` of `_loop` (`kNoPeriodics` when they are compiled out)
+    const EV_ATOMIC_T *_wake_pending;   ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
+
+    static constexpr int kNoPeriodics = 0; ///< the periodic count of a loop built without them
 
     // `_wake_pending` (qev's `pipe_write_skipped`) is written by a PRODUCER thread's `ev_async_send`
     // (Huly QB-192 made that store a `__atomic` release); this inline read is on the owner thread, so
     // it must be an atomic acquire too or ThreadSanitizer flags the pair once ev.c is instrumented.
-    // Other inline reads in the gate (`_io_fed`, `_active_count`, `_timer_count`) are owner-thread
+    // Other inline reads in the gate (`_io_fed`, `_active_count`, `_timer_count`, `_periodic_count`) are owner-thread
     // only -- written by `ev_run` on this same thread -- so they stay plain. gcc/clang only; the MSVC
     // read is plain (no TSan there), matching qev's own `#else`.
     [[nodiscard]] int
@@ -790,6 +789,11 @@ public:
         , _wake(_loop)
         , _park_cap(_loop)
         , _timer_count(_loop.timer_count_addr())
+#if EV_PERIODIC_ENABLE
+        , _periodic_count(_loop.periodic_count_addr())
+#else
+        , _periodic_count(&kNoPeriodics)
+#endif
         , _wake_pending(_loop.wake_pending_addr()) {
         _calibrate_tsc(); // the interval itself stays 0 (poll every pass) until an embedder sets one
         _defer_wake.set<listener, &listener::_on_defer_wake>(this);

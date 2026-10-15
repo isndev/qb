@@ -14,8 +14,9 @@
  * consequence for the timer API: a loop that runs only when something is due has a stale clock
  * the rest of the time, so `event::timer` refreshes it before every arm -- the raw C arm, which
  * does not, is the negative control. A periodic is a deadline too, in a heap of its own that
- * `ev_timer_count_addr` does not count: a loop holding nothing else must still fire it, and a far
- * one must still cost no loop pass (Huly QB-275).
+ * `ev_timer_count_addr` does not count (`ev_periodic_count_addr` does): a loop holding nothing else
+ * must still fire it, one beside a quiet socket on its deadline rather than at the next poll, and a
+ * far one must still cost no loop pass (Huly QB-275).
  *
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  * Licensed under the Apache License, Version 2.0. See LICENSE for details.
@@ -139,6 +140,25 @@ TEST_F(ListenerTimerGate, AFarPeriodicCostsNoLoopPass) {
     RawPeriodic far_off(3600.); // not `far`: a Windows macro
     EXPECT_EQ(loop_runs_over(1000), 0u) << "with one far periodic, a thousand non-blocking passes ran the loop zero times";
     EXPECT_EQ(far_off.hits, 0);
+}
+
+TEST_F(ListenerTimerGate, APeriodicBesideAQuietSocketFiresOnItsDeadline) {
+    // Beside a quiet socket, with no timer, "no timer" left the periodic to the cadence's next poll --
+    // ten seconds away here, against a 5 ms deadline (Huly QB-275). The passes between two polls judge
+    // a periodic's deadline as they judge a timer's: on the periodic count beside the timer count.
+    qb::io::test::replay_until_conclusive([] {
+        Pipe                              p;
+        const qb::io::test::CadenceWindow w = qb::io::test::open_cold_interval(10s); // polls, finds nothing, goes cold
+        RawPeriodic                       soon(0.005);
+        const auto                        t0 = qb::mono_now();
+        while (soon.hits == 0 && qb::mono_now() - t0 < 2s)
+            listener::current.run(EVRUN_NOWAIT);
+        if (!qb::io::test::ran_inside(w))
+            return false; // the host stalled the attempt past the interval: a pass may have polled, legitimately
+        EXPECT_EQ(soon.hits, 1) << "the periodic waited for the cadence's next poll (10 s) instead of firing on its deadline (5 ms)";
+        EXPECT_EQ(p.hits, 0) << "the socket stayed quiet";
+        return true;
+    });
 }
 
 TEST_F(ListenerTimerGate, AFarTimerCostsNoLoopPass) {

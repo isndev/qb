@@ -635,10 +635,11 @@ policy.
 - **A loop whose only deadline is a periodic fires it under non-blocking passes (Huly QB-275).** The
   pass that does not run the loop judged deadlines on `ev_timer_count_addr`, which counts `ev_timer`
   watchers only, so a loop holding an `ev_periodic` and neither a timer nor an fd never ran under
-  `run(EVRUN_NOWAIT)`: a busy or latency-0 `VirtualCore`, `run_until` and `run_for` never fired it. Without
-  an fd the gate now asks `ev_timer_next`, which reads the periodic heap too, as it does for a timer; beside
-  an fd the cadence's next poll pass reifies it, at most one `setIoPollInterval` late. A far periodic still
-  costs no loop pass.
+  `run(EVRUN_NOWAIT)`: a busy or latency-0 `VirtualCore`, `run_until` and `run_for` never fired it, and
+  one beside a quiet socket fired at the cadence's next poll, up to a `setIoPollInterval` late. The gate
+  now reads qev's periodic count (`ev_periodic_count_addr`, through the new `ev::loop_ref::periodic_count_addr()`)
+  beside the timer count and judges the earliest deadline of either through `ev_timer_next`, as it judges
+  a timer's. A far periodic still costs no loop pass.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior
