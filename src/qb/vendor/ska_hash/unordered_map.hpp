@@ -654,6 +654,7 @@ public:
         return num_elements == 0;
     }
 
+protected:
     // qb local modification (Huly QB-1004): std::unordered_map / std::unordered_set ::merge. The NODE of each element of
     // `source` whose key is absent here is unlinked from `source` and linked into this table: nothing is allocated,
     // built, moved or freed, and "pointers and references to the transferred elements remain valid, but now refer into

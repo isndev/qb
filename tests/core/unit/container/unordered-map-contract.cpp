@@ -64,6 +64,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -414,6 +415,10 @@ struct ShiftedHash {
     }
 };
 
+// Whether `D::merge` takes an `S` -- a requirement on the overload set, read without calling anything.
+template <typename D, typename S>
+concept merges_from = requires(D &dst, S &src) { dst.merge(src); };
+
 } // namespace unordered_map_contract_test
 
 TEST(UnorderedMapContract, MergeRelinksTheNodesItTakes) {
@@ -483,6 +488,15 @@ TEST(UnorderedMapContract, TheFlatMapMergesAsTheNodeMapDoes) {
     EXPECT_EQ(set_dst.size(), 2u);
     ASSERT_EQ(set_src.size(), 1u);
     EXPECT_TRUE(set_src.contains(1));
+
+    // The source set holds the same element type, as std::unordered_set::merge's does; its hasher and equality may
+    // differ. A set of another element type is no source: emplace() of a foreign element builds a T before its lookup,
+    // so a merge from one emptied every element it then left behind.
+    using unordered_map_contract_test::merges_from;
+    using unordered_map_contract_test::ShiftedHash;
+    EXPECT_TRUE((merges_from<qb::unordered_flat_set<int>, qb::unordered_flat_set<int, ShiftedHash>>) );
+    EXPECT_FALSE((merges_from<qb::unordered_flat_set<std::string>, qb::unordered_flat_set<std::string_view>>) );
+    EXPECT_FALSE((merges_from<qb::unordered_flat_set<long>, qb::unordered_flat_set<int>>) );
 }
 
 TEST(UnorderedMapContract, TheNodeSetMergesByRelinkingToo) {

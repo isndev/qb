@@ -2375,11 +2375,12 @@ public:
         return Table::emplace(std::move(arg));
     }
 
-    // qb local modification (Huly QB-1004): std::unordered_set::merge for the open-addressing set, which had none -- the
-    // keys absent here move in and leave `source`, the others stay (see flat_hash_map::merge).
-    template <typename T2, typename H2, typename E2, typename A2>
+    // qb local modification (Huly QB-1004): std::unordered_set::merge for the open-addressing set, which had none --
+    // the keys absent here move in and leave `source`, the others stay (see flat_hash_map::merge). The source holds the
+    // same element type, as std's does: emplace() of another type builds a T before its lookup, emptying a kept one.
+    template <typename H2, typename E2, typename A2>
     void
-    merge(flat_hash_set<T2, H2, E2, A2> &source) {
+    merge(flat_hash_set<T, H2, E2, A2> &source) {
         if (static_cast<const void *>(&source) == static_cast<const void *>(this))
             return;
         for (auto it = source.begin(); it != source.end();) {
@@ -2390,9 +2391,9 @@ public:
         }
     }
 
-    template <typename T2, typename H2, typename E2, typename A2>
+    template <typename H2, typename E2, typename A2>
     void
-    merge(flat_hash_set<T2, H2, E2, A2> &&source) {
+    merge(flat_hash_set<T, H2, E2, A2> &&source) {
         merge(source);
     }
 

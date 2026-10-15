@@ -31,7 +31,8 @@ policy.
 
 - **`merge()` on `qb::unordered_set`, `qb::unordered_flat_map` and `qb::unordered_flat_set` (Huly QB-1004).** The node
   set relinks its nodes as the node map does; the flat tables move each element whose key is absent (a flat table
-  relocates its elements, so no pointer into one survives an insertion anyway). Pinned by
+  relocates its elements, so no pointer into one survives an insertion anyway). A set merges from a set of its own
+  element type, as `std::unordered_set::merge` does. Pinned by
   `UnorderedMapContract.TheFlatMapMergesAsTheNodeMapDoes` and `UnorderedMapContract.TheNodeSetMergesByRelinkingToo`.
 - **`nanolog::log_file_opened()` and `NanoLogLine::operator<<(string_literal_t)` (Huly QB-327, QB-366).** The first
   says whether the last `nanolog::initialize()` opened its file; the second borrows static text explicitly -- the
