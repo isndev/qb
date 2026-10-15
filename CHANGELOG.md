@@ -594,6 +594,9 @@ policy.
   `QuicCreditBlockedHeadTest.BlockedHeadLeavesOtherWorkSendableAndTheWriterIdle` (per-stream and
   connection credit) and `QuicEndpointLoop.CreditBlockedStreamLeavesTheWriterIdle`, red before the fix;
   `TxBatchBudgetFlushesLargePayloadAcrossPolls` (congestion-limited, ACK-driven) is the control.
+  `CreditBlockedStreamParksBehindQueuedWorkInOrder` covers a refusal with another stream queued behind
+  the head and bytes sent to a parked stream; `ResetOfACreditBlockedStreamReleasesItsQueuedData` proves a
+  reset releases the parked chunks from the send caps (red with that release removed).
   `EnforcesPreConnectionSendQueueLimits` no longer expects a backend with no connection to report
   `wants_write()` for queued data.
 - **A CSPRNG failure no longer leaves a QUIC listener's Retry secret zeroed for good (Huly QB-334).**

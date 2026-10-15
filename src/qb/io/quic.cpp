@@ -774,10 +774,9 @@ private:
     // listener's own packet vector. NO connection state is created — the client must re-send its
     // Initial carrying the token, proving it can receive at its claimed address, before we spend a
     // full handshake (ngtcp2_conn + SSL) on it. This is the anti-spoofed-Initial-flood defense.
+    // Precondition: ensure_retry_secret() succeeded (its one caller drops the Initial otherwise).
     void
     send_retry(packet_view datagram, ngtcp2_pkt_hd const &hd) {
-        if (!ensure_retry_secret())
-            return;
         std::uint8_t scidbuf[NGTCP2_MIN_INITIAL_DCIDLEN];
         if (!fill_random(scidbuf, sizeof(scidbuf)))
             return;
