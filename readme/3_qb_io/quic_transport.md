@@ -105,8 +105,8 @@ QUIC is not TCP with one descriptor per connection. A server endpoint owns one U
 - A QUIC stream is not extracted to another listener the way a TCP session is.
 - Under `qb-core`, scale by running endpoints on separate ports or listeners, or by forwarding business work to worker actors through `qb` events that carry the connection and stream ids, then posting responses back to the actor that owns the endpoint.
 
-The internal `connection_id` is a monotonically assigned `std::uint64_t`, not the on-wire connection id. `io_handler` — which `server` and `connector` inherit, and `endpoint` does **not** — keys stream sessions by the `{connection_id, stream_id}` pair, and caps how many it will create: `set_max_sessions(n)` makes `ensure_stream_session` return `nullptr` past the limit, with `session_count()` and `max_sessions()` to observe it.
-<!-- src: qb/src/qb/io/async/quic/io_handler.h:77-89 (the cap accessors), :182-183 (enforcement) -->
+The internal `connection_id` is a monotonically assigned `std::uint64_t`, not the on-wire connection id. `io_handler` — which `server` and `connector` inherit, and `endpoint` does **not** — keys stream sessions by the `{connection_id, stream_id}` pair, and caps how many it will admit: once `set_max_sessions(n)` sessions exist, registering a **new** pair returns `nullptr` (on the data path the facade resets that stream with code `1`), while a pair already admitted keeps resolving to its session — lowering the cap evicts and refuses nothing it holds. `session_count()` and `max_sessions()` observe it. The `on(StreamSession&)` creation hook runs once the session is in the registry and may remove it: registration then reports `nullptr` and the stream is refused the same way, and a session the hook installed under the same pair is the one returned.
+<!-- src: qb/src/qb/io/async/quic/io_handler.h:77-89 (the cap accessors), :309-315 (the lookup precedes the cap), :330-341 (what the registry holds after the hook) -->
 
 ### The `use<>::quic` aliases
 
@@ -392,7 +392,7 @@ credit obligation for the attached backend and arms a writable retry while the s
 Replacing the backend clears the old obligation. This does not replay an aborted event batch or
 guarantee progress under persistent memory exhaustion.
 
-<!-- src: qb/src/qb/io/async/quic/endpoint.h:541-554,326-340 (extend_stream_credit + batch drain), :207-240,268-281 (credit retry), :98-103,392-396 (backend replacement); qb/src/qb/io/async/quic/io_handler.h:285-295 (automatic credit), qb/src/qb/io/async/quic/server.h:124-126 (the server facade wires it) -->
+<!-- src: qb/src/qb/io/async/quic/endpoint.h:541-554,326-340 (extend_stream_credit + batch drain), :207-240,268-281 (credit retry), :98-103,392-396 (backend replacement); qb/src/qb/io/async/quic/io_handler.h:259-269 (automatic credit), qb/src/qb/io/async/quic/server.h:124-126 (the server facade wires it) -->
 
 QUIC DATAGRAMs are off by default: `settings.enable_datagrams` is `false` and `max_datagram_frame_size` is `0`. Calling `send_datagram(...)` while datagrams are disabled does not silently no-op — the native backend queues a `connection_closed` event with `disconnect_reason::protocol_error` and the reason phrase `QUIC DATAGRAM is not enabled`. Enable datagrams (`settings.enable_datagrams = true` plus a non-zero `max_datagram_frame_size`) before sending. A payload that exceeds `max_datagram_frame_size`, or that overflows the `max_pending_datagram_bytes` / `max_pending_datagram_frames` queue, resolves as `disconnect_reason::buffer_overflow` instead. An empty payload, or a send issued while the connection is closing, is dropped without error.
 
@@ -404,7 +404,7 @@ Two precisions on that paragraph, both worth knowing before you debug a datagram
 A stream-session read-buffer overflow is fatal to the stream. Appending past `max_read_buffer_size` makes `feed_stream_data` fail, and the `server` / `connector` facade turns that failure into a `reset_stream` with error code `1`. The write side is not symmetric: publishing past `max_write_buffer_size` returns `nullptr` and marks the session's disconnect reason, but it is not on the `feed_stream_data` path and produces **no** reset. Both limits are per session and settable with `set_max_read_buffer_size` / `set_max_write_buffer_size`.
 
 <!-- src: qb/src/qb/io/async/quic/stream.h:190-193 (append overflow), :208-212 (publish overflow), :157-165 (the setters) -->
-<!-- src: qb/src/qb/io/async/quic/io_handler.h:286-287 (feed_stream_data returns false), qb/src/qb/io/async/quic/server.h:127 (the reset) -->
+<!-- src: qb/src/qb/io/async/quic/io_handler.h:260-261 (feed_stream_data returns false), qb/src/qb/io/async/quic/server.h:127 (the reset) -->
 
 ## Pitfalls
 

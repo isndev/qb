@@ -536,6 +536,24 @@ policy.
 
 ### Fixed
 
+- **The QUIC stream-session cap refuses new streams, never one it already admitted (Huly QB-329).**
+  `io_handler` tested `set_max_sessions()` before looking the `{connection_id, stream_id}` pair up, so
+  once the registry was full every later chunk of an admitted stream -- one opened by `stream_started`
+  before its first byte included -- was refused and the facade reset it with code `1`. The lookup now
+  comes first: an admitted pair resolves whatever the cap says, and lowering the cap evicts nothing.
+  Pinned in `tests/io/unit/quic/quic-adapter.cpp` (`ExistingSessionLookupAndSessionCapRejection`,
+  `StreamSessionCapRejectsExtraRemoteStreamsAndResetsStream`), both red before the fix.
+- **A QUIC creation hook that removes its new session refuses the stream instead of crashing the feed
+  (Huly QB-331).** `registerSession` returned the session it had just created even when the
+  `on(StreamSession&)` hook had unregistered it or cleared the registry -- a pointer to a session freed
+  as the call returned -- and the data path then looked the session up again and dereferenced the empty
+  result. Registration now reports what the registry holds once the hook returns: `nullptr` after a
+  removal (the facade resets the stream with code `1`, as for a capped stream), the replacement when the
+  hook installed another session under the same pair. The data path admits once and keeps that owner
+  alive across the protocol handlers, one hash lookup fewer per chunk. Pinned by
+  `CreationHookRemovalMakesRegistrationReportNoSession` and
+  `CreationHookRemovalRefusesStreamDataInsteadOfFeedingAMissingSession`; the second crashed with
+  SIGSEGV before the fix.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

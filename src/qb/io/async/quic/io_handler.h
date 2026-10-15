@@ -179,35 +179,8 @@ public:
 
     [[nodiscard]] StreamSession *
     registerSession(std::uint64_t connection_id, std::uint64_t stream_id) {
-        if (_max_stream_sessions > 0 && _sessions.size() >= _max_stream_sessions)
-            return nullptr;
-
-        const stream_key key{connection_id, stream_id};
-        if (auto it = _sessions.find(key); it != _sessions.end())
-            return it->second.get();
-
-        std::shared_ptr<StreamSession> session;
-        if constexpr (std::is_constructible_v<StreamSession, Derived &, std::uint64_t>)
-            session = std::make_shared<StreamSession>(static_cast<Derived &>(*this), stream_id);
-        else if constexpr (std::is_constructible_v<StreamSession, Derived &>) {
-            session = std::make_shared<StreamSession>(static_cast<Derived &>(*this));
-            assign_stream_id(*session, stream_id);
-        } else if constexpr (std::is_constructible_v<StreamSession, std::uint64_t>)
-            session = std::make_shared<StreamSession>(stream_id);
-        else {
-            session = std::make_shared<StreamSession>();
-            assign_stream_id(*session, stream_id);
-        }
-
-        assign_quic_ids(*session, connection_id, stream_id);
-
-        auto [it, inserted] = _sessions.emplace(key, session);
-        if (!inserted)
-            return it->second.get();
-
-        if constexpr (qb::has_on<Derived, StreamSession &>)
-            static_cast<Derived &>(*this).on(*session);
-        return session.get();
+        // The map keeps its own reference, so the pointer outlives this temporary owner.
+        return admit_session(connection_id, stream_id).get();
     }
 
     [[nodiscard]] StreamSession *
@@ -274,10 +247,11 @@ protected:
     template <typename Credit>
     bool
     feed_stream_data(event::stream_data const &ev, Credit &&credit) {
-        if (!ensure_stream_session(ev.connection_id, ev.id))
+        // One admission, and the owner it returns keeps the session alive across the protocol's handlers.
+        auto keep_alive = admit_session(ev.connection_id, ev.id);
+        if (!keep_alive)
             return false;
-        auto  keep_alive = session_handle(ev.connection_id, ev.id);
-        auto *session    = keep_alive.get();
+        auto *session = keep_alive.get();
         if constexpr (requires(StreamSession &s, std::string_view data) {
                           s.append(data);
                           s.process();
@@ -329,6 +303,46 @@ protected:
     }
 
 private:
+    /// The session the registry holds for the key: the admitted one, else a new one, else nullptr when
+    /// the cap refuses a NEW key or the creation hook removed the new session.
+    [[nodiscard]] std::shared_ptr<StreamSession>
+    admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
+        const stream_key key{connection_id, stream_id};
+        // The lookup comes first: the cap limits admission, never a stream it already admitted.
+        if (auto it = _sessions.find(key); it != _sessions.end())
+            return it->second;
+        if (_max_stream_sessions > 0 && _sessions.size() >= _max_stream_sessions)
+            return nullptr;
+
+        std::shared_ptr<StreamSession> session;
+        if constexpr (std::is_constructible_v<StreamSession, Derived &, std::uint64_t>)
+            session = std::make_shared<StreamSession>(static_cast<Derived &>(*this), stream_id);
+        else if constexpr (std::is_constructible_v<StreamSession, Derived &>) {
+            session = std::make_shared<StreamSession>(static_cast<Derived &>(*this));
+            assign_stream_id(*session, stream_id);
+        } else if constexpr (std::is_constructible_v<StreamSession, std::uint64_t>)
+            session = std::make_shared<StreamSession>(stream_id);
+        else {
+            session = std::make_shared<StreamSession>();
+            assign_stream_id(*session, stream_id);
+        }
+
+        assign_quic_ids(*session, connection_id, stream_id);
+
+        auto [it, inserted] = _sessions.emplace(key, session);
+        if (!inserted)
+            return it->second;
+
+        if constexpr (qb::has_on<Derived, StreamSession &>) {
+            static_cast<Derived &>(*this).on(*session);
+            // The hook may unregister this session, clear the registry or install another session
+            // under the key: report what the registry holds now, not the local owner.
+            auto held = _sessions.find(key);
+            return held == _sessions.end() ? nullptr : held->second;
+        }
+        return session;
+    }
+
     static void
     assign_stream_id(StreamSession &session, std::uint64_t stream_id) {
         if constexpr (requires(StreamSession &s) { s.assign_stream_id(stream_id); })

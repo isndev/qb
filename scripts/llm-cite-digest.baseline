@@ -98,6 +98,8 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:541-554	42fdc6b6c1d9	extend_st
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:562-579	03a719e94fbb	reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, st...
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:614-629	cb98e519f56b	void
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:85-122	abd73efa0440	void
+llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
+llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:330-341	aabe4f0252c0	assign_quic_ids(*session, connection_id, stream_id);
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1022-1023	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1467-1494	abe6342ced08	static int
 llm/qb.llm.api.md	src/qb/io/quic.cpp:393-404	f3b23d71b8f5	bool
