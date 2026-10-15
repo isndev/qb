@@ -125,7 +125,7 @@ Two rules follow from the lifecycle:
 
 ### Referenced actors are not owned
 
-`addRefActor<T>(...)` creates a child actor on the **same** `VirtualCore` and returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`). The parent does **not** own the child: the parent's destructor will not delete it, and the child manages its own lifecycle through its own `kill()`. The handle **never dangles** — it resolves the live pointer on demand, so `get()` / `operator->` return `nullptr` once the child calls `kill()` (and while it is still Activating, or after a failed init). Check `handle.valid()` before sending to `handle.id()`; terminal teardown can return an empty handle. Gate direct calls on `handle.ready()`. (`src/qb/core/Actor.h`)
+`addRefActor<T>(...)` creates a child actor on the **same** `VirtualCore` and returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`). The parent does **not** own the child: the parent's destructor will not delete it, and the child manages its own lifecycle through its own `kill()`. The handle **never dangles** — `get()` resolves the live pointer on demand and returns `nullptr` once the child calls `kill()` (and while it is still Activating, or after a failed init). `operator->` requires `ready()` and asserts in debug when unavailable (`src/qb/core/Actor.h:2501-2506`). Check `handle.valid()` before sending to `handle.id()`; terminal teardown can return an empty handle. Gate direct calls on `handle.ready()`.
 
 Two safe patterns:
 

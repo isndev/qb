@@ -235,7 +235,8 @@ spawn([d = 100ms](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 //                             no timer). THE way to continue after the current handler unwinds,
 //                             e.g. a handler that must destroy/replace the object it runs on.
 //   callback(fn) / fn()    -> run INLINE, right now (callback(fn) is NOT deferred).
-qb::io::async::defer([this] { if (is_alive()) reconnect(); }); // never runs re-entrantly
+// An actor's deferred closure must own its captures; defer does not extend actor lifetime.
+// Never capture `this` and then call is_alive() from the deferred closure.
 
 // Inactivity timeout (CRTP): implement on(event::timer&), call updateTimeout() on activity.
 class Session : public qb::io::async::with_timeout<Session> {
@@ -460,9 +461,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `addActor`; reach same-core via `getService<Cfg>()`, any core via `qb::Actor::getServiceId<CfgTag>(core)`.
   The tag registers at static initialisation; register an image that brings one before `Main::start`.
 - **Referenced child (same core)** — `addRefActor<Child>(args...)` returns a phase-aware
-  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()`/`operator->` resolve the live actor on demand
-  and yield `nullptr` while the child is Activating, after a failed init, or once it died — never a
-  dangling pointer. Check `handle.valid()` before sending to its id; gate direct calls on `handle.ready()`.
+  `qb::ActorHandle<T>` (alias `RefActorHandle<T>`); `get()` resolves the live actor on demand
+  and yields `nullptr` while the child is Activating, after a failed init, or once it died — never a
+  dangling pointer. `operator->` requires `ready()` and asserts in debug when unavailable
+  (`Actor.h:2501-2506`). Check `handle.valid()` before sending to its id; gate direct calls on `handle.ready()`.
   `addRefHandle<Child>()` is `addRefActor` marked `[[nodiscard]]` — same handle type, not a stronger or
   separately liveness-checked one: spell it so when you keep the handle, `addRefActor` for a fire-and-forget
   child. `RefActorHandle<T>` is a `using` alias of `ActorHandle<T>` (not a distinct class), kept for source compatibility.

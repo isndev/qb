@@ -137,7 +137,7 @@ namespace qb::io::async {
 ```
 <!-- src: qb/src/qb/io/async/listener.h:1600 (async::defer); qb/src/qb/io/async/listener.h:1181 (listener::defer) -->
 
-Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive — the liveness guard below applies to it exactly as it does to a delayed `callback`.
+Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive: the same capture-lifetime rule applies as for a delayed `callback`. A check through a captured raw `this` cannot make either closure safe.
 
 ## `callback` — delayed actions, and the overload that is not delayed at all
 
@@ -158,7 +158,7 @@ Key facts, each verified against the header:
 
 - **The delay is a `std::chrono` duration, not a `double`.** Pass `200ms`, `std::chrono::seconds(5)`, or any `std::chrono::duration`. There is no seconds-as-`double` overload. <!-- src: qb/src/qb/io/async/io.h:402-404 -->
 - **A non-positive (or absent) delay fires inline, immediately.** `callback(f)` and `callback(f, d)` with `d <= 0` invoke `func()` synchronously at the call site — they do *not* defer to the next iteration. To run after the current handler unwinds, use `defer(f)`; do not reach for `callback(f, 1ms)`, which only hides the re-entrancy behind a timer. <!-- src: qb/src/qb/io/async/io.h:368-384,388-389,410-412 -->
-- **The callback runs on the same `VirtualCore`** that scheduled it, so it may touch that actor's state — but only if the actor is still alive when it fires.
+- **The callback runs on the same `VirtualCore`** that scheduled it. This does not extend the actor's lifetime: touch actor state only through a timer owned by the actor, or use an actor-scoped coroutine and a context event.
 - **Fire-and-forget.** The scheduled `Timeout<F>` is heap-allocated and deletes itself after firing; there is no handle to cancel it. When you need cancellation, use `scoped_callback`.
 
 ### Capture safety: the actor may be gone

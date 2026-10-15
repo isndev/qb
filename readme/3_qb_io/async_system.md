@@ -172,11 +172,15 @@ The delayed path refreshes libev's cached "now" before arming — every `event::
 
 `defer(func)` queues `func` to run **once, at the tail of the current loop turn** — after every libev watcher for that turn has returned. It is the correct primitive whenever a handler must **destroy or replace the object it is currently running on**, the canonical case being a reconnect that frees and recreates its own connection.
 
+The deferred closure must retain any object it will touch. A raw `this` capture can dangle if
+the handler destroys or replaces that object before the tail of the turn. For a connection
+managed by `std::shared_ptr` and `std::enable_shared_from_this`, capture its owner:
+
 ```cpp
 // src: derived from qb/src/qb/io/async/listener.h:1181 (listener::defer)
 void on(qb::io::async::event::disconnected const &) {
-    // NOT callback(...): this frees the object whose handler is running.
-    qb::io::async::defer([this] { reconnect(); });
+    auto self = shared_from_this();
+    qb::io::async::defer([self] { self->reconnect(); });
 }
 ```
 

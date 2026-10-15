@@ -379,8 +379,9 @@ if (child.ready()) child->doWork();                    // direct call only when 
 // async-init child: if (co_await child.ready_async(context())) child->doWork();
 ```
 
-The handle never dangles: `get()` / `operator->` resolve the live actor on demand and return
-`nullptr` while it is Activating, after a failed init, or once it died. Code that already used
+The handle never dangles: `get()` resolves the live actor on demand and returns
+`nullptr` while it is Activating, after a failed init, or once it died. `operator->` requires
+`ready()` and asserts in debug when unavailable (`Actor.h:2501-2506`). Code that already used
 `addRefHandle<T>()` + `RefActorHandle<T>` keeps compiling unchanged.
 
 ## Part 4 — `Event::id_type` is now one type in every build mode
