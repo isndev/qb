@@ -589,8 +589,9 @@ check_stored_result(bool fail, bool cancel_after_store, bool throwing) {
     EXPECT_EQ(observation->cancelled, cancel_wins ? 1 : 0);
     EXPECT_EQ(observation->inner_error, !cancel_wins && fail ? 1 : 0);
     EXPECT_EQ(observation->completed, !cancel_wins && !fail ? 1 : 0);
-    if (!cancel_wins && !fail)
+    if (!cancel_wins && !fail) {
         EXPECT_EQ(observation->value, 842);
+    }
     EXPECT_EQ(observation->unexpected, 0);
     EXPECT_TRUE(token.get_state()->callbacks.empty());
     EXPECT_EQ(coro_scheduler().pending_count(), 0u);
