@@ -50,6 +50,21 @@ policy.
   `https://[::1]:/` now carry the default port of their scheme and the host without the colon (RFC 3986 3.2.3, 6.2.3).
   A name kept the colon -- host `example.com:`, classified `AF_INET6` for it -- and a bracketed host an empty port
   (`u_port() == 0`). An unbracketed IPv6 host ending in `:` (`fe80::`) keeps every colon in its host, as before.
+- **`icase_unordered_map` / `icase_map` lookups build no folded `std::string` (Huly QB-279 follow-up).**
+  `find`, `has`, `at` and `erase(key)` folded the key into a fresh `std::string` on every call -- a heap
+  allocation past the small-string capacity (`"Transfer-Encoding"` is 17 bytes), and a runtime
+  character loop even for a string literal. The key is now folded into a stack buffer eight bytes at a
+  time (`string_to_lower::fold`) and looked up as a `std::string_view` through transparent functors: the
+  maps are keyed on `qb::string_hash` (`std::hash<std::string_view>`, whose values the standard
+  requires to equal `std::hash<std::string>`'s, so buckets and iteration order are unchanged) with
+  `std::equal_to<>`, and `icase_map` on `std::less<>`; the vendored `ska::unordered_map` gains the
+  heterogeneous `find`/`count`/`contains`/`erase` on the standard's condition (both functors
+  `is_transparent`) and nothing otherwise. Only an insert still builds the folded `std::string` (the
+  stored key), with the same eight-byte fold. A `const char *` key, which did not compile, is accepted.
+  Measured with callgrind on qbm-http's header map (WSL2 g++-14 -O3, instructions per iteration of a
+  two-`add_header` / two-`remove_header` loop, deterministic to 0.1 Ir): 1811 before the QB-279 fix,
+  1913 with it (the `const std::string` key now folded, +102), 1666 with this change -- below the
+  unfolded base, with every literal lookup's character loop gone as well.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through
@@ -872,6 +887,14 @@ policy.
   (RFC 3986 3.2.2). Pinned by `UriParse.AssignedTextIsClassifiedLikeAFreshUriOfIt`,
   `UriParse.CopiesAndMovesKeepTheEditedQueryMap` and `UriParse.ABracketedHostEndsTheAuthorityOrIsFollowedByAPort` in
   `tests/io/unit/core/uri-parse.cpp`.
+- **`icase_unordered_map` / `icase_map` erase a `const std::string` key through its folded form (Huly QB-279).**
+  The wrapper imported the base map's whole `erase` set to expose the position forms, and with it the base's
+  `erase(const key_type &)`: for a `const std::string` lvalue that non-template tied with the folding template
+  and won, so the key was looked up unfolded in folded storage and nothing was erased -- qbm-http's
+  `Headers::remove_header` and `CookieJar::remove` kept the entry whenever the name passed had an upper-case letter. The key
+  form is now the folding template alone, constrained to keys the trait converts, and the position and range forms
+  are spelled out over `const_iterator`; `erase(iterator)` on `icase_unordered_map`, which did not compile, now
+  does. Every other key form folded already and is unchanged.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

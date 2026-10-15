@@ -22,7 +22,7 @@ template <class K, …> using unordered_set      = ska::unordered_set<K, H, E, A
 template <class K, …> using unordered_flat_set = ska::flat_hash_set<K, H, E, A>;
 }
 ```
-<!-- src: qb/src/qb/system/container/unordered_map.h:49-50, :100-101 -->
+<!-- src: qb/src/qb/system/container/unordered_map.h:56-57, :107-108 -->
 <!-- src: qb/src/qb/system/container/unordered_set.h:45-46, :74-75 -->
 
 Both are from the vendored `ska_hash` library and both are drop-in for their `std::` equivalents. The difference is where the value lives, and it is the only thing you need to decide between them.
@@ -34,7 +34,7 @@ Both are from the vendored `ska_hash` library and both are drop-in for their `st
 | Locality | one indirection per lookup | none |
 | Use when | you hold a reference, pointer or `&map[k]` across an insertion | you only ever look up and copy out |
 
-`qb::unordered_map` gives the same stability contract `std::unordered_map` does: **a rehash invalidates iterators but not references or pointers to elements** (`qb/src/qb/system/container/unordered_map.h:53-60`). That guarantee matters when a caller retains an element across insertions; the engine's current registries are different examples. `CoreInitializer::_registered_services` is a membership set (`src/qb/core/Main.h:215`), and the actor-facing event router's `_registered_events` is an `internal::key_table` (`src/qb/system/event/router.h:1125`). Since 3.2, `VirtualCore::ActorMap` has been a dense vector of `std::unique_ptr<Actor>` indexed by service id — since 3.3 a `qb::allocator::region_vector`, whose storage from 64 KiB is a region the next engine rebuilds it in ([Buffers](./buffers.md#what-an-engine-leaves-to-the-next-one)) (`src/qb/core/VirtualCore.h:187`); the actor lives behind its `unique_ptr` when the slot moves, and the old node map cost a `malloc`/`free` and two hashed probes per actor lifetime.
+`qb::unordered_map` gives the same stability contract `std::unordered_map` does: **a rehash invalidates iterators but not references or pointers to elements** (`qb/src/qb/system/container/unordered_map.h:60-67`). That guarantee matters when a caller retains an element across insertions; the engine's current registries are different examples. `CoreInitializer::_registered_services` is a membership set (`src/qb/core/Main.h:215`), and the actor-facing event router's `_registered_events` is an `internal::key_table` (`src/qb/system/event/router.h:1125`). Since 3.2, `VirtualCore::ActorMap` has been a dense vector of `std::unique_ptr<Actor>` indexed by service id — since 3.3 a `qb::allocator::region_vector`, whose storage from 64 KiB is a region the next engine rebuilds it in ([Buffers](./buffers.md#what-an-engine-leaves-to-the-next-one)) (`src/qb/core/VirtualCore.h:187`); the actor lives behind its `unique_ptr` when the slot moves, and the old node map cost a `malloc`/`free` and two hashed probes per actor lifetime.
 
 Measured on this checkout: a reference taken from a `qb::unordered_map<std::string, int>` before 10 000 further insertions — many rehashes — still reads the right value afterwards.
 
@@ -50,7 +50,7 @@ So when auditing engine-adjacent code that indexes a `qb::unordered_map`, the qu
 
 ### The alias is unconditional, and must stay that way
 
-`qb::unordered_map` resolves to `ska::unordered_map` in **every** build configuration. It must never be made to depend on `NDEBUG`, `CMAKE_BUILD_TYPE`, or any other build macro, and the header says so as a `@warning` rather than as a comment (`qb/src/qb/system/container/unordered_map.h:62-80`).
+`qb::unordered_map` resolves to `ska::unordered_map` in **every** build configuration. It must never be made to depend on `NDEBUG`, `CMAKE_BUILD_TYPE`, or any other build macro, and the header says so as a `@warning` rather than as a comment (`qb/src/qb/system/container/unordered_map.h:69-87`).
 
 The reason is that this is a **public type used as a data member of public classes** — `qb::VirtualCore`, `qb::Main`, `qb::router::*`, and qbm's own headers. A macro-selected implementation would make `sizeof(qb::unordered_map<int,int>)` differ between two translation units (measured: 32 against 40), so a consumer compiled one way against a library compiled the other reads one map's storage through the other's layout. The observed symptom is a runtime abort far from the cause — `std::overflow_error: __next_prime overflow` — with no diagnostic from the compiler or the linker, because each translation unit is internally consistent and vague linkage merges the bodies silently.
 
@@ -67,8 +67,8 @@ Upstream `ska_hash` predates C++20 and is no longer maintained. qb's copy is a d
 
 Upstream's third table, `bytell_hash_map.hpp`, is no longer shipped. qb never used it, and it placed over-aligned value types in storage aligned only for `unsigned char`.
 
-<!-- src: qb/src/qb/vendor/ska_hash/unordered_map.hpp:171-201, :226-262, :431-456, :658-705, :936-964, :991-1002, :1044-1056 -->
-<!-- src: qb/src/qb/vendor/ska_hash/flat_hash_map.hpp:399-426, :446-477, :792-807, :2277-2299, :2326-2340, :2378-2398 -->
+<!-- src: qb/src/qb/vendor/ska_hash/unordered_map.hpp:182-212, :237-273, :487-512, :714-761, :992-1020, :1047-1058, :1100-1112 -->
+<!-- src: qb/src/qb/vendor/ska_hash/flat_hash_map.hpp:432-459, :479-510, :825-840, :2310-2332, :2359-2373, :2411-2431 -->
 
 ### Custom keys
 
@@ -101,12 +101,12 @@ namespace qb {
 template <class Map, class Trait = string_to_lower> class icase_basic_map;
 
 template <class Value, class Trait = string_to_lower>
-using icase_map           = icase_basic_map<std::map<std::string, Value>, Trait>;
+using icase_map           = icase_basic_map<std::map<std::string, Value, std::less<>>, Trait>;
 template <class Value, class Trait = string_to_lower>
-using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value>, Trait>;
+using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value, string_hash, std::equal_to<>>, Trait>;
 }
 ```
-<!-- src: qb/src/qb/system/container/unordered_map.h:228-229, :414-424 -->
+<!-- src: qb/src/qb/system/container/unordered_map.h:252-253, :528-541 -->
 
 ```cpp
 qb::icase_unordered_map<int> headers;
@@ -117,12 +117,12 @@ headers.has("CONTENT-LENGTH");    // true
 
 Four things to know about it:
 
-- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace`, `at`, `operator[]`, `find` and `erase` — the first at `qb/src/qb/system/container/unordered_map.h:267-270`, the last at `:376-380`, so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value.
-- **The conversion is ASCII-only.** `string_to_lower::charToLower` maps `'A'`–`'Z'` and leaves every other byte alone (`qb/src/qb/system/container/unordered_map.h:116-119`). That is correct for HTTP field names and wrong for arbitrary Unicode, deliberately.
-- **`has(key)` is the membership test** (`qb/src/qb/system/container/unordered_map.h:363-367`). The base map's `count` and `contains` are not among the re-exported members — deliberately, and the point sharpened in 3.0 when the fork gained a `contains()`: there is still no way to reach a lookup that skips the key conversion, which is the whole reason the inheritance is private.
-- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `erase`, `size` (`qb/src/qb/system/container/unordered_map.h:383-390`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion.
+- **The stored key is the lowercased one.** `_Trait::convert` runs before every `emplace`, `try_emplace` and `operator[]` — the first at `qb/src/qb/system/container/unordered_map.h:339-342` — so iterating the map yields lowercase keys — not the casing you inserted. If you must reproduce the original spelling on the wire, store it in the value. A lookup — `find`, `has`, `at`, `erase(key)` (the last at `:460-472`) — builds no string at all: the key is folded eight bytes at a time into a stack buffer (`string_to_lower::fold`, the folding path at `:288-302`) and looked up as a `std::string_view` through the maps' transparent functors (`qb::string_hash`, whose values are `std::hash<std::string>`'s, with `std::equal_to<>`; `std::less<>` for `icase_map`); only a key longer than that buffer, or a base map without heterogeneous lookup, converts. Every key form is folded, a `const std::string` included: until 3.3 that one reached the base map's own `erase(const key_type &)`, which looks the key up unfolded, so the entry stayed (Huly QB-279).
+- **The conversion is ASCII-only.** `string_to_lower::charToLower` maps `'A'`–`'Z'` and leaves every other byte alone (`qb/src/qb/system/container/unordered_map.h:124-127`). That is correct for HTTP field names and wrong for arbitrary Unicode, deliberately.
+- **`has(key)` is the membership test** (`qb/src/qb/system/container/unordered_map.h:441-445`). The base map's `count` and `contains` are not among the re-exported members — deliberately, and the point sharpened in 3.0 when the fork gained a `contains()`: there is still no way to reach a lookup that skips the key conversion, which is the whole reason the inheritance is private.
+- **Inheritance is private**, and only a hand-picked set of base members is re-exported: `begin`, `cbegin`, `cend`, `clear`, `empty`, `end`, `size` (`qb/src/qb/system/container/unordered_map.h:496-502`). Anything not on that list is intentionally unreachable, because reaching it would skip the key conversion. `erase` is not re-exported for that very reason — the base set includes the key form — but spelled out: the folding key form, and the position and range forms (`:479-482`, `:490-493`), which take a `const_iterator` (an `iterator` converts).
 
-`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:401-405`).
+`convert_key(k)` is available as a static helper when you need the normalised form outside a map operation (`qb/src/qb/system/container/unordered_map.h:513-517`).
 
 ## `qb::string<N>` — the reason the first example in the README is not `std::string`
 
@@ -224,11 +224,11 @@ A growable single-thread FIFO: a power-of-two buffer over storage aligned for `T
 
 - **`qb::string<N>` truncates silently.** Assigning or appending past `N` clamps; nothing throws and nothing reports it (`qb/src/qb/string.h:249-259`). This is the one that bites, because a path or a name that fits in your tests will not fit in production.
 - **`operator+` truncates too**, at `std::max` of the two capacities (`qb/src/qb/string.h:1425-1431`).
-- **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:267-271`).
-- **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:116-119`). Correct for HTTP field names; not a Unicode case-folding.
+- **An `icase_*` map stores the lowercased key.** Iterating it will not give you back the casing you inserted (`qb/src/qb/system/container/unordered_map.h:339-343`).
+- **`icase_*` lowercasing is ASCII-only** (`qb/src/qb/system/container/unordered_map.h:124-127`). Correct for HTTP field names; not a Unicode case-folding.
 - **Node stability is not reentrancy safety.** A reference into a `qb::unordered_map` survives a rehash and does *not* survive an `erase` of that entry from a callback you invoked while holding it.
 - **`unordered_flat_map` invalidates references on rehash.** Reach for it only when you copy values out; if you are unsure which you have, you want `qb::unordered_map`.
-- **Do not make the `unordered_map` alias conditional on a build macro**, for any reason, including debugger pretty-printers (`qb/src/qb/system/container/unordered_map.h:62-80`). It is the layout of a public type.
+- **Do not make the `unordered_map` alias conditional on a build macro**, for any reason, including debugger pretty-printers (`qb/src/qb/system/container/unordered_map.h:69-87`). It is the layout of a public type.
 - **`ring_buffer` with `Overwrite = true` loses data by design.** The default is the lossy one.
 - **None of these containers is thread-safe.** Every one of them belongs to exactly one thread, which in qb means one `VirtualCore`.
 
