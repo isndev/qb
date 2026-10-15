@@ -689,14 +689,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1273-1287, :1563-1578, :1622-1652, :1688-1715)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:73-85; async/io.h:77-82, :97-98, :106-110)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1463-1476; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1544-1557; mixin.h:63-71)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1448-1460)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:373-413)_ _(listener.h:1515)_
+  them. _(listener.h:1529-1541)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:373-413)_ _(listener.h:1596)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:574-603)_
@@ -1552,13 +1552,13 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `thread_local static listener current;` — the implicit loop every async object binds to.
     *   `[T<_Event,_Actor,_Args...>] _Event& registerEvent(_Actor& actor, _Args&&... args)` — wrap a libev watcher.
     *   `void unregisterEvent(IRegisteredKernelEvent* kevent)` (idempotent).
-    *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then drain coroutines.
+    *   `void run(int flag = 0)` — run the loop (0 / EVRUN_ONCE / EVRUN_NOWAIT), then the deferred callbacks, then coroutines. A non-blocking call drains the deferred callbacks once, at its tail; a blocking run also drains them inside the loop, once per iteration.
     *   `bool has_work() const noexcept` — whether a `run()` turn has anything to do: referenced active watchers, pending events, deferred callbacks, ready coroutines. `VirtualCore` gates its libev pass on it.
     *   `void arm_wake()` / `void disarm_wake() noexcept` / `bool is_wake_armed() const noexcept` — owner thread only; arm the `ev_async` that lets another thread end a `run_once_for()` park (unref'd, never counts as work).
     *   `void wake() noexcept` — end a `run_once_for()` park from ANY thread (`ev_async_send`); the one thread-safe member. Requires `arm_wake()` to have happened-before.
     *   `std::size_t run_once_for(qb::duration cap)` — one turn that may block for at most `cap` until a watcher fires or `wake()` lands (one-shot cap timer + `EVRUN_ONCE`); a turn with deferred/ready/pending work, or `cap <= 0`, is a plain `EVRUN_NOWAIT`. → events invoked this turn. Owner thread only.
-    *   `void set_dispatch_timing(bool enabled) noexcept` / `[[nodiscard]] TimingStats dispatch_timing() const noexcept` — time the watcher dispatch (the callbacks one libev iteration runs) into a `qb::TimingStats`; off by default and free when off (libev's own dispatch through the same pointer); the deferred callbacks and coroutine resumes `run()` drains after it are not part of it; turning it off keeps the stats. Owner thread only. Under qb-core, `CoreInitializer::setPassTiming()` times the whole pass instead (Huly QB-165).
-    *   `void break_one()`, `void clear()`.
+    *   `void set_dispatch_timing(bool enabled) noexcept` / `[[nodiscard]] TimingStats dispatch_timing() const noexcept` — time the watcher dispatch (the callbacks one libev iteration runs) into a `qb::TimingStats`; off by default and free when off (libev's own dispatch through the same pointer); the deferred callbacks and coroutine resumes `run()` drains after it are not part of it (a blocking run's in-loop defer drain is); turning it off keeps the stats. Owner thread only. Under qb-core, `CoreInitializer::setPassTiming()` times the whole pass instead (Huly QB-165).
+    *   `void break_one()`, `void clear()` — `clear()` detaches every watcher (destroying loop-owned timers) and DROPS every deferred callback, never runs one: those queued before it and those deferred while it tears down; called from a deferred callback, it ends that drain.
     *   `std::size_t nb_invoked_event() const`, `total_events_processed() const`, `size() const`.
     *   `ev::loop_ref loop() const`, `CoroutineScheduler& coro_scheduler()`.
 *   Free drivers:
@@ -1581,7 +1581,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   Callbacks / scheduling — three primitives, pick by intent:
     *   `[T<_Func>] void callback(_Func&& func)` — run **inline immediately** (NOT deferred, despite the name).
     *   `[T<_Func,Rep,Period>] void callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` — run after a real `timeout` (`<= 0` runs inline). Use for timeouts/deadlines. The timer keeps its OWN copy of `func` (`Timeout<std::decay_t<_Func>>`: an lvalue is copied, an rvalue moved; a move-only lvalue must be `std::move`d in; `std::ref(fn)` shares one deliberately).
-    *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown.
+    *   `[T<_Func>] void defer(_Func&& func)` — run **at the tail of the current loop turn** (next tick, no delay, no timer). The primitive for "continue after this handler unwinds" (e.g. a reconnect that frees+recreates its connection). Never runs re-entrantly; captured state released on fire or on loop teardown. One generation per turn: a callback deferred by a deferred callback runs on the next `run()` call.
     *   `[T<_Func,Rep,Period>] auto scoped_callback(_Func&& func, std::chrono::duration<Rep,Period> timeout)` → `std::unique_ptr<ScopedTimeout<...>>` — hot-path timer variant; destroying/reusing the ptr cancels. Takes a named callable or a temporary and keeps its own copy, like `callback`.
     *   use: `qb::io::async::callback([]{ … }, 200ms);` (timer) · `qb::io::async::defer([]{ … });` (next turn).
 *   `[T] class file_watcher<_Derived> : public base<..., event::file>` — watch a file, read/parse new content via an owned protocol. `do_read = true`. `void start(const std::filesystem::path& fpath, qb::duration interval = std::chrono::milliseconds(100)) noexcept`, `disconnect()`, `switch_protocol<P>(...)`, `read_all()`. `interval` is the `stat()` cadence only where the path is polled (macOS, Windows, a non-local Linux filesystem; floor ~0.107 s) — on a local Linux filesystem inotify wakes the watcher and `interval` is unused; the event is two `stat`s either way. The watcher copies the path into an owned `std::string _watched_path` for its lifetime — `ev_stat` stores the path **pointer** without copying, so the string must outlive the watcher.
@@ -1674,7 +1674,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
 *   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1463-1476`)_.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1544-1557`)_.
 *   `[T] inline void pin_frame_copy(T& copy) noexcept` — keep a by-value coroutine parameter's frame copy at its own alignment: a memory-operand asm barrier on clang (no instruction emitted), a no-op on GCC, MSVC and clang-cl. Shields LLVM issue 159571 (clang older than 22 on a `byval` ABI — x86-64 Linux / Intel macOS — spills a never-written parameter copy at alignment 8 and reads it at 64). Call it before the first suspension of a coroutine that takes an event by value and never assigns to it; every `qb::ask*` pattern coroutine does (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:378)_
 *   use: `co_await qb::io::async::sleep(100ms);`
 

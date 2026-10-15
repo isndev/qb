@@ -1524,7 +1524,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame)
 TEST_F(CoroutineSchedulerTests, CurrentSchedulerPtrFreeFunctionMatchesStatic) {
     // The fixture SetUp only calls async::init(), which is a no-op: the listener's
     // CoroutineScheduler is created lazily and installed as the TLS current pointer ONLY on the
-    // first coro_scheduler() access (listener.h:654-658). So we must touch it here to install it
+    // first coro_scheduler() access (listener.h:717-721). So we must touch it here to install it
     // before asserting the accessors are non-null — otherwise current_scheduler_ptr() is
     // legitimately null (no scheduler exists yet).
     auto *installed = &qb::io::async::listener::current.coro_scheduler();

@@ -74,7 +74,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1463-1476	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1544-1557	31584ba4b550	inline void
 llm/qb.llm.api.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.api.md	offload.h:124-124	f009c11da3b1	bool set_offload_threads(std::size_t n) noexcept;
 llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : public awaiter_base {
@@ -166,7 +166,7 @@ llm/qb.llm.md	VirtualCore.h:1712-1712	4112605310a9	Actor::spawn(std::string_view
 llm/qb.llm.md	async/io.h:106-110	4ab46a163948	~base() {
 llm/qb.llm.md	async/io.h:77-82	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/io.h:97-98	bc5b8adc7b00	base()
-llm/qb.llm.md	async/listener.h:73-85	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
+llm/qb.llm.md	async/listener.h:74-86	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
 llm/qb.llm.md	channel.h:1148-1148	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
 llm/qb.llm.md	combinators.h:191-191	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
@@ -194,9 +194,9 @@ llm/qb.llm.md	io.h:3136-3140	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:368-404	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
 llm/qb.llm.md	io.h:373-413	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:624-627	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1448-1460	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1463-1476	31584ba4b550	inline void
-llm/qb.llm.md	listener.h:1515-1515	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1529-1541	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1544-1557	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1596-1596	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.md	offload.h:202-213	2f7b9e7ef6cd	run() noexcept override {
 llm/qb.llm.md	offload.h:24-40	d6f92fe8755f	* THE CONTRACT, IN FOUR RULES

@@ -595,6 +595,21 @@ policy.
   teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
   witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
   one completion per pass and one fewer per extra completion (callgrind).
+- **One generation of deferred callbacks per `run()` call (Huly QB-448).** A callback deferred by a
+  deferred callback ran in the same `run(EVRUN_NOWAIT)` call: `run()`'s own drain after the loop took
+  what the in-loop drain had left for the next turn, and when the loop invoked a fed watcher on entry
+  (`disconnect()` feeds one) the in-loop drain ran there and its zero-delay re-arm fired in the same
+  call's iteration. The in-loop drain now serves blocking runs only (`run(0)`, `EVRUN_ONCE`, which hand
+  it what was queued before them); a non-blocking call drains once, at its tail, after every watcher it
+  invoked. A bare `defer()` no longer makes the loop run at all (callgrind: 475 -> 156 instructions a
+  pass that defers one callback), and the drain's body is out of line behind an inline emptiness test,
+  which leaves the actor-only pass instruction for instruction as it was but for one alignment `nop`.
+- **`listener::clear()` drops the work deferred while it tears down instead of running it (Huly
+  QB-276).** Its first purge dropped what was queued before the call, but what the teardown released
+  after it -- the capture of a loop-owned `callback(fn, delay)` timer, a coroutine its flush passes
+  resumed -- could `defer()` again, and those flush passes ran it. `clear()` now holds the drain guard
+  for the whole call and drops the queue again on its way out; called from a deferred callback, it ends
+  that drain, so a callback deferred after the clear runs on the next turn.
 - **A loop whose only deadline is a periodic fires it under non-blocking passes (Huly QB-275).** The
   pass that does not run the loop judged deadlines on `ev_timer_count_addr`, which counts `ev_timer`
   watchers only, so a loop holding an `ev_periodic` and neither a timer nor an fd never ran under
