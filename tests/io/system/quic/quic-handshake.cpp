@@ -1244,7 +1244,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  * @brief With DATAGRAM enabled on both ends, the server sends a datagram after the handshake; pumping
  *        delivers it to the client (recv_datagram_cb increments datagrams_received) and carries the
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
- *        incrementing datagrams_acked. Covers quic.cpp:1408-1421 (acked branch) + 1548-1553.
+ *        incrementing datagrams_acked. Covers quic.cpp:1408-1421 (acked branch) + 1551-1556.
  */
 TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1296,13 +1296,18 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     EXPECT_GE(server->current_stats().datagrams_acked, 1u) << "server never saw the datagram ACK (ack_datagram_cb did not fire)";
 }
 
+class QuicStreamResetTest : public ::testing::TestWithParam<std::uint64_t> {};
+
 /**
- * @test The peer observes a RESET_STREAM frame, driving stream_reset_cb
+ * @test The peer observes a RESET_STREAM frame, and both full closes keep it a reset
  * @brief The server opens a stream, sends data, then resets it; pumping carries the RESET_STREAM frame
  *        to the client whose stream_reset_cb fires and queues a stream_closed event with
- *        stream_close_reason::reset and the application error code. Covers quic.cpp:1517-1525.
+ *        stream_close_reason::reset and the application error code. Pumping on until ngtcp2 closes the
+ *        stream on BOTH peers, each stream_close_cb must report reset with that code and neither may
+ *        synthesise a FIN nobody sent. Application error code 0 is a valid reset code: ngtcp2 flags it
+ *        as set, and it must not read as a clean finish (Huly QB-335; the 0x42 case is the control).
  */
-TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
+TEST_P(QuicStreamResetTest, PeerObservesStreamResetFromServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     auto server = qb::io::quic::make_native_backend();
@@ -1344,30 +1349,62 @@ TEST(QuicHandshakeNativeBackend, PeerObservesStreamResetFromServer) {
     }
     ASSERT_TRUE(client_saw_stream) << "peer never saw the server stream open";
 
-    server->reset_stream(server_connection_id, stream, 0x42);
+    const std::uint64_t code = GetParam();
+    server->reset_stream(server_connection_id, stream, code);
 
-    bool                              client_saw_reset = false;
-    qb::io::quic::stream_close_reason observed_reason  = qb::io::quic::stream_close_reason::none;
-    std::uint64_t                     observed_error   = 0;
-    const auto                        reset_deadline   = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (!client_saw_reset && std::chrono::steady_clock::now() < reset_deadline) {
-        deliver_quic_packets(*client, *server);
-        deliver_quic_packets(*server, *client);
-        for (auto const &event : client->drain_events()) {
-            if (event.type == qb::io::quic::backend_event::kind::stream_closed
-                && event.stream_reason == qb::io::quic::stream_close_reason::reset) {
-                client_saw_reset = true;
-                observed_reason  = event.stream_reason;
-                observed_error   = event.error_code;
+    // stream_reset_cb's event carries a text; stream_close_cb's, the full close, carries none.
+    struct Observed {
+        bool                              peer_reset      = false;
+        std::uint64_t                     peer_reset_code = ~std::uint64_t{0};
+        bool                              closed          = false;
+        qb::io::quic::stream_close_reason close_reason    = qb::io::quic::stream_close_reason::none;
+        std::uint64_t                     close_code      = ~std::uint64_t{0};
+        int                               fins            = 0;
+    };
+    const auto observe = [stream](qb::io::quic::backend &backend, Observed &seen) {
+        for (auto const &event : backend.drain_events()) {
+            if (event.stream_id != stream)
+                continue;
+            if (event.type == qb::io::quic::backend_event::kind::stream_data && event.error_code == 1)
+                ++seen.fins;
+            if (event.type != qb::io::quic::backend_event::kind::stream_closed)
+                continue;
+            if (event.text == "stream reset by peer") {
+                seen.peer_reset      = true;
+                seen.peer_reset_code = event.error_code;
+            } else if (event.text.empty()) {
+                seen.closed       = true;
+                seen.close_reason = event.stream_reason;
+                seen.close_code   = event.error_code;
             }
         }
-        (void) server->drain_events();
+    };
+    Observed   client_seen;
+    Observed   server_seen;
+    const auto reset_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while ((!client_seen.closed || !server_seen.closed) && std::chrono::steady_clock::now() < reset_deadline) {
+        deliver_ready_quic_packets(*server, *client);
+        deliver_ready_quic_packets(*client, *server);
+        observe(*client, client_seen);
+        observe(*server, server_seen);
     }
 
-    ASSERT_TRUE(client_saw_reset) << "peer never observed the RESET_STREAM (stream_reset_cb did not fire)";
-    EXPECT_EQ(observed_reason, qb::io::quic::stream_close_reason::reset);
-    EXPECT_EQ(observed_error, 0x42u);
+    ASSERT_TRUE(client_seen.peer_reset) << "peer never observed the RESET_STREAM (stream_reset_cb did not fire)";
+    EXPECT_EQ(client_seen.peer_reset_code, code);
+    ASSERT_TRUE(client_seen.closed) << "the client never fully closed the reset stream";
+    EXPECT_EQ(client_seen.close_reason, qb::io::quic::stream_close_reason::reset) << "a reset must not close as finished";
+    EXPECT_EQ(client_seen.close_code, code);
+    EXPECT_EQ(client_seen.fins, 0) << "the server never sent a FIN: none may be synthesised";
+    ASSERT_TRUE(server_seen.closed) << "the server never fully closed the stream it reset";
+    EXPECT_EQ(server_seen.close_reason, qb::io::quic::stream_close_reason::reset);
+    EXPECT_EQ(server_seen.close_code, code);
+    EXPECT_EQ(server_seen.fins, 0);
 }
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::testing::Values(std::uint64_t{0x42}, std::uint64_t{0}),
+                         [](::testing::TestParamInfo<std::uint64_t> const &info) {
+                             return info.param == 0 ? std::string{"ApplicationCodeZero"} : std::string{"ApplicationCode0x42"};
+                         });
 
 /**
  * @test A malformed UDP datagram against a started parent server is rejected, not accepted
@@ -1419,7 +1456,7 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
  * @test The server observes its own STOP_SENDING when it stops reading a stream (stream_stop_sending_cb).
  * @brief The client opens a bidi stream and writes; the server stops reading it via stop_stream()
  *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:580-590 (the synchronous stop_sending
- *        event queued by stop_stream) AND quic.cpp:1527-1534 (stream_stop_sending_cb, fired by
+ *        event queued by stop_stream) AND quic.cpp:1530-1537 (stream_stop_sending_cb, fired by
  *        ngtcp2 when the local endpoint drains its transport after shutting down the read side).
  *
  * QUIC/ngtcp2 SEMANTICS — important correction over the prior version of this test, which expected
@@ -1480,7 +1517,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     server->stop_stream(server_connection_id, server_stream_id, app_error);
 
     // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:589) and arms
-    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1528)
+    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1531)
     // for the SAME stream/reason. Pump a bounded number of times and collect every stop_sending event
     // the server observes.
     int                               server_stop_sending_count = 0;
@@ -1594,9 +1631,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
  *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1499-1508) and emits a trailing stream_data carrying error_code == 1
+ *        SYNTHESIS arm (quic.cpp:1502-1511) and emits a trailing stream_data carrying error_code == 1
  *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1509-1513), then queues stream_closed(finished).
+ *        (quic.cpp:1512-1516), then queues stream_closed(finished).
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -1661,7 +1698,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
     // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1499-1513) and emits a trailing
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1502-1516) and emits a trailing
     // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL

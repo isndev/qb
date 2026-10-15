@@ -567,6 +567,16 @@ policy.
   connection. Pinned by `DefaultConnectionAddressesTheSoleConnectedPeerByItsRealId` and the
   `SolePeerConnection` case of `QuicServerInitiatedStreamTest.ReachesClient` (the client never received
   the server's bytes before the fix; the `ExplicitConnection` case is the control).
+- **A QUIC stream reset with application error code 0 closes as a reset, not as a clean finish (Huly QB-335).**
+  The native `stream_close` callback took `app_error_code == 0` for a clean close and ignored the
+  `NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET` flag that says a code was set, so a reset or stop with the
+  valid code `0` reached both peers as `stream_close_reason::finished`, each preceded by a synthesised FIN
+  nobody sent (the `server` / `connector` facades, which drop a stream's session on its reset event, would
+  admit a new one for that FIN). The
+  flag now decides: a set code, `0` included, closes as `reset` with that code, and only a clean close may
+  synthesise a FIN. Pinned by the `ApplicationCodeZero` case of
+  `QuicStreamResetTest.PeerObservesStreamResetFromServer`, which now pumps until both peers' full close
+  (`ApplicationCode0x42` and `CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf` are the controls).
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

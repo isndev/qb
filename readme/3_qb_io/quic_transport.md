@@ -11,7 +11,7 @@
 QUIC in `qb-io` is transport infrastructure only. The layer owns UDP sockets, timers, connection-id routing, streams, stream credit, resets, stop-sending, datagrams, and typed lifecycle events. Request/response semantics such as HTTP/3 framing and QPACK belong to higher modules such as `qbm/http`, not to `qb-io`. The default Application-Layer Protocol Negotiation (ALPN) identifier is `h3`, so an endpoint is wired for HTTP/3 out of the box, but the transport itself carries opaque stream bytes.
 
 The feature is gated at build time, and it is worth being precise about *what* the gate removes. **The QUIC types always compile**: `quic.cpp` is unconditionally in the library's sources, all six headers are unconditional, and `use<_Derived>::quic` sits inside no `#ifdef` — unlike `use<>::tcp::ssl`. What `QB_HAS_QUIC` gates is the **native backend's body** and what `make_native_backend()` returns. An endpoint declared in a QUIC-off build compiles and links; `listen` or `connect` throws on a default endpoint with no backend, while a backend supplied through `set_backend()` bypasses that availability check. Branch on `qb::io::quic::available()` before **native** use, or on `QB_HAS_QUIC` at compile time — and note that `available()` is a compile-time constant: for whether the OpenSSL crypto helper actually initialised at process start, ask `qb::io::quic::native_backend_ready()`.
-<!-- src: qb/src/qb/io/CMakeLists.txt:85 (quic.cpp unconditional), qb/src/qb/io/async.h:147 (use<>::quic is not #ifdef'd), qb/src/qb/io/quic.cpp:1604-1611 (make_native_backend), qb/src/qb/io/async/quic/endpoint.h:98-108,410-416 (injected backend), qb/src/qb/io/quic/types.h:103 (available), :122 (native_backend_ready) -->
+<!-- src: qb/src/qb/io/CMakeLists.txt:85 (quic.cpp unconditional), qb/src/qb/io/async.h:147 (use<>::quic is not #ifdef'd), qb/src/qb/io/quic.cpp:1607-1614 (make_native_backend), qb/src/qb/io/async/quic/endpoint.h:98-108,410-416 (injected backend), qb/src/qb/io/quic/types.h:103 (available), :122 (native_backend_ready) -->
 
 ## Build
 
@@ -368,6 +368,9 @@ The endpoint dispatches seven typed events to derived `on(event::...)` overloads
 
 `reason` on `connection_closed` is a `qb::io::quic::disconnect_reason` (`idle_timeout`, `handshake_failed`, `stateless_retry_failed`, `transport_error`, `application_close`, and others). `reason` on `stream_closed` is a `qb::io::quic::stream_close_reason` that distinguishes normal finish from `reset`, `stop_sending`, `flow_control_error`, and `connection_closed`. `reset_stream(...)` maps to an abrupt stream shutdown; `stop_stream(...)` maps to the QUIC read-side stop-sending path.
 
+When ngtcp2 finally closes a stream, the close is `finished` only if no application error code was ever set on it: a stream reset or stopped by either side closes as `reset`, carrying that code, and `0` is a valid reset code like any other. Only a `finished` close whose read half never received a FIN delivers a synthesised one, as a last empty `stream_data` with `fin` set.
+<!-- src: qb/src/qb/io/quic.cpp:1495-1497 (the error-code flag), :1502-1511 (the FIN only a clean close synthesises), :1515-1516 (reset or finished) -->
+
 Stopping only the read side leaves the bidirectional stream's write side active. The native backend retains unacknowledged output for retransmission until ACK or full stream close, even when the peer resets its own write side. Use `reset_stream(...)` when both halves must stop and pending output may be discarded.
 
 <!-- src: qb/src/qb/io/quic/types.h:18-39 -->
@@ -419,7 +422,7 @@ A stream-session read-buffer overflow is fatal to the stream. Appending past `ma
   <!-- src: qb/src/qb/io/async/quic/endpoint.h:371-374 -->
 - **Native QUIC requires a backend.** `ensure_backend()` throws `std::runtime_error` when no backend is installed and native QUIC is unavailable; an injected backend is accepted. It is called by `listen`, the `connect` overloads, `open_bidirectional_stream`, `open_unidirectional_stream`, `send_stream_data`, `reset_stream`, `stop_stream` and `send_datagram`. With no backend, `extend_stream_credit` and `close_connection` return without work. `close()` is different: it still stops its watchers, closes an open socket and marks the endpoint closed; only backend shutdown is conditional. Guard native use with `available()` or `QB_HAS_QUIC` rather than relying on a throw.
   <!-- src: qb/src/qb/io/async/quic/endpoint.h:98-108 (ensure_backend), :555-557 (extend_stream_credit no-op), :620-622 (close_connection no-op), :629-644 (close cleanup) -->
-  <!-- src: qb/src/qb/io/quic.cpp:1604-1611 -->
+  <!-- src: qb/src/qb/io/quic.cpp:1607-1614 -->
 - **Borrowed event payloads do not outlive the dispatch.** Copy `event::stream_data.payload` / `event::datagram.payload` before returning from the handler.
 - **Do not open a stream before `event::connected`.** `connect()` returns while the handshake is still in flight, and opening then throws `std::runtime_error` from the backend.
 - **A mutator called from inside a handler does not deliver its events before that handler returns.** The event drain refuses to re-enter and re-runs afterwards. Sends and other mutators drain packets synchronously; credit-only calls share the final drain after the current batch of handlers unwinds.

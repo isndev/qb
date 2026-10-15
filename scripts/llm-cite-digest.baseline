@@ -103,7 +103,8 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:98-135	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:330-341	aabe4f0252c0	assign_quic_ids(*session, connection_id, stream_id);
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1022-1023	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.api.md	src/qb/io/quic.cpp:1467-1494	abe6342ced08	static int
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1467-1494	99362d517b67	static int
+llm/qb.llm.api.md	src/qb/io/quic.cpp:1495-1516	ba101415d704	// A reset or a stop sets the application error code, 0 included; onl...
 llm/qb.llm.api.md	src/qb/io/quic.cpp:393-404	f3b23d71b8f5	bool
 llm/qb.llm.api.md	src/qb/io/quic.cpp:408-434	75c6d9c8f575	drain_packets() override {
 llm/qb.llm.api.md	src/qb/io/quic.cpp:547-564	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
@@ -221,7 +222,7 @@ llm/qb.llm.md	scheduler.h:633-633	d4378b7b6e55	bool set_suspension_tracking(bool
 llm/qb.llm.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:555-568	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	src/qb/io/quic.cpp:1022-1023	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
-llm/qb.llm.md	src/qb/io/quic.cpp:1467-1494	abe6342ced08	static int
+llm/qb.llm.md	src/qb/io/quic.cpp:1467-1494	99362d517b67	static int
 llm/qb.llm.md	src/qb/io/quic.cpp:393-404	f3b23d71b8f5	bool
 llm/qb.llm.md	src/qb/io/quic.cpp:547-564	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	ssl/context.cpp:463-463	6a5ed66e2196	if (SSL_CTX_use_certificate_chain_file(_ctx.get(), cert_s.c_str()) != 1)

@@ -1478,7 +1478,7 @@ private:
     }
 
     static int
-    stream_close_cb(ngtcp2_conn *conn, uint32_t, int64_t stream_id, uint64_t app_error_code, void *user_data, void *stream_user_data) {
+    stream_close_cb(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id, uint64_t app_error_code, void *user_data, void *stream_user_data) {
         auto *self = static_cast<native_backend *>(user_data);
         if (self->_stats.active_streams > 0)
             --self->_stats.active_streams;
@@ -1492,13 +1492,16 @@ private:
             else
                 ngtcp2_conn_extend_max_streams_uni(conn, 1);
         }
+        // A reset or a stop sets the application error code, 0 included; only an unflagged close is a
+        // clean finish, and only a clean finish may synthesise the FIN below.
+        const bool reset = (flags & NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET) != 0;
         // Non-inserting lookup: operator[] would default-insert a `false` entry
         // for `id` only to erase it again on the line below. find() avoids the
         // transient insert while preserving the "absent == not-yet-seen-FIN"
         // semantics that drives the synthetic FIN event.
         const auto fin_it           = self->_stream_fin_seen.find(id);
         const bool fin_already_seen = fin_it != self->_stream_fin_seen.end() && fin_it->second;
-        if (app_error_code == 0 && !fin_already_seen) {
+        if (!reset && !fin_already_seen) {
             backend_event fin_event;
             fin_event.type          = backend_event::kind::stream_data;
             fin_event.connection_id = self->_connection_id;
@@ -1510,7 +1513,7 @@ private:
         self->erase_queued_stream_data(id);
         self->_next_stream_offsets.erase(id);
         self->queue_stream_close_event(static_cast<std::uint64_t>(stream_id),
-                                       app_error_code == 0 ? stream_close_reason::finished : stream_close_reason::reset, app_error_code, {});
+                                       reset ? stream_close_reason::reset : stream_close_reason::finished, app_error_code, {});
         return 0;
     }
 

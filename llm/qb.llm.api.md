@@ -665,7 +665,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `stream_started { connection_id; id; stream_direction direction; stream_origin origin; }`
 *   `stream_data { connection_id; id; std::string_view payload; bool fin; }` — **`payload` is a view into the receive buffer; copy it to keep it.**
 *   `stream_data_acked { connection_id; id; std::uint64_t bytes; }`
-*   `stream_closed { connection_id; id; stream_close_reason reason; std::uint64_t error_code; }`
+*   `stream_closed { connection_id; id; stream_close_reason reason; std::uint64_t error_code; }` — a stream reset or stopped by either side closes as `reset` with its application error code, `0` included; only a close with no code set is `finished`, and only it may deliver a synthesised empty `stream_data` with `fin` for a FIN the read half never received (`src/qb/io/quic.cpp:1495-1516`).
 *   `datagram { connection_id; std::string_view payload; }` — same view lifetime rule.
 
 #### CRTP client / server (`<qb/io/async/quic/client.h>`, `server.h`)
