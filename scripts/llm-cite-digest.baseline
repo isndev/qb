@@ -74,7 +74,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1455-1468	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1463-1476	31584ba4b550	inline void
 llm/qb.llm.api.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.api.md	offload.h:124-124	f009c11da3b1	bool set_offload_threads(std::size_t n) noexcept;
 llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : public awaiter_base {
@@ -194,9 +194,9 @@ llm/qb.llm.md	io.h:3136-3140	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:368-404	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
 llm/qb.llm.md	io.h:373-413	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:624-627	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1440-1452	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1455-1468	31584ba4b550	inline void
-llm/qb.llm.md	listener.h:1507-1507	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1448-1460	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1463-1476	31584ba4b550	inline void
+llm/qb.llm.md	listener.h:1515-1515	cc6b74b785e4	defer(_Func &&func) {
 llm/qb.llm.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.md	offload.h:202-213	2f7b9e7ef6cd	run() noexcept override {
 llm/qb.llm.md	offload.h:24-40	d6f92fe8755f	* THE CONTRACT, IN FOUR RULES

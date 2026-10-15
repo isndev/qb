@@ -595,6 +595,13 @@ policy.
   teardown and past its fallback to epoll. `src/qb/ev/ev_iouring.c`, `src/qb/ev/ev_linuxaio.c`;
   witnesses in qev's `tests/test-loops.c`. The io_uring drain is level in executed instructions at
   one completion per pass and one fewer per extra completion (callgrind).
+- **A loop whose only deadline is a periodic fires it under non-blocking passes (Huly QB-275).** The
+  pass that does not run the loop judged deadlines on `ev_timer_count_addr`, which counts `ev_timer`
+  watchers only, so a loop holding an `ev_periodic` and neither a timer nor an fd never ran under
+  `run(EVRUN_NOWAIT)`: a busy or latency-0 `VirtualCore`, `run_until` and `run_for` never fired it. Without
+  an fd the gate now asks `ev_timer_next`, which reads the periodic heap too, as it does for a timer; beside
+  an fd the cadence's next poll pass reifies it, at most one `setIoPollInterval` late. A far periodic still
+  costs no loop pass.
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

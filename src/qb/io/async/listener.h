@@ -326,7 +326,9 @@ private:
 
     /// Whether the earliest timer is due, on a real reading of the loop's clock -- made only when
     /// the counter-based estimate says the deadline is within reach (see the block above). A
-    /// reading made here is kept for the loop (`_supply`). Called only with `*_timer_count > 0`.
+    /// reading made here is kept for the loop (`_supply`). Called with a timer active, or on a loop
+    /// without an fd whose active watcher may be a periodic: `ev_timer_next` covers both heaps, and
+    /// answers `EV_TSTAMP_HUGE`, never due, when neither holds one (Huly QB-275).
     [[nodiscard]] bool
     _timer_due(std::uint64_t const tsc) noexcept {
         const double next = _loop.timer_next();
@@ -357,8 +359,9 @@ private:
         // when hot or due; `EVRUN_NOPOLL` keeps everything else of the pass. A hot pass stamps its
         // poll too, so the interval counts from the LAST poll, whichever rule ran it. One counter
         // read serves the cadence and the timer gate.
-        std::uint64_t tsc  = 0;
-        bool          poll = *_io_count > 0;
+        std::uint64_t tsc    = 0;
+        const bool    has_io = *_io_count > 0;
+        bool          poll   = has_io;
         if (poll && _poll_every_tsc != 0) {
             tsc = qb::tsc_ticks();
             if (_io_hot)
@@ -375,7 +378,12 @@ private:
         // instead of making its own.
         if (poll || pending || _wake_is_pending() != 0)
             return true;
-        if (*_timer_count == 0)
+        // No timer beside an fd: nothing to fire before the cadence's next poll, whose pass reifies the
+        // periodics too. Without an fd the loop still holds a referenced active watcher (the caller
+        // tested it), and `*_timer_count` counts ev_timers only: a periodic is in a heap of its own,
+        // which `ev_timer_next` reads too, so the deadline is judged below like a timer's -- a periodic
+        // alone on the loop was never fired by a non-blocking pass (Huly QB-275).
+        if (*_timer_count == 0 && has_io)
             return false;
         if (_tsc_per_ns <= 0.) // no usable counter: the loop's own read is the cheaper judge
             return true;
