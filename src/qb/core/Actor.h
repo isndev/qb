@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1299-1300`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1339-1340`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -371,8 +371,9 @@ class Actor : nocopy {
      *          this flag. The full inventory — who is withheld during the Activating
      *          window, who is not, and why — is the table on `is_active()` below.
      */
-    mutable bool  _activated = true;
-    std::uint32_t id_type    = 0u;
+    mutable bool  _activated    = true;
+    bool          _init_started = false; // owning core: prevents a second drive of constructor-created children
+    std::uint32_t id_type       = 0u;
 
     /**
      * @brief Dispatch pointer for the corresponding default event, or nullptr while unregistered.
@@ -2252,9 +2253,7 @@ public:
      */
     [[nodiscard]] qb::io::async::cancellation_token
     child_token() const {
-        qb::io::async::cancellation_token child;
-        _scope.on_cancel([child]() mutable { child.cancel(); });
-        return child;
+        return qb::io::async::detail::linked_child_token(_scope);
     }
 
     /**
@@ -2417,6 +2416,16 @@ class ActorHandle {
     ActorId _id;
     _Actor *_cached = nullptr;
 
+    static qb::io::async::task<bool>
+    ready_async_impl(ActorId target, ScopedCoroContext ctx, qb::duration timeout) {
+        detail::activation_awaiter aw{target, timeout, ctx.token()};
+        if (!(co_await aw))
+            co_return false;
+        ActorHandle snapshot;
+        snapshot._id = target;
+        co_return snapshot.get() != nullptr;
+    }
+
 public:
     ActorHandle() noexcept = default;
 
@@ -2485,8 +2494,8 @@ public:
      */
     [[nodiscard]] qb::io::async::task<bool>
     ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono::seconds{5}) const {
-        detail::activation_awaiter aw{_id, timeout, ctx.token()}; // ctx lives in this frame, and so does its token
-        co_return co_await aw;
+        // Snapshot while this handle is alive, before the lazy coroutine frame starts.
+        return ready_async_impl(_id, std::move(ctx), timeout);
     }
 
     /** @brief `get()` asserted ready in debug builds (deref-when-ready). */

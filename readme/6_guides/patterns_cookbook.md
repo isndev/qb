@@ -53,7 +53,7 @@ event handled in an ordinary `on()`.** Use a bare `callback` only for work that 
 outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
 [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
 the full contract.
-<!-- src: qb/src/qb/core/Actor.h:1512-1513,2265-2267, qb/src/qb/core/Actor.h:863-866, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:330-338,363 -->
+<!-- src: qb/src/qb/core/Actor.h:1514,2264-2266, qb/src/qb/core/Actor.h:864-867, qb/src/qb/core/Actor.cpp:562-568, qb/src/qb/io/async/io.h:330-338,363 -->
 
 ## Recipe: one-shot timer
 

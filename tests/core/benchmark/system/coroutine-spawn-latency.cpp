@@ -9,9 +9,9 @@
 
 /**
  * @file benchmark/system/coroutine-spawn-latency.cpp
- * @brief Actor `spawn_detached` throughput + suspend/resume latency on the live event loop.
+ * @brief Actor coroutine spawn/resume throughput and complete child-token lifecycle cost.
  *
- * Two engine-level coroutine benches, both built on the actor `spawn_detached(lambda → task<void>)`
+ * Three actor-level benchmark families; the first two use the `spawn_detached(lambda → task<void>)`
  * round-trip the system suite pins (`coroutine-basics.cpp`):
  *   - `BM_Coroutine_SpawnThroughput` — an actor spawns `coroutines` detached coroutines that complete
  *     IMMEDIATELY (`co_await std::suspend_never` via a plain `co_return` after one `ctx.push`), so the
@@ -23,6 +23,9 @@
  *     actor samples `active_coroutine_count()` right after the spawn loop (the peak number of live
  *     coroutine frames) and publishes it, proving the coroutines genuinely suspended rather than
  *     completing inline.
+ *   - `BM_ChildTokenChurn` — on the benchmark thread's real actor, create/drop 64 or 1024
+ *     child tokens per iteration, optionally cancelling each. Parent cancellation and destruction
+ *     stay inside every iteration, including any child history the parent retained.
  *
  * Each coroutine pushes one completion event back; the actor counts them and calls `qb::Main::stop()`
  * the instant it has seen all `coroutines` — deterministic, event-driven shutdown. The actor runs
@@ -37,6 +40,9 @@
  *     produces no nominal-work rate. Descriptor counters are assigned once after a valid loop;
  *   - a one-shot, out-of-loop probe runs one full fan-out and asserts every coroutine delivered and
  *     the watchdog never fired, so a coroutine that never resumes is caught before timing.
+ * Child-token churn instead owns the only State loop inside a synchronous onInit first drive:
+ * timing starts after engine setup and ends before engine teardown. Every iteration checks its
+ * checksum and cancellation counts; the final engine/work/destruction guard runs outside timing.
  *
  * New bench (no predecessor in the flat `benchmark/` set); pairs with the coroutine system suite.
  */
@@ -46,6 +52,9 @@
 #include <benchmark/benchmark.h>
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <limits>
+#include <thread>
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <qb/io/async/coroutine.h>
@@ -200,12 +209,148 @@ BM_Coroutine_SuspendResumeLatency(benchmark::State &state) {
 
 } // namespace
 
+namespace child_token_churn_bench {
+
+struct Observation {
+    std::thread::id benchmark_thread = std::this_thread::get_id();
+    std::uint64_t   iterations       = 0;
+    std::uint64_t   children         = 0;
+    std::uint64_t   child_callbacks  = 0;
+    std::uint64_t   parent_callbacks = 0;
+    std::uint64_t   last_checksum    = 0;
+    unsigned        destroyed        = 0;
+    bool            entered          = false;
+    bool            failed           = false;
+    bool            rejected         = false;
+};
+
+class ChildTokenChurnActor final : public qb::Actor {
+    benchmark::State   &_state;
+    Observation        &_observed;
+    const std::uint64_t _count;
+    const bool          _cancel_children;
+
+public:
+    ChildTokenChurnActor(benchmark::State &state, Observation &observed, std::uint64_t count, bool cancel_children)
+        : _state(state)
+        , _observed(observed)
+        , _count(count)
+        , _cancel_children(cancel_children) {}
+
+    ~ChildTokenChurnActor() final {
+        ++_observed.destroyed;
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        if (std::this_thread::get_id() != _observed.benchmark_thread) {
+            _observed.failed = true;
+            co_return false; // never access State from another thread
+        }
+        _observed.entered            = true;
+        const auto expected_checksum = _count * (_count + 1) / 2;
+        // This is the only State loop. start(false) keeps it on the benchmark thread;
+        // engine setup precedes StartKeepRunning, engine teardown follows FinishKeepRunning.
+        for (auto _ : _state) {
+            std::uint64_t created          = 0;
+            std::uint64_t checksum         = 0;
+            std::uint64_t child_callbacks  = 0;
+            std::uint64_t parent_callbacks = 0;
+            bool          valid            = true;
+            {
+                qb::io::async::cancellation_token parent;
+                const qb::ScopedCoroContext       ctx(this, parent);
+                parent.on_cancel([&parent_callbacks] { ++parent_callbacks; });
+                for (std::uint64_t i = 0; i < _count; ++i) {
+                    auto child = ctx.child_token();
+                    ++created;
+                    valid = valid && static_cast<bool>(child) && !child.is_cancelled();
+                    checksum += static_cast<bool>(child) ? i + 1 : 0;
+                    if (_cancel_children) {
+                        child.on_cancel([&child_callbacks] { ++child_callbacks; });
+                        child.cancel();
+                        valid = valid && child.is_cancelled();
+                    }
+                    benchmark::DoNotOptimize(child);
+                } // every public child handle is dropped before parent cancellation
+                parent.cancel();
+                valid = valid && parent.is_cancelled() && parent_callbacks == 1;
+            } // include context, parent and all retained child-history destruction
+            benchmark::DoNotOptimize(checksum);
+            benchmark::DoNotOptimize(created);
+            benchmark::DoNotOptimize(child_callbacks);
+            benchmark::DoNotOptimize(parent_callbacks);
+            if (!valid || created != _count || checksum != expected_checksum || child_callbacks != (_cancel_children ? _count : 0)) {
+                _observed.failed = true;
+                _state.SkipWithError("child-token lifecycle count, checksum or cancellation mismatch");
+                _observed.rejected = true;
+                break;
+            }
+            ++_observed.iterations;
+            _observed.children += created;
+            _observed.child_callbacks += child_callbacks;
+            _observed.parent_callbacks += parent_callbacks;
+            _observed.last_checksum = checksum;
+        }
+        kill();
+        co_return true;
+    }
+};
+
+void
+BM_ChildTokenChurn(benchmark::State &state) {
+    const auto  count           = static_cast<std::uint64_t>(state.range(0));
+    const bool  cancel_children = state.range(1) != 0;
+    Observation observed;
+    {
+        qb::Main main;
+        main.addActor<ChildTokenChurnActor>(0, std::ref(state), std::ref(observed), count, cancel_children);
+        main.start(false);
+        main.join();
+        if (main.hasError()) {
+            if (!observed.rejected)
+                state.SkipWithError("child-token actor failed to initialize or complete");
+            return;
+        }
+    }
+    if (observed.failed) {
+        if (!observed.rejected)
+            state.SkipWithError("child-token actor did not run on the benchmark thread");
+        return;
+    }
+    if (!observed.entered || observed.destroyed != 1 || observed.iterations == 0
+        || observed.iterations != static_cast<std::uint64_t>(state.iterations())
+        || observed.iterations > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) / count
+        || observed.children != observed.iterations * count || observed.parent_callbacks != observed.iterations
+        || observed.child_callbacks != (cancel_children ? observed.children : 0)) {
+        state.SkipWithError("child-token actor did not complete exactly the requested lifecycle work");
+        return;
+    }
+    state.SetItemsProcessed(static_cast<std::int64_t>(observed.children));
+    state.counters["children"]                       = static_cast<double>(count);
+    state.counters["cancel_children"]                = cancel_children ? 1.0 : 0.0;
+    state.counters["checksum"]                       = static_cast<double>(observed.last_checksum);
+    state.counters["child_callbacks_per_iteration"]  = cancel_children ? static_cast<double>(count) : 0.0;
+    state.counters["parent_callbacks_per_iteration"] = 1.0;
+}
+
+} // namespace child_token_churn_bench
+
 BENCHMARK(BM_Coroutine_SpawnThroughput)->Arg(100)->Arg(1000)->Arg(5000)->ArgName("coroutines")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_Coroutine_SuspendResumeLatency)
     ->Arg(100)
     ->Arg(500)
     ->Arg(2000)
     ->ArgName("coroutines")
+    ->Unit(benchmark::kMicrosecond)
+    ->UseRealTime();
+
+BENCHMARK(child_token_churn_bench::BM_ChildTokenChurn)
+    ->Args({64, 0})
+    ->Args({1024, 0})
+    ->Args({64, 1})
+    ->Args({1024, 1})
+    ->ArgNames({"children", "cancel_children"})
     ->Unit(benchmark::kMicrosecond)
     ->UseRealTime();
 

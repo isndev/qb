@@ -102,6 +102,9 @@ pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
 
 namespace qb {
 VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexcept
+    : VirtualCore(id, engine, 0) {}
+
+VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine, ServiceId const promised_floor) noexcept
     : _index(id)
     , _resolved_index(engine._core_set.resolve(id))
     , _engine(engine)
@@ -122,7 +125,7 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexc
     // Seed the pool above the last registered service id. The base `detail::service_registry_seal` counted this core
     // alive under the registry mutex before any member was built: every registration before it is visible to this
     // relaxed load, and none can follow it while the core lives -- it would be refused (Huly QB-1007).
-    _ids.init(static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1));
+    _ids.init(std::max(promised_floor, static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1)));
     // The five default events resolve through the actor registry, not a handler table: install
     // their resolvers now, before any actor can register one (`memh::install` must precede the
     // first `subscribe<E>` for that type, and `registerEvent<E>` never subscribes a default one).
@@ -239,7 +242,17 @@ VirtualCore::__set_stop_token__(qb::stop_token token) noexcept {
 }
 
 ActorId
+VirtualCore::__factory_promised_id__(ServiceId const sid) const noexcept {
+    return ActorId(sid, _index);
+}
+
+ActorId
 VirtualCore::__generate_id__() noexcept {
+    if (_pending_factory_id.is_valid()) {
+        const ActorId promised = _pending_factory_id;
+        _pending_factory_id    = ActorId::NotFound;
+        return promised;
+    }
     if (_ids.empty())
         return ActorId(ActorId::NotFound);
     const auto sid = _ids.acquire();
@@ -669,14 +682,17 @@ VirtualCore::__init__(CoreIdSet const &affinity_cores) {
 
 bool
 VirtualCore::__init__actors__() {
-    // Snapshot the actor pointers first: driving an `onInit()` may itself create
-    // referenced actors (`addRefActor`), mutating `_actors` mid-iteration.
-    std::vector<Actor *> actors_to_init;
+    // Snapshot identities, not pointers: a previous onInit may destroy another
+    // startup actor or grow the registry through addRefActor.
+    std::vector<ActorId> actors_to_init;
     actors_to_init.reserve(_actor_count);
     for (const auto &slot : _actors)
         if (slot)
-            actors_to_init.push_back(slot.get());
-    for (auto *actor : actors_to_init) {
+            actors_to_init.push_back(slot->id());
+    for (const ActorId id : actors_to_init) {
+        Actor *const actor = __actor_slot__(id);
+        if (actor == nullptr || actor->_init_started)
+            continue;
         qb::io::async::task<bool> init = actor->onInit();
         switch (__drive_init__(*actor, init)) {
             case InitOutcome::ReadyTrue:
@@ -702,7 +718,8 @@ VirtualCore::__init__actors__() {
 
 VirtualCore::InitOutcome
 VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexcept {
-    auto h = init.handle();
+    actor._init_started = true;
+    auto h              = init.handle();
     if (unlikely(!h))
         return InitOutcome::ReadyTrue; // defensive: a null task ⇒ trivially successful
     // `task` starts suspended: resume once to reach the first `co_await` or the `co_return`.
@@ -746,6 +763,26 @@ VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init
     act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
     _activating.emplace(actor.id(), std::move(act));
     QB_LOG_VERB(actor << " activating (async onInit in flight)");
+}
+
+qb::duration
+VirtualCore::__activation_park_cap__(qb::duration cap) const noexcept {
+    // Activation uses wall time; request deadlines below remain monotonic.
+    std::uint64_t nearest = 0;
+    for (auto const &entry : _activating) {
+        auto const &act = entry.second;
+        if (act.cancelling || act.deadline_ns == 0)
+            continue;
+        if (nearest == 0 || act.deadline_ns < nearest)
+            nearest = act.deadline_ns;
+    }
+    if (nearest == 0)
+        return cap;
+    const auto wall = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+    const auto left = nearest > wall ? nearest - wall : 0;
+    if (left < static_cast<std::uint64_t>(cap.count()))
+        cap = qb::duration{static_cast<qb::duration::rep>(left)};
+    return cap;
 }
 
 bool
@@ -833,7 +870,7 @@ VirtualCore::__pump_activations__() {
         act.init = qb::io::async::task<bool>{};
 
         Actor *const actor = __actor_slot__(id);
-        if (dying || !ok || actor == nullptr) {
+        if (dying || act.cancelling || !ok || actor == nullptr) {
             // Killed during init, failed init, or already gone → complete teardown now
             // (the deferred-destroy: the actor outlived its own coroutine frame).
             // Dispose the never-replayed stash so any non-trivial event payload (std::string /
@@ -1063,6 +1100,8 @@ VirtualCore::__workflow_loop__() {
                 // timer for it any more, so neither park may outlast it -- the cap is the smaller
                 // of `latency` and the time to the earliest deadline, on a clock reading made here.
                 auto cap = _mail_box.getLatency();
+                if (unlikely(!_activating.empty()))
+                    cap = __activation_park_cap__(cap);
                 if (_deadlines.armed()) {
                     const auto now  = static_cast<std::uint64_t>(qb::mono_now().time_since_epoch().count());
                     const auto left = detail::deadlines_next_in(_deadlines, now);
@@ -1177,6 +1216,7 @@ VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
             case InitOutcome::ReadyFalse: {
                 const auto h     = init.handle();
                 const bool threw = h && qb::io::async::detail::promise_of(h).has_exception();
+                actor.__cancel_coro_scope__();
                 removeActor(actor.id(), threw ? DownReason::init_threw : DownReason::init_failed);
                 return ActorId::NotFound;
             }
@@ -1348,7 +1388,13 @@ VirtualCore::try_send(Event const &event) const noexcept {
 // pipe, whose copy clears it; the batched flush relocates it later exactly like a try_send miss.
 void
 VirtualCore::send(Event const &event) noexcept {
-    if (event.dest._core_id == _index || unlikely(event.state.bits.alive) || !try_send(event)) {
+    // The local destination is already known: reserve directly in its stable pipe,
+    // without decoding the destination again to discover the same cursor address.
+    if (event.dest._core_id == _index) {
+        detail::event_wire::copy(_self_pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
+        return;
+    }
+    if (unlikely(event.state.bits.alive) || !try_send(event)) {
         auto &pipe = __getPipe__(event.dest._core_id);
         detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
         return;

@@ -266,7 +266,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
 - **A running call is never interrupted.** A frame destroyed while its call runs (a `when_any` loser, a
   cancelled scope, a killed actor's `ctx.offload`) is not resumed: the result is destroyed on the loop and
   counted in `offload_stats::discarded`. A bare `offload` inside an actor is NOT woken by a kill — it
-  waits on, as a bare `sleep` does — so inside an actor write `ctx.offload`. _(Actor.h:2331-2334)_
+  waits on, as a bare `sleep` does — so inside an actor write `ctx.offload`. _(Actor.h:2330-2333)_
 - The pool is process-wide and starts with the first `offload` (no thread before it), two threads unless
   `qb::io::async::set_offload_threads(n)` ran first (`false` once started);
   `qb::io::async::current_offload_stats()` reads `threads` / `submitted` / `completed` / `discarded` /
@@ -324,7 +324,7 @@ sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
 - **A name is given at spawn** — `spawn("name", fn)`, `spawn_detached("name", fn)`, the scheduler's
   `spawn(name, task)` — and lives as long as the frame; an unnamed spawn stores nothing. While a named coroutine
   lives, every frame destruction on its thread pays one name lookup and on another thread one thread-local read;
-  suspensions pay nothing for names. _(Actor.h:1523, scheduler.h:611)_
+  suspensions pay nothing for names. _(Actor.h:1524, scheduler.h:611)_
 - **An awaitable of your own labels itself**: `qb::io::async::track_suspension(h, "my queue")` first in its
   `await_suspend`. One that does not leaves the coroutine with the record of its PREVIOUS wait, ageing.
   `scripts/check-awaiter-tracking.py` holds every awaiter of qb and of the modules to it. _(tracking.h:164)_
@@ -358,7 +358,7 @@ on a *cancellation-aware* await (`ctx.sleep`, `ctx.cancellation_point`, `ctx.unt
 `ctx.cancellable`, and everything in the patterns library — `qb::ask` and friends) wakes on the next
 loop iteration, throws `qb::io::async::cancelled_error`, and unwinds cleanly (destructors and `catch`
 blocks run). A killed actor therefore cannot leave a coroutine parked on a long timeout or a dead
-socket. `spawn()` hands the lambda a `qb::ScopedCoroContext`. _(Actor.h:1478-1513)_
+socket. `spawn()` hands the lambda a `qb::ScopedCoroContext`. _(Actor.h:1479-1514)_
 
 ```cpp
 #include <qb/actor.h>
@@ -395,7 +395,7 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 - **After any `co_await`, the only legal channel back is the context.** `ctx.push<E>()` /
   `ctx.push_to<E>(dest, …)` / `ctx.broadcast<E>()` / `ctx.id()` / `ctx.time()` are safe by
   construction — the context stores the `ActorId` by value, and events addressed to a dead actor are
-  dropped, not delivered into freed memory. _(Actor.h:1682-1688)_
+  dropped, not delivered into freed memory. _(Actor.h:1683-1689)_
 - **`spawn()` must be called from the actor's own VirtualCore thread** (i.e. from a handler,
   `onInit()`, or `on(qb::LoopEvent const&)`).
 - **Pass the lambda WITHOUT a trailing `()`.** `spawn(f())` invokes the closure to get a `task`, the
@@ -405,19 +405,19 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 - **A lazy coroutine that accepts `task<T>&&` can outlive its operand.** `with_deadline` takes
   ownership at the call, so a temporary operation remains alive when the returned wrapper is
   stored and awaited later. When writing another wrapper coroutine, take a task parameter by
-  value or move it into an owning frame before returning. _(coroutine/cancellation.h:1061,
-  :1119-1120)_
+  value or move it into an owning frame before returning. _(coroutine/cancellation.h:1226,
+  :1284-1285)_
 
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
 `until_cancelled()`, `cancellable(task<T>&&)`, `offload(fn, args...)` (3.3: a blocking call on the
 offload pool, whose wait a kill ends — see "A call that blocks"), `child_token()`, `token()`,
-`cancelled()`. _(Actor.h:2222-2335)_
+`cancelled()`. A `child_token()` can be cancelled independently and detaches from the parent on child cancellation or destruction; public cancel hooks run before descendant propagation. _(Actor.h:2223-2334; coroutine/cancellation.h:189-212,314-328)_
 
 `Actor::context()` returns that same `ScopedCoroContext` **wherever you hold the actor** — most
 importantly inside `onInit()`, which is itself a coroutine (`task<bool>`) and gets no `ctx`
 parameter. It is also what you pass to the free functions of the patterns library:
-`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1529-1545, :2343-2346)_
+`co_await qb::ask(context(), target, req, 500ms)`. _(Actor.h:1530-1546, :2342-2345)_
 
 **When `spawn_detached()` is the right tool — and only then.** It is the low-level form: the lambda
 receives a plain `qb::CoroContext` (no scope token), and killing the actor does **not** cancel the
@@ -425,9 +425,9 @@ coroutine. It can outlive the actor only while the **same VirtualCore stays runn
 task does not keep that core alive, and its loop exits when its last actor dies. Keep another actor
 on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
-`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1418-1476;
-VirtualCore.h:1696-1707; coroutine-detached.cpp:878-938)_
-The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1022-1024)_
+`CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1419-1477;
+VirtualCore.h:1713-1724; coroutine-detached.cpp:878-938)_
+The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1059-1061)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -503,7 +503,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `DownEvent{watched, reason}` per watch. Target-down answers follow the destructor; `unknown` and `core_stopped` need no target destructor. `unwatch(id)` is final (no answer after it, even one
   in flight). Ids are reused, so unwatch an outgoing actor before watching its replacement. `qb::Supervisor(...,
   qb::supervision::watch)` restarts children gone for any reason. Death watch says *gone*; `co_await qb::ping` says
-  *responsive*. _(Actor.h:515-538; DeathWatch.h:36-96)_
+  *responsive*. _(Actor.h:516-539; DeathWatch.h:36-96)_
 - **reply vs forward** — both reuse the received event (require a non-const `on(Event&)` handler).
   `reply(e)` swaps dest↔source; `forward(dest, e)` keeps the original source. Neither works on
   broadcast events (dropped). After the call the event is consumed — do not touch it. Both are
@@ -515,7 +515,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
   `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
   option only when placed on a different core and returning the result by event. _(io.h:368-404;
-  Actor.h:2304-2334; offload.h:302)_
+  Actor.h:2303-2333; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
 
@@ -532,7 +532,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   built it destroys it, on its own thread, in the reap phase. Under AddressSanitizer the arena poisons a
   block it holds, so a read through a dead actor's pointer (a `this` captured by a loop-owned callback, a
   handle read without its gate) is reported as `use-after-poison` -- the report `malloc` used to give and
-  the arena had taken away. _(Actor.h:561-582, thread_arena.h:126-171)_
+  the arena had taken away. _(Actor.h:562-583, thread_arena.h:126-171)_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
   registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
@@ -551,15 +551,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:388-410; VirtualCore.cpp:708-714, :845-857, :1171-1192; coroutine/scheduler.h:850-854)_
+  _(Actor.cpp:388-410; VirtualCore.cpp:725-731, :882-894, :1210-1232; coroutine/scheduler.h:850-854)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
   bare `offload` in an actor's coroutine is not woken by the actor's kill: `ctx.offload` is.
-  _(offload.h:24-40; Actor.h:2331-2334)_
+  _(offload.h:24-40; Actor.h:2330-2333)_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
-  small and allocation-light. _(Actor.h:1113-1119; Pipe.h:138-153)_
+  small and allocation-light. _(Actor.h:1114-1120; Pipe.h:138-153)_
 - **`send<T>()` is unordered; `push<T>()` is ordered.** Trivial destructibility is a guideline on `send`
   and a `static_assert` only when `T` derives from `qb::EventQOS0` — the one kind the cross-core flush
   may DROP undisposed. A DELIVERED event is disposed exactly once whichever primitive queued it, so a
@@ -567,7 +567,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   "faster" is not one: `send` hands the event to the peer's ring at once instead of the pass's batched
   flush, which wins for ONE event with nothing behind it to batch (a request the sender then idles
   for) and LOSES on sustained traffic (all-to-all, 120 actors: 26.1 ns per round trip against `push`'s
-  24.9, measured in the qb-vs-others benchmark, TUNING guide §9.6). _(Actor.h:1068-1073, :1128-1132)_
+  24.9, measured in the qb-vs-others benchmark, TUNING guide §9.6). _(Actor.h:1069-1074, :1129-1133)_
 - **An actor lives on the core where it was created, for life: qb has no migration and no
   work-stealing.** `addActor<T>(core, ...)` is a topology decision, and the cost it decides is the
   core crossing: a ring of actors spread `i % cores` crosses a core on EVERY hop (112 ns a hop on two
@@ -603,12 +603,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   replied/forwarded. _(Actor.cpp:577-595)_ They are `send`-family: unordered relative to the handler's
   pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with
   your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
+  Raw `send(Event const&)` uses `_self_pipe` directly only when the destination's logical core
+  equals the current core; cross-core fallback still selects the destination pipe and clears
+  `alive` in the copied header. _(VirtualCore.cpp:1390-1406)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   check `valid()` before sending, because terminal core teardown returns an empty handle without constructing
-  a child. `get()` resolves on demand and returns `nullptr` while Activating, after failed init or after death;
+  a child. `get()` revalidates the ID without writing through a const handle and returns `nullptr` while Activating, after failed init or after death;
   `operator->` requires `ready()` and asserts in debug if unavailable. Send to a valid `handle.id()`;
   gate direct calls on `handle.ready()`. Cross-thread deref of a `RefActorHandle` is a logic error.
-  _(Actor.h:1370-1375, :1396, :2438-2458, :2492-2497)_
+  _(Actor.h:1371-1376, :1397, :2447-2467, :2501-2506)_
 - **`getService<T>()` is the ONE lookup that is not phase-gated: it hands back a service whose async
   `onInit()` is still in flight AND one that has been `kill()`ed but not yet reaped.** Deliberate — it
   is what lets a service look itself or a peer up from inside its own `onInit()`, and what keeps a
@@ -616,14 +619,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
   target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
-  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1225-1248;
-  the inventory table Actor.h:868-912)_
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1243-1266;
+  the inventory table Actor.h:869-913)_
 - **A service tag registers before the cores, or not while they live.** Every tag a program names registers at
   static initialisation, and each core seeds its ordinary-actor ids above the registered tags. A tag whose FIRST
   registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
   ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
   without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
-  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1543-1557; VirtualCore.cpp:1737-1772;
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1560-1574; VirtualCore.cpp:1783-1818;
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
@@ -631,8 +634,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   it can finish afterwards only while another actor keeps the same VirtualCore running);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1476 / VirtualCore.h:1686; `spawn` Actor.h:1513 /
-  VirtualCore.h:1712)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1022-1024)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1477 / VirtualCore.h:1703; `spawn` Actor.h:1514 /
+  VirtualCore.h:1729)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1059-1061)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -641,7 +644,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:698-700, :508-510)_
+  with 0 actors fails startup. _(Main.cpp:721-723, :508-510)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
@@ -649,12 +652,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:802-819; VirtualCore.h:1048-1060; VirtualCore.cpp:1395-1402)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1050-1062; VirtualCore.cpp:1441-1448)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
   Same-core traffic is received and never "sent", and a counter moves after the event it counts was handled. Nothing
-  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:779-799; CoreStats.h:52-86)_
+  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:780-800; CoreStats.h:52-86)_
 - **A blocking handler shows in the pass time -- on a core that times its passes.** `CoreInitializer::setPassTiming()`
   (off by default, decided at thread start) fills `CoreStats::pass_time`, a `qb::TimingStats` of the core's passes
   with the park excluded: `recent_max`, the longest pass of the last one to two seconds, is the stall gauge. It costs
@@ -673,7 +676,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `init_failed` / `init_threw` from its core. `unknown` for an id nobody holds and `core_stopped` for a stopped
   core require no target destructor. Nothing follows `unwatch()`. A `DownEvent` whose type the watcher did not
   register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1273-1287, :1563-1578, :1622-1652, :1688-1715)_
+  _(VirtualCore.cpp:1313-1327, :1609-1624, :1668-1698, :1734-1761)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

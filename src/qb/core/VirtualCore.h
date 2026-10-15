@@ -156,6 +156,7 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
+    VirtualCore(CoreId id, SharedCoreCommunication &engine, ServiceId promised_floor) noexcept;
     // The router's report of a unicast it could not deliver reaches the dead-letter path through
     // the thread's current core (Huly QB-163).
     friend void Event::__undelivered__(Event &) noexcept;
@@ -841,7 +842,8 @@ private:
     /// Move a suspended `onInit()` frame into the Activating set (+arm deadline, flip phase).
     void __begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept;
     /// True iff `id` is currently Activating (or dying with a still-live onInit frame).
-    [[nodiscard]] bool __is_activating__(ActorId id) const noexcept;
+    [[nodiscard]] bool                __is_activating__(ActorId id) const noexcept;
+    [[nodiscard]] QB_NOINLINE QB_COLD qb::duration __activation_park_cap__(qb::duration cap) const noexcept;
     /// Byte-copy a gated inbound unicast event into the destination actor's FIFO stash.
     /// @return true if the event was taken into the stash (ownership transferred — the caller must
     ///         NOT dispose the original); false if it was dropped (cap overflow) and the caller
@@ -1071,8 +1073,10 @@ private:
     // A service constructor may add another service before either reaches `_actors`.
     std::vector<ServiceId> _constructing_services;
     // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
-    ActorId *_constructing_actor_id_out = nullptr;
-    void     __rollback_failed_admission__(ActorId id) noexcept;
+    ActorId               _pending_factory_id = ActorId::NotFound; // one promised ordinary ID during a startup factory
+    [[nodiscard]] ActorId __factory_promised_id__(ServiceId sid) const noexcept;
+    ActorId              *_constructing_actor_id_out = nullptr;
+    void                  __rollback_failed_admission__(ActorId id) noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1138,6 +1142,20 @@ VirtualCore::addReferencedActor(_Init &&...init) {
     // admission before allocating or invoking a user constructor; no new frame may enter a dying scheduler.
     if (unlikely(_tearing_down))
         return nullptr;
+    // A dynamic child built by a factory allocator or constructor must draw from the
+    // ordinary pool. The outer factory keeps its promised ID until its own base ctor.
+    struct FactoryPromisePause {
+        ActorId &slot;
+        ActorId  saved;
+        explicit FactoryPromisePause(ActorId &value) noexcept
+            : slot(value)
+            , saved(value) {
+            slot = ActorId::NotFound;
+        }
+        ~FactoryPromisePause() noexcept {
+            slot = saved;
+        }
+    } pause{_pending_factory_id};
     auto construct = [&]() -> _Actor * {
         // The allocation customization point TActorFactory uses, so a user's qb::allocate_actor<_Actor> serves
         // engine-created and dynamically-added actors alike (PMR/pool support, 2.13).
@@ -1472,8 +1490,7 @@ ActorHandle<_Actor>::get() const noexcept {
     // findActor is phase-aware: nullptr while the actor is still Activating, and after it
     // failed init / died. So `get()` returns a usable pointer only for an *active* actor.
     auto *resolved = handler->template findActor<_Actor>(_id);
-    // Keep the cache fresh if it drifted (e.g. handle copied after kill).
-    const_cast<ActorHandle<_Actor> *>(this)->_cached = resolved;
+    // Resolution is read-only; the reserved cache field is not an authoritative lookup.
     return resolved;
 }
 
@@ -1610,7 +1627,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:717-727`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:734-744`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

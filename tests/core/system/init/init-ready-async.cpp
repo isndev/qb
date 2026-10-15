@@ -45,6 +45,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 
 #include <gtest/gtest.h>
@@ -476,6 +477,244 @@ TEST(InitReadyAsync, TwoWaitersOnOneChild) {
     EXPECT_EQ(g_p9_done.load(), 2) << "both spawned waiters must have resumed";
     EXPECT_EQ(g_p9_true.load(), 3) << "all three waiters on the same activation must resume true";
     EXPECT_FALSE(main.hasError());
+}
+
+// QB-263: phase order is established by FIFO events, a shared gate and the callback/reap phase.
+// All fields are written on core 0 and inspected only after start(false)/join().
+enum class ReadyDeathControl { death, healthy, cancel };
+
+struct ReadyDeathWindowProbe {
+    qb::io::async::async_event init_gate;
+    unsigned                   ticks                      = 0;
+    unsigned                   sequence                   = 0;
+    unsigned                   marker_sequence            = 0;
+    unsigned                   gate_sequence              = 0;
+    unsigned                   init_sequence              = 0;
+    unsigned                   business_sequence          = 0;
+    unsigned                   kill_sequence              = 0;
+    unsigned                   destructor_sequence        = 0;
+    unsigned                   waiter_sequence            = 0;
+    unsigned                   child_inits                = 0;
+    unsigned                   child_dtors                = 0;
+    unsigned                   business_calls             = 0;
+    unsigned                   waiter_results             = 0;
+    bool                       child_admitted             = false;
+    bool                       marker_seen                = false;
+    bool                       gate_opened                = false;
+    bool                       init_finished              = false;
+    bool                       business_saw_finished_init = false;
+    bool                       waiter_started             = false;
+    bool                       waiter_started_unready     = false;
+    bool                       waiter_finished            = false;
+    bool                       waiter_cancelled           = false;
+    bool                       ready_answer               = true;
+    bool                       resolved_at_resume         = true;
+    bool                       killed_during_replay       = false;
+    bool                       killed_after_notification  = false;
+    bool                       callback_window_missing    = false;
+    bool                       guard_exhausted            = false;
+};
+
+struct ReadyDeathBusiness : qb::Event {};
+struct ReadyDeathMarker : qb::Event {};
+struct ReadyDeathFinished : qb::Event {};
+
+qb::io::async::task<void>
+wait_ready_death_gate(std::shared_ptr<ReadyDeathWindowProbe> probe) {
+    co_await probe->init_gate.wait();
+}
+
+class ReadyDeathWindowChild : public qb::Actor {
+    std::shared_ptr<ReadyDeathWindowProbe> _probe;
+    bool                                   _kill_during_replay;
+
+public:
+    ReadyDeathWindowChild(std::shared_ptr<ReadyDeathWindowProbe> probe, bool kill_during_replay)
+        : _probe(std::move(probe))
+        , _kill_during_replay(kill_during_replay) {}
+
+    ~ReadyDeathWindowChild() override {
+        ++_probe->child_dtors;
+        _probe->destructor_sequence = ++_probe->sequence;
+    }
+
+    qb::io::async::task<bool>
+    onInit() final {
+        // Copies made before suspension: nothing below the await reads an actor member.
+        const auto probe = _probe;
+        const auto ctx   = context();
+        ++probe->child_inits;
+        registerEvent<ReadyDeathBusiness>(*this);
+        co_await ctx.cancellable(wait_ready_death_gate(probe));
+        probe->init_finished = true;
+        probe->init_sequence = ++probe->sequence;
+        co_return true;
+    }
+
+    void
+    on(ReadyDeathBusiness &) {
+        ++_probe->business_calls;
+        _probe->business_saw_finished_init = _probe->init_finished;
+        _probe->business_sequence          = ++_probe->sequence;
+        if (_kill_during_replay) {
+            _probe->killed_during_replay = true;
+            _probe->kill_sequence        = ++_probe->sequence;
+            kill();
+        }
+    }
+};
+
+class ReadyDeathWindowDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<ReadyDeathWindowProbe> _probe;
+    bool                                   _kill_during_replay;
+    ReadyDeathControl                      _control;
+    qb::ActorHandle<ReadyDeathWindowChild> _child;
+
+public:
+    ReadyDeathWindowDriver(std::shared_ptr<ReadyDeathWindowProbe> probe, bool kill_during_replay, ReadyDeathControl control)
+        : _probe(std::move(probe))
+        , _kill_during_replay(kill_during_replay)
+        , _control(control) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<ReadyDeathMarker>(*this);
+        registerEvent<ReadyDeathFinished>(*this);
+        registerCallback(*this);
+        _child                 = addRefActor<ReadyDeathWindowChild>(_probe, _kill_during_replay);
+        _probe->child_admitted = _child.valid();
+        // Same ordered pipe: the marker cannot be received until business was stashed.
+        push<ReadyDeathBusiness>(_child.id());
+        push<ReadyDeathMarker>(id());
+        const auto probe = _probe;
+        auto       child = _child;
+        spawn([probe, child](qb::ScopedCoroContext ctx) mutable -> qb::io::async::task<void> {
+            probe->waiter_started         = true;
+            probe->waiter_started_unready = child.valid() && child.get() == nullptr;
+            try {
+                const bool result = co_await child.ready_async(ctx, qb::duration::zero());
+                // These two observations are adjacent, with no suspension or actor dereference.
+                probe->ready_answer       = result;
+                probe->resolved_at_resume = child.get() != nullptr;
+                ++probe->waiter_results;
+            } catch (const qb::io::async::cancelled_error &) {
+                probe->waiter_cancelled = true;
+            }
+            probe->waiter_finished = true;
+            probe->waiter_sequence = ++probe->sequence;
+            ctx.push<ReadyDeathFinished>();
+        });
+        co_return true;
+    }
+
+    void
+    on(ReadyDeathMarker &) {
+        _probe->marker_seen     = true;
+        _probe->marker_sequence = ++_probe->sequence;
+    }
+
+    void
+    on(ReadyDeathFinished &) {
+        push<qb::KillEvent>(_child.id()); // also cleans a still-Activating cancellation control
+        kill();
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        ++_probe->ticks;
+        if (_probe->marker_seen && _probe->waiter_started && !_probe->gate_opened) {
+            if (_control == ReadyDeathControl::cancel) {
+                auto scope = context().token();
+                scope.cancel(); // only the waiter scope; child has its independent actor scope
+            }
+            _probe->gate_opened   = true;
+            _probe->gate_sequence = ++_probe->sequence;
+            _probe->init_gate.set();
+        }
+        // The core pumps completion and notifies activation waiters before this callback.
+        // In this mode the replayed handler does not kill, so this callback is reached before reap.
+        if (_control == ReadyDeathControl::death && !_kill_during_replay && _probe->init_finished && _probe->business_calls == 1
+            && !_probe->waiter_finished && !_probe->killed_after_notification) {
+            if (auto *live = _child.get()) {
+                _probe->killed_after_notification = true;
+                _probe->kill_sequence             = ++_probe->sequence;
+                live->kill();
+            } else {
+                _probe->callback_window_missing = true;
+            }
+        }
+        if (_probe->ticks >= 32 && !_probe->waiter_finished) {
+            // Pass budget is a cleanup backstop, not the mechanism/ordering oracle.
+            _probe->guard_exhausted = true;
+            _probe->init_gate.set();
+            broadcast<qb::KillEvent>();
+            kill();
+        }
+    }
+};
+
+void
+check_ready_death_window(bool kill_during_replay, ReadyDeathControl control = ReadyDeathControl::death) {
+    const auto probe = std::make_shared<ReadyDeathWindowProbe>();
+    qb::Main   main;
+    main.addActor<ReadyDeathWindowDriver>(0, probe, kill_during_replay, control);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(probe->child_admitted);
+    EXPECT_TRUE(probe->marker_seen);
+    EXPECT_TRUE(probe->gate_opened);
+    if (control != ReadyDeathControl::cancel) {
+        EXPECT_TRUE(probe->init_finished);
+        EXPECT_TRUE(probe->business_saw_finished_init);
+    }
+    EXPECT_TRUE(probe->waiter_started);
+    EXPECT_TRUE(probe->waiter_started_unready);
+    EXPECT_TRUE(probe->waiter_finished);
+    EXPECT_EQ(probe->waiter_cancelled, control == ReadyDeathControl::cancel);
+    EXPECT_FALSE(probe->callback_window_missing);
+    EXPECT_FALSE(probe->guard_exhausted);
+    EXPECT_EQ(probe->child_inits, 1u);
+    EXPECT_EQ(probe->child_dtors, 1u);
+    EXPECT_EQ(probe->waiter_results, control == ReadyDeathControl::cancel ? 0u : 1u);
+    EXPECT_LT(probe->marker_sequence, probe->gate_sequence);
+    if (control != ReadyDeathControl::cancel) {
+        const bool healthy = control == ReadyDeathControl::healthy;
+        EXPECT_EQ(probe->business_calls, 1u);
+        EXPECT_EQ(probe->ready_answer, healthy);
+        EXPECT_EQ(probe->resolved_at_resume, healthy);
+        EXPECT_FALSE(probe->ready_answer && !probe->resolved_at_resume) << "ready_async true must imply an immediately resolvable handle";
+        EXPECT_LT(probe->gate_sequence, probe->init_sequence);
+        EXPECT_LT(probe->init_sequence, probe->business_sequence);
+        if (healthy) {
+            EXPECT_LT(probe->business_sequence, probe->waiter_sequence);
+            EXPECT_LT(probe->waiter_sequence, probe->destructor_sequence);
+        } else {
+            EXPECT_LT(probe->business_sequence, probe->kill_sequence);
+            EXPECT_LT(probe->kill_sequence, probe->destructor_sequence);
+            EXPECT_LT(probe->destructor_sequence, probe->waiter_sequence);
+        }
+        EXPECT_EQ(probe->killed_during_replay, !healthy && kill_during_replay);
+        EXPECT_EQ(probe->killed_after_notification, !healthy && !kill_during_replay);
+    }
+}
+
+TEST(InitReadyAsync, ReadyResultRejectsChildKilledDuringStashReplay) {
+    check_ready_death_window(true);
+}
+
+TEST(InitReadyAsync, ReadyResultRejectsChildKilledAfterNotificationBeforeResume) {
+    check_ready_death_window(false);
+}
+
+TEST(InitReadyAsync, QB263HealthyPostReplayWaiterStillResolvesTrue) {
+    check_ready_death_window(false, ReadyDeathControl::healthy);
+}
+
+TEST(InitReadyAsync, QB263CancelledWaiterReportsCancellationBeforeChildCleanup) {
+    check_ready_death_window(false, ReadyDeathControl::cancel);
 }
 
 } // namespace init_ready_async_test

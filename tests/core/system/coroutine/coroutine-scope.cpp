@@ -60,6 +60,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <memory>
+#include <optional>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
@@ -784,3 +786,336 @@ TEST(ActorCoroutineScope, CancellableSameTickWatcherFiredThenCancelledNoLeakNoUA
         << "every cancellable op must resolve exactly once (completed or cancelled)";
     EXPECT_EQ(live_frames_now(), baseline) << "no frame may leak regardless of which side of the race wins";
 }
+
+// QB-267 public-path witnesses: this source is identical for the control
+// child_token implementation and the private candidate. No internal factory.
+namespace coroutine_scope_qb267_test {
+
+struct PublicChildHistoryObservation {
+    std::atomic<int>  markers_created{0};
+    std::atomic<int>  markers_destroyed{0};
+    std::atomic<int>  child_callbacks{0};
+    std::atomic<int>  parent_callbacks{0};
+    std::atomic<int>  callbacks_baseline{-1};
+    std::atomic<int>  hooks_baseline{-1};
+    std::atomic<int>  callbacks_before_kill{-1};
+    std::atomic<int>  hooks_before_kill{-1};
+    std::atomic<int>  created_before_kill{-1};
+    std::atomic<int>  destroyed_before_kill{-1};
+    std::atomic<int>  child_callbacks_before_kill{-1};
+    std::atomic<int>  actor_destroyed{0};
+    std::atomic<bool> parent_alive_before_kill{false};
+    std::atomic<bool> snapshot_taken{false};
+};
+
+struct ChildCallbackMarker {
+    const std::shared_ptr<PublicChildHistoryObservation> observation;
+    explicit ChildCallbackMarker(std::shared_ptr<PublicChildHistoryObservation> o)
+        : observation(std::move(o)) {
+        observation->markers_created.fetch_add(1, std::memory_order_relaxed);
+    }
+    ~ChildCallbackMarker() {
+        observation->markers_destroyed.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+// Public state census held by a live ScopedCoroContext. Its bound detects a
+// corrupt cycle without spinning; no private child representation is inspected.
+int
+live_scope_hooks(const qb::io::async::cancellation_token &scope) {
+    const auto *state = scope.get_state();
+    if (!state)
+        return -1;
+    const auto *head  = &state->hooks;
+    int         count = 0;
+    for (const auto *hook = head->next; hook != head; hook = hook->next) {
+        if (!hook || ++count > 4098)
+            return -1;
+    }
+    return count;
+}
+
+class PublicChildHistoryActor
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<PublicChildHistoryObservation> observation_;
+    bool                                           cancel_children_;
+    bool                                           ran_ = false;
+
+public:
+    static constexpr int ChildCount = 4096;
+
+    PublicChildHistoryActor(std::shared_ptr<PublicChildHistoryObservation> o, bool cancel_children)
+        : observation_(std::move(o))
+        , cancel_children_(cancel_children) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerCallback(*this);
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (ran_)
+            return;
+        ran_                       = true;
+        const auto observation     = observation_;
+        const bool cancel_children = cancel_children_;
+        auto       ctx             = context(); // real actor scope, kept alive throughout every census
+        ctx.token().on_cancel([observation] { observation->parent_callbacks.fetch_add(1, std::memory_order_relaxed); });
+        observation->callbacks_baseline = static_cast<int>(ctx.token().get_state()->callbacks.size());
+        observation->hooks_baseline     = live_scope_hooks(ctx.token());
+        for (int i = 0; i < ChildCount; ++i) {
+            // Each Marker is owned solely by the child callback. No external
+            // Marker handle survives this registration, and observation owns no token.
+            auto child = context().child_token();
+            child.on_cancel([marker = std::make_shared<ChildCallbackMarker>(observation)] {
+                marker->observation->child_callbacks.fetch_add(1, std::memory_order_relaxed);
+            });
+            if (cancel_children) {
+                auto copy       = child;
+                auto moved_copy = std::move(copy);
+                child.cancel();
+                // Both copied/moved handles die before the loop's child handle.
+                // This is public token ownership, not a private node assertion.
+                (void) moved_copy;
+            }
+        }
+        // Snapshot before kill; later cancellation/actor destruction must not
+        // repair an earlier failed observation and make history look bounded.
+        observation->callbacks_before_kill       = static_cast<int>(ctx.token().get_state()->callbacks.size());
+        observation->hooks_before_kill           = live_scope_hooks(ctx.token());
+        observation->created_before_kill         = observation->markers_created.load(std::memory_order_relaxed);
+        observation->destroyed_before_kill       = observation->markers_destroyed.load(std::memory_order_relaxed);
+        observation->child_callbacks_before_kill = observation->child_callbacks.load(std::memory_order_relaxed);
+        observation->parent_alive_before_kill    = is_alive() && !ctx.cancelled();
+        observation->snapshot_taken.store(true, std::memory_order_release);
+        kill(); // synchronous handler, outside a coroutine body; no actor access after this
+    }
+
+    ~PublicChildHistoryActor() override {
+        observation_->actor_destroyed.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+void
+expect_public_child_history_bounded(bool cancel_children) {
+    auto observation = std::make_shared<PublicChildHistoryObservation>();
+    {
+        qb::Main main;
+        main.addActor<PublicChildHistoryActor>(0, observation, cancel_children);
+        main.start(false);
+        main.join();
+        EXPECT_FALSE(main.hasError());
+    }
+    ASSERT_TRUE(observation->snapshot_taken.load(std::memory_order_acquire));
+    EXPECT_TRUE(observation->parent_alive_before_kill.load());
+    EXPECT_EQ(observation->created_before_kill.load(), PublicChildHistoryActor::ChildCount);
+    EXPECT_EQ(observation->destroyed_before_kill.load(), PublicChildHistoryActor::ChildCount)
+        << "child callback payloads must die before the live parent scope is killed";
+    EXPECT_EQ(observation->child_callbacks_before_kill.load(), cancel_children ? PublicChildHistoryActor::ChildCount : 0);
+    ASSERT_GE(observation->callbacks_baseline.load(), 1); // ordinary sentinel callback is live
+    ASSERT_GE(observation->hooks_baseline.load(), 0);
+    ASSERT_GE(observation->callbacks_before_kill.load(), 0);
+    ASSERT_GE(observation->hooks_before_kill.load(), 0);
+    EXPECT_LE(observation->callbacks_before_kill.load(), observation->callbacks_baseline.load())
+        << "the live parent callback set contains completed-child history";
+    EXPECT_LE(observation->hooks_before_kill.load(), observation->hooks_baseline.load())
+        << "the live parent hook set contains completed-child history";
+    // Cleanup evidence is independent of the immutable snapshots above. It
+    // deliberately accepts the base's delayed passive callback delivery on kill.
+    EXPECT_EQ(observation->parent_callbacks.load(), 1);
+    EXPECT_EQ(observation->markers_created.load(), PublicChildHistoryActor::ChildCount);
+    EXPECT_EQ(observation->markers_destroyed.load(), PublicChildHistoryActor::ChildCount);
+    EXPECT_EQ(observation->actor_destroyed.load(), 1);
+    if (cancel_children) {
+        EXPECT_EQ(observation->child_callbacks.load(), PublicChildHistoryActor::ChildCount);
+    }
+}
+
+TEST(ActorCoroutineScope, QB267PublicPassiveChildrenReleasePayloadsBeforeParentKill) {
+    expect_public_child_history_bounded(false);
+}
+
+TEST(ActorCoroutineScope, QB267PublicCancelledChildCopiesLeaveNoLiveParentHistory) {
+    expect_public_child_history_bounded(true);
+}
+
+} // namespace coroutine_scope_qb267_test
+
+namespace coroutine_scope_qb267_topology_test {
+using qb::io::async::cancellation_token;
+using qb::io::async::null_token;
+
+enum class Scenario { live_copies, cancelled_copies, nested_drop, reentrant };
+struct Observation {
+    std::atomic<int>  created{0};
+    std::atomic<int>  destroyed{0};
+    std::atomic<int>  delivered{0};
+    std::atomic<bool> completed{false};
+};
+struct Marker {
+    std::shared_ptr<Observation> observation;
+    explicit Marker(std::shared_ptr<Observation> value)
+        : observation(std::move(value)) {
+        ++observation->created;
+    }
+    ~Marker() {
+        ++observation->destroyed;
+    }
+};
+
+int
+hooks(cancellation_token const &token) {
+    return coroutine_scope_qb267_test::live_scope_hooks(token);
+}
+std::size_t
+callbacks(cancellation_token const &token) {
+    return token.get_state() ? token.get_state()->callbacks.size() : 0;
+}
+
+class TopologyActor
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<Observation> _observation;
+    Scenario                     _scenario;
+
+public:
+    TopologyActor(std::shared_ptr<Observation> observation, Scenario scenario)
+        : _observation(std::move(observation))
+        , _scenario(scenario) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        // Every token, context and state view lives on this core. No await or callback
+        // outlives these locals; the actual actor is retained throughout each public call.
+        const auto                  observation = _observation;
+        cancellation_token          parent;
+        const qb::ScopedCoroContext parent_ctx(this, parent);
+        int                         parent_deliveries = 0;
+        parent.on_cancel([&parent_deliveries] { ++parent_deliveries; });
+        const auto base_callbacks = callbacks(parent);
+        const int  base_hooks     = hooks(parent);
+        const auto links          = [&] {
+            return static_cast<int>(callbacks(parent) - base_callbacks) + hooks(parent) - base_hooks;
+        };
+        if (_scenario == Scenario::live_copies || _scenario == Scenario::cancelled_copies) {
+            auto child  = parent_ctx.child_token();
+            auto copied = child;
+            auto moved  = std::move(copied);
+            EXPECT_FALSE(static_cast<bool>(copied));
+            EXPECT_EQ(child.get_state(), moved.get_state());
+            EXPECT_EQ(links(), 1);                  // either public callback or hook while the child is live
+            EXPECT_EQ(child.get_state()->refs, 2u); // exactly the two public handles
+            auto                        marker = std::make_shared<Marker>(observation);
+            const std::weak_ptr<Marker> weak   = marker;
+            child.on_cancel([marker] { ++marker->observation->delivered; });
+            marker.reset();
+            if (_scenario == Scenario::cancelled_copies) {
+                child.cancel();
+                EXPECT_TRUE(moved.is_cancelled());
+                EXPECT_FALSE(parent.is_cancelled());
+                EXPECT_TRUE(weak.expired());
+                EXPECT_EQ(callbacks(child), 0u);
+                EXPECT_EQ(hooks(child), 0);
+                EXPECT_EQ(links(), 0); // copied cancelled handles remain alive here
+                EXPECT_EQ(observation->delivered.load(), 1);
+            }
+            child = cancellation_token(null_token);
+            if (_scenario == Scenario::live_copies) {
+                EXPECT_FALSE(weak.expired());
+                EXPECT_EQ(links(), 1);
+            }
+            moved = cancellation_token(null_token);
+            EXPECT_TRUE(weak.expired());
+            EXPECT_EQ(links(), 0);
+            EXPECT_EQ(callbacks(parent), base_callbacks);
+            EXPECT_EQ(hooks(parent), base_hooks);
+            EXPECT_FALSE(parent.is_cancelled()); // parent retained until all snapshots are taken
+        } else if (_scenario == Scenario::nested_drop) {
+            cancellation_token    grandchild(null_token);
+            std::weak_ptr<Marker> middle_marker;
+            {
+                auto middle   = parent_ctx.child_token();
+                grandchild    = qb::ScopedCoroContext(this, middle).child_token();
+                auto marker   = std::make_shared<Marker>(observation);
+                middle_marker = marker;
+                middle.on_cancel([marker] { ++marker->observation->delivered; });
+                marker.reset();
+                EXPECT_FALSE(middle_marker.expired());
+                EXPECT_EQ(links(), 1);
+            }
+            EXPECT_TRUE(middle_marker.expired());
+            EXPECT_EQ(links(), 0);
+            parent.cancel();
+            EXPECT_FALSE(grandchild.is_cancelled());
+            EXPECT_EQ(callbacks(parent), 0u);
+            EXPECT_EQ(hooks(parent), 0);
+            int grandchild_deliveries = 0;
+            grandchild.on_cancel([&grandchild_deliveries] { ++grandchild_deliveries; });
+            grandchild.cancel();
+            EXPECT_EQ(grandchild_deliveries, 1);
+            EXPECT_EQ(observation->destroyed.load(), 1);
+        } else {
+            auto                              first = parent_ctx.child_token();
+            std::optional<cancellation_token> sibling(parent_ctx.child_token());
+            int                               first_deliveries     = 0;
+            int                               sibling_deliveries   = 0;
+            int                               immediate_deliveries = 0;
+            bool                              fresh_cancelled      = false;
+            sibling->on_cancel([&sibling_deliveries] { ++sibling_deliveries; });
+            first.on_cancel([&] {
+                ++first_deliveries;
+                sibling.reset();
+                auto fresh      = parent_ctx.child_token();
+                fresh_cancelled = fresh.is_cancelled();
+                fresh.on_cancel([&immediate_deliveries] { ++immediate_deliveries; });
+                parent.cancel(); // reentrant cancellation of the still-held parent
+            });
+            parent.cancel();
+            EXPECT_TRUE(first.is_cancelled());
+            EXPECT_TRUE(fresh_cancelled);
+            EXPECT_EQ(first_deliveries, 1);
+            EXPECT_LE(sibling_deliveries, 1); // sibling order is unspecified
+            EXPECT_EQ(immediate_deliveries, 1);
+            EXPECT_EQ(callbacks(parent), 0u);
+            EXPECT_EQ(hooks(parent), 0);
+            EXPECT_EQ(callbacks(first), 0u);
+            EXPECT_EQ(hooks(first), 0);
+        }
+        parent.cancel();
+        EXPECT_EQ(parent_deliveries, 1);
+        observation->completed.store(true);
+        kill();
+    }
+};
+
+void
+check_topology(Scenario scenario) {
+    const auto observation = std::make_shared<Observation>();
+    qb::Main   main;
+    main.addActor<TopologyActor>(0, observation, scenario);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(observation->completed.load());
+    EXPECT_EQ(observation->created.load(), observation->destroyed.load());
+}
+TEST(ActorCoroutineScope, QB267PublicLiveCopiesMoveAndLastDropUnlinkBeforeParentCancel) {
+    check_topology(Scenario::live_copies);
+}
+TEST(ActorCoroutineScope, QB267PublicCancelledCopiesReleaseMarkersWhileParentRemainsAlive) {
+    check_topology(Scenario::cancelled_copies);
+}
+TEST(ActorCoroutineScope, QB267PublicNestedMiddleDropLeavesGrandchildIndependent) {
+    check_topology(Scenario::nested_drop);
+}
+TEST(ActorCoroutineScope, QB267PublicReentrantCancelCanDropSiblingAndCreateCancelledChild) {
+    check_topology(Scenario::reentrant);
+}
+} // namespace coroutine_scope_qb267_topology_test
