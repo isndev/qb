@@ -1711,7 +1711,7 @@ TEST(QuicAdapterEndpoint, OversizedUdpPacketTripsTransportFailureAndClosesEndpoi
 
 /**
  * @test connect(uri, alpn) — the two-argument no-TLS overload — backfills server_name from the URI host
- * @brief The convenience `connect(remote_uri, alpn_protocols)` overload (endpoint.h:433-438) constructs a
+ * @brief The convenience `connect(remote_uri, alpn_protocols)` overload (endpoint.h:453-458) constructs a
  *        default tls_config, assigns server_name from the URI host, and forwards to the three-argument
  *        connect with the caller's ALPN. Every existing adapter test reaches connect() through either the
  *        single-arg `connect(uri)` default-argument form or the explicit `connect(uri, tls, alpn)` form;

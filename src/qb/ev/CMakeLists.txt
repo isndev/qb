@@ -292,7 +292,7 @@ if (QB_EV_WATCHERS_FULL)
     set(QB_EV_EMBED_ENABLE 1)
     # The child watcher is the one family that is not a choice. It is built on waitpid(),
     # SIGCHLD, WNOHANG and WUNTRACED -- POSIX, none of which Windows has -- so asking for it
-    # there is not a reduced feature set, it is a compile error (ev.c:3620, :4339). Upstream
+    # there is not a reduced feature set, it is a compile error (ev.c:3748, :4499). Upstream
     # libev gates it the same way. "Full" therefore means every family the PLATFORM has.
     if (WIN32)
         set(QB_EV_CHILD_ENABLE 0)
