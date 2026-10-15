@@ -942,6 +942,61 @@ TEST(QuicAdapterServer, LocalStreamSessionCanPublishAndFlush) {
 }
 
 /**
+ * @test Connection id 0 on a server addresses the sole connected peer, by its real id
+ * @brief The single-argument forms pass connection 0. On a server with exactly one connected peer, the
+ *        stream handle and its session carry that peer's id (7), so the flush, a raw single-argument
+ *        send and the backend open all address connection 7. With two peers 0 is ambiguous and opening
+ *        throws while an explicit id still opens; after a close the survivor is the sole peer again; with
+ *        none, opening throws (Huly QB-330: the handle kept the caller's 0, the session was keyed by it,
+ *        and the native backend dropped every send to connection 0).
+ */
+TEST(QuicAdapterServer, DefaultConnectionAddressesTheSoleConnectedPeerByItsRealId) {
+    FakeQuicBackend   *raw = nullptr;
+    CallbackQuicServer server{make_fake(raw)};
+    ASSERT_TRUE(server.listen(qb::io::uri{"quic://127.0.0.1:0"}, "", ""));
+
+    const auto connected = [&](std::uint64_t id) {
+        raw->queued_events.push_back({qb::io::quic::backend_event::kind::connected, id, 0, 0, "h3", {}});
+        server.poll();
+    };
+    const auto closed = [&](std::uint64_t id) {
+        raw->stats.active_connections = 1;
+        raw->queued_events.push_back(
+            {qb::io::quic::backend_event::kind::connection_closed, id, 0, 0, "bye", {}, qb::io::quic::disconnect_reason::application_close});
+        server.poll();
+    };
+
+    connected(7);
+    auto *session = server.open_bidirectional_stream_session();
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(raw->last_open_connection_id, 7u) << "the backend must open on the real connection";
+    EXPECT_EQ(session->connection_id(), 7u) << "the session must be keyed by the real connection id";
+    EXPECT_EQ(server.stream_session(7, session->id()), session);
+    session->publish(std::string_view{"hello", 5});
+    server.flush_stream_session(*session);
+    EXPECT_EQ(raw->sent_connection_id, 7u);
+    EXPECT_EQ(raw->sent_stream_bytes, 5u);
+    const auto handle = server.open_unidirectional_stream();
+    EXPECT_EQ(handle.connection_id(), 7u);
+    server.send_stream_data(handle.id(), std::string_view{"raw"});
+    EXPECT_EQ(raw->sent_connection_id, 7u) << "a single-argument send addresses the sole peer";
+    EXPECT_EQ(raw->sent_stream_bytes, 8u);
+
+    connected(9);
+    EXPECT_THROW((void) server.open_bidirectional_stream_session(), std::runtime_error) << "two peers: connection 0 is ambiguous";
+    auto *explicit_session = server.open_bidirectional_stream_session(9);
+    ASSERT_NE(explicit_session, nullptr);
+    EXPECT_EQ(raw->last_open_connection_id, 9u);
+    EXPECT_EQ(explicit_session->connection_id(), 9u);
+
+    closed(7);
+    EXPECT_EQ(server.open_unidirectional_stream().connection_id(), 9u) << "the survivor is the sole peer again";
+    closed(9);
+    EXPECT_THROW((void) server.open_unidirectional_stream(), std::runtime_error) << "no connected peer to open on";
+    EXPECT_TRUE(server.is_open());
+}
+
+/**
  * @test A connector local stream session can publish and flush (unidirectional)
  * @brief Same publish/flush contract on the connector role with a unidirectional stream.
  */

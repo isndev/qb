@@ -59,13 +59,13 @@ The bridge in the other direction is the one qbm's three modules use, and it is 
 
 ## QUIC has no coroutine surface at all
 
-Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight QUIC sources — `src/qb/io/quic.h`, `quic.cpp`, `quic/types.h`, `quic/backend.h`, `async/quic.h` and the five headers under `async/quic/`. The whole surface is callback and virtual dispatch: `endpoint::dispatch(event::…)` overloads (`src/qb/io/async/quic/endpoint.h:57-72`) forwarded to your class by `requires`-guarded detection.
+Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight QUIC sources — `src/qb/io/quic.h`, `quic.cpp`, `quic/types.h`, `quic/backend.h`, `async/quic.h` and the five headers under `async/quic/`. The whole surface is callback and virtual dispatch: `endpoint::dispatch(event::…)` overloads (`src/qb/io/async/quic/endpoint.h:61-76`) forwarded to your class by `requires`-guarded detection.
 
 Three properties of the design make an awaiter genuinely hard here, and they are visible in the code rather than being a matter of taste:
 
-- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:660`). `wait_readable` has nothing to park on.
-- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:309`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
-- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:244-281`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
+- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:675`). `wait_readable` has nothing to park on.
+- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:328`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
+- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:258-295`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
 
 Use the callback surface, and if you want coroutine ergonomics on top of it, park on your own `async_awaiter<T>` that a `dispatch(event::stream_data)` handler completes — after copying the payload.
 

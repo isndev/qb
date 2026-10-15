@@ -554,6 +554,19 @@ policy.
   `CreationHookRemovalMakesRegistrationReportNoSession` and
   `CreationHookRemovalRefusesStreamDataInsteadOfFeedingAMissingSession`; the second crashed with
   SIGSEGV before the fix.
+- **A QUIC server stream opened on the default connection carries its real connection id (Huly QB-330).**
+  The single-argument forms pass connection id `0`, documented as "the sole/current connection". On a
+  server the native backend opened on its only child, but the endpoint handed back a stream (and the
+  facade keyed a session) with the caller's `0`; every later flush or send then addressed connection
+  `0`, which the native server does not have, and its output was consumed and dropped. The endpoint now
+  tracks its connected peers from `connected` / `connection_closed` and resolves `0` to the sole one
+  before calling the backend: the handle and the session carry the real id, and single-argument sends,
+  resets, stops, credit and closes reach that peer. Behaviour decision: opening on `0` throws
+  `std::runtime_error` when the server has no connected peer or several, instead of guessing; an
+  explicit id is unchanged, and a mutator addressed to `0` with no sole peer still reaches no
+  connection. Pinned by `DefaultConnectionAddressesTheSoleConnectedPeerByItsRealId` and the
+  `SolePeerConnection` case of `QuicServerInitiatedStreamTest.ReachesClient` (the client never received
+  the server's bytes before the fix; the `ExplicitConnection` case is the control).
 - **Custom protocol guides show complete, bounded frame inspection (Huly QB-472, QB-473, QB-752).**
   Chat and broker examples now wait for the whole frame, reject invalid headers and lengths
   before allocating, and close on protocol errors. Their guide snippets match that behavior

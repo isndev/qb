@@ -865,14 +865,20 @@ TEST(QuicHandshakeLoopback, ClosingOneConnectionLeavesTheSurvivorsRoutable) {
     qb::io::async::listener::current.clear();
 }
 
+enum class QuicServerStreamConnection { explicit_id, sole_peer };
+
+class QuicServerInitiatedStreamTest : public ::testing::TestWithParam<QuicServerStreamConnection> {};
+
 /**
  * @test A server-initiated stream is delivered to the client over the live loopback (ADDED — dossier §"Missing")
  * @brief After the handshake, the SERVER opens a bidirectional stream session on the connection and pushes
  *        "from-server\n"; the client (a connector carrying HandshakeStreamSession) registers the inbound
  *        stream and receives the bytes. The prior native tests only pushed client→server — this proves the
- *        reverse direction end-to-end.
+ *        reverse direction end-to-end. The session is opened with the connection id from `connected`, and
+ *        with the default connection 0, which must address the sole peer by its real id (Huly QB-330: the
+ *        session kept the id 0, and the native backend dropped its output).
  */
-TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
+TEST_P(QuicServerInitiatedStreamTest, ReachesClient) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     qb::io::async::init();
@@ -901,10 +907,12 @@ TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
 
     ASSERT_TRUE(pump_until([&] { return server.connection_id != 0; }, std::chrono::seconds(5))) << "server never learned the connection id";
 
-    auto *session = server.open_bidirectional_stream_session(server.connection_id);
+    auto *session = GetParam() == QuicServerStreamConnection::explicit_id ? server.open_bidirectional_stream_session(server.connection_id)
+                                                                          : server.open_bidirectional_stream_session();
     ASSERT_NE(session, nullptr);
+    EXPECT_EQ(session->connection_id(), server.connection_id) << "the session must carry the real connection id";
     session->publish(std::string_view{"from-server\n", 12});
-    ASSERT_TRUE(server.flush_stream_session(server.connection_id, session->id()));
+    server.flush_stream_session(*session);
 
     EXPECT_TRUE(pump_until([&] { return client.received.find("from-server") != std::string::npos; }, std::chrono::seconds(5)))
         << "client never received the server-initiated stream data";
@@ -913,6 +921,13 @@ TEST(QuicHandshakeLoopback, ServerInitiatedStreamReachesClient) {
     server.close();
     qb::io::async::listener::current.clear();
 }
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeLoopback, QuicServerInitiatedStreamTest,
+                         ::testing::Values(QuicServerStreamConnection::explicit_id, QuicServerStreamConnection::sole_peer),
+                         [](::testing::TestParamInfo<QuicServerStreamConnection> const &info) {
+                             return info.param == QuicServerStreamConnection::explicit_id ? std::string{"ExplicitConnection"}
+                                                                                          : std::string{"SolePeerConnection"};
+                         });
 
 /**
  * @test A graceful server close is observed end-to-end with a typed disconnect reason (ADDED — dossier §"Missing")
