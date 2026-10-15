@@ -1916,8 +1916,9 @@ check_allocator_factory_binding(bool attempt_failure) {
     probe->promised[1] = main.addActor<StartupService>(0, probe);
     probe->promised[2] = main.addActor<AllocatorParent>(0, probe);
     probe->promised[3] = main.addActor<StartupPeer>(0, probe);
-    for (auto promised : probe->promised)
+    for (auto promised : probe->promised) {
         ASSERT_TRUE(promised.is_valid());
+    }
     main.start(false);
     main.join();
 
@@ -1953,11 +1954,14 @@ check_allocator_factory_binding(bool attempt_failure) {
         EXPECT_EQ(probe->child_dtors[role], expected);
         if (expected != 0) {
             EXPECT_TRUE(probe->child_actual[role].is_valid());
-            for (auto promised : probe->promised)
+            for (auto promised : probe->promised) {
                 EXPECT_NE(probe->child_actual[role], promised);
-            for (unsigned previous = 0; previous < role; ++previous)
-                if (probe->child_ctors[previous] != 0)
+            }
+            for (unsigned previous = 0; previous < role; ++previous) {
+                if (probe->child_ctors[previous] != 0) {
                     EXPECT_NE(probe->child_actual[role], probe->child_actual[previous]);
+                }
+            }
         }
     }
 }

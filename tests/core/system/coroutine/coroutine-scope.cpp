@@ -929,8 +929,9 @@ expect_public_child_history_bounded(bool cancel_children) {
     EXPECT_EQ(observation->markers_created.load(), PublicChildHistoryActor::ChildCount);
     EXPECT_EQ(observation->markers_destroyed.load(), PublicChildHistoryActor::ChildCount);
     EXPECT_EQ(observation->actor_destroyed.load(), 1);
-    if (cancel_children)
+    if (cancel_children) {
         EXPECT_EQ(observation->child_callbacks.load(), PublicChildHistoryActor::ChildCount);
+    }
 }
 
 TEST(ActorCoroutineScope, QB267PublicPassiveChildrenReleasePayloadsBeforeParentKill) {
