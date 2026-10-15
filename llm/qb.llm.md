@@ -695,7 +695,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
   never emit them. _(time.h:8-25, aliases :93, :96, :99)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range
-  `substr` throw). _(string.h:237)_ Its value is its `size()` characters: comparisons, searches and
+  `substr` throw). _(string.h:251)_ Its value is its `size()` characters: comparisons, searches and
   `operator<<` span that whole length, an interior `'\0'` included, as `std::string`'s do. A char
   buffer is read up to its first NUL; only `(ptr, len)` keeps interior NULs.
 - **DoS bounds are enforced:** read/write buffers cap at 200 MB (`QB_MAX_READ/WRITE_BUFFER_SIZE`), a

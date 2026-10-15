@@ -808,15 +808,24 @@ policy.
   MiBs are backed.
 - **`qb::string` closes three gaps with `std::string` (Huly QB-1002).** A const char array --
   `const char raw[3] = {'x','y','z'}` -- took the non-template `const char*` constructor, `assign` and `operator=`,
-  whose `strlen` reads past an array without a NUL (`std::string` does the same); the pointer forms are now templates
-  an array argument cannot win, so every array, a literal included, takes the bounded array form. `operator>>` read the
+  whose `strlen` reads past an array without a NUL (`std::string` does the same) -- and so did every other member and
+  operator that takes a C string: `compare`, `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains`,
+  `==`, `!=`, `<`, `>`, `<=`, `>=` (and `==` / `!=` with the array on the left), `operator+` on either side. Each has a
+  `const char(&)[N]` form now, and its pointer form is a template an array argument cannot win, so every array, a
+  literal included, is read up to its first NUL and never past its end; the length is a memchr bounded by `N`, folded
+  to a constant for a literal as `strlen` was. A literal `nullptr` operand -- `strlen(nullptr)`, undefined -- no
+  longer compiles there (`==` / `!=` excepted, unchanged), and a literal `0`, ambiguous between the pointer and the
+  `char` forms of `find`, `rfind`, `append`, `+=`, `starts_with`, `ends_with`, `contains` and `operator+`, now takes the
+  `char` form, as `assign` and `operator=` already did. `operator>>` read the
   whole word into a temporary `std::string` before keeping what fitted, so a long token allocated its whole length; it
   now reads as `std::string`'s extraction does -- leading white space skipped, `width()` honoured and reset, the word
   consumed whole -- keeping the first `_Size` characters and dropping the rest as it reads, with no allocation.
   `find(needle, pos)` answered `npos` at `pos == size()` whatever the needle, and `contains("")` was false on an empty
   string; both now answer as `std::string` does. Pinned by `StringTest.AConstCharArrayIsReadWithinItsBounds`,
-  `StringTest.ExtractionKeepsTheCapacityAndNeverBuffersTheWord` and `StringAlgorithmTest.AnEmptyNeedleIsFoundUpToTheSize`
-  in `tests/core/unit/container/string.cpp`.
+  `StringTest.ExtractionKeepsTheCapacityAndNeverBuffersTheWord`, `StringAlgorithmTest.AnEmptyNeedleIsFoundUpToTheSize`
+  and the `StringArrayOperand` cases -- one per operation, an unterminated array read in place and one alone on the
+  stack (an AddressSanitizer report before), and the call shapes callers write, checked to compile unambiguously and
+  to answer as `std::string` -- in `tests/core/unit/container/string.cpp`.
 - **The startup log diagnostic follows the open, not the path (Huly QB-327).** The default `LogInitializer` warned when
   `./qb.1.log` did not EXIST: a directory of that name exists, nanolog's open of it fails, and every log line was
   discarded with no word. The answer is now nanolog's own, `nanolog::log_file_opened()`, taken from the first file's

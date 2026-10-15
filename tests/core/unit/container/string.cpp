@@ -1087,6 +1087,301 @@ TEST_F(StringAlgorithmTest, AnEmptyNeedleIsFoundUpToTheSize) {
     EXPECT_FALSE(empty.contains("x"));
 }
 
+// Huly QB-1002 (decision 2): every other member that takes a C string -- compare, find, rfind, append, +=,
+// starts_with, ends_with, contains, the six comparisons, == and != with the array on the left, operator+ on either
+// side -- took a char array as `const char *` and read it with strlen, past the end of an array that has no NUL. Each
+// has a bounded array form now. Two witnesses per operation: `adjacent.raw`, an unterminated array followed by more
+// text in the same object, turns the over-read into a wrong answer in any build; `lone`, an unterminated array alone
+// on the stack, turns it into an AddressSanitizer stack-buffer-overflow under the sanitize preset.
+struct UnterminatedOperand {
+    const char raw[3];
+    const char after[5];
+};
+static_assert(sizeof(UnterminatedOperand) == 8, "the arrays must be contiguous for the over-read to land in `after`");
+
+template <typename Check>
+void
+against_unterminated_arrays(Check check) {
+    const UnterminatedOperand adjacent{{'x', 'y', 'z'}, {'Q', 'Q', 'Q', 'Q', '\0'}};
+    check(adjacent.raw, "followed by \"QQQQ\" in the same object");
+    const char lone[3] = {'x', 'y', 'z'};
+    check(lone, "alone on the stack");
+}
+
+TEST(StringArrayOperand, CompareReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_EQ(qb::string<16>("xyz").compare(operand), 0) << where; });
+}
+
+TEST(StringArrayOperand, FindReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        const qb::string<16> haystack("axyzb");
+        EXPECT_EQ(haystack.find(operand), 1u) << where;
+        EXPECT_EQ(haystack.find(operand, 2), qb::string<16>::npos) << where;
+    });
+}
+
+TEST(StringArrayOperand, RfindReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        const qb::string<16> haystack("xyzxyz");
+        EXPECT_EQ(haystack.rfind(operand), 3u) << where;
+        EXPECT_EQ(haystack.rfind(operand, 2), 0u) << where;
+    });
+}
+
+TEST(StringArrayOperand, AppendReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        qb::string<16> text("a");
+        text.append(operand);
+        EXPECT_EQ(std::string_view(text), "axyz") << where;
+    });
+}
+
+TEST(StringArrayOperand, PlusAssignReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        qb::string<16> text("a");
+        text += operand;
+        EXPECT_EQ(std::string_view(text), "axyz") << where;
+    });
+}
+
+TEST(StringArrayOperand, StartsWithReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_TRUE(qb::string<16>("xyz!").starts_with(operand)) << where; });
+}
+
+TEST(StringArrayOperand, EndsWithReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_TRUE(qb::string<16>("!xyz").ends_with(operand)) << where; });
+}
+
+TEST(StringArrayOperand, ContainsReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_TRUE(qb::string<16>("axyzb").contains(operand)) << where; });
+}
+
+TEST(StringArrayOperand, EqualityReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_TRUE(qb::string<16>("xyz") == operand) << where; });
+}
+
+TEST(StringArrayOperand, InequalityReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_FALSE(qb::string<16>("xyz") != operand) << where; });
+}
+
+TEST(StringArrayOperand, LessThanReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        EXPECT_FALSE(qb::string<16>("xyz") < operand) << where; // "xyz" < "xyzQQQQ" when read past the end
+    });
+}
+
+TEST(StringArrayOperand, GreaterThanReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) {
+        EXPECT_TRUE(qb::string<16>("xyzA") > operand) << where; // 'A' < 'Q'
+    });
+}
+
+TEST(StringArrayOperand, LessOrEqualReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_FALSE(qb::string<16>("xyzA") <= operand) << where; });
+}
+
+TEST(StringArrayOperand, GreaterOrEqualReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_TRUE(qb::string<16>("xyz") >= operand) << where; });
+}
+
+TEST(StringArrayOperand, EqualityWithTheArrayOnTheLeftReadsItWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_TRUE(operand == qb::string<16>("xyz")) << where; });
+}
+
+TEST(StringArrayOperand, InequalityWithTheArrayOnTheLeftReadsItWithinItsBounds) {
+    against_unterminated_arrays([](const char (&operand)[3], const char *where) { EXPECT_FALSE(operand != qb::string<16>("xyz")) << where; });
+}
+
+TEST(StringArrayOperand, ConcatenationOnTheRightReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_EQ(std::string_view(qb::string<16>("a") + operand), "axyz") << where; });
+}
+
+TEST(StringArrayOperand, ConcatenationOnTheLeftReadsTheArrayWithinItsBounds) {
+    against_unterminated_arrays(
+        [](const char (&operand)[3], const char *where) { EXPECT_EQ(std::string_view(operand + qb::string<16>("b")), "xyzb") << where; });
+}
+
+// A buffer (a non-const array) takes the same array forms: the reference to const binds it, and the pointer form,
+// deduced as `char *`, is the less specialised.
+TEST(StringArrayOperand, ACharBufferTakesTheArrayFormsToo) {
+    struct {
+        char raw[3];
+        char after[5];
+    } buffer{{'x', 'y', 'z'}, {'Q', 'Q', 'Q', 'Q', '\0'}};
+    static_assert(sizeof(buffer) == 8, "contiguous");
+    qb::string<16> text("a");
+    text.append(buffer.raw);
+    text += buffer.raw;
+    EXPECT_EQ(std::string_view(text), "axyzxyz");
+    EXPECT_EQ(qb::string<16>("axyzb").find(buffer.raw), 1u);
+    EXPECT_TRUE(qb::string<16>("xyz") == buffer.raw);
+    EXPECT_TRUE(buffer.raw == qb::string<16>("xyz"));
+    EXPECT_EQ(qb::string<16>("xyz").compare(buffer.raw), 0);
+    EXPECT_EQ(std::string_view(qb::string<16>("a") + buffer.raw), "axyz");
+}
+
+// The call shapes callers write still compile, unambiguously, and answer as std::string answers: a literal, a
+// terminated const array, a buffer, `const char *`, `char *`, std::string, std::string_view, a qb::string of this
+// capacity and of another, a char. A requires-expression is false for an ambiguous call, so each row below is also
+// the proof that the array forms and the pointer forms never tie.
+using S16 = qb::string<16>;
+using S8  = qb::string<8>;
+
+template <typename A>
+constexpr bool every_search_takes = requires(S16 const &s, A &&a) {
+    s.compare(a);
+    s.find(a);
+    s.find(a, std::size_t{1});
+    s.starts_with(a);
+    s.ends_with(a);
+    s.contains(a);
+};
+template <typename A>
+constexpr bool rfind_takes = requires(S16 const &s, A &&a) { s.rfind(a); };
+template <typename A>
+constexpr bool every_append_takes = requires(S16 &s, A &&a) {
+    s.append(a);
+    s += a;
+};
+template <typename A>
+constexpr bool equality_takes = requires(S16 const &s, A &&a) {
+    s == a;
+    s != a;
+    a == s;
+    a != s;
+};
+template <typename A>
+constexpr bool ordering_takes = requires(S16 const &s, A &&a) {
+    s < a;
+    s > a;
+    s <= a;
+    s >= a;
+};
+template <typename A>
+constexpr bool concatenation_takes = requires(S16 const &s, A &&a) {
+    s + a;
+    a + s;
+};
+
+// clang-format off
+static_assert(every_search_takes<const char (&)[4]> && every_search_takes<const char (&)[3]> && every_search_takes<char (&)[8]>
+              && every_search_takes<const char *&> && every_search_takes<char *&> && every_search_takes<const std::string &>
+              && every_search_takes<std::string_view &> && every_search_takes<const S16 &> && every_search_takes<const S8 &>);
+static_assert(requires(S16 const &s, char c) {
+    s.find(c);
+    s.rfind(c);
+    s.starts_with(c);
+    s.ends_with(c);
+    s.contains(c);
+});
+static_assert(rfind_takes<const char (&)[4]> && rfind_takes<const char (&)[3]> && rfind_takes<char (&)[8]>
+              && rfind_takes<const char *&> && rfind_takes<char *&> && rfind_takes<char &>);
+static_assert(every_append_takes<const char (&)[4]> && every_append_takes<const char (&)[3]> && every_append_takes<char (&)[8]>
+              && every_append_takes<const char *&> && every_append_takes<char *&> && every_append_takes<const std::string &>
+              && every_append_takes<std::string_view &> && every_append_takes<const S16 &> && every_append_takes<const S8 &>
+              && every_append_takes<char &>);
+static_assert(equality_takes<const char (&)[4]> && equality_takes<const char (&)[3]> && equality_takes<char (&)[8]>
+              && equality_takes<const char *&> && equality_takes<char *&> && equality_takes<const std::string &>
+              && equality_takes<std::string_view &> && equality_takes<const S16 &> && equality_takes<const S8 &>);
+static_assert(ordering_takes<const char (&)[4]> && ordering_takes<const char (&)[3]> && ordering_takes<char (&)[8]>
+              && ordering_takes<const char *&> && ordering_takes<char *&> && ordering_takes<const std::string &>
+              && ordering_takes<const S16 &> && ordering_takes<const S8 &>);
+static_assert(concatenation_takes<const char (&)[4]> && concatenation_takes<const char (&)[3]> && concatenation_takes<char (&)[8]>
+              && concatenation_takes<const char *&> && concatenation_takes<char *&> && concatenation_takes<const S16 &>
+              && concatenation_takes<const S8 &> && concatenation_takes<char &>);
+// clang-format on
+
+TEST(StringArrayOperand, TheUsualCallShapesAnswerAsStdString) {
+    const S16         s("abcabc");
+    const std::string mirror("abcabc");
+    const char        terminated[] = "bc";
+    char              buffer[8]    = "bc";
+    const char       *const_ptr    = "bc";
+    char             *ptr          = buffer;
+    const std::string str("bc");
+    std::string_view  view("bc");
+    const S16         same("bc");
+    const S8          other("bc");
+    const auto        sign = [](int v) {
+        return (v > 0) - (v < 0);
+    };
+
+    // Searches, every shape against the std::string answer.
+    const std::string_view needle("bc");
+    {
+        EXPECT_EQ(sign(s.compare("bc")), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(terminated)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(buffer)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(const_ptr)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(ptr)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(str)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(view)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(same)), sign(mirror.compare(needle)));
+        EXPECT_EQ(sign(s.compare(other)), sign(mirror.compare(needle)));
+        for (std::size_t pos = 0; pos <= s.size() + 1; ++pos) {
+            EXPECT_EQ(s.find("bc", pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.find(terminated, pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.find(buffer, pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.find(const_ptr, pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.find(ptr, pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.find(same, pos), mirror.find(needle, pos)) << pos;
+            EXPECT_EQ(s.rfind("bc", pos), mirror.rfind(needle, pos)) << pos;
+            EXPECT_EQ(s.rfind(terminated, pos), mirror.rfind(needle, pos)) << pos;
+            EXPECT_EQ(s.rfind(buffer, pos), mirror.rfind(needle, pos)) << pos;
+            EXPECT_EQ(s.rfind(const_ptr, pos), mirror.rfind(needle, pos)) << pos;
+            EXPECT_EQ(s.rfind(ptr, pos), mirror.rfind(needle, pos)) << pos;
+        }
+    }
+    EXPECT_EQ(s.find('c'), mirror.find('c'));
+    EXPECT_EQ(s.rfind('c'), mirror.rfind('c'));
+    EXPECT_TRUE(s.starts_with("ab") && s.starts_with('a') && !s.starts_with(terminated) && !s.starts_with(const_ptr));
+    EXPECT_TRUE(s.ends_with(terminated) && s.ends_with(buffer) && s.ends_with(const_ptr) && s.ends_with(ptr) && s.ends_with(same)
+                && s.ends_with(str) && s.ends_with(view) && s.ends_with('c'));
+    EXPECT_TRUE(s.contains(terminated) && s.contains(buffer) && s.contains(const_ptr) && s.contains(ptr) && s.contains(same) && s.contains(str)
+                && s.contains(view) && !s.contains('z'));
+
+    // Comparisons, both sides.
+    EXPECT_TRUE(same == "bc" && same == terminated && same == buffer && same == const_ptr && same == ptr && same == str && same == view
+                && same == other && same == same);
+    EXPECT_TRUE("bc" == same && terminated == same && buffer == same && const_ptr == same && ptr == same && str == same && view == same);
+    EXPECT_FALSE(same != "bc" || same != terminated || same != const_ptr || same != str || same != other || terminated != same
+                 || const_ptr != same);
+    EXPECT_TRUE(s < "b" && s < terminated && s < buffer && s < const_ptr && s < ptr && s < str && s < same && s < other);
+    EXPECT_TRUE(s <= "b" && s <= terminated && !(s > terminated) && !(s >= const_ptr) && same >= terminated && same <= buffer);
+
+    // Appends and concatenations: what each shape adds.
+    S16 text("x");
+    text.append("y").append(terminated).append(buffer).append(const_ptr).append(ptr).append('!');
+    EXPECT_EQ(std::string_view(text), "xybcbcbcbc!");
+    S16 more;
+    more += "<";
+    more += terminated;
+    more += buffer;
+    more += const_ptr;
+    more += ptr;
+    more += str;
+    more += view;
+    EXPECT_EQ(std::string_view(more), "<bcbcbcbcbcbc");
+    EXPECT_EQ(std::string_view(same + "!"), "bc!");
+    EXPECT_EQ(std::string_view(same + terminated), "bcbc");
+    EXPECT_EQ(std::string_view(same + buffer), "bcbc");
+    EXPECT_EQ(std::string_view(same + const_ptr), "bcbc");
+    EXPECT_EQ(std::string_view(same + ptr), "bcbc");
+    EXPECT_EQ(std::string_view(same + other), "bcbc");
+    EXPECT_EQ(std::string_view(same + '!'), "bc!");
+    EXPECT_EQ(std::string_view("<" + same), "<bc");
+    EXPECT_EQ(std::string_view(terminated + same), "bcbc");
+    EXPECT_EQ(std::string_view(buffer + same), "bcbc");
+    EXPECT_EQ(std::string_view(const_ptr + same), "bcbc");
+    EXPECT_EQ(std::string_view(ptr + same), "bcbc");
+    EXPECT_EQ(std::string_view('<' + same), "<bc");
+}
+
 // Edge cases and error handling
 
 TEST_F(StringTest, EmptyStringOperations) {
