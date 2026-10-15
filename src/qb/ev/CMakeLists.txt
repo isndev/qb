@@ -853,9 +853,9 @@ endif ()
 # runs (Huly QB-1071). Registered here, they run wherever the library is tested; the matrix keeps
 # its cells, which add what ctest does not (the single-loop profile, a warning-free compile).
 # C++ is enabled for this suite alone: the library stays C, and an embedder reaches this only by
-# turning QB_EV_BUILD_TESTS on (qb cannot: its copy has no tests/).
-# It links the C library, so a sanitizer build hands its flags to CMAKE_CXX_FLAGS as well as to
-# CMAKE_C_FLAGS: g++ pulls the runtime in from C's implicit libraries, clang++ does not.
+# turning QB_EV_BUILD_TESTS on (qb cannot: its copy has no tests/). It builds at C++17, the default
+# of current g++ and clang++: below it -- MSVC and clang-cl default to C++14 -- clang-cl warns that
+# the noexcept function-pointer parameters of ev.h and ev++.h will mangle differently in C++17.
 if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/test-cxx.cpp")
     include(CheckLanguage)
     check_language(CXX)
@@ -863,6 +863,39 @@ if (QB_EV_BUILD_TESTS AND TARGET qev AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tes
         enable_language(CXX)
         add_executable(qev-test-cxx tests/test-cxx.cpp)
         target_link_libraries(qev-test-cxx PRIVATE qev)
+        target_compile_features(qev-test-cxx PRIVATE cxx_std_17)
+        # A sanitizer reaches the library through the C flags, and this suite links that library:
+        # it takes the C flags' sanitizer options -- those alone -- for its own compile and its link,
+        # or clang++ links an instrumented archive without the runtime (g++ pulls it in from C's
+        # implicit libraries). CMAKE_C_FLAGS, then CMAKE_C_FLAGS_<CONFIG> under $<CONFIG>. cl and
+        # clang-cl objects name their runtime themselves, and link.exe has no such option.
+        set(_qev_cxx_san "")
+        foreach (_qev_cfg IN ITEMS "" ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE})
+            if (_qev_cfg STREQUAL "")
+                set(_qev_cflags "${CMAKE_C_FLAGS}")
+            else ()
+                string(TOUPPER "${_qev_cfg}" _qev_cfg_upper)
+                set(_qev_cflags "${CMAKE_C_FLAGS_${_qev_cfg_upper}}")
+            endif ()
+            separate_arguments(_qev_cflags NATIVE_COMMAND "${_qev_cflags}")
+            foreach (_qev_cflag IN LISTS _qev_cflags)
+                if (_qev_cflag MATCHES "^[-/]f(no-)?sanitize")
+                    if (_qev_cfg STREQUAL "")
+                        list(APPEND _qev_cxx_san "${_qev_cflag}")
+                    else ()
+                        string(REPLACE "," "$<COMMA>" _qev_cflag "${_qev_cflag}")
+                        list(APPEND _qev_cxx_san "$<$<CONFIG:${_qev_cfg}>:${_qev_cflag}>")
+                    endif ()
+                endif ()
+            endforeach ()
+        endforeach ()
+        if (_qev_cxx_san)
+            list(REMOVE_DUPLICATES _qev_cxx_san)
+            target_compile_options(qev-test-cxx PRIVATE ${_qev_cxx_san})
+            if (NOT MSVC)
+                target_link_options(qev-test-cxx PRIVATE ${_qev_cxx_san})
+            endif ()
+        endif ()
         add_test(NAME cxx COMMAND qev-test-cxx)
         set_tests_properties(cxx PROPERTIES TIMEOUT 60)
     else ()
