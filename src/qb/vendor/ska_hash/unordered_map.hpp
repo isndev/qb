@@ -98,6 +98,17 @@ public:
     using difference_type = std::ptrdiff_t;
     using hasher          = ArgumentHash;
     using key_equal       = ArgumentEqual;
+
+private:
+    // qb local modification: whether this table offers heterogeneous lookup -- true exactly when
+    // both functors declare `is_transparent` (the standard's condition for std::unordered_map).
+    template <typename H, typename E, typename = void>
+    struct transparent_lookup : std::false_type {};
+    template <typename H, typename E>
+    struct transparent_lookup<H, E, std::void_t<typename H::is_transparent, typename E::is_transparent>> : std::true_type {};
+    using is_transparent_lookup = transparent_lookup<ArgumentHash, ArgumentEqual>;
+
+public:
     using allocator_type  = EntryAlloc;
     using reference       = value_type &;
     using const_reference = const value_type &;
@@ -382,6 +393,51 @@ public:
     const_iterator
     find(const FindKey &key) const {
         return const_cast<sherwood_v10_table *>(this)->find(key);
+    }
+    // qb local modification: heterogeneous lookup, on the standard's condition -- BOTH the hash
+    // and the equality declare `is_transparent` (C++20 [unord.map.overview]) -- and for a key
+    // type other than the map's own, which the exact overloads above keep. The same walk, with
+    // the key hashed and compared as the type it arrives in: a map keyed on std::string with
+    // qb::string_hash / std::equal_to<> looks a std::string_view up without building a string.
+    // A map whose functors are not transparent has none of these, as before: nothing is promised
+    // that the functors cannot keep.
+    template <typename K, typename = std::enable_if_t<is_transparent_lookup::value && !std::is_same<K, FindKey>::value>>
+    iterator
+    find(const K &key) {
+        size_t        index  = hash_policy.index_for_hash(hash_object(key), num_slots_minus_one);
+        EntryPointer *bucket = entries + ptrdiff_t(index);
+        for (EntryPointer it = *bucket; it; it = it->next) {
+            if (compares_equal(key, it->value))
+                return {it, bucket};
+        }
+        return end();
+    }
+    template <typename K, typename = std::enable_if_t<is_transparent_lookup::value && !std::is_same<K, FindKey>::value>>
+    const_iterator
+    find(const K &key) const {
+        return const_cast<sherwood_v10_table *>(this)->find(key);
+    }
+    template <typename K, typename = std::enable_if_t<is_transparent_lookup::value && !std::is_same<K, FindKey>::value>>
+    size_t
+    count(const K &key) const {
+        return find(key) == end() ? 0 : 1;
+    }
+    template <typename K, typename = std::enable_if_t<is_transparent_lookup::value && !std::is_same<K, FindKey>::value>>
+    bool
+    contains(const K &key) const {
+        return find(key) != end();
+    }
+    // The position forms keep every iterator argument: a type that converts to one never selects this.
+    template <typename K, typename = std::enable_if_t<is_transparent_lookup::value && !std::is_same<K, FindKey>::value
+                                                      && !std::is_convertible<const K &, const_iterator>::value
+                                                      && !std::is_convertible<const K &, iterator>::value>>
+    size_t
+    erase(const K &key) {
+        auto found = find(key);
+        if (found == end())
+            return 0;
+        erase(found);
+        return 1;
     }
     size_t
     count(const FindKey &key) const {

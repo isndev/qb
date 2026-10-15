@@ -774,3 +774,149 @@ TYPED_TEST(IcaseMapErase, IteratorAndRangeFormsErasePositionsNotKeys) {
         EXPECT_TRUE(map.empty());
     }
 }
+
+// --- 6. A lookup folds its key on the stack; only an insert builds the folded std::string -------
+// `find`, `has`, `at` and `erase(key)` used to call `_Trait::convert` -- a std::string of the folded
+// key, heap-allocated past the small-string capacity -- for every lookup. They now fold the key into
+// a stack buffer and look that view up through the base map's transparent hash and equality
+// (`qb::string_hash` / `std::equal_to<>`, or `std::less<>` for icase_map); only a key longer than the
+// buffer, and every INSERT (the stored key must be the folded std::string), still convert. The hash
+// values are std::hash<std::string>'s, so buckets and iteration order are what they were.
+
+namespace {
+
+/// `string_to_lower` with counters: how many keys were converted (a std::string built) and how many
+/// were folded in place.
+struct counting_fold_trait {
+    inline static int converts = 0;
+    inline static int folds    = 0;
+
+    template <std::size_t N>
+    static std::string
+    convert(const char (&str)[N]) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static std::string
+    convert(std::string const &str) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static std::string
+    convert(std::string_view const &str) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static void
+    fold(const char *src, char *dst, std::size_t n) noexcept {
+        ++folds;
+        qb::string_to_lower::fold(src, dst, n);
+    }
+    static void
+    reset() noexcept {
+        converts = folds = 0;
+    }
+};
+
+/// The byte-wise reference the eight-byte fold must agree with.
+char
+reference_lower(char c) noexcept {
+    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c;
+}
+
+} // namespace
+
+template <typename Map>
+class IcaseMapLookup : public ::testing::Test {};
+using CountingIcaseMaps =
+    ::testing::Types<qb::icase_basic_map<qb::unordered_map<std::string, int, qb::string_hash, std::equal_to<>>, counting_fold_trait>,
+                     qb::icase_basic_map<std::map<std::string, int, std::less<>>, counting_fold_trait>>;
+TYPED_TEST_SUITE(IcaseMapLookup, CountingIcaseMaps);
+
+TYPED_TEST(IcaseMapLookup, LookupsFoldOnTheStackAndInsertsConvert) {
+    using Map = TypeParam;
+    counting_fold_trait::reset();
+    Map map;
+    map["Content-Length"] = 1;
+    map.emplace("X-Other", 2);
+    map.try_emplace(std::string("Transfer-Encoding"), 3);
+    EXPECT_EQ(counting_fold_trait::converts, 3) << "every insert builds the folded key";
+    EXPECT_EQ(counting_fold_trait::folds, 0);
+
+    const std::string      lvalue = "CONTENT-length";
+    const std::string_view view   = "x-OTHER";
+    const char            *ptr    = "transfer-ENCODING";
+    counting_fold_trait::reset();
+    EXPECT_EQ(map.find("content-LENGTH")->second, 1) << "string literal";
+    EXPECT_EQ(map.find(lvalue)->second, 1) << "const std::string";
+    EXPECT_EQ(map.find(view)->second, 2) << "std::string_view";
+    EXPECT_EQ(map.find(ptr)->second, 3) << "const char *";
+    EXPECT_TRUE(map.has("CONTENT-LENGTH") && map.has(lvalue) && map.has(view) && map.has(ptr));
+    EXPECT_EQ(map.at(lvalue), 1);
+    EXPECT_EQ(std::as_const(map).at(ptr), 3);
+    EXPECT_TRUE(std::as_const(map).find(view) != map.cend());
+    EXPECT_EQ(counting_fold_trait::converts, 0) << "a lookup never builds a std::string";
+    EXPECT_EQ(counting_fold_trait::folds, 11) << "one stack fold per lookup";
+
+    counting_fold_trait::reset();
+    EXPECT_THROW((void) map.at("absent"), std::out_of_range);
+    EXPECT_THROW((void) std::as_const(map).at(std::string("absent")), std::out_of_range);
+    EXPECT_EQ(counting_fold_trait::converts, 0);
+
+    counting_fold_trait::reset();
+    EXPECT_EQ(map.erase(lvalue), 1u) << "erase folds the const std::string on the stack too";
+    EXPECT_EQ(map.erase("absent"), 0u);
+    EXPECT_FALSE(map.has("content-length"));
+    EXPECT_EQ(map.size(), 2u);
+    EXPECT_EQ(counting_fold_trait::converts, 0);
+    EXPECT_EQ(counting_fold_trait::folds, 3);
+}
+
+TYPED_TEST(IcaseMapLookup, AKeyLongerThanTheStackBufferIsConvertedAndStillFound) {
+    using Map = TypeParam;
+    Map               map;
+    const std::string stored(200, 'K');
+    map[stored] = 7;
+    counting_fold_trait::reset();
+    EXPECT_EQ(map.find(std::string(200, 'k'))->second, 7);
+    EXPECT_TRUE(map.has(stored));
+    EXPECT_EQ(map.erase(std::string_view(stored)), 1u);
+    EXPECT_TRUE(map.empty());
+    EXPECT_EQ(counting_fold_trait::converts, 3) << "a 200-byte key does not fit the stack buffer";
+    EXPECT_EQ(counting_fold_trait::folds, 0);
+}
+
+TEST(StringToLower, FoldAgreesWithTheByteWiseReferenceAtEveryLengthAndWordBoundary) {
+    // Every byte value, letters placed on both sides of every eight-byte boundary.
+    std::string source;
+    for (int b = 0; b < 256; ++b)
+        source.push_back(static_cast<char>(b));
+    source += "aZ-AzZ@[`{Az";
+    for (std::size_t n = 0; n <= 40; ++n) {
+        for (std::size_t start = 0; start + n <= source.size() && start < 24; ++start) {
+            const std::string in = source.substr(start, n);
+            std::string       expected(in);
+            for (auto &c : expected)
+                c = reference_lower(c);
+            std::string out(n, '\0');
+            qb::string_to_lower::fold(in.data(), out.data(), n);
+            EXPECT_EQ(out, expected) << "into a buffer, n=" << n << " start=" << start;
+            std::string in_place(in);
+            qb::string_to_lower::fold(in_place.data(), in_place.data(), n);
+            EXPECT_EQ(in_place, expected) << "in place, n=" << n << " start=" << start;
+        }
+    }
+    EXPECT_EQ(qb::string_to_lower::convert("Content-Type"), "content-type");
+    EXPECT_EQ(qb::string_to_lower::convert(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`")), "abcdefghijklmnopqrstuvwxyz[\]^_`");
+    EXPECT_EQ(qb::string_to_lower::convert(std::string_view("\x80\xC1\xDA\xFF"
+                                                            "AZ")),
+              std::string("\x80\xC1\xDA\xFF"
+                          "az"));
+}
+
+TEST(StringHash, EqualsStdHashOfTheSameBytesSoBucketsAndOrderAreUnchanged) {
+    for (const char *key : {"", "a", "content-type", "transfer-encoding", "x-a-rather-long-header-name-past-the-small-string"}) {
+        const std::string s(key);
+        EXPECT_EQ(qb::string_hash{}(std::string_view(s)), std::hash<std::string>{}(s)) << key;
+    }
+}

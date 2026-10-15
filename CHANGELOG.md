@@ -9,6 +9,21 @@ policy.
 
 ### Changed
 
+- **`icase_unordered_map` / `icase_map` lookups build no folded `std::string` (Huly QB-279 follow-up).**
+  `find`, `has`, `at` and `erase(key)` folded the key into a fresh `std::string` on every call -- a heap
+  allocation past the small-string capacity (`"Transfer-Encoding"` is 17 bytes), and a runtime
+  character loop even for a string literal. The key is now folded into a stack buffer eight bytes at a
+  time (`string_to_lower::fold`) and looked up as a `std::string_view` through transparent functors: the
+  maps are keyed on `qb::string_hash` (`std::hash<std::string_view>`, whose values the standard
+  requires to equal `std::hash<std::string>`'s, so buckets and iteration order are unchanged) with
+  `std::equal_to<>`, and `icase_map` on `std::less<>`; the vendored `ska::unordered_map` gains the
+  heterogeneous `find`/`count`/`contains`/`erase` on the standard's condition (both functors
+  `is_transparent`) and nothing otherwise. Only an insert still builds the folded `std::string` (the
+  stored key), with the same eight-byte fold. A `const char *` key, which did not compile, is accepted.
+  Measured with callgrind on qbm-http's header map (WSL2 g++-14 -O3, instructions per iteration of a
+  two-`add_header` / two-`remove_header` loop, deterministic to 0.1 Ir): 1811 before the QB-279 fix,
+  1913 with it (the `const std::string` key now folded, +102), 1666 with this change -- below the
+  unfolded base, with every literal lookup's character loop gone as well.
 - **QUIC byte-credit output follows the existing packet-drain boundary (Huly QB-503).**
   The native backend updates stream and connection offsets immediately and marks a writer attempt due;
   direct callers generate its packets, sent counters and writer-generated events through

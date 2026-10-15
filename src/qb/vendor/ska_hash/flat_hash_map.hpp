@@ -107,6 +107,24 @@ struct KeyOrValueHasher : functor_storage<size_t, hasher> {
     operator()(const std::pair<F, S> &value) const {
         return static_cast<const hasher_storage &>(*this)(value.first);
     }
+    // qb local modification: a TRANSPARENT hasher (one that declares `is_transparent`, as the
+    // standard's heterogeneous lookup requires) also hashes a key of another type -- a
+    // std::string_view against std::string keys -- for the heterogeneous find/count/contains/erase
+    // the tables offer under that same condition. The key, value and pair forms above are exact
+    // matches and keep handling what they handled; a hasher without `is_transparent` never
+    // instantiates these.
+    template <typename Q, typename H = hasher, typename = typename H::is_transparent,
+              typename = std::enable_if_t<!std::is_same<Q, key_type>::value && !std::is_same<Q, value_type>::value>>
+    size_t
+    operator()(const Q &key) {
+        return static_cast<hasher_storage &>(*this)(key);
+    }
+    template <typename Q, typename H = hasher, typename = typename H::is_transparent,
+              typename = std::enable_if_t<!std::is_same<Q, key_type>::value && !std::is_same<Q, value_type>::value>>
+    size_t
+    operator()(const Q &key) const {
+        return static_cast<const hasher_storage &>(*this)(key);
+    }
 };
 template <typename key_type, typename value_type, typename key_equal>
 struct KeyOrValueEquality : functor_storage<bool, key_equal> {
@@ -149,6 +167,21 @@ struct KeyOrValueEquality : functor_storage<bool, key_equal> {
     bool
     operator()(const std::pair<F, S> &lhs, const value_type &rhs) {
         return static_cast<equality_storage &>(*this)(lhs.first, rhs.first);
+    }
+    // qb local modification: a TRANSPARENT equality (`is_transparent`) compares a key of another
+    // type with a stored value, for the heterogeneous lookups the tables offer under that
+    // condition (see KeyOrValueHasher). The forms above are exact matches and are unchanged.
+    template <typename Q, typename E = key_equal, typename = typename E::is_transparent,
+              typename = std::enable_if_t<!std::is_same<Q, key_type>::value && !std::is_same<Q, value_type>::value>>
+    bool
+    operator()(const Q &lhs, const value_type &rhs) {
+        return static_cast<equality_storage &>(*this)(lhs, rhs.first);
+    }
+    template <typename Q, typename E = key_equal, typename = typename E::is_transparent,
+              typename = std::enable_if_t<!std::is_same<Q, key_type>::value && !std::is_same<Q, value_type>::value>>
+    bool
+    operator()(const value_type &lhs, const Q &rhs) {
+        return static_cast<equality_storage &>(*this)(lhs.first, rhs);
     }
     template <typename FL, typename SL, typename FR, typename SR>
     bool

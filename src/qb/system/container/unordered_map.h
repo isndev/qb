@@ -26,10 +26,17 @@
 #ifndef QB_UNORDERED_MAP_H
 #define QB_UNORDERED_MAP_H
 #include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <functional>
 #include <map>
 #include <qb/vendor/ska_hash/unordered_map.hpp>
+#include <stdexcept>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 namespace qb {
 
@@ -103,8 +110,9 @@ using unordered_map = ska::unordered_map<K, V, H, E, A>;
 /**
  * @brief Utility class for case-insensitive string operations
  *
- * Provides functions to convert strings to lowercase for case-insensitive
- * comparisons and lookups, with both compile-time and runtime implementations.
+ * Provides the ASCII case folding the case-insensitive maps key on: `fold()` lowercases bytes
+ * in place or into a caller's buffer, eight at a time; the `convert()` overloads return the
+ * folded copy as a `std::string`.
  */
 class string_to_lower {
     /**
@@ -118,75 +126,66 @@ class string_to_lower {
         return (c >= 'A' && c <= 'Z') ? c + ('a' - 'A') : c;
     }
 
-    /**
-     * @brief Compile-time string class for storing converted lowercase strings
-     *
-     * @tparam N Size of the string
-     */
-    template <std::size_t N>
-    class const_str {
-    private:
-        const char s[N + 1]; // One extra byte to fill with a 0 value
-
-    public:
-        /**
-         * @brief Constructor that converts a string to lowercase at compile-time
-         *
-         * @tparam T Integer sequence type
-         * @tparam Nums Parameter pack of indices
-         * @param str The input string
-         * @param unused Integer sequence for parameter pack expansion
-         */
-        template <typename T, T... Nums>
-        constexpr const_str(const char (&str)[N], std::integer_sequence<T, Nums...>)
-            : s{charToLower(str[Nums])..., 0} {}
-
-        /**
-         * @brief Compile-time access operator to access characters in the string
-         *
-         * @param i Index of the character to access
-         * @return The character at the given index
-         */
-        constexpr char
-        operator[](std::size_t i) const {
-            return s[i];
-        }
-
-        /**
-         * @brief Conversion operator to const char* for runtime access
-         *
-         * @return Pointer to the internal string array
-         */
-        operator const char *() const {
-            return s;
-        }
-    };
-
-    /**
-     * @brief Creates a lowercase version of a string at compile-time
-     *
-     * @tparam N Size of the string
-     * @param str The input string
-     * @return Lowercase version of the input string
-     */
-    template <std::size_t N>
-    constexpr static const_str<N>
-    toLower(const char (&str)[N]) {
-        return {str, std::make_integer_sequence<unsigned, N>()};
+    /// Eight bytes with every `'A'`..`'Z'` lowercased and every other byte left alone.
+    [[nodiscard]] static constexpr std::uint64_t
+    fold_word(std::uint64_t w) noexcept {
+        constexpr std::uint64_t ones = 0x0101010101010101ULL;
+        // Bit 7 is cleared first so the two additions never carry into the next byte; a byte
+        // that had it set is not an ASCII letter and is excluded by `~w` below.
+        const std::uint64_t lo       = w & (ones * 0x7F);
+        const std::uint64_t ge_a     = lo + ones * (0x80 - 'A');     // bit 7 set iff byte >= 'A'
+        const std::uint64_t gt_z     = lo + ones * (0x80 - 'Z' - 1); // bit 7 set iff byte > 'Z'
+        const std::uint64_t is_upper = ge_a & ~gt_z & ~w & (ones * 0x80);
+        return w | (is_upper >> 2); // 0x80 >> 2 == 0x20: the case bit
     }
 
 public:
     /**
+     * @brief Lowercases `n` bytes of `src` into `dst`, ASCII only (`'A'`..`'Z'`; every other
+     *        byte is copied unchanged).
+     *
+     * Eight bytes per step, the last eight re-read overlapped (folding is idempotent), a byte
+     * loop under eight. `dst` may be `src` itself (in place) or a non-overlapping buffer.
+     *
+     * @param src The bytes to fold.
+     * @param dst Where the folded bytes go; at least `n` bytes.
+     * @param n   How many bytes.
+     */
+    static void
+    fold(const char *src, char *dst, std::size_t n) noexcept {
+        if (n < sizeof(std::uint64_t)) {
+            for (std::size_t i = 0; i < n; ++i)
+                dst[i] = charToLower(src[i]);
+            return;
+        }
+        std::size_t i = 0;
+        for (; i + sizeof(std::uint64_t) <= n; i += sizeof(std::uint64_t)) {
+            std::uint64_t w;
+            std::memcpy(&w, src + i, sizeof w);
+            w = fold_word(w);
+            std::memcpy(dst + i, &w, sizeof w);
+        }
+        if (i < n) {
+            std::uint64_t w;
+            std::memcpy(&w, src + n - sizeof w, sizeof w);
+            w = fold_word(w);
+            std::memcpy(dst + n - sizeof w, &w, sizeof w);
+        }
+    }
+
+    /**
      * @brief Converts a character array to lowercase
      *
-     * @tparam N Size of the character array
+     * @tparam N Size of the character array; `N - 1` bytes are converted (a string literal).
      * @param str The input character array
      * @return std::string Lowercase version of the input string
      */
     template <std::size_t N>
     static std::string
     convert(const char (&str)[N]) {
-        return std::string{toLower(str), N - 1};
+        std::string copy(str, N - 1);
+        fold(copy.data(), copy.data(), N - 1);
+        return copy;
     }
 
     /**
@@ -197,8 +196,8 @@ public:
      */
     [[nodiscard]] static std::string
     convert(std::string const &str) {
-        std::string copy(str.size(), '\0');
-        std::transform(str.cbegin(), str.cend(), copy.begin(), charToLower);
+        std::string copy(str);
+        fold(copy.data(), copy.data(), copy.size());
         return copy;
     }
 
@@ -210,9 +209,26 @@ public:
      */
     [[nodiscard]] static std::string
     convert(std::string_view const &str) {
-        std::string copy(str.size(), '\0');
-        std::transform(str.cbegin(), str.cend(), copy.begin(), charToLower);
+        std::string copy(str);
+        fold(copy.data(), copy.data(), copy.size());
         return copy;
+    }
+};
+
+/**
+ * @brief The transparent string hash the case-insensitive maps key on
+ *
+ * Hashes any string-like key through `std::hash<std::string_view>`, whose value the standard
+ * requires to equal `std::hash<std::string>` of the same bytes ([basic.string.hash]): a map that
+ * switches to it keeps every bucket, and every iteration order, it had with `std::hash<std::string>`,
+ * and gains lookups that take a `std::string_view` without building a `std::string` first.
+ */
+struct string_hash {
+    using is_transparent = void;
+
+    [[nodiscard]] std::size_t
+    operator()(std::string_view key) const noexcept {
+        return std::hash<std::string_view>{}(key);
     }
 };
 
@@ -222,12 +238,68 @@ public:
  * This template class wraps any map type to provide case-insensitive
  * string keys by converting keys to lowercase before operations.
  *
+ * The stored key is the folded one (`_Trait::convert`), built once, when a key is INSERTED
+ * (`emplace`, `try_emplace`, `operator[]`). A lookup (`find`, `at`, `has`, `erase(key)`) builds
+ * nothing: when the base map accepts a `std::string_view` key and the trait offers `fold()`,
+ * the key is folded into a buffer on the stack and looked up as a view -- no `std::string`, no
+ * allocation, whatever the key's length -- and only a key longer than that buffer goes through
+ * `convert()`. A base map without heterogeneous lookup, or a trait without `fold()`, keeps the
+ * converting path for everything.
+ *
  * @tparam _Map The underlying map type
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */
 template <typename _Map, typename _Trait = string_to_lower>
 class icase_basic_map : _Map {
     using base_t = _Map;
+
+    /// The stack buffer a lookup key is folded into; longer keys are converted instead.
+    static constexpr std::size_t inline_fold_capacity = 128;
+
+    /// Whether the base map looks a `std::string_view` up without a `std::string`
+    /// (a transparent hash and equality, or a transparent comparator).
+    static constexpr bool heterogeneous_lookup = requires(const base_t &m, std::string_view v) { m.find(v); };
+
+    /// Whether the trait folds into a caller's buffer.
+    static constexpr bool trait_folds = requires(const char *s, char *d, std::size_t n) { _Trait::fold(s, d, n); };
+
+    /// The bytes of a key, as a view: `N - 1` for a character array (a string literal),
+    /// `std::string_view` for anything that converts to one.
+    template <std::size_t N>
+    [[nodiscard]] static constexpr std::string_view
+    key_view(const char (&key)[N]) noexcept {
+        return {key, N - 1};
+    }
+    template <typename T>
+    requires(!std::is_array_v<std::remove_cvref_t<T>> && std::is_convertible_v<const T &, std::string_view>)
+    [[nodiscard]] static constexpr std::string_view
+    key_view(const T &key) noexcept(std::is_nothrow_convertible_v<const T &, std::string_view>) {
+        return std::string_view{key};
+    }
+
+    /// Whether a key of type `T` can take the stack-folded path.
+    template <typename T>
+    static constexpr bool viewable_key = requires(const T &key) { key_view(key); };
+
+    /**
+     * @brief Runs `op` on the folded form of `key`: a view of a stack buffer when the base map
+     *        can look a view up and the key fits, the converted `std::string` otherwise.
+     */
+    template <typename T, typename Op>
+    static decltype(auto)
+    with_folded_key(T &&key, Op &&op) {
+        if constexpr (heterogeneous_lookup && trait_folds && viewable_key<std::remove_cvref_t<T>>) {
+            const std::string_view raw = key_view(key);
+            if (raw.size() <= inline_fold_capacity) {
+                char folded[inline_fold_capacity];
+                _Trait::fold(raw.data(), folded, raw.size());
+                return op(std::string_view{folded, raw.size()});
+            }
+            return op(_Trait::convert(raw));
+        } else {
+            return op(_Trait::convert(std::forward<T>(key)));
+        }
+    }
 
 public:
     /** @brief Default constructor */
@@ -296,7 +368,10 @@ public:
     template <typename T>
     [[nodiscard]] auto &
     at(T &&key) {
-        return static_cast<base_t &>(*this).at(_Trait::convert(std::forward<T>(key)));
+        auto it = find(std::forward<T>(key));
+        if (it == static_cast<base_t &>(*this).end())
+            throw std::out_of_range("Argument passed to at() was not in the map.");
+        return it->second;
     }
 
     /**
@@ -310,7 +385,10 @@ public:
     template <typename T>
     [[nodiscard]] const auto &
     at(T &&key) const {
-        return static_cast<base_t const &>(*this).at(_Trait::convert(std::forward<T>(key)));
+        auto it = find(std::forward<T>(key));
+        if (it == static_cast<base_t const &>(*this).end())
+            throw std::out_of_range("Argument passed to at() was not in the map.");
+        return it->second;
     }
 
     /**
@@ -336,7 +414,7 @@ public:
     template <typename T>
     [[nodiscard]] auto
     find(T &&key) {
-        return static_cast<base_t &>(*this).find(_Trait::convert(std::forward<T>(key)));
+        return with_folded_key(std::forward<T>(key), [this](auto const &folded) { return static_cast<base_t &>(*this).find(folded); });
     }
 
     /**
@@ -350,7 +428,7 @@ public:
     template <typename T>
     [[nodiscard]] auto
     find(T &&key) const {
-        return static_cast<base_t const &>(*this).find(_Trait::convert(std::forward<T>(key)));
+        return with_folded_key(std::forward<T>(key), [this](auto const &folded) { return static_cast<base_t const &>(*this).find(folded); });
     }
 
     /**
@@ -381,9 +459,16 @@ public:
      */
     template <typename T>
     requires requires(T &&key) { _Trait::convert(std::forward<T>(key)); }
-    auto
+    std::size_t
     erase(T &&key) {
-        return static_cast<base_t &>(*this).erase(_Trait::convert(std::forward<T>(key)));
+        return with_folded_key(std::forward<T>(key), [this](auto const &folded) -> std::size_t {
+            auto      &base = static_cast<base_t &>(*this);
+            const auto it   = base.find(folded);
+            if (it == base.end())
+                return 0;
+            base.erase(it);
+            return 1;
+        });
     }
 
     /**
@@ -435,20 +520,25 @@ public:
 /**
  * @brief Case-insensitive ordered map using std::map
  *
- * @tparam Value The value type
- * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
- */
-template <typename Value, typename _Trait = string_to_lower>
-using icase_map = icase_basic_map<std::map<std::string, Value>, _Trait>;
-
-/**
- * @brief Case-insensitive unordered map using qb::unordered_map
+ * The comparator is transparent (`std::less<>`), so a lookup takes its folded key as a view.
  *
  * @tparam Value The value type
  * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
  */
 template <typename Value, typename _Trait = string_to_lower>
-using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value>, _Trait>;
+using icase_map = icase_basic_map<std::map<std::string, Value, std::less<>>, _Trait>;
+
+/**
+ * @brief Case-insensitive unordered map using qb::unordered_map
+ *
+ * Keyed on `qb::string_hash` and `std::equal_to<>`, both transparent, so a lookup takes its
+ * folded key as a view; the hash values are those of `std::hash<std::string>`.
+ *
+ * @tparam Value The value type
+ * @tparam _Trait The trait class for string conversion (defaults to string_to_lower)
+ */
+template <typename Value, typename _Trait = string_to_lower>
+using icase_unordered_map = icase_basic_map<qb::unordered_map<std::string, Value, string_hash, std::equal_to<>>, _Trait>;
 
 } // namespace qb
 
