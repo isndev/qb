@@ -719,6 +719,7 @@ private:
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
     std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
     bool                                                _tearing_down  = false; ///< terminal teardown refuses new actors
+    ActorId _pending_factory_id = ActorId::NotFound; ///< the startup factory's promised ID (QB-263), in the padding: no member moves
     /// The tick phase's snapshot of `_callback_list` (Huly QB-257): a tick handler may register or
     /// unregister actors during the dispatch (`addRefActor`), so the dispatch walks a copy. A member rather
     /// than the `thread_local` it was in the loop, whose guard and destructor registration were a TLS derivation
@@ -1073,7 +1074,6 @@ private:
     // A service constructor may add another service before either reaches `_actors`.
     std::vector<ServiceId> _constructing_services;
     // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
-    ActorId               _pending_factory_id = ActorId::NotFound; // one promised ordinary ID during a startup factory
     [[nodiscard]] ActorId __factory_promised_id__(ServiceId sid) const noexcept;
     ActorId              *_constructing_actor_id_out = nullptr;
     void                  __rollback_failed_admission__(ActorId id) noexcept;
