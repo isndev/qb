@@ -383,7 +383,7 @@ the tail of `<qb/core/VirtualCore.h>` (they were `Actor.tpp` through 2.6.0), bec
 complete `qb::VirtualCore`. Including `VirtualCore.h` directly supplies those bodies and is
 covered by an installed-entry-point link test. The umbrellas remain the usual entry points:
 `VirtualCore.h` also brings `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU.
-<!-- src: qb/src/qb/core/VirtualCore.h:1510-1514; qb/scripts/installed-entry-points/qb_core_VirtualCore_h.cpp:21-42 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1516-1520; qb/scripts/installed-entry-points/qb_core_VirtualCore_h.cpp:21-42 -->
 
 `<qb/main.h>` was on the wrong side of that table until 3.0.0.
 

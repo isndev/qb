@@ -245,6 +245,20 @@ concept reports_undelivered = requires(_Event &event) {
 };
 
 /**
+ * @brief An event type whose broadcast id names a core, and that is asked, before a broadcast is fanned
+ *        out, whether it names the calling one (Huly QB-268).
+ * @details `qb::Event` declares `static bool __broadcast_here__(Event &) noexcept`: `false` for a
+ *          `BroadcastId(c)` of a core the engine does not run, which aliases the first core's queues --
+ *          the event is then reported as a dead letter and reaches no handler. Asked only on the
+ *          broadcast branch, never by a unicast; any other event type routes exactly as it compiled
+ *          before.
+ */
+template <typename _Event>
+concept scopes_broadcast = requires(_Event &event) {
+    { _Event::__broadcast_here__(event) } noexcept -> std::same_as<bool>;
+};
+
+/**
  * @brief Raise `alive` on an event about to be destroyed, so that no later walk destroys it again.
  * @details The flag already means "do not destroy these bytes" -- `reply()`/`forward()` raise it on an
  *          original whose bytes moved on. Raised on every disposed event, it lets a core that stops on a
@@ -421,6 +435,10 @@ private:
         // C++20: use concept directly
         if constexpr (qb::has_is_broadcast<_HandlerId>) {
             if (event.getDestination().is_broadcast()) {
+                if constexpr (internal::scopes_broadcast<_RawEvent>) {
+                    if (!_RawEvent::__broadcast_here__(event))
+                        return; // another core's: reported, disposed by route() (Huly QB-268)
+                }
                 // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
                 static thread_local qb::allocator::detail::region_stack<_Handler *> bcast_snapshot;
                 const std::size_t                                                   base = bcast_snapshot.size();
@@ -593,6 +611,10 @@ public:
      */
     QB_NOINLINE QB_COLD void
     route_broadcast(_RawEvent &event) const {
+        if constexpr (internal::scopes_broadcast<_RawEvent>) {
+            if (!_RawEvent::__broadcast_here__(event))
+                return; // another core's: reported, disposed by route() (Huly QB-268)
+        }
         static thread_local qb::allocator::detail::region_stack<Entry> bcast_snapshot;
         const std::size_t                                              base = bcast_snapshot.size();
         struct RestoreSnapshot {

@@ -28,6 +28,8 @@
  *   - a failed asynchronous `onInit()` reports every stashed event as `init_failed`, and a full
  *     stash reports its overflow as `stash_overflow` -- each one disposed, none leaked;
  *   - the residue for a stopped core is `peer_stopped`;
+ *   - a broadcast to a core the engine does not run reaches no actor and is `not_found` on the core it
+ *     reached, the first one, whatever sent it (Huly QB-268);
  *   - a handler that throws is contained: the core carries on and the letter is still counted.
  *
  * The oversize drop's report is pinned with the drop itself (messaging/oversize-event-probe.cpp), and
@@ -410,6 +412,118 @@ public:
         kill();
     }
 };
+
+// --- 6. a broadcast to a core the engine does not run (Huly QB-268) --------------------------------
+// Every id outside the core set aliases the first core's pipe and mailbox (`CoreSet::resolve` gives it
+// index 0), so an event to a core the engine does not run lands on the first core. A unicast found no
+// actor there and was a `not_found` letter; a BROADCAST was fanned out to every actor of that core: on an
+// engine of cores 1 and 3, a `Hello` to `BroadcastId(2)` reached core 1's actors, and a `KillEvent` so
+// addressed killed them all. It now reaches no actor and is reported once, `not_found`, by the core it
+// reached, its payload disposed -- whatever primitive sent it and whatever router path meets it.
+
+struct Hello : qb::Event {
+    Counted payload;
+};
+struct Sync : qb::Event {};
+
+constexpr qb::CoreId kLowCore = 1, kHighCore = 3; // cores 0, 2 and 5 are absent, and 300 is past qb::MaxCores
+std::atomic<int>     g_misaddressed{0};           // a Hello whose BroadcastId names another core than its receiver's
+std::atomic<int>     g_hello_on[4]{};             // valid Hello receptions, by core
+std::atomic<bool>    g_synced{false};
+
+class Listener : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Hello>(*this);
+        registerEvent<Ping>(*this);
+        registerEvent<Sync>(*this);
+        co_return true;
+    }
+    void
+    on(Hello const &hello) {
+        if (hello.getDestination().is_broadcast() && hello.getDestination().index() != getIndex())
+            g_misaddressed.fetch_add(1);
+        else
+            g_hello_on[getIndex()].fetch_add(1);
+    }
+    void
+    on(Ping const &) {}
+    void
+    on(Sync const &) { // behind everything the driver queued for this core: all of it has been received
+        g_synced.store(true);
+        qb::Main::stop();
+    }
+};
+
+class MisaddressingDriver : public qb::Actor {
+    qb::ActorId _low_listener;
+
+public:
+    explicit MisaddressingDriver(qb::ActorId low_listener) noexcept
+        : _low_listener(low_listener) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        // A deadlock guard, never the oracle: a listener the defect kills never stops the engine.
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(10s);
+            (void) ctx;
+            qb::Main::stop();
+        });
+        broadcast<Hello>();                        // control: every listener, once
+        push<Hello>(qb::BroadcastId(kHighCore));   // control: this core's listener, once
+        push<Hello>(qb::BroadcastId(2));           // absent, between the two
+        push<Hello>(qb::BroadcastId(0));           // absent, below
+        push<Hello>(qb::BroadcastId(5));           // absent, above
+        push<Hello>(qb::BroadcastId(300));         // past qb::MaxCores
+        push<Orphan>(qb::BroadcastId(2));          // a type nobody subscribed: the router's other path
+        push<qb::KillEvent>(qb::BroadcastId(2));   // a default event: kills nobody
+        send<Ping>(qb::BroadcastId(2));            // send: straight into the first core's ring
+        push<Ping>(qb::ActorId(2u << 16 | 9999u)); // control: a unicast to an absent core is not_found
+        push<Sync>(_low_listener);                 // FIFO behind all of the above, to the first core
+        co_return true;
+    }
+};
+
+TEST(DeadLetters, ABroadcastToACoreTheEngineDoesNotRunReachesNoActor) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the misaddressed events cross from core 3 to core 1";
+    reset();
+    g_live.store(0);
+    g_misaddressed.store(0);
+    for (auto &n : g_hello_on)
+        n.store(0);
+    g_synced.store(false);
+    {
+        qb::Main main;
+        main.core(kLowCore).setDeadLetterHandler(&record);
+        main.core(kHighCore).setDeadLetterHandler(&record);
+        const auto low = main.addActor<Listener>(kLowCore);
+        main.addActor<Listener>(kHighCore);
+        main.addActor<MisaddressingDriver>(kHighCore, low);
+        main.start();
+        main.join();
+        ASSERT_FALSE(main.hasError());
+    }
+    EXPECT_TRUE(g_synced.load()) << "the first core's listener was killed by a KillEvent addressed to core 2";
+    EXPECT_EQ(g_misaddressed.load(), 0) << "a broadcast to a core the engine does not run reached the first core's actors";
+    EXPECT_EQ(g_hello_on[kLowCore].load(), 1) << "control: broadcast<Hello>() reaches core 1 once";
+    EXPECT_EQ(g_hello_on[kHighCore].load(), 2) << "control: broadcast<Hello>() and BroadcastId(3) reach core 3";
+    EXPECT_EQ(g_live.load(), 0) << "every Hello payload is destroyed, the dropped ones included";
+
+    const auto  got        = letters();
+    std::size_t broadcasts = 0, unicasts = 0;
+    for (auto const &l : got) {
+        SCOPED_TRACE(qb::event_type_name(l.event_id));
+        EXPECT_EQ(l.reason, qb::DeadLetterReason::not_found);
+        EXPECT_EQ(l.core, kLowCore) << "reported by the core the event reached";
+        EXPECT_NE(l.destination.index(), kLowCore);
+        EXPECT_NE(l.destination.index(), kHighCore);
+        (l.destination.is_broadcast() ? broadcasts : unicasts) += 1;
+    }
+    EXPECT_EQ(broadcasts, 7u) << "four Hello, the Orphan, the KillEvent and the sent Ping, each reported once";
+    EXPECT_EQ(unicasts, 1u) << "control: the unicast to core 2";
+}
 
 TEST(DeadLetters, AHandlerThatThrowsIsContainedAndTheLetterStillCounted) {
     g_thrown.store(0);

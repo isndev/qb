@@ -90,7 +90,7 @@ An event that reaches no actor is a **dead letter**, and since 3.3 every one of 
 
 | Reason | What happened |
 |---|---|
-| `not_found` | No live actor holds the destination id on its core: it never existed, or it was removed — the stale-id and kill/message-race signal |
+| `not_found` | No live actor holds the destination id on its core: it never existed, or it was removed — the stale-id and kill/message-race signal. Also a `BroadcastId` of a core the engine does not run (Huly QB-268): every id outside the core set lands on the first core, where such a broadcast reaches no actor |
 | `unhandled` | The destination is alive but handles no event of that type: a `registerEvent<E>(*this)` that was never made |
 | `stash_overflow` | The destination was in its asynchronous `onInit()` and its stash of early events was full; the activation fails with it |
 | `init_failed` | The event was stashed for an actor whose asynchronous `onInit()` then failed, threw, timed out or was killed: discarded unreplayed |

@@ -160,6 +160,8 @@ private:
     // The router's report of a unicast it could not deliver reaches the dead-letter path through
     // the thread's current core (Huly QB-163).
     friend void Event::__undelivered__(Event &) noexcept;
+    // ... and of a broadcast that names a core the engine does not run (Huly QB-268).
+    friend bool Event::__broadcast_here__(Event &) noexcept;
     template <typename>
     friend class ActorHandle; // RefActorHandle is an alias of ActorHandle
     ////////////
@@ -380,6 +382,10 @@ private:
         route_event(_Event &event) const {
             const auto dest = event.getDestination();
             if (dest.is_broadcast()) {
+                if (unlikely(dest.index() != _core._index)) [[unlikely]] {
+                    (void) Event::__broadcast_here__(event); // another core's: reported, disposed by resolve() (QB-268)
+                    return;
+                }
                 static thread_local allocator::detail::region_stack<Actor *> snapshot;
                 const std::size_t                                            base = snapshot.size();
                 struct RestoreSnapshot {
@@ -1640,7 +1646,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:737-747`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:740-750`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

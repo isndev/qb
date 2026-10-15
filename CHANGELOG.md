@@ -653,6 +653,21 @@ policy.
   client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
   it is refused both ways.
 
+- **A broadcast to a core the engine does not run reaches no actor (Huly QB-268).** Every id outside the engine's
+  core set aliases the first core's pipe and mailbox (`CoreSet::resolve` gives it index 0), so an event to such a
+  core lands on the first core. A unicast found no actor there and was a `not_found` dead letter, but a
+  `BroadcastId(c)` was fanned out to every actor of the first core: on an engine of cores 1 and 3, a `push` to
+  `BroadcastId(2)` reached core 1's actors, and a `KillEvent` so addressed killed them all. The router asks
+  `qb::Event::__broadcast_here__` before it fans a broadcast out (`router::internal::scopes_broadcast`, on the
+  broadcast branch only), and so do the default events' resolver and the branch that meets an event nobody
+  subscribed to: a broadcast naming another core reaches no actor, is reported once as a `not_found` dead letter
+  by the core it reached, and is disposed. Unicast routing is untouched: the receive loop runs 53 instructions an
+  event against 54 before, a broadcast receipt 18 more (callgrind, g++-14), on no measured hot path -- broadcast is
+  rare there (the Savina cells' one shutdown `KillEvent`). Witness: `qb-core-test-system-dead-letters`
+  (`ABroadcastToACoreTheEngineDoesNotRunReachesNoActor`: absent cores 0, 2, 5 and 300 through `push`, `send`, a
+  default event and an unsubscribed type, from another core; valid broadcasts and the unicast to an absent core as
+  controls).
+
 - **`CoreStats::io_events` counts the core's own io callbacks (Huly QB-357).** It copied the io loop's lifetime
   count, and a synchronous engine (`start(false)`) runs its last core on the calling thread, whose loop outlives
   the engine: every engine after the first on a thread reported the io callbacks of those before it. The core

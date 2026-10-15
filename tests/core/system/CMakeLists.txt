@@ -188,7 +188,8 @@ qb_add_test(MODULE qb-core TIER system NAME core-stats SOURCES engine/core-stats
 # dead-letters pins the dead-letter path (Huly QB-163): every event that reaches no actor is counted and reported
 # with its exact reason -- not_found / unhandled whichever router path dropped it, a removed actor's id (the
 # same-pass window before its reap stays unreported, and a broadcast reports nothing), a failed async init's stash,
-# a full stash, the residue for a stopped core -- and a throwing handler is contained.
+# a full stash, the residue for a stopped core, a broadcast to a core the engine does not run (QB-268) -- and a
+# throwing handler is contained.
 qb_add_test(MODULE qb-core TIER system NAME dead-letters SOURCES engine/dead-letters.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 # pass-timing pins CoreInitializer::setPassTiming (Huly QB-165): a timed core counts every completed pass and shows
 # a stall inside a handler as its longest and recent-worst pass; the park is not a pass; an untimed core reports zero.

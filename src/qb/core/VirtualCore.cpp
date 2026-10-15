@@ -357,10 +357,13 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         }
         _router.route(*event, [this](auto &event) {
             // No actor on this core registered the type. A broadcast reaching such a core is
-            // normal; a unicast is a dead letter (Huly QB-163) -- the destination is alive and
-            // handles no such event, or it is not there at all.
+            // normal -- unless it names a core the engine does not run (Huly QB-268); a unicast is a
+            // dead letter (Huly QB-163) -- the destination is alive and handles no such event, or it
+            // is not there at all.
             if (!event.getDestination().is_broadcast())
                 __dead_letter__(event, __undelivered_reason__(event.getDestination()));
+            else
+                (void) Event::__broadcast_here__(event);
         });
         ++_metrics._nb_event_received;
         _metrics._nb_bucket_received += width;
@@ -1580,6 +1583,18 @@ VirtualCore::getCoreStats() const noexcept {
     if (_pass_timing)
         s.pass_time = _pass_recorder.snapshot(qb::mono_now());
     return s;
+}
+
+// The router's question before a broadcast is fanned out (`router::internal::scopes_broadcast`, Huly QB-268): a
+// `BroadcastId` of a core the engine does not run aliased this core's queues (`CoreSet::resolve`'s index 0) and is
+// owed to no actor here. Reported once, `not_found`; the router disposes it. A thread that runs no core asks nothing.
+bool
+Event::__broadcast_here__(Event &event) noexcept {
+    VirtualCore *const core = VirtualCore::_handler;
+    if (core == nullptr || event.getDestination().index() == core->_index)
+        return true;
+    core->__dead_letter__(event, DeadLetterReason::not_found);
+    return false;
 }
 
 // The router's report of a unicast it could not deliver (`router::internal::reports_undelivered`).

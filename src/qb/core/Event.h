@@ -519,6 +519,22 @@ public:
      *          thread that runs no core. The event is disposed by the router afterwards, as before.
      */
     static QB_NOINLINE QB_COLD void __undelivered__(Event &event) noexcept;
+
+    /**
+     * @private
+     * @brief The router's question before it fans a broadcast out: is it addressed to the calling core?
+     * @details Every id outside the engine's core set aliases the first core's pipe and mailbox
+     *          (`CoreSet::resolve` gives it index 0), so an event to a core the engine does not run
+     *          lands on the first core. A unicast finds no actor there and is reported; a
+     *          `BroadcastId(c)` naming such a core was fanned out to every actor of the first core
+     *          (Huly QB-268). Asked from the broadcast branch of `qb::router::semh` -- found by
+     *          `qb::router::internal::scopes_broadcast`, a router over any other event type compiles
+     *          exactly as before -- and of the default events' resolver. `false` when the broadcast
+     *          names another core than the calling one: it is then reported as a `not_found` dead
+     *          letter, and the router disposes it as any event. `true` on a thread that runs no core.
+     *          Out of line (VirtualCore.cpp).
+     */
+    [[nodiscard]] static QB_NOINLINE QB_COLD bool __broadcast_here__(Event &event) noexcept;
 };
 
 /*!
@@ -540,7 +556,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:1874-1958`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:1889-1973`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -1077,7 +1093,7 @@ inline constexpr bool event_fits_bucket_alignment = alignof(T) <= alignof(EventB
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1294-1297) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1300-1303) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1129,7 +1145,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:1299-1302), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:1305-1308), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this
@@ -1141,7 +1157,7 @@ routing_safe_type_id() noexcept {
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
     // full, and it discards it WITHOUT disposing it -- `__refused__` returns false for
-    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:1874-1885). Every other event is
+    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:1889-1900). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See
