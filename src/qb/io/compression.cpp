@@ -103,36 +103,30 @@ public:
             throw std::runtime_error("Prior unrecoverable compression stream error " + std::to_string(m_state));
         }
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-constant-compare"
-#endif // __clang__
-        if (input_size > (std::numeric_limits<unsigned int>::max)() || output_size > (std::numeric_limits<unsigned int>::max)())
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif // __clang__
-        {
-            throw std::runtime_error("Compression input or output size out of range");
-        }
+        // zlib counts a call's input and output in a 32-bit uInt: it is handed what it can count, and the contract
+        // reports what it took. This threw past 4 GiB (Huly QB-1004). An input cut short cannot END the stream --
+        // Z_FINISH tells zlib there is no more input -- so such a call flushes as a non-final one, and the caller's
+        // next call, with the rest, finishes.
+        const std::size_t avail_in  = (std::min) (input_size, qb::compression::detail::zlib_max_chunk);
+        const std::size_t avail_out = (std::min) (output_size, qb::compression::detail::zlib_max_chunk);
+        const bool        finishing = hint == operation_hint::is_last && avail_in == input_size;
+        m_stream.next_in            = const_cast<uint8_t *>(input);
+        m_stream.avail_in           = static_cast<uInt>(avail_in);
+        m_stream.next_out           = const_cast<uint8_t *>(output);
+        m_stream.avail_out          = static_cast<uInt>(avail_out);
 
-        m_stream.next_in   = const_cast<uint8_t *>(input);
-        m_stream.avail_in  = static_cast<unsigned int>(input_size);
-        m_stream.next_out  = const_cast<uint8_t *>(output);
-        m_stream.avail_out = static_cast<unsigned int>(output_size);
-
-        m_state = ::deflate(&m_stream, (hint == operation_hint::is_last) ? Z_FINISH : Z_PARTIAL_FLUSH);
+        m_state = ::deflate(&m_stream, finishing ? Z_FINISH : Z_PARTIAL_FLUSH);
         // Z_BUF_ERROR is "no progress was possible", never fatal: a drain call that found the flush already complete.
-        if (m_state != Z_OK && m_state != Z_STREAM_ERROR && m_state != Z_BUF_ERROR
-            && !(hint == operation_hint::is_last && m_state == Z_STREAM_END)) {
+        if (m_state != Z_OK && m_state != Z_STREAM_ERROR && m_state != Z_BUF_ERROR && !(finishing && m_state == Z_STREAM_END)) {
             throw std::runtime_error("Unrecoverable compression stream error " + std::to_string(m_state));
         }
 
         // deflate's own rule: a flush that returned with the output buffer full may not be complete, and the call is
         // repeated -- with the same flush and more room -- until it leaves room unused.
-        m_flushing            = hint != operation_hint::is_last && m_stream.avail_out == 0;
-        input_bytes_processed = input_size - m_stream.avail_in;
+        m_flushing            = !finishing && m_stream.avail_out == 0;
+        input_bytes_processed = avail_in - m_stream.avail_in;
         done                  = (m_state == Z_STREAM_END);
-        return output_size - m_stream.avail_out;
+        return avail_out - m_stream.avail_out;
     }
 
     void
@@ -209,33 +203,26 @@ public:
             throw std::runtime_error("Prior unrecoverable decompression stream error " + std::to_string(m_state));
         }
 
-#if defined(__clang__)
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-constant-compare"
-#endif // __clang__
-        if (input_size > (std::numeric_limits<unsigned int>::max)() || output_size > (std::numeric_limits<unsigned int>::max)())
-#if defined(__clang__)
-#pragma clang diagnostic pop
-#endif // __clang__
-        {
-            throw std::runtime_error("Compression input or output size out of range");
-        }
+        // As the compressor: zlib is handed what its 32-bit uInt counts and the contract reports what it took -- this
+        // threw past 4 GiB (Huly QB-1004) -- and only a call whose input zlib saw whole asks for Z_FINISH.
+        const std::size_t avail_in  = (std::min) (input_size, qb::compression::detail::zlib_max_chunk);
+        const std::size_t avail_out = (std::min) (output_size, qb::compression::detail::zlib_max_chunk);
+        const bool        finishing = hint == operation_hint::is_last && avail_in == input_size;
+        m_stream.next_in            = const_cast<uint8_t *>(input);
+        m_stream.avail_in           = static_cast<uInt>(avail_in);
+        m_stream.next_out           = const_cast<uint8_t *>(output);
+        m_stream.avail_out          = static_cast<uInt>(avail_out);
 
-        m_stream.next_in   = const_cast<uint8_t *>(input);
-        m_stream.avail_in  = static_cast<unsigned int>(input_size);
-        m_stream.next_out  = const_cast<uint8_t *>(output);
-        m_stream.avail_out = static_cast<unsigned int>(output_size);
-
-        m_state = inflate(&m_stream, (hint == operation_hint::is_last) ? Z_FINISH : Z_PARTIAL_FLUSH);
+        m_state = inflate(&m_stream, finishing ? Z_FINISH : Z_PARTIAL_FLUSH);
         if (m_state != Z_OK && m_state != Z_STREAM_ERROR && m_state != Z_STREAM_END && m_state != Z_BUF_ERROR) {
             // Z_BUF_ERROR is a success code for Z_FINISH, and the caller can continue as
             // if operation_hint::is_last was not given
             throw std::runtime_error("Unrecoverable decompression stream error " + std::to_string(m_state));
         }
 
-        input_bytes_processed = input_size - m_stream.avail_in;
+        input_bytes_processed = avail_in - m_stream.avail_in;
         done                  = (m_state == Z_STREAM_END);
-        return output_size - m_stream.avail_out;
+        return avail_out - m_stream.avail_out;
     }
 
     void

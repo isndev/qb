@@ -550,6 +550,13 @@ policy.
 
 ### Fixed
 
+- **The gzip / deflate streaming providers take an input or a window past 4 GiB (Huly QB-1004).** zlib counts a call
+  in a 32-bit `uInt`, and `compress` / `decompress` threw `std::runtime_error` past it, where their contract lets a
+  call take part of its input and fill part of its window. They now hand zlib at most `detail::zlib_max_chunk` of each
+  and report what was taken; an `is_last` call whose input was cut flushes as a non-final one -- `Z_FINISH` would have
+  ended the stream on part of its input -- and the call that sees the rest finishes. Pinned by `CompressionProvider.*`
+  in `tests/io/unit/compression/compression-codec.cpp`, over 4 GiB of reserved address space of which only the first
+  MiBs are backed.
 - **`qb::string` closes three gaps with `std::string` (Huly QB-1002).** A const char array --
   `const char raw[3] = {'x','y','z'}` -- took the non-template `const char*` constructor, `assign` and `operator=`,
   whose `strlen` reads past an array without a NUL (`std::string` does the same); the pointer forms are now templates

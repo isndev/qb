@@ -26,6 +26,7 @@
 #include <qb/io/compression.h>
 #include <qb/io/crypto.h>
 #include <qb/system/allocator/pipe.h>
+#include <qb/system/allocator/region.h>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -724,4 +725,126 @@ TEST(CompressionBeyondUIntMax, DISABLED_UncompressWindowsPast4GiB) {
     ASSERT_NO_THROW((void) qb::gzip::uncompress(back, packed.data(), packed.size()));
     ASSERT_EQ(back.size(), body.size()) << "2 GiB + 4 KiB came back as " << back.size();
     EXPECT_TRUE(back == body);
+}
+
+// =============================================================================
+// THE STREAMING PROVIDERS PAST 4 GiB (Huly QB-1004)
+//
+// zlib counts a call's input and output in a 32-bit uInt. The gzip / deflate providers THREW when a length passed it,
+// where their contract lets a call take part of its input and fill part of its window: they now hand zlib what it can
+// count, report how much input was taken, and -- since an input cut short cannot end the stream -- finish only on the
+// call whose input zlib saw whole. The buffers are 4 GiB + 4 KiB of RESERVED address space of which only the first
+// MiBs are backed: a call reads no further than its window lets it (incompressible input, a 4 KiB window), and writes
+// no further than its output.
+// =============================================================================
+
+namespace compression_codec_test {
+
+// `size` bytes of address space, the first `backed` of them usable (Windows commits only those; POSIX maps the whole
+// range lazily). qb's own reserved regions (qb/system/allocator/region.h), so no platform code is repeated here.
+class ReservedBytes {
+public:
+    ReservedBytes(std::size_t size, std::size_t backed)
+        : _size(size)
+        , _bytes(static_cast<std::uint8_t *>(qb::allocator::detail::region_acquire_reserved(size))) {
+        if (_bytes && !qb::allocator::detail::region_commit(_bytes, backed)) {
+            qb::allocator::detail::region_release_reserved(_bytes, _size);
+            _bytes = nullptr;
+        }
+    }
+    ~ReservedBytes() {
+        if (_bytes)
+            qb::allocator::detail::region_release_reserved(_bytes, _size);
+    }
+    ReservedBytes(ReservedBytes const &)            = delete;
+    ReservedBytes &operator=(ReservedBytes const &) = delete;
+
+    std::uint8_t *
+    data() const noexcept {
+        return _bytes;
+    }
+
+private:
+    std::size_t   _size;
+    std::uint8_t *_bytes;
+};
+
+constexpr std::size_t past_uint_max = (std::size_t{1} << 32) + 4096; // one length zlib cannot count
+constexpr std::size_t backed_bytes  = std::size_t{4} << 20;
+
+} // namespace compression_codec_test
+
+TEST(CompressionProvider, ZlibTakesPartOfAnInputItCannotCountAndNeverEndsTheStreamThere) {
+    static_assert(sizeof(std::size_t) >= 8, "a length past 4 GiB needs a 64-bit size_t");
+    using compression_codec_test::backed_bytes;
+    using compression_codec_test::past_uint_max;
+    compression_codec_test::ReservedBytes input(past_uint_max, backed_bytes);
+    ASSERT_NE(input.data(), nullptr) << "could not reserve 4 GiB of address space";
+    const std::string noise = qb::io::test::codec_contract::random_bytes(backed_bytes, 9);
+    std::memcpy(input.data(), noise.data(), noise.size());
+
+    for (const char *algorithm : {"gzip", "deflate"}) {
+        auto compressor = qb::compression::builtin::make_compressor(algorithm);
+        ASSERT_TRUE(compressor) << algorithm;
+        std::vector<std::uint8_t> window(4096);
+        std::size_t               taken    = 0;
+        bool                      done     = true;
+        std::size_t               produced = 0;
+        ASSERT_NO_THROW(
+            produced = compressor->compress(input.data(), past_uint_max, window.data(), window.size(), qb::compression::is_last, taken, done))
+            << algorithm << ": an input zlib cannot count was refused instead of taken in part";
+        EXPECT_FALSE(done) << algorithm << ": the stream ended with most of its input still to come";
+        EXPECT_GT(taken, 0u) << algorithm;
+        EXPECT_LT(taken, backed_bytes) << algorithm << ": a 4 KiB window cannot have taken this much";
+        ASSERT_EQ(produced, window.size()) << algorithm;
+
+        // What was produced is the start of a stream of that input: it decodes to a prefix of it.
+        auto                      decompressor = qb::compression::builtin::make_decompressor(algorithm);
+        std::vector<std::uint8_t> plain(backed_bytes);
+        std::size_t               read     = 0;
+        bool                      finished = true;
+        const std::size_t         decoded  = decompressor->decompress(window.data(), produced, plain.data(), plain.size(),
+                                                                      qb::compression::operation_hint::has_more, read, finished);
+        EXPECT_FALSE(finished) << algorithm;
+        EXPECT_GT(decoded, 0u) << algorithm;
+        EXPECT_LE(decoded, taken) << algorithm;
+        EXPECT_EQ(std::memcmp(plain.data(), noise.data(), decoded), 0) << algorithm << ": the partial stream decodes to other bytes";
+    }
+}
+
+TEST(CompressionProvider, ZlibWritesIntoAWindowItCannotCount) {
+    static_assert(sizeof(std::size_t) >= 8, "a length past 4 GiB needs a 64-bit size_t");
+    using compression_codec_test::backed_bytes;
+    using compression_codec_test::past_uint_max;
+    compression_codec_test::ReservedBytes window(past_uint_max, backed_bytes);
+    ASSERT_NE(window.data(), nullptr) << "could not reserve 4 GiB of address space";
+    const std::string body = qb::io::test::codec_contract::random_bytes(100000, 4) + std::string(100000, 'w');
+
+    for (const char *algorithm : {"gzip", "deflate"}) {
+        // Compress into the wide window, in one call: the whole input, the whole stream.
+        auto        compressor = qb::compression::builtin::make_compressor(algorithm);
+        std::size_t taken      = 0;
+        bool        done       = false;
+        std::size_t packed     = 0;
+        ASSERT_NO_THROW(packed = compressor->compress(reinterpret_cast<const std::uint8_t *>(body.data()), body.size(), window.data(),
+                                                      past_uint_max, qb::compression::is_last, taken, done))
+            << algorithm << ": a window zlib cannot count was refused instead of used in part";
+        EXPECT_TRUE(done) << algorithm;
+        EXPECT_EQ(taken, body.size()) << algorithm;
+        ASSERT_GT(packed, 0u);
+        const std::string stream(reinterpret_cast<const char *>(window.data()), packed);
+
+        // And decompress back into the same wide window.
+        auto        decompressor = qb::compression::builtin::make_decompressor(algorithm);
+        std::size_t read         = 0;
+        bool        finished     = false;
+        std::size_t unpacked     = 0;
+        ASSERT_NO_THROW(unpacked = decompressor->decompress(reinterpret_cast<const std::uint8_t *>(stream.data()), stream.size(), window.data(),
+                                                            past_uint_max, qb::compression::is_last, read, finished))
+            << algorithm;
+        EXPECT_TRUE(finished) << algorithm;
+        EXPECT_EQ(read, stream.size()) << algorithm;
+        ASSERT_EQ(unpacked, body.size()) << algorithm;
+        EXPECT_EQ(std::memcmp(window.data(), body.data(), body.size()), 0) << algorithm;
+    }
 }
