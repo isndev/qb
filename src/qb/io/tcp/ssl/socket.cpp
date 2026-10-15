@@ -66,10 +66,10 @@ static std::string
 asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
     if (!bs)
         return "";
-    std::ostringstream oss;
-    for (int i = 0; i < bs->length; ++i) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(bs->data[i]);
-    }
+    std::ostringstream   oss;
+    const unsigned char *data = ASN1_STRING_get0_data(bs); // ASN1_STRING is opaque from OpenSSL 4.0: accessors only
+    for (int i = 0, length = ASN1_STRING_length(bs); i < length; ++i)
+        oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]);
     return oss.str();
 }
 
@@ -146,25 +146,25 @@ get_certificate(SSL *ssl) {
                 GENERAL_NAME *san = sk_GENERAL_NAME_value(sans, i);
                 std::string   san_str;
                 if (san->type == GEN_DNS) {
-                    ASN1_IA5STRING *dns_name = san->d.dNSName;
-                    if (dns_name && dns_name->data && dns_name->length > 0) {
-                        san_str =
-                            "DNS:" + std::string(reinterpret_cast<const char *>(dns_name->data), static_cast<std::size_t>(dns_name->length));
+                    const ASN1_IA5STRING *dns_name = san->d.dNSName; // ASN1_STRING is opaque from OpenSSL 4.0: accessors only
+                    const int             dns_len  = dns_name ? ASN1_STRING_length(dns_name) : 0;
+                    if (const unsigned char *dns = dns_len > 0 ? ASN1_STRING_get0_data(dns_name) : nullptr) {
+                        san_str = "DNS:" + std::string(reinterpret_cast<const char *>(dns), static_cast<std::size_t>(dns_len));
                     }
                 } else if (san->type == GEN_IPADD) {
-                    ASN1_OCTET_STRING *ip_addr = san->d.iPAddress;
-                    if (ip_addr && ip_addr->data) {
+                    const ASN1_OCTET_STRING *ip_addr = san->d.iPAddress;
+                    if (const unsigned char *ip = ip_addr ? ASN1_STRING_get0_data(ip_addr) : nullptr) {
                         san_str = "IP:";
-                        if (ip_addr->length == 4) { // IPv4
+                        if (const int ip_length = ASN1_STRING_length(ip_addr); ip_length == 4) { // IPv4
                             std::ostringstream oss;
-                            oss << static_cast<int>(ip_addr->data[0]) << "." << static_cast<int>(ip_addr->data[1]) << "."
-                                << static_cast<int>(ip_addr->data[2]) << "." << static_cast<int>(ip_addr->data[3]);
+                            oss << static_cast<int>(ip[0]) << "." << static_cast<int>(ip[1]) << "." << static_cast<int>(ip[2]) << "."
+                                << static_cast<int>(ip[3]);
                             san_str += oss.str();
-                        } else if (ip_addr->length == 16) { // IPv6
+                        } else if (ip_length == 16) { // IPv6
                             std::ostringstream oss;
-                            for (int j = 0; j < ip_addr->length; ++j) {
-                                oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip_addr->data[j]);
-                                if (j % 2 == 1 && j < ip_addr->length - 1)
+                            for (int j = 0; j < ip_length; ++j) {
+                                oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip[j]);
+                                if (j % 2 == 1 && j < ip_length - 1)
                                     oss << ":";
                             }
                             san_str += oss.str();
@@ -1272,26 +1272,26 @@ socket::get_peer_certificate_chain() const noexcept {
                     GENERAL_NAME *san_entry = sk_GENERAL_NAME_value(sans, j);
                     std::string   san_str_entry;
                     if (san_entry->type == GEN_DNS) {
-                        ASN1_IA5STRING *dns_name = san_entry->d.dNSName;
-                        if (dns_name && dns_name->data && dns_name->length > 0) {
-                            san_str_entry =
-                                "DNS:"
-                                + std::string(reinterpret_cast<const char *>(dns_name->data), static_cast<std::size_t>(dns_name->length));
+                        // ASN1_STRING is opaque from OpenSSL 4.0: read through the accessors, as get_certificate() does.
+                        const ASN1_IA5STRING *dns_name = san_entry->d.dNSName;
+                        const int             dns_len  = dns_name ? ASN1_STRING_length(dns_name) : 0;
+                        if (const unsigned char *dns = dns_len > 0 ? ASN1_STRING_get0_data(dns_name) : nullptr) {
+                            san_str_entry = "DNS:" + std::string(reinterpret_cast<const char *>(dns), static_cast<std::size_t>(dns_len));
                         }
                     } else if (san_entry->type == GEN_IPADD) {
-                        ASN1_OCTET_STRING *ip_addr = san_entry->d.iPAddress;
-                        if (ip_addr && ip_addr->data) {
+                        const ASN1_OCTET_STRING *ip_addr = san_entry->d.iPAddress;
+                        if (const unsigned char *ip = ip_addr ? ASN1_STRING_get0_data(ip_addr) : nullptr) {
                             san_str_entry = "IP:";
-                            if (ip_addr->length == 4) { // IPv4
+                            if (const int ip_length = ASN1_STRING_length(ip_addr); ip_length == 4) { // IPv4
                                 std::ostringstream oss_ip;
-                                oss_ip << static_cast<int>(ip_addr->data[0]) << "." << static_cast<int>(ip_addr->data[1]) << "."
-                                       << static_cast<int>(ip_addr->data[2]) << "." << static_cast<int>(ip_addr->data[3]);
+                                oss_ip << static_cast<int>(ip[0]) << "." << static_cast<int>(ip[1]) << "." << static_cast<int>(ip[2]) << "."
+                                       << static_cast<int>(ip[3]);
                                 san_str_entry += oss_ip.str();
-                            } else if (ip_addr->length == 16) { // IPv6
+                            } else if (ip_length == 16) { // IPv6
                                 std::ostringstream oss_ip;
-                                for (int k = 0; k < ip_addr->length; ++k) {
-                                    oss_ip << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip_addr->data[k]);
-                                    if (k % 2 == 1 && k < ip_addr->length - 1)
+                                for (int k = 0; k < ip_length; ++k) {
+                                    oss_ip << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip[k]);
+                                    if (k % 2 == 1 && k < ip_length - 1)
                                         oss_ip << ":";
                                 }
                                 san_str_entry += oss_ip.str();

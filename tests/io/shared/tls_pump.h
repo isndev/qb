@@ -97,10 +97,13 @@ public:
             X509_set_version(_x509, 2); // v3: extensions
             X509_gmtime_adj(X509_getm_notBefore(_x509), -3600);
             X509_gmtime_adj(X509_getm_notAfter(_x509), 3600);
-            X509_NAME *name = X509_get_subject_name(_x509);
-            ok = X509_set_pubkey(_x509, _pkey) == 1
+            // A name of our own, set as the subject: X509_get_subject_name() returns const from OpenSSL 4.0.
+            X509_NAME *name = X509_NAME_new();
+            ok = name && X509_set_pubkey(_x509, _pkey) == 1
                  && X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>(cn.c_str()), -1, -1, 0) == 1
+                 && X509_set_subject_name(_x509, name) == 1
                  && X509_set_issuer_name(_x509, issuer ? X509_get_subject_name(issuer->_x509) : name) == 1;
+            X509_NAME_free(name);
         }
         if (ok && r == role::authority) {
             BASIC_CONSTRAINTS *bc = BASIC_CONSTRAINTS_new();

@@ -610,6 +610,18 @@ policy.
 
 ### Fixed
 
+- **qb builds against OpenSSL 4 (Huly QB-1076).** OpenSSL 4.0 made `ASN1_STRING` opaque, and the certificate
+  accessors of `qb::io::tcp::ssl::socket` -- the serial number and the `DNS:` / `IP:` subject alternative names of
+  `get_peer_certificate_details()` and `get_peer_certificate_chain()` -- read its `data` and `length` members: with
+  OpenSSL 4's headers `qb-io` stopped compiling (`member access into incomplete type 'ASN1_OCTET_STRING'`), which is
+  what a macOS user gets from Homebrew today, `openssl` being `openssl@4`. They read through `ASN1_STRING_get0_data()`
+  and `ASN1_STRING_length()` now, which every OpenSSL qb supports has, and print the same bytes: the SAN test pins the
+  exact strings and a three-byte serial, and passes unchanged on the old code under OpenSSL 3. The TLS tests that no
+  longer compiled against OpenSSL 4 (`X509_get_subject_name()` returns a `const X509_NAME *`) or called functions it
+  deprecates (`X509_NAME_get_text_by_NID`, `X509_cmp_time`, `X509_cmp_current_time`) build their certificate names
+  and read their dates through calls both versions have. Verified on OpenSSL 4.0.3 (with ngtcp2 1.25.0 built against
+  it) and 3.5.7 on Linux, and 3.6.3 on Windows.
+
 - **A standalone io object's `dispose()` ends its transport (Huly QB-1060).** `input<>`, `output<>` and
   `io<>` stopped a standalone object's watcher -- a client's, an acceptor's -- and left its transport as it
   was until the object connected again or was destroyed: the peer of a `disconnect()`, or of a connection

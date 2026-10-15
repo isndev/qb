@@ -50,6 +50,7 @@
  * @ingroup Tests
  */
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno> // errno — distinguishes a clean close_notify from a real read error
 #include <chrono>
@@ -905,14 +906,20 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
     }
 
     bool ok = true;
-    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+    // Three serial bytes, 01 ab 09: a leading zero nibble at both ends and a letter between, so the
+    // hex rendering of every byte -- two lowercase digits, zero-padded -- is what the test pins.
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 0x01ab09);
     X509_gmtime_adj(X509_getm_notBefore(x509), -3600);
     X509_gmtime_adj(X509_getm_notAfter(x509), 3600);
     ok = ok && X509_set_pubkey(x509, pkey) == 1;
 
-    X509_NAME *name = X509_get_subject_name(x509);
-    ok = ok && X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>("qb-san-test"), -1, -1, 0) == 1;
+    // A name of our own, set as subject and issuer: X509_get_subject_name() returns const from OpenSSL 4.0.
+    X509_NAME *name = X509_NAME_new();
+    ok = ok && name
+         && X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char *>("qb-san-test"), -1, -1, 0) == 1;
+    ok = ok && X509_set_subject_name(x509, name) == 1;
     ok = ok && X509_set_issuer_name(x509, name) == 1;
+    X509_NAME_free(name);
 
     // DNS + IPv4 + IPv6 SANs, each exercising a different branch of the extractor.
     if (ok) {
@@ -950,6 +957,8 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
             add_ip(ipv4, 4);
             const unsigned char ipv6[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}; // ::1
             add_ip(ipv6, 16);
+            const unsigned char odd[5] = {10, 0, 0, 1, 7}; // neither IPv4 nor IPv6: rendered as a bare "IP:"
+            add_ip(odd, 5);
 
             if (X509_add1_ext_i2d(x509, NID_subject_alt_name, gens, 0, 0) != 1)
                 ok = false;
@@ -1054,32 +1063,20 @@ TEST(SSLSocketLoopback, PeerCertificateSubjectAlternativeNamesAreExtracted) {
     const auto details = client.get_peer_certificate_details();
     ASSERT_FALSE(details.subject_alternative_names.empty()) << "SAN extraction produced no entries from a SAN-bearing certificate";
 
-    bool saw_dns  = false;
-    bool saw_ipv4 = false;
-    bool saw_ipv6 = false;
-    for (const auto &san : details.subject_alternative_names) {
-        if (san == "DNS:san.example.test")
-            saw_dns = true;
-        else if (san == "IP:127.0.0.1")
-            saw_ipv4 = true;
-        else if (san.rfind("IP:", 0) == 0 && san.find(':', 3) != std::string::npos)
-            saw_ipv6 = true; // colon-grouped IPv6 form
-    }
-    EXPECT_TRUE(saw_dns) << "DNS SAN not extracted";
-    EXPECT_TRUE(saw_ipv4) << "IPv4 SAN not extracted";
-    EXPECT_TRUE(saw_ipv6) << "IPv6 SAN not extracted";
+    // The exact strings, in the certificate's order, and the exact serial: the rendering is the contract. Both
+    // extractors read the certificate's ASN1 strings through OpenSSL's accessors (the struct is opaque from
+    // OpenSSL 4.0), and what they print must not depend on how the bytes are reached.
+    const std::vector<std::string> expected_sans{"DNS:san.example.test", "IP:127.0.0.1", "IP:0000:0000:0000:0000:0000:0000:0000:0001", "IP:"};
+    EXPECT_EQ(details.subject_alternative_names, expected_sans);
+    EXPECT_EQ(details.serial_number, "01ab09");
 
-    // The leaf cert also appears (with its SANs) in the verified chain accessor.
+    // The leaf cert also appears (with its SANs) in the verified chain accessor, rendered the same way.
     const auto chain = client.get_peer_certificate_chain();
     ASSERT_FALSE(chain.empty());
-    bool chain_has_sans = false;
-    for (const auto &c : chain) {
-        if (!c.subject_alternative_names.empty()) {
-            chain_has_sans = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(chain_has_sans) << "chain accessor did not extract SANs";
+    const auto leaf = std::find_if(chain.begin(), chain.end(), [](const auto &c) { return !c.subject_alternative_names.empty(); });
+    ASSERT_NE(leaf, chain.end()) << "chain accessor did not extract SANs";
+    EXPECT_EQ(leaf->subject_alternative_names, expected_sans);
+    EXPECT_EQ(leaf->serial_number, "01ab09");
 
     // Unblock the server's read so the thread exits cleanly.
     EXPECT_TRUE(write_exactly(client, "x", 1));
@@ -2198,9 +2195,13 @@ TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHo
         std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
         if (!cert)
             return std::string{};
-        char      buf[256] = {0};
-        const int n        = X509_NAME_get_text_by_NID(X509_get_subject_name(cert.get()), NID_commonName, buf, sizeof(buf));
-        return n > 0 ? std::string(buf, static_cast<std::size_t>(n)) : std::string{};
+        // The CN entry's bytes through the accessors: X509_NAME_get_text_by_NID() is deprecated from OpenSSL 4.0.
+        const X509_NAME   *subject = X509_get_subject_name(cert.get());
+        const int          index   = subject ? X509_NAME_get_index_by_NID(subject, NID_commonName, -1) : -1;
+        const ASN1_STRING *cn      = index >= 0 ? X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, index)) : nullptr;
+        return cn && ASN1_STRING_length(cn) > 0
+                   ? std::string(reinterpret_cast<const char *>(ASN1_STRING_get0_data(cn)), static_cast<std::size_t>(ASN1_STRING_length(cn)))
+                   : std::string{};
     }();
 
     if (cert_cn.empty()) {
@@ -2319,16 +2320,23 @@ TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
         std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
         ASSERT_NE(cert, nullptr) << "cannot parse " << path;
 
-        EXPECT_EQ(X509_cmp_current_time(X509_get_notBefore(cert.get())), -1) << path << " is not valid yet";
-        EXPECT_EQ(X509_cmp_current_time(X509_get_notAfter(cert.get())), 1)
+        // X509_cmp_time()'s answer -- -1 at or before `t`, 1 after it, 0 on error -- through ASN1_TIME_cmp_time_t()
+        // (-1 / 0 / 1, -2 on error): X509_cmp_time() and X509_cmp_current_time() are deprecated from OpenSSL 4.0.
+        const auto cmp_time = [](const ASN1_TIME *s, time_t t) {
+            const int c = ASN1_TIME_cmp_time_t(s, t);
+            return c == 1 ? 1 : (c == 0 || c == -1) ? -1 : 0;
+        };
+        const time_t now = std::time(nullptr);
+        EXPECT_EQ(cmp_time(X509_get0_notBefore(cert.get()), now), -1) << path << " is not valid yet";
+        EXPECT_EQ(cmp_time(X509_get0_notAfter(cert.get()), now), 1)
             << path
             << " has EXPIRED. Every TLS case in this suite asserts a rejection or opts out with "
                "set_insecure(), so they all stay green while proving nothing about chain "
                "verification. Regenerate the fixture.";
 
         // 30 days of warning, so this fails while there is still time to act.
-        time_t soon = std::time(nullptr) + 30 * 24 * 60 * 60;
-        EXPECT_EQ(X509_cmp_time(X509_get_notAfter(cert.get()), &soon), 1)
+        const time_t soon = now + 30 * 24 * 60 * 60;
+        EXPECT_EQ(cmp_time(X509_get0_notAfter(cert.get()), soon), 1)
             << path << " expires within 30 days — regenerate it now, before the suite starts passing for the wrong reason.";
     }
 
