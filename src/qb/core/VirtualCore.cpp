@@ -1395,8 +1395,7 @@ VirtualCore::send(Event const &event) noexcept {
         return;
     }
     if (unlikely(event.state.bits.alive) || !try_send(event)) {
-        auto &pipe = __getPipe__(event.dest._core_id);
-        detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
+        __send_unpublished__(event);
         return;
     }
     // Published straight into the peer's ring: the flush will never see it, so it is counted
@@ -1966,6 +1965,18 @@ VirtualCore::push_forward(ActorId const dest, Event &event) noexcept {
     detail::event_wire::set_dest(event, dest);
     push(event);
     event.state.bits.alive = 1;
+}
+
+// The cross-core `send(Event const &)` that was not published straight into the peer's ring (Huly QB-356): the
+// ring refused it -- a full mailbox, one blocked attempt, as a refused flush is -- or the original is `alive` and
+// was not offered (see `send`). Either way it waits in the outbound pipe, whose copy clears `alive`, and the flush
+// delivers it. Cold, out of line and at the end of the file for the layout reason above: inline, its counter kept
+// `this` live across the copy and cost the published reply one instruction (27 Ir a call against 26, callgrind).
+void
+VirtualCore::__send_unpublished__(Event const &event) noexcept {
+    _nb_send_blocked += !event.state.bits.alive;
+    auto &pipe = __getPipe__(event.dest._core_id);
+    detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
 }
 
 // The tick phase (Huly QB-257): out of the pass's loop, and after it in the file for the layout reason

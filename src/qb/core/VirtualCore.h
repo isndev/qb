@@ -686,8 +686,8 @@ private:
     /// Per signal number, the `Main::_signal_raised` generation this core last delivered (Huly QB-65).
     /// Read only by the cold `__deliver_signals__`, and declared LAST so it moves no member the pass reads.
     std::array<unsigned int, Main::SignalSlots> _signal_seen{};
-    // The cold counters of `Actor::getCoreStats()` (Huly QB-162), moved only on the flush's
-    // backpressure paths and declared after everything the pass reads, for the same reason.
+    // The cold counters of `Actor::getCoreStats()` (Huly QB-162), moved only on the backpressure paths -- the
+    // flush's and a refused direct publication's (QB-356) -- and declared after everything the pass reads.
     std::uint64_t _nb_send_blocked  = 0; ///< publish attempts that found the destination's mailbox full
     std::uint64_t _nb_event_dropped = 0; ///< best-effort (QoS-0) events discarded on backpressure
     /// Per outbound pipe (dense core index): the peer's consumer index as this core's producer ring saw
@@ -995,6 +995,9 @@ private:
      */
     [[nodiscard]] bool try_send(Event const &event) const noexcept;
     void               send(Event const &event) noexcept;
+    /// `send`'s cold half (Huly QB-356): the event its direct publication did not place -- refused by a full
+    /// mailbox, which counts one blocked attempt, or an `alive` original never offered -- goes to the pipe.
+    QB_NOINLINE QB_COLD void __send_unpublished__(Event const &event) noexcept;
     /*!
      * @brief Push an event to the event queue
      * @param event Event to push
@@ -1318,11 +1321,16 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
     // Delivered straight into the peer's ring: give the tail range back. Nothing was queued in
     // between, so this is the last allocation and `free_back` is exact. A `send` the ring could
     // not take stays queued at the tail, behind earlier pushes -- `send` is unordered, and
-    // the flush delivers it with the rest, and counts it then; this path counts its own.
-    if (dest._core_id != _index && try_send(data)) {
-        pipe.free_back(BUCKET_SIZE);
-        ++_metrics._nb_event_sent;
-        _metrics._nb_bucket_sent += BUCKET_SIZE;
+    // the flush delivers it with the rest, and counts it then; this path counts its own: the
+    // publication, or the full mailbox it met (Huly QB-356).
+    if (dest._core_id != _index) {
+        if (try_send(data)) {
+            pipe.free_back(BUCKET_SIZE);
+            ++_metrics._nb_event_sent;
+            _metrics._nb_bucket_sent += BUCKET_SIZE;
+        } else [[unlikely]] {
+            ++_nb_send_blocked;
+        }
     }
 }
 

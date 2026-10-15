@@ -25,6 +25,8 @@
  *     peer receives exactly what was published, and each drop met a full mailbox once
  *     (`sends_blocked`) -- no system test covered the QoS-0 drop at all before this one;
  *   - a QoS-2 burst into a full mailbox loses nothing and reports the backpressure it met;
+ *   - a `send`, `forward` or `reply` whose direct publication finds the peer's mailbox full is ONE
+ *     blocked attempt, and the event, kept in the pipe, is delivered (Huly QB-356);
  *   - io callbacks are counted (a `defer()`ed one included), and `loop_passes` is the pass
  *     number a `LoopEvent` carries.
  *
@@ -293,6 +295,161 @@ TEST(CoreStats, AQoS2BurstIntoAFullMailboxLosesNothingAndReportsTheBackpressure)
     EXPECT_EQ(g_burst_after.events_dropped - g_burst_before.events_dropped, 0u);
     EXPECT_GT(g_burst_after.sends_blocked - g_burst_before.sends_blocked, 0u)
         << "a burst four rings deep into a blocked core must meet a full mailbox";
+}
+
+// --- a direct publication into a full mailbox (Huly QB-356) ---------------------------------------
+// `send`, `reply` and `forward` publish straight into the peer's ring; when that ring is full, the
+// event goes to the outbound pipe and the flush delivers it later. The refused attempt met a full
+// mailbox exactly as a refused flush does, and `sends_blocked` counts every such attempt -- until 3.3 it
+// counted the flush's alone. The sink holds its core while the source fills the ring with a QoS-0
+// burst (the flush drops what does not fit), then the source measures each direct path around its one
+// call. The sink lets its core go only after the last measurement, so the ring stays full throughout;
+// the two QoS-2 events that waited in the pipe -- the forward and the reply -- are delivered after.
+
+struct Relay : qb::Event {};
+struct Volley : qb::Event {};
+
+std::atomic<bool> g_direct_filled{false}; // send<> and forward() are measured: the sink serves its volley
+std::atomic<bool> g_direct_done{false};   // the reply is measured: the sink lets its core go
+std::atomic<bool> g_direct_stuck{false};  // a handshake never came: reported, never waited on forever
+std::uint64_t     g_dropped_at_fill       = 0;
+std::uint64_t     g_send_blocked_delta    = 0;
+std::uint64_t     g_forward_blocked_delta = 0;
+std::uint64_t     g_reply_blocked_delta   = 0;
+int               g_sink_relays           = 0;
+int               g_sink_volleys          = 0;
+
+// The handshakes are deadlock guards, never an ordering oracle: the order is the pass's.
+void
+await_flag(std::atomic<bool> const &flag) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (!flag.load(std::memory_order_acquire)) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            g_direct_stuck.store(true);
+            return;
+        }
+        std::this_thread::yield();
+    }
+}
+
+class DirectSink : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Hold>(*this);
+        registerEvent<Spark>(*this);
+        registerEvent<Relay>(*this);
+        registerEvent<Volley>(*this);
+        co_return true;
+    }
+    void
+    on(Hold const &hold) {
+        g_sink_holding.store(true, std::memory_order_release);
+        await_flag(g_direct_filled);
+        send<Volley>(hold.getSource()); // into the source's own ring, which is empty: published at once
+        await_flag(g_direct_done);      // this core drains nothing until the reply is measured
+    }
+    void
+    on(Spark const &) {}
+    void
+    on(Relay const &) {
+        ++g_sink_relays;
+        leave_when_served();
+    }
+    void
+    on(Volley const &) {
+        ++g_sink_volleys;
+        leave_when_served();
+    }
+
+private:
+    void
+    leave_when_served() {
+        if (g_sink_relays >= 1 && g_sink_volleys >= 1)
+            kill();
+    }
+};
+
+class DirectSource
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorId _sink;
+    int         _step = 0;
+
+public:
+    explicit DirectSource(qb::ActorId sink) noexcept
+        : _sink(sink) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Relay>(*this);
+        registerEvent<Volley>(*this);
+        push<Hold>(_sink);
+        registerCallback(*this);
+        co_return true;
+    }
+    // Pass k: the burst and a self-addressed Relay. Pass k+1: the flush fills the sink's ring and drops
+    // the rest of the burst, the receive hands over the Relay (forwarded), then this tick sends.
+    void
+    on(qb::LoopEvent const &) override {
+        if (_step == 0) {
+            if (!g_sink_holding.load(std::memory_order_acquire))
+                return;
+            for (std::uint64_t i = 0; i < kRing + 64; ++i)
+                push<Spark>(_sink);
+            push<Relay>(id());
+            _step = 1;
+            return;
+        }
+        if (_step != 1)
+            return;
+        _step             = 2;
+        g_dropped_at_fill = getCoreStats().events_dropped;
+        const auto before = getCoreStats().sends_blocked;
+        send<Spark>(_sink);
+        g_send_blocked_delta = getCoreStats().sends_blocked - before;
+        unregisterCallback();
+        g_direct_filled.store(true, std::memory_order_release);
+    }
+    void
+    on(Relay &relay) {
+        const auto before = getCoreStats().sends_blocked;
+        forward(_sink, relay);
+        g_forward_blocked_delta = getCoreStats().sends_blocked - before;
+    }
+    void
+    on(Volley &volley) {
+        const auto before = getCoreStats().sends_blocked;
+        reply(volley);
+        g_reply_blocked_delta = getCoreStats().sends_blocked - before;
+        g_direct_done.store(true, std::memory_order_release);
+        kill(); // the forward and the reply wait in this core's pipe: its shutdown drain delivers them
+    }
+};
+
+TEST(CoreStats, ADirectPublicationRefusedByAFullMailboxIsOneBlockedAttempt) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the publications must cross a mailbox";
+    g_sink_holding.store(false);
+    g_direct_filled.store(false);
+    g_direct_done.store(false);
+    g_direct_stuck.store(false);
+    g_dropped_at_fill = g_send_blocked_delta = g_forward_blocked_delta = g_reply_blocked_delta = 0;
+    g_sink_relays = g_sink_volleys = 0;
+
+    qb::Main   main;
+    const auto sink = main.addActor<DirectSink>(1);
+    main.addActor<DirectSource>(0, sink);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    ASSERT_FALSE(g_direct_stuck.load()) << "a handshake between the two cores never came";
+
+    EXPECT_GE(g_dropped_at_fill, 64u) << "the burst must have filled the sink's ring before the measurements";
+    EXPECT_EQ(g_send_blocked_delta, 1u) << "send<E>() whose direct publication found the mailbox full is one blocked attempt";
+    EXPECT_EQ(g_forward_blocked_delta, 1u) << "forward() into a full mailbox is one blocked attempt";
+    EXPECT_EQ(g_reply_blocked_delta, 1u) << "reply() into a full mailbox is one blocked attempt";
+    EXPECT_EQ(g_sink_relays, 1) << "the refused forward waited in the pipe and was delivered";
+    EXPECT_EQ(g_sink_volleys, 1) << "the refused reply waited in the pipe and was delivered";
 }
 
 // --- io callbacks and passes --------------------------------------------------------------------

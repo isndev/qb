@@ -653,6 +653,16 @@ policy.
   client asking for `x` connected to the `localhost` certificate before the change and is refused after it; on 3.5.7
   it is refused both ways.
 
+- **`CoreStats::sends_blocked` counts a refused direct publication (Huly QB-356).** A cross-core `send`, `reply`
+  or `forward` publishes straight into the peer's ring; when the ring is full the event goes to the outbound pipe
+  and the flush delivers it later. That refused attempt met a full mailbox as a refused flush does, yet only the
+  flush's attempts were counted, so the counter missed exactly the backpressure a request/reply exchange meets.
+  Each refused direct publication is now one blocked attempt; the flush counts its own retries as before. The
+  refused path is out of line (`VirtualCore::__send_unpublished__`): the published reply runs 25 instructions
+  in `send(Event const&)` against 26 before, the same-core reply and `send<E>` are unchanged (callgrind, g++-14).
+  Witness: `qb-core-test-system-core-stats` (`ADirectPublicationRefusedByAFullMailboxIsOneBlockedAttempt`:
+  `send<E>`, `forward` and `reply` into a full ring, one each, and both QoS-2 events delivered after).
+
 - **`icase_basic_map::convert_key` and the map's move members are `noexcept` only when what they run is (Huly
   QB-1074).** `convert_key` builds the folded key as a `std::string`, so an exhausted heap throws `std::bad_alloc`
   out of it, and its `noexcept` turned that into `std::terminate()`; it is no longer `noexcept` (no caller in qb or

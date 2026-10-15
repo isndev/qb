@@ -63,8 +63,10 @@ struct CoreStats {
     /// Size of `events_sent`, in 64-byte event buckets.
     std::uint64_t buckets_sent = 0;
     /// Attempts to publish an event that found the destination core's mailbox full -- the
-    /// backpressure signal. A retried event counts once per failed attempt; the event itself is
-    /// sent later (`events_sent`) or, for a `qb::EventQOS0`, dropped (`events_dropped`).
+    /// backpressure signal: the flush's, and those of a `send`, `reply` or `forward` whose direct
+    /// publication was refused (the event then waits in the outbound queue for the flush). A retried
+    /// event counts once per failed attempt; the event itself is sent later (`events_sent`) or, for
+    /// a `qb::EventQOS0`, dropped (`events_dropped`).
     std::uint64_t sends_blocked = 0;
     /// `qb::EventQOS0` events discarded because the destination's mailbox was full, as their
     /// contract allows. No other event is ever discarded on backpressure.

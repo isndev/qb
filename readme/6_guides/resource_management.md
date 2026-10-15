@@ -131,7 +131,7 @@ Two safe patterns:
 
 - **Send events, not pointer calls.** Once the child handle is valid, capture its `id()` and `push<Event>(child_id)`.
   Events to a dead actor are dropped by the router, so this never dereferences freed memory. (`src/qb/core/Actor.h:2399-2401`)
-- **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`src/qb/core/VirtualCore.h:1483-1494`)
+- **Hold the phase-aware handle.** `addRefActor<T>()` (and its alias `addRefHandle<T>()`) returns a `qb::ActorHandle<T>` you can keep across event-handler boundaries. Its `get()` re-queries the owning `VirtualCore` (via `findActor`) and returns `nullptr` if the child is still Activating, failed init, or has died — never a dangling pointer; `operator->()` / `operator*()` call `get()` and assert non-null in debug builds. (`src/qb/core/VirtualCore.h:1491-1502`)
 
 ```cpp
 // src: src/qb/core/Actor.h (addRefHandle / RefActorHandle)
