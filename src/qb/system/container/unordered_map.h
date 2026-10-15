@@ -515,6 +515,15 @@ public:
     convert_key(T &&key) noexcept {
         return _Trait::convert(std::forward<T>(key));
     }
+
+    /**
+     * @brief The longest key a lookup (`find`, `has`, `at`, `erase(key)`) folds on the stack: such a
+     *        lookup builds no `std::string` and allocates nothing. A longer key is converted, which
+     *        allocates; 0 when this map converts every key (a base map without heterogeneous lookup,
+     *        or a trait without `fold()`). A caller that must not allocate -- a `noexcept` lookup --
+     *        takes another path past it (qbm-http's `Headers::has_header` / `remove_header`, Huly QB-1068).
+     */
+    static constexpr std::size_t lookup_fold_capacity = heterogeneous_lookup && trait_folds ? inline_fold_capacity : 0;
 };
 
 /**
