@@ -116,6 +116,10 @@ jobs:
           gcc-14 --version
           "clang-${LLVM_VERSION}" --version
 
+      - name: Check macOS dependency selector
+        if: runner.os == 'macOS'
+        run: python3 scripts/test-ci-macos-dependencies.py
+
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |

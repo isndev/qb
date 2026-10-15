@@ -138,32 +138,57 @@ if [[ "${install_llvm}" == true ]]; then
   packages+=(llvm)
 fi
 
-# One OpenSSL per process. libngtcp2's OpenSSL helper links the OpenSSL its Homebrew formula depends on,
-# so qb must find and link that same one. On the October 2026 runner images Homebrew's default `openssl`
-# is 4.x, libngtcp2 depends on it and openssl@3 is keg-only: pinning openssl@3 here put two OpenSSLs in
-# every QUIC-linked test process, and they segfaulted at start. Without QUIC, the default formula.
+# Install first: brew install upgrades an outdated libngtcp2 keg. Inspecting its old runtime
+# dependencies before this step can pick OpenSSL 3 for a helper that ends up linked to 4.
+brew install "${packages[@]}"
+
+homebrew_prefix="$(brew --prefix)"
+ngtcp2_prefix="${homebrew_prefix}/opt/libngtcp2"
 openssl_formula=openssl
-if [[ "${install_quic}" == true ]]; then
-  openssl_formula="$(brew deps libngtcp2 | grep -E '^openssl(@[0-9]+)?$' | head -n 1 || true)"
+if [[ -e "${ngtcp2_prefix}/lib/libngtcp2_crypto_ossl.dylib" ]]; then
+  if ! runtime_deps="$(brew deps libngtcp2)"; then
+    echo "Could not read the installed libngtcp2 runtime dependencies." >&2
+    exit 1
+  fi
+  openssl_formula=""
+  while IFS= read -r dependency; do
+    if [[ "${dependency}" =~ ^openssl(@[0-9]+)?$ ]]; then
+      if [[ -n "${openssl_formula}" ]]; then
+        echo "libngtcp2 has multiple OpenSSL runtime dependencies; refusing an ambiguous build." >&2
+        exit 1
+      fi
+      openssl_formula="${dependency}"
+    fi
+  done <<< "${runtime_deps}"
   if [[ -z "${openssl_formula}" ]]; then
-    echo "libngtcp2 declares no OpenSSL dependency: cannot pick the OpenSSL its helper links." >&2
+    echo "libngtcp2's installed crypto helper has no OpenSSL runtime dependency." >&2
+    exit 1
+  fi
+  if ! brew list --versions "${openssl_formula}" >/dev/null; then
+    echo "OpenSSL runtime dependency ${openssl_formula} is not installed." >&2
+    exit 1
+  fi
+elif [[ "${install_quic}" == true ]]; then
+  echo "libngtcp2 was requested but its OpenSSL crypto helper is absent." >&2
+  exit 1
+else
+  brew install "${openssl_formula}"
+  if [[ -e "${ngtcp2_prefix}/lib/libngtcp2_crypto_ossl.dylib" ]]; then
+    echo "libngtcp2's crypto helper appeared after selecting OpenSSL; refusing to guess." >&2
     exit 1
   fi
 fi
-packages+=("${openssl_formula}")
-
-brew install "${packages[@]}"
 
 openssl_prefix="$(brew --prefix "${openssl_formula}")"
 echo "OpenSSL for this build: ${openssl_formula} ($(brew list --versions "${openssl_formula}")) at ${openssl_prefix}"
 
 # The chosen OpenSSL precedes the Homebrew prefix, so FindOpenSSL cannot pick another one linked there.
-prefix_path="${openssl_prefix};$(brew --prefix);$(brew --prefix zlib)"
+prefix_path="${openssl_prefix};${homebrew_prefix};$(brew --prefix zlib)"
 pkg_config_path="${openssl_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 
-if [[ "${install_quic}" == true ]]; then
-  prefix_path="${prefix_path};$(brew --prefix libngtcp2)"
-  pkg_config_path="$(brew --prefix libngtcp2)/lib/pkgconfig:${pkg_config_path}"
+if [[ -e "${ngtcp2_prefix}/lib/libngtcp2_crypto_ossl.dylib" ]]; then
+  prefix_path="${prefix_path};${ngtcp2_prefix}"
+  pkg_config_path="${openssl_prefix}/lib/pkgconfig:${ngtcp2_prefix}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
 fi
 
 if [[ "${install_llvm}" == true ]]; then
