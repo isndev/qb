@@ -1010,6 +1010,10 @@ private:
     /// `send`'s cold half (Huly QB-356): the event its direct publication did not place -- refused by a full
     /// mailbox, which counts one blocked attempt, or an `alive` original never offered -- goes to the pipe.
     QB_NOINLINE QB_COLD void __send_unpublished__(Event const &event) noexcept;
+    /// `send<E>`'s cold half (Huly QB-356): the direct publication a full mailbox refused, one blocked attempt;
+    /// the event stays queued at the pipe's tail. Out of line: inline, MSVC laid the increment between the
+    /// published path and the epilogue, a taken jump on every cross-core `send<E>`.
+    QB_NOINLINE QB_COLD void __send_blocked__() noexcept;
     /*!
      * @brief Push an event to the event queue
      * @param event Event to push
@@ -1334,14 +1338,15 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
     // between, so this is the last allocation and `free_back` is exact. A `send` the ring could
     // not take stays queued at the tail, behind earlier pushes -- `send` is unordered, and
     // the flush delivers it with the rest, and counts it then; this path counts its own: the
-    // publication, or the full mailbox it met (Huly QB-356).
+    // publication, or the full mailbox it met (Huly QB-356), out of line so that the published
+    // path runs straight into the epilogue.
     if (dest._core_id != _index) {
         if (try_send(data)) {
             pipe.free_back(BUCKET_SIZE);
             ++_metrics._nb_event_sent;
             _metrics._nb_bucket_sent += BUCKET_SIZE;
         } else [[unlikely]] {
-            ++_nb_send_blocked;
+            __send_blocked__();
         }
     }
 }

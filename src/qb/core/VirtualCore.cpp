@@ -2006,6 +2006,15 @@ VirtualCore::__send_unpublished__(Event const &event) noexcept {
     detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
 }
 
+// The direct publication of `send<E>` that a full mailbox refused (Huly QB-356): one blocked attempt, the event
+// left at the tail of the outbound pipe for the flush. Cold and out of line for the same reason: inline, MSVC
+// laid the increment between the published path and the epilogue, which every published cross-core `send<E>`
+// jumped over (91 instructions against 89, and the published path a taken jump longer).
+void
+VirtualCore::__send_blocked__() noexcept {
+    ++_nb_send_blocked;
+}
+
 // The tick phase (Huly QB-257): out of the pass's loop, and after it in the file for the layout reason
 // above -- a ticking core calls it every pass, every other core never, and the call costs the ticking
 // core less than the snapshot assignment it makes anyway. Not inlined, which is the point: inlined,

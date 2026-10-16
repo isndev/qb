@@ -169,11 +169,11 @@ if (dest._core_id != _index) {
         pipe.free_back(BUCKET_SIZE);
         // … and count it as sent: no flush will ever see it
     } else [[unlikely]] {
-        ++_nb_send_blocked; // a full mailbox: one blocked attempt, the flush delivers it (QB-356)
+        __send_blocked__(); // a full mailbox: one blocked attempt, out of line; the flush delivers it (QB-356)
     }
 }
 ```
-<!-- src: qb/src/qb/core/VirtualCore.h:1321-1347 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1333-1360 -->
 
 `allocate_back` reserves at the tail of the head-most segment with room, or of a fresh one from the core's pool: the event joins the FIFO stream and is delivered by the next flush, in order with everything already queued to that core ([what the segmented pipe does on each push](../0_foundations/buffers.md#events)).
 

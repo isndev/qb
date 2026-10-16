@@ -711,8 +711,14 @@ policy.
   and the flush delivers it later. That refused attempt met a full mailbox as a refused flush does, yet only the
   flush's attempts were counted, so the counter missed exactly the backpressure a request/reply exchange meets.
   Each refused direct publication is now one blocked attempt; the flush counts its own retries as before. The
-  refused path is out of line (`VirtualCore::__send_unpublished__`): the published reply runs 25 instructions
-  in `send(Event const&)` against 26 before, the same-core reply and `send<E>` are unchanged (callgrind, g++-14).
+  refused paths are out of line: `send(Event const&)`'s in `VirtualCore::__send_unpublished__` -- the published
+  reply runs 25 instructions against 26 before, the same-core reply unchanged (callgrind, g++-14) -- and
+  `send<E>`'s in `VirtualCore::__send_blocked__`: inline, MSVC laid the counter's increment between the published
+  path and the epilogue, a taken jump on every published cross-core `send<E>` (91 instructions against 89;
+  `BM_Ask_RoundTrip_CrossCore` +1.2 % [+0.0, +2.0]); out of line, the published path is develop's instruction
+  stream again with the cold call after the `ret` (`BM_Ask_RoundTrip_CrossCore` -0.9 % [-1.5, +0.2] against
+  develop, three physical copies in a seeded order; `BM_Ask_Scatter<Any>` +0.6 % [+0.3, +1.3], at the spread of
+  its own copies), and g++, which inlines `send<E>` into its callers, had placed the branch cold already.
   Witness: `qb-core-test-system-core-stats` (`ADirectPublicationRefusedByAFullMailboxIsOneBlockedAttempt`:
   `send<E>`, `forward` and `reply` into a full ring, one each, and both QoS-2 events delivered after).
 
