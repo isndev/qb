@@ -621,6 +621,18 @@ policy.
 
 ### Fixed
 
+- **The qb-core benchmarks size their engines to the CPUs the process may run on (Huly QB-1080).**
+  `qb::bench::effectiveHardwareCores()` returned `std::thread::hardware_concurrency()`, the machine's online
+  CPUs, so a container whose cpuset held 6 of its host's 20 CPUs built the eight-core cells: eight VirtualCores
+  at the default latency, which never park, on six CPUs. A cross-core hop then waits for a preempted core's next
+  time slice -- 320 ns a hop with eight CPUs, 0.89 ms with seven, 0.92 ms with six (a 2 000-round-trip
+  eight-core chain, WSL2 g++ 14, the cpuset emulated) -- and the superproject's benchmark lane timed out on
+  `pipeline-chain-latency` 8c and `ask-all-fanout` on every run since its runners' slots shrank to six CPUs.
+  It now counts the CPUs this process may run on, read once during static initialisation:
+  `hardware_concurrency()` lowered on Linux to the size of the affinity mask and to the ceiling of a cgroup v2
+  `cpu.max` quota. An unrestricted host registers exactly the cases it did (21 binaries, identical
+  `--benchmark_list_tests`); a six-CPU slot registers no cell wider than six cores and spreads the scatter
+  benchmarks over six. Benchmarks and docs only.
 - **The event loop's wake pipe discards its `read()`/`write()` results explicitly, and qb no longer
   compiles `src/qb/ev` with `-Wno-unused-result` (Huly QB-1079).** The results are ignored on purpose (a
   non-blocking write fails only with `EAGAIN` when a wake is already pending; a drain fails only on an
