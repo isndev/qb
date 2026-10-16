@@ -691,8 +691,14 @@ policy.
   broadcast branch only), and so do the default events' resolver and the branch that meets an event nobody
   subscribed to: a broadcast naming another core reaches no actor, is reported once as a `not_found` dead letter
   by the core it reached, and is disposed. Unicast routing is untouched: the receive loop runs 53 instructions an
-  event against 54 before, a broadcast receipt 18 more (callgrind, g++-14), on no measured hot path -- broadcast is
-  rare there (the Savina cells' one shutdown `KillEvent`). Witness: `qb-core-test-system-dead-letters`
+  event against 54 before (callgrind, g++-14). The question is one inline compare of the broadcast's core with the
+  thread's -- `Event::__core_scope__`, a `thread_local` bound with `VirtualCore::_handler` by
+  `VirtualCore::__bind_thread__`, their one writer -- and only the report is out of line
+  (`Event::__broadcast_elsewhere__`). Asked out of line, as it first landed, the call cost a broadcast receipt 18
+  Ir on g++ and 3.4 ns on MSVC (`semh::route_broadcast` 82 to 86 instructions; `BM_Fanout_Deliveries<Broadcast>`
+  with eight sinks +4.0 % [+3.0, +5.0], three physical copies in a seeded order, A/A +-1.0 %); inline, the receipt
+  runs six more instructions on MSVC (the TLS load, the compare and its branch; the cold report after the walk),
+  five on g++, and the cell is level with develop (+0.6 % [-1.1, +1.3] on MSVC). Witness: `qb-core-test-system-dead-letters`
   (`ABroadcastToACoreTheEngineDoesNotRunReachesNoActor`: absent cores 0, 2, 5 and 300 through `push`, `send`, a
   default event and an unsubscribed type, from another core; valid broadcasts and the unicast to an absent core as
   controls).

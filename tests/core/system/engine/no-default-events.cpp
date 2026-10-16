@@ -92,7 +92,7 @@ public:
         co_return true;
     }
     // Both must be declared: any `on` in a derived class hides EVERY base overload, and dispatch
-    // goes through the derived type (`VirtualCore.h:310-314`, `default_trampoline`), so the
+    // goes through the derived type (`VirtualCore.h:318-322`, `default_trampoline`), so the
     // registrations above need these.
     void
     on(qb::SignalEvent const &) {

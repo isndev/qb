@@ -1585,16 +1585,16 @@ VirtualCore::getCoreStats() const noexcept {
     return s;
 }
 
-// The router's question before a broadcast is fanned out (`router::internal::scopes_broadcast`, Huly QB-268): a
-// `BroadcastId` of a core the engine does not run aliased this core's queues (`CoreSet::resolve`'s index 0) and is
-// owed to no actor here. Reported once, `not_found`; the router disposes it. A thread that runs no core asks nothing.
-bool
-Event::__broadcast_here__(Event &event) noexcept {
-    VirtualCore *const core = VirtualCore::_handler;
-    if (core == nullptr || event.getDestination().index() == core->_index)
-        return true;
-    core->__dead_letter__(event, DeadLetterReason::not_found);
-    return false;
+// The cold half of the router's question before a broadcast is fanned out (`Event::__broadcast_here__`,
+// `router::internal::scopes_broadcast`, Huly QB-268): the broadcast names another core than the one this thread
+// runs -- a `BroadcastId` of a core the engine does not run aliased this core's queues (`CoreSet::resolve`'s index
+// 0) and is owed to no actor here. Reported once, `not_found`; the router disposes it. Reached only on a thread
+// bound to a core (`__bind_thread__`: the inline compare answers for every other); the test is kept for a caller
+// that would not be.
+void
+Event::__broadcast_elsewhere__(Event &event) noexcept {
+    if (VirtualCore *const core = VirtualCore::_handler; core != nullptr)
+        core->__dead_letter__(event, DeadLetterReason::not_found);
 }
 
 // The router's report of a unicast it could not deliver (`router::internal::reports_undelivered`).

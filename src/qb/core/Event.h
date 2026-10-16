@@ -33,6 +33,7 @@
 #include <bitset>
 #include <cstddef> // detail::event_wire: offsetof
 #include <cstring> // detail::prepare_event_storage
+#include <limits>  // Event::NoCoreScope
 #include <qb/system/allocator/pipe.h>
 #include <qb/system/allocator/segmented_pipe.h>
 // Explicit, though qb/system/allocator/pipe.h already reaches it: qb::Event is the type whose
@@ -522,6 +523,25 @@ public:
 
     /**
      * @private
+     * @brief The index of the core this thread runs, `NoCoreScope` on a thread that runs none: what
+     *        `__broadcast_here__` compares a broadcast's core to (Huly QB-268).
+     * @details Bound with `VirtualCore::_handler` by `VirtualCore::__bind_thread__`, its one writer, so
+     *          the two cannot disagree; `inline` + QB_ABI_ANCHOR for the reason `_handler` is (one
+     *          instance per thread across images). Read here only.
+     */
+    static constexpr CoreId                         NoCoreScope    = (std::numeric_limits<CoreId>::max)();
+    QB_ABI_ANCHOR static inline thread_local CoreId __core_scope__ = NoCoreScope;
+
+    /**
+     * @private
+     * @brief The cold half of `__broadcast_here__`: the broadcast names another core than the one this
+     *        thread runs. Reports it to the calling core's dead-letter path as `not_found` (Huly QB-268);
+     *        the router disposes it afterwards, as any event. Out of line (VirtualCore.cpp).
+     */
+    static QB_NOINLINE QB_COLD void __broadcast_elsewhere__(Event &event) noexcept;
+
+    /**
+     * @private
      * @brief The router's question before it fans a broadcast out: is it addressed to the calling core?
      * @details Every id outside the engine's core set aliases the first core's pipe and mailbox
      *          (`CoreSet::resolve` gives it index 0), so an event to a core the engine does not run
@@ -531,10 +551,19 @@ public:
      *          `qb::router::internal::scopes_broadcast`, a router over any other event type compiles
      *          exactly as before -- and of the default events' resolver. `false` when the broadcast
      *          names another core than the calling one: it is then reported as a `not_found` dead
-     *          letter, and the router disposes it as any event. `true` on a thread that runs no core.
-     *          Out of line (VirtualCore.cpp).
+     *          letter (`__broadcast_elsewhere__`), and the router disposes it as any event. `true` on a
+     *          thread that runs no core. Inline: one compare of the broadcast's core with `__core_scope__`
+     *          -- out of line, the call cost a broadcast receipt 3.4 ns on MSVC (+3.7 % on an
+     *          eight-sink fan-out) for a question a compare answers.
      */
-    [[nodiscard]] static QB_NOINLINE QB_COLD bool __broadcast_here__(Event &event) noexcept;
+    [[nodiscard]] static bool
+    __broadcast_here__(Event &event) noexcept {
+        const CoreId scope = __core_scope__;
+        if (likely(event.getDestination().index() == scope || scope == NoCoreScope)) [[likely]]
+            return true;
+        __broadcast_elsewhere__(event);
+        return false;
+    }
 };
 
 /*!
@@ -1093,7 +1122,7 @@ inline constexpr bool event_fits_bucket_alignment = alignof(T) <= alignof(EventB
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1301-1304) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1313-1316) and
  *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1145,7 +1174,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:1306-1309), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:1318-1321), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this

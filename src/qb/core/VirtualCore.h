@@ -84,6 +84,14 @@ class VirtualCore : detail::service_registry_seal {
     // statically-linked plugin each got their own "current VirtualCore" on one thread. See
     // qb/utility/abi.h for the measurement.
     QB_ABI_ANCHOR static inline thread_local VirtualCore *_handler = nullptr;
+    /// Binds this thread to `core` -- `_handler`, and the core index `Event::__broadcast_here__` compares a
+    /// broadcast's to (`Event::__core_scope__`, Huly QB-268) -- or to none with `nullptr`. The one writer of
+    /// both, so they cannot disagree.
+    static void
+    __bind_thread__(VirtualCore *const core) noexcept {
+        _handler              = core;
+        Event::__core_scope__ = core != nullptr ? core->_index : Event::NoCoreScope;
+    }
     /**
      * @brief The service registry (Huly QB-1007): `_nb_service` counts the registered tags, `_live_cores` the cores
      *        alive, and both are written under `servicesMutex()` only.
@@ -161,7 +169,7 @@ private:
     // the thread's current core (Huly QB-163).
     friend void Event::__undelivered__(Event &) noexcept;
     // ... and of a broadcast that names a core the engine does not run (Huly QB-268).
-    friend bool Event::__broadcast_here__(Event &) noexcept;
+    friend void Event::__broadcast_elsewhere__(Event &) noexcept;
     template <typename>
     friend class ActorHandle; // RefActorHandle is an alias of ActorHandle
     ////////////
@@ -383,7 +391,7 @@ private:
             const auto dest = event.getDestination();
             if (dest.is_broadcast()) {
                 if (unlikely(dest.index() != _core._index)) [[unlikely]] {
-                    (void) Event::__broadcast_here__(event); // another core's: reported, disposed by resolve() (QB-268)
+                    Event::__broadcast_elsewhere__(event); // another core's: reported, disposed by resolve() (QB-268)
                     return;
                 }
                 static thread_local allocator::detail::region_stack<Actor *> snapshot;

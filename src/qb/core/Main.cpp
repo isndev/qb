@@ -470,7 +470,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     // owning-thread context. This guard precedes `core`, hence runs after it.
     struct ThreadContextGuard {
         ~ThreadContextGuard() {
-            VirtualCore::_handler = nullptr;
+            VirtualCore::__bind_thread__(nullptr);
         }
     } thread_context_guard;
     VirtualCore core(initializer.getIndex(), params.shared_com, initializer._next_id);
@@ -481,7 +481,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     // Wire the engine-wide `qb::stop_token` so `__workflow__` can observe
     // cooperative cancellation requests issued via `qb::stop_source`.
     core.__set_stop_token__(params.stop_token);
-    VirtualCore::_handler = &core;
+    VirtualCore::__bind_thread__(&core);
     io::async::init();
     io::async::listener::current.set_io_poll_interval(initializer.getIoPollInterval());
     core._dead_letter_handler = std::move(initializer._dead_letter_handler); // before any actor runs (Huly QB-163)
