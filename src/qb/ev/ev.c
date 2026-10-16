@@ -3533,6 +3533,12 @@ evpipe_pending(EV_P) {
     return pending;
 }
 
+/* qev: the wake pipe ignores two results on purpose, and says so here rather than compiling ev.c
+ * with -Wno-unused-result -- a fortified glibc marks read() and write() warn_unused_result, and a
+ * mask would hide every other ignored result too. evpipe_write runs in a signal handler or on any
+ * thread, on a NON-BLOCKING fd: its write either lands or fails with EAGAIN (the pipe, or the
+ * eventfd counter, is full -- a wake is already pending, nothing is lost), and a signal handler can
+ * do nothing safe about any other error. pipecb's drain fails only on an already-empty pipe. */
 inline_speed void
 evpipe_write(EV_P_ EV_ATOMIC_T *flag) {
     ECB_MEMORY_FENCE; /* push out the write before this function was called, acquire flag */
@@ -3558,7 +3564,8 @@ evpipe_write(EV_P_ EV_ATOMIC_T *flag) {
 #if EV_USE_EVENTFD
         if (evpipe[0] < 0) {
             uint64_t counter = 1;
-            write(evpipe[1], &counter, sizeof(uint64_t));
+            ssize_t  written = write(evpipe[1], &counter, sizeof(uint64_t));
+            (void) written; /* ignored on purpose: see above evpipe_write */
         } else
 #endif
         {
@@ -3567,9 +3574,10 @@ evpipe_write(EV_P_ EV_ATOMIC_T *flag) {
             DWORD  sent;
             buf.buf = (char *) &buf;
             buf.len = 1;
-            WSASend(EV_FD_TO_WIN32_HANDLE(evpipe[1]), &buf, 1, &sent, 0, 0, 0);
+            (void) WSASend(EV_FD_TO_WIN32_HANDLE(evpipe[1]), &buf, 1, &sent, 0, 0, 0); /* see above evpipe_write */
 #else
-            write(evpipe[1], &(evpipe[1]), 1);
+            ssize_t written = write(evpipe[1], &(evpipe[1]), 1);
+            (void) written; /* ignored on purpose: see above evpipe_write */
 #endif
         }
 
@@ -3588,7 +3596,8 @@ pipecb(EV_P_ ev_io *iow, int revents) {
 #if EV_USE_EVENTFD
         if (evpipe[0] < 0) {
             uint64_t counter;
-            read(evpipe[1], &counter, sizeof(uint64_t));
+            ssize_t  drained = read(evpipe[1], &counter, sizeof(uint64_t));
+            (void) drained; /* ignored on purpose: see above evpipe_write */
         } else
 #endif
         {
@@ -3599,9 +3608,10 @@ pipecb(EV_P_ ev_io *iow, int revents) {
             DWORD  flags = 0;
             buf.buf      = dummy;
             buf.len      = sizeof(dummy);
-            WSARecv(EV_FD_TO_WIN32_HANDLE(evpipe[0]), &buf, 1, &recvd, &flags, 0, 0);
+            (void) WSARecv(EV_FD_TO_WIN32_HANDLE(evpipe[0]), &buf, 1, &recvd, &flags, 0, 0); /* see above evpipe_write */
 #else
-            read(evpipe[0], &dummy, sizeof(dummy));
+            ssize_t drained = read(evpipe[0], &dummy, sizeof(dummy));
+            (void) drained; /* ignored on purpose: see above evpipe_write */
 #endif
         }
     }

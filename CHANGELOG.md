@@ -610,6 +610,14 @@ policy.
 
 ### Fixed
 
+- **The event loop's wake pipe discards its `read()`/`write()` results explicitly, and qb no longer
+  compiles `src/qb/ev` with `-Wno-unused-result` (Huly QB-1079).** The results are ignored on purpose (a
+  non-blocking write fails only with `EAGAIN` when a wake is already pending; a drain fails only on an
+  empty pipe), but the mask that hid the warning also hid any other ignored result, and qev's white-box
+  test, which compiles `ev.c` without it, warned four times under a fortified glibc (gcc 13, Ubuntu
+  24.04). `ev.c` now says why at the call sites, the mask is gone, and the object code is unchanged
+  instruction for instruction (162/162 functions under gcc 14, 135/135 under clang 19). Shared
+  byte-for-byte with qev.
 - **qb builds against OpenSSL 4 (Huly QB-1076).** OpenSSL 4.0 made `ASN1_STRING` opaque, and the certificate
   accessors of `qb::io::tcp::ssl::socket` -- the serial number and the `DNS:` / `IP:` subject alternative names of
   `get_peer_certificate_details()` and `get_peer_certificate_chain()` -- read its `data` and `length` members: with
