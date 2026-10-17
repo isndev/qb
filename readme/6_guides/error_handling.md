@@ -82,7 +82,7 @@ Two practical rules follow. First, sending an event never throws, so you cannot 
 | `push`/`send` to a dead or unknown `ActorId`, or to an actor with no handler for the type | A dead letter on the receiving core | Event dropped and disposed; sender keeps running | The receiving core: `getCoreStats().dead_letters`, a WARN line (the first 16, then one per power of two), its `DeadLetterHandler` — never the sender; design an explicit ack/timeout if the sender must know |
 | A watched actor ends, whatever ended it | One `qb::DownEvent{watched, reason}` to each watcher, after its destructor | Nothing else changes; the watcher decides | Each actor that called `watch()` on it — see [Supervision](#supervision) |
 | Peer closes, socket error, protocol violation | `on(event::disconnected&&)` | Connection disposed; event delivered to the I/O component | The actor's `disconnected` handler |
-| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:225`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:441`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
+| Callback exception (`async::callback`, `scoped_callback`) | Swallowed | Caught by an internal `catch (...)`. `async::callback`'s `Timeout` (`src/qb/io/async/io.h:236`) then deletes itself; `scoped_callback`'s `ScopedTimeout` (`src/qb/io/async/io.h:452`) does **not** — it is owned by its handle and only marks itself fired | Nobody — see [the callback footgun](#the-asynccallback-lifetime-footgun) |
 
 ### Dead letters: what reached no actor
 
@@ -388,7 +388,7 @@ A throw from inside a callback does **not** reach the `VirtualCore` fail-stop bo
 Another option is to **own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback cannot run after the actor is gone:
 
 ```cpp
-// src: qb/src/qb/io/async/io.h:441 (class ScopedTimeout), :507, :519-526 (scoped_callback overloads)
+// src: qb/src/qb/io/async/io.h:452 (class ScopedTimeout), :518, :530-537 (scoped_callback overloads)
 #include <qb/actor.h>
 #include <qb/io/async.h>
 #include <chrono>

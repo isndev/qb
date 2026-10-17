@@ -62,6 +62,17 @@ namespace detail {
  */
 template <typename T>
 concept resets_input_per_read = requires { requires T::has_reset_on_pending_read; };
+
+/**
+ * @brief A component whose transport is a socket: `transport().native_handle()` yields the native socket handle, the
+ *        one a lingering close shuts down for sending (Huly QB-1089). Spelled over the type, not `*this`: MSVC 19.51
+ *        evaluated the same compound requirement, written on `*this` in the `if constexpr` of the member function
+ *        that tests it, as unsatisfied for a session whose transport satisfies it.
+ */
+template <typename T>
+concept has_socket_transport = requires(T &component) {
+    { component.transport().native_handle() } -> std::same_as<std::remove_cv_t<decltype(qb::io::invalid_socket)>>;
+};
 } // namespace detail
 
 /**
@@ -2108,12 +2119,108 @@ class io : public base<io<_Derived>, event::io> {
     std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
     bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
     bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */
+    bool                                    _lingering    = false; /**< A delivered close_after_deliver() waits for its peer. */
+    bool                                    _linger_spent = false; /**< The linger bound elapsed: the next dispatch ends it. */
     int                                     _reason       = 0;     /**< Disconnection reason code. */
     int                                     _system_error = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
     std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
     std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
     std::size_t _bytes_written      = 0;                   /**< Total number of bytes written to the transport. */
     std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
+
+    /**
+     * @brief The bound of a lingering close (Huly QB-1089): armed when a server session's close_after_deliver()
+     *        has delivered its output, it ends the linger of a peer that neither closes nor stops sending.
+     *        Its callback only flags the expiry and feeds the io watcher: the session is disposed from the
+     *        io dispatch, never from under this timer, which the session owns.
+     */
+    class linger_timer : public with_timeout<linger_timer> {
+        io &_owner;
+
+    public:
+        linger_timer(io &owner, qb::duration bound)
+            : with_timeout<linger_timer>(bound)
+            , _owner(owner) {}
+
+        void
+        on(event::timer const &) noexcept {
+            _owner.linger_expired();
+        }
+    };
+
+    qb::duration                  _linger = std::chrono::seconds(2); /**< set_linger(): the bound of a lingering close. */
+    std::unique_ptr<linger_timer> _linger_timer;                     /**< Alive while lingering() is true. */
+
+    /**
+     * @brief Begins a lingering close once a server session's close_after_deliver() has delivered everything
+     *        (Huly QB-1089): the sending side is shut down -- the peer reads the delivered bytes, then EOF --
+     *        and what the peer still sends is read and dropped until it closes, the socket fails, or
+     *        linger() elapses; then the session is disposed. Closing at once would close a socket whose input
+     *        is unread, which TCP turns into a reset, and a reset can destroy the delivered bytes before the
+     *        peer reads them (Windows drops data received and not yet read).
+     * @return False when there is nothing to linger for -- a disconnect() since (the `eos` hook may have called
+     *         it), a linger() of zero, a standalone object (its dispose() half-closes and keeps the descriptor,
+     *         `detail::end_transport`), a datagram transport, a socket already gone or reset -- and the caller
+     *         disposes at once, as before.
+     */
+    QB_NOINLINE QB_COLD bool
+    begin_linger() noexcept {
+        if (_reason)
+            return false;
+        if (_lingering)
+            return true;
+        if constexpr (_Derived::has_server && !detail::resets_input_per_read<_Derived> && detail::has_socket_transport<_Derived>) {
+            if (_linger <= qb::duration::zero())
+                return false;
+            const auto handle = Derived.transport().native_handle();
+            if (handle == qb::io::invalid_socket || ::shutdown(handle, QB_SD_SEND) != 0)
+                return false;
+            try {
+                _linger_timer = std::make_unique<linger_timer>(*this, _linger);
+            } catch (...) {
+                return false; // no bound, no linger: closing at once is what it did before
+            }
+            _lingering    = true;
+            _linger_spent = false;
+            Derived.in().reset();
+            this->_async_event.set(EV_READ);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    /**
+     * @brief Serves one dispatch of a lingering close: drops what the peer sent, a read over the input-buffer cap (-2) included.
+     * @return False once the linger ends -- the peer closed (EOF), the socket failed, or the bound elapsed.
+     */
+    QB_NOINLINE QB_COLD bool
+    linger_read(event::io const &event) noexcept {
+        if (_linger_spent || (event._revents & EV_ERROR))
+            return false;
+        if (!(event._revents & EV_READ))
+            return true;
+        const auto ret = static_cast<std::size_t>(Derived.read());
+        if (ret == static_cast<std::size_t>(-1))
+            return qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()); // EOF reads -1 with no error
+        Derived.in().reset();
+        return true;
+    }
+
+    /// The linger bound elapsed: flagged here, ended by the dispatch this feeds (linger_timer).
+    void
+    linger_expired() noexcept {
+        _linger_spent = true;
+        this->_async_event.feed_event(EV_READ);
+    }
+
+    /// Ends a lingering close's bookkeeping: its timer is stopped and released.
+    void
+    end_linger() noexcept {
+        _lingering    = false;
+        _linger_spent = false;
+        _linger_timer.reset();
+    }
 
 public:
     typedef io<_Derived>        base_io_t;          /**< Base I/O type alias for CRTP. */
@@ -2605,9 +2712,21 @@ public:
 
     /**
      * @brief Requests connection closure after all pending output data is delivered.
-     * @details Marks the current protocol as invalid (`_protocol->not_ok()`).
-     *          The `on(event::io&)` handler will then initiate `dispose()` after successfully
-     *          writing any remaining buffered output if the protocol is not ok and output buffer is empty.
+     * @details Marks the current protocol as invalid (`_protocol->not_ok()`): nothing more is read for it.
+     *          Once the remaining output is written, `event::eos` reports the delivery, and then:
+     *          - a **server-associated session** (one a server accepted) closes *after its peer*: its
+     *            sending side is shut down -- the peer reads everything delivered, then EOF -- and what the
+     *            peer still sends is read and dropped until it closes, the socket fails, or linger()
+     *            elapses (2 s by default); then `dispose()` runs and the server releases the session
+     *            (Huly QB-1089). Closing at once, as it did until 3.3, closed a socket with unread input,
+     *            which TCP turns into a reset, and a reset can destroy what was just delivered before the
+     *            peer reads it: on Windows it drops data received and not yet read, and everywhere the
+     *            peer's next send fails. `set_linger(qb::duration::zero())` restores the immediate close.
+     *          - any other object disposes at once; its transport is half-closed and kept (Huly QB-1060).
+     *
+     *          `disconnect()` stays an abort: called before or during the linger, it disposes at the next
+     *          dispatch. A TLS session is half-closed at the TCP level, as `detail::end_transport` does:
+     *          no close_notify is sent first.
      */
     void
     close_after_deliver() noexcept {
@@ -2615,6 +2734,46 @@ public:
         // Unconditional: NoProtocol::not_ok() is a no-op, so on the shared sentinel this does nothing
         // (it stays immutable / thread-safe) — no `== no_protocol()` guard needed.
         _protocol->not_ok();
+    }
+
+    /**
+     * @brief Sets the bound of a lingering close: how long a server session that called
+     *        close_after_deliver() waits, once its output is delivered, for its peer to close (Huly QB-1089).
+     * @param bound The longest wait; zero or less closes at once when the output is delivered, as before 3.3.
+     *        The default is 2 s. Set it before close_after_deliver() delivers: a linger in progress keeps
+     *        the bound it began with.
+     */
+    void
+    set_linger(qb::duration bound) noexcept {
+        _linger = bound;
+    }
+
+    /**
+     * @brief The bound set_linger() set (2 s by default).
+     */
+    [[nodiscard]] qb::duration
+    linger() const noexcept {
+        return _linger;
+    }
+
+    /**
+     * @brief Whether this session is in a lingering close: its close_after_deliver() output is delivered, its
+     *        sending side shut down, and it waits for its peer to close (Huly QB-1089). A lingering session
+     *        is closing, never open work: it reads nothing for its protocol and writes nothing more.
+     */
+    [[nodiscard]] bool
+    lingering() const noexcept {
+        return _lingering;
+    }
+
+    /**
+     * @brief Abandons a lingering close without ending the connection: its bound is released and nothing
+     *        follows from it. For an owner that takes the transport over -- `io_handler::extractSession`
+     *        calls it -- and finds it half-closed (Huly QB-1089). A no-op when not lingering.
+     */
+    void
+    cancel_linger() noexcept {
+        end_linger();
     }
 
     /**
@@ -2901,7 +3060,11 @@ private:
                         Derived.on(std::move(evt__eos));
                     }
                 }
-                return false;
+                // Delivered -- and, for a server session, not closed yet: a peer still sending would turn the close
+                // into a reset that can destroy what was just delivered (Huly QB-1089). begin_linger() answers false
+                // to a disconnect() -- an abort, or one the eos hook made -- itself, out of line: no second test of
+                // the reason here, where MSVC kept it in a register on the drain check every write passes.
+                return begin_linger();
             }
             this->_async_event.set(EV_READ);
             if constexpr (qb::has_on<_Derived, event::eos>) {
@@ -2999,6 +3162,13 @@ private:
 
         if (ok)
             return;
+        // Nothing was read or written: the not-ok path, the one place a lingering close is served -- the ok
+        // paths returned above and never test it (Huly QB-1089).
+        if (_lingering) {
+            if (linger_read(event))
+                return;
+            goto error;
+        }
         // A read readiness that came alone while close_after_deliver() waits for its output to drain
         // (the protocol is not-ok, so the read above was skipped, and the socket was full, so no
         // EV_WRITE came with it): not an error, the delivery is still under way. Stop watching reads
@@ -3082,6 +3252,7 @@ protected:
         // still ok mean the peer's EOF or a socket error did -- close_after_deliver() ends with a protocol
         // that is not ok (Huly QB-1060).
         [[maybe_unused]] const bool ended_by_peer = !_reason && this->_protocol->ok();
+        end_linger(); // its bound, whatever ended it: the peer, the bound, a disconnect() (Huly QB-1089)
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
@@ -3137,6 +3308,7 @@ protected:
         _on_message   = false;
         _reason       = 0;
         _system_error = 0;
+        end_linger();
     }
 
     /**
