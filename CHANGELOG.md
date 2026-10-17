@@ -93,7 +93,9 @@ policy.
   `*_name()`; and `qb::io::reconnect_policy`, the backoff of a reconnection run that `qb::redis::RetryPolicy` and
   `qb::http::RetryPolicy` now alias: `max_attempts`, `initial_delay`, `max_delay`, `multiplier`, `jitter`,
   `connect_timeout` (zero = the client's own), `on_retry`, the `with_*` builders, the pure `next_delay(attempt, rng)`
-  and `allows_attempt(attempts)`. Not `qb::io::async::retry_policy` (a coroutine body retried on an exception) nor
+  and `allows_attempt(attempts)`. The states say where a client stands, not what becomes of work submitted outside
+  `ready`: that is each client's documented policy (qbm-redis holds it, up to its command timeout; qbm-pgsql refuses
+  it). Not `qb::io::async::retry_policy` (a coroutine body retried on an exception) nor
   `qb::retry_policy` (an `ask` retried). Pinned by `qb-io-test-unit-reconnect-contract`, which took over the backoff
   arithmetic cases of qbm-http's former `retry-policy` unit test.
 

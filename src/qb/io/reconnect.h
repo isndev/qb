@@ -55,26 +55,26 @@ namespace qb::io {
  * @brief Where a connection-keeping client stands: what its `state()` answers.
  * @details The life of a client is `idle` -> `connecting` -> `handshaking` -> `ready`, and from
  *          `ready` either back through `reconnecting` -> `handshaking` -> `ready` when a reconnection
- *          run is armed and the connection was lost, or to `down`. Work submitted outside `ready`
- *          waits (it is HELD) until the client is ready, and fails once, with its reason, when the
- *          client goes `down` or when the client's own timeout says so -- it never waits for ever.
+ *          run is armed and the connection was lost, or to `down`. What becomes of work submitted
+ *          outside `ready` is each client's documented policy -- qbm-redis holds it until the client is
+ *          ready, up to its command timeout; qbm-pgsql refuses it -- and either way it never waits for ever.
  *          A new `connect()` leaves `idle` or `down`; nothing else does.
  */
 enum class connection_state : std::uint8_t {
-    /// Constructed, never asked to connect. Work submitted now fails at once: nothing would send it.
+    /// Constructed, never asked to connect. Work submitted now fails: nothing would send it.
     idle,
-    /// A connection is being opened -- the transport, before any handshake. Work is held.
+    /// A connection is being opened -- the transport, before any handshake.
     connecting,
     /// The transport is up and the handshake runs on it: the protocol's own (credentials, database,
     /// protocol version), the user's hook, then the replay of the session (a consumer's
-    /// subscriptions). Only the handshake writes; work is held.
+    /// subscriptions). Only the handshake writes.
     handshaking,
     /// The handshake succeeded: work flows. The one state in which `is_connected()` is true.
     ready,
     /// A ready connection was lost and a reconnection run is armed: the run waits out its backoff and
-    /// tries again, each attempt passing through `handshaking`. Work is held.
+    /// tries again, each attempt passing through `handshaking`.
     reconnecting,
-    /// Terminal: `down_reason()` says why. Held work has failed; a stream has delivered what it held,
+    /// Terminal: `down_reason()` says why. Work a client held has failed; a stream has delivered what it held,
     /// then ended. Only an explicit `connect()` leaves it.
     down,
 };
