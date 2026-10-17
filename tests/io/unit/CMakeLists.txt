@@ -229,3 +229,6 @@ endif()
 add_test(NAME qb-io-test-unit-target-arch COMMAND "${CMAKE_COMMAND}" ${_qb_target_arch_args})
 set_tests_properties(qb-io-test-unit-target-arch PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 unset(_qb_target_arch_args)
+# reconnect contract (Huly QB-126): the vocabulary every connection-keeping client shares, and the
+# backoff arithmetic of qb::io::reconnect_policy that qbm-redis and qbm-http alias.
+qb_add_test(MODULE qb-io TIER unit NAME reconnect-contract SOURCES core/reconnect-contract.cpp DEPENDS ${PROJECT_NAME})
