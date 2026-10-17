@@ -281,7 +281,7 @@ run_scrape(qb::ScopedCoroContext ctx, std::vector<qb::CoreId> cores, qb::CoreId 
     calls.reserve(cores.size());
     for (std::size_t i = 0; i < cores.size(); ++i) {
         if (cores[i] == here)
-            continue; // answered by `local`: a registry asking itself would read its own request as the answer
+            continue; // answered by `local`: a registry asking itself reads its own request as the answer (Huly QB-1100)
         calls.emplace_back(collect_from(ctx, qb::Actor::getServiceId<qb::detail::service_tag_t<RegistryType>>(cores[i]), timeout));
         asked.push_back(i);
     }
