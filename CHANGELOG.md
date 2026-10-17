@@ -85,6 +85,23 @@ policy.
 
 ### Added
 
+- **`qb::metrics`: the metrics model of qb and its modules, its Prometheus text exposition, and a per-core
+  registry a scrape gathers (Huly QB-154).** `<qb/core/metrics.h>` is plain values -- no actor, no clock: a
+  `qb::metrics::snapshot` of families (counter, gauge, histogram) with their samples, `write_text()` in the
+  Prometheus text format 0.0.4 (`# HELP`/`# TYPE` once per family, label values and help escaped, integers exact
+  past 2^53, doubles in their shortest `%g` form, histograms cumulated to `le="+Inf"`, `_sum` only when the source
+  keeps one), `merge()` and `canonicalize()` (one label set in any order is one series and is summed; a family
+  of two types or a histogram of two bucket layouts is dropped and counted), and `describe(snapshot&, CoreStats,
+  CoreId)`, the `qb_core_*` families of one core. `<qb/core/metrics_registry.h>` adds `qb::metrics::Registry`, a
+  service actor per core whose actors add their counters (`add_source`, owned by a `source_handle`), and
+  `qb::metrics::scrape(self, cores, timeout)`: the registry of the scraping actor's core collects its own core at
+  once and asks the others, so it receives the answers and the scraping actor registers nothing; a core that does
+  not answer in time is `qb_scrape_core_up{core} 0` and never fails the scrape (`qb::ask_all` throws on one silent
+  target), a source that throws is dropped and counted. The counters stay plain integers of the core that owns
+  them: nothing is shared, nothing atomic, nothing runs between two scrapes. The registry's service tag is a
+  template parameter, so a program that never names `Registry` registers no service id. Pinned by
+  `qb-core-test-unit-metrics-text` (the exposition byte for byte) and `qb-core-test-system-metrics-scrape`.
+
 - **IO observability instruments (Huly QB-248).** `qb-io-bench-observability-overhead` supplies paired
   listener-dispatch timing and offload-pool snapshot-request workloads. Every batch verifies callbacks/results
   and cumulative-counter deltas outside timing. The offload comparison includes the full worker round trip;

@@ -237,3 +237,7 @@ endif()
 # mailbox ring per pair of cores, measured after a warm-up engine and a region_cache::trim(). Counts bytes, never time; a
 # platform with no reading skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
 qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mailbox-footprint.cpp DEPENDS ${PROJECT_NAME})
+# metrics-scrape pins qb::metrics::Registry and scrape() (Huly QB-154): every core answers through the scraping
+# actor's own registry, a core without a registry is reported down instead of failing the scrape, a throwing source
+# is contained and counted, a reset source is gone, and a core with no registry refuses to scrape.
+qb_add_test(MODULE qb-core TIER system NAME metrics-scrape SOURCES engine/metrics-scrape.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore coroutine)

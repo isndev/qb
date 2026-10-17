@@ -84,3 +84,8 @@ qb_add_test(MODULE qb-core TIER unit NAME mpsc-ring-allocation SOURCES lockfree/
 # Mailbox built closed on Windows only; on Windows the block commits its rings' header pages at rest and a ring's slot
 # pages on its first write, exactly (VirtualQuery), and the next mailbox reuses the block with what it had committed.
 qb_add_test(MODULE qb-core TIER unit NAME mpsc-block-ring SOURCES lockfree/mpsc-block-ring.cpp DEPENDS ${PROJECT_NAME} LABELS lockfree)
+# metrics-text pins qb::metrics (Huly QB-154): the Prometheus text exposition 0.0.4 byte for byte (escaping, exact
+# integers past 2^53, shortest doubles, +Inf/-Inf/NaN, cumulated histogram buckets, _sum only when known), the names
+# and shapes refused before anything is printed, the merge (one series summed in any label order, conflicts dropped
+# and counted) and describe(CoreStats).
+qb_add_test(MODULE qb-core TIER unit NAME metrics-text SOURCES metrics/metrics-text.cpp DEPENDS ${PROJECT_NAME})

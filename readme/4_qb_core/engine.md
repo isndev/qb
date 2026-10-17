@@ -301,6 +301,31 @@ Three properties are pinned by `qb/tests/core/system/engine/core-stats.cpp`, and
 
 The counters are plain integers written by the core's own thread, so `getCoreStats()` reads the caller's core and no other. A view across cores is asked for, the way any cross-core question is: one responder actor per core answering with its snapshot, gathered with `qb::ask_all`. Nothing is shared, nothing is atomic, and nothing is paid between two collections.
 
+### Exposing them: `qb::metrics`
+
+The responder per core ships (Huly QB-154). `qb::metrics::Registry` is a service actor -- one per core, added like any other (`engine.addActor<qb::metrics::Registry>(core)`) -- that answers a scrape with its core's snapshot: the core's own counters, as the `qb_core_*` families with a `core` label (`qb::metrics::describe`), and every source the actors of that core added with `add_source()` -- a module client's `stats()`, an HTTP server's request counts. A scrape runs from a coroutine of an actor whose core has a registry: `co_await qb::metrics::scrape(*this, getCoreSet(), timeout)`. That registry collects its own core at once and asks the others (one `qb::ask` each, all at the same time), so it receives the answers and the scraping actor registers nothing; a core that does not answer in time -- no registry there, or a handler holding it past `timeout` -- is reported `qb_scrape_core_up{core="N"} 0` instead of failing the scrape, which is why it is not built on `qb::ask_all` (a single silent target fails that one). `qb::metrics::write_text()` renders the result in the Prometheus text format 0.0.4. The rule above still holds: a counter is read on its own core, by its own thread, only when a scrape asks, and nothing is paid between two scrapes (`src/qb/core/metrics.h:252`; `src/qb/core/metrics_registry.h:178`, `:201`).
+
+```cpp
+#include <qb/core/metrics_registry.h>
+#include <qb/main.h>
+
+int main() {
+    qb::Main engine;
+    for (qb::CoreId core : {0, 1})
+        engine.addActor<qb::metrics::Registry>(core);   // every core a scrape asks
+    // ... the application's actors; one of them, on core 0 or 1:
+    //   _source = getService<qb::metrics::Registry>()->add_source(
+    //       [this](qb::metrics::snapshot &s) { s.counter("app_jobs_total", "Jobs done.").add({}, _jobs); });
+    //   ...and, from a coroutine:
+    //   auto snap = co_await qb::metrics::scrape(*this, getCoreSet(), std::chrono::milliseconds(500));
+    //   std::string text = qb::metrics::write_text(snap);
+    engine.start();
+    engine.join();
+}
+```
+
+Pinned by `qb/tests/core/unit/metrics/metrics-text.cpp` (the exposition byte for byte, the merge) and `qb/tests/core/system/engine/metrics-scrape.cpp` (two cores through one registry, a core without one reported down, a throwing source contained).
+
 ## Shutdown
 
 ### Three triggers, one path

@@ -35,9 +35,9 @@ project(qb-core
 # -----------------------------------------------------------------------------
 # HAZARD -- ONE SOURCE FILE IS NOT A TYPO. THIS AMALGAMATION IS LOAD-BEARING.
 #
-# core.cpp #includes ActorId.cpp, Event.cpp, VirtualCore.cpp, Actor.cpp, CoreSet.cpp and
-# Main.cpp rather than compiling them separately, so qb-core is ONE translation unit. Listing
-# those six here instead is a one-line edit that changes behaviour, and it is the SAME SHAPE as
+# core.cpp #includes ActorId.cpp, Event.cpp, VirtualCore.cpp, Actor.cpp, CoreSet.cpp, Main.cpp and
+# metrics.cpp rather than compiling them separately, so qb-core is ONE translation unit. Listing
+# those seven here instead is a one-line edit that changes behaviour, and it is the SAME SHAPE as
 # qb-io's list -- the measurement, and the three defects a split arms (one of which 3.0 has
 # since removed), is in the HAZARD block at src/qb/io/CMakeLists.txt:36. Read it before
 # touching this.
