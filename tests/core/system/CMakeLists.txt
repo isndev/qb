@@ -237,3 +237,5 @@ endif()
 # mailbox ring per pair of cores, measured after a warm-up engine and a region_cache::trim(). Counts bytes, never time; a
 # platform with no reading skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
 qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mailbox-footprint.cpp DEPENDS ${PROJECT_NAME})
+# ask-self: an ask addressed to the asking actor itself, in every form (Huly QB-1100).
+qb_add_test(MODULE qb-core TIER system NAME ask-self SOURCES coroutine/ask-self.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

@@ -633,6 +633,23 @@ policy.
 
 ### Fixed
 
+- **An ask an actor addresses to itself is answered by its handler (Huly QB-1100).** A self-ask's request and
+  its reply carry the same correlation id to the same actor, so `resolve_ask` -- called by the asker's own
+  `on(E&)`, and by `qb::answer` -- matched the REQUEST and resumed the ask with it: the handler never ran and the
+  asker read an unanswered envelope, without an error. Every form did it: `qb::ask` by value and emplace,
+  `qb::ask_by`, `qb::ask_all` and `qb::ask_any` over targets that include the caller, and `qb::ask_stream` (its
+  request came back as the first chunk). A self-ask is now told apart at send time, by one compare, and made a
+  self-ask's out of line: the first arrival of its id at the actor is the request and reaches the handler -- also
+  when the handler checks it again (`qb::answer` after a `resolve_ask`) -- and the next one is the answer,
+  whatever its form: `reply()`, `push_reply()`, a copy of the request, a freshly built event, or the request
+  answered by another actor it was forwarded to. A self-ask while the actor is still in its `onInit()` (before
+  or after its first suspension) cannot be answered -- its handlers run once `onInit()` completes -- and now
+  throws `std::logic_error` at once instead of waiting for its timeout; `qb::ask_stream` throws it from the call.
+  The event header is untouched. Cost, callgrind on `qb-core-bench-ask-roundtrip` (same core, g++-14 Release,
+  100 000 asks): the send path pays the compare (+3 instructions an ask), `ask_deliver` tests the owner before
+  the delivery pointer (-1 an arrival, two arrivals an ask), 1364.0 -> 1365.1 instructions an ask. Pinned by
+  `qb-core-test-system-ask-self`.
+
 - **The qb-core benchmarks size their engines to the CPUs the process may run on (Huly QB-1080).**
   `qb::bench::effectiveHardwareCores()` returned `std::thread::hardware_concurrency()`, the machine's online
   CPUs, so a container whose cpuset held 6 of its host's 20 CPUs built the eight-core cells: eight VirtualCores

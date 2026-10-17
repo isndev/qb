@@ -356,9 +356,68 @@ ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
         return false;
     ask_slot *slot = tls_ask_slots.find(id);
     // Only the owning actor may resolve its slot, and only once.
-    if (!slot || slot->done || !slot->deliver || !(slot->owner == owner))
+    if (!slot || slot->done || !(slot->owner == owner))
         return false;
+    // A null `deliver` is a self-ask's (Huly QB-1100): the same test as before, a cold target.
+    if (!slot->deliver) [[unlikely]]
+        return ask_self_arrival(id, *slot, resp);
     slot->deliver(slot->self, resp);
+    return true;
+}
+
+namespace {
+/**
+ * @brief A self-ask in flight (Huly QB-1100): the delivery `ask_self_begin` parked, and where its request was
+ *        handed to the handler.
+ * @details The request and the answer of a self-ask carry the same correlation id to the same actor, and the
+ *          answer may be a byte copy of the request, so no field of the event can tell them apart. The ORDER can:
+ *          the request is the first event with the id to reach its owner (nothing else carries a fresh id), and
+ *          the answer arrives in a later dispatch. While the request's handler runs, it may check it more than
+ *          once (`qb::answer` resolves before answering, after a handler that already did): those calls see the
+ *          same event in the same dispatch -- the core's received-event count, which the pass bumps after each
+ *          handler, and the event's address, which no other live event shares.
+ */
+struct self_ask_record {
+    std::uint64_t id;
+    void (*deliver)(void *self, Event &resp) noexcept;
+    std::uint64_t request_dispatch = 0;       ///< the core's received count while the request's handler ran
+    const Event  *request          = nullptr; ///< the request, once it arrived
+};
+// A handful at most (one per self-ask in flight); cold: only a self-ask reaches it.
+thread_local std::vector<self_ask_record> tls_self_asks;
+} // namespace
+
+bool
+ask_self_begin(std::uint64_t const id, ask_slot &slot) noexcept {
+    const VirtualCore *const core = VirtualCore::_handler;
+    if (core && core->__in_init__(slot.owner))
+        return false;
+    // Drop the records of self-asks that ended without an answer (a timeout, a cancel): their entry is gone.
+    std::erase_if(tls_self_asks, [](self_ask_record const &r) { return tls_ask_slots.find(r.id) == nullptr; });
+    tls_self_asks.push_back(self_ask_record{id, slot.deliver});
+    slot.deliver = nullptr;
+    return true;
+}
+
+bool
+ask_self_arrival(std::uint64_t const id, ask_slot &slot, Event &resp) noexcept {
+    const auto it = std::find_if(tls_self_asks.begin(), tls_self_asks.end(), [id](self_ask_record const &r) { return r.id == id; });
+    if (it == tls_self_asks.end())
+        return false; // not a self-ask's slot: nothing bound to deliver to
+    const VirtualCore *const core     = VirtualCore::_handler;
+    const std::uint64_t      dispatch = core ? core->_metrics._nb_event_received : 0;
+    if (it->request == nullptr) { // the first arrival is the request: its handler answers it
+        it->request          = &resp;
+        it->request_dispatch = dispatch;
+        return false;
+    }
+    if (it->request == &resp && it->request_dispatch == dispatch)
+        return false; // the same request, checked again while its handler runs
+    // The answer, whatever its form. The slot goes back to the plain path first (a stream's next chunks take
+    // it), and nothing of the slot or the record is touched after `deliver`, which may end the ask.
+    slot.deliver = it->deliver;
+    tls_self_asks.erase(it);
+    slot.deliver(slot.self, resp);
     return true;
 }
 

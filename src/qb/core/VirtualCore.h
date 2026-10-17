@@ -160,6 +160,10 @@ private:
     friend detail::activation_state detail::activation_wait(qb::ActorId, detail::activation_waiter &, void (*)(void *, bool) noexcept,
                                                             void *) noexcept;
     friend void                     detail::activation_unwait(qb::ActorId, detail::activation_waiter &) noexcept;
+    // A self-ask is refused while its actor is in its onInit(), and tells its request from its answer by the
+    // core's dispatch count (Huly QB-1100).
+    friend bool detail::ask_self_begin(std::uint64_t, detail::ask_slot &) noexcept;
+    friend bool detail::ask_self_arrival(std::uint64_t, detail::ask_slot &, Event &) noexcept;
     friend class CoroContext;
     friend class Service;
     friend class CoreInitializer;
@@ -861,7 +865,10 @@ private:
     /// Move a suspended `onInit()` frame into the Activating set (+arm deadline, flip phase).
     void __begin_activation__(Actor &actor, qb::io::async::task<bool> &&init) noexcept;
     /// True iff `id` is currently Activating (or dying with a still-live onInit frame).
-    [[nodiscard]] bool                __is_activating__(ActorId id) const noexcept;
+    [[nodiscard]] bool __is_activating__(ActorId id) const noexcept;
+    /// True iff `id`'s `onInit()` has not completed: it runs right now (driven by `__drive_init__`) or it is
+    /// suspended (Activating). What refuses a self-ask (Huly QB-1100): its handlers cannot answer it before.
+    [[nodiscard]] bool                __in_init__(ActorId id) const noexcept;
     [[nodiscard]] QB_NOINLINE QB_COLD qb::duration __activation_park_cap__(qb::duration cap) const noexcept;
     /// Byte-copy a gated inbound unicast event into the destination actor's FIFO stash.
     /// @return true if the event was taken into the stash (ownership transferred — the caller must
@@ -1660,7 +1667,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:740-750`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:749-759`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it
