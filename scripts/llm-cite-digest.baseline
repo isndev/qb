@@ -48,16 +48,16 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:900-901	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:909-910	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.cpp:1065-1067	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.api.md	VirtualCore.cpp:1319-1333	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.api.md	VirtualCore.cpp:1615-1620	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
-llm/qb.llm.api.md	VirtualCore.cpp:1635-1650	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1694-1713	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1715-1724	c027cf31c3fe	void
-llm/qb.llm.api.md	VirtualCore.cpp:1809-1844	6255f8b6dda5	ServiceId
-llm/qb.llm.api.md	VirtualCore.cpp:1846-1871	3c42a027ac9f	bool
-llm/qb.llm.api.md	VirtualCore.cpp:691-727	a81611ababf7	// Snapshot identities, not pointers: a previous onInit may destroy a...
-llm/qb.llm.api.md	VirtualCore.cpp:879-900	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
+llm/qb.llm.api.md	VirtualCore.cpp:1214-1228	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.api.md	VirtualCore.cpp:1510-1515	10782883fa06	// One rule carries it: a watch is a record on its watcher's core, op...
+llm/qb.llm.api.md	VirtualCore.cpp:1530-1545	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1589-1608	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1610-1619	c027cf31c3fe	void
+llm/qb.llm.api.md	VirtualCore.cpp:1704-1739	6255f8b6dda5	ServiceId
+llm/qb.llm.api.md	VirtualCore.cpp:1741-1766	3c42a027ac9f	bool
+llm/qb.llm.api.md	VirtualCore.cpp:586-622	a81611ababf7	// Snapshot identities, not pointers: a previous onInit may destroy a...
+llm/qb.llm.api.md	VirtualCore.cpp:774-795	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
+llm/qb.llm.api.md	VirtualCore.cpp:960-962	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.h:1270-1293	f5f18dc56a93	template <typename _ServiceActor>
 llm/qb.llm.api.md	VirtualCore.h:1514-1528	090b760196e5	template <typename _Actor>
 llm/qb.llm.api.md	VirtualCore.h:1569-1578	a57c15ec1d9a	template <typename Tag>
@@ -159,22 +159,22 @@ llm/qb.llm.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std:
 llm/qb.llm.md	DeathWatch.h:36-96	727ef60e200b	/*!
 llm/qb.llm.md	Event.h:865-878	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
-llm/qb.llm.md	Main.cpp:511-513	74f8f97adb96	} else if (core_factory.empty()) {
-llm/qb.llm.md	Main.cpp:732-734	0f521c2df42b	Main::core(CoreId const index) {
-llm/qb.llm.md	Main.h:307-324	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
+llm/qb.llm.md	Main.cpp:575-577	74f8f97adb96	} else if (core_factory.empty()) {
+llm/qb.llm.md	Main.cpp:803-805	0f521c2df42b	Main::core(CoreId const index) {
+llm/qb.llm.md	Main.h:314-331	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
 llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1065-1067	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.md	VirtualCore.cpp:1216-1238	de06942f6cd7	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1319-1333	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.md	VirtualCore.cpp:1396-1411	63f8d5ff4dd6	VirtualCore::send(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1446-1453	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1635-1650	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1694-1724	904dffe89372	void
-llm/qb.llm.md	VirtualCore.cpp:1760-1787	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:1809-1844	6255f8b6dda5	ServiceId
-llm/qb.llm.md	VirtualCore.cpp:2003-2007	ddac1343ac54	VirtualCore::__send_unpublished__(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:731-737	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
-llm/qb.llm.md	VirtualCore.cpp:888-900	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.cpp:1111-1133	de06942f6cd7	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1214-1228	5caea4ce8521	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.md	VirtualCore.cpp:1291-1306	63f8d5ff4dd6	VirtualCore::send(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1341-1348	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1530-1545	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1589-1619	904dffe89372	void
+llm/qb.llm.md	VirtualCore.cpp:1655-1682	2675dbf23890	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:1704-1739	6255f8b6dda5	ServiceId
+llm/qb.llm.md	VirtualCore.cpp:1898-1902	ddac1343ac54	VirtualCore::__send_unpublished__(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:626-632	983f5dcb3fd1	// `task` starts suspended: resume once to reach the first `co_await`...
+llm/qb.llm.md	VirtualCore.cpp:783-795	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.cpp:960-962	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.md	VirtualCore.h:1078-1090	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	VirtualCore.h:1270-1293	f5f18dc56a93	template <typename _ServiceActor>
 llm/qb.llm.md	VirtualCore.h:1593-1607	5337a095ca99	template <typename Tag>

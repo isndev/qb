@@ -13,6 +13,10 @@
 #include <fstream>
 #include <regex>
 #include <unistd.h>
+#if defined(__linux__)
+#include <pthread.h>
+#include <sched.h>
+#endif
 
 #elif defined(_WIN32) || defined(_WIN64)
 #ifndef NOMINMAX
@@ -25,7 +29,11 @@
 #include <winreg.h>
 #endif
 
+#include <algorithm>
 #include <cctype>
+#include <cerrno>
+#include <charconv>
+#include <climits>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -398,7 +406,7 @@ CPU::ThreadPinningSupported() noexcept {
     // SetThreadAffinityMask() is implemented; individual requests may still be refused.
     return true;
 #else
-    // Mirrors VirtualCore::__init__, which only issues SetThreadAffinityMask() under
+    // Mirrors detail::pin_current_thread below, which only issues SetThreadAffinityMask() under
     // _MSC_VER (a GNU toolchain on Windows gets a #warning and no pinning at all).
     return false;
 #endif
@@ -442,6 +450,227 @@ linux_physical_cores(std::string const &cpu_root) {
         cores.insert(*key);
     }
     return static_cast<int>(cores.size());
+}
+
+// ---- Thread placement: the inherited mask, the usable CPUs, the pin and its undo (Huly QB-1081, QB-1082, QB-1083).
+// The one place qb talks to the OS about where a thread runs; `Main` decides what to ask for.
+
+std::vector<unsigned>
+inherited_cpus() {
+    std::vector<unsigned> cpus;
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(0, sizeof(set), &set) == 0) {
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+            if (CPU_ISSET(cpu, &set))
+                cpus.push_back(static_cast<unsigned>(cpu));
+    }
+#elif defined(_WIN32) || defined(_WIN64)
+    DWORD_PTR process = 0;
+    DWORD_PTR system  = 0;
+    if (GetProcessAffinityMask(GetCurrentProcess(), &process, &system)) {
+        for (unsigned cpu = 0; cpu < sizeof(DWORD_PTR) * CHAR_BIT; ++cpu)
+            if (process & (static_cast<DWORD_PTR>(1) << cpu))
+                cpus.push_back(cpu);
+    }
+#endif
+    return cpus;
+}
+
+unsigned
+cgroup_cpu_limit(std::string const &self_cgroup, std::string const &cgroup_root) {
+    std::ifstream membership(self_cgroup);
+    std::string   line;
+    std::string   path;
+    bool          unified = false;
+    while (std::getline(membership, line)) {
+        if (line.rfind("0::", 0) == 0) {
+            path    = line.substr(3);
+            unified = true;
+            break;
+        }
+    }
+    while (!path.empty() && std::isspace(static_cast<unsigned char>(path.back())))
+        path.pop_back();
+    // A path outside the mount (`/..` when this process sits above its cgroup namespace's root) names no file here.
+    if (!unified || path.empty() || path.front() != '/' || path.find("/..") != std::string::npos)
+        return 0u;
+
+    unsigned long long limit = 0;
+    for (;;) {
+        // The leaf first, then each parent up to the root, whose `cpu.max` does not exist: nothing caps the root.
+        const auto file = std::filesystem::path(cgroup_root) / std::filesystem::path(path).relative_path() / "cpu.max";
+        if (const auto value = read_attribute(file)) {
+            const std::string &text  = *value;
+            const auto         space = text.find(' ');
+            if (space != std::string::npos && text.compare(0, space, "max") != 0) {
+                unsigned long long quota  = 0;
+                unsigned long long period = 0;
+                const char *const  begin  = text.data();
+                const char *const  end    = text.data() + text.size();
+                const auto         q      = std::from_chars(begin, begin + space, quota);
+                const auto         p      = std::from_chars(begin + space + 1, end, period);
+                if (q.ec == std::errc{} && q.ptr == begin + space && p.ec == std::errc{} && quota > 0 && period > 0) {
+                    const unsigned long long ceiling = quota / period + (quota % period != 0 ? 1u : 0u);
+                    limit                            = limit == 0 ? ceiling : std::min(limit, ceiling);
+                }
+            }
+        }
+        if (path == "/")
+            break;
+        const auto slash = path.rfind('/');
+        path             = slash == 0 ? std::string("/") : path.substr(0, slash);
+    }
+    return static_cast<unsigned>(std::min<unsigned long long>(limit, UINT_MAX));
+}
+
+unsigned
+usable_cpus() {
+    unsigned usable = std::thread::hardware_concurrency();
+    if (usable == 0u)
+        usable = 1u;
+    if (const auto cpus = inherited_cpus(); !cpus.empty())
+        usable = std::min(usable, static_cast<unsigned>(cpus.size()));
+#if defined(__linux__)
+    if (const auto limit = cgroup_cpu_limit("/proc/self/cgroup", "/sys/fs/cgroup"); limit != 0u)
+        usable = std::min(usable, limit);
+#endif
+    return std::max(usable, 1u);
+}
+
+thread_placement
+place_thread(unsigned const position, std::span<unsigned const> const requested, bool const explicit_request,
+             std::span<unsigned const> const inherited) {
+    thread_placement placement;
+    if (!explicit_request) {
+        if (inherited.empty())
+            placement.pin.push_back(position); // no mask to read (macOS): core i asks for CPU i, as before 3.3
+        else if (position < inherited.size())
+            placement.pin.push_back(inherited[position]);
+        return placement; // a core past the mask's end runs on the whole mask
+    }
+    for (const unsigned cpu : requested) {
+        const bool inside = inherited.empty() || std::binary_search(inherited.begin(), inherited.end(), cpu);
+        (inside ? placement.pin : placement.refused).push_back(cpu);
+    }
+    for (auto *const cpus : {&placement.pin, &placement.refused}) {
+        std::sort(cpus->begin(), cpus->end());
+        cpus->erase(std::unique(cpus->begin(), cpus->end()), cpus->end());
+    }
+    return placement;
+}
+
+int
+pin_current_thread(std::span<unsigned const> const cpus) noexcept {
+    if (cpus.empty())
+        return 0;
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    bool any = false;
+    for (const unsigned cpu : cpus) {
+        if (cpu < static_cast<unsigned>(CPU_SETSIZE)) {
+            CPU_SET(static_cast<int>(cpu), &set);
+            any = true;
+        }
+    }
+    // pthread_setaffinity_np RETURNS its error; it does not set errno.
+    return any ? pthread_setaffinity_np(pthread_self(), sizeof(set), &set) : 0;
+#elif defined(__APPLE__)
+    // macOS has no pthread_setaffinity_np. THREAD_AFFINITY_POLICY takes one tag, and threads sharing a tag are placed
+    // to share an L2 cache: a hint, not a pin. The lowest CPU of the set is the tag. Apple Silicon does not implement
+    // the policy and answers KERN_NOT_SUPPORTED to every call: taken as success, or every core of every run would warn
+    // about a pin this host cannot make -- CPU::ThreadPinningSupported() is the query that tells.
+    const unsigned first = *std::min_element(cpus.begin(), cpus.end());
+    if (first >= std::thread::hardware_concurrency())
+        return EINVAL;
+    thread_affinity_policy_data_t policy = {static_cast<integer_t>(first)};
+    const kern_return_t           ret    = thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY,
+                                                             reinterpret_cast<thread_policy_t>(&policy), THREAD_AFFINITY_POLICY_COUNT);
+    return ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED ? 0 : static_cast<int>(ret);
+#elif defined(_WIN32) || defined(_WIN64)
+#ifdef _MSC_VER
+    // Within the thread's processor group: a CPU past the mask's width is left out, never a failure.
+    DWORD_PTR mask = 0;
+    for (const unsigned cpu : cpus)
+        if (cpu < sizeof(DWORD_PTR) * CHAR_BIT)
+            mask |= static_cast<DWORD_PTR>(1) << cpu;
+    if (mask == 0)
+        return 0;
+    return SetThreadAffinityMask(GetCurrentThread(), mask) != 0 ? 0 : static_cast<int>(GetLastError());
+#else
+#warning "Cannot set affinity on windows with GNU Compiler"
+    return 0;
+#endif
+#else
+    return 0;
+#endif
+}
+
+thread_affinity
+current_thread_affinity() noexcept {
+    thread_affinity affinity;
+#if defined(__linux__)
+    static_assert(CPU_SETSIZE <= 1024, "thread_affinity::cpus holds a cpu_set_t");
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (pthread_getaffinity_np(pthread_self(), sizeof(set), &set) == 0) {
+        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+            if (CPU_ISSET(cpu, &set))
+                affinity.cpus.set(static_cast<std::size_t>(cpu));
+        affinity.known = true;
+    }
+#elif defined(__APPLE__)
+    // The tag, or THREAD_AFFINITY_TAG_NULL for none; Apple Silicon answers KERN_NOT_SUPPORTED: nothing to keep.
+    thread_affinity_policy_data_t policy      = {THREAD_AFFINITY_TAG_NULL};
+    mach_msg_type_number_t        count       = THREAD_AFFINITY_POLICY_COUNT;
+    boolean_t                     get_default = FALSE;
+    if (thread_policy_get(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policy), &count,
+                          &get_default)
+        == KERN_SUCCESS) {
+        affinity.tag   = policy.affinity_tag;
+        affinity.known = true;
+    }
+#elif (defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER)
+    GROUP_AFFINITY group{};
+    if (GetThreadGroupAffinity(GetCurrentThread(), &group)) {
+        for (unsigned cpu = 0; cpu < sizeof(KAFFINITY) * CHAR_BIT; ++cpu)
+            if (group.Mask & (static_cast<KAFFINITY>(1) << cpu))
+                affinity.cpus.set(cpu);
+        affinity.group = group.Group;
+        affinity.known = true;
+    }
+#endif
+    return affinity;
+}
+
+int
+restore_thread_affinity(thread_affinity const &affinity) noexcept {
+    if (!affinity.known)
+        return 0;
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+        if (affinity.cpus.test(static_cast<std::size_t>(cpu)))
+            CPU_SET(cpu, &set);
+    return pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+#elif defined(__APPLE__)
+    thread_affinity_policy_data_t policy = {static_cast<integer_t>(affinity.tag)};
+    const kern_return_t           ret    = thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_AFFINITY_POLICY,
+                                                             reinterpret_cast<thread_policy_t>(&policy), THREAD_AFFINITY_POLICY_COUNT);
+    return ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED ? 0 : static_cast<int>(ret);
+#elif (defined(_WIN32) || defined(_WIN64)) && defined(_MSC_VER)
+    GROUP_AFFINITY group{};
+    group.Group = affinity.group;
+    for (unsigned cpu = 0; cpu < sizeof(KAFFINITY) * CHAR_BIT; ++cpu)
+        if (affinity.cpus.test(cpu))
+            group.Mask |= static_cast<KAFFINITY>(1) << cpu;
+    return SetThreadGroupAffinity(GetCurrentThread(), &group, nullptr) ? 0 : static_cast<int>(GetLastError());
+#else
+    return 0;
+#endif
 }
 
 } // namespace detail

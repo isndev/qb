@@ -72,8 +72,8 @@ class IActorFactory;
  * engine.core(1).setAffinity(qb::CoreIdSet{2, qb::NoAffinity});
  * @endcode
  *
- * Runtime behaviour: `VirtualCore::__init__` filters out any `CoreId >=
- * qb::MaxCores` (which includes `NoAffinity`). If the resulting set contains
+ * Runtime behaviour: the core's start filters out any `CoreId >= qb::MaxCores`
+ * (which includes `NoAffinity`). If the resulting set contains
  * zero real core ids, no `pthread_setaffinity_np` /
  * `SetThreadAffinityMask` call is issued — semantics identical to passing an
  * empty `CoreIdSet`. This makes `NoAffinity` a safe, well-defined sentinel.
@@ -82,10 +82,10 @@ class IActorFactory;
  * describes the sentinel; it does not promise that omitting the sentinel pins
  * anything. Whether a *real* `CoreId` produces an OS-level pin is a platform
  * property, and on macOS the answer is "no" or "not the way it reads":
- * - macOS has no `pthread_setaffinity_np`, so qb supplies one that calls
- *   `thread_policy_set(THREAD_AFFINITY_POLICY)`. On **Apple Silicon** that
+ * - macOS has no `pthread_setaffinity_np`, so qb calls
+ *   `thread_policy_set(THREAD_AFFINITY_POLICY)` instead. On **Apple Silicon** that
  *   flavor is not implemented: every call answers `KERN_NOT_SUPPORTED`, and
- *   the shim deliberately reports *success* for that code (otherwise every
+ *   qb deliberately takes that code as *success* (otherwise every
  *   core of every run would warn). Nothing is pinned, silently.
  * - Where macOS *does* implement it (Intel), `<mach/thread_policy.h>` calls it
  *   experimental and a scheduler **hint**: threads sharing an affinity *tag*
@@ -93,14 +93,14 @@ class IActorFactory;
  *   so `setAffinity(3)` requests "group me with other tag-3 threads", not "pin
  *   me to CPU 3". That is a different guarantee from the Linux/Windows one, on
  *   every Mac.
- * - The shim also honours only the **first** real id in the set, so a
+ * - qb also honours only the **first** real id in the set, so a
  *   multi-core `CoreIdSet` narrows to its lowest member there.
  *
  * Do not infer placement from a successful `setAffinity()`; ask
  * `qb::CPU::ThreadPinningSupported()` (`qb/system/cpu.h`), which reports
  * whether this host implements per-thread pinning at all — a runtime probe, so
- * it is also right for an x86_64 binary running under Rosetta 2. Linux and
- * other POSIX use the real `pthread_setaffinity_np`; MSVC Windows uses
+ * it is also right for an x86_64 binary running under Rosetta 2. Linux uses
+ * the real `pthread_setaffinity_np`; MSVC Windows uses
  * `SetThreadAffinityMask`; a Windows GNU build applies no affinity at all.
  *
  * Implementation detail: value is `std::numeric_limits<CoreId>::max()`,
@@ -209,8 +209,9 @@ private:
     qb::duration      _latency;
     qb::duration      _idle_spin;
     qb::duration      _io_poll_interval;
-    DeadLetterHandler _dead_letter_handler; ///< handed to the core at thread start (Huly QB-163)
-    bool              _pass_timing = false; ///< time the core's passes (Huly QB-165)
+    DeadLetterHandler _dead_letter_handler;       ///< handed to the core at thread start (Huly QB-163)
+    bool              _pass_timing       = false; ///< time the core's passes (Huly QB-165)
+    bool              _affinity_explicit = false; ///< `setAffinity()` was called: `_affinity` is CPUs (Huly QB-1081)
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -268,12 +269,18 @@ public:
     [[nodiscard]] ActorBuilder builder() noexcept;
 
     /*!
-     * @brief Set the CPU affinity for the VirtualCore associated with this initializer.
-     * @param cores A `CoreIdSet` specifying the set of physical CPU cores this VirtualCore thread
-     *              should be allowed to run on. An empty set typically means default OS scheduling.
+     * @brief Set the CPUs the VirtualCore associated with this initializer is pinned to.
+     * @param cores A `CoreIdSet` of CPU numbers. Empty (the default argument), or holding only ids
+     *              `>= qb::MaxCores` such as `qb::NoAffinity`, pins nothing: the thread keeps the mask it inherited.
      * @return Reference to this `CoreInitializer` for method chaining.
-     * @note By default, affinity is typically set to allow the VirtualCore thread to run on any CPU.
-     *       This setting takes effect when the engine starts.
+     * @note Without this call a core is pinned to the CPU at its position in the mask its thread inherits -- core 0
+     *       to the first CPU the process may run on, core 1 to the second -- and a core the mask has no CPU for is not
+     *       pinned (Huly QB-1081). That mask is read when the core starts: on Linux the mask of the thread that called
+     *       `Main::start()` (a `taskset`, a cgroup cpuset), on Windows the process's (`start /affinity`, a job object).
+     *       On a host that restricts nothing, core `index` is pinned to CPU `index`, as before 3.3.
+     * @note A CPU outside that mask is left out, with a warning, and a set with none inside pins nothing: a deployment's
+     *       restriction is never widened by the program it restricts -- the rule a Linux cpuset and Windows' process
+     *       mask already enforce. This setting takes effect when the engine starts.
      * @warning This is a **request**, and on macOS it does not pin: the call succeeds while
      *          nothing is placed (Apple Silicon) or groups threads by cache tag rather than
      *          binding them to a CPU (Intel). See `qb::NoAffinity` above for the full account,
@@ -375,8 +382,9 @@ public:
      */
     [[nodiscard]] CoreId getIndex() const noexcept;
     /**
-     * @brief Gets the currently configured CPU affinity set for this core.
-     * @return Const reference to a `CoreIdSet` representing the CPU cores this VirtualCore may run on.
+     * @brief Gets the CPU set `setAffinity()` gave this core.
+     * @return Const reference to a `CoreIdSet`. A core never given one holds `{index}`: its POSITION in the mask its
+     *         thread inherits, which is CPU `index` only on a host that restricts nothing (see `setAffinity()`).
      */
     [[nodiscard]] CoreIdSet const &getAffinity() const noexcept;
     /**
@@ -992,6 +1000,11 @@ public:
      *              If `false`, the calling thread becomes one of the VirtualCore workers and normally blocks until it stops.
      *              Use `join()` after a successful asynchronous start to wait for every worker.
      * @note All actors and core configurations (affinity, latency) must be set up *before* calling `start()`.
+     * @note `start()` warns, on stderr and in the log, when more cores run at latency 0 than this process can run at
+     *       once -- its inherited affinity mask and, on Linux, a cgroup v2 `cpu.max` quota: such cores never yield their
+     *       CPU, so they preempt one another and every event between them waits for a time slice (Huly QB-1082).
+     *       With `async == false` the calling thread's affinity, which its core pinned, is put back when `start()`
+     *       returns, after a failed init as after a run (Huly QB-1083).
      */
     void start(bool async = true) noexcept;
 

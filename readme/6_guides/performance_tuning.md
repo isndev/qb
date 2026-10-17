@@ -68,6 +68,8 @@ Verified semantics:
 
 - The argument is a `qb::CoreIdSet` (alias of `CoreIdBitSet`, a `std::bitset<MaxCores>` of CPU ids).
 - An **empty set** leaves scheduling to the OS.
+- **Without `setAffinity`**, core `i` is pinned to the `i`-th CPU of the mask its thread inherits — on Linux the mask of the thread that calls `start()` (a `taskset`, a container's cpuset), on Windows the process's (`start /affinity`, a job object) — and a core the mask has no CPU for is not pinned (since 3.3, Huly QB-1081). On a host that restricts nothing that is CPU `i`.
+- A CPU outside that mask is left out of an explicit set, with a warning in the log; a set with none inside pins nothing. A deployment's CPU restriction is never widened by the program it restricts.
 - `qb::NoAffinity` (`== std::numeric_limits<CoreId>::max()`) is a sentinel meaning "no pinning." Any `CoreId >= qb::MaxCores` — including `NoAffinity` — is silently filtered out when the set is built, so `qb::CoreIdSet{qb::NoAffinity}` is well-defined and issues no pinning call rather than throwing. `qb::MaxCores` is 256.
 
 ```cpp
@@ -84,6 +86,8 @@ engine.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});
 ```
 
 Affinity is a sharp tool. Over-subscribing one physical CPU with several pinned `VirtualCore`s, or pinning every worker to the same core, degrades throughput. Pin only the cores a profiler shows are migration-sensitive, and leave the rest to the OS.
+
+The sharpest over-subscription is of spinning cores. A core at the default `latency == 0` never parks and never yields its CPU, so when such cores outnumber the CPUs the process can run at once they preempt one another, and an event between two of them waits for the receiver's next time slice — 320 ns a hop with a CPU per core, 0.89 ms with one CPU short, on an eight-core chain (WSL2, Huly QB-1080). `start()` warns on stderr and in the log when it is configured so, counting the inherited mask and, on Linux, the tightest cgroup v2 `cpu.max` quota (Huly QB-1082). Size an engine to the CPUs it is given, not to `std::thread::hardware_concurrency()`, which counts neither.
 
 ### Event-loop idle latency
 

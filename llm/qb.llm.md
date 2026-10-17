@@ -168,7 +168,8 @@ int main() {
 }
 ```
 
-`start(false)` makes the calling thread the last worker and normally blocks until that worker stops.
+`start(false)` makes the calling thread the last worker and normally blocks until that worker stops; the
+thread's affinity, which its core pinned, is put back when it returns (3.3, Huly QB-1083).
 `Main::core(idx)` throws once the engine is running, and `std::range_error` for `idx >= qb::MaxCores`
 (256). A core started with **0 actors fails startup** (`Error::NoActor`). `setLatency` takes a
 `qb::duration`: `qb::duration::zero()` = busy-spin (an idle pass still makes one ordered read of the CPU counter, `lfence; rdtsc`: that read paces the poll of the peer rings); `>0` parks up to that span when idle — after
@@ -192,10 +193,22 @@ cores commits that ring's slots; a refused commit terminates the process, the cr
 full mesh is still quadratic: the pages of a ring per pair that talked, `N × (N − 1)`. `qb/system/lockfree/mpsc.h` has
 the mechanism.
 
+**A core is placed in the CPUs the process was given (3.3, Huly QB-1081).** Without `setAffinity`, core `i`
+is pinned to the `i`-th CPU of the mask its thread inherits — Linux: the mask of the thread that calls
+`start()` (a `taskset`, a cgroup cpuset), which every core thread starts with; Windows: the process mask
+(`start /affinity`, a job object) — and a core past the mask's end is not pinned. An explicit set keeps its
+CPUs inside that mask, leaves the others out with a log warning, and pins nothing when none is inside: a
+program never widens its deployment's restriction. On an unrestricted host core `i` is still CPU `i`; through
+3.2 it was CPU `i` whatever the mask (out of a `taskset` on Linux, a refused pin on Windows). macOS has no mask:
+core `i` asks for tag `i`, as before. `start()` warns on stderr and in the log when more cores run at latency 0
+than the process can run at once — the inherited mask and, on Linux, the tightest cgroup v2 `cpu.max` quota
+(Huly QB-1082): such cores never yield their CPU, so they preempt one another and a hop between two of them
+waits for a time slice (0.89 ms with one CPU short, against 320 ns with a CPU each). It changes nothing else.
+
 `setAffinity` is best-effort, and on **Apple Silicon it does nothing at all** — silently. macOS has no
-`pthread_setaffinity_np`, so qb emulates one with `thread_policy_set(THREAD_AFFINITY_POLICY)`, a flavor
+`pthread_setaffinity_np`, so qb calls `thread_policy_set(THREAD_AFFINITY_POLICY)` instead, a flavor
 arm64 macOS does not implement: it answers `KERN_NOT_SUPPORTED` for every core (measured on an Apple M4
-Pro, Darwin 25.6.0: `ret == 46`). qb's shim reports that as success on purpose — failing would warn once
+Pro, Darwin 25.6.0: `ret == 46`). qb takes that as success on purpose — failing would warn once
 per core on every run — so no caller and no log learns the pin never happened. Even on Intel macOS the
 affinity tag is a scheduler *hint* that groups threads onto a shared L2, not a pin to CPU N. Hard per-CPU
 pinning is real only on Linux (`pthread_setaffinity_np`) and Windows/MSVC (`SetThreadAffinityMask`).
@@ -433,7 +446,7 @@ on that core alive until the task reports completion (or complete the work befor
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
 `CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1419-1477;
 VirtualCore.h:1746-1757; coroutine-detached.cpp:878-938)_
-The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1065-1067)_
+The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:960-962)_
 
 ```cpp
 void on(const AuditEvent &) {
@@ -558,7 +571,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:388-410; VirtualCore.cpp:731-737, :888-900, :1216-1238; coroutine/scheduler.h:850-854)_
+  _(Actor.cpp:388-410; VirtualCore.cpp:626-632, :783-795, :1111-1133; coroutine/scheduler.h:850-854)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -588,7 +601,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   hypervisor, a few µs on native Linux — for qb as for every framework; the floor decides how long a
   core keeps polling before it takes that sleep, so that a gap shorter than the floor never pays the
   wake and a longer one pays it once. Raise it to trade idle CPU for wake latency, lower it to trade
-  the other way; `setLatency(0)` never sleeps at all. _(Main.h:307-324; measured in the
+  the other way; `setLatency(0)` never sleeps at all. _(Main.h:314-331; measured in the
   qb-vs-others benchmark, TUNING guide §8.2)_
 - **A `setLatency` under a millisecond sleeps a millisecond and a half on Windows, and what it says
   on Linux.** Both parks — the condition variable of a core that owns no io watcher (MSVC's `wait_for`
@@ -618,7 +631,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
   Raw `send(Event const&)` uses `_self_pipe` directly only when the destination's logical core
   equals the current core; cross-core fallback still selects the destination pipe and clears
-  `alive` in the copied header. _(VirtualCore.cpp:1396-1411, :2003-2007)_
+  `alive` in the copied header. _(VirtualCore.cpp:1291-1306, :1898-1902)_
 - **`addRefActor<T>()` returns a phase-aware `qb::ActorHandle<T>` (alias `RefActorHandle<T>`);**
   check `valid()` before sending, because terminal core teardown returns an empty handle without constructing
   a child. `get()` revalidates the ID without writing through a const handle and returns `nullptr` while Activating, after failed init or after death;
@@ -639,7 +652,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   registration comes while any core is alive (an image loaded mid-run) is refused rather than handed an id an
   ordinary actor may hold: `getServiceId<Tag>()` gives `{0, core}`, `addActor` / `addRefActor` of its service fail
   without constructing it, a CRIT line, an assert in debug — until every core is gone. `ActorId::is_valid()` is
-  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1593-1607; VirtualCore.cpp:1809-1844;
+  `sid() != 0`: no actor holds service id 0 on any core. _(VirtualCore.h:1593-1607; VirtualCore.cpp:1704-1739;
   ActorId.h:470-473)_
 - **Coroutine after `co_await`: never read actor members** — capture by value before the first
   `co_await`, communicate back only through the context. Prefer **`spawn()`** (`ScopedCoroContext`,
@@ -648,7 +661,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
   body and answer through an event. _(`spawn_detached` Actor.h:1477 / VirtualCore.h:1736; `spawn` Actor.h:1514 /
-  VirtualCore.h:1762)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1065-1067)_
+  VirtualCore.h:1762)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:960-962)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -657,7 +670,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
-  with 0 actors fails startup. _(Main.cpp:732-734, :511-513)_
+  with 0 actors fails startup. _(Main.cpp:803-805, :575-577)_
 - **`Actor::time()` is the VirtualCore's cached nanosecond timestamp,** constant within one handler /
   `on(qb::LoopEvent const&)` invocation, and sampled on demand — the first call in a pass reads the clock, every
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
@@ -665,7 +678,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1078-1090; VirtualCore.cpp:1446-1453)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:803-820; VirtualCore.h:1078-1090; VirtualCore.cpp:1341-1348)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
@@ -694,7 +707,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   when that core stops is answered `core_stopped`, whatever ended the target meanwhile -- a test that expects the
   target's own reason must hold the target until the watch is registered (Huly QB-1072). Nothing follows `unwatch()`.
   A `DownEvent` whose type the watcher did not register is an `unhandled` dead letter; internal watch events never are.
-  _(VirtualCore.cpp:1319-1333, :1635-1650, :1694-1724, :1760-1787)_
+  _(VirtualCore.cpp:1214-1228, :1530-1545, :1589-1619, :1655-1682)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:77-82, :97-98, :106-110)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor

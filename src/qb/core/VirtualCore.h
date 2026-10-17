@@ -810,7 +810,7 @@ private:
     //! Event Management
 
     // Workflow
-    bool __init__(CoreIdSet const &cores);
+    bool __init__(std::span<unsigned const> cpus);
     bool __init__actors__();
     void __workflow__();
     /// The core's loop and its residual drain. `__workflow__` picks the instantiation once (Huly
@@ -1660,7 +1660,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:740-750`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:635-645`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

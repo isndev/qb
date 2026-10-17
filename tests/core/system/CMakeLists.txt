@@ -237,3 +237,8 @@ endif()
 # mailbox ring per pair of cores, measured after a warm-up engine and a region_cache::trim(). Counts bytes, never time; a
 # platform with no reading skips. The mechanism is qb-core-test-unit-mpsc-ring-allocation.
 qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mailbox-footprint.cpp DEPENDS ${PROJECT_NAME})
+# core-affinity pins where a VirtualCore's thread runs, read back from the OS (Huly QB-1081, QB-1082, QB-1083): default
+# cores take the CPUs of the mask their thread inherits in order, an explicit CPU outside that mask is left out, start(false)
+# puts the calling thread's affinity back, and start() warns on stderr when more cores spin at latency 0 than the process
+# can run. Each case narrows the inherited mask itself (the calling thread's on Linux, the process's on Windows).
+qb_add_test(MODULE qb-core TIER system NAME core-affinity SOURCES core/core-affinity.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)

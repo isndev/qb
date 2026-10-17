@@ -35,7 +35,7 @@ Create a [referenced actor](#referenced-actor) on the caller's own core. Both re
 
 #### Affinity (CPU affinity)
 
-The configured mapping of a [`VirtualCore`](#virtualcore-qbvirtualcore) thread onto a set of physical CPUs, set with `CoreInitializer::setAffinity` before the engine starts. Affinity is best-effort: a failed `pthread_setaffinity_np` (or `SetThreadAffinityMask` on Windows) only warns and never fails core initialization, and core ids at or above `qb::MaxCores` — including the `qb::NoAffinity` sentinel (`CoreId` max) — are filtered out before pinning. See [Engine](../4_qb_core/engine.md).
+The configured mapping of a [`VirtualCore`](#virtualcore-qbvirtualcore) thread onto a set of physical CPUs, set with `CoreInitializer::setAffinity` before the engine starts; without it, core `i` takes the `i`-th CPU of the mask its thread inherits (a `taskset`, a cpuset, a Windows process mask), and an explicit CPU outside that mask is left out. Affinity is best-effort: a failed `pthread_setaffinity_np` (or `SetThreadAffinityMask` on Windows) only warns and never fails core initialization, and core ids at or above `qb::MaxCores` — including the `qb::NoAffinity` sentinel (`CoreId` max) — are filtered out before pinning. See [Engine](../4_qb_core/engine.md).
 
 #### `BroadcastId` (`qb::BroadcastId`)
 

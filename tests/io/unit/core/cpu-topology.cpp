@@ -26,8 +26,13 @@
  * NOT asserted against a hard-coded platform expectation: it is cross-checked against the
  * kernel's own answer, so it stays honest on Apple Silicon (where the answer is `false`), on
  * Intel macOS, and on Linux, without the test knowing which it is running on.
+ *
+ * And the pieces a VirtualCore's placement is made of (Huly QB-1081, QB-1082): the inherited mask
+ * read back from the OS, the cgroup v2 CPU quota over fixture trees (portable, so on every platform),
+ * the usable CPU count, and every branch of the placement rule.
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -36,6 +41,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -49,6 +55,14 @@
 #elif defined(__linux__)
 #include <pthread.h>
 #include <sched.h>
+#elif defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
 #endif
 
 // =============================================================================
@@ -431,4 +445,169 @@ TEST(CpuTopology, SpinLoopPauseRunsAndMakesProgress) {
         ran = ran + 1; // volatile compound-assignment (++) is deprecated in C++20
     }
     EXPECT_EQ(ran, kIterations) << "spin_loop_pause() must be callable on every iteration without trapping";
+}
+
+// =============================================================================
+// Thread placement -- the inherited mask, the cgroup CPU quota, the usable CPUs, the placement rule
+// (Huly QB-1081, QB-1082). Where the cores of an engine really run is read back from the OS in
+// qb-core-test-system-core-affinity; here, the pieces it is made of.
+// =============================================================================
+
+namespace cpu_topology_test {
+
+using Cpus = std::vector<unsigned>;
+
+// A cgroup v2 world in a fixture tree: `self` plays /proc/self/cgroup, `fs/` the mount at /sys/fs/cgroup.
+unsigned
+quota_of(SysfsTree const &tree) {
+    return qb::detail::cgroup_cpu_limit(tree.root() + "/self", tree.root() + "/fs");
+}
+
+} // namespace cpu_topology_test
+
+using cpu_topology_test::Cpus;
+using cpu_topology_test::quota_of;
+
+/**
+ * @test A quota rounds UP to the CPUs it lets run at once: 1.5 CPUs of `cpu.max` run two threads, part of the time.
+ */
+TEST(CpuPlacement, CgroupQuotaRoundsUp) {
+    SysfsTree tree;
+    tree.write("self", "0::/system.slice/app.service");
+    tree.write("fs/system.slice/app.service/cpu.max", "150000 100000");
+    EXPECT_EQ(quota_of(tree), 2u);
+    tree.write("fs/system.slice/app.service/cpu.max", "200000 100000");
+    EXPECT_EQ(quota_of(tree), 2u) << "a whole number of CPUs stays whole";
+    tree.write("fs/system.slice/app.service/cpu.max", "50000 100000");
+    EXPECT_EQ(quota_of(tree), 1u) << "half a CPU still runs one thread at a time";
+}
+
+/**
+ * @test The tightest `cpu.max` on the path wins, wherever it sits: a pod's limit above an unlimited container, and a
+ *       container's own limit below a looser pod. The root of the mount has no `cpu.max`: nothing caps it.
+ */
+TEST(CpuPlacement, CgroupQuotaIsTheTightestOnThePath) {
+    SysfsTree tree;
+    tree.write("self", "0::/kubepods/pod1/ctr");
+    tree.write("fs/kubepods/pod1/ctr/cpu.max", "max 100000");
+    tree.write("fs/kubepods/pod1/cpu.max", "250000 100000");
+    tree.write("fs/kubepods/cpu.max", "800000 100000");
+    EXPECT_EQ(quota_of(tree), 3u) << "the pod's 2.5 CPUs cap the unlimited container";
+    tree.write("fs/kubepods/pod1/ctr/cpu.max", "100000 100000");
+    EXPECT_EQ(quota_of(tree), 1u) << "the container's own CPU is tighter than its pod's";
+}
+
+/**
+ * @test A process at the root of its cgroup namespace (`0::/`, a container with its own namespace) reads the mount's
+ *       own `cpu.max`, which is its container's.
+ */
+TEST(CpuPlacement, CgroupQuotaAtTheNamespaceRoot) {
+    SysfsTree tree;
+    tree.write("self", "0::/");
+    tree.write("fs/cpu.max", "400000 100000");
+    EXPECT_EQ(quota_of(tree), 4u);
+}
+
+/**
+ * @test No quota is 0, never a guess: unlimited everywhere, a cgroup v1 host (no `0::` line), a hybrid host whose
+ *       unified tree has no `cpu.max`, a malformed or non-positive `cpu.max`, a path that leaves the mount, no file.
+ */
+TEST(CpuPlacement, CgroupQuotaAbsentIsZero) {
+    SysfsTree tree;
+    tree.write("self", "0::/app");
+    tree.write("fs/app/cpu.max", "max 100000");
+    EXPECT_EQ(quota_of(tree), 0u) << "unlimited";
+    for (const char *const malformed : {"abc 100000", "100000", "0 100000", "-5 100000", "100000 0", "100000 abc", ""}) {
+        tree.write("fs/app/cpu.max", malformed);
+        EXPECT_EQ(quota_of(tree), 0u) << "cpu.max '" << malformed << "'";
+    }
+    tree.write("self", "12:cpu,cpuacct:/docker/abc\n11:memory:/docker/abc");
+    EXPECT_EQ(quota_of(tree), 0u) << "cgroup v1: no unified line";
+    tree.write("self", "12:cpu,cpuacct:/user.slice\n0::/user.slice/session-1.scope");
+    EXPECT_EQ(quota_of(tree), 0u) << "hybrid: the unified tree carries no cpu.max here";
+    tree.write("self", "0::/../../outside");
+    tree.write("fs/cpu.max", "100000 100000");
+    EXPECT_EQ(quota_of(tree), 0u) << "a path above the namespace's root names no file of this mount";
+    EXPECT_EQ(qb::detail::cgroup_cpu_limit(tree.root() + "/no-such-file", tree.root() + "/fs"), 0u);
+}
+
+/**
+ * @test The placement rule, every branch: a default core takes the CPU at its position in the inherited mask, or none
+ *       past its end; an explicit request keeps the CPUs inside the mask and refuses the others; without a mask
+ *       (macOS) the request stands as given, by default the core's own index.
+ */
+TEST(CpuPlacement, PlaceThreadFollowsTheInheritedMask) {
+    using qb::detail::place_thread;
+    const Cpus mask{4, 5, 9};
+    const Cpus none{};
+
+    EXPECT_EQ(place_thread(0, {}, false, mask).pin, (Cpus{4}));
+    EXPECT_EQ(place_thread(2, {}, false, mask).pin, (Cpus{9})) << "the third CPU of the mask, not CPU 2";
+    EXPECT_TRUE(place_thread(3, {}, false, mask).pin.empty()) << "past the mask's end: no pin, the whole mask";
+    EXPECT_TRUE(place_thread(3, {}, false, mask).refused.empty());
+    EXPECT_EQ(place_thread(3, {}, false, none).pin, (Cpus{3})) << "no mask: core i asks for CPU i";
+
+    const Cpus mixed{1, 5, 11, 9, 5};
+    const auto split = place_thread(0, mixed, true, mask);
+    EXPECT_EQ(split.pin, (Cpus{5, 9}));
+    EXPECT_EQ(split.refused, (Cpus{1, 11}));
+    const auto outside = place_thread(0, Cpus{1}, true, mask);
+    EXPECT_TRUE(outside.pin.empty()) << "nothing inside the mask: nothing pinned";
+    EXPECT_EQ(outside.refused, (Cpus{1}));
+    EXPECT_TRUE(place_thread(0, {}, true, mask).pin.empty()) << "an explicit empty set pins nothing";
+    EXPECT_TRUE(place_thread(0, {}, true, mask).refused.empty());
+    EXPECT_EQ(place_thread(6, Cpus{7, 3}, true, none).pin, (Cpus{3, 7})) << "no mask: the request stands";
+    EXPECT_TRUE(place_thread(6, Cpus{7, 3}, true, none).refused.empty());
+}
+
+/**
+ * @test `inherited_cpus()` is the mask a new thread starts with, read back from the OS here: the calling thread's own
+ *       on Linux, the process's on Windows; nothing where the platform has no mask.
+ */
+TEST(CpuPlacement, InheritedCpusAreTheOsMask) {
+    const Cpus inherited = qb::detail::inherited_cpus();
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    ASSERT_EQ(sched_getaffinity(0, sizeof(set), &set), 0);
+    Cpus os;
+    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
+        if (CPU_ISSET(cpu, &set))
+            os.push_back(static_cast<unsigned>(cpu));
+    EXPECT_EQ(inherited, os);
+#elif defined(_WIN32)
+    DWORD_PTR process = 0, system = 0;
+    ASSERT_TRUE(GetProcessAffinityMask(GetCurrentProcess(), &process, &system));
+    Cpus os;
+    for (unsigned cpu = 0; cpu < sizeof(DWORD_PTR) * 8u; ++cpu)
+        if (process & (static_cast<DWORD_PTR>(1) << cpu))
+            os.push_back(cpu);
+    EXPECT_EQ(inherited, os);
+#else
+    EXPECT_TRUE(inherited.empty()) << "macOS has no affinity mask";
+#endif
+    EXPECT_TRUE(std::is_sorted(inherited.begin(), inherited.end()));
+}
+
+/**
+ * @test `usable_cpus()` is at least one, at most the machine's, at most the inherited mask's, and on Linux exactly
+ *       what the mask and the cgroup quota leave.
+ */
+TEST(CpuPlacement, UsableCpusAreBoundedByTheMaskAndTheQuota) {
+    const unsigned usable    = qb::detail::usable_cpus();
+    const unsigned hardware  = std::max(1u, std::thread::hardware_concurrency());
+    const Cpus     inherited = qb::detail::inherited_cpus();
+    EXPECT_GE(usable, 1u);
+    EXPECT_LE(usable, hardware);
+    if (!inherited.empty()) {
+        EXPECT_LE(usable, inherited.size());
+    }
+#if defined(__linux__)
+    unsigned expected = inherited.empty() ? hardware : std::min<unsigned>(hardware, static_cast<unsigned>(inherited.size()));
+    if (const unsigned quota = qb::detail::cgroup_cpu_limit("/proc/self/cgroup", "/sys/fs/cgroup"); quota != 0u)
+        expected = std::min(expected, quota);
+    EXPECT_EQ(usable, expected);
+#elif defined(__APPLE__)
+    EXPECT_EQ(usable, hardware) << "a Mac has no mask and no cgroup";
+#endif
 }

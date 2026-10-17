@@ -9,6 +9,25 @@ policy.
 
 ### Changed
 
+- **A VirtualCore's default affinity follows the CPUs the process was given (Huly QB-1081).** Core `i` was pinned
+  to CPU `i` whatever mask the process inherited: with the calling thread narrowed to CPUs 22-23, as `taskset -c
+  22,23` does (WSL2, g++ 14), cores 0, 1 and 2 ran on CPUs 0, 1 and 2, out of the operator's set, and in a container's cpuset a core numbered past it failed with
+  `EINVAL` and floated; on Windows under a process mask of CPUs 22-23, `SetThreadAffinityMask(1 << 0)` was refused
+  and every core ran on the whole mask. A core never given `setAffinity()` is now pinned to the CPU at its position
+  in the mask its thread inherits -- on Linux the mask of the thread that calls `Main::start()` (a `taskset`, a
+  cgroup cpuset, the program's own `sched_setaffinity`), which every core thread starts with; on Windows the
+  process's (`start /affinity`, a job object) -- and a core past the mask's end is not pinned, so it runs on the
+  whole mask. On a host that restricts nothing core `i` is still CPU `i`. An explicit `setAffinity()` keeps the CPUs
+  of that mask it names and leaves the others out, with a log warning, and pins nothing when none is inside: a
+  deployment's restriction is never widened by the program it restricts -- the rule a Linux cpuset already
+  enforces and the one Windows enforces on a thread's mask, where a set with one CPU outside the process mask used
+  to be refused whole. macOS has no mask: its defaults are unchanged (core `i` asks for tag `i`). The OS calls
+  moved out of `VirtualCore.cpp` into `qb/io/cpu.cpp` (`qb::detail::inherited_cpus`, `place_thread`,
+  `pin_current_thread`, beside `CPU::ThreadPinningSupported`); the macOS `pthread_setaffinity_np` shim is gone with
+  them, and a refused pin's warning now names the error `pthread_setaffinity_np` returned instead of reading an
+  `errno` it never set. Pinned by `qb-core-test-system-core-affinity`, every placement read back from the OS on
+  the core's own thread, and by `qb-io-test-unit-cpu-topology` (every branch of the rule).
+
 - **An event type aligned past `qb::EventBucket` is a compile error (Huly QB-269).** Every queue an event crosses
   -- the pipe, the mailbox ring, the activation stash -- places it on a bucket boundary and nothing stronger, and
   `qb::Event` is aligned to exactly one bucket (the cache line, 64 bytes by default). An event declared
@@ -632,6 +651,25 @@ policy.
 
 
 ### Fixed
+
+- **`Main::start()` warns when more cores spin at latency 0 than the process can run at once (Huly QB-1082).** A
+  core at the default latency never parks and never yields its CPU, so with fewer CPUs than such cores they
+  preempt one another and every event between two of them waits for the receiver's next time slice: an eight-core
+  chain took 320 ns a hop with eight CPUs, 0.89 ms with seven and 1.29 ms with four (WSL2, the cpuset emulated) --
+  with no word from qb. `start()` now counts its cores at latency 0 against `qb::detail::usable_cpus()` --
+  `hardware_concurrency()` lowered to the inherited affinity mask and, on Linux, to the tightest cgroup v2
+  `cpu.max` quota on the process's cgroup path (a container's or a systemd slice's) -- and says so on stderr and
+  in the log, naming both counts and the remedy (a latency, or fewer cores). Nothing else changes, and no pass
+  pays anything: the count is read once, before any core exists. It is the one implementation of that count: the
+  benchmarks' `effectiveHardwareCores()` (Huly QB-1080) now reads it instead of a copy of its own, and gains the
+  quota of a parent cgroup. Pinned by `qb-core-test-system-core-affinity` (two spinning cores on one CPU warn, one
+  spinning and one parking do not) and by the fixture trees of `qb-io-test-unit-cpu-topology`.
+- **`Main::start(false)` puts the calling thread's affinity back when it returns (Huly QB-1083).** The calling
+  thread runs the engine's last core, which pinned it, and stayed pinned: after a one-core engine on core 1 the
+  thread ran on CPU 1 alone, on Linux and on Windows, and on Linux every thread it started after inherited that
+  one CPU -- a later engine's cores among them. Its affinity (Linux: its mask; Windows: its group and mask; macOS: its tag) is
+  read before its core starts and put back when the core returns, after a failed init as after a run. Pinned by
+  `qb-core-test-system-core-affinity`.
 
 - **The qb-core benchmarks size their engines to the CPUs the process may run on (Huly QB-1080).**
   `qb::bench::effectiveHardwareCores()` returned `std::thread::hardware_concurrency()`, the machine's online

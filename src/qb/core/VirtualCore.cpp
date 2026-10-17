@@ -30,75 +30,13 @@
 #include <memory>
 #include <new>
 #include <ostream>
+#include <system_error>
 #include <thread>
 #include <qb/core/VirtualCore.h>
 #include <qb/event.h>
 #include <qb/io/async/listener.h>
 #include <qb/system/cpu.h>
 #include <qb/system/time.h>
-
-#ifdef __APPLE__
-#include <mach/mach.h>
-#include <mach/thread_act.h>
-#include <mach/thread_policy.h>
-#include <pthread.h>
-#include <sys/sysctl.h>
-#include <sys/types.h>
-
-// Modern C++: use using alias instead of typedef struct
-using cpu_set_t = struct cpu_set {
-    uint32_t count;
-};
-
-constexpr int CPU_SETSIZE = static_cast<int>(sizeof(uint32_t) * CHAR_BIT);
-
-static inline void
-CPU_ZERO(cpu_set_t *cs) {
-    cs->count = 0;
-}
-
-static inline void
-CPU_SET(int num, cpu_set_t *cs) {
-    if (num < 0 || num >= CPU_SETSIZE) {
-        return;
-    }
-    // `1u`, not `1`: CPU_SETSIZE is 32, so `num` reaches 31 and `1 << 31` shifts into an int's
-    // sign bit. C++20 defines that modulo 2^32, but the value then round-trips through
-    // uint32_t and back to int in CPU_ISSET, which is out-of-range and implementation-defined.
-    // An unsigned literal keeps the whole path well-defined on every standard qb targets (20/23).
-    cs->count |= (1u << num);
-}
-
-static inline int
-CPU_ISSET(int num, cpu_set_t *cs) {
-    if (num < 0 || num >= CPU_SETSIZE) {
-        return 0;
-    }
-    return static_cast<int>((cs->count & (1u << num)) != 0u);
-}
-
-// NB: a macOS shim for pthread_getaffinity_np() used to live here, but
-// __init__ no longer calls getaffinity (it would clobber the requested cpuset),
-// so it has been removed as dead code.
-
-static int
-pthread_setaffinity_np(pthread_t thread, size_t cpu_size, cpu_set_t *cpu_set) {
-    // Modern C++: use std::cmp_less for safe mixed-signed comparisons (or use unsigned types)
-    // Here we use size_t to match the unsigned nature of cpu_size and hardware_concurrency
-    size_t core = 0;
-
-    for (; core < 8 * cpu_size; ++core) {
-        if (CPU_ISSET(static_cast<int>(core), cpu_set))
-            break;
-    }
-    if (core >= std::thread::hardware_concurrency())
-        return -1;
-    thread_affinity_policy_data_t policy      = {static_cast<integer_t>(core)};
-    thread_port_t                 mach_thread = pthread_mach_thread_np(thread);
-    const auto                    ret = thread_policy_set(mach_thread, THREAD_AFFINITY_POLICY, reinterpret_cast<thread_policy_t>(&policy), 1);
-    return !(ret == KERN_SUCCESS || ret == KERN_NOT_SUPPORTED);
-}
-#endif
 
 namespace qb {
 VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexcept
@@ -627,56 +565,13 @@ VirtualCore::__flush_pipes__() noexcept {
 
 // Workflow
 bool
-VirtualCore::__init__(CoreIdSet const &affinity_cores) {
+VirtualCore::__init__(std::span<unsigned const> const cpus) {
     bool ret(true);
-    // Filter out the public `qb::NoAffinity` sentinel (== CoreId::max()) and
-    // any out-of-range CoreId so users can pass `CoreIdSet{qb::NoAffinity}`
-    // without triggering UB in the OS-level pinning APIs.
-    auto is_real_core = [](CoreId c) noexcept {
-        return c < static_cast<CoreId>(qb::MaxCores);
-    };
-    if (!affinity_cores.empty() && std::any_of(affinity_cores.begin(), affinity_cores.end(), is_real_core)) {
-#if defined(unix) || defined(__unix) || defined(__unix__) || defined(__APPLE__)
-        cpu_set_t cpuset;
-
-        CPU_ZERO(&cpuset);
-        for (const auto core : affinity_cores)
-            if (is_real_core(core))
-                CPU_SET(core, &cpuset);
-
-        pthread_t current_thread = pthread_self();
-        // NB: do NOT call pthread_getaffinity_np() on `cpuset` here. It writes the
-        // thread's *current* affinity mask into `cpuset`, overwriting the requested
-        // set built above — so the subsequent pthread_setaffinity_np() would just
-        // re-apply the current affinity (a no-op on Linux) and the requested
-        // per-core pinning would be silently discarded. Apply the requested set
-        // directly.
-        //
-        // Affinity is best-effort: a logical QB CoreId need not map to a physical
-        // CPU (e.g. core 255 on an 8-core host), so a failed pin must NOT fail the
-        // VirtualCore init — it only loses a placement optimisation. Warn and
-        // continue. (Previously the pthread_getaffinity_np clobber masked this by
-        // always pinning to CPU 0, which trivially succeeds.)
-        if (pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset) != 0)
-            QB_LOG_WARN("set thread affinity failed: " << strerror(errno));
-#elif defined(_WIN32) || defined(_WIN64)
-#ifdef _MSC_VER
-        constexpr auto kAffinityBits = static_cast<CoreId>(sizeof(DWORD_PTR) * 8u);
-        DWORD_PTR      mask          = 0u;
-        for (const auto core : affinity_cores)
-            if (is_real_core(core) && core < kAffinityBits)
-                mask |= static_cast<DWORD_PTR>(1u) << core;
-        // QB CoreIds are logical ids; they may exceed the affinity width of a
-        // single Windows processor group. In that case, skip OS pinning rather
-        // than failing VirtualCore init for an otherwise legal QB core id.
-        // Affinity is best-effort: never fail init on a pin failure (warn only).
-        if (mask != 0u && SetThreadAffinityMask(GetCurrentThread(), mask) == 0)
-            QB_LOG_WARN("set thread affinity failed");
-#else
-#warning "Cannot set affinity on windows with GNU Compiler"
-#endif
-#endif
-    }
+    // The CPUs `Main::start_thread` placed this core on (`qb::detail::place_thread`, Huly QB-1081): its position in the
+    // mask its thread inherited by default, an explicit request inside that mask, or nothing -- the thread then keeps
+    // the mask it inherited. Affinity is best-effort: a refused pin loses a placement, never the core, so it only warns.
+    if (const int error = detail::pin_current_thread(cpus); error != 0)
+        QB_LOG_WARN("set thread affinity failed: " << std::system_category().message(error));
     _actor_to_remove.reserve(_actor_count);
     // Publish this thread's io loop to the mailbox so a producer can end a park taken INSIDE
     // it (`Mailbox::wait(listener &)`, below in `__workflow__`). Before the start barrier,

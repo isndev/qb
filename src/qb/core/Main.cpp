@@ -30,7 +30,12 @@
 #include <qb/core/Main.h>
 #include <qb/core/VirtualCore.h>
 #include <qb/io/async/listener.h>
+#include <qb/system/cpu.h>
+#include <sstream>
+#include <string>
+#include <system_error>
 #include <thread>
+#include <vector>
 
 namespace qb {
 
@@ -66,7 +71,8 @@ CoreInitializer::builder() noexcept {
 
 CoreInitializer &
 CoreInitializer::setAffinity(CoreIdSet const &id) noexcept {
-    _affinity = id;
+    _affinity          = id;
+    _affinity_explicit = true;
     return *this;
 }
 
@@ -448,6 +454,63 @@ Main::release_shared_com() noexcept {
     _shared_com.reset();
 }
 
+namespace {
+std::string
+cpu_list(std::span<unsigned const> const cpus) {
+    std::ostringstream out;
+    out << '{';
+    for (std::size_t i = 0; i < cpus.size(); ++i)
+        out << (i ? "," : "") << cpus[i];
+    out << '}';
+    return out.str();
+}
+
+/// The CPUs core @p index is pinned to, on its own thread before its init (Huly QB-1081): `qb::detail::place_thread`
+/// over the mask this thread inherited -- on Linux the calling thread's of `start()`, which every core thread starts
+/// with, on Windows the process's. An explicit CPU outside that mask is left out and named in the log.
+std::vector<unsigned>
+place_core(CoreId const index, CoreIdSet const &affinity, bool const explicit_request) {
+    std::vector<unsigned> requested;
+    if (explicit_request) {
+        for (const auto cpu : affinity)
+            if (cpu < static_cast<CoreId>(qb::MaxCores)) // `qb::NoAffinity` and every id past the set's range: no CPU
+                requested.push_back(cpu);
+    }
+    const auto inherited = detail::inherited_cpus();
+    auto       placement = detail::place_thread(index, requested, explicit_request, inherited);
+    if (!placement.refused.empty())
+        QB_LOG_WARN("VirtualCore(" << index << ") affinity: CPU " << cpu_list(placement.refused) << " left out, this process may run on "
+                                   << cpu_list(inherited) << (placement.pin.empty() ? ": nothing is pinned" : ""));
+    return std::move(placement.pin);
+}
+
+/// The start warning of Huly QB-1082: a core at latency 0 never parks and never yields its CPU, so more of them than
+/// the CPUs this process can run at once preempt one another, and every event between two of them waits for the
+/// receiver's next time slice -- measured 320 ns a hop with a CPU each, 0.89 ms with one CPU short (an eight-core
+/// chain, WSL2). Said on stderr as well as in the log: a logger nobody initialised drops a warning, and a message that
+/// disappears in an ordinary build is the failure being fixed. Read once, before any core exists; costs no pass anything.
+void
+warn_spinning_beyond_usable_cpus(CoreInitializerMap const &initializers) {
+    std::size_t spinning = 0;
+    for (const auto &initializer : initializers | std::views::values)
+        if (initializer.getLatency() <= qb::duration::zero())
+            ++spinning;
+    if (spinning < 2)
+        return; // a process can always run one
+    const unsigned usable = detail::usable_cpus();
+    if (spinning <= usable)
+        return;
+    std::ostringstream text;
+    text << "[Start Sequence] WARNING: " << spinning << " VirtualCores spin at latency 0 but this process can run only " << usable
+         << (usable == 1 ? " CPU" : " CPUs")
+         << " at a time (its affinity mask and cgroup CPU quota): the spinning cores preempt one another and every event "
+            "between them waits for a time slice. Give the cores that can wait a latency (CoreInitializer::setLatency) "
+            "or run fewer cores.";
+    QB_LOG_WARN(text.str());
+    qb::io::cerr() << text.str() << '\n';
+}
+} // namespace
+
 void
 Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     auto &initializer = params.initializer;
@@ -504,8 +567,9 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     bool entered_workflow = false;
     try {
         // Init VirtualCore
-        auto &core_factory = initializer._actor_factories;
-        if (!core.__predicted_ids_hold__(initializer) || !core.__init__(initializer.getAffinity())) { // the first: Huly QB-1007
+        auto      &core_factory = initializer._actor_factories;
+        const auto cpus         = place_core(initializer.getIndex(), initializer.getAffinity(), initializer._affinity_explicit); // Huly QB-1081
+        if (!core.__predicted_ids_hold__(initializer) || !core.__init__(cpus)) { // the first: Huly QB-1007
             QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
         } else if (core_factory.empty()) {
@@ -635,6 +699,7 @@ Main::start(bool async) noexcept {
         QB_LOG_CRIT("[Start Sequence] Failed: No Core registered");
         return;
     }
+    warn_spinning_beyond_usable_cpus(_core_initializers); // Huly QB-1082
 
     _is_running = true;
     // This engine's cores deliver the signals raised from here on, and none before (Huly QB-364). The counts are
@@ -661,7 +726,13 @@ Main::start(bool async) noexcept {
             // Synchronous fallback: the caller becomes the last worker. The
             // stop token is still wired so a `request_stop()` on the source
             // (from destruction or a signal-free stop path) cancels it too.
+            // Its core pins this thread; the thread's affinity is put back however the core returns -- start_thread
+            // never throws (Huly QB-1083). It stayed on its core's CPU before, and every thread it started after
+            // inherited that one CPU.
+            const auto caller_affinity = detail::current_thread_affinity();
             start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark});
+            if (const int error = detail::restore_thread_affinity(caller_affinity); error != 0)
+                QB_LOG_WARN("[Main] the calling thread's affinity could not be put back: " << std::system_category().message(error));
         } else {
             // C++20: `qb::jthread` auto-joins on destruction. The worker is
             // spawned with the stop_token captured by value so the lifetime

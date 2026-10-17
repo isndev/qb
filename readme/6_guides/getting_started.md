@@ -140,7 +140,7 @@ What each call does:
 
 After `join()` (or after `start(false)` in a single-core engine), check `engine.hasError()` to detect a core that terminated on an error.
 
-<!-- src: qb/src/qb/core/Main.h:987-996,998-1004,1015-1021 -->
+<!-- src: qb/src/qb/core/Main.h:995-1009,1011-1017,1028-1034 -->
 
 ## 4. A two-actor program: ping/pong
 
@@ -242,7 +242,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:388-399,442-445, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:1042 -->
+<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:388-399,442-445, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:1055 -->
 
 ## 5. Add a non-blocking timer
 
@@ -346,7 +346,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/src/qb/core/Main.cpp:732-734 (Main::core throws while running), :511-513 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:388-399 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:475-477 (onInit is where registerEvent belongs) -->
+<!-- src: qb/src/qb/core/Main.cpp:803-805 (Main::core throws while running), :575-577 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:388-399 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:475-477 (onInit is where registerEvent belongs) -->
 
 ## Where to go next
 

@@ -206,7 +206,7 @@ engine.core(0)
 
 Two per-core knobs affect placement performance, both set on the `CoreInitializer` returned by `Main::core(core_id)` before `start()`:
 
-- `setAffinity(CoreIdSet)` pins the worker thread to one or more physical CPU cores so the OS scheduler does not migrate it. `qb::NoAffinity` opts out.
+- `setAffinity(CoreIdSet)` pins the worker thread to one or more physical CPU cores so the OS scheduler does not migrate it. `qb::NoAffinity` opts out. Without it, core `i` is pinned to the `i`-th CPU of the mask its thread inherits (since 3.3).
 - `setLatency(qb::duration)` sets how long an idle core waits before re-checking its mailbox. `qb::duration::zero()` (the default) is the busy, lowest-latency mode; a non-zero value trades latency for lower CPU usage when the core is idle. `Main::setLatency(...)` sets a default for every core that has no explicit value.
 
 ```cpp
@@ -238,7 +238,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 `Actor::spawn()` and `Actor::spawn_detached()` are the two supported ways to run a C++20 coroutine inside an actor. Both launch the coroutine in an *isolated context* on the actor's own `VirtualCore` and return immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. They differ only in lifetime:
 
 - **`spawn()` — recommended default.** *Scoped* to the actor: `kill()` cancels it at the next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` with cancellation-aware operations (`ctx.sleep`, `ctx.until_cancelled`, `ctx.cancellation_point`, `ctx.cancellable`). Request/response patterns (`qb::ask`, `qb::ask_all`, `qb::run_saga`, …) are free functions in `qb/patterns.h` built on it.
-- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1746-1757; qb/src/qb/core/VirtualCore.cpp:1065-1067 -->
+- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1746-1757; qb/src/qb/core/VirtualCore.cpp:960-962 -->
 
 The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which both entry points share.
 
