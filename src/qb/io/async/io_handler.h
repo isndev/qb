@@ -282,6 +282,10 @@ public:
         if (it == _sessions.cend())
             return {typename _Session::transport_io_type{}, false};
         auto keep_alive = it->second;
+        // A session in a lingering close (io::close_after_deliver()) leaves it: its bound must not end the
+        // session under its new owner (Huly QB-1089).
+        if constexpr (requires { keep_alive->cancel_linger(); })
+            keep_alive->cancel_linger();
         if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>) {
             // The hook may register or extract sessions: no iterator survives it (a rehash frees the
             // bucket array, an erase frees the node -- Huly QB-306). Look the session up again.

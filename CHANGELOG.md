@@ -9,6 +9,13 @@ policy.
 
 ### Changed
 
+- **A server session's `close_after_deliver()` lingers: it closes after its peer, at most `linger()` -- 2 s by
+  default -- once its output is delivered (Huly QB-1089).** It used to close as soon as the output was written;
+  the session now stays registered meanwhile, reads and drops what the peer sends, and reports
+  `on(event::disconnected)` when the peer has closed or the bound elapsed (`event::eos` still marks the
+  delivery). `io::set_linger(qb::duration::zero())` restores the immediate close; `io::lingering()` tells a
+  closing session from open work; `disconnect()` still aborts at once. The fix this carries is under Fixed.
+
 - **An event type aligned past `qb::EventBucket` is a compile error (Huly QB-269).** Every queue an event crosses
   -- the pipe, the mailbox ring, the activation stash -- places it on a bucket boundary and nothing stronger, and
   `qb::Event` is aligned to exactly one bucket (the cache line, 64 bytes by default). An event declared
@@ -633,6 +640,24 @@ policy.
 
 ### Fixed
 
+- **`close_after_deliver()` delivers to a peer that is still sending (Huly QB-1089).** A session a server
+  accepted disposed as soon as its output was written: its server released it, and the transport's destructor
+  closed a socket whose input was unread -- which TCP turns into a reset. The reset failed the peer's next send
+  everywhere (EPIPE on Linux: a client still uploading 4 MiB, 20 runs in 20, WSL2 g++ 14), and on Windows it
+  also dropped the answer the peer had received and not yet read -- the very reply `close_after_deliver()`
+  promised: "goodbye" lost 9 runs in 10 (WSAECONNRESET), and qbm-http's 413 to an oversized upload lost 39 in
+  40, MSVC 19.51 Release. QB-1060 had fixed the standalone half (a half-close, the descriptor kept); a server's
+  session now closes after its peer: once the output is delivered and `event::eos` reported, its sending side
+  is shut down -- the peer reads everything, then EOF -- and what the peer still sends is read and dropped until
+  it closes, the socket fails, or `linger()` elapses; then `dispose()` runs. The bound's timer only flags the
+  expiry and feeds the io watcher, so the session that owns it is never disposed from under it; a server's
+  teardown destroys a lingering session without waiting; `extractSession()` takes one out of the linger
+  (`io::cancel_linger()`). The ok read and write paths do not test it: the dispatch reaches it only once
+  nothing was read or written, and the drain check every write passes is instruction-identical (MSVC `/FAs`
+  of `io<>::on(event::io)`, `handle_write`, `process_messages`). A TLS session is half-closed at the TCP
+  level, as `detail::end_transport` does. Witnesses: `qb-io-test-system-text-protocol-roundtrip`
+  (`CloseAfterDeliverReachesAPeerStillSending`, red on both platforms before; the linger's life cycle: the
+  peer's close, the bound, a zero linger, `disconnect()`, the server's teardown, `extractSession()`).
 - **The qb-core benchmarks size their engines to the CPUs the process may run on (Huly QB-1080).**
   `qb::bench::effectiveHardwareCores()` returned `std::thread::hardware_concurrency()`, the machine's online
   CPUs, so a container whose cpuset held 6 of its host's 20 CPUs built the eight-core cells: eight VirtualCores

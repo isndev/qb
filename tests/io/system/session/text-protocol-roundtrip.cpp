@@ -344,6 +344,344 @@ TEST_F(SessionRoundtripTest, CloseAfterDeliverSendsDataThenDisconnects) {
     EXPECT_TRUE(g_eos_before_destroy.load()) << "eos must be delivered while the session is alive, before disposal";
 }
 
+// The peer is still sending when the session answers and asks to close: what it sent after the
+// answer is never read, so the server closes a socket with unread input -- which the TCP stack turns
+// into a reset. The reset fails the peer's send everywhere, and on Windows it also destroys the
+// answer the peer received and has not read yet. The client below sends its line, then a large tail,
+// and reads only once its upload is out: the deterministic shape of that race (Huly QB-1089).
+TEST_F(SessionRoundtripTest, CloseAfterDeliverReachesAPeerStillSending) {
+    using namespace cad;
+    g_destroyed.store(false);
+    g_eos_count.store(0);
+    g_eos_before_destroy.store(false);
+
+    CloseAfterDeliverServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
+    server.start();
+
+    std::atomic<bool> client_done{false};
+    std::string       received;
+    int               read_error  = 0;
+    std::size_t       upload_left = 0;
+    int               write_error = 0;
+    std::thread       t([&received, &read_error, &upload_left, &write_error, &client_done, port]() {
+        qb::io::tcp::socket sock;
+        ASSERT_EQ(sock.connect_v4("127.0.0.1", port), SocketStatus::Done);
+        sock.set_nonblocking(true);
+        std::string       pending = "ping\n";
+        const std::string tail(4 * 1024 * 1024, 'x');
+        pending += tail;
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (!pending.empty() && std::chrono::steady_clock::now() < deadline) {
+            const int n = sock.write(pending.data(), pending.size());
+            if (n > 0)
+                pending.erase(0, static_cast<std::size_t>(n));
+            else if (n < 0 && !qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                write_error = qb::io::socket::get_last_errno();
+                break; // reset by the server
+            } else
+                std::this_thread::sleep_for(1ms);
+        }
+        upload_left = pending.size();
+        char buffer[512];
+        while (std::chrono::steady_clock::now() < deadline) {
+            const int n     = sock.read(buffer, sizeof(buffer));
+            const int error = n < 0 ? qb::io::socket::get_last_errno() : 0;
+            if (n > 0)
+                received.append(buffer, static_cast<std::size_t>(n));
+            else if (error == 0) // tcp::socket::read() reports EOF as -1 with no error
+                break;
+            else if (!qb::io::socket::not_recv_error(error)) {
+                read_error = error;
+                break;
+            } else
+                std::this_thread::sleep_for(1ms);
+        }
+        sock.disconnect();
+        client_done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load() && client_done.load(); }, 10s));
+    t.join();
+    EXPECT_NE(received.find("goodbye"), std::string::npos)
+        << "the answer did not reach a peer that was still sending (read error " << read_error << ")";
+    EXPECT_EQ(upload_left, 0u) << "the peer was reset while it was still sending (write error " << write_error << ")";
+}
+
+// =============================================================================
+// The lingering close of a server session (Huly QB-1089): its life cycle
+// =============================================================================
+
+namespace linger_test {
+
+using linger_clock = std::chrono::steady_clock;
+
+std::atomic<bool>        g_destroyed{false};
+std::atomic<bool>        g_delivered{false};
+std::atomic<int>         g_disconnected{0};
+qb::duration             g_linger = 2s;
+linger_clock::time_point g_delivered_at{};
+linger_clock::time_point g_destroyed_at{};
+
+class LingerServer;
+
+class LingerSession : public use<LingerSession>::tcp::client<LingerServer> {
+public:
+    using Protocol = qb::protocol::text::command<LingerSession>;
+
+    explicit LingerSession(IOServer &server)
+        : client(server) {}
+
+    ~LingerSession() {
+        g_destroyed_at = linger_clock::now();
+        g_destroyed.store(true);
+    }
+
+    void
+    on(Protocol::message &&) {
+        *this << "goodbye" << Protocol::end;
+        close_after_deliver();
+    }
+
+    void
+    on(qb::io::async::event::eos &&) {
+        g_delivered_at = linger_clock::now();
+        g_delivered.store(true);
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) {
+        g_disconnected.fetch_add(1);
+    }
+
+    // The extraction contract: a session that gives its socket away stops watching it.
+    void
+    on(qb::io::async::event::extracted &&) {
+        stop();
+    }
+};
+
+class LingerServer : public use<LingerServer>::tcp::server<LingerSession> {
+public:
+    void
+    on(IOSession &session) {
+        session.set_linger(g_linger);
+    }
+};
+
+/// What the peer saw: the answer, then EOF -- the session's half-close -- or an error.
+struct PeerView {
+    std::string received;
+    bool        eof   = false;
+    int         error = 0;
+};
+
+/// The peer: sends "bye", reads until EOF or an error, then keeps its socket open until `release` is set,
+/// so the test decides when -- and whether -- the peer closes.
+void
+run_peer(std::uint16_t port, PeerView &view, std::atomic<bool> &saw_end, std::atomic<bool> &release) {
+    qb::io::tcp::socket sock;
+    if (sock.connect_v4("127.0.0.1", port) != SocketStatus::Done) {
+        saw_end.store(true);
+        return;
+    }
+    sock.write("bye\n", 4);
+    sock.set_nonblocking(true);
+    char       buffer[256];
+    const auto deadline = linger_clock::now() + 10s;
+    while (linger_clock::now() < deadline) {
+        const int n     = sock.read(buffer, sizeof(buffer));
+        const int error = n < 0 ? qb::io::socket::get_last_errno() : 0;
+        if (n > 0) {
+            view.received.append(buffer, static_cast<std::size_t>(n));
+        } else if (error == 0) {
+            view.eof = true;
+            break;
+        } else if (!qb::io::socket::not_recv_error(error)) {
+            view.error = error;
+            break;
+        } else {
+            std::this_thread::sleep_for(1ms);
+        }
+    }
+    saw_end.store(true);
+    while (!release.load() && linger_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    sock.disconnect();
+}
+
+void
+reset(qb::duration linger) {
+    g_destroyed.store(false);
+    g_delivered.store(false);
+    g_disconnected.store(0);
+    g_linger = linger;
+}
+
+[[nodiscard]] bool
+any_lingering(LingerServer &server) {
+    for (auto &[id, session] : server.sessions())
+        if (session->lingering())
+            return true;
+    return false;
+}
+
+/// Runs the loop for `span`, whatever happens: no predicate, no failure.
+void
+pump_for(qb::duration span) {
+    const auto until = linger_clock::now() + span;
+    while (linger_clock::now() < until)
+        async::run(EVRUN_NOWAIT);
+}
+
+} // namespace linger_test
+
+// The answer is delivered, then the session waits for its peer: still registered, lingering, its sending
+// side shut down -- the peer reads the answer then EOF -- and it ends as soon as the peer closes.
+TEST_F(SessionRoundtripTest, ALingeringCloseWaitsForThePeerAndEndsWhenItCloses) {
+    using namespace linger_test;
+    reset(30s);
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return g_delivered.load() && saw_end.load(); }, 5s));
+    pump_for(20ms);
+    EXPECT_TRUE(view.eof) << "the peer must read EOF once the answer is out: the sending side is shut down (error " << view.error << ")";
+    EXPECT_NE(view.received.find("goodbye"), std::string::npos);
+    EXPECT_FALSE(g_destroyed.load()) << "the session must wait for its peer";
+    EXPECT_EQ(server.session_count(), 1u);
+    EXPECT_TRUE(any_lingering(server));
+
+    release.store(true);
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "the peer's close must end the linger at once, not after 30 s";
+    peer.join();
+    EXPECT_EQ(g_disconnected.load(), 1);
+    EXPECT_EQ(server.session_count(), 0u);
+}
+
+// A peer that never closes is waited for linger(), no more.
+TEST_F(SessionRoundtripTest, ALingeringCloseIsBoundedByItsLinger) {
+    using namespace linger_test;
+    reset(300ms);
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "the bound must end the linger";
+    release.store(true);
+    peer.join();
+    ASSERT_TRUE(g_delivered.load());
+    // Not before its bound -- the bound is what the linger is (a millisecond of timer granularity aside).
+    EXPECT_GE(g_destroyed_at - g_delivered_at, 290ms);
+    EXPECT_NE(view.received.find("goodbye"), std::string::npos);
+    EXPECT_EQ(g_disconnected.load(), 1);
+}
+
+// set_linger(0): the session closes as soon as its answer is delivered, as before 3.3.
+TEST_F(SessionRoundtripTest, AZeroLingerClosesAsSoonAsTheAnswerIsDelivered) {
+    using namespace linger_test;
+    reset(qb::duration::zero());
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "the peer has not closed: only an immediate close ends it";
+    EXPECT_FALSE(any_lingering(server));
+    release.store(true);
+    peer.join();
+    EXPECT_NE(view.received.find("goodbye"), std::string::npos);
+}
+
+// disconnect() is an abort: it ends a linger at the next dispatch.
+TEST_F(SessionRoundtripTest, DisconnectAbortsALingeringClose) {
+    using namespace linger_test;
+    reset(30s);
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return any_lingering(server); }, 5s));
+    server.sessions().begin()->second->disconnect();
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "disconnect() must not wait for the linger";
+    release.store(true);
+    peer.join();
+    EXPECT_EQ(g_disconnected.load(), 1);
+}
+
+// The server goes while one of its sessions lingers: no wait, no leak, and nothing fires afterwards.
+TEST_F(SessionRoundtripTest, ServerTeardownDuringALingerNeitherWaitsNorLeaks) {
+    using namespace linger_test;
+    reset(30s);
+    auto server = std::make_unique<LingerServer>();
+    ASSERT_EQ(server->transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server->transport().local_endpoint().port();
+    server->start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return any_lingering(*server); }, 5s));
+    const auto before = linger_clock::now();
+    server.reset();
+    EXPECT_LT(linger_clock::now() - before, 1s) << "a lingering session must not hold its server's teardown";
+    EXPECT_TRUE(g_destroyed.load());
+    pump_for(100ms); // the session's bound went with it: nothing of it may run now
+    release.store(true);
+    peer.join();
+}
+
+// A lingering session whose socket is taken over (extractSession) leaves the linger: its bound must not
+// end the session under its new owner.
+TEST_F(SessionRoundtripTest, ExtractingALingeringSessionCancelsItsLinger) {
+    using namespace linger_test;
+    reset(100ms);
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return any_lingering(server); }, 5s));
+    const auto id      = server.sessions().begin()->first;
+    auto       session = server.session(id); // kept alive past the extraction
+    auto [sock, ok]    = server.extractSession(id);
+    ASSERT_TRUE(ok);
+    EXPECT_FALSE(session->lingering());
+    pump_for(400ms); // four bounds
+    EXPECT_EQ(g_disconnected.load(), 0) << "the linger's bound ended a session that had left it";
+    session.reset();
+    sock.close();
+    release.store(true);
+    peer.join();
+}
+
 // =============================================================================
 // io_handler::stream() broadcasts to every live session
 // =============================================================================
