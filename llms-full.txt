@@ -384,6 +384,22 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - A stream ngtcp2 refuses for lack of its OWN credit is parked (`park_credit_blocked_stream`) until the peer's MAX_STREAM_DATA reaches `extend_max_stream_data_cb`; the writer goes on with the next stream, the DATAGRAMs and the control frames. With the connection's credit spent (`conn_get_max_data_left`), DATAGRAMs (never flow controlled) and control frames still go out. _(src/qb/io/quic.cpp:1263-1271,1282-1288,1558-1563)_
 - QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1061-1062,1565-1592)_
 
+### A client that keeps its connection — `<qb/io/reconnect.h>` (3.3)
+
+`qb::io::connection_state`, `qb::io::down_reason`, `qb::io::gap_reason` / `qb::io::gap_info` and
+`qb::io::reconnect_policy` are the shared vocabulary of the clients that keep a connection (the qbm-redis
+client and consumers, the qbm-pgsql connection, the qbm-http clients); qb-io itself runs no such client.
+What such a client promises: it walks `idle -> connecting -> handshaking -> ready`, and from `ready`
+either `reconnecting` (a lost connection while a reconnection run is armed) or `down`, its only terminal
+state; an explicit `disconnect()` is terminal whatever the policy, only a peer's loss starts a run.
+Every connection, the first included, runs its handshake (the protocol's, the user's hook, the session
+replay) before any user byte, and `is_connected()` means `ready`. A refused handshake is terminal
+(`handshake_refused`); a transport failure during one is only one more attempt. In-flight work fails
+once, with the reason of the loss; nothing waits for ever. A stream that survives a reconnection or an
+overflow says so in band, with one gap marker. What becomes of work submitted outside `ready` is each
+client's documented policy: qbm-redis HOLDS it until the client is ready, up to its command timeout;
+qbm-pgsql REFUSES it.
+
 ### Coroutines inside an actor
 
 **Use `spawn()`. It is the default and the safe one.** `spawn()` binds the coroutine to a per-actor
@@ -1423,6 +1439,15 @@ RFC 3986 URI. Parsed on construction.
 *   `static bool is_valid_scheme(std::string_view) noexcept`, `is_valid_host(std::string_view) noexcept`, `normalize_path(std::string&) noexcept`.
 *   RFC 3986 char predicates (free functions, `bool f(int c)`): `is_alnum`, `is_unreserved`, `is_gen_delim`, `is_sub_delim`, `is_reserved`, `is_scheme_character`, `is_user_info_character`, `is_authority_character`, `is_path_character`, `is_query_character`, `is_fragment_character`.
 *   use: `qb::io::uri u("tcp://127.0.0.1:8080/x"); u.host(); u.u_port();`
+
+### Reconnect contract vocabulary (`<qb/io/reconnect.h>`, 3.3, Huly QB-126)
+Header-only: names and pure functions, no runtime code. The words every client that keeps a connection reports itself in -- the qbm-redis client and consumers, the qbm-pgsql connection, the qbm-http clients (whose RetryPolicy, like qbm-redis's, aliases `reconnect_policy`).
+*   `enum class qb::io::connection_state : std::uint8_t { idle, connecting, handshaking, ready, reconnecting, down }` -- what a client's `state()` answers. `ready` is the one state in which it is usable (`is_connected()`): the handshake ran on that connection before any user byte. `down` is the only terminal state; only an explicit `connect()` leaves it, or `idle`. `inline constexpr std::size_t connection_states = 6`; `[[nodiscard]] constexpr std::string_view connection_state_name(connection_state) noexcept`.
+*   `enum class qb::io::down_reason : std::uint8_t { user, peer, protocol, retries_exhausted, handshake_refused }` -- what `down_reason()` answers, shaped like the death watch's `qb::DownReason`. `user`: `disconnect()`, terminal whatever the policy; `peer`: the peer closed, reset, could not be reached or stopped answering, no run armed; `protocol`: bytes the client could not accept, no run armed; `retries_exhausted`: a run spent its attempts; `handshake_refused`: the server or the user's handshake hook refused, which no run retries. A client's `on_disconnected` hook receives `user`, `peer` or `protocol`. `down_reasons = 5`; `down_reason_name(down_reason)`.
+*   `enum class qb::io::gap_reason : std::uint8_t { reconnect, overflow }` -- why a stream (a subscription, a notification channel) has a hole: the connection was replaced, or the client's own queue was full. `gap_reasons = 2`; `gap_reason_name(gap_reason)`.
+*   `struct qb::io::gap_info { gap_reason reason = gap_reason::reconnect; std::uint64_t lost = 0; }` -- what a gap marker carries. Consecutive losses coalesce into one marker: `reconnect` when a reconnection is among them, `lost` counting what the client itself dropped.
+*   `struct qb::io::reconnect_policy` -- the backoff of a reconnection run: `int max_attempts = -1` (attempts per run, -1 = unlimited); `qb::duration initial_delay` = 100 ms (the wait before attempt 2); `qb::duration max_delay` = 30 s; `double multiplier = 2.0` (below 1 reads as 1); `bool jitter = true` (a quarter either way); `qb::duration connect_timeout{}` (zero: the client's own connect timeout); `std::function<void(int attempt, qb::duration next_delay)> on_retry` (before each wait). Builders, each `reconnect_policy&`: `with_max_attempts(int)`, `with_initial_delay(qb::duration)`, `with_max_delay(qb::duration)`, `with_multiplier(double)`, `with_jitter(bool)`, `with_connect_timeout(qb::duration)`, `with_on_retry(std::function<void(int, qb::duration)>)`. Pure: `[[nodiscard]] qb::duration next_delay(int attempt, std::mt19937 *rng = nullptr) const` -- zero for `attempt < 1`, else `initial_delay * multiplier^(attempt - 1)` capped at `max_delay`, jittered when `rng` is given and `jitter` is on; `[[nodiscard]] constexpr bool allows_attempt(int attempts) const noexcept`. Not `qb::io::async::retry_policy` (a coroutine body retried on an exception) nor `qb::retry_policy` (an `ask` retried).
+*   use: `auto p = qb::io::reconnect_policy{}.with_max_attempts(5).with_initial_delay(200ms); p.next_delay(1); // 200 ms`
 
 ### Low-level socket (`<qb/io/system/sys__socket.h>`)
 *   `using qb::io::socket_type = int` (POSIX) / `SOCKET` (Windows) (from config.h).
