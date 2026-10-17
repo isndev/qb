@@ -201,6 +201,8 @@ public:
  * @details `counter`, `gauge` and `histogram` return the family of that name, appending it the first time (with
  *          its help text): a source asks for its family and adds its samples. They throw `std::invalid_argument` on
  *          a name that is not a valid metric name, or that names a family of another type in this snapshot.
+ *          The reference they return is valid until the next family is added: a family is an element of a vector,
+ *          so fill one family before asking for the next.
  *          A snapshot is a value: copyable, movable, and carried between cores by an event.
  */
 class snapshot {

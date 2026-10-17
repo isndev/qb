@@ -681,7 +681,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   registers nothing. A core that does not answer is `qb_scrape_core_up{core} 0`, never an exception; a throwing source
   is dropped and counted. Nothing runs and nothing is shared between two scrapes: the counters stay the core's own
   integers. Names: `qb_<layer>_<name>_<unit>[_total]`, base units; a family made on several cores carries `core` or is
-  summed by the merge. _(metrics.h:206; metrics_registry.h:178, :201)_
+  summed by the merge. _(metrics.h:208; metrics_registry.h:178, :201)_
 - **A blocking handler shows in the pass time -- on a core that times its passes.** `CoreInitializer::setPassTiming()`
   (off by default, decided at thread start) fills `CoreStats::pass_time`, a `qb::TimingStats` of the core's passes
   with the park excluded: `recent_max`, the longest pass of the last one to two seconds, is the stall gauge. It costs
