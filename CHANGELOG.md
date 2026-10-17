@@ -3235,7 +3235,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
 
 - **`QB_ENABLE_NATIVE_ARCH`'s documented default was the inverse of the code, across the readme
   books, `INSTALL.md`, `README.md` and the `.cursor/` rules and skills.** The option is
-  `option(... OFF)` (`qbConfig.cmake:140`) and has been — verified by running a bare
+  `option(... OFF)` ([`qbConfig.cmake` L152](https://github.com/isndev/qb/blob/4cdcf36b777143124fc7fa539009a58dc302a2b7/cmake/qbConfig.cmake#L152)) and has been — verified by running a bare
   `cmake -S qb -B tmp -DCMAKE_BUILD_TYPE=Release` with no preset, which yields `OFF`. There is no
   configuration in which `ON` is the default. Two files contradicted themselves within a few lines,
   and one stated the narrowest wrong version ("the `ON` default applies only to a raw `cmake -D...`
@@ -3523,8 +3523,8 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   `Actor.h`'s tail is a guard no-op and the class is still incomplete there. What a `.tpp` was
   reaching for was never a file — it was a **position**, and the position is the tail of the
   header that closes the cycle. Two supporting moves fall out of the same reasoning:
-  `service_event_type` moved from `Actor.h:141-142` to `Event.h:696` (Pipe.h is included *from*
-  `Actor.h:50`, 91 lines before the concept was declared, so a body in Pipe.h could never see it),
+  `service_event_type` moved from [`Actor.h` L141-L142](https://github.com/isndev/qb/blob/8be422305460913166857014f98d834a9d106087/src/qb/core/Actor.h#L141-L142) to [`Event.h` L696](https://github.com/isndev/qb/blob/861356a12ad717f7e1699b85eaed0d645b97c663/src/qb/core/Event.h#L696) (Pipe.h is included *from*
+  [`Actor.h` L50](https://github.com/isndev/qb/blob/8be422305460913166857014f98d834a9d106087/src/qb/core/Actor.h#L50), 91 lines before the concept was declared, so a body in Pipe.h could never see it),
   and `Pipe.h` gained `<qb/system/event/router.h>`, which `Pipe.tpp` had silently borrowed from
   its includer — it carried no includes at all.
 
@@ -3593,7 +3593,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   host C++20 — so the declarations could only ever have produced a link error. Every platform qb
   builds on provides both functions natively, and `qb::io::inet::ip::compat` is now a pure re-export.
   The file sat in the public header tree but was never shipped (qb's install rule matches `*.h`,
-  `*.hpp`, `*.tpp` and `*.inl` — `qbPackage.cmake:161-165`; the last two now match nothing, this
+  `*.hpp`, `*.tpp` and `*.inl` — [`qbPackage.cmake` L162-L165](https://github.com/isndev/qb/blob/4cdcf36b777143124fc7fa539009a58dc302a2b7/cmake/qbPackage.cmake#L162-L165); the last two now match nothing, this
   release having retired both extensions). `QB__HAS_NTOP` itself is kept as a published
   feature-test macro.
 - **`SO_NOSIGPIPE` is no longer defined on Linux.** `<qb/io/config.h>` — an **installed public
@@ -3841,7 +3841,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   the invention looked plausible.) The real key agreement is `x25519_key_exchange`; the AEAD-with-
   metadata pair is `encrypt_with_metadata`/`decrypt_with_metadata`, now documented with a citation
   and a worked example. Separately, `ecies_encrypt` returns `{ephemeral_public_key, ciphertext}`
-  (`crypto_asymmetric.cpp:718`) while `ecies_decrypt` takes the ciphertext **first**, so the pair is
+  ([`crypto_asymmetric.cpp` L718](https://github.com/isndev/qb/blob/4cdcf36b777143124fc7fa539009a58dc302a2b7/src/qb/io/crypto_asymmetric.cpp#L718)) while `ecies_decrypt` takes the ciphertext **first**, so the pair is
   deliberately not in call order — the reference said the opposite, and following it throws
   `Failed to create public key from raw bytes` at run time. Found by compiling and running the
   documented snippet rather than by reading it; every corrected snippet on that page now round-trips
@@ -3952,7 +3952,7 @@ against" — and the include-prefix move above lands hardest in exactly those mo
   bodies reach a complete `qb::Actor` with every member template *declared*, while Actor's bodies were
   reached only by `qb/actor.h`, `qb/patterns.h` and `qb/core/patterns.h`. A TU whose only qb include
   was the engine umbrella compiled clean and failed at link. `qb/main.h` now pulls
-  `core/VirtualCore.h`, the same position and for the same reason as `qb/actor.h:18`.
+  `core/VirtualCore.h`, the same position and for the same reason as [`qb/actor.h` L18](https://github.com/isndev/qb/blob/4cdcf36b777143124fc7fa539009a58dc302a2b7/src/qb/actor.h#L18).
   `<qb/core/Actor.h>` alone still does **not** carry the template bodies, and that stays deliberate:
   they need a complete `qb::VirtualCore`, and `VirtualCore.h` is what drags `<windows.h>`,
   `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU. The umbrellas are the entry points; the class

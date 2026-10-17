@@ -967,14 +967,14 @@ using service_event = ServiceEvent;
 // ============================================================================================
 // Concepts over the event hierarchy declared above.
 //
-// `service_event_type` lived at Actor.h:143-144 through 2.6.0. It moved here in 3.0 because
-// Pipe.h needs it: Pipe's template bodies now sit at the tail of Pipe.h (they shipped as
-// Pipe.tpp), and Pipe.h is included FROM Actor.h:52 -- 91 lines before Actor.h declared the
-// concept. It cannot be reached from there. Event.h is where it belongs anyway: the concept
-// constrains `ServiceEvent`, which is declared above at :488, and it needs nothing from
+// `service_event_type` lived in Actor.h through 2.6.0. It moved here in 3.0 because Pipe.h
+// needs it: Pipe's template bodies now sit at the tail of Pipe.h (they shipped as Pipe.tpp),
+// and Actor.h included Pipe.h 91 lines above the concept (the 3.0.0 CHANGELOG links both).
+// It cannot be reached from there. Event.h is where it belongs anyway: the concept
+// constrains `ServiceEvent`, which is declared above at :623, and it needs nothing from
 // `qb::Actor`. Every consumer keeps seeing it, since Actor.h includes this header.
 //
-// `event_qos0_type` deliberately stays at Actor.h:136. Only VirtualCore's bodies use it, and
+// `event_qos0_type` deliberately stays at Actor.h:260-261. Only VirtualCore's bodies use it, and
 // they sit in VirtualCore.h, which has a complete Actor.h. Moving it too would be churn.
 //
 // The declaration is placed after the closing brace above, not spliced into the namespace
