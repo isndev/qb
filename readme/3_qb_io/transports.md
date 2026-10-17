@@ -120,6 +120,38 @@ A standalone client that must have failed its requests when its own disconnect r
 `dispose()` and `start()` never touch the buffers: `reset_for_reconnect()` clears both, and the protocols, before the next transport is installed (`src/qb/io/async/io.h:3167-3171`) — what the previous connection left in `out()` would otherwise be the first bytes of the next one (Huly QB-202).
 The transport is another matter: a standalone object's `dispose()` ends the one its connection ended with, once the watcher is stopped and `on(event::disconnected&&)` has returned, through `detail::end_transport` (`src/qb/io/async/io.h:3104-3107`). When the peer's EOF or a socket error ended the connection it is closed, and a client whose peer hung up keeps no CLOSE_WAIT socket. When the object ended it — `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()` — only its sending side is shut down: the peer reads EOF once everything queued has left, and nothing is reset, because a close would reset a peer whose bytes are still unread: its next send fails, and on Windows it also drops what it received and has not read yet (`src/qb/io/async/teardown.h:100-116`). It used to be left as it was until the object connected again or was destroyed (Huly QB-1060). The next connection comes with its own transport, installed once `dispose()` has returned — one installed from inside `on(event::disconnected&&)` is the one ended.
 
+### A client that keeps its connection: the reconnect contract (`qb/io/reconnect.h`)
+
+A client that keeps one connection open -- and reopens it when it is lost -- has the same questions to answer
+whatever it speaks: where does it stand, why did it stop, what did a stream lose, how long does it wait before trying
+again. `qb/io/reconnect.h` gives those answers one vocabulary (Huly QB-126), names and pure functions only, nothing to
+link. qb-io runs no such client itself; the modules do: the qbm-redis client and consumers, the qbm-pgsql connection,
+and the qbm-http clients, whose retry policy is this header's `reconnect_policy` under another name (as qbm-redis's
+is).
+
+- **`qb::io::connection_state`** -- what a client's `state()` answers: `idle`, `connecting`, `handshaking`, `ready`,
+  `reconnecting`, `down`. A client is usable only in `ready`: the handshake -- the protocol's, the user's hook, the
+  replay of its session -- has run on that connection before any byte of the user's. `down` is the only terminal
+  state, and only an explicit `connect()` leaves it.
+- **`qb::io::down_reason`** -- why it is down: `user` (`disconnect()`, terminal whatever the policy), `peer` and
+  `protocol` (a loss with no reconnection run armed), `retries_exhausted` (a run spent its attempts),
+  `handshake_refused` (the server or the hook refused; no run retries it). Shaped like the death watch's
+  `qb::DownReason`.
+- **`qb::io::gap_reason` and `qb::io::gap_info`** -- what a stream lost at one point: a reconnection, or an overflow
+  of the client's own queue, and how many items the client dropped. A stream says so in band, with one marker before
+  the first item after the hole.
+- **`qb::io::reconnect_policy`** -- the backoff of a run: `max_attempts` (-1 = unlimited), `initial_delay` (100 ms),
+  `max_delay` (30 s), `multiplier` (2.0), `jitter` (a quarter either way), `connect_timeout` (zero = the client's
+  own), `on_retry`; `next_delay(attempt, rng)` and `allows_attempt(attempts)` are pure, so a policy is tested on its
+  own. It is not `qb::io::async::retry_policy`, which retries a coroutine body on an exception.
+
+What the clients promise, in short: an explicit disconnect is terminal and only a peer's loss starts a run; a refused
+handshake is terminal and a transport failure during one is one more attempt; in-flight work fails once, with the
+reason; nothing waits for ever. What becomes of work submitted outside `ready` is each client's documented policy:
+qbm-redis holds it until the client is ready, up to its command timeout; qbm-pgsql refuses it.
+
+<!-- src: qb/src/qb/io/reconnect.h:63-80 (connection_state), :117-133 (down_reason), :167-173 (gap_reason), :201-204 (gap_info), :218-308 (reconnect_policy) -->
+
 ### Stream abstractions
 
 The three stream templates live in `qb/io/stream.h`. Each is parameterized by the underlying I/O type `_IO_`:

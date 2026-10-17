@@ -356,6 +356,22 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - A stream ngtcp2 refuses for lack of its OWN credit is parked (`park_credit_blocked_stream`) until the peer's MAX_STREAM_DATA reaches `extend_max_stream_data_cb`; the writer goes on with the next stream, the DATAGRAMs and the control frames. With the connection's credit spent (`conn_get_max_data_left`), DATAGRAMs (never flow controlled) and control frames still go out. _(src/qb/io/quic.cpp:1263-1271,1282-1288,1558-1563)_
 - QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1061-1062,1565-1592)_
 
+### A client that keeps its connection — `<qb/io/reconnect.h>` (3.3)
+
+`qb::io::connection_state`, `qb::io::down_reason`, `qb::io::gap_reason` / `qb::io::gap_info` and
+`qb::io::reconnect_policy` are the shared vocabulary of the clients that keep a connection (the qbm-redis
+client and consumers, the qbm-pgsql connection, the qbm-http clients); qb-io itself runs no such client.
+What such a client promises: it walks `idle -> connecting -> handshaking -> ready`, and from `ready`
+either `reconnecting` (a lost connection while a reconnection run is armed) or `down`, its only terminal
+state; an explicit `disconnect()` is terminal whatever the policy, only a peer's loss starts a run.
+Every connection, the first included, runs its handshake (the protocol's, the user's hook, the session
+replay) before any user byte, and `is_connected()` means `ready`. A refused handshake is terminal
+(`handshake_refused`); a transport failure during one is only one more attempt. In-flight work fails
+once, with the reason of the loss; nothing waits for ever. A stream that survives a reconnection or an
+overflow says so in band, with one gap marker. What becomes of work submitted outside `ready` is each
+client's documented policy: qbm-redis HOLDS it until the client is ready, up to its command timeout;
+qbm-pgsql REFUSES it.
+
 ### Coroutines inside an actor
 
 **Use `spawn()`. It is the default and the safe one.** `spawn()` binds the coroutine to a per-actor
