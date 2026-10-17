@@ -35,6 +35,7 @@ endfunction()
 
 qbio_bench(async        async-hotpaths)
 qbio_bench(async        ev-backends)
+qbio_bench(async        observability-overhead)
 qbio_bench(coroutine    coroutine-scheduler-throughput)
 qbio_bench(crypto       crypto-primitives          ssl)
 qbio_bench(compression  compress-codecs            compression)

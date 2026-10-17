@@ -55,6 +55,7 @@ qbc_bench(system callback-burst-throughput)
 qbc_bench(system engine-lifecycle)
 qbc_bench(system actor-spawn-throughput)
 qbc_bench(system coroutine-spawn-latency)
+qbc_bench(system observability-overhead)
 
 # --- messaging/ ---
 qbc_bench(messaging fan-in-contention)

@@ -11,7 +11,7 @@ The benchmarks are micro-benchmarks of the actor engine and the qb-io stack. The
 
 ## Concepts
 
-The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned to tag `v1.9.5` by default via `QB_GOOGLEBENCHMARK_GIT_TAG`; `qb/cmake/qbConfig.cmake:117`). Each benchmark source is a separate executable with its own `BENCHMARK_MAIN()` entry point, so there is no aggregate runner — you run one binary per pattern.
+The suite uses [Google Benchmark](https://github.com/google/benchmark) (pinned to tag `v1.9.5` by default via `QB_GOOGLEBENCHMARK_GIT_TAG`; `qb/cmake/qbConfig.cmake:117`). Each benchmark source is a separate executable with its own entry point, so there is no aggregate runner — you run one binary per pattern.
 
 Two properties distinguish the benchmark targets from the test targets:
 
@@ -74,6 +74,7 @@ The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (
 | `system/push-allocated-bigmsg.cpp` | `push-allocated-bigmsg` | Large one-way messages: `Actor::push` versus `Pipe::allocated_push`, sweeping the pre-allocation hint. |
 | `system/callback-burst-throughput.cpp` | `callback-burst-throughput` | One-way throughput: an `ICallback` producer sending in bursts versus one message per tick. |
 | `system/engine-lifecycle.cpp` | `engine-lifecycle` | Engine lifecycle cost: construct → `start(true)` → `join()` of a near-empty `qb::Main`. |
+| `system/observability-overhead.cpp` | `observability-overhead` | Timing off/on, requested core snapshots and dead-letter handler costs on identical checked batches; see [contract](../../tests/core/benchmark/OBSERVABILITY.md). |
 | `system/actor-spawn-throughput.cpp` | `actor-spawn-throughput` | Actor registration and first-frame throughput, plus `KillEvent` broadcast-kill teardown. |
 | `system/coroutine-spawn-latency.cpp` | `coroutine-spawn-latency` | Actor `spawn_detached` throughput and suspend/resume latency on the live event loop. |
 
@@ -109,7 +110,7 @@ The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (
 | `patterns/saga-orchestration.cpp` | `saga-orchestration` | `qb::run_saga` multi-step orchestration overhead against the same steps as raw `qb::ask`s. |
 | `patterns/resilience-overhead.cpp` | `resilience-overhead` | Per-call overhead of `qb::CircuitBreaker` and `qb::rate_limiter` (no actor engine — the guards take the clock as a parameter). |
 
-<!-- src: qb/tests/core/benchmark/CMakeLists.txt:45-80 -->
+<!-- src: qb/tests/core/benchmark/CMakeLists.txt:45-81 -->
 
 ## Building the benchmarks
 
@@ -175,6 +176,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | Source | Executable suffix | Measures |
 |---|---|---|
 | `async/async-hotpaths.cpp` | `async-hotpaths` | The qb-io async event-loop hot paths (callback register/unregister, async-callback fire, scoped-callback construct/cancel, broadcast scratch reuse). |
+| `async/observability-overhead.cpp` | `observability-overhead` | Bare-listener dispatch timing and offload snapshot request contrasts; see [contract](../../tests/io/benchmark/OBSERVABILITY.md). |
 | `async/ev-backends.cpp` | `ev-backends` | Cross-backend libev stress — finds the best event-loop backend on the host. |
 | `async/timer-dispatch.cpp` | `timer-dispatch` | The async timer / callback dispatch machinery. |
 | `coroutine/coroutine-scheduler-throughput.cpp` | `coroutine-scheduler-throughput` | The coroutine scheduler, frame, `co_await`, and timer workloads. |
@@ -194,7 +196,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `coroutine/sync-primitives.cpp` | `sync-primitives` | The qb-io coroutine synchronization primitives (`semaphore`, `async_mutex`, `async_rw_lock`, `async_latch`). |
 | `coroutine/offload-roundtrip.cpp` | `offload-roundtrip` | What a `co_await offload(...)` costs: one round trip loop → pool thread → loop, on a polling and on a parked loop, and a burst through the pool (3.3). |
 
-<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-54 -->
+<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-55 -->
 
 Build and run them the same way as the core benchmarks — each is a standard Google Benchmark binary that accepts the usual flags:
 

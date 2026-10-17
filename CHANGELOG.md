@@ -85,6 +85,18 @@ policy.
 
 ### Added
 
+- **IO observability instruments (Huly QB-248).** `qb-io-bench-observability-overhead` supplies paired
+  listener-dispatch timing and offload-pool snapshot-request workloads. Every batch verifies callbacks/results
+  and cumulative-counter deltas outside timing. The offload comparison includes the full worker round trip;
+  it does not disable the pool counters or claim an isolated getter latency. Tracking, dump and other observer
+  surfaces remain separate workloads.
+
+- **Core observability cost instrument (Huly QB-248).** Six benchmark cells compare
+  pass timing off/on, requested CoreStats snapshots and an optional counting
+  dead-letter handler. Each batch checks its work and counters outside timing.
+  Startup and join are included; WARN output is filtered identically. This does
+  not disable cumulative counters or claim that disabled observability is free.
+
 - **The embedded loop exports `ev_periodic_count_addr(loop)` (qev, Huly QB-275).** `const int *`
   to the number of active `ev_periodic` watchers, read inline and valid until `ev_loop_destroy`,
   declared under `EV_PERIODIC_ENABLE` beside the other `ev_periodic_*`: the counterpart of
