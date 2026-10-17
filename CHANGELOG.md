@@ -104,6 +104,20 @@ policy.
 
 ### Added
 
+- **`qb/io/reconnect.h`: the reconnect contract's vocabulary, shared by every client that keeps a connection
+  (Huly QB-126).** Header-only, names and pure functions: `qb::io::connection_state` (`idle`, `connecting`,
+  `handshaking`, `ready`, `reconnecting`, `down`), `qb::io::down_reason` (`user`, `peer`, `protocol`,
+  `retries_exhausted`, `handshake_refused` -- shaped like the death watch's `qb::DownReason`), `qb::io::gap_reason`
+  (`reconnect`, `overflow`) and `qb::io::gap_info` (what a gap marker carries), each enum with its count and its
+  `*_name()`; and `qb::io::reconnect_policy`, the backoff of a reconnection run that `qb::redis::RetryPolicy` and
+  `qb::http::RetryPolicy` now alias: `max_attempts`, `initial_delay`, `max_delay`, `multiplier`, `jitter`,
+  `connect_timeout` (zero = the client's own), `on_retry`, the `with_*` builders, the pure `next_delay(attempt, rng)`
+  and `allows_attempt(attempts)`. The states say where a client stands, not what becomes of work submitted outside
+  `ready`: that is each client's documented policy (qbm-redis holds it, up to its command timeout; qbm-pgsql refuses
+  it). Not `qb::io::async::retry_policy` (a coroutine body retried on an exception) nor
+  `qb::retry_policy` (an `ask` retried). Pinned by `qb-io-test-unit-reconnect-contract`, which took over the backoff
+  arithmetic cases of qbm-http's former `retry-policy` unit test.
+
 - **IO observability instruments (Huly QB-248).** `qb-io-bench-observability-overhead` supplies paired
   listener-dispatch timing and offload-pool snapshot-request workloads. Every batch verifies callbacks/results
   and cumulative-counter deltas outside timing. The offload comparison includes the full worker round trip;
