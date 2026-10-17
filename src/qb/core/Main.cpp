@@ -503,8 +503,8 @@ warn_spinning_beyond_usable_cpus(CoreInitializerMap const &initializers) {
     std::ostringstream text;
     text << "[Start Sequence] WARNING: " << spinning << " VirtualCores spin at latency 0 but this process can run only " << usable
          << (usable == 1 ? " CPU" : " CPUs")
-         << " at a time (its affinity mask and cgroup CPU quota): the spinning cores preempt one another and every event "
-            "between them waits for a time slice. Give the cores that can wait a latency (CoreInitializer::setLatency) "
+         << " at a time (its affinity mask; on Linux, its cgroup CPU quota): the spinning cores preempt one another and every "
+            "event between them waits for a time slice. Give the cores that can wait a latency (CoreInitializer::setLatency) "
             "or run fewer cores.";
     QB_LOG_WARN(text.str());
     qb::io::cerr() << text.str() << '\n';
