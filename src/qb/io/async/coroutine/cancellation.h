@@ -588,7 +588,7 @@ struct cancellation_awaiter {
     // walk (a when_any loser reclaimed by an earlier callback) — see `cancellation_token::cancel`.
     cancellation_token::id_type _cancel_id = 0; ///< on_cancel registration, deregistered on teardown.
 
-    // Explicit constructor: the user-declared destructor below makes this type a
+    // Explicit constructor: the deleted copy below (a user-declared constructor) makes this type a
     // non-aggregate, so the brace-init in check_cancelled() needs a constructor.
     cancellation_awaiter(cancellation_token t, std::coroutine_handle<> h)
         : token(std::move(t))
@@ -610,6 +610,14 @@ struct cancellation_awaiter {
     await_resume() {
         token.throw_if_cancelled();
     }
+
+    // Neither copyable nor movable (Huly QB-1000): its destructor removes the on_cancel registration by the id the
+    // live wait holds, so a copy destroyed first left the live wait with no hook. check_cancelled() returns a
+    // prvalue.
+    cancellation_awaiter(const cancellation_awaiter &)            = delete;
+    cancellation_awaiter(cancellation_awaiter &&)                 = delete;
+    cancellation_awaiter &operator=(const cancellation_awaiter &) = delete;
+    cancellation_awaiter &operator=(cancellation_awaiter &&)      = delete;
 
     ~cancellation_awaiter() {
         // Deregister so a normally-completed wait leaves no dead callback on a long-lived token,
@@ -714,12 +722,19 @@ public:
         bool                          throw_on_cancel;
         cancellation_token::id_type   _cancel_id = 0;
 
-        // User-declared dtor below makes this a non-aggregate → provide the ctor the
+        // The deleted copy below makes this a non-aggregate → provide the ctor the
         // brace-init in operator co_await() relies on.
         awaiter(std::shared_ptr<shared_state> s, cancellation_token t, bool toc)
             : state(std::move(s))
             , token(std::move(t))
             , throw_on_cancel(toc) {}
+
+        // Neither copyable nor movable (Huly QB-1000): see cancellation_awaiter; its destructor also tears down the
+        // runner of an operation still in flight.
+        awaiter(const awaiter &)            = delete;
+        awaiter(awaiter &&)                 = delete;
+        awaiter &operator=(const awaiter &) = delete;
+        awaiter &operator=(awaiter &&)      = delete;
 
         ~awaiter() {
             // Deregister the cancel hook on normal completion so a long-lived token does
@@ -869,6 +884,13 @@ public:
             , token(std::move(t))
             , throw_on_cancel(toc) {}
 
+        // Neither copyable nor movable (Huly QB-1000): see cancellation_awaiter; its destructor also tears down the
+        // runner of an operation still in flight.
+        awaiter(const awaiter &)            = delete;
+        awaiter(awaiter &&)                 = delete;
+        awaiter &operator=(const awaiter &) = delete;
+        awaiter &operator=(awaiter &&)      = delete;
+
         ~awaiter() {
             token.remove_on_cancel(_cancel_id);
             // Destroyed while the inner op is still in flight (when_any/race loser reclaim, no
@@ -1006,10 +1028,17 @@ struct cancellable_sleep_awaiter {
     cancellation_token::id_type  _cancel_id = 0;
     std::shared_ptr<sleep_state> state; ///< shared with the cancel hook + the detached timer_task
 
-    // User-declared dtor below → non-aggregate; provide the ctor cancellable_sleep() uses.
+    // The deleted copy below → non-aggregate; provide the ctor cancellable_sleep() uses.
     cancellable_sleep_awaiter(qb::duration d, cancellation_token t)
         : duration(d)
         , token(std::move(t)) {}
+
+    // Neither copyable nor movable (Huly QB-1000): see cancellation_awaiter; its destructor also resolves the shared
+    // state and reclaims the sleep's timer.
+    cancellable_sleep_awaiter(const cancellable_sleep_awaiter &)            = delete;
+    cancellable_sleep_awaiter(cancellable_sleep_awaiter &&)                 = delete;
+    cancellable_sleep_awaiter &operator=(const cancellable_sleep_awaiter &) = delete;
+    cancellable_sleep_awaiter &operator=(cancellable_sleep_awaiter &&)      = delete;
 
     ~cancellable_sleep_awaiter() {
         // Without this, a `co_await ctx.sleep(...)` loop on the long-lived actor scope token
@@ -1124,6 +1153,13 @@ struct with_deadline_timeout_awaiter {
         : state(std::move(s))
         , deadline(dl)
         , token(std::move(t)) {}
+
+    // Neither copyable nor movable (Huly QB-1000): see cancellation_awaiter; its destructor also completes the shared
+    // state and reclaims the deadline timer.
+    with_deadline_timeout_awaiter(const with_deadline_timeout_awaiter &)            = delete;
+    with_deadline_timeout_awaiter(with_deadline_timeout_awaiter &&)                 = delete;
+    with_deadline_timeout_awaiter &operator=(const with_deadline_timeout_awaiter &) = delete;
+    with_deadline_timeout_awaiter &operator=(with_deadline_timeout_awaiter &&)      = delete;
 
     ~with_deadline_timeout_awaiter() {
         token.remove_on_cancel(_cancel_id);

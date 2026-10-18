@@ -35,6 +35,8 @@
 #include <atomic>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -513,4 +515,17 @@ TEST_F(SharedTaskFanout, VoidAwaiterReclaimedWhileParked) {
         EXPECT_EQ(r.index, 1u);
         co_await shared; // flush must NOT resume the reclaimed void parker
     });
+}
+
+// A shared_task stays copyable -- its handles share one result -- but the awaiter each co_await makes is neither
+// copyable nor movable (Huly QB-1000): it queues its own handle in the shared waiters and its destructor removes it,
+// so a copy destroyed first removed the live waiter and its coroutine never resumed. A compile-time oracle.
+TEST(SharedTaskAwaiter, IsNeitherCopyableNorMovableWhileTheTaskIsCopyable) {
+    using awaiter_t      = decltype(std::declval<const shared_task<int> &>().operator co_await());
+    using void_awaiter_t = decltype(std::declval<const shared_task<void> &>().operator co_await());
+    static_assert(!std::is_copy_constructible_v<awaiter_t> && !std::is_move_constructible_v<awaiter_t>);
+    static_assert(!std::is_copy_assignable_v<awaiter_t> && !std::is_move_assignable_v<awaiter_t>);
+    static_assert(!std::is_copy_constructible_v<void_awaiter_t> && !std::is_move_constructible_v<void_awaiter_t>);
+    static_assert(!std::is_copy_assignable_v<void_awaiter_t> && !std::is_move_assignable_v<void_awaiter_t>);
+    static_assert(std::is_copy_constructible_v<shared_task<int>> && std::is_copy_constructible_v<shared_task<void>>);
 }

@@ -68,6 +68,13 @@ jobs:
       - name: Awaiters - every await_suspend says what its coroutine waits on
         run: ./scripts/check-awaiter-tracking.py
 
+      # An awaiter whose destructor undoes something (a queue node, a parked handle, an on_cancel
+      # registration, a timer) and that can be copied lets the copy destroyed first undo it for the
+      # live awaiter -- a wait that never resumes, a grant returned twice (Huly QB-302, QB-1000). Same
+      # phase: pure Python, whole tree, qb only; qbm's run from the superproject's dev/agent/verify.sh.
+      - name: Awaiters - every awaiter with a destructor deletes its copy
+        run: ./scripts/check-awaiter-copy.py
+
       - name: Install LLVM tools
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile format-check

@@ -35,6 +35,8 @@
  */
 
 #include <atomic>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -1563,4 +1565,43 @@ TEST_F(CoroutineSyncPrimitives, BarrierReclaimedWhileParked) {
         EXPECT_EQ(r.index, 1u);
         co_await b.arrive_and_wait(); // the 2nd arrival fires the (reclaimed) first waiter
     });
+}
+
+// The synchronization awaiters are neither copyable nor movable (Huly QB-1000): each publishes its own node or
+// handle, and its destructor retracts it or gives back what it was granted -- a permit, the lock, a reader slot,
+// an auto-reset wake -- so a copy destroyed first retracted the live waiter or returned a grant twice. A compile-time
+// oracle: every factory returns a prvalue.
+TEST_F(CoroutineSyncPrimitives, AwaitersAreNeitherCopyableNorMovable) {
+    using acquire_t        = decltype(std::declval<semaphore &>().acquire());
+    using cancel_acquire_t = decltype(std::declval<semaphore &>().acquire(std::declval<cancellation_token>()));
+    using lock_t           = decltype(std::declval<async_mutex &>().lock());
+    using read_lock_t      = decltype(std::declval<async_rw_lock &>().lock_read());
+    using write_lock_t     = decltype(std::declval<async_rw_lock &>().lock_write());
+    using arrive_t         = decltype(std::declval<barrier &>().arrive_and_wait());
+    using event_wait_t     = decltype(std::declval<async_event &>().wait());
+    using latch_wait_t     = decltype(std::declval<async_latch &>().wait());
+    static_assert(!std::is_copy_constructible_v<acquire_t> && !std::is_move_constructible_v<acquire_t>);
+    static_assert(!std::is_copy_assignable_v<acquire_t> && !std::is_move_assignable_v<acquire_t>);
+    static_assert(!std::is_copy_constructible_v<cancel_acquire_t> && !std::is_move_constructible_v<cancel_acquire_t>);
+    static_assert(!std::is_copy_assignable_v<cancel_acquire_t> && !std::is_move_assignable_v<cancel_acquire_t>);
+    static_assert(!std::is_copy_constructible_v<lock_t> && !std::is_move_constructible_v<lock_t>);
+    static_assert(!std::is_copy_assignable_v<lock_t> && !std::is_move_assignable_v<lock_t>);
+    static_assert(!std::is_copy_constructible_v<read_lock_t> && !std::is_move_constructible_v<read_lock_t>);
+    static_assert(!std::is_copy_assignable_v<read_lock_t> && !std::is_move_assignable_v<read_lock_t>);
+    static_assert(!std::is_copy_constructible_v<write_lock_t> && !std::is_move_constructible_v<write_lock_t>);
+    static_assert(!std::is_copy_assignable_v<write_lock_t> && !std::is_move_assignable_v<write_lock_t>);
+    static_assert(!std::is_copy_constructible_v<arrive_t> && !std::is_move_constructible_v<arrive_t>);
+    static_assert(!std::is_copy_assignable_v<arrive_t> && !std::is_move_assignable_v<arrive_t>);
+    static_assert(!std::is_copy_constructible_v<event_wait_t> && !std::is_move_constructible_v<event_wait_t>);
+    static_assert(!std::is_copy_assignable_v<event_wait_t> && !std::is_move_assignable_v<event_wait_t>);
+    static_assert(!std::is_copy_constructible_v<latch_wait_t> && !std::is_move_constructible_v<latch_wait_t>);
+    static_assert(!std::is_copy_assignable_v<latch_wait_t> && !std::is_move_assignable_v<latch_wait_t>);
+}
+
+// The scoped guards are not awaiters: they transfer the resource they hold, and must keep moving.
+TEST_F(CoroutineSyncPrimitives, ScopedGuardsStayNothrowMovable) {
+    static_assert(std::is_nothrow_move_constructible_v<semaphore::guard>);
+    static_assert(std::is_nothrow_move_constructible_v<async_mutex::guard>);
+    static_assert(std::is_nothrow_move_constructible_v<async_rw_lock::read_guard>);
+    static_assert(std::is_nothrow_move_constructible_v<async_rw_lock::write_guard>);
 }

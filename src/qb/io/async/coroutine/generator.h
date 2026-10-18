@@ -428,7 +428,7 @@ public:
         std::shared_ptr<bool>   _gen_alive; ///< generator liveness; skip promise access when false
         std::coroutine_handle<> _parked{};  ///< consumer handle parked in the generator's continuation
 
-        // User-declared dtor below makes this a non-aggregate → provide the ctor `next()` uses.
+        // The deleted copy below makes this a non-aggregate → provide the ctor `next()` uses.
         next_awaiter(handle_type h, std::shared_ptr<bool> alive)
             : handle(h)
             , _gen_alive(std::move(alive)) {}
@@ -437,6 +437,14 @@ public:
         // handle from the generator's `continuation` so a later co_yield/final_suspend symmetric-
         // transfers into noop_coroutine() rather than our freed frame. No-op once the generator
         // already resumed us (continuation cleared/moved on) or if the generator itself is gone.
+        // Neither copyable nor movable (Huly QB-1000): it parks its consumer as the generator's continuation and its
+        // destructor clears that slot, so a copy destroyed first cleared the live consumer's and it never resumed.
+        // next() returns a prvalue.
+        next_awaiter(const next_awaiter &)            = delete;
+        next_awaiter(next_awaiter &&)                 = delete;
+        next_awaiter &operator=(const next_awaiter &) = delete;
+        next_awaiter &operator=(next_awaiter &&)      = delete;
+
         ~next_awaiter() {
             if (_parked && _gen_alive && *_gen_alive && handle && detail::promise_of(handle).continuation == _parked)
                 detail::promise_of(handle).continuation = {};

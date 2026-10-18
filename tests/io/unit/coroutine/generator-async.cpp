@@ -33,6 +33,8 @@
 
 #include <atomic>
 #include <functional>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -351,4 +353,13 @@ TEST_F(GeneratorAsync, NextOverPullAndMovedFromReturnNullopt) {
     EXPECT_TRUE(b_empty.load()) << "clean end must be nullopt";
     EXPECT_TRUE(c_empty.load()) << "over-pull on a done generator must be nullopt, not UB";
     EXPECT_TRUE(d_empty.load()) << "next() on a moved-from generator must be nullopt, not UB";
+}
+
+// The awaiter of async_generator::next() is neither copyable nor movable (Huly QB-1000): it parks its consumer in
+// the generator's continuation and its destructor clears that slot, so a copy destroyed first cleared the live
+// consumer's and it never resumed. A compile-time oracle: next() returns a prvalue.
+TEST(AsyncGeneratorNextAwaiter, IsNeitherCopyableNorMovable) {
+    using next_t = decltype(std::declval<async_generator<int> &>().next());
+    static_assert(!std::is_copy_constructible_v<next_t> && !std::is_move_constructible_v<next_t>);
+    static_assert(!std::is_copy_assignable_v<next_t> && !std::is_move_assignable_v<next_t>);
 }

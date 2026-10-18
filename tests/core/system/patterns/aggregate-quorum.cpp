@@ -39,6 +39,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <type_traits>
 #include <vector>
 #include "../../shared/ProbeResponders.h"
 
@@ -305,4 +306,12 @@ TEST(AskQuorum, ReclaimsAllCoroutineFrames) {
     EXPECT_EQ(g_q_size.load(), 3);
     EXPECT_EQ(qb::io::async::detail::CoroutineFrameAllocator::live_frames, baseline)
         << "ask_quorum leaked coroutine frames (quorum awaiter + N collectors)";
+}
+
+// The quorum awaiter is neither copyable nor movable (Huly QB-1000): it parks its coroutine in the quorum state and
+// its destructor detaches it, so a copy destroyed first detached the live wait. A compile-time oracle.
+TEST(AskQuorum, AwaiterIsNeitherCopyableNorMovable) {
+    using quorum_t = qb::detail::quorum_awaiter<Probe>;
+    static_assert(!std::is_copy_constructible_v<quorum_t> && !std::is_move_constructible_v<quorum_t>);
+    static_assert(!std::is_copy_assignable_v<quorum_t> && !std::is_move_assignable_v<quorum_t>);
 }

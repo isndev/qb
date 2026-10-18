@@ -23,7 +23,7 @@ The framework targets C++20 by default; coroutine support requires a compiler wi
 <!-- src: qb/README.md (C++20 requirement); connector.h gated on __cpp_impl_coroutine -->
 
 Every timed coroutine API on this page takes a `qb::duration` (a `std::chrono::nanoseconds` span; any `std::chrono::duration` converts implicitly). Deadlines that need an absolute point use `std::chrono::steady_clock::time_point` (the type behind `qb::mono_time`). Raw `double`-seconds arguments are not part of this surface.
-<!-- src: qb/src/qb/io/async/coroutine/awaiter.h:332, cancellation.h:1284 -->
+<!-- src: qb/src/qb/io/async/coroutine/awaiter.h:332, cancellation.h:1320 -->
 
 ## The execution model
 
@@ -140,7 +140,7 @@ task<void> fan_out() {
 ```
 
 Awaiting a default-constructed `shared_task` throws `std::logic_error` — construct it through `make_shared_task`.
-<!-- src: qb/src/qb/io/async/coroutine/shared_task.h:188, :372 -->
+<!-- src: qb/src/qb/io/async/coroutine/shared_task.h:196, :386 -->
 
 ## The scheduler
 
@@ -216,8 +216,8 @@ What it does **not** give you is cancellation-awareness. A coroutine parked in a
 > Awaiters must remain alive until `await_resume()`. Never create a temporary awaiter that goes out of scope before the coroutine resumes. The framework awaiters stop their libev watcher in `await_resume()` and in their destructor, so an early return or thrown exception cannot leave a live watcher pointing at a freed frame.
 <!-- src: qb/src/qb/io/async/coroutine/awaiter.h:30-35, :383-397 (await_resume stops the watcher), :407-430 (destructor) -->
 
-> Nor is one copied. Since 3.3 the connect awaiters, `select`'s and `when_all` / `when_any`'s are neither copyable nor movable, as `timeout_awaiter` and `awaiter_base` already were: each destructor deactivates, resolves or reclaims through a state a copy shared, so the copy destroyed first -- a temporary, a vector's old storage -- left the live awaiter never resuming (Huly QB-302). `co_await` what the factory returns, or name it once (`auto op = tcp::connect(u, 5s); co_await op;`) and `co_await` the name.
-<!-- src: qb/src/qb/io/async/tcp/connector.h:961-964, qb/src/qb/io/async/coroutine/combinators.h:191-194, qb/src/qb/io/async/coroutine/channel.h:1148-1151 (copy and move deleted) -->
+> Nor is one copied. Since 3.3 the connect awaiters, `select`'s and `when_all` / `when_any`'s are neither copyable nor movable, as `timeout_awaiter` and `awaiter_base` already were: each destructor deactivates, resolves or reclaims through a state a copy shared, so the copy destroyed first -- a temporary, a vector's old storage -- left the live awaiter never resuming (Huly QB-302). So is every other awaiter of qb whose destructor undoes what it registered -- a channel's send and receive, the eight of `sync.h`, the cancellation ones, `coroutine_scope`'s joins, `shared_task`'s, `async_generator::next()`'s, the quorum's: a copy destroyed first retracted the live wait or gave a permit or a lock back twice (Huly QB-1000). `co_await` what the factory returns, or name it once (`auto op = tcp::connect(u, 5s); co_await op;`) and `co_await` the name. `scripts/check-awaiter-copy.py` holds every awaiter of qb and of the modules to that rule.
+<!-- src: qb/src/qb/io/async/tcp/connector.h:961-964, qb/src/qb/io/async/coroutine/combinators.h:191-194, qb/src/qb/io/async/coroutine/channel.h:1187-1190; qb/src/qb/io/async/coroutine/channel.h:182-185, qb/src/qb/io/async/coroutine/sync.h:125-128 (copy and move deleted) -->
 
 ### Awaiting a TCP connect
 
@@ -362,8 +362,8 @@ token.cancel();                                 // same thread only
 ```
 
 `cancellation_token` is copyable (copies share one intrusively refcounted `state`; the count is NOT atomic, because every copy lives on the owning thread — a copy is one register increment, which is what lets `qb::ask` take its context by value) and holds no mutex: `cancel()`, `on_cancel()` and `link()` must run on the token's own thread. `with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` takes ownership of the moved operation at the call, so the returned task can be stored or passed on before it is awaited. It checks the absolute deadline on resume, then throws `timeout_error` if already past or `cancelled_error` on cancellation; a winning operation result is authoritative and is never reclassified against wall-clock time. A wrapper coroutine of your own must also take a task operand by value, as `bounded` does above. `check_cancelled(token)` and `yield_or_cancel(token)` throw `cancelled_error` when the token is set; `make_cancellable(task, token)` wraps a task so it surfaces cancellation.
-Its `task_runner` constructs a successful value with `result.emplace`, so a movable result does not have to be assignable (`src/qb/io/async/coroutine/cancellation.h:811-815`).
-<!-- src: qb/src/qb/io/async/coroutine/cancellation.h:409 (cancel), :434 (on_cancel), :1284-1285 (with_deadline ownership), :1226 (owning frame), :1235-1237 (deadline already past), :628 (check_cancelled), :668 (yield_or_cancel), :973 (make_cancellable), :1096 (cancellable_sleep) -->
+Its `task_runner` constructs a successful value with `result.emplace`, so a movable result does not have to be assignable (`src/qb/io/async/coroutine/cancellation.h:826-830`).
+<!-- src: qb/src/qb/io/async/coroutine/cancellation.h:409 (cancel), :434 (on_cancel), :1320-1321 (with_deadline ownership), :1262 (owning frame), :1271-1273 (deadline already past), :636 (check_cancelled), :676 (yield_or_cancel), :995 (make_cancellable), :1125 (cancellable_sleep) -->
 
 A token from `ScopedCoroContext::child_token()` follows its parent scope but can be cancelled independently (`src/qb/core/Actor.h:2254-2258`).
 The private `child_state` unlinks from its parent when cancelled or destroyed (`src/qb/io/async/coroutine/cancellation.h:189-206`).
@@ -383,13 +383,13 @@ The distinction the vocabulary draws, and which the rest of this section depends
 
 | Awaitable | Parks on | Hook | On cancel |
 |---|---|---|---|
-| `co_await cancellable_sleep(d, tok)` | a spawned timer task (`sleep(d)` inside it) | `on_cancel` — `cancellation.h:1050` | wakes now, tears the spawned timer down through `cancel_spawned`, and `await_resume` throws `cancelled_error` |
-| `co_await make_cancellable(std::move(t), tok, throw_on_cancel)` | a spawned `task_runner` driving the inner task | `on_cancel` — `cancellation.h:763` (`:904` for `void`) | destroys the runner frame **first**, then `forget`s and drops the inner task, then resumes the waiter; throws `cancelled_error` when `throw_on_cancel` |
-| `co_await with_deadline(std::move(op), deadline, tok)` | `when_any(op, timeout_branch)`; the timeout branch owns the hook | `on_cancel` — `cancellation.h:1161` | resolves the branch with `result == 1`, reclaims the deadline timer, and `with_deadline` throws `cancelled_error` |
+| `co_await cancellable_sleep(d, tok)` | a spawned timer task (`sleep(d)` inside it) | `on_cancel` — `cancellation.h:1079` | wakes now, tears the spawned timer down through `cancel_spawned`, and `await_resume` throws `cancelled_error` |
+| `co_await make_cancellable(std::move(t), tok, throw_on_cancel)` | a spawned `task_runner` driving the inner task | `on_cancel` — `cancellation.h:778` (`:926` for `void`) | destroys the runner frame **first**, then `forget`s and drops the inner task, then resumes the waiter; throws `cancelled_error` when `throw_on_cancel` |
+| `co_await with_deadline(std::move(op), deadline, tok)` | `when_any(op, timeout_branch)`; the timeout branch owns the hook | `on_cancel` — `cancellation.h:1197` | resolves the branch with `result == 1`, reclaims the deadline timer, and `with_deadline` throws `cancelled_error` |
 | `co_await check_cancelled(tok)` | nothing but the token itself | `on_cancel` — `cancellation.h:606` | resumes and throws `cancelled_error` |
-| `co_await sem.acquire(tok)` | the semaphore's `_waiters` deque | `on_cancel` — `sync.h:226` | marks the node cancelled, retracts it from the queue, resumes, and throws `cancelled_error` |
+| `co_await sem.acquire(tok)` | the semaphore's `_waiters` deque | `on_cancel` — `sync.h:241` | marks the node cancelled, retracts it from the queue, resumes, and throws `cancelled_error` |
 
-`yield_or_cancel(tok)` is a near miss worth naming: it re-enqueues the coroutine at the back of the ready queue and **checks** the token when it resumes — `yield_or_cancel` (`cancellation.h:639-670`), so it observes cancellation promptly in a loop — but it registers no hook, so it cannot be woken by `cancel()` from a longer sleep.
+`yield_or_cancel(tok)` is a near miss worth naming: it re-enqueues the coroutine at the back of the ready queue and **checks** the token when it resumes — `yield_or_cancel` (`cancellation.h:647-678`), so it observes cancellation promptly in a loop — but it registers no hook, so it cannot be woken by `cancel()` from a longer sleep.
 
 ### Not cancellation-aware — `cancel()` does nothing to these
 
@@ -406,11 +406,11 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:453`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:794`) | whichever comes first |
-| `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:158`), `recv_awaiter` (`:247`) | a counterparty, or `close()` |
-| `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:524`), `timed_send_awaiter` (`:633`) | a counterparty, `close()`, or the timer |
-| `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1091`) | the first channel with data or a close |
-| `co_await sem.acquire()` (no token) / `mtx.lock()` / `rw.lock_read()` / `lock_write()` — only when the permit or lock is NOT free: a free one is taken without suspending | the primitive's own waiter deque — `acquire_awaiter` (`sync.h:102`), `lock_awaiter` (`:450`), `read_lock_awaiter` (`:685`), `write_lock_awaiter` (`:734`) | a `release()` / `unlock()`, which hands the permit or lock over (FIFO) before resuming the waiter |
-| `co_await b.arrive_and_wait()` / `ev.wait()` / `latch.wait()` | the primitive's waiter list — `arrive_awaiter` (`sync.h:997`) and the two `wait_awaiter`s (`:1149`, `:1345`) | the final arrival / `set()` / the count reaching zero |
+| `co_await ch.send(v)` / `ch.recv()` | the channel's own `_send_waiters` / `_recv_waiters` deque — `send_awaiter` (`channel.h:159`), `recv_awaiter` (`:257`) | a counterparty, or `close()` |
+| `co_await ch.send_for(v, d)` / `ch.recv_for(d)` | the same deques plus a spawned `sleep` timer — `timed_recv_awaiter` (`channel.h:541`), `timed_send_awaiter` (`:661`) | a counterparty, `close()`, or the timer |
+| `co_await select(a, b, ...)` | every channel's `_select_waiters`, through `channel_select_awaiter` (`channel.h:1130`) | the first channel with data or a close |
+| `co_await sem.acquire()` (no token) / `mtx.lock()` / `rw.lock_read()` / `lock_write()` — only when the permit or lock is NOT free: a free one is taken without suspending | the primitive's own waiter deque — `acquire_awaiter` (`sync.h:102`), `lock_awaiter` (`:465`), `read_lock_awaiter` (`:707`), `write_lock_awaiter` (`:763`) | a `release()` / `unlock()`, which hands the permit or lock over (FIFO) before resuming the waiter |
+| `co_await b.arrive_and_wait()` / `ev.wait()` / `latch.wait()` | the primitive's waiter list — `arrive_awaiter` (`sync.h:1033`) and the two `wait_awaiter`s (`:1192`, `:1395`) | the final arrival / `set()` / the count reaching zero |
 | `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:424`) | the generator's next `co_yield` |
 | `co_await stream.collect()` and every other terminal | an ordinary `task` over the source | the source |
 | `co_await with_retry(f, policy)` | `f()`, and `sleep(delay)` between attempts (`retry.h:273`, `:321`, `:379`) | `f()` or the backoff timer — **the backoff is a plain `sleep`, not `cancellable_sleep`** |
@@ -425,7 +425,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 
 - **Watcher-backed awaiters stop the watcher unconditionally, gated only on "was it armed", never on `ev_is_active`.** A one-shot `ev_timer` is auto-stopped by libev the instant it expires — *before* its callback runs — so between expiry and dispatch it is inactive yet still sitting in `pendings[]` with `w->data` pointing at the awaiter. An active-gated stop would skip it and leave a freed watcher queued for invocation (`awaiter.h:412-431`).
 - **They scrub the scheduler's queues, not just the suspended set.** Once a watcher has fired, the frame has already moved out of `suspended_coroutines_` and *into* the ready queue and in-flight set. `unregister_suspended()` alone would leave a dangling handle for the next drain to resume; `unschedule()` → `CoroutineScheduler::forget()` clears all three (`awaiter.h:264-268`; `scheduler.h:561`).
-- **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:125-127`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:470-471`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1169-1170`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:286-288`). The send side has nothing to repair: a parked `ch.send()` or `send_for()` is served by its wake, which hands the value over before resuming it, so a sender reclaimed after its wake has sent, exactly once (Huly QB-272).
+- **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:133-135`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:492-493`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1219-1220`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:303-305`). The send side has nothing to repair: a parked `ch.send()` or `send_for()` is served by its wake, which hands the value over before resuming it, so a sender reclaimed after its wake has sent, exactly once (Huly QB-272).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:488-495`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
 `~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:665-668`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
@@ -488,11 +488,11 @@ co_await with_lock(mtx,     [] { return do_sync_work(); });
 ```
 
 Notes grounded in the headers: the mutex methods are `lock()` / `unlock()` / `scoped_lock()`; the read/write lock exposes `lock_read()` / `lock_write()` / `unlock_read()` / `unlock_write()` plus the RAII `scoped_read_lock()` / `scoped_write_lock()`. `async_event(bool auto_reset = false, bool initially_set = false)`. `with_semaphore` and `with_lock` take a *synchronous* callable and return its result (they `co_return f()`), not a task factory. Over-releasing a semaphore is a no-op; unlocking an unheld mutex or rw-lock asserts in debug builds.
-<!-- src: qb/src/qb/io/async/coroutine/sync.h:250 (acquire), :365 (scoped_acquire), :507 (lock), :530 (unlock), :597 (scoped_lock), :903/:909 (scoped_read/write_lock), :797/:811 (unlock_read/write), :1049 (arrive_and_wait), :1130 (async_event ctor), :1216 (set), :1325 (count_down), :1474/:1505 (with_semaphore/with_lock), :283/:531 (no-op / assert) -->
+<!-- src: qb/src/qb/io/async/coroutine/sync.h:265 (acquire), :380 (scoped_acquire), :529 (lock), :552 (unlock), :619 (scoped_lock), :939/:945 (scoped_read/write_lock), :833/:847 (unlock_read/write), :1092 (arrive_and_wait), :1173 (async_event ctor), :1266 (set), :1375 (count_down), :1531/:1562 (with_semaphore/with_lock), :298/:553 (no-op / assert) -->
 
-Two properties are worth spelling out because they are the reason these primitives exist at all rather than `std::mutex` and friends. **The rw-lock is writer-preferring**: a reader is admitted only when no writer holds *and* `_write_waiters` is empty (`sync.h:713`), so a steady stream of readers cannot starve a writer. And **`semaphore::acquire(cancellation_token)` is the one cancellation-aware primitive in the whole layer** (`sync.h:261`) — everything else here is woken only by a matching `release()`, `unlock()`, `set()` or arrival. `with_semaphore` uses the *non*-token overload (`sync.h:1476`).
+Two properties are worth spelling out because they are the reason these primitives exist at all rather than `std::mutex` and friends. **The rw-lock is writer-preferring**: a reader is admitted only when no writer holds *and* `_write_waiters` is empty (`sync.h:742`), so a steady stream of readers cannot starve a writer. And **`semaphore::acquire(cancellation_token)` is the one cancellation-aware primitive in the whole layer** (`sync.h:276`) — everything else here is woken only by a matching `release()`, `unlock()`, `set()` or arrival. `with_semaphore` uses the *non*-token overload (`sync.h:1533`).
 
-**A free lock is taken without suspending** (since 3.3, Huly QB-287). `co_await mtx.lock()`, `rw.lock_read()` and `rw.lock_write()` on a lock that is free for the caller complete synchronously in `await_ready`, as `sem.acquire()` with a free permit always did (`sync.h:478-483`, `:712-717`, `:764-769`, `:138-146`): `co_await mtx.lock()` is not a yield point when nobody holds the mutex, and a loop that counted on it to let other coroutines run must `co_await sleep(0ms)`, the cooperative yield. Until 3.3 a free lock was granted, the coroutine queued and suspended, and a grant on that path could not be given back if the frame was reclaimed before it resumed (a `when_any` loser): the mutex stayed locked with no holder, a reader count leaked, the write lock stuck. FIFO is the other half of the contract: `unlock()` hands the lock to the first waiter without releasing it (`sync.h:534-538`), so a newcomer arriving before that waiter resumes queues behind it, and every hand-off of the rw-lock keeps it held the same way. Queued readers are never stranded either: when the last waiting writer is reclaimed, the readers that queued behind it are admitted at once (`sync.h:929-932`, Huly QB-288).
+**A free lock is taken without suspending** (since 3.3, Huly QB-287). `co_await mtx.lock()`, `rw.lock_read()` and `rw.lock_write()` on a lock that is free for the caller complete synchronously in `await_ready`, as `sem.acquire()` with a free permit always did (`sync.h:500-505`, `:741-746`, `:800-805`, `:146-154`): `co_await mtx.lock()` is not a yield point when nobody holds the mutex, and a loop that counted on it to let other coroutines run must `co_await sleep(0ms)`, the cooperative yield. Until 3.3 a free lock was granted, the coroutine queued and suspended, and a grant on that path could not be given back if the frame was reclaimed before it resumed (a `when_any` loser): the mutex stayed locked with no holder, a reader count leaked, the write lock stuck. FIFO is the other half of the contract: `unlock()` hands the lock to the first waiter without releasing it (`sync.h:556-560`), so a newcomer arriving before that waiter resumes queues behind it, and every hand-off of the rw-lock keeps it held the same way. Queued readers are never stranded either: when the last waiting writer is reclaimed, the readers that queued behind it are admitted at once (`sync.h:965-968`, Huly QB-288).
 
 ## Channels
 
@@ -533,23 +533,23 @@ auto [in_p, out_p] = make_pipeline<int, int>(            // pair of shared_ptr h
 
 `recv_for` / `send_for` are **member functions** (`ch.recv_for(timeout)` returns `task<std::optional<T>>`; `ch.send_for(value, timeout)` returns `task<bool>`). `send(value)`/`recv()` return awaiters; `recv()` yields `std::optional<T>` that is empty once the channel is closed, while `send(value)` throws `channel_closed` on a closed channel. `make_channel` returns a `std::unique_ptr`, so the caller owns the channel's lifetime; `make_pipeline` returns two `std::shared_ptr` handles whose lifetime rules come below.
 
-What `close()` does to each parked party is worth a table of its own, because the three answers differ (`channel.h:397-418`):
+What `close()` does to each parked party is worth a table of its own, because the three answers differ (`channel.h:414-435`):
 
 | Parked on | After `close()` |
 |---|---|
-| `recv()` / `recv_for()` | resumes with `std::nullopt` — never an exception, and a value still in `_buffer` is drained first (`channel.h:331-335`) |
-| `send()` | resumes and **throws `channel_closed`** — a parked sender is resumed without a hand-off only by `close()` (`channel.h:221-226`) |
-| `send_for()` | resumes and returns **`false`** — no exception: it reports whether a wake handed its value over, and `close()` hands nothing (`channel.h:614`, `:668-675`) |
-| `select()` | resumes with `closed == true` and an empty `value` (`channel.h:416`) |
+| `recv()` / `recv_for()` | resumes with `std::nullopt` — never an exception, and a value still in `_buffer` is drained first (`channel.h:348-352`) |
+| `send()` | resumes and **throws `channel_closed`** — a parked sender is resumed without a hand-off only by `close()` (`channel.h:231-236`) |
+| `send_for()` | resumes and returns **`false`** — no exception: it reports whether a wake handed its value over, and `close()` hands nothing (`channel.h:642`, `:703-710`) |
+| `select()` | resumes with `closed == true` and an empty `value` (`channel.h:433`) |
 
-`~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:137-143`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
+`~channel()` clears its liveness flag **before** calling `close()`, and the order is load-bearing: `close()` only *schedules* the resumes, so by the time they run the channel is gone and every awaiter must be able to answer from its own state alone (`channel.h:138-144`). A parked `recv` then returns `nullopt`, a parked `send` throws, a parked `send_for` returns `false` — the same answers as a plain close, reached without touching the freed object.
 
-**A parked sender is served by its wake** (since 3.3, Huly QB-272). When room appears for a parked `send()` or `send_for()` — a slot freed by a receive, a receiver or a `select()` / `recv_for()` that parks — the first parked sender's value is handed over on the spot, to that receiver, select waiter or slot, and only then is the sender resumed, already done (`channel.h:802-819`). Every send goes through the one hand-off, `deliver()`: a waiting receiver, then a live select waiter, then a free buffer slot (`channel.h:767-782`). The buffer therefore never holds more than `capacity()` values, a capacity-0 channel never buffers, and parked senders are served in FIFO order. Until 3.3 the sender was only woken and delivered when it resumed, so a `try_send` or a fast-path send running in between took the freed room, and the woken sender then buffered past the capacity. One consequence to know when a send races in a `when_any`: a sender reclaimed after its wake has sent — its value is in the channel exactly once, as a `send_for` woken before its timer always was.
+**A parked sender is served by its wake** (since 3.3, Huly QB-272). When room appears for a parked `send()` or `send_for()` — a slot freed by a receive, a receiver or a `select()` / `recv_for()` that parks — the first parked sender's value is handed over on the spot, to that receiver, select waiter or slot, and only then is the sender resumed, already done (`channel.h:841-858`). Every send goes through the one hand-off, `deliver()`: a waiting receiver, then a live select waiter, then a free buffer slot (`channel.h:806-821`). The buffer therefore never holds more than `capacity()` values, a capacity-0 channel never buffers, and parked senders are served in FIFO order. Until 3.3 the sender was only woken and delivered when it resumed, so a `try_send` or a fast-path send running in between took the freed room, and the woken sender then buffered past the capacity. One consequence to know when a send races in a `when_any`: a sender reclaimed after its wake has sent — its value is in the channel exactly once, as a `send_for` woken before its timer always was.
 
-`send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:614`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
+`send_for` also has a **move-only caveat the header documents explicitly** above `send_for` (`channel.h:642`): its slow path stores the pending value in a `std::any`, so for a `T` that is not copy-constructible the timed path can only ever resolve as a timeout. Use a copyable payload, or `send()` with an outer `with_deadline`.
 
 **A pipeline lives as long as its handles** (since 3.3, Huly QB-981). `make_pipeline<T, U>(f, buffer_size = 10)` returns two `std::shared_ptr` handles, `in` and `out`, and spawns a worker that sends `f(v)` to `out` for every `v` that `in` receives, and closes `out` once `in` is closed or `f` throws. The worker co-owns both channels, so it never touches a freed one, and the handles — every copy of them included — share one lease on it, the lease `backpressure()` and `debounce()` hold on their producer ([Async streams](#async-streams)). When the last handle goes, the worker is destroyed wherever it waits, `in` closed or not: it transforms nothing more, and values still buffered in either channel go with the channels. So keep a handle for as long as you read `out`, and hand a coroutine that feeds or reads the pipeline beyond your own handles a copy of the handle, never a raw pointer. Until 3.3 a pipeline dropped without closing `in` left its worker parked for the life of the thread, holding the two channels and everything `f` captured.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:131 (capacity default 0), :237 (send), :347 (recv), :514 (recv_for), :614 (send_for), :357/:380 (try_send/try_recv), :397 (close), :846 (make_channel), :1023 (make_pipeline), :947/:969/:991 (transform/filter/collect) -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:132 (capacity default 0), :247 (send), :364 (recv), :531 (recv_for), :642 (send_for), :374/:397 (try_send/try_recv), :414 (close), :885 (make_channel), :1062 (make_pipeline), :986/:1008/:1030 (transform/filter/collect) -->
 
 ### `select` — first ready channel wins
 
@@ -560,13 +560,13 @@ else if (res.index == 0) use(res.get<int>());
 else                     use(res.get<std::string>());
 ```
 
-`select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1100-1124`).
+`select(...)` returns `select_result { size_t index; bool closed; std::any value; }`: `index` is the 0-based channel that won, `closed` is true when that channel was closed (the value is then empty), and `get<T>()` casts the received value. The immediate pass checks every channel for **data before checking any for closure**, deliberately, so a closed channel in the set cannot starve a live one (`channel.h:1139-1163`).
 
-One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1160-1172`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:286-288`, `:559-561`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:1070 (select_result), :1210 (select variadic), :1295 (select vector) -->
+One asymmetry to know before you compose `select` with anything that can abandon it: a `select` that resolved *with a value* and is then destroyed before it resumes — a `when_any` loser, a cancelled scope — **drops that value** (`channel.h:1199-1211`). `recv()` and `recv_for()` re-buffer theirs instead (`channel.h:303-305`, `:583-585`); `select` cannot, because by then the channels it was watching may already be gone and the only thing it still holds is its own refcounted state.
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:1109 (select_result), :1249 (select variadic), :1334 (select vector) -->
 
 > A `channel<T>` is single-thread only. Its destructor clears an internal liveness flag *before* closing, so a parked sender or receiver whose frame is torn down does not touch freed channel memory. `channel_range` (and `async_stream::from_channel`) drain non-blocking and stop at the first empty slot — use [`async_stream`](#async-streams) for true async iteration, and prefer `from_channel_shared` to avoid the borrowed-reference lifetime trap.
-<!-- src: qb/src/qb/io/async/coroutine/channel.h:137-143 (dtor clears _alive before close), :854-857 (channel_range does not suspend, Factbook); stream.h:169/:181 -->
+<!-- src: qb/src/qb/io/async/coroutine/channel.h:138-144 (dtor clears _alive before close), :893-896 (channel_range does not suspend, Factbook); stream.h:169/:181 -->
 
 ## Structured concurrency: `coroutine_scope`
 
@@ -612,7 +612,7 @@ co_await repeat_while(
 ```
 
 `join_any()` returns `task<size_t>` (the completed index, or `total_count()` at once when the scope holds no task — never spawned into, or emptied by `prune_completed()`); `join_all_for(qb::duration)` returns `task<bool>`. The cleanup policy on scope destruction is one of `cancel_all` (default — signals the scope token), `join_all` (best-effort; children keep running via the shared scope state if you forgot to `co_await join_all()`), or `detach`. `parallel_map(items, f, max_concurrency = 10)` takes the mapping function *before* the concurrency limit; `repeat_while(factory, should_continue, cancel_token = {})` calls `should_continue()` synchronously and `factory()` to build each iteration's task. The ready-made `joining_scope`, `cancelling_scope`, and `detaching_scope` subclasses fix the policy.
-<!-- src: qb/src/qb/io/async/coroutine/scope.h:81 (cleanup_policy), :153 (default cancel_all), :228/:255 (spawn task/Callable), :366 (join_all), :428 (join_any), :500 (join_all_for), :631/:640/:649 (scope subclasses), :729 (with_scope), :746 (repeat_while), :792 (parallel_map) -->
+<!-- src: qb/src/qb/io/async/coroutine/scope.h:82 (cleanup_policy), :154 (default cancel_all), :229/:256 (spawn task/Callable), :367 (join_all), :440 (join_any), :522 (join_all_for), :664/:673/:682 (scope subclasses), :762 (with_scope), :779 (repeat_while), :825 (parallel_map) -->
 
 ## Generators
 
@@ -676,7 +676,7 @@ One property is worth relying on: **`take(gen, n)` pulls exactly `min(n, size(ge
 more.** The limit is tested before the source is resumed. Over `iota` an extra pull would cost nothing,
 which is exactly why the opposite behaviour survived for so long; over a source whose body reads a row, a
 token or a socket byte, that pull is a side effect nobody asked for.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :527 (collect_to_vector lvalue), :554 (collect_to_vector rvalue), :580 (from_range), :621 (from_iterator), :636 (iota), range/repeat (:653/:668) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :535 (collect_to_vector lvalue), :562 (collect_to_vector rvalue), :588 (from_range), :629 (from_iterator), :644 (iota), range/repeat (:661/:676) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -700,7 +700,7 @@ auto total = co_await reduce(read_lines("f"), std::size_t{0},
 ```
 
 `reduce(gen, init, reducer)` takes the seed before the reducer.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :794 (take), :808 (skip), :833 (map, lazy), :844 (filter, lazy), :867 (for_each), :897 (reduce: init then reducer), :915 (collect_to_vector), :941 (map_to_vector, eager), :960 (filter_to_vector, eager) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :802 (take), :816 (skip), :841 (map, lazy), :852 (filter, lazy), :875 (for_each), :905 (reduce: init then reducer), :923 (collect_to_vector), :949 (map_to_vector, eager), :968 (filter_to_vector, eager) -->
 
 ## Async streams
 
@@ -980,12 +980,12 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | Macro | What it traces | Source |
 |---|---|---|
 | `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:94`, `awaiter.h:210` |
-| `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:42` |
+| `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:43` |
 | `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:56-57` |
 | `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:35-37` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
-<!-- src: qb/src/qb/io/async/coroutine/{task.h:94, awaiter.h:210, scope.h:42, scheduler.h:56-57, generator.h:35-37} -->
+<!-- src: qb/src/qb/io/async/coroutine/{task.h:94, awaiter.h:210, scope.h:43, scheduler.h:56-57, generator.h:35-37} -->
 
 ## Header reference
 

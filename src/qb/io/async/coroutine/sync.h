@@ -109,7 +109,7 @@ public:
         bool                  _resumed   = false; ///< set in await_resume: distinguishes granted-then-reclaimed
         std::shared_ptr<bool> _sem_alive;         ///< semaphore liveness; skip retract when false
 
-        // User-declared dtor below makes this a non-aggregate → provide the ctor `acquire()` uses.
+        // The deleted copy below makes this a non-aggregate → provide the ctor `acquire()` uses.
         explicit acquire_awaiter(semaphore &s)
             : sem(s) {}
 
@@ -119,6 +119,14 @@ public:
         // resumed — the granted-then-reclaimed window of a when_any/with_deadline loser — the permit
         // we were handed would otherwise be lost forever (the semaphore's effective capacity erodes
         // by one). Hand it back via release() so the next waiter is served.
+        // Neither copyable nor movable (Huly QB-1000): it publishes its own queue node, and its destructor retracts
+        // it or gives back the permit it was granted, so a copy destroyed first retracted the live waiter or released
+        // a permit twice. Every factory of this header returns a prvalue.
+        acquire_awaiter(const acquire_awaiter &)            = delete;
+        acquire_awaiter(acquire_awaiter &&)                 = delete;
+        acquire_awaiter &operator=(const acquire_awaiter &) = delete;
+        acquire_awaiter &operator=(acquire_awaiter &&)      = delete;
+
         ~acquire_awaiter() {
             if (!_parked || _resumed || !_sem_alive || !*_sem_alive)
                 return;
@@ -187,6 +195,13 @@ public:
         cancel_acquire_awaiter(semaphore &s, cancellation_token t)
             : sem(s)
             , token(std::move(t)) {}
+
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor also removes the on_cancel
+        // registration the live wait holds.
+        cancel_acquire_awaiter(const cancel_acquire_awaiter &)            = delete;
+        cancel_acquire_awaiter(cancel_acquire_awaiter &&)                 = delete;
+        cancel_acquire_awaiter &operator=(const cancel_acquire_awaiter &) = delete;
+        cancel_acquire_awaiter &operator=(cancel_acquire_awaiter &&)      = delete;
 
         ~cancel_acquire_awaiter() {
             token.remove_on_cancel(cancel_id); // a callback still parked in the token never fires after this
@@ -455,7 +470,7 @@ public:
         std::coroutine_handle<> _parked{};        ///< set when queued in _waiters
         std::shared_ptr<bool>   _mtx_alive;       ///< mutex liveness; skip retract when false
 
-        // User-declared dtor below makes this a non-aggregate → provide the ctor `lock()` uses.
+        // The deleted copy below makes this a non-aggregate → provide the ctor `lock()` uses.
         explicit lock_awaiter(async_mutex &m)
             : mtx(m) {}
 
@@ -464,6 +479,13 @@ public:
         // us and handed the lock to us) but never resumed — the woken-then-reclaimed window of a
         // when_any/with_deadline loser — the lock ownership we were handed would otherwise be lost
         // forever (mutex stuck `_locked` with no holder). Release it so the next waiter is served.
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor retracts the parked handle
+        // or unlocks a lock it was handed.
+        lock_awaiter(const lock_awaiter &)            = delete;
+        lock_awaiter(lock_awaiter &&)                 = delete;
+        lock_awaiter &operator=(const lock_awaiter &) = delete;
+        lock_awaiter &operator=(lock_awaiter &&)      = delete;
+
         ~lock_awaiter() {
             if (!_parked || _resumed || !_mtx_alive || !*_mtx_alive)
                 return;
@@ -698,6 +720,13 @@ public:
         // admitted us as a reader: ++_readers, popped us) but never resumed — the woken-then-reclaimed
         // window of a when_any/with_deadline loser — that reader count would otherwise leak forever
         // (a future writer waits on _readers==0 that never comes). Give the read slot back.
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor retracts the parked reader
+        // or returns the reader slot it was admitted to.
+        read_lock_awaiter(const read_lock_awaiter &)            = delete;
+        read_lock_awaiter(read_lock_awaiter &&)                 = delete;
+        read_lock_awaiter &operator=(const read_lock_awaiter &) = delete;
+        read_lock_awaiter &operator=(read_lock_awaiter &&)      = delete;
+
         ~read_lock_awaiter() {
             if (!_parked || _resumed || !_rw_alive || !*_rw_alive)
                 return;
@@ -748,6 +777,13 @@ public:
         // _write_locked=true, popped us) but never resumed — the woken-then-reclaimed window of a
         // when_any/with_deadline loser — the lock would otherwise be stuck `_write_locked` with no holder forever.
         // Release it so the next waiter is served.
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor retracts the parked writer
+        // or releases the write lock it was handed.
+        write_lock_awaiter(const write_lock_awaiter &)            = delete;
+        write_lock_awaiter(write_lock_awaiter &&)                 = delete;
+        write_lock_awaiter &operator=(const write_lock_awaiter &) = delete;
+        write_lock_awaiter &operator=(write_lock_awaiter &&)      = delete;
+
         ~write_lock_awaiter() {
             if (!_parked || _resumed || !_rw_alive || !*_rw_alive)
                 return;
@@ -1007,6 +1043,13 @@ public:
         // Destroyed while still parked (a non-final arrival reclaimed by when_any/race): retract our
         // handle so the final arrival cannot schedule a freed frame. (The arrival already counted —
         // _remaining stays decremented, matching "an arrived-then-gone waiter still arrived".)
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor erases the parked handle
+        // from the barrier.
+        arrive_awaiter(const arrive_awaiter &)            = delete;
+        arrive_awaiter(arrive_awaiter &&)                 = delete;
+        arrive_awaiter &operator=(const arrive_awaiter &) = delete;
+        arrive_awaiter &operator=(arrive_awaiter &&)      = delete;
+
         ~arrive_awaiter() {
             if (_parked && _b_alive && *_b_alive)
                 b.erase_handle(_parked);
@@ -1163,6 +1206,13 @@ public:
         // woken-then-reclaimed window of a when_any/with_deadline loser — that signal would otherwise
         // be lost forever (the next waiter parks indefinitely). Re-deliver it via set(). Manual-reset
         // keeps _signaled latched, so nothing is consumed and no re-signal is needed there.
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor retracts the parked handle
+        // or restores an auto-reset wake it consumed.
+        wait_awaiter(const wait_awaiter &)            = delete;
+        wait_awaiter(wait_awaiter &&)                 = delete;
+        wait_awaiter &operator=(const wait_awaiter &) = delete;
+        wait_awaiter &operator=(wait_awaiter &&)      = delete;
+
         ~wait_awaiter() {
             if (!_parked || _resumed || !_ev_alive || !*_ev_alive)
                 return;
@@ -1354,6 +1404,13 @@ public:
 
         // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
         // count_down()-to-zero cannot schedule a freed frame.
+        // Neither copyable nor movable (Huly QB-1000): see acquire_awaiter; its destructor erases the parked handle
+        // from the latch.
+        wait_awaiter(const wait_awaiter &)            = delete;
+        wait_awaiter(wait_awaiter &&)                 = delete;
+        wait_awaiter &operator=(const wait_awaiter &) = delete;
+        wait_awaiter &operator=(wait_awaiter &&)      = delete;
+
         ~wait_awaiter() {
             if (_parked && _latch_alive && *_latch_alive)
                 _latch.erase_handle(_parked);

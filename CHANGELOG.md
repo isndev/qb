@@ -627,6 +627,20 @@ policy.
   Nothing in qb, its modules or the examples copied one; code that did no longer compiles. Pinned at compile time by
   `AwaitersAreNeitherCopyableNorMovable` (`tcp-connector-state-machine.cpp`, `coroutine-combinators.cpp`) and
   `SelectAwaitersAreNeitherCopyableNorMovable` (`channel-sync-ops.cpp`).
+- **Twenty-four more awaiters are neither copyable nor movable, and a guard holds every awaiter to it (Huly QB-1000).**
+  The shape of QB-302 lived on in channel's send / receive and timed send / receive awaiters, the eight of `sync.h`
+  (semaphore, cancellable acquire, mutex, both rw-lock locks, barrier, event, latch), the five of `cancellation.h`
+  (`check_cancelled`, both `cancellable_operation` awaiters, `cancellable_sleep`, the deadline timer), the three joins
+  of `coroutine_scope`, both `shared_task` awaiters, `async_generator::next()` and the quorum awaiter. Each registers
+  something for its coroutine -- a queue node, a parked handle, an `on_cancel` id, a timer, a continuation slot -- and
+  its destructor undoes it, so a copy destroyed first undid it for the live awaiter: a wait that never resumes, a
+  permit or a lock given back twice. They now delete their copy, move and both assignments, declaration only: no field,
+  flag or allocation, and no `noexcept` changed. Nothing in qb, its modules or the examples copied one (the whole tree
+  builds); code that did no longer compiles -- `co_await` what the factory returns. `shared_task` handles and the
+  scoped lock guards keep moving. Pinned at compile time in each owner test (`AwaitersAreNeitherCopyableNorMovable`
+  and its siblings), and beside their definition for the five local awaiters no test can name; all twenty-four were
+  red on the base. `scripts/check-awaiter-copy.py`, in the format-check lane, refuses an awaiter that declares a
+  destructor without deleting its copy (or deriving from a base it proves does, like `awaiter_base`).
 - **Public API rename: `qb::lockfree::mpsc::ringbuffer::enqueue<Index>(...)` is now `enqueue_at<Index>(...)`, with no
   alias (Huly QB-980).** Both compile-time-index forms -- one item, `enqueue_at<Index>(item)`, and the bulk form,
   `enqueue_at<Index, All>(items, n)` -- on both variants (fixed and runtime producer count); what they do is

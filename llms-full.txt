@@ -330,7 +330,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
   neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
   copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
-  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:961; combinators.h:191; channel.h:1148)_
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:961; combinators.h:191; channel.h:1187)_
 - **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
@@ -362,6 +362,11 @@ sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
 - **An awaitable of your own labels itself**: `qb::io::async::track_suspension(h, "my queue")` first in its
   `await_suspend`. One that does not leaves the coroutine with the record of its PREVIOUS wait, ageing.
   `scripts/check-awaiter-tracking.py` holds every awaiter of qb and of the modules to it. _(tracking.h:164)_
+- **An awaitable whose destructor undoes something is not copyable**: one that registers a queue node, a parked
+  handle, an `on_cancel` id or a timer for its coroutine, and undoes it in its destructor, deletes its copy, move and
+  both assignments -- as `channel<T>::send_awaiter` does -- or a copy destroyed first undoes it for the live one (a wait
+  that never resumes, a grant returned twice). `co_await` what the factory returns, or name it once and `co_await` the
+  name. `scripts/check-awaiter-copy.py` holds every awaiter of qb and of the modules to it. _(channel.h:182)_
 - A `parked_coroutine` gives `frame`, `name`, `kind` (`"sleep"`, `"io"`, `"ask"`, `"mutex"`, `"task"`, … —
   `"watcher"` for a coroutine parked on a loop watcher with no record), `age`, `waits_on` (the awaited
   coroutine, for `"task"` and `"generator next"`) and `root`. Call `dump()` on the scheduler's thread; it allocates. _(scheduler.h:309)_
@@ -455,8 +460,8 @@ actor can be destroyed, and the coroutine frame outlives it. So:
 - **A lazy coroutine that accepts `task<T>&&` can outlive its operand.** `with_deadline` takes
   ownership at the call, so a temporary operation remains alive when the returned wrapper is
   stored and awaited later. When writing another wrapper coroutine, take a task parameter by
-  value or move it into an owning frame before returning. _(coroutine/cancellation.h:1226,
-  :1284-1285)_
+  value or move it into an owning frame before returning. _(coroutine/cancellation.h:1262,
+  :1320-1321)_
 
 `qb::ScopedCoroContext` is a superset of `qb::CoroContext`. On top of `push`/`push_to`/`broadcast`/
 `id`/`time` it adds the cancellation-aware surface: `sleep(qb::duration)`, `cancellation_point()`,
@@ -1792,7 +1797,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline cancellation_awaiter check_cancelled(const cancellation_token&)`
 *   `inline yield_awaiter yield_or_cancel(const cancellation_token&)`
 *   `[T<T>] auto make_cancellable(task<T>&&, cancellation_token, bool throw_on_cancel = true)` — wraps a task so cancellation can end its wait.
-    `result.emplace` constructs a successful result in the slot, so a movable result need not be assignable _(`coroutine/cancellation.h:815`)_.
+    `result.emplace` constructs a successful result in the slot, so a movable result need not be assignable _(`coroutine/cancellation.h:830`)_.
 *   `inline task<void> cancellable_sleep(qb::duration duration, cancellation_token token)`
 *   `[T<T>] task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` — owns the moved operation when called, even if the returned task is stored before awaiting; checks the absolute deadline when resumed; `timeout_error` past deadline / `cancelled_error` on cancel.
 

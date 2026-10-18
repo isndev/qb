@@ -914,7 +914,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline cancellation_awaiter check_cancelled(const cancellation_token&)`
 *   `inline yield_awaiter yield_or_cancel(const cancellation_token&)`
 *   `[T<T>] auto make_cancellable(task<T>&&, cancellation_token, bool throw_on_cancel = true)` — wraps a task so cancellation can end its wait.
-    `result.emplace` constructs a successful result in the slot, so a movable result need not be assignable _(`coroutine/cancellation.h:815`)_.
+    `result.emplace` constructs a successful result in the slot, so a movable result need not be assignable _(`coroutine/cancellation.h:830`)_.
 *   `inline task<void> cancellable_sleep(qb::duration duration, cancellation_token token)`
 *   `[T<T>] task<T> with_deadline(task<T>&& operation, std::chrono::steady_clock::time_point deadline, cancellation_token token = {})` — owns the moved operation when called, even if the returned task is stored before awaiting; checks the absolute deadline when resumed; `timeout_error` past deadline / `cancelled_error` on cancel.
 

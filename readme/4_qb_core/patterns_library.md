@@ -242,7 +242,7 @@ first `k`, or all under a concurrency cap.
 | `qb::ask_all` (all) | `task<std::vector<E>> ask_all(ScopedCoroContext, std::vector<ActorId> targets, E req, qb::duration timeout)` | `scatter.h:57-66` |
 | `qb::ask_all` (bounded) | `task<std::vector<E>> ask_all(…, qb::duration timeout, std::size_t max_in_flight)` | `scatter.h:111-123` |
 | `qb::ask_any` | `task<E> ask_any(ScopedCoroContext, std::vector<ActorId> targets, E req, qb::duration timeout)` | `scatter.h:141-151` |
-| `qb::ask_quorum` | `task<std::vector<E>> ask_quorum(ScopedCoroContext, std::vector<ActorId> targets, std::size_t k, E req, qb::duration timeout)` | `scatter.h:249-290` |
+| `qb::ask_quorum` | `task<std::vector<E>> ask_quorum(ScopedCoroContext, std::vector<ActorId> targets, std::size_t k, E req, qb::duration timeout)` | `scatter.h:256-297` |
 
 - **`ask_all`** asks every target with a copy of `req` and awaits **all** replies, returned in input
   order; built on `when_all`. Throws `timeout_error` if **any** target fails to reply in time
@@ -257,10 +257,10 @@ first `k`, or all under a concurrency cap.
 - **`ask_quorum`** asks every target and resolves with the **first `k`** successful replies, in
   completion order (`k` clamped to `[1, targets.size()]`; empty vector if `k == 0` or no targets).
   Throws `timeout_error` (carrying the first underlying error) once the quorum is provably
-  unreachable — i.e. `fail > total - need` (`scatter.h:226-290`). Surplus replies beyond `k` are
-  dropped (`scatter.h:240-243`). Internally it spawns one detached collector per target into a
+  unreachable — i.e. `fail > total - need` (`scatter.h:233-297`). Surplus replies beyond `k` are
+  dropped (`scatter.h:247-250`). Internally it spawns one detached collector per target into a
   shared `quorum_state`; the awaiter's destructor clears `st->cont` so a late collector cannot
-  resume a reclaimed frame (`scatter.h:153-222`).
+  resume a reclaimed frame (`scatter.h:153-229`).
 
 ### Example — bounded scatter (`ask_all` with a cap)
 
@@ -293,7 +293,7 @@ spawn([targets, k, to](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     }
 });
 ```
-<!-- src: qb/tests/core/system/patterns/aggregate-quorum.cpp:87-103 -->
+<!-- src: qb/tests/core/system/patterns/aggregate-quorum.cpp:88-104 -->
 
 ### Flow — `ask_all` bounded sliding window
 
@@ -837,7 +837,7 @@ qb::io::async::task<bool> onInit() override {
 | Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:59`) |
 | Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:113`) |
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:143`) |
-| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:251`) |
+| Ask many, need a majority / first `k` | scatter-gather | `qb::ask_quorum` (`scatter.h:258`) |
 | Is an actor alive? | discovery | `qb::ping` (`discovery.h:178`) |
 | Find all live actors of a type | discovery | `qb::require<T>` (`discovery.h:209`) |
 | Multi-step workflow with rollback | saga | `qb::run_saga` + `qb::SagaScope` (`saga.h:117,44`) |

@@ -246,6 +246,19 @@ TEST_F(ChannelSyncOps, SelectAwaitersAreNeitherCopyableNorMovable) {
     static_assert(!std::is_copy_assignable_v<select_vector_t> && !std::is_move_assignable_v<select_vector_t>);
 }
 
+// The send and receive awaiters are neither copyable nor movable (Huly QB-1000): each queues its own address -- the
+// value, the result slot, the completion flag -- and its destructor retracts its handle or hands an abandoned payload
+// back, so a copy destroyed first retracted the live operation. A compile-time oracle; `int` exposes the implicit
+// copy a move-only payload hides. send() and recv() return prvalues.
+TEST_F(ChannelSyncOps, SendAndRecvAwaitersAreNeitherCopyableNorMovable) {
+    using send_t = decltype(std::declval<channel<int> &>().send(1));
+    using recv_t = decltype(std::declval<channel<int> &>().recv());
+    static_assert(!std::is_copy_constructible_v<send_t> && !std::is_move_constructible_v<send_t>);
+    static_assert(!std::is_copy_assignable_v<send_t> && !std::is_move_assignable_v<send_t>);
+    static_assert(!std::is_copy_constructible_v<recv_t> && !std::is_move_constructible_v<recv_t>);
+    static_assert(!std::is_copy_assignable_v<recv_t> && !std::is_move_assignable_v<recv_t>);
+}
+
 // try_send must hand its value to a PARKED select waiter, mirroring the coroutine send() path.
 // Regression for the cap-0 rendezvous gap: try_send only checked _recv_waiters + the buffer, so
 // with a parked select()/recv_for() waiter and no usable buffer (cap 0) it returned false and the

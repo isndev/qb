@@ -37,6 +37,7 @@
 // vectors are sufficient.
 #include <optional>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 #if defined(QB_DEBUG_SCOPE) && QB_DEBUG_SCOPE
@@ -374,7 +375,7 @@ public:
             std::shared_ptr<scope_impl>              impl;
             std::shared_ptr<std::coroutine_handle<>> slot;
 
-            // User-declared dtor below → non-aggregate; provide the ctor the brace-init relies on.
+            // The deleted copy below → non-aggregate; provide the ctor the brace-init relies on.
             join_all_awaiter(std::shared_ptr<scope_impl> i, std::shared_ptr<std::coroutine_handle<>> s)
                 : impl(std::move(i))
                 , slot(std::move(s)) {}
@@ -383,6 +384,13 @@ public:
             // ran, so *slot still holds our (about-to-be-freed) handle and on_task_done()/wake_slots
             // would dereference it (h.done()). Null it so the wake path skips us. impl also holds the
             // slot, so the null is observed there too.
+            // Neither copyable nor movable (Huly QB-1000): its destructor clears the shared slot the live join is
+            // parked in, so a copy destroyed first emptied it and the join never resumed.
+            join_all_awaiter(const join_all_awaiter &)            = delete;
+            join_all_awaiter(join_all_awaiter &&)                 = delete;
+            join_all_awaiter &operator=(const join_all_awaiter &) = delete;
+            join_all_awaiter &operator=(join_all_awaiter &&)      = delete;
+
             ~join_all_awaiter() {
                 if (slot)
                     *slot = {};
@@ -409,6 +417,10 @@ public:
                 *slot = {};
             }
         };
+
+        // A local awaiter no test can name: the oracle of Huly QB-1000 sits beside its definition.
+        static_assert(!std::is_copy_constructible_v<join_all_awaiter> && !std::is_move_constructible_v<join_all_awaiter>);
+        static_assert(!std::is_copy_assignable_v<join_all_awaiter> && !std::is_move_assignable_v<join_all_awaiter>);
 
         co_await join_all_awaiter{_impl, slot};
         QB_SCOPE_TRACE("join_all done");
@@ -440,6 +452,12 @@ public:
 
             // Destroyed while still parked (when_any/race loser reclaim): null *slot so
             // on_task_done()/wake_slots skip our freed handle instead of dereferencing it.
+            // Neither copyable nor movable (Huly QB-1000): see join_all_awaiter.
+            join_any_awaiter(const join_any_awaiter &)            = delete;
+            join_any_awaiter(join_any_awaiter &&)                 = delete;
+            join_any_awaiter &operator=(const join_any_awaiter &) = delete;
+            join_any_awaiter &operator=(join_any_awaiter &&)      = delete;
+
             ~join_any_awaiter() {
                 if (slot)
                     *slot = {};
@@ -483,6 +501,10 @@ public:
             }
         };
 
+        // A local awaiter no test can name: the oracle of Huly QB-1000 sits beside its definition.
+        static_assert(!std::is_copy_constructible_v<join_any_awaiter> && !std::is_move_constructible_v<join_any_awaiter>);
+        static_assert(!std::is_copy_assignable_v<join_any_awaiter> && !std::is_move_assignable_v<join_any_awaiter>);
+
         co_return co_await join_any_awaiter{_impl, slot};
     }
 
@@ -522,6 +544,13 @@ public:
             // *slot so neither on_task_done() nor the join_all_timer dereferences our freed handle in
             // wake_slots / on expiry, and tear down the timeout timer if it is still parked (it self-
             // clears *timer_slot once fired, so cancel_spawned is a no-op then). Mirrors with_deadline.
+            // Neither copyable nor movable (Huly QB-1000): see join_all_awaiter; its destructor also reclaims the
+            // timeout's timer.
+            timed_join_awaiter(const timed_join_awaiter &)            = delete;
+            timed_join_awaiter(timed_join_awaiter &&)                 = delete;
+            timed_join_awaiter &operator=(const timed_join_awaiter &) = delete;
+            timed_join_awaiter &operator=(timed_join_awaiter &&)      = delete;
+
             ~timed_join_awaiter() {
                 if (slot)
                     *slot = {};
@@ -554,6 +583,10 @@ public:
                 return impl->active_count == 0;
             }
         };
+
+        // A local awaiter no test can name: the oracle of Huly QB-1000 sits beside its definition.
+        static_assert(!std::is_copy_constructible_v<timed_join_awaiter> && !std::is_move_constructible_v<timed_join_awaiter>);
+        static_assert(!std::is_copy_assignable_v<timed_join_awaiter> && !std::is_move_assignable_v<timed_join_awaiter>);
 
         co_return co_await timed_join_awaiter{_impl, slot, timeout};
     }

@@ -38,6 +38,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -164,7 +165,7 @@ public:
         std::coroutine_handle<> _parked{}; ///< set when queued in _send_waiters
         std::shared_ptr<bool>   _ch_alive; ///< channel liveness; skip ch access when false
 
-        // Explicit constructor: the user-declared destructor below makes this
+        // Explicit constructor: the deleted copy below (a user-declared constructor) makes this
         // a non-aggregate, so send() needs a constructor for brace-init.
         send_awaiter(channel &c, T v)
             : ch(c)
@@ -174,6 +175,15 @@ public:
         // If this sender is still parked when its coroutine frame is destroyed,
         // remove its entry from _send_waiters so a later wake_one_sender()/close()
         // cannot schedule_via_current() a dangling handle (use-after-free).
+        // Neither copyable nor movable (Huly QB-1000): it queues its own handle with pointers to its value and
+        // completion flag, and its destructor retracts that entry, so a copy destroyed first retracted the live send
+        // -- and a "move" was one, the user-declared destructor suppressing the implicit move. send() returns a
+        // prvalue.
+        send_awaiter(const send_awaiter &)            = delete;
+        send_awaiter(send_awaiter &&)                 = delete;
+        send_awaiter &operator=(const send_awaiter &) = delete;
+        send_awaiter &operator=(send_awaiter &&)      = delete;
+
         ~send_awaiter() {
             if (!_parked || !*_ch_alive) // channel already freed: nothing to de-register
                 return;
@@ -252,7 +262,7 @@ public:
         bool                  _resumed = false; ///< set in await_resume: distinguishes woken-then-reclaimed
         std::shared_ptr<bool> _ch_alive;        ///< channel liveness; skip ch access when false
 
-        // Explicit constructor: the user-declared destructor below makes this a
+        // Explicit constructor: the deleted copy below (a user-declared constructor) makes this a
         // non-aggregate, so recv() needs a constructor for brace-init.
         recv_awaiter(channel &c, std::optional<T> r)
             : ch(c)
@@ -272,6 +282,13 @@ public:
         // receiver gets it. Gated on !_resumed: on the normal path await_resume std::move's _result
         // (which leaves the optional engaged-but-moved-from), so without the gate we would re-buffer a
         // moved-from value (double/garbage delivery).
+        // Neither copyable nor movable (Huly QB-1000): see send_awaiter; this one queues the address of its own
+        // result slot, and its destructor retracts it or puts back a value handed but never read.
+        recv_awaiter(const recv_awaiter &)            = delete;
+        recv_awaiter(recv_awaiter &&)                 = delete;
+        recv_awaiter &operator=(const recv_awaiter &) = delete;
+        recv_awaiter &operator=(recv_awaiter &&)      = delete;
+
         ~recv_awaiter() {
             if (!*_ch_alive)
                 return; // channel already freed: nothing to de-register
@@ -543,6 +560,13 @@ public:
             // value (state->resolved, not a timeout/close) but we are reclaimed before consuming it,
             // re-buffer that value so the sender's message is not lost. Guarded by _ch_alive (the
             // channel may be torn down first) and !_resumed (await_resume already took the value).
+            // Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor resolves the shared state
+            // the live wait is parked on, or restores a value it was handed and never read.
+            timed_recv_awaiter(const timed_recv_awaiter &)            = delete;
+            timed_recv_awaiter(timed_recv_awaiter &&)                 = delete;
+            timed_recv_awaiter &operator=(const timed_recv_awaiter &) = delete;
+            timed_recv_awaiter &operator=(timed_recv_awaiter &&)      = delete;
+
             ~timed_recv_awaiter() {
                 if (state && !state->resolved) {
                     state->resolved = true;
@@ -601,6 +625,10 @@ public:
             }
         };
 
+        // A local awaiter no test can name: the oracle of Huly QB-1000 sits beside its definition.
+        static_assert(!std::is_copy_constructible_v<timed_recv_awaiter> && !std::is_move_constructible_v<timed_recv_awaiter>);
+        static_assert(!std::is_copy_assignable_v<timed_recv_awaiter> && !std::is_move_assignable_v<timed_recv_awaiter>);
+
         co_return co_await timed_recv_awaiter{*this, state, timeout};
     }
 
@@ -648,6 +676,13 @@ public:
             // parked, set *guard so neither send_timer nor wake_one_sender()
             // schedules the dangling handle or reads its value (the stale _send_waiters
             // entry is lazily discarded by the guard check).
+            // Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor sets the shared guard
+            // that retracts the queued value, out from under the live send.
+            timed_send_awaiter(const timed_send_awaiter &)            = delete;
+            timed_send_awaiter(timed_send_awaiter &&)                 = delete;
+            timed_send_awaiter &operator=(const timed_send_awaiter &) = delete;
+            timed_send_awaiter &operator=(timed_send_awaiter &&)      = delete;
+
             ~timed_send_awaiter() {
                 if (!_resumed && guard && !*guard)
                     *guard = true;
@@ -675,6 +710,10 @@ public:
                 return _delivered;
             }
         };
+
+        // A local awaiter no test can name: the oracle of Huly QB-1000 sits beside its definition.
+        static_assert(!std::is_copy_constructible_v<timed_send_awaiter> && !std::is_move_constructible_v<timed_send_awaiter>);
+        static_assert(!std::is_copy_assignable_v<timed_send_awaiter> && !std::is_move_assignable_v<timed_send_awaiter>);
 
         co_return co_await timed_send_awaiter{*this, std::move(value), guard, timeout};
     }

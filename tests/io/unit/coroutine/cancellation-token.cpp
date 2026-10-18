@@ -45,6 +45,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 #include <utility>
 
 #include <gtest/gtest.h>
@@ -402,4 +403,25 @@ TEST(CancellationToken, HooksDoNotAccumulateAcrossLinkUnlinkLoop) {
     token.cancel();
     EXPECT_EQ(last.fired, 1) << "only the single live hook survives to fire";
     EXPECT_TRUE(token.get_state()->callbacks.empty());
+}
+
+// The cancellation awaiters are neither copyable nor movable (Huly QB-1000): each registers an on_cancel callback (or
+// arms a timer) for its own coroutine and its destructor deregisters it, so a copy destroyed first dropped the live
+// waiter's registration. A compile-time oracle.
+TEST(CancellationAwaiters, AreNeitherCopyableNorMovable) {
+    using check_t          = decltype(qb::io::async::check_cancelled(std::declval<const cancellation_token &>()));
+    using operation_t      = decltype(std::declval<qb::io::async::cancellable_operation<int> &>().operator co_await());
+    using operation_void_t = decltype(std::declval<qb::io::async::cancellable_operation<void> &>().operator co_await());
+    using sleep_t          = qb::io::async::cancellable_sleep_awaiter;
+    using deadline_t       = qb::io::async::detail::with_deadline_timeout_awaiter;
+    static_assert(!std::is_copy_constructible_v<check_t> && !std::is_move_constructible_v<check_t>);
+    static_assert(!std::is_copy_assignable_v<check_t> && !std::is_move_assignable_v<check_t>);
+    static_assert(!std::is_copy_constructible_v<operation_t> && !std::is_move_constructible_v<operation_t>);
+    static_assert(!std::is_copy_assignable_v<operation_t> && !std::is_move_assignable_v<operation_t>);
+    static_assert(!std::is_copy_constructible_v<operation_void_t> && !std::is_move_constructible_v<operation_void_t>);
+    static_assert(!std::is_copy_assignable_v<operation_void_t> && !std::is_move_assignable_v<operation_void_t>);
+    static_assert(!std::is_copy_constructible_v<sleep_t> && !std::is_move_constructible_v<sleep_t>);
+    static_assert(!std::is_copy_assignable_v<sleep_t> && !std::is_move_assignable_v<sleep_t>);
+    static_assert(!std::is_copy_constructible_v<deadline_t> && !std::is_move_constructible_v<deadline_t>);
+    static_assert(!std::is_copy_assignable_v<deadline_t> && !std::is_move_assignable_v<deadline_t>);
 }

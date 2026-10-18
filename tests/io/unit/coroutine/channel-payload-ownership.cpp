@@ -34,6 +34,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -249,4 +251,15 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue)
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only recv_for slow-path coroutine never completed";
     EXPECT_TRUE(timed_out_empty) << "documented contract: a move-only recv_for slow path resolves as a timeout";
     EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a value sent while the receiver was parked";
+}
+
+// A move-only payload makes the send and receive awaiters non-copyable on its own; they stay neither copyable nor
+// movable when the awaiter itself forbids it (Huly QB-1000), and the payload still moves through them.
+TEST_F(ChannelPayloadOwnership, MoveOnlySendAndRecvAwaitersAreNeitherCopyableNorMovable) {
+    using send_t = decltype(std::declval<channel<std::unique_ptr<int>> &>().send(std::declval<std::unique_ptr<int>>()));
+    using recv_t = decltype(std::declval<channel<std::unique_ptr<int>> &>().recv());
+    static_assert(!std::is_copy_constructible_v<send_t> && !std::is_move_constructible_v<send_t>);
+    static_assert(!std::is_copy_assignable_v<send_t> && !std::is_move_assignable_v<send_t>);
+    static_assert(!std::is_copy_constructible_v<recv_t> && !std::is_move_constructible_v<recv_t>);
+    static_assert(!std::is_copy_assignable_v<recv_t> && !std::is_move_assignable_v<recv_t>);
 }

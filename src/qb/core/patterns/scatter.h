@@ -185,7 +185,7 @@ struct quorum_awaiter {
     qb::io::async::cancellation_token token;    // the actor scope — a kill takes priority on resume
     std::coroutine_handle<>           parked{}; ///< handle stored in st->cont (cleared on teardown)
 
-    // User-declared dtor below makes this a non-aggregate → provide the ctor ask_quorum uses.
+    // The deleted copy below makes this a non-aggregate → provide the ctor ask_quorum uses.
     quorum_awaiter(std::shared_ptr<quorum_state<E>> s, qb::io::async::cancellation_token t)
         : st(std::move(s))
         , token(std::move(t)) {}
@@ -193,6 +193,13 @@ struct quorum_awaiter {
     // Destroyed while still parked (await_resume never ran — e.g. a when_any/race loser reclaim):
     // the DETACHED collectors still hold `st` and would later quorum_wake() → schedule_via_current()
     // our freed frame. Clear st->cont so that wake is a no-op. The held `st` keeps the state valid.
+    // Neither copyable nor movable (Huly QB-1000): it parks its coroutine as the quorum's continuation and its
+    // destructor clears it, so a copy destroyed first detached the live wait.
+    quorum_awaiter(const quorum_awaiter &)            = delete;
+    quorum_awaiter(quorum_awaiter &&)                 = delete;
+    quorum_awaiter &operator=(const quorum_awaiter &) = delete;
+    quorum_awaiter &operator=(quorum_awaiter &&)      = delete;
+
     ~quorum_awaiter() {
         if (parked && st->cont == parked)
             st->cont = {};

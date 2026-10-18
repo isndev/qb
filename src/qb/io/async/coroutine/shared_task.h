@@ -157,6 +157,14 @@ public:
         // Destroyed while still parked (e.g. a when_any/race loser reclaim): retract our handle so a
         // later flush() cannot schedule a freed frame. The held `s` keeps the state alive, so no
         // separate liveness guard is needed — the list we erase from is always valid here.
+        // Neither copyable nor movable (Huly QB-1000): it queues its own handle in the shared waiters and its
+        // destructor removes it, so a copy destroyed first removed the live waiter and its coroutine never resumed.
+        // The task's handles stay copyable; operator co_await returns a prvalue.
+        awaiter(const awaiter &)            = delete;
+        awaiter(awaiter &&)                 = delete;
+        awaiter &operator=(const awaiter &) = delete;
+        awaiter &operator=(awaiter &&)      = delete;
+
         ~awaiter() {
             if (!_parked || !s)
                 return;
@@ -303,6 +311,12 @@ public:
 
         // Destroyed while still parked (when_any/race loser reclaim): retract our handle so a later
         // flush() cannot schedule a freed frame (the held `s` keeps the list valid here).
+        // Neither copyable nor movable (Huly QB-1000): see shared_task<T>::awaiter.
+        awaiter(const awaiter &)            = delete;
+        awaiter(awaiter &&)                 = delete;
+        awaiter &operator=(const awaiter &) = delete;
+        awaiter &operator=(awaiter &&)      = delete;
+
         ~awaiter() {
             if (!_parked || !s)
                 return;
