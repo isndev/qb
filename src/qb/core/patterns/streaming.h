@@ -306,6 +306,9 @@ private:
  * @note Usable inside `onInit()` — chunks reach an *Activating* asker via the continuation registry
  *       (the activation gate routes correlated replies). The asker routes chunks with
  *       `resolve_ask(e)` in its `on(E&)` (chunks are `AskEvent`s).
+ * @note `target` may be the asker itself (Huly QB-1100): its own handler streams the chunks. Not from inside
+ *       its `onInit()`, whose handlers cannot run before it completes: `ask_stream` then throws
+ *       `std::logic_error` from the call.
  * @see qb::Actor::resolve_ask, qb::yield_answer, qb::end_stream
  */
 template <stream_event_type E>
@@ -323,7 +326,13 @@ ask_stream(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duration ti
     st->slot.deliver = &detail::stream_state<E>::deliver_thunk;
     qb::detail::ask_register_type(qb::Event::template type_to_id<E>());
     const std::uint64_t id = qb::detail::ask_take(ctx.id(), &st->slot);
-    stream<E>           out{id, std::move(st), timeout};
+    // A stream the actor asks of ITSELF (Huly QB-1100): its request is handed to its own handler first; refused
+    // while the actor is activating, when that handler cannot run -- after `out` owns the entry, which its
+    // destructor gives back.
+    const bool refused = target == ctx.id() && !qb::detail::ask_self_begin(id, st->slot);
+    stream<E>  out{id, std::move(st), timeout};
+    if (refused) [[unlikely]]
+        throw std::logic_error(qb::detail::ask_self_refused);
 
     req.correlation_id = id;
     ctx.template push_to<E>(target, std::move(req)); // send to target, source = asker

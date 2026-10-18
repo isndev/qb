@@ -279,7 +279,7 @@ The pool is one per process and starts with the first `offload` — no thread ex
 
 How the resume crosses threads, and what that costs a loop that never offloads: each thread that awaits an offload gets a completion port, its own `ev_async` watcher on that thread's loop, started while an offload of the thread is in flight and stopped once none is (`qb/src/qb/io/async/offload.cpp:47-49`). A pool thread hands the finished call back in `complete()`, under the port's mutex, so it never sends to a loop that is being destroyed (`qb/src/qb/io/async/offload.cpp:87-106`); the watcher's callback, `on_complete`, schedules the coroutine on the loop's own scheduler (`qb/src/qb/io/async/offload.cpp:289-308`). While started, the watcher is a referenced active watcher: the loop counts as busy (`has_work()`), a `VirtualCore` keeps pumping it and parks *inside* it, where the pool's send ends the park, and a blocking `async::run()` returns only once the offload has completed — as it would for a pending timer. A thread that never calls `offload` has no port, no watcher and no pipe, and no existing path of the loop changed to make room for one.
 
-Inside an actor, write `ctx.offload(fn, args...)` (`ScopedCoroContext::offload`, `qb/src/qb/core/Actor.h:2330`): the same call, scoped to the actor, so a kill wakes the wait at once with `cancelled_error` rather than leaving the coroutine parked until the call returns — see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor).
+Inside an actor, write `ctx.offload(fn, args...)` (`ScopedCoroContext::offload`, `qb/src/qb/core/Actor.h:2375`): the same call, scoped to the actor, so a kill wakes the wait at once with `cancelled_error` rather than leaving the coroutine parked until the call returns — see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor).
 <!-- src: qb/src/qb/io/async/coroutine/offload.h:302 (offload), :124 (set_offload_threads), :130 (current_offload_stats); qb/src/qb/io/async/offload.cpp:73-76 (begin), :87-106 (complete), :289-308 (on_complete) -->
 
 ## Combinators
@@ -365,7 +365,7 @@ token.cancel();                                 // same thread only
 Its `task_runner` constructs a successful value with `result.emplace`, so a movable result does not have to be assignable (`src/qb/io/async/coroutine/cancellation.h:826-830`).
 <!-- src: qb/src/qb/io/async/coroutine/cancellation.h:409 (cancel), :434 (on_cancel), :1320-1321 (with_deadline ownership), :1262 (owning frame), :1271-1273 (deadline already past), :636 (check_cancelled), :676 (yield_or_cancel), :995 (make_cancellable), :1125 (cancellable_sleep) -->
 
-A token from `ScopedCoroContext::child_token()` follows its parent scope but can be cancelled independently (`src/qb/core/Actor.h:2254-2258`).
+A token from `ScopedCoroContext::child_token()` follows its parent scope but can be cancelled independently (`src/qb/core/Actor.h:2299-2303`).
 The private `child_state` unlinks from its parent when cancelled or destroyed (`src/qb/io/async/coroutine/cancellation.h:189-206`).
 Public `cancel_hook` callbacks run before propagation to linked children (`src/qb/io/async/coroutine/cancellation.h:314-328`).
 `linked_child_token` retains and rechecks the parent state before installing that link (`src/qb/io/async/coroutine/cancellation.h:520-541`).
@@ -817,24 +817,24 @@ public:
 ```
 
 `CoroContext` exposes exactly five members: `push<Event>(args…)` (send an event to the spawning actor — i.e. to `self`), `push_to<Event>(dest, args…)` (send to a specific `ActorId`), `broadcast<Event>(args…)` (fan out to every actor on all cores, mirroring `Actor::broadcast` — this is how `qb::require` sends its discovery ping), `id()`, and `time()`. Events sent to a now-dead actor are ignored, so the context is safe to use after any suspension. A `spawn` coroutine instead receives a `qb::ScopedCoroContext`, which derives from `CoroContext` and adds cancellation-aware operations (`sleep`, `until_cancelled`, `cancellation_point`, `cancellable`). For request/reply, use the free helper `qb::ask(ctx, target, Event{...}, timeout)` (declared in `qb/core/patterns/request.h`): it sends `Event` to `target` and `co_return`s the same `Event` filled in by the responder's `reply()` — e.g. `auto r = co_await qb::ask(ctx, target, PriceQuery{"BTC"}, 500ms);`. `has_active_coroutines()` reports whether the actor still has spawned coroutines in flight.
-<!-- src: qb/src/qb/core/Actor.h:1688 (class CoroContext), :1708 (push), :1720 (push_to), :1729 (broadcast), :1744 (time), :2223 (ScopedCoroContext), :1514 (spawn), :1477 (spawn_detached); qb/src/qb/core/patterns/request.h:276 (ask free helper); qb/src/qb/core/Actor.cpp:513,534 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
+<!-- src: qb/src/qb/core/Actor.h:1692 (class CoroContext), :1712 (push), :1724 (push_to), :1733 (broadcast), :1748 (time), :2268 (ScopedCoroContext), :1514 (spawn), :1477 (spawn_detached); qb/src/qb/core/patterns/request.h:317 (ask free helper); qb/src/qb/core/Actor.cpp:572,593 (__resolve_coro_scheduler__ debug-asserts a TLS scheduler) -->
 
 | Rule | Reason | Source |
 |---|---|---|
 | Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:1011` |
 | Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1514`, `:1477` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1436-1438`, `:1494-1495`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1707-1720` (`push` and `push_to`); `qb/src/qb/system/event/router.h:587-595` (missing destination → report), `:557-567` (dispose), `qb/src/qb/core/VirtualCore.cpp:1499-1503` (dead letter); when the event type itself is unregistered, `qb/src/qb/system/event/router.h:1188-1226` |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1711-1724` (`push` and `push_to`); `qb/src/qb/system/event/router.h:587-595` (missing destination → report), `:557-567` (dispose), `qb/src/qb/core/VirtualCore.cpp:1513-1517` (dead letter); when the event type itself is unregistered, `qb/src/qb/system/event/router.h:1188-1226` |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1432-1434` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — `run`, `run_for` and `run_sync` block that thread, and [the framework's guard does not fire from a handler](./async_system.md#the-guard-and-what-it-actually-checks).
 
 One corollary of [the cancellation table](#every-awaitable-and-what-cancellation-does-to-it) applies specifically here, and it is the sharpest thing on this page. `kill()` cancels the actor's coroutine scope, which **signals the token** — by itself that stops nothing.
 
-A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All five of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:2266`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:2287`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:2299`), `ctx.offload(fn, args...)` is `make_cancellable` over an [`offload`](#offloading-blocking-work) — the kill ends the wait, the call runs on to its end on the pool and its result is discarded on the core (`src/qb/core/Actor.h:2330-2333`), and `qb::ask` links an embedded `cancel_hook` on the same token — no `std::function`, nothing allocated, unlinked in O(1) when the reply lands (`src/qb/core/Actor.h:1992`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:2277`), so it is prompt inside a loop but cannot be woken out of a long wait.
+A coroutine parked on a cancellation-aware operation unwinds promptly, because that awaiter registered a hook. All five of the context's own operations qualify: `ctx.sleep(d)` is `cancellable_sleep` (`src/qb/core/Actor.h:2311`), `ctx.until_cancelled()` is `check_cancelled` (`src/qb/core/Actor.h:2332`), `ctx.cancellable(t)` is `make_cancellable` (`src/qb/core/Actor.h:2344`), `ctx.offload(fn, args...)` is `make_cancellable` over an [`offload`](#offloading-blocking-work) — the kill ends the wait, the call runs on to its end on the pool and its result is discarded on the core (`src/qb/core/Actor.h:2375-2378`), and `qb::ask` links an embedded `cancel_hook` on the same token — no `std::function`, nothing allocated, unlinked in O(1) when the reply lands (`src/qb/core/Actor.h:2026`). `ctx.cancellation_point()` is a near relative rather than a member of that set: it returns a `yield_or_cancel` that hands the loop a turn and throws if the token fired while it was away (`src/qb/core/Actor.h:2322`), so it is prompt inside a loop but cannot be woken out of a long wait.
 
 A coroutine parked on **anything else** is listening to nothing. It is neither woken nor unwound; it resumes when its own operation finishes, into a world where its actor is gone. The `CoroContext` makes that safe rather than fatal — an event addressed to a dead actor finds no handler and is disposed — but the work is not cancelled, and whatever it holds is not released until it completes. **To be interruptible, an unwrapped await must be wrapped**: `ctx.cancellable(op)`, `with_deadline(op, deadline, ctx.token())`, or a `when_any` against `ctx.until_cancelled()`.
-<!-- src: qb/src/qb/core/Actor.cpp:532; qb/src/qb/io/async/listener.h:1549 (ensure_not_inside_ready_drain) -->
+<!-- src: qb/src/qb/core/Actor.cpp:591; qb/src/qb/io/async/listener.h:1549 (ensure_not_inside_ready_drain) -->
 
 ## Lifetime footguns
 
@@ -905,7 +905,7 @@ qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Ord
     ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
 }
 ```
-<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:231 (pin_frame_copy), resilience.h:468 (pin_frame_copy), :560 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:314 (pin_frame_copy) -->
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:267 (pin_frame_copy), resilience.h:468 (pin_frame_copy), :560 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:317 (pin_frame_copy) -->
 
 ## Seeing what a coroutine waits on
 

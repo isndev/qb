@@ -144,7 +144,13 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        auto &aw            = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        if (_target == _ctx.id()) [[unlikely]] { // a self-ask (Huly QB-1100), engaged out of line
+            if (!engage_self(h))
+                return; // refused: nothing sent, resumed with the error
+        } else {
+            _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        }
+        auto &aw            = *_aw;
         _req.correlation_id = aw.id;
         _ctx.template push_to<E>(_target, std::move(_req)); // send to target, source = asker
         aw.await_suspend(h);                                // deadline + scope cancel hook (or resume at once if cancelled)
@@ -157,6 +163,19 @@ public:
     }
     /// The `task<E>` form, for a shape that needs a task: the same exchange inside one pooled frame.
     operator task_type() &&;
+
+private:
+    /// Engage the awaiter of an ask the actor addresses to ITSELF (Huly QB-1100) and make its slot a self-ask's,
+    /// so its request reaches the handler. `false` -- the ask refused and resumed with the error, nothing to
+    /// send -- while the actor is activating. Out of line: the plain ask pays only the compare that chooses it.
+    QB_NOINLINE bool
+    engage_self(std::coroutine_handle<> h) {
+        auto &aw = _aw.emplace(_ctx.id(), _timeout, _ctx.token());
+        if (qb::detail::ask_self_begin(aw.id, aw.slot))
+            return true;
+        aw.refuse(h);
+        return false;
+    }
 };
 
 /**
@@ -207,7 +226,13 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        auto &aw           = _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        if (_target == _ctx.id()) [[unlikely]] { // a self-ask (Huly QB-1100), engaged out of line
+            if (!engage_self(h))
+                return; // refused: nothing sent, resumed with the error
+        } else {
+            _aw.emplace(_ctx.id(), _timeout, _ctx.token()); // takes (and binds) the registry entry
+        }
+        auto &aw           = *_aw;
         E    &req          = std::apply([this](Args &...a) -> E             &{ return _ctx.template push_to<E>(_target, std::move(a)...); },
                                         _args); // built in the pipe slot
         req.correlation_id = aw.id;
@@ -221,6 +246,17 @@ public:
     }
     /// The `task<E>` form, for a shape that needs a task: the same exchange inside one pooled frame.
     operator task_type() &&;
+
+private:
+    /// The self-ask's awaiter (Huly QB-1100): see `ask_operation::engage_self`.
+    QB_NOINLINE bool
+    engage_self(std::coroutine_handle<> h) {
+        auto &aw = _aw.emplace(_ctx.id(), _timeout, _ctx.token());
+        if (qb::detail::ask_self_begin(aw.id, aw.slot))
+            return true;
+        aw.refuse(h);
+        return false;
+    }
 };
 
 namespace detail {
@@ -264,9 +300,14 @@ operator qb::io::async::task<E>() && {
  *         coroutine frame of its own — or let it convert to a `task<E>` where a task is needed.
  * @throws qb::io::async::timeout_error if no reply arrives in time.
  * @throws qb::io::async::cancelled_error if the actor is killed while waiting.
+ * @throws std::logic_error for an ask of the actor ITSELF while it is still in its `onInit()`, at once.
  * @details Correlation, timeout and cancel-on-kill are handled by a single awaiter (no detached
  *          helper). The responder fills `on(E&)` and `reply()`s it back (preserving the
  *          correlation id); the asker routes responses with `resolve_ask(e)` in its own `on(E&)`.
+ *          `target` may be the asker itself (Huly QB-1100): its own handler answers the request (see
+ *          `Actor::resolve_ask`), and the plain ask pays one compare to tell. Not while the actor is
+ *          still in its `onInit()`: its handlers run only once that completes, so a self-ask then throws
+ *          `std::logic_error` at once and sends nothing.
  * @code
  * auto r = co_await qb::ask(ctx, market, PriceQuery{"BTC"}, 500ms);
  * @endcode

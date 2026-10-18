@@ -242,3 +242,5 @@ qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mai
 # puts the calling thread's affinity back, and start() warns on stderr when more cores spin at latency 0 than the process
 # can run. Each case narrows the inherited mask itself (the calling thread's on Linux, the process's on Windows).
 qb_add_test(MODULE qb-core TIER system NAME core-affinity SOURCES core/core-affinity.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
+# ask-self: an ask addressed to the asking actor itself, in every form (Huly QB-1100).
+qb_add_test(MODULE qb-core TIER system NAME ask-self SOURCES coroutine/ask-self.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)

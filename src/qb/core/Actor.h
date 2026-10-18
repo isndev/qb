@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1384-1386`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1398-1400`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -1574,6 +1574,10 @@ public:
      * The `ask` pattern round-trips a single event type: the asker sends it via
      * `qb::ask(ctx, ...)`, the responder fills its response fields and `reply()`s it back
      * (which preserves `correlation_id`), and the asker's `on(E&)` handler routes it here.
+     * An ask the actor addressed to ITSELF (Huly QB-1100) reaches this handler twice with the
+     * same id: the first arrival is the request -- `false`, so the handler answers it, also
+     * when it is checked again while that handler runs (`qb::answer` after a `resolve_ask`) --
+     * and the next one, whatever its form, is the answer and resolves the ask.
      * @code
      * void on(MyExchange &e) { if (resolve_ask(e)) return; // ... unsolicited handling ... }
      * @endcode
@@ -1765,7 +1769,10 @@ namespace detail {
 /**
  * @brief Type-erased pending-ask slot, stored by address in the per-core registry.
  * @details Function-pointer dispatch (no vtable) keeps it POD/allocation-friendly. Lives
- *          inside the `ask_awaiter` (which lives in the ask() coroutine frame).
+ *          inside the `ask_awaiter` (which lives in the ask() coroutine frame). A null `deliver`
+ *          on a taken slot marks an ask the actor addressed to ITSELF (Huly QB-1100): its delivery
+ *          is parked by `ask_self_begin` and `ask_deliver` routes the slot through `ask_self_arrival`,
+ *          off the plain path, which still tests the same fields.
  */
 struct ask_slot {
     qb::ActorId owner;
@@ -1780,6 +1787,33 @@ struct ask_slot {
 void                       ask_unregister(std::uint64_t id) noexcept;
 bool                       ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
 [[nodiscard]] ev::loop_ref ask_loop() noexcept;
+
+/// What a self-ask the asker cannot make reports: see `ask_self_begin`.
+inline constexpr char const *ask_self_refused = "qb::ask: an actor cannot ask itself while it is activating -- its handlers run only "
+                                                "once onInit() has completed, so the request could never be answered";
+
+/**
+ * @brief Make the ask whose entry is `id` (bound to `slot`) a SELF-ask: the asker is its own target (Huly QB-1100).
+ * @return `false` -- and nothing changed -- while the asker is activating (its `onInit()` running or suspended):
+ *         its handlers run only once activation completes, so the request could never be answered; the sender
+ *         then fails the ask at once with `ask_self_refused` instead of letting the init wait for its timeout.
+ * @details Called by the senders (`ask`, `ask_stream`) only when the target is the asker, so the plain ask pays
+ *          one compare for it. The request and its reply of a self-ask carry the same correlation id to the same
+ *          actor: without this, `resolve_ask` matched the REQUEST and resumed the ask with it, and the handler
+ *          never ran. The slot's `deliver` is parked here and set to null; `ask_self_arrival` then hands the
+ *          first arrival of `id` -- the request -- to the handler, and delivers the next one, whatever its form.
+ */
+[[nodiscard]] bool ask_self_begin(std::uint64_t id, ask_slot &slot) noexcept;
+/**
+ * @brief The delivery of a taken slot whose `deliver` is null: a self-ask's (see `ask_self_begin`).
+ * @return `true` when `resp` was delivered to the waiting ask; `false` for the request itself -- its first
+ *         arrival, and the same event checked again while its handler runs (`qb::answer` after a
+ *         `resolve_ask`) -- and for a slot that is not a self-ask's.
+ * @details The answer is whatever arrives next with the id: `reply()`, `push_reply()`, a copy of the request,
+ *          a freshly built event (`yield_answer`), or the request answered by another actor it was forwarded to.
+ *          Cold and out of line: a plain ask never comes here.
+ */
+bool ask_self_arrival(std::uint64_t id, ask_slot &slot, qb::Event &resp) noexcept;
 
 /**
  * @brief Register an event type as ask-correlated (carries `AskEvent::correlation_id`).
@@ -1940,9 +1974,9 @@ struct ask_awaiter {
     const qb::io::async::cancellation_token &token;
     std::optional<E>                         result;
     std::coroutine_handle<>                  cont;
-    request_deadline                         deadline{};                   ///< the timeout, in the core's own clock (no `ev_timer`)
-    bool                                     finished             = false; ///< `finish()` ran (await_resume, else the dtor)
-    enum class kind { pending, ok, timed_out, cancelled } outcome = kind::pending;
+    request_deadline                         deadline{};                            ///< the timeout, in the core's own clock (no `ev_timer`)
+    bool                                     finished                      = false; ///< `finish()` ran (await_resume, else the dtor)
+    enum class kind { pending, ok, timed_out, cancelled, refused } outcome = kind::pending;
     qb::io::async::cancellation_token::cancel_hook hook{}; ///< scope cancel hook; unlinked in finish().
 
     ask_awaiter(qb::ActorId owner, qb::duration t, const qb::io::async::cancellation_token &tok)
@@ -2000,9 +2034,20 @@ struct ask_awaiter {
                 return std::move(*result);
             case kind::timed_out:
                 throw qb::io::async::timeout_error();
-            default: // pending (entry-cancelled) or cancelled
+            default: // pending (entry-cancelled), cancelled, or a refused self-ask
+                if (outcome == kind::refused)
+                    throw std::logic_error(ask_self_refused);
                 throw qb::io::async::cancelled_error();
         }
+    }
+
+    /// A self-ask `ask_self_begin` refused (the asker is activating): nothing was sent; resumes at once, through
+    /// the scheduler, and `await_resume()` throws `std::logic_error` (`ask_self_refused`).
+    void
+    refuse(std::coroutine_handle<> h) noexcept {
+        cont    = h;
+        outcome = kind::refused;
+        qb::io::async::schedule_via_current(h);
     }
 
     ~ask_awaiter() {
