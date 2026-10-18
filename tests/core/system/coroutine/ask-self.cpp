@@ -403,3 +403,356 @@ TEST(AskSelf, ASelfAskFromASuspendedOnInitIsRefusedAtOnce) {
 TEST(AskSelf, ASelfStreamFromOnInitIsRefusedAtOnce) {
     ask_self_test::run_in_init(/*suspend_first=*/false, /*stream=*/true);
 }
+
+namespace ask_self_test {
+
+enum class child_finish { success, returns_false, throws };
+
+struct NestedInitCase {
+    bool         service;
+    child_finish finish;
+};
+
+struct NestedInitOutcome {
+    bool        adding_child                  = false;
+    bool        child_started_inside_add      = false;
+    bool        child_active_before_admission = false;
+    bool        child_absent_before_admission = false;
+    bool        child_refused                 = false;
+    bool        child_reached_outcome         = false;
+    bool        child_valid                   = false;
+    bool        child_ready                   = false;
+    bool        parent_refused_before         = false;
+    bool        parent_refused_after          = false;
+    bool        active_finished               = false;
+    bool        finish_handled                = false;
+    int         child_init_calls              = 0;
+    int         child_destroyed               = 0;
+    int         destroyed_when_add_returned   = 0;
+    int         unexpected_stream_requests    = 0;
+    int         parent_answers                = 0;
+    int         active_response               = 0;
+    std::string child_error;
+    std::string parent_before_error;
+    std::string parent_after_error;
+    std::string active_error;
+};
+
+// Unlike co_await ask(), ask_stream refuses synchronously. Neither this check nor
+// the child's outcome may suspend: the parent must still be in its FIRST resume,
+// where the activation table cannot hide a lost outer-init marker.
+bool
+refuses_initial_self_stream(qb::Actor &actor, std::string &error) {
+    try {
+        auto stream = qb::ask_stream(actor.context(), actor.id(), EchoStream{7}, 500ms);
+        (void) stream;
+    } catch (std::logic_error const &e) {
+        error = e.what();
+        return error.find("activating") != std::string::npos;
+    } catch (std::exception const &e) {
+        error = e.what();
+    }
+    return false;
+}
+
+struct NestedInitServiceTag {};
+struct CheckActiveSelfAsk : qb::Event {};
+
+template <typename Base>
+class NestedInitChild final : public Base {
+    NestedInitOutcome &_out;
+    child_finish       _finish;
+
+public:
+    NestedInitChild(NestedInitOutcome *out, child_finish finish)
+        : _out(*out)
+        , _finish(finish) {}
+
+    ~NestedInitChild() override {
+        ++_out.child_destroyed;
+    }
+
+    qb::io::async::task<bool>
+    onInit() override {
+        this->template registerEvent<EchoStream>(*this);
+        ++_out.child_init_calls;
+        _out.child_started_inside_add      = _out.adding_child;
+        _out.child_active_before_admission = this->is_active();
+        _out.child_absent_before_admission = !this->is_actor_alive(this->id());
+        _out.child_refused                 = refuses_initial_self_stream(*this, _out.child_error);
+        _out.child_reached_outcome         = true;
+        if (_finish == child_finish::throws)
+            throw std::runtime_error("nested init preservation witness");
+        co_return _finish == child_finish::success;
+    }
+
+    void
+    on(EchoStream &) {
+        // A mutant may wrongly send the initial request. Count/drop it so the
+        // negative proof cannot become a request/reply storm.
+        ++_out.unexpected_stream_requests;
+    }
+};
+
+using NestedOrdinaryChild = NestedInitChild<qb::Actor>;
+using NestedServiceChild  = NestedInitChild<qb::ServiceActor<NestedInitServiceTag>>;
+
+class NestedInitParent final : public qb::Actor {
+    NestedInitOutcome &_out;
+    NestedInitCase     _case;
+    qb::ActorId        _child;
+
+    template <typename Child>
+    void
+    add_child() {
+        const auto child = addRefActor<Child>(&_out, _case.finish);
+        _child           = child.id();
+        _out.child_valid = child.valid();
+        _out.child_ready = child.ready();
+    }
+
+public:
+    NestedInitParent(NestedInitOutcome *out, NestedInitCase test_case)
+        : _out(*out)
+        , _case(test_case) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Echo>(*this);
+        registerEvent<EchoStream>(*this);
+        registerEvent<CheckActiveSelfAsk>(*this);
+        registerEvent<Finish>(*this);
+        _out.parent_refused_before = refuses_initial_self_stream(*this, _out.parent_before_error);
+        _out.adding_child          = true;
+        if (_case.service)
+            add_child<NestedServiceChild>();
+        else
+            add_child<NestedOrdinaryChild>();
+        _out.adding_child                = false;
+        _out.destroyed_when_add_returned = _out.child_destroyed;
+        _out.parent_refused_after        = refuses_initial_self_stream(*this, _out.parent_after_error);
+        push<CheckActiveSelfAsk>(id());
+        co_return true;
+    }
+
+    void
+    on(CheckActiveSelfAsk const &) {
+        spawn([out = &_out](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            try {
+                out->active_response = (co_await qb::ask(ctx, ctx.id(), Echo{7}, 500ms)).response;
+            } catch (std::exception const &e) {
+                out->active_error = e.what();
+            }
+            out->active_finished = true;
+            ctx.push<Finish>();
+        });
+    }
+
+    void
+    on(Echo &e) {
+        qb::answer(*this, e, [this](Echo const &request) {
+            ++_out.parent_answers;
+            return request.key * 10 + 1;
+        });
+    }
+
+    void
+    on(EchoStream &) {
+        ++_out.unexpected_stream_requests;
+    }
+
+    void
+    on(Finish const &) {
+        _out.finish_handled = true;
+        if (_child.is_valid())
+            push<qb::KillEvent>(_child);
+        kill();
+    }
+};
+
+class AskSelfNestedInit : public ::testing::TestWithParam<NestedInitCase> {};
+
+TEST_P(AskSelfNestedInit, ChildRefusalRestoresParentAndLeavesActiveSelfAskUsable) {
+    // Register the service tag before any core exists, including in shuffled runs.
+    ASSERT_TRUE(qb::Actor::getServiceId<NestedInitServiceTag>(0).is_valid());
+    const auto        test_case = GetParam();
+    NestedInitOutcome out;
+    qb::Main          main;
+    main.addActor<NestedInitParent>(0, &out, test_case);
+    main.start(false); // all observations are written/read on this calling thread
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(out.child_init_calls, 1);
+    EXPECT_TRUE(out.child_started_inside_add);
+    EXPECT_TRUE(out.child_active_before_admission);
+    EXPECT_TRUE(out.child_absent_before_admission) << "the synchronous child is active by phase, but has not entered the actor map";
+    EXPECT_TRUE(out.child_refused) << out.child_error;
+    EXPECT_TRUE(out.child_reached_outcome);
+    EXPECT_EQ(out.child_valid, test_case.finish == child_finish::success);
+    EXPECT_EQ(out.child_ready, test_case.finish == child_finish::success);
+    EXPECT_EQ(out.destroyed_when_add_returned, test_case.finish == child_finish::success ? 0 : 1);
+    EXPECT_TRUE(out.parent_refused_before) << out.parent_before_error;
+    EXPECT_TRUE(out.parent_refused_after) << out.parent_after_error;
+    EXPECT_TRUE(out.active_finished);
+    EXPECT_TRUE(out.finish_handled);
+    EXPECT_TRUE(out.active_error.empty()) << out.active_error;
+    EXPECT_EQ(out.active_response, 71);
+    EXPECT_EQ(out.parent_answers, 1);
+    EXPECT_EQ(out.unexpected_stream_requests, 0);
+    EXPECT_EQ(out.child_destroyed, 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(DynamicChildren, AskSelfNestedInit,
+                         ::testing::Values(NestedInitCase{false, child_finish::success}, NestedInitCase{false, child_finish::returns_false},
+                                           NestedInitCase{false, child_finish::throws}, NestedInitCase{true, child_finish::success},
+                                           NestedInitCase{true, child_finish::returns_false}, NestedInitCase{true, child_finish::throws}),
+                         [](const ::testing::TestParamInfo<NestedInitCase> &info) {
+                             std::string name = info.param.service ? "Service" : "Ordinary";
+                             switch (info.param.finish) {
+                                 case child_finish::success:
+                                     return name + "Success";
+                                 case child_finish::returns_false:
+                                     return name + "False";
+                                 case child_finish::throws:
+                                     return name + "Throw";
+                             }
+                             return name;
+                         });
+
+} // namespace ask_self_test
+
+namespace ask_self_test {
+
+struct StartParentOwnedStream : qb::Event {};
+struct ParentOwnedStreamComplete : qb::Event {};
+
+struct ParentOwnedStreamOutcome {
+    bool             parent_active    = false;
+    bool             distinct_owner   = false;
+    bool             owner_alive      = false;
+    bool             child_valid      = false;
+    bool             child_pending    = false;
+    bool             stream_started   = false;
+    bool             stream_ended     = false;
+    bool             child_finished   = false;
+    bool             completed        = false;
+    int              child_init_calls = 0;
+    int              child_destroyed  = 0;
+    int              parent_requests  = 0;
+    std::vector<int> chunks;
+    std::string      error;
+};
+
+// The child consumes a stream owned by the still-active parent. Its first resume
+// must not prevent that parent's handlers from serving the parent's self-request.
+class ParentOwnedStreamChild final : public qb::Actor {
+    qb::ScopedCoroContext     _parent;
+    ParentOwnedStreamOutcome *_out;
+
+public:
+    ParentOwnedStreamChild(qb::ScopedCoroContext parent, ParentOwnedStreamOutcome *out)
+        : _parent(parent)
+        , _out(out) {}
+
+    ~ParentOwnedStreamChild() override {
+        ++_out->child_destroyed;
+    }
+
+    qb::io::async::task<bool>
+    onInit() override {
+        // Snapshot the context and observations before suspending; no child member
+        // or parent actor pointer is accessed after the first await.
+        auto        parent = _parent;
+        auto *const out    = _out;
+        ++out->child_init_calls;
+        out->distinct_owner = parent.id() != id();
+        out->owner_alive    = is_actor_alive(parent.id());
+        try {
+            auto stream         = qb::ask_stream(parent, parent.id(), EchoStream{7}, 500ms);
+            out->stream_started = true;
+            while (auto chunk = co_await stream.next())
+                out->chunks.push_back(chunk->chunk);
+            out->stream_ended = true;
+        } catch (std::exception const &e) {
+            out->error = e.what();
+        } catch (...) {
+            out->error = "non-standard exception";
+        }
+        out->child_finished = true;
+        parent.push<ParentOwnedStreamComplete>();
+        co_return true;
+    }
+};
+
+class ParentOwnedStreamParent final : public qb::Actor {
+    ParentOwnedStreamOutcome &_out;
+    qb::ActorId               _child;
+
+public:
+    explicit ParentOwnedStreamParent(ParentOwnedStreamOutcome *out)
+        : _out(*out) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<StartParentOwnedStream>(*this);
+        registerEvent<ParentOwnedStreamComplete>(*this);
+        registerEvent<EchoStream>(*this);
+        push<StartParentOwnedStream>(id());
+        co_return true;
+    }
+
+    void
+    on(StartParentOwnedStream const &) {
+        _out.parent_active = is_active();
+        const auto child   = addRefActor<ParentOwnedStreamChild>(context(), &_out);
+        _child             = child.id();
+        _out.child_valid   = child.valid();
+        _out.child_pending = child.valid() && !child.ready();
+        if (!child.valid())
+            push<ParentOwnedStreamComplete>(id());
+    }
+
+    void
+    on(EchoStream &e) {
+        if (resolve_ask(e))
+            return;
+        ++_out.parent_requests;
+        qb::yield_answer(*this, e, e.key * 10 + 1);
+        qb::end_stream(*this, e);
+    }
+
+    void
+    on(ParentOwnedStreamComplete const &) {
+        _out.completed = true;
+        if (_child.is_valid())
+            push<qb::KillEvent>(_child);
+        kill();
+    }
+};
+
+TEST(AskSelf, ActiveParentOwnsStreamWhileChildInitializes) {
+    ParentOwnedStreamOutcome out;
+    qb::Main                 main;
+    main.addActor<ParentOwnedStreamParent>(0, &out);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(out.parent_active);
+    EXPECT_TRUE(out.distinct_owner);
+    EXPECT_TRUE(out.owner_alive);
+    EXPECT_TRUE(out.child_valid);
+    EXPECT_TRUE(out.child_pending);
+    EXPECT_EQ(out.child_init_calls, 1);
+    EXPECT_TRUE(out.stream_started) << out.error;
+    EXPECT_TRUE(out.stream_ended) << out.error;
+    EXPECT_TRUE(out.error.empty()) << out.error;
+    EXPECT_EQ(out.chunks, (std::vector<int>{71}));
+    EXPECT_EQ(out.parent_requests, 1);
+    EXPECT_TRUE(out.child_finished);
+    EXPECT_TRUE(out.completed);
+    EXPECT_EQ(out.child_destroyed, 1);
+}
+
+} // namespace ask_self_test

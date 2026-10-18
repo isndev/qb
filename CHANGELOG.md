@@ -9,6 +9,10 @@ policy.
 
 ### Changed
 
+- **Actor initialization keeps its first-resume guard on the owning core (Huly QB-1100 performance follow-up).**
+  The guard uses a core-owned pointer instead of a separate thread-local lookup, saved and restored across
+  nested child initialization. Self-asks remain rejected until the actor’s `onInit()` completes.
+
 - **A VirtualCore's default affinity follows the CPUs the process was given (Huly QB-1081).** Core `i` was pinned
   to CPU `i` whatever mask the process inherited: with the calling thread narrowed to CPUs 22-23, as `taskset -c
   22,23` does (WSL2, g++ 14), cores 0, 1 and 2 ran on CPUs 0, 1 and 2, out of the operator's set, and in a container's cpuset a core numbered past it failed with

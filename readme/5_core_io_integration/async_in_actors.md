@@ -23,9 +23,9 @@ This is the comparison that matters, and it is a comparison of *stacks*, not of 
 
 ```
 VirtualCore::__workflow__                          ← pass N
- ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:939)
- ├─ __flush_all__()                                step 5 (VirtualCore.cpp:953)
- └─ __receive__()                                  step 6 (VirtualCore.cpp:955)
+ ├─ listener::current.run(EVRUN_NOWAIT)            step 3 (VirtualCore.cpp:933)
+ ├─ __flush_all__()                                step 5 (VirtualCore.cpp:947)
+ └─ __receive__()                                  step 6 (VirtualCore.cpp:949)
      └─ your on(RequestEvent&)
          └─ spawn([...](auto ctx) -> task<void> { ... });
             └─ registers a frame with the core's scheduler and RETURNS
@@ -90,13 +90,13 @@ template <typename Func> void spawn_detached(Func &&func) const;   // uncancelle
 ```
 
 - **`spawn(func)` — the default.** The coroutine joins the actor's cancellation scope, so a `kill()` signals it. Its callable receives a `qb::ScopedCoroContext` (alias `qb::scoped_coro_context`) — a `CoroContext` extended with cancellation-aware operations (`ctx.sleep(d)`, `ctx.until_cancelled()`, `ctx.cancellation_point()`, `ctx.cancellable(task)`, `ctx.child_token()`). The request/response and orchestration patterns — `qb::ask`, `qb::ask_all`, `qb::run_saga`, … — are **free functions** in `qb/patterns.h` that take that context.
-- **`spawn_detached(func)` — explicit fire-and-forget.** Not cancelled on kill, and its callable receives a plain `qb::CoroContext`. It can finish after its actor dies only while another actor keeps the same core running; wait for a completion event before stopping that keeper. <!-- src: qb/src/qb/core/VirtualCore.cpp:974-976; qb/tests/core/system/coroutine/coroutine-detached.cpp:878-938 -->
+- **`spawn_detached(func)` — explicit fire-and-forget.** Not cancelled on kill, and its callable receives a plain `qb::CoroContext`. It can finish after its actor dies only while another actor keeps the same core running; wait for a completion event before stopping that keeper. <!-- src: qb/src/qb/core/VirtualCore.cpp:968-970; qb/tests/core/system/coroutine/coroutine-detached.cpp:878-938 -->
 
 Both return immediately and **share the same safety contract**, because a coroutine frame can still be running a step while — or just after — its actor is destroyed: <!-- src: qb/src/qb/core/Actor.h:1430-1446,1477,1514 -->
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterwards is undefined behaviour.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or a reference to a member.
-- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1616-1634 -->
+- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1620-1638 -->
 - **Keep coroutines short-lived.** The longer one runs, the wider the window in which its actor can be destroyed.
 
 ```cpp
@@ -181,7 +181,7 @@ qb::io::async::callback([this, task_id]() {
 Two arguments are commonly offered for the guard, and neither holds:
 
 - *"The callback runs on the actor's own core, so capturing `this` is safe — there is no cross-thread access."* This answers the wrong question. The hazard is **lifetime**, not threading; running on the right thread says nothing about whether the object still exists.
-- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:1964-1969,1209-1210,1228-1233 -->
+- *"The guard covers the killed-but-not-yet-reaped window, which is the one that matters."* Backwards for a *delayed* callback. `kill()` only flags, but `VirtualCore` reaps in the same or the next loop turn — it unregisters the actor's callbacks and destroys it right there. A 5-second timer fires long after the reap. The guard covers microseconds; the hazard window is the whole delay. <!-- src: qb/src/qb/core/VirtualCore.cpp:1958-1963,1203-1204,1222-1227 -->
 
 **The fix is to bind the delay to the actor's lifetime instead of guarding after the fact.** `Actor::spawn` runs a coroutine under the actor's cancellation scope, and `kill()` cancels that scope, so a pending `ctx.sleep` unwinds rather than resuming into a destroyed actor:
 
@@ -294,7 +294,7 @@ Each of these is a *delay owned by an actor*, so each is a `spawn` + `co_await c
 Use a bare `qb::io::async::callback(func, delay)` only with a **positive** delay and a fast,
 non-blocking closure that captures nothing the actor owns. The timer is not cancelled when the
 actor dies, but it can fire afterwards only while another actor keeps the **same core** running;
-it does not keep that core alive itself. <!-- src: qb/src/qb/io/async/io.h:403-415; qb/src/qb/core/VirtualCore.cpp:974-976 -->
+it does not keep that core alive itself. <!-- src: qb/src/qb/io/async/io.h:403-415; qb/src/qb/core/VirtualCore.cpp:968-970 -->
 
 ## `scoped_callback` — when you need the handle back
 

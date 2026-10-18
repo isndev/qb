@@ -617,12 +617,6 @@ VirtualCore::__init__actors__() {
 // Asynchronous actor initialization — the *Activating* phase (driver + pump).
 // -----------------------------------------------------------------------------
 
-namespace {
-/// The actor whose `onInit()` `__drive_init__` is running on this thread, or null: until that first resume
-/// returns, the actor is not yet in `_activating` (Huly QB-1100). Saved and restored, as an init may add an actor.
-constinit thread_local const Actor *tls_init_running = nullptr;
-} // namespace
-
 VirtualCore::InitOutcome
 VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexcept {
     actor._init_started = true;
@@ -635,10 +629,10 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
     // whose cold path binds THIS loop's scheduler (`detail::bind_thread_scheduler`), so the
     // continuation is drained by the owning loop; a synchronous init creates no scheduler, and
     // a core whose actors never suspend keeps a loop pass that asks no scheduler for work.
-    const Actor *const outer = tls_init_running;
-    tls_init_running         = &actor;
+    const Actor *const outer = _init_running;
+    _init_running            = &actor;
     h.resume();
-    tls_init_running = outer;
+    _init_running = outer;
     if (h.done()) {
         auto &p = qb::io::async::detail::promise_of(h);
         if (unlikely(p.has_exception())) {
@@ -702,7 +696,7 @@ VirtualCore::__is_activating__(ActorId const id) const noexcept {
 
 bool
 VirtualCore::__in_init__(ActorId const id) const noexcept {
-    return (tls_init_running != nullptr && tls_init_running->id() == id) || __is_activating__(id);
+    return (_init_running != nullptr && _init_running->id() == id) || __is_activating__(id);
 }
 
 bool
