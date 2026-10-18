@@ -81,7 +81,7 @@ int main() {
 `init()` is a **no-op** kept for symmetry — its whole body is a comment. `listener::current` is a `thread_local` that initializes itself on first access, so nothing needs readying; and `init()` deliberately does *not* clear existing state, because fixtures that share a thread's listener would have their already-registered watchers invalidated. For a genuinely clean loop, call `listener::current.clear()` (see [The async runtime](./async_system.md#one-loop-one-thread-no-lock)). `coro_scheduler()` returns the listener's scheduler so `spawn`, timers, and `run_ready()` all share one loop; `run_sync` spawns onto it for you, which is why the example above never names it.
 
 Prefer `run_sync(awaitable)` over `run_for(duration)` for a root task. `run_sync` returns when the work is done — it pumps the loop until the awaitable completes, then yields its value or rethrows its exception. `run_for` returns when the *duration* is up, so it burns its whole budget even when the work finished early, and the duration is a correctness guess in the other direction too: pick it too small on a loaded machine and the coroutine is abandoned mid-flight, with no diagnostic and exit code 0. Reach for `run_for` only when pumping the loop for a fixed span is genuinely what you mean. Under `qb-core`, each `VirtualCore` owns its listener and pumps the loop for you — you call neither from inside an actor (see [Safe integration with `qb::Actor`](#safe-integration-with-qbactor)).
-<!-- src: qb/src/qb/io/async/listener.h:1534 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for), :285 (run_sync), examples/03-coroutines/01-first-coroutine.cpp:144-175 -->
+<!-- src: qb/src/qb/io/async/listener.h:1534 (init), qb/src/qb/io/async/coroutine/utils.h:212 (coro_scheduler), :227 (run_for), :293 (run_sync), examples/03-coroutines/01-first-coroutine.cpp:144-175 -->
 
 ## `task<T>` — the coroutine return type
 
@@ -746,7 +746,7 @@ The numeric source is `range_stream(start, end)` (there is no `async_stream<T>::
 <!-- src: qb/src/qb/io/async/coroutine/stream.h:169/:181/:189 (from_channel/_shared/_vector), :973 (range_stream), :922 (interval), :781 (merge_streams), :834 (zip), :227/:244/:261/:277 (map/filter/take/skip), :447/:455/:463/:494/:502/:511/:520/:529/:539 (for_each/collect/first/reduce/count/any/all/find/drain_to) -->
 
 `backpressure(max_buffer[, semaphore])` and `debounce(delay)` run their source in a producer coroutine of their own — eagerly for `backpressure`, from the first pull for `debounce`. That producer lives as long as its source or the stream, whichever ends first: the stream and every copy of it hold it, and when the last one is gone — an early terminal (`first`, `take`, `any`, `find`), a stream dropped unread — the producer is destroyed wherever it waits, pulls nothing more from the source, and a caller-supplied semaphore gets back every permit it held. Values already pulled and buffered go with the stream (Huly QB-289). The lease is the one `make_pipeline`'s handles hold on its worker ([Channels](#channels), Huly QB-981): a single mechanism, `detail::worker_lease`, which spawns the coroutine, keeps its handle in a slot the coroutine clears when it ends, and destroys it through `CoroutineScheduler::cancel_spawned()` when the last handle goes.
-<!-- src: qb/src/qb/io/async/coroutine/stream.h:118-140 (producer_lease), :348 (debounce), :561 (backpressure), :720/:746 (the two producers); qb/src/qb/io/async/coroutine/utils.h:409 (worker_lease) -->
+<!-- src: qb/src/qb/io/async/coroutine/stream.h:118-140 (producer_lease), :348 (debounce), :561 (backpressure), :720/:746 (the two producers); qb/src/qb/io/async/coroutine/utils.h:419 (worker_lease) -->
 
 ## Safe integration with `qb::Actor`
 
@@ -895,7 +895,7 @@ A parameter taken by value is copied into the coroutine frame, which is what mak
 `qb::io::async::pin_frame_copy(param)` is the shield: a memory-operand asm barrier that makes the copy a written, escaped object, so the optimiser keeps it and the frame lays it out at its declared alignment. The asm emits no instruction; the copy costs what the spill cost, plus one 64-byte stack copy the optimiser used to forward when a pattern hands the request to an inner coroutine — and the call is a no-op everywhere but clang on a `byval` ABI. Every `qb::ask*` pattern coroutine opens with it on its request (`qb::ask` itself is an awaitable, not a coroutine, since 3.2); a coroutine of yours that takes an event by value and does not assign to it before its first `co_await` should do the same while it has to build with an older clang.
 
 ```cpp
-// src: derived from qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:559-560 (ask_guarded)
+// src: derived from qb/src/qb/io/async/coroutine/utils.h:388 (pin_frame_copy), qb/src/qb/core/patterns/resilience.h:559-560 (ask_guarded)
 struct Order  : qb::Event { int amount{0}; };   // every qb::Event is 64-byte aligned
 struct Placed : qb::Event { int amount{0}; };
 
@@ -905,7 +905,7 @@ qb::io::async::task<void> place(qb::ScopedCoroContext ctx, qb::ActorId book, Ord
     ctx.push_to<Placed>(book, order.amount);       // read after the suspension: the copy the frame holds
 }
 ```
-<!-- src: qb/src/qb/io/async/coroutine/utils.h:378 (pin_frame_copy); qb/src/qb/core/patterns/request.h:267 (pin_frame_copy), resilience.h:468 (pin_frame_copy), :560 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:317 (pin_frame_copy) -->
+<!-- src: qb/src/qb/io/async/coroutine/utils.h:388 (pin_frame_copy); qb/src/qb/core/patterns/request.h:267 (pin_frame_copy), resilience.h:468 (pin_frame_copy), :560 (pin_frame_copy), scatter.h:60 (pin_frame_copy), streaming.h:317 (pin_frame_copy) -->
 
 ## Seeing what a coroutine waits on
 

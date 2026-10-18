@@ -104,11 +104,11 @@ registry, or as a member — never relocate them.
   in debug builds and throws `std::logic_error` in release
   (`src/qb/io/async/listener.h:1549`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
-  `run_for()` (`src/qb/io/async/coroutine/utils.h:285`, `:227`): they are for
+  `run_for()` (`src/qb/io/async/coroutine/utils.h:293`, `:227`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
   `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
   debug and throws `std::logic_error` in release
-  (`src/qb/io/async/coroutine/utils.h:288`, `:228`). A second, deeper
+  (`src/qb/io/async/coroutine/utils.h:296`, `:228`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself makes a
   nested drain a no-op: it resumes nothing and returns `0`
   (`src/qb/io/async/coroutine/scheduler.h:738-740`). That is what the member

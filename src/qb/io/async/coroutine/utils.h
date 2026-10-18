@@ -232,21 +232,29 @@ run_for(qb::duration duration) {
         listener::current.coro_scheduler().run_ready();
     }
     while (std::chrono::steady_clock::now() < end) {
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(end - std::chrono::steady_clock::now());
-        if (remaining.count() <= 0)
+        const auto remaining = end - std::chrono::steady_clock::now();
+        if (remaining <= std::chrono::steady_clock::duration::zero())
             break;
 
         // Run event loop (listener::run does run_ready() after _loop.run())
+        std::size_t processed = 0;
         for (int i = 0; i < 16 /*max event loop drain iterations*/; ++i) {
             listener::current.run(EVRUN_NOWAIT);
+            processed += listener::current.nb_invoked_event();
             if (!listener::current.has_coro_scheduler() || !listener::current.coro_scheduler().has_ready()) {
                 break;
             }
         }
 
-        // Small yield so wall clock advances and timers can fire
-        if (!listener::current.size() && (!listener::current.has_coro_scheduler() || !listener::current.coro_scheduler().has_ready())) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        // A turn that ran nothing parks the loop in its backend wait until a watcher fires or
+        // the deadline, 1 ms at most: a timer fires at its delay and a socket is read at poll
+        // latency (Huly QB-1103). This replaces a blind `sleep_for(1ms)` taken only while no
+        // event was registered -- 1-2.5 ms on Windows -- and a hot spin for the whole duration
+        // once one was.
+        if (!processed) {
+            constexpr qb::duration cap{std::chrono::milliseconds(1)};
+            const auto             left = std::chrono::duration_cast<qb::duration>(remaining);
+            listener::current.run_once_for(left < cap ? left : cap);
         }
     }
 
@@ -305,12 +313,14 @@ run_sync(Awaitable &&awaitable)
                         break;
                 }
             } else {
-                // Do not use EVRUN_ONCE here: when libev uses timerfd-based time-jump
-                // detection, waittime can become MAX_BLOCKTIME2 while timercnt==0 (only
-                // ev_io watchers). One EVRUN_ONCE then blocks epoll_wait for ~10^6 seconds,
-                // freezing run_sync() and any test SetUp/TearDown that uses it.
-                listener::current.run(EVRUN_NOWAIT);
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                // A pass with nothing ready parks the loop in its backend wait, ended at poll
+                // latency by the watcher the awaitable waits on; the 1 ms cap bounds a wait no
+                // watcher ends. The `run(EVRUN_NOWAIT)` + blind `sleep_for(1ms)` this replaces
+                // resumed every awaited I/O at least 1 ms late -- 1-2.5 ms on Windows (Huly
+                // QB-1103). A bare EVRUN_ONCE was avoided here because a timerfd build computes
+                // MAX_BLOCKTIME2 (~10^6 s) while timercnt == 0; the cap timer is a heap timer,
+                // so that wait is never computed.
+                listener::current.run_once_for(std::chrono::milliseconds(1));
             }
         }
     };

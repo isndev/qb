@@ -74,7 +74,7 @@ llm/qb.llm.api.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine o
 llm/qb.llm.api.md	coroutine/cancellation.h:189-206	46df22c06e52	struct child_state final : state {
 llm/qb.llm.api.md	coroutine/cancellation.h:520-541	e827eda2278d	inline cancellation_token
 llm/qb.llm.api.md	coroutine/cancellation.h:830-830	ffff25485ea6	state->result.emplace(co_await state->inner_task);
-llm/qb.llm.api.md	coroutine/utils.h:378-378	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.api.md	coroutine/utils.h:388-388	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.api.md	crypto.h:1055-1055	9613fb7d2235	static std::vector<unsigned char> x25519_key_exchange(const std::vect...
 llm/qb.llm.api.md	crypto.h:1067-1067	d0e7c7fb5535	static std::vector<unsigned char> x25519_key_exchange(const std::stri...
 llm/qb.llm.api.md	crypto.h:1093-1110	1893285b514b	static std::string encrypt_with_metadata(const std::vector<unsigned c...
@@ -199,7 +199,9 @@ llm/qb.llm.md	coroutine/cancellation.h:1262-1262	733ec14c540c	with_deadline_owne
 llm/qb.llm.md	coroutine/cancellation.h:189-212	9fb6c087ede8	struct child_state final : state {
 llm/qb.llm.md	coroutine/cancellation.h:314-328	2c207f4373a0	// Every still-linked public hook is noexcept and is dispatched before
 llm/qb.llm.md	coroutine/scheduler.h:850-854	26fa5d69b282	current() {
-llm/qb.llm.md	coroutine/utils.h:378-378	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.md	coroutine/utils.h:227-227	c6608bac00ef	run_for(qb::duration duration) {
+llm/qb.llm.md	coroutine/utils.h:293-293	49516cd6ffac	run_sync(Awaitable &&awaitable)
+llm/qb.llm.md	coroutine/utils.h:388-388	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.md	crypto.h:105-116	51e14a279751	template <typename Step>
 llm/qb.llm.md	crypto.h:122-127	d1e0d208ae9b	inline int
 llm/qb.llm.md	crypto.h:33-44	0e90de8e08fe	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
@@ -224,6 +226,7 @@ llm/qb.llm.md	io.h:635-638	91f115a44f84	start(const std::filesystem::path &fpath
 llm/qb.llm.md	listener.h:1533-1545	9bb119dec73f	inline void
 llm/qb.llm.md	listener.h:1548-1561	31584ba4b550	inline void
 llm/qb.llm.md	listener.h:1600-1600	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1633-1633	d3424619f351	run_until(bool const &status) {
 llm/qb.llm.md	offload.h:107-130	1896a5a8a473	struct offload_stats {
 llm/qb.llm.md	offload.h:202-213	2f7b9e7ef6cd	run() noexcept override {
 llm/qb.llm.md	offload.h:24-40	d6f92fe8755f	* THE CONTRACT, IN FOUR RULES
