@@ -25,8 +25,10 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -187,8 +189,9 @@ struct probe_slot {
 // The registry is a slot table the id indexes (`[core:16][generation:26][slot:22]`), not a hash
 // map: an entry is taken AND bound to its owner's slot by `ask_take` (one call — every owner is
 // built before the send, so there is no unbound window), released by `ask_unregister`, and a
-// released id must MISS for ever after — including once its entry has been handed to a later
-// ask, which is what the generation is for. Driven directly on the test thread.
+// released id never delivers again, but is CONSUMED as an obsolete own response, including
+// after reuse by a later ask. An entry is never given to a different owner. Driven directly
+// on the test thread.
 TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     constexpr std::uint64_t slot_mask = (std::uint64_t{1} << 22) - 1;
     const NormalId          owner(5, 3);
@@ -210,7 +213,7 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
 
     // Released: the same id resolves nothing, and releasing it again is a no-op.
     qb::detail::ask_unregister(id);
-    EXPECT_FALSE(qb::detail::ask_deliver(id, owner, resp));
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, resp));
     qb::detail::ask_unregister(id);
     EXPECT_EQ(p.delivered, 1);
 
@@ -232,7 +235,7 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     EXPECT_NE(reissued, id);
     EXPECT_EQ(reissued >> 48, id >> 48);
     EXPECT_EQ((reissued >> 22) & ((std::uint64_t{1} << 26) - 1), ((id >> 22) & ((std::uint64_t{1} << 26) - 1)) + 1);
-    EXPECT_FALSE(qb::detail::ask_deliver(id, owner, resp)); // stale generation
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, resp)); // stale generation consumed, not delivered
     EXPECT_TRUE(qb::detail::ask_deliver(reissued, owner, resp));
     EXPECT_EQ(q.delivered, 1);
     EXPECT_EQ(p.delivered, 1);
@@ -245,11 +248,205 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     for (const auto t : taken) {
         EXPECT_TRUE(qb::detail::ask_deliver(t, owner, resp));
         qb::detail::ask_unregister(t);
-        EXPECT_FALSE(qb::detail::ask_deliver(t, owner, resp));
+        EXPECT_TRUE(qb::detail::ask_deliver(t, owner, resp));
     }
     EXPECT_EQ(q.delivered, 1 + static_cast<int>(taken.size()));
     qb::detail::ask_unregister(reissued);
-    EXPECT_FALSE(qb::detail::ask_deliver(reissued, owner, resp));
+    EXPECT_TRUE(qb::detail::ask_deliver(reissued, owner, resp));
+}
+
+TEST(ActorId, ReleasedAskSlotNeverChangesOwner) {
+    constexpr std::uint64_t mask = (std::uint64_t{1} << 22) - 1;
+    const NormalId          owner(29, 12), other(30, 12);
+    probe_slot              first{owner}, second{other};
+    qb::Event               response{};
+    const auto              retired = qb::detail::ask_take(owner, &first.slot);
+    qb::detail::ask_unregister(retired);
+
+    std::vector<std::uint64_t> active;
+    for (int i = 0; i < 300; ++i) {
+        const auto next = qb::detail::ask_take(other, &second.slot);
+        active.push_back(next);
+        EXPECT_NE(next & mask, retired & mask);
+    }
+    EXPECT_TRUE(qb::detail::ask_deliver(retired, owner, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(retired, other, response));
+    EXPECT_EQ(first.delivered, 0);
+    EXPECT_EQ(second.delivered, 0);
+    for (auto id : active)
+        qb::detail::ask_unregister(id);
+
+    const auto reused = qb::detail::ask_take(owner, &first.slot);
+    EXPECT_EQ(reused & mask, retired & mask);
+    EXPECT_NE(reused, retired);
+    EXPECT_TRUE(qb::detail::ask_deliver(retired, owner, response));
+    EXPECT_EQ(first.delivered, 0);
+    EXPECT_TRUE(qb::detail::ask_deliver(reused, owner, response));
+    EXPECT_EQ(first.delivered, 1);
+    qb::detail::ask_unregister(reused);
+}
+
+TEST(ActorId, AskOwnerQueuesStayDistinctAcrossCoresAndPages) {
+    constexpr std::uint64_t       mask = (std::uint64_t{1} << 22) - 1;
+    const std::array<NormalId, 3> owners{NormalId(255, 211), NormalId(255, 212), NormalId(511, 211)};
+    std::array<std::uint64_t, 3>  first{};
+    qb::Event                     response{};
+    for (std::size_t i = 0; i < owners.size(); ++i) {
+        first[i] = qb::detail::ask_take(owners[i], nullptr);
+        qb::detail::ask_unregister(first[i]);
+        for (std::size_t j = 0; j < i; ++j)
+            EXPECT_NE(first[i] & mask, first[j] & mask);
+    }
+    // Reacquire after every release: same SID on another core and same page offset
+    // on another page must never hit the previous owner's cached free queue.
+    for (int round = 0; round < 4; ++round) {
+        for (std::size_t i = 0; i < owners.size(); ++i) {
+            probe_slot probe{owners[i]};
+            const auto id = qb::detail::ask_take(owners[i], &probe.slot);
+            EXPECT_EQ(id & mask, first[i] & mask);
+            EXPECT_NE(id, first[i]);
+            EXPECT_TRUE(qb::detail::ask_deliver(first[i], owners[i], response));
+            EXPECT_EQ(probe.delivered, 0);
+            for (std::size_t j = 0; j < owners.size(); ++j)
+                if (i != j) {
+                    EXPECT_FALSE(qb::detail::ask_deliver(first[i], owners[j], response));
+                    EXPECT_FALSE(qb::detail::ask_deliver(id, owners[j], response));
+                }
+            EXPECT_EQ(probe.delivered, 0);
+            EXPECT_TRUE(qb::detail::ask_deliver(id, owners[i], response));
+            EXPECT_EQ(probe.delivered, 1);
+            qb::detail::ask_unregister(id);
+        }
+    }
+}
+
+TEST(ActorId, FinishedAskIsConsumedBeforeUnregister) {
+    const NormalId owner(31, 12), other(32, 12);
+    probe_slot     probe{owner};
+    qb::Event      response{};
+    const auto     id = qb::detail::ask_take(owner, &probe.slot);
+    probe.slot.done   = true;
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, other, response));
+    EXPECT_EQ(probe.delivered, 0);
+    qb::detail::ask_unregister(id);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_EQ(probe.delivered, 0);
+}
+
+TEST(ActorId, UnboundAskKeepsItsOwnerWithoutDereferencingASlot) {
+    const NormalId owner(33, 12), other(34, 12);
+    qb::Event      response{};
+    const auto     id = qb::detail::ask_take(owner, nullptr);
+    EXPECT_FALSE(qb::detail::ask_deliver(id, owner, response));
+    qb::detail::ask_unregister(id);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, other, response));
+    // The next generation has not been issued, so it is not an obsolete response.
+    EXPECT_FALSE(qb::detail::ask_deliver(id + (std::uint64_t{1} << 22), owner, response));
+    const auto next = qb::detail::ask_take(owner, nullptr);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(next, owner, response));
+    qb::detail::ask_unregister(next);
+}
+
+TEST(ActorId, RetiredAskOutlivesItsDestroyedSlot) {
+    const NormalId owner(35, 12);
+    auto           probe = std::make_unique<probe_slot>(owner);
+    const auto     id    = qb::detail::ask_take(owner, &probe->slot);
+    qb::detail::ask_unregister(id);
+    probe.reset(); // ASan must catch retaining the old slot pointer instead of the owner.
+    qb::Event response{};
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    qb::detail::ask_unregister(id);
+}
+
+TEST(ActorId, AskCompletionCanDestroyItsSlotAndGrowTheTableInline) {
+    const NormalId owner(36, 12);
+    struct completion_state {
+        std::unique_ptr<probe_slot> current;
+        probe_slot                  replacement;
+        std::vector<std::uint64_t>  taken;
+        std::uint64_t               id    = 0;
+        int                         calls = 0;
+        explicit completion_state(ActorId owner)
+            : current(std::make_unique<probe_slot>(owner))
+            , replacement(owner) {}
+    } state(owner);
+    state.current->slot.self    = &state;
+    state.current->slot.deliver = [](void *raw, qb::Event &) noexcept {
+        auto &s = *static_cast<completion_state *>(raw);
+        ++s.calls;
+        qb::detail::ask_unregister(s.id);
+        s.current.reset();
+        // Enough simultaneous entries to cross several original table capacities.
+        for (int i = 0; i < 2048; ++i)
+            s.taken.push_back(qb::detail::ask_take(s.replacement.slot.owner, &s.replacement.slot));
+    };
+    state.id = qb::detail::ask_take(owner, &state.current->slot);
+    qb::Event response{};
+    EXPECT_TRUE(qb::detail::ask_deliver(state.id, owner, response));
+    EXPECT_EQ(state.calls, 1);
+    EXPECT_FALSE(state.current);
+    EXPECT_TRUE(qb::detail::ask_deliver(state.id, owner, response));
+    EXPECT_EQ(state.replacement.delivered, 0);
+    for (auto id : state.taken)
+        qb::detail::ask_unregister(id);
+}
+
+TEST(ActorId, RetiredAskPreservesTheEntireOwnerCodec) {
+    const NormalId owner(65534, 65535), wrong_core(65534, 65534), wrong_sid(65533, 65535);
+    const auto     id = qb::detail::ask_take(owner, nullptr);
+    EXPECT_EQ(id >> 48, 65535u);
+    qb::detail::ask_unregister(id);
+    qb::Event response{};
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, wrong_core, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, wrong_sid, response));
+}
+
+TEST(ActorId, AskRegistryRejectsUnissuedTokensAndForeignCoreRelease) {
+    constexpr std::uint64_t slot_mask       = (std::uint64_t{1} << 22) - 1;
+    constexpr std::uint64_t generation_mask = ((std::uint64_t{1} << 26) - 1) << 22;
+    const NormalId          owner(257, 213);
+    probe_slot              probe{owner};
+    qb::Event               response{};
+    const auto              id             = qb::detail::ask_take(owner, &probe.slot);
+    const auto              no_generation  = id & ~generation_mask;
+    const auto              outside_table  = (id & ~slot_mask) | slot_mask;
+    const auto              not_yet_issued = id + (std::uint64_t{1} << 22);
+    for (auto invalid : {no_generation, outside_table, not_yet_issued}) {
+        EXPECT_FALSE(qb::detail::ask_deliver(invalid, owner, response));
+        qb::detail::ask_unregister(invalid);
+    }
+    // Changing only the core bits must not release this owner's live entry.
+    qb::detail::ask_unregister(id ^ (std::uint64_t{1} << 48));
+    EXPECT_EQ(probe.delivered, 0);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_EQ(probe.delivered, 1);
+    qb::detail::ask_unregister(id);
+    EXPECT_FALSE(qb::detail::ask_deliver(not_yet_issued, owner, response));
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_EQ(probe.delivered, 1);
+}
+
+TEST(ActorId, AskOwnerFreeQueuePreservesItsRemainingEntries) {
+    constexpr std::uint64_t      mask = (std::uint64_t{1} << 22) - 1;
+    const NormalId               owner(258, 213);
+    std::array<std::uint64_t, 3> original{};
+    for (auto &id : original)
+        id = qb::detail::ask_take(owner, nullptr);
+    for (auto id : original)
+        qb::detail::ask_unregister(id);
+    const auto first  = qb::detail::ask_take(owner, nullptr);
+    const auto second = qb::detail::ask_take(owner, nullptr);
+    EXPECT_EQ(first & mask, original[0] & mask);
+    EXPECT_EQ(second & mask, original[1] & mask);
+    qb::detail::ask_unregister(first);
+    qb::detail::ask_unregister(second);
+    const auto third = qb::detail::ask_take(owner, nullptr);
+    EXPECT_EQ(third & mask, original[2] & mask);
+    qb::detail::ask_unregister(third);
 }
 
 // --- CoreIdBitSet ------------------------------------------------------------

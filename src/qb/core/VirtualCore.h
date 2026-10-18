@@ -1454,7 +1454,7 @@ inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Ta
 //
 // TEMPLATES ONLY. Every definition below is a template, and that is the only thing keeping
 // the program linkable. This header is reached by TWO disjoint populations:
-//   * Actor.cpp:29                          -> compiled once, into libqb-core.a
+//   * Actor.cpp:32                          -> compiled once, into libqb-core.a
 //   * qb/actor.h, qb/main.h, qb/patterns.h,
 //     qb/core/patterns.h, and (since 3.0)
 //     core/patterns/{discovery,supervisor}.h -> compiled in EVERY consumer TU

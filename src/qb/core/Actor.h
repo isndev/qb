@@ -684,8 +684,8 @@ public:
     /**
      * @brief Route a `RequireEvent` reply to its pending coroutine discovery.
      * @param e The received reply.
-     * @return `true` if it resolved a pending `ping`/`require` of this actor; `false` otherwise
-     *         (legacy `correlation_id == 0`, or not ours).
+     * @return `true` for a live or obsolete own response consumed by this actor; `false`
+     *         for legacy `correlation_id == 0` or an unrelated exchange.
      */
     [[nodiscard]] bool resolve_require(RequireEvent &e) const noexcept;
 
@@ -1567,9 +1567,10 @@ public:
      * @brief Resolve a pending `ask` from a response event (call from `on(E&)`).
      * @tparam E A `qb::AskEvent` subtype used as the request/response envelope.
      * @param e The received event (a response carries the stamped `correlation_id`).
-     * @return `true` if `e` matched a pending ask of this actor and was delivered to the
-     *         waiting coroutine; `false` if it is an unrelated/unsolicited event — handle
-     *         it normally in that case.
+     * @return `true` if this actor consumed `e`: it delivered the response to a pending
+     *         operation, or discarded an obsolete response to one of its own operations.
+     *         `false` means an unrelated/unsolicited event to handle normally. A true result
+     *         does not imply that a continuation ran (Huly QB-1104).
      * @details
      * The `ask` pattern round-trips a single event type: the asker sends it via
      * `qb::ask(ctx, ...)`, the responder fills its response fields and `reply()`s it back
@@ -1577,7 +1578,9 @@ public:
      * An ask the actor addressed to ITSELF (Huly QB-1100) reaches this handler twice with the
      * same id: the first arrival is the request -- `false`, so the handler answers it, also
      * when it is checked again while that handler runs (`qb::answer` after a `resolve_ask`) --
-     * and the next one, whatever its form, is the answer and resolves the ask.
+     * and the next one, whatever its form, is the answer and resolves the ask. Once that
+     * exchange has ended, its remaining arrivals are consumed without user processing,
+     * including a self-request that first arrives after its operation already ended.
      * @code
      * void on(MyExchange &e) { if (resolve_ask(e)) return; // ... unsolicited handling ... }
      * @endcode
@@ -1784,7 +1787,8 @@ struct ask_slot {
 /// Take a registry entry for an ask owned by `owner`, bound to `slot`; returns its correlation id.
 [[nodiscard]] std::uint64_t ask_take(qb::ActorId owner, ask_slot *slot) noexcept;
 /// Give the entry back. Idempotent: a released (or never taken) id is a no-op.
-void                       ask_unregister(std::uint64_t id) noexcept;
+void ask_unregister(std::uint64_t id) noexcept;
+/// True consumes a live reply or discards an obsolete reply owned by this actor; false means unrelated.
 bool                       ask_deliver(std::uint64_t id, qb::ActorId owner, qb::Event &resp) noexcept;
 [[nodiscard]] ev::loop_ref ask_loop() noexcept;
 
@@ -1826,9 +1830,9 @@ bool ask_self_arrival(std::uint64_t id, ask_slot &slot, qb::Event &resp) noexcep
 void ask_register_type(qb::Event::id_type type) noexcept;
 
 /**
- * @brief If `ev` is an ask reply resolving a pending ask owned by `dest`, deliver it.
- * @return `true` if `ev` was an ask-correlated event that resolved one of `dest`'s pending
- *         asks (consumed); `false` otherwise (the caller stashes / routes normally).
+ * @brief Deliver a live correlated response or discard an obsolete own response.
+ * @return `true` when `dest` consumed `ev`, by delivery or obsolete-response disposal;
+ *         `false` otherwise (the caller stashes / routes normally).
  * @details The type-id check guarantees `ev` derives from `AskEvent`, so reading
  *          `correlation_id` at the base subobject offset is safe. Used only by the gate.
  */

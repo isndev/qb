@@ -54,15 +54,15 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1490-1492`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1546`, `:2387-2391`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1546`, `:2391-2395`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1692,1712,1724,1733,1740,1748`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2268-2269,2281-2285,2309-2311`). **Never capture `this` past a `co_await`** — capture by
+  `qb/src/qb/core/Actor.h:1695,1715,1727,1736,1743,1751`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:2272-2273,2285-2289,2313-2315`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1494-1496`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
   (`qb/src/qb/core/Event.h:827-828`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1762`);
+  (`qb/src/qb/core/Actor.h:1765`);
   `qb::PingEvent` / `qb::RequireEvent` derive from it for
   discovery (`qb/src/qb/core/Event.h:850,869`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
@@ -143,7 +143,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   `savina/bank-transaction` −29 % / −12 % (1c / 2c) on WSL2, 1c-park 232 -> 163 (-30 %), 1c-spin 229 -> 161 (-29 %), 2c-park 143 -> 109 (-24 %), 2c-spin 142 -> 106 (-25 %) on Windows. Do not constrain on the return
   type being exactly `task<E>`: a concept written that way silently selects a fallback.
 - `answer` is the responder helper. It first calls `self.resolve_ask(e)` (routing any reply to one of
-  the responder's own pending asks, returning early if so), then sets `e.response = fn(e)` and
+  the responder's own pending asks, or discarding an obsolete own response, returning early in both cases), then sets `e.response = fn(e)` and
   `reply()`s the same event back, preserving the correlation id (`request.h:455-462`). **`fn` must
   not throw** — a throwing handler terminates the worker core; carry failure in the response payload
   instead (`request.h:447-454`).
@@ -153,16 +153,26 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:410-415`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1566-1586`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1566-1589`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
+A true resolver result means **consumed**, not necessarily delivered: replies after completion,
+timeout or cancellation are discarded without re-entering the user request function. This remains
+true after the registry entry is reused, because an entry never changes its numeric actor owner.
+The registry retains the sum of owners' high-water slot demands and lazily allocated owner queues;
+when a generation is exhausted the entry is retired instead of wrapping and also remains allocated.
+The 22-bit slot domain permits 4,194,304 retained entries per worker thread. Exhausting it aborts
+the process; it bounds cumulative per-owner demand and retired generations, not just live asks.
+An already-ended self
+exchange is also discarded if its original request first arrives late.
+
 An actor may also ask **itself** — `qb::ask(ctx, id(), ...)`, or an `ask_all` / `ask_any` whose targets include
 it (Huly QB-1100). Its request and its reply then carry the same correlation id to the same actor, so their order
-tells them apart: the first arrival is the request and reaches the handler — also when the handler calls
+tells them apart while the exchange is live: the first arrival is the request and reaches the handler — also when the handler calls
 `resolve_ask` before `answer` calls it again — and the next one is the answer, whatever its form: `reply()`,
 `push_reply()`, a copy of the request, a freshly built event, or the answer of an actor the request was forwarded
-to (`qb/src/qb/core/Actor.cpp:403-422`). The plain ask pays one compare for it at send time. Not from `onInit()`:
+to (`qb/src/qb/core/Actor.cpp:499-518`). The plain ask pays one compare for it at send time. Not from `onInit()`:
 a self-ask before `onInit()` completes could never be answered — the handlers run only afterwards — and throws
 `std::logic_error` at once (`qb/tests/core/system/coroutine/ask-self.cpp`).
 
@@ -195,7 +205,7 @@ spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
     ctx.push<PatternsDone>();
 });
 ```
-<!-- src: qb/tests/core/shared/AskResponders.h:58-77 (Ping, Echoer); qb/tests/core/system/coroutine/ask-patterns.cpp:172-176 (asker) -->
+<!-- src: qb/tests/core/shared/AskResponders.h:58-77 (Ping, Echoer); qb/tests/core/system/coroutine/ask-patterns.cpp:173-177 (asker) -->
 
 ### Example — absolute deadline across a chain
 
@@ -235,7 +245,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,455-462 and qb/src/qb/core/Actor.h:1566-1586 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,455-462 and qb/src/qb/core/Actor.h:1566-1589 -->
 
 ---
 
@@ -354,7 +364,8 @@ of a type within a time window.
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
   (`discovery.h:173-175`, `:197-201`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
-  (`discovery.h:126-136`).
+  (`discovery.h:126-136`). An obsolete own discovery reply is consumed without invoking the
+  legacy unsolicited handler; true from `resolve_require` does not imply a coroutine resumed.
 
 ### Example
 
@@ -531,7 +542,8 @@ the asker drains them one at a time until end-of-stream.
   FIFO order, then `std::nullopt` at end-of-stream (`streaming.h:292-340`).
 - The responder pushes chunks with `yield_answer(self, request, chunk)` and signals completion with
   `end_stream(self, request)` (`streaming.h:342-372`). Chunks are `AskEvent`s, so the asker routes
-  them via `resolve_ask(e)` in its `on(E&)` (`streaming.h:306-312`).
+  them via `resolve_ask(e)` in its `on(E&)` (`streaming.h:306-312`). Live chunks enter the stream
+  buffer and waiter wakeups may be queued; obsolete own chunks are consumed without waking anyone.
 - `next()` throws `timeout_error` if no chunk arrives within the **per-chunk** timeout,
   `cancelled_error` on kill, and `stream_overflow_error` if the responder outran the buffer (a loud
   failure, not a silent drop) (`streaming.h:274-284`, `:124-135`). Works inside `onInit()`
@@ -749,7 +761,8 @@ timeout would make the responder run its effect twice. Carry a **stable** `idemp
 request (added to your `Request<Resp>` subtype) and let the responder de-duplicate by it
 (`idempotency.h:1-9`, `:40-52`).
 
-- `answer_idempotent` (1) routes any reply via `resolve_ask(e)`, (2) for a non-default key already in
+- `answer_idempotent` (1) consumes live or obsolete own responses via `resolve_ask(e)`, returning
+  before cache lookup, effect or reply, (2) for a non-default key already in
   the cache, replies the cached response **without** running `fn`, otherwise (3) runs `fn`, caches
   the result, and replies. A default-valued key (`{}`) bypasses the cache — always runs `fn`
   (`idempotency.h:172-216`).

@@ -268,10 +268,10 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
             // and replayed FIFO once the actor becomes active.
             if (!dest.is_broadcast() && __is_activating__(dest) && event->getID() != qb::Event::type_to_id<qb::KillEvent>()) {
                 if (qb::detail::ask_try_deliver_reply(*event, dest)) {
-                    // Consumed by a pending continuation — and this is the END of that event's
+                    // Consumed by a live operation or discarded as obsolete — the END of that event's
                     // life, so it must be disposed exactly like every other terminal path
                     // (route() disposes after the handler; the stash disposes on overflow and
-                    // on a failed init; the replay routes and disposes). The awaiter took what
+                    // on a failed init; the replay routes and disposes). A live awaiter took what
                     // it needed BY VALUE — `ask` moves the event into its `result`, `ask_stream`
                     // moves it into the chunk deque, `ping`/`require` copy two scalars — so
                     // nothing references these bytes afterwards. Skipping the destructor leaked

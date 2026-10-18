@@ -180,7 +180,7 @@ private:
  * @param cache The responder's `dedup_map` keyed by `idempotency_key`.
  * @param fn    Computes the response; **runs at most once per distinct key**.
  * @details
- * Call from the responder's `on(E&)`. It (1) routes any reply to one of `self`'s own pending asks
+ * Call from the responder's `on(E&)`. It (1) consumes live or obsolete responses to `self`'s own asks
  * via `resolve_ask(e)`, (2) for a non-default key already in `cache`, replies the cached response
  * **without** running `fn`, otherwise (3) runs `fn`, caches the result under the key, and replies.
  * A default-valued key (`{}`) bypasses the cache (always runs `fn`) — set a stable key to dedup.
@@ -196,7 +196,7 @@ template <idempotent_event E, class Cache, class Fn>
 void
 answer_idempotent(qb::Actor &self, E &e, Cache &cache, Fn &&fn) {
     if (self.resolve_ask(e))
-        return; // a reply to one of our own asks — already delivered to the coroutine.
+        return; // own response: delivered to a live operation, or discarded as obsolete.
 
     using key_t      = std::decay_t<decltype(e.idempotency_key)>;
     const key_t &key = e.idempotency_key;

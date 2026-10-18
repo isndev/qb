@@ -439,7 +439,7 @@ ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, deadline dl, Args... args)
  * @param fn Computes the response payload from `e` (runs synchronously, full actor access).
  * @details
  * Call this from the responder's `on(E&)`. It first routes any reply to one of `self`'s own
- * pending asks via `resolve_ask(e)` (returning early if so), then computes `e.response = fn(e)`
+ * live or obsolete asks via `resolve_ask(e)` (returning early if consumed), else computes `e.response = fn(e)`
  * and `reply()`s the same event back to the asker (preserving the correlation id).
  * @code
  * void on(Quote &q) { qb::answer(*this, q, [](Quote const &r){ return lookup(r.symbol); }); }
@@ -456,7 +456,7 @@ template <class E, class Fn>
 void
 answer(qb::Actor &self, E &e, Fn &&fn) noexcept(noexcept(std::forward<Fn>(fn)(e))) {
     if (self.resolve_ask(e))
-        return; // it was a reply to one of our own asks — already delivered to the coroutine.
+        return; // own response: delivered to a live operation, or discarded as obsolete.
     e.response = std::forward<Fn>(fn)(e);
     self.reply(e);
 }

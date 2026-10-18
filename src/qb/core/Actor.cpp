@@ -22,10 +22,13 @@
  * @ingroup Core
  */
 
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
 #include <map>
+#include <memory>
+#include <type_traits>
 #include <unordered_set>
 #include <qb/core/Actor.h>
 #include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp); <windows.h> on Windows
@@ -61,11 +64,13 @@ namespace {
  *          owner's slot (one call, not a take followed by a register: `perf` priced every
  *          out-of-line trip through here, TLS guard included, at about as much as the work it
  *          did), look-up = index + compare, release = push; no multiply, no probe, no allocation
- *          once warm (the table doubles when the free list runs dry and never shrinks). The free list is FIFO,
- *          not LIFO, on purpose: it spreads reuse across every free entry, so a generation
- *          advances once per `free_count` asks rather than once per ask and a 26-bit generation
- *          wraps after ~2^26 × 63 asks on a warm table — and a wrapped stale id would still have
- *          to name its own owner. Id 0 stays reserved ("not an ask"): generations start at 1.
+ *          once warm. An entry belongs permanently to one numeric ActorId: a late reply must
+ *          still identify its owner after the awaiter is gone AND after later asks reuse the entry.
+ *          Each owner has its own FIFO. A new owner takes only unassigned entries, not another
+ *          owner's retired ones. Thus storage follows the sum of owners' high-water demands,
+ *          rather than just the maximum simultaneous demand of the core. The owner queues are
+ *          paged and lazy; a warm exchange allocates nothing. An exhausted generation retires
+ *          the entry permanently, never wrapping its id. Id 0 stays reserved ("not an ask").
  *          Strictly mono-thread, like everything else in here.
  */
 class ask_table {
@@ -82,26 +87,54 @@ public:
         std::free(_tab);
     }
 
-    /// Take a free entry for an ask owned by an actor of core `core`, bound to the owner's
+    /// Take a free entry for an ask owned by `owner`, bound to the owner's
     /// `slot` (which may be null: such an entry resolves nothing); returns its correlation id.
     [[nodiscard]] std::uint64_t
-    take(std::uint16_t const core, ask_slot *slot) {
-        if (_free_head == none)
-            grow();
-        const std::uint32_t i = _free_head;
-        entry              &e = _tab[i];
-        _free_head            = e.next;
-        if (_free_head == none)
-            _free_tail = none;
-        e.next = busy;
-        e.slot = slot;
-        return (static_cast<std::uint64_t>(core) << 48) | (static_cast<std::uint64_t>(e.gen) << slot_bits) | i;
+    take(ActorId const owner, ask_slot *slot) {
+        assert(!slot || slot->owner == owner);
+        auto         &queue = owner_queue(owner);
+        std::uint32_t i;
+        if (queue.head == none) [[unlikely]] {
+            if (_assigned == _cap)
+                grow();
+            i = _assigned++;
+        } else {
+            i          = queue.head;
+            queue.head = _tab[i].next;
+            if (queue.head == none)
+                queue.tail = none;
+        }
+        entry &e = _tab[i];
+        if (slot) {
+            e.data.slot = slot;
+            e.next      = busy;
+        } else {
+            // The codec tests and detail callers may take an entry without an awaiter.
+            e.data.owner = static_cast<std::uint32_t>(owner);
+            e.next       = unbound;
+        }
+        return (static_cast<std::uint64_t>(owner.index()) << 48) | (static_cast<std::uint64_t>(e.gen) << slot_bits) | i;
     }
 
     [[nodiscard]] ask_slot *
     find(std::uint64_t const id) const noexcept {
         const entry *const e = live(id);
-        return e ? e->slot : nullptr;
+        return e && e->next == busy ? e->data.slot : nullptr;
+    }
+
+    /// Cold miss classification: all issued generations keep the same numeric owner.
+    [[nodiscard]] QB_NOINLINE bool
+    obsolete(std::uint64_t const id, ActorId const owner) const noexcept {
+        const auto i          = id & slot_mask;
+        const auto generation = static_cast<std::uint32_t>((id >> slot_bits) & gen_max);
+        if (generation == 0 || i >= _assigned)
+            return false;
+        const entry &e = _tab[i];
+        if (entry_owner(e) != owner)
+            return false;
+        // The free entry's current generation has not been issued yet. An exhausted
+        // entry's final generation HAS been issued, and must remain recognisable.
+        return generation < e.gen || (generation == e.gen && e.next == exhausted);
     }
 
     /// Give the entry back. Idempotent: a released (or never taken) id is a no-op.
@@ -110,45 +143,103 @@ public:
         entry *const e = live(id);
         if (!e)
             return;
-        e->slot = nullptr;
-        e->gen  = e->gen == gen_max ? 1 : e->gen + 1; // a stale id misses from this point on
-        push_free(static_cast<std::uint32_t>(e - _tab));
+        const ActorId owner = entry_owner(*e);
+        if ((id >> 48) != owner.index())
+            return;
+        // Capture before ending the pointer member's lifetime; the awaiter may be
+        // destroyed as soon as unregister returns. No retired raw pointer survives.
+        e->data.owner = static_cast<std::uint32_t>(owner);
+        if (e->gen == gen_max) [[unlikely]] {
+            e->next = exhausted;
+            return;
+        }
+        ++e->gen;
+        push_free(owner_queue(owner), static_cast<std::uint32_t>(e - _tab));
     }
 
 private:
+    static constexpr std::uint32_t none       = ~std::uint32_t{0};
+    static constexpr std::uint32_t busy       = none - 1;
+    static constexpr std::uint32_t unbound    = none - 2;
+    static constexpr std::uint32_t exhausted  = none - 3;
+    static constexpr std::uint32_t unassigned = none - 4;
+
     struct entry {
-        ask_slot     *slot = nullptr;
+        union payload {
+            ask_slot     *slot;
+            std::uint32_t owner;
+            constexpr payload()
+                : owner(0) {}
+        } data;
         std::uint32_t gen  = 1;
-        std::uint32_t next = 0; ///< free-list link while free, `busy` while taken
+        std::uint32_t next = unassigned;
     };
-    static constexpr std::uint32_t none = ~std::uint32_t{0};
-    static constexpr std::uint32_t busy = none - 1;
+    static_assert(std::is_trivially_copyable_v<entry>);
+    static_assert(sizeof(entry) == sizeof(ask_slot *) + 2 * sizeof(std::uint32_t));
+
+    struct free_queue {
+        std::uint32_t head = none;
+        std::uint32_t tail = none;
+    };
+    using queue_page = std::array<free_queue, 256>;
+    struct owner_directory {
+        std::array<std::unique_ptr<queue_page>, 256> pages;
+    };
+
+    [[nodiscard]] static ActorId
+    entry_owner(entry const &e) noexcept {
+        return e.next == busy ? e.data.slot->owner : ActorId{e.data.owner};
+    }
+
+    QB_NOINLINE void
+    select_core(std::uint16_t const core) {
+        _current_owners = &_owners.try_emplace(core).first->second;
+        _current_core   = core;
+    }
+
+    QB_NOINLINE static void
+    create_page(std::unique_ptr<queue_page> &page) {
+        page = std::make_unique<queue_page>();
+    }
+
+    free_queue &
+    owner_queue(ActorId const owner) {
+        // A worker uses one core. The cold directory also supports the calling
+        // thread hosting successive engines, and pure codec tests with other cores.
+        if (_current_core != owner.index()) [[unlikely]]
+            select_core(owner.index());
+        const auto sid  = owner.sid();
+        auto      &page = _current_owners->pages[sid >> 8];
+        if (!page) [[unlikely]]
+            create_page(page);
+        return (*page)[sid & 255];
+    }
 
     [[nodiscard]] entry *
     live(std::uint64_t const id) const noexcept {
         const std::uint64_t i = id & slot_mask;
-        if (i >= _cap)
+        if (i >= _assigned)
             return nullptr;
         entry *const e = _tab + i;
-        if (e->next != busy || e->gen != static_cast<std::uint32_t>((id >> slot_bits) & gen_max))
+        if ((e->next != busy && e->next != unbound) || e->gen != static_cast<std::uint32_t>((id >> slot_bits) & gen_max))
             return nullptr;
         return e;
     }
 
     void
-    push_free(std::uint32_t const i) noexcept {
+    push_free(free_queue &queue, std::uint32_t const i) noexcept {
         _tab[i].next = none;
-        if (_free_tail == none)
-            _free_head = i;
+        if (queue.tail == none)
+            queue.head = i;
         else
-            _tab[_free_tail].next = i;
-        _free_tail = i;
+            _tab[queue.tail].next = i;
+        queue.tail = i;
     }
 
     void
     grow() {
-        // 2^22 entries taken on ONE core is 2^22 suspended asks; the registry cannot
-        // degrade past that (an id that names no entry is a lost reply), so it stops.
+        // The token keeps its existing 22-bit slot domain. Permanent ownership
+        // and exhausted generations count toward this retained-capacity bound.
         if (_cap > slot_mask)
             std::abort();
         const std::uint32_t old_cap = _cap;
@@ -159,14 +250,15 @@ private:
         _tab = t;
         for (std::uint32_t i = old_cap; i < _cap; ++i) {
             _tab[i] = entry{};
-            push_free(i);
         }
     }
 
-    entry        *_tab       = nullptr;
-    std::uint32_t _cap       = 0;
-    std::uint32_t _free_head = none;
-    std::uint32_t _free_tail = none;
+    entry                                   *_tab      = nullptr;
+    std::uint32_t                            _cap      = 0;
+    std::uint32_t                            _assigned = 0;
+    std::map<std::uint16_t, owner_directory> _owners;
+    owner_directory                         *_current_owners = nullptr;
+    std::uint32_t                            _current_core   = none;
 };
 
 thread_local ask_table tls_ask_slots;
@@ -340,7 +432,7 @@ ask_take(qb::ActorId const owner, ask_slot *slot) noexcept {
     // The entry is taken AND bound here, before the request is sent — its owner (the
     // awaiter, the discovery awaiter, the `stream`) already exists, and that owner's
     // destructor is what gives the entry back, through `ask_unregister`, on every path.
-    return tls_ask_slots.take(owner.index(), slot);
+    return tls_ask_slots.take(owner, slot);
 }
 
 void
@@ -356,8 +448,12 @@ ask_deliver(std::uint64_t const id, ActorId const owner, Event &resp) noexcept {
         return false;
     ask_slot *slot = tls_ask_slots.find(id);
     // Only the owning actor may resolve its slot, and only once.
-    if (!slot || slot->done || !(slot->owner == owner))
+    if (!slot) [[unlikely]]
+        return tls_ask_slots.obsolete(id, owner);
+    if (!(slot->owner == owner))
         return false;
+    if (slot->done)
+        return true; // timeout/cancel can finish before the awaiter unregisters.
     // A null `deliver` is a self-ask's (Huly QB-1100): the same test as before, a cold target.
     if (!slot->deliver) [[unlikely]]
         return ask_self_arrival(id, *slot, resp);

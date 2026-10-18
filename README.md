@@ -218,8 +218,8 @@ int main() {
 The lambda captures the id by value and never `this`: the actor may be destroyed while the coroutine
 is suspended, and the context is the only legal way back to it. `qb::ask` throws `timeout_error` if
 the deadline passes and `cancelled_error` if the actor is killed while waiting; a reply that lands
-after the timeout reaches `on(Quote &)` as an ordinary, unsolicited event, which is what `resolve_ask`
-returning `false` means. Streams (`qb::ask_stream`), scatter-gather (`qb::ask_all`, `qb::ask_any`),
+after the timeout is consumed by `resolve_ask` without resuming the finished operation. Its `true`
+result means consumed, not necessarily delivered; `false` is unrelated/unsolicited work. Streams (`qb::ask_stream`), scatter-gather (`qb::ask_all`, `qb::ask_any`),
 discovery (`qb::require<T>`) and deadlines shared across a chain (`qb::ask_by`) are in the
 [pattern library](./readme/4_qb_core/patterns_library.md).
 

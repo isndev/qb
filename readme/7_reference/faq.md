@@ -105,7 +105,7 @@ Yes — through two entry points, `spawn()` (recommended) and `spawn_detached()`
 A spawned coroutine runs in an isolated context and **must not touch actor state after a `co_await`**: the actor may be destroyed while the coroutine is suspended, so dereferencing `this` or an actor member after suspension is undefined behavior. The rules:
 
 - Copy every value you need **by value before the first `co_await`**. Never capture `this` or a reference to an actor member.
-- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1703-1712` and `:1723-1724`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1739-1741` and `:1748`).
+- After suspension, communicate only through the `CoroContext` argument. `ctx.push<Event>(args…)` posts an event back to the spawning actor itself; `ctx.push_to<Event>(dest, args…)` posts to another actor by id (`qb/src/qb/core/Actor.h:1706-1715` and `:1726-1727`). Both are safe even after the spawning actor has died — events addressed to a dead actor are dropped by the router. `ctx.id()` and `ctx.time()` are also safe (`qb/src/qb/core/Actor.h:1742-1744` and `:1751`).
 - Keep coroutines short-lived; a long-running coroutine widens the window in which the actor can die underneath it.
 
 ```cpp
@@ -137,7 +137,7 @@ Not directly inside an `on()` handler or a registered callback. A blocking call 
 - **Run the call on the offload pool** with `co_await ctx.offload(fn, copied_values...)` from an actor coroutine. Return its result by value and leave actor state on the core.
 - **Delegate to worker actors on different cores**; have them reply by event.
 
-`qb::io::async::defer` and a positive-delay `callback` only change *when* the call blocks this same core; `callback(f)` with no delay runs inline in the handler. None moves the call to another thread. <!-- src: qb/src/qb/io/async/io.h:379-415; qb/src/qb/core/Actor.h:2348-2378 -->
+`qb::io::async::defer` and a positive-delay `callback` only change *when* the call blocks this same core; `callback(f)` with no delay runs inline in the handler. None moves the call to another thread. <!-- src: qb/src/qb/io/async/io.h:379-415; qb/src/qb/core/Actor.h:2352-2382 -->
 
 See [Async operations in actors](../5_core_io_integration/async_in_actors.md).
 

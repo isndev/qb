@@ -42,6 +42,7 @@
 #include <chrono>
 #include <thread>
 #include <vector>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
@@ -966,4 +967,229 @@ TEST(ActorAskPatterns, SagaCompensationThrowsContinuesRemaining) {
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_comp0_ran.load()) << "comp[0] must run despite comp[1] throwing first (best-effort rollback)";
     EXPECT_TRUE(g_released.load()) << "the surviving rollback (Release) must go through after the throw";
+}
+
+namespace late_answer_test {
+
+enum class ending { winner, timeout, cancellation };
+
+struct Exchange : qb::Request<int> {
+    int key = 31;
+};
+struct Release : qb::Event {};
+struct Cancel : qb::Event {};
+struct Checked : qb::Event {};
+
+struct Outcome {
+    int         requests           = 0;
+    int         arrivals_after_end = 0;
+    int         answered_after_end = 0;
+    int         peer_echoes        = 0;
+    int         winner             = 0;
+    bool        retired            = false;
+    bool        released           = false;
+    bool        checked            = false;
+    std::string result;
+};
+
+// A held request is copied back only after the asking coroutine has ended. The
+// following marker uses the same ordered pipe, so the test never guesses when
+// the late response arrived. At most two unwanted answers are allowed to leave
+// the fixture; a broken product cannot turn this witness into an infinite storm.
+class HeldPeer : public qb::Actor {
+    Outcome &_out;
+    ending   _ending;
+    Exchange _pending;
+    bool     _held = false;
+
+public:
+    HeldPeer(Outcome *out, ending how)
+        : _out(*out)
+        , _ending(how) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Exchange>(*this);
+        registerEvent<Release>(*this);
+        co_return true;
+    }
+
+    void
+    on(Exchange &e) {
+        if (!_held) {
+            _held    = true;
+            _pending = e;
+            ++_out.requests;
+            if (_ending == ending::cancellation)
+                push<Cancel>(e.getSource());
+            return;
+        }
+        if (_out.peer_echoes < 2)
+            qb::answer(*this, e, [this](Exchange const &request) {
+                ++_out.peer_echoes;
+                return request.key * 3;
+            });
+    }
+
+    void
+    on(Release const &) {
+        _out.released = _held && _out.retired;
+        if (_held) {
+            _pending.response = _pending.key * 3;
+            push<Exchange>(_pending.getSource(), _pending);
+            push<Checked>(_pending.getSource());
+        }
+    }
+};
+
+class FastPeer : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Exchange>(*this);
+        co_return true;
+    }
+    void
+    on(Exchange &e) {
+        qb::answer(*this, e, [](Exchange const &request) { return request.key * 2; });
+    }
+};
+
+class Asker : public qb::Actor {
+    Outcome                          &_out;
+    ending                            _ending;
+    bool                              _self;
+    qb::ActorId                       _held_peer;
+    qb::ActorId                       _fast_peer;
+    qb::io::async::cancellation_token _operation;
+    Exchange                          _pending;
+    bool                              _held = false;
+
+public:
+    Asker(Outcome *out, ending how, bool self, qb::ActorId held_peer, qb::ActorId fast_peer)
+        : _out(*out)
+        , _ending(how)
+        , _self(self)
+        , _held_peer(held_peer)
+        , _fast_peer(fast_peer) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Exchange>(*this);
+        registerEvent<Release>(*this);
+        registerEvent<Cancel>(*this);
+        registerEvent<Checked>(*this);
+        _operation = context().child_token();
+        const qb::ScopedCoroContext operation_context{this, _operation};
+        const auto                  target = _self ? id() : _held_peer;
+        spawn(
+            [operation_context, target, fast = _fast_peer, how = _ending, out = &_out](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                try {
+                    if (how == ending::winner) {
+                        out->winner = (co_await qb::ask_any(operation_context, {target, fast}, Exchange{}, 5s)).response;
+                        out->result = "winner";
+                    } else {
+                        (void) co_await qb::ask(operation_context, target, Exchange{}, how == ending::timeout ? 1ms : 5s);
+                        out->result = "unexpected reply";
+                    }
+                } catch (qb::io::async::timeout_error const &) {
+                    out->result = "timeout";
+                } catch (qb::io::async::cancelled_error const &) {
+                    out->result = "cancellation";
+                } catch (std::exception const &e) {
+                    out->result = e.what();
+                }
+                out->retired = true;
+                ctx.push_to<Release>(target);
+            });
+        co_return true;
+    }
+
+    void
+    on(Exchange &e) {
+        if (_self && !_held) {
+            // The first self arrival is its request, not its answer (QB-1100).
+            if (resolve_ask(e))
+                return;
+            _held    = true;
+            _pending = e;
+            ++_out.requests;
+            if (_ending == ending::cancellation)
+                push<Cancel>(id());
+            return;
+        }
+        if (_out.retired)
+            ++_out.arrivals_after_end;
+        if (_out.answered_after_end < 2)
+            qb::answer(*this, e, [this](Exchange const &request) {
+                ++_out.answered_after_end;
+                return request.key * 4;
+            });
+    }
+
+    void
+    on(Cancel const &) {
+        _operation.cancel();
+    }
+
+    void
+    on(Release const &) {
+        _out.released = _held && _out.retired;
+        if (_held) {
+            _pending.response = _pending.key * 3;
+            push<Exchange>(id(), _pending);
+            push<Checked>(id());
+        }
+    }
+
+    void
+    on(Checked const &) {
+        _out.checked = true;
+        push<qb::KillEvent>(_fast_peer);
+        if (!_self)
+            push<qb::KillEvent>(_held_peer);
+        kill();
+    }
+};
+
+void
+run(ending how, bool self) {
+    Outcome    out;
+    qb::Main   main;
+    const auto fast = main.addActor<FastPeer>(0);
+    const auto held = self ? qb::ActorId{} : main.addActor<HeldPeer>(0, &out, how);
+    main.addActor<Asker>(0, &out, how, self, held, fast);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    ASSERT_EQ(out.requests, 1);
+    ASSERT_TRUE(out.retired);
+    ASSERT_TRUE(out.released);
+    ASSERT_TRUE(out.checked);
+    ASSERT_GE(out.arrivals_after_end, 1);
+    EXPECT_EQ(out.result, how == ending::winner ? "winner" : how == ending::timeout ? "timeout" : "cancellation");
+    if (how == ending::winner)
+        EXPECT_EQ(out.winner, 62);
+    EXPECT_EQ(out.answered_after_end, 0) << "a retired ask response reached the user request function";
+}
+
+} // namespace late_answer_test
+
+TEST(ActorAskPatterns, LateAskAnyResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::winner, false);
+}
+TEST(ActorAskPatterns, LateTimedOutResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::timeout, false);
+}
+TEST(ActorAskPatterns, LateCancelledResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::cancellation, false);
+}
+TEST(ActorAskPatterns, LateSelfAskAnyResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::winner, true);
+}
+TEST(ActorAskPatterns, LateSelfTimedOutResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::timeout, true);
+}
+TEST(ActorAskPatterns, LateSelfCancelledResponseIsNotANewRequest) {
+    late_answer_test::run(late_answer_test::ending::cancellation, true);
 }

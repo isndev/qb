@@ -18,22 +18,22 @@ llm/qb.llm.api.md	Actor.h:1479-1514	ebacec412d5d	/**
 llm/qb.llm.api.md	Actor.h:1524-1524	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
 llm/qb.llm.api.md	Actor.h:1528-1528	f39703789923	void spawn_detached(std::string_view name, Func &&func) const;
 llm/qb.llm.api.md	Actor.h:1530-1546	fdcc13b19f97	/**
-llm/qb.llm.api.md	Actor.h:1692-1701	dadd4620b634	class CoroContext {
-llm/qb.llm.api.md	Actor.h:2142-2249	bb1e47a5f85b	struct activation_awaiter {
-llm/qb.llm.api.md	Actor.h:2268-2379	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:2299-2303	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
-llm/qb.llm.api.md	Actor.h:2375-2378	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.api.md	Actor.h:2387-2390	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.api.md	Actor.h:2412-2427	172957b38276	* @details One instance per VirtualCore per Tag, with the same servic...
-llm/qb.llm.api.md	Actor.h:2464-2473	5522188c5d2b	static qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:2492-2512	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.api.md	Actor.h:2503-2509	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:2511-2515	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:2541-2545	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
-llm/qb.llm.api.md	Actor.h:2546-2551	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
-llm/qb.llm.api.md	Actor.h:2575-2576	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2887-2887	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2895-2895	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:1695-1704	dadd4620b634	class CoroContext {
+llm/qb.llm.api.md	Actor.h:2146-2253	bb1e47a5f85b	struct activation_awaiter {
+llm/qb.llm.api.md	Actor.h:2272-2383	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.api.md	Actor.h:2303-2307	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
+llm/qb.llm.api.md	Actor.h:2379-2382	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.api.md	Actor.h:2391-2394	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.api.md	Actor.h:2416-2431	172957b38276	* @details One instance per VirtualCore per Tag, with the same servic...
+llm/qb.llm.api.md	Actor.h:2468-2477	5522188c5d2b	static qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:2496-2516	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.api.md	Actor.h:2507-2513	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:2515-2519	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:2545-2549	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
+llm/qb.llm.api.md	Actor.h:2550-2555	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.api.md	Actor.h:2579-2580	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2891-2891	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2899-2899	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
 llm/qb.llm.api.md	Actor.h:516-532	b2c838f90518	/**
 llm/qb.llm.api.md	Actor.h:534-539	a94c49a67b2a	/**
 llm/qb.llm.api.md	Actor.h:562-583	c0770292de14	static void *
@@ -139,9 +139,9 @@ llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:308-390	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:164-164	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1095-1134	7001d24b2fe3	if (port_begin && port_begin < port_end) {
-llm/qb.llm.md	Actor.cpp:447-452	df9e20a73808	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:447-469	e3c3b5b245b4	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:636-654	94aff7135980	void
+llm/qb.llm.md	Actor.cpp:543-548	df9e20a73808	Actor::Actor() noexcept
+llm/qb.llm.md	Actor.cpp:543-565	e3c3b5b245b4	Actor::Actor() noexcept
+llm/qb.llm.md	Actor.cpp:732-750	94aff7135980	void
 llm/qb.llm.md	Actor.h:1069-1074	411d83537697	* This is the primary and recommended method for sending events. Even...
 llm/qb.llm.md	Actor.h:1114-1120	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
 llm/qb.llm.md	Actor.h:1129-1133	31e37e853c4c	* Events sent using `send()` are not guaranteed to be received in the...
@@ -153,13 +153,13 @@ llm/qb.llm.md	Actor.h:1479-1514	ebacec412d5d	/**
 llm/qb.llm.md	Actor.h:1514-1514	f9f0e3c13c7d	void spawn(Func &&func) const;
 llm/qb.llm.md	Actor.h:1524-1524	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
 llm/qb.llm.md	Actor.h:1530-1546	fdcc13b19f97	/**
-llm/qb.llm.md	Actor.h:1687-1693	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
-llm/qb.llm.md	Actor.h:2268-2379	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:2348-2378	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
-llm/qb.llm.md	Actor.h:2375-2378	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.md	Actor.h:2387-2390	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.md	Actor.h:2492-2512	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.md	Actor.h:2546-2551	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.md	Actor.h:1690-1696	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
+llm/qb.llm.md	Actor.h:2272-2383	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.md	Actor.h:2352-2382	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
+llm/qb.llm.md	Actor.h:2379-2382	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.md	Actor.h:2391-2394	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.md	Actor.h:2496-2516	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.md	Actor.h:2550-2555	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
 llm/qb.llm.md	Actor.h:516-539	c86530b413ad	/**
 llm/qb.llm.md	Actor.h:562-583	c0770292de14	static void *
 llm/qb.llm.md	Actor.h:780-800	6d433ed7aa37	/**

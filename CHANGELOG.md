@@ -9,6 +9,17 @@ policy.
 
 ### Changed
 
+- **Response resolution consumes obsolete own exchanges (Huly QB-1104).** `resolve_ask` and
+  `resolve_require` return true for a live delivery or a discarded response to an operation that
+  already ended. A true result no longer guarantees a continuation ran. This prevents `answer`,
+  `answer_idempotent` and the usual handwritten resolver guard from replying to late replies forever.
+  Registry entries retain their numeric owner across reuse, with per-owner free queues and no
+  generation wrap. The Event layout and correlation codec are unchanged; retained capacity follows
+  the sum of owners' high-water demands plus permanently exhausted entries, rather than peak
+  simultaneous demand alone. The unchanged 22-bit slot domain holds 4,194,304 retained entries
+  per worker thread; exhausting it aborts the process, so long-lived high-fanout actor churn
+  consumes this capacity even after its requests finish.
+
 - **A VirtualCore's default affinity follows the CPUs the process was given (Huly QB-1081).** Core `i` was pinned
   to CPU `i` whatever mask the process inherited: with the calling thread narrowed to CPUs 22-23, as `taskset -c
   22,23` does (WSL2, g++ 14), cores 0, 1 and 2 ran on CPUs 0, 1 and 2, out of the operator's set, and in a container's cpuset a core numbered past it failed with

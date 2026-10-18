@@ -21,8 +21,8 @@
  *   - CROSS-CORE round-trip — request and reply traverse the lock-free pipes, correlation preserved;
  *   - CORRELATION isolation — N sequential and concurrent asks from one actor each resolve to their
  *     own distinct reply;
- *   - LATE REPLY — a reply arriving AFTER the ask timed out is delivered as unsolicited
- *     (`resolve_ask` returns false), with no double-resume / use-after-free, same-core AND cross-core;
+ *   - LATE REPLY — a reply arriving AFTER the ask timed out is consumed as obsolete
+ *     (`resolve_ask` returns true without resuming the finished operation), with no double-resume / use-after-free, same-core AND cross-core;
  *   - NON-TRIVIAL payload — an owning (`shared_ptr<string>`) request round-trips intact;
  *   - EMPLACE form — `co_await qb::ask<E>(ctx, target, timeout, args...)` builds the request IN the
  *     pipe slot: same success / timeout / cancel / cross-core contract as the by-value form, the
@@ -36,7 +36,7 @@
  * Hardening over the original (see dev/tests-audit/qb-core/qbcore-c10.md):
  *   - the fragile `30ms`-timeout / `80ms`-late-reply ORDERING ORACLE is replaced by an EVENT-DRIVEN
  *     gate: the gated market holds its reply until it receives an explicit "now" signal that the
- *     asker sends only AFTER it has observed its own timeout, so the late-reply-is-unsolicited
+ *     asker sends only AFTER it has observed its own timeout, so the late-reply-is-consumed
  *     invariant no longer depends on a wall-clock race;
  *   - a new cross-core timeout-mid-reply case (requires-multicore) exercises the cross-core teardown
  *     race: the reply is in flight from core 1 when the asker's core-0 timeout fires.
@@ -419,8 +419,8 @@ TEST(ActorCoroutineAsk, ConcurrentAsksResolveDistinctly) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. A reply arriving AFTER the ask timed out is delivered as unsolicited (no
-//    double-resume / use-after-free); resolve_ask returns false.
+// 6. A reply arriving AFTER the ask timed out is consumed as obsolete (no
+//    double-resume / use-after-free); resolve_ask returns true without delivery.
 //
 //    DE-FLAKED: the old version raced a 30ms ask timeout against an 80ms late
 //    wall-clock reply. Here the market (GatedMarket) parks the reply and releases
@@ -429,7 +429,7 @@ TEST(ActorCoroutineAsk, ConcurrentAsksResolveDistinctly) {
 //    timeout, no wall-clock margin involved.
 // ---------------------------------------------------------------------------
 namespace {
-std::atomic<bool> g_late_unsolicited{false};
+std::atomic<bool> g_late_consumed{false};
 
 // Explicit "you may now reply" signal sent by the asker once it has timed out.
 struct ReleaseReply : public qb::Event {};
@@ -482,23 +482,21 @@ public:
                 g_ask_timed_out = true;
             }
             // We have provably timed out. Now tell the market to release its held reply; it will
-            // arrive as an unsolicited Ping (the ask slot is gone) — the case under test.
+            // arrive as an obsolete own Ping (the ask slot is gone) — the case under test.
             ctx.template push_to<ReleaseReply>(mkt);
         });
         co_return true;
     }
     void
     on(Ping &e) {
-        if (resolve_ask(e))
-            return; // would be a live ask; here the slot is gone → false
-        g_late_unsolicited = true;
+        g_late_consumed = resolve_ask(e); // obsolete own response is consumed, never delivered again.
         qb::Main::stop();
     }
 };
 
-TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsUnsolicitedAndSafe) {
+TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsConsumedAndSafe) {
     reset_flags();
-    g_late_unsolicited = false;
+    g_late_consumed = false;
     qb::Main main;
     auto     mkt = main.addActor<GatedMarket>(0);
     main.addActor<TraderLate>(0, mkt);
@@ -506,12 +504,12 @@ TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsUnsolicitedAndSafe) {
     main.join();
     EXPECT_FALSE(main.hasError());
     EXPECT_TRUE(g_ask_timed_out.load()) << "the ask must time out before the gated reply is released";
-    EXPECT_TRUE(g_late_unsolicited.load()) << "a reply released after the timeout must arrive as unsolicited (resolve_ask false)";
+    EXPECT_TRUE(g_late_consumed.load()) << "a reply released after the timeout must be consumed without resuming the operation";
 }
 
 // Cross-core variant: the timeout fires on core 0 while a reply is in flight from core 1. The slow
 // market (core 1) replies after 160ms via a scoped coroutine; the asker times out at 40ms, then the
-// in-flight reply lands as unsolicited. Exercises the cross-core teardown race.
+// in-flight reply is consumed as obsolete. Exercises the cross-core teardown race.
 //
 // The ordering is a wall-clock one, and an oversubscribed host can starve the asker's core past its
 // own deadline: the reply then lands BEFORE the deadline is observed, `resolve_ask` resumes the ask
@@ -521,7 +519,7 @@ TEST(ActorCoroutineAsk, LateReplyAfterTimeoutIsUnsolicitedAndSafe) {
 // own handler, and the case SKIPS with the reason: the race was not exercised, nothing was wrong.
 // The 160ms reply (was 80) leaves the 40ms deadline 120ms of room before that happens.
 namespace {
-std::atomic<bool> g_xcore_late_unsolicited{false};
+std::atomic<bool> g_xcore_late_consumed{false};
 std::atomic<bool> g_xcore_reply_won{false}; ///< the reply beat the deadline: the host starved core 0
 } // namespace
 
@@ -541,9 +539,9 @@ public:
                 co_await qb::ask(ctx, mkt, Ping{5}, 40ms); // SlowMarket replies at 160ms → timeout first
             } catch (const qb::io::async::timeout_error &) {
                 g_ask_timed_out = true;
-                co_return; // do NOT stop: wait for the in-flight cross-core reply to land as unsolicited
+                co_return; // do NOT stop: wait for the in-flight cross-core reply to be consumed
             }
-            // The reply won: this core was starved past its 40ms deadline, so no unsolicited reply can
+            // The reply won: this core was starved past its 40ms deadline, so no obsolete reply can
             // come any more. End the case through the actor's own handler instead of hanging.
             g_xcore_reply_won = true;
             ctx.push<AskDone>();
@@ -552,9 +550,10 @@ public:
     }
     void
     on(Ping &e) {
-        if (resolve_ask(e))
-            return; // slot gone after timeout → false (or the reply won: the coroutine reports it)
-        g_xcore_late_unsolicited = true;
+        const bool consumed = resolve_ask(e);
+        if (!g_ask_timed_out.load())
+            return; // a live reply resumes its coroutine, which performs normal shutdown.
+        g_xcore_late_consumed = consumed;
         qb::Main::stop();
     }
     void
@@ -568,8 +567,8 @@ TEST(ActorCoroutineAsk, TimeoutWhileReplyInFlightCrossCore) {
         GTEST_SKIP() << "requires-multicore: needs >= 2 cores to put the in-flight reply on a different core";
     }
     reset_flags();
-    g_xcore_late_unsolicited = false;
-    g_xcore_reply_won        = false;
+    g_xcore_late_consumed = false;
+    g_xcore_reply_won     = false;
     qb::Main main;
     // SlowMarket (core 1) answers seq*3 after 160ms via a scoped coroutine — the reply is mid-flight
     // when the asker's core-0 40ms timeout fires.
@@ -583,8 +582,8 @@ TEST(ActorCoroutineAsk, TimeoutWhileReplyInFlightCrossCore) {
                         "the host starved core 0 past its deadline, the cross-core teardown race was not exercised";
     }
     EXPECT_TRUE(g_ask_timed_out.load()) << "the asker must time out (40ms) before the slow reply (160ms) arrives";
-    EXPECT_TRUE(g_xcore_late_unsolicited.load())
-        << "a cross-core reply arriving after the timeout must land as unsolicited, no double-resume/UAF";
+    EXPECT_TRUE(g_xcore_late_consumed.load())
+        << "a cross-core reply arriving after the timeout must be consumed without resuming the operation";
 }
 
 // ---------------------------------------------------------------------------

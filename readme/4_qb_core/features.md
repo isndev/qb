@@ -110,7 +110,7 @@ The lifetime story — what a `kill()` does to a coroutine that is already parke
 | Launch a detached coroutine | `Actor::spawn_detached(func)` | Not cancelled when its actor dies; can finish afterwards only while another actor keeps the same VirtualCore running. |
 | Lifetime-safe context | `qb::CoroContext` / `qb::ScopedCoroContext` | Captures the actor's `ActorId` by value at spawn time; its `push<E>(...)` and `push_to<E>(dest, ...)` remain valid even if the parent actor is destroyed during a `co_await`. The scoped variant adds cancellation-aware ops and `ask()`. |
 | Cancellation-aware context outside `spawn` | `Actor::context()` | Returns the same `ScopedCoroContext` a `spawn()` body receives, available wherever you hold the actor — most notably **inside `onInit()`**, which is what makes a `co_await` during init cancellable when the actor is killed (`src/qb/core/Actor.h:1546`). |
-| Resolve a pending `qb::ask` | `Actor::resolve_ask(e)` | Routes a correlated reply arriving in an ordinary `on(E&)` handler back to the awaiting coroutine (`src/qb/core/Actor.h:1586`). |
+| Resolve a pending `qb::ask` | `Actor::resolve_ask(e)` | Consumes an own correlated response: delivers if live, discards if obsolete (`src/qb/core/Actor.h:1589`). |
 | Coroutine introspection | `has_active_coroutines()`, `active_coroutine_count()` | Inspect pending asynchronous work before destroying an actor. |
 
 The safety contract — never touch actor members after a `co_await`, copy all needed state by value before the first suspension, and use only `CoroContext` afterward — is detailed and illustrated under [qb-io: safe integration with `qb::Actor`](../3_qb_io/coroutines.md#safe-integration-with-qbactor).
@@ -126,7 +126,7 @@ Owned by [Common actor patterns and utilities](./patterns.md).
 | Periodic callbacks | `qb::ICallback` + `registerCallback(*this)` | Mixin granting an `on(qb::LoopEvent const&)` tick once per `VirtualCore` loop iteration, after the core has received and dispatched that iteration's events; the body must be fast and non-blocking. |
 | Service actors | `qb::ServiceActor<Tag>` | One instance per `VirtualCore`, identified by a unique `Tag`; reached on the same core via `getService<MyService>()`. |
 | Dependency discovery | `require<TargetActor>()` | Broadcasts a `PingEvent`; live actors of the target type reply with `qb::RequireEvent`, handled with `is<TargetActor>(event)`. |
-| Safe child references | `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) | The return type of `addRefActor<T>()`. Phase-aware: `get()` resolves the live actor on demand and yields `nullptr` while it is Activating, after a failed init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable (`Actor.h:2546-2551`). `id()` is usable immediately; `ready()` / `co_await ready_async(ctx)` wait for an async-init child. |
+| Safe child references | `qb::ActorHandle<T>` (alias `RefActorHandle<T>`) | The return type of `addRefActor<T>()`. Phase-aware: `get()` resolves the live actor on demand and yields `nullptr` while it is Activating, after a failed init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable (`Actor.h:2550-2555`). `id()` is usable immediately; `ready()` / `co_await ready_async(ctx)` wait for an async-init child. |
 
 ---
 
