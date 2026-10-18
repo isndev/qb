@@ -708,6 +708,17 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
   Same-core traffic is received and never "sent", and a counter moves after the event it counts was handled. Nothing
   is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:780-800; CoreStats.h:52-89)_
+- **Metrics are pulled at scrape time, never pushed (Huly QB-154).** `qb::metrics::snapshot` (`<qb/core/metrics.h>`,
+  plain values, no actor) is what a source reports -- families of counters, gauges and histograms -- and
+  `qb::metrics::write_text()` renders it in the Prometheus text format 0.0.4. `engine.addActor<qb::metrics::Registry>(core)`
+  on every core a scrape asks (`<qb/core/metrics_registry.h>`); an actor adds its counters with
+  `getService<qb::metrics::Registry>()->add_source(fn)` (keep the returned `source_handle`: destroying it removes the
+  source); `co_await qb::metrics::scrape(*this, getCoreSet(), timeout)` from a coroutine of an actor whose own core has
+  a registry gathers every core -- that registry asks the others and receives the answers, so the scraping actor
+  registers nothing. A core that does not answer is `qb_scrape_core_up{core} 0`, never an exception; a throwing source
+  is dropped and counted. Nothing runs and nothing is shared between two scrapes: the counters stay the core's own
+  integers. Names: `qb_<layer>_<name>_<unit>[_total]`, base units; a family made on several cores carries `core` or is
+  summed by the merge. _(metrics.h:208; metrics_registry.h:178, :201)_
 - **A blocking handler shows in the pass time -- on a core that times its passes.** `CoreInitializer::setPassTiming()`
   (off by default, decided at thread start) fills `CoreStats::pass_time`, a `qb::TimingStats` of the core's passes
   with the park excluded: `recent_max`, the longest pass of the last one to two seconds, is the stall gauge. It costs

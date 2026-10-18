@@ -244,3 +244,7 @@ qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mai
 qb_add_test(MODULE qb-core TIER system NAME core-affinity SOURCES core/core-affinity.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 # ask-self: an ask addressed to the asking actor itself, in every form (Huly QB-1100).
 qb_add_test(MODULE qb-core TIER system NAME ask-self SOURCES coroutine/ask-self.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# metrics-scrape pins qb::metrics::Registry and scrape() (Huly QB-154): every core answers through the scraping
+# actor's own registry, a core without a registry is reported down instead of failing the scrape, a throwing source
+# is contained and counted, a reset source is gone, and a core with no registry refuses to scrape.
+qb_add_test(MODULE qb-core TIER system NAME metrics-scrape SOURCES engine/metrics-scrape.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore coroutine)
