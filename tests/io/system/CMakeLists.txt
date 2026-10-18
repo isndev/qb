@@ -225,3 +225,11 @@ qb_add_test(MODULE qb-io TIER system NAME suspension-tracking SOURCES coroutine/
 # disconnect() the peer reads EOF and nothing is reset, unread input included; a peer's EOF leaves no CLOSE_WAIT
 # socket; a hook that closes the transport again closes nothing else.
 qb_add_test(MODULE qb-io TIER system NAME standalone-dispose-ends-transport SOURCES tcp/standalone-dispose-ends-transport.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+
+# The standalone loop drivers park in the backend instead of sleeping blind (Huly QB-1103): a reply ends
+# run_until's and run_sync's idle park at poll latency (the median of 200 loopback round trips awaited on
+# the loop is under 500 us, against ~2 ms on the Windows base), and a loop holding one idle io watcher makes
+# at most two iterations per millisecond under run_until and run_for (ev_iteration, against ~9 per
+# millisecond under the 50 us sleep on Linux and a hot spin under run_for). Serial: medians and wake
+# counts are read on a quiet process.
+qb_add_test(MODULE qb-io TIER system NAME loop-drivers-park SOURCES async/loop-drivers-park.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine serial REQUIRES network)

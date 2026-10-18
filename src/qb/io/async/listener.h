@@ -1638,8 +1638,18 @@ run_until(bool const &status) {
         const auto processed = listener::current.nb_invoked_event();
         nb_invoked_events += processed;
         if (!processed) {
-            // Avoid busy spinning when the loop is temporarily idle.
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            // A pass that did nothing parks the loop in its own backend wait: a watcher that
+            // fires -- a socket turning readable, a timer -- ends the park at poll latency, and
+            // the 1 ms cap only bounds a wait that nothing ends. The blind `sleep_for(50us)`
+            // this replaces returned 1-2.5 ms later on Windows (a sub-millisecond wait is served
+            // at the millisecond plus the kernel's coalescing, Huly QB-196) and ~110 us later on
+            // Linux, with the reply already sitting in the socket: a pgsql FETCH loop paid 2 ms
+            // per round trip on a 300 us path, and a loop with nothing to do woke ~9000 times a
+            // second on Linux (Huly QB-1103). `status` is read without synchronisation, so it is
+            // flipped on this thread -- by a handler, a callback or a coroutine the loop runs --
+            // and nothing legitimate waits on the cap. The cap timer is a heap timer, so a
+            // timerfd build never computes MAX_BLOCKTIME2 here.
+            nb_invoked_events += listener::current.run_once_for(std::chrono::milliseconds(1));
         }
     }
     return nb_invoked_events;

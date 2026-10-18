@@ -9,6 +9,31 @@ policy.
 
 ### Changed
 
+- **The standalone loop drivers park in the backend instead of sleeping blind (Huly QB-1103).**
+  `qb::io::async::run_until` slept 50 µs on a pass that invoked nothing, `run_sync`'s pump and `run_for`
+  1 ms; on Windows a sub-millisecond sleep is served at the millisecond plus the kernel's coalescing
+  (1.0–2.5 ms), so a reply that landed during the sleep was read when it ended: the pgsql
+  `streaming-results` example paid 1.97 ms per `FETCH` on a 300 µs round trip (20 000 of them, 39 s,
+  at the edge of its 60 s run budget), and every `run_sync`-awaited I/O resumed at least 1 ms late on
+  Linux too. A pass that did nothing now parks the loop in its own backend wait through
+  `listener::run_once_for()`: io readiness or a timer ends the park at poll latency, and the cap — 1 ms
+  for all three — only bounds a wait that nothing ends; the cap is a heap timer, so the timerfd
+  `MAX_BLOCKTIME2` case the pump used to avoid `EVRUN_ONCE` for is never computed. Measured on the
+  witness (a loopback round trip, median of 2000): Windows `run_until` 1.5–2.0 ms → 26–38 µs,
+  `run_sync` likewise; WSL2 g++-14 `run_until` 130 µs → the parked loop's 50–70 µs; the example 38.7 s →
+  5.8–6.0 s; a `run_until` loop with nothing to do wakes ~1000 times a second on Linux instead of ~9000
+  (measured on WSL2 g++-14: 15.6–17.5 % → 9.3–10.5 % of one core, the same ~10 % the 1 ms `nanosleep`
+  cadence already cost `run_sync` and `run_for` there — a timer wake is accounted ~100 µs of CPU under that
+  hypervisor; Windows reads 0–2 % before and after). `run_until`'s `status` is read unsynchronised and must be
+  flipped on the loop thread — by a handler, a callback or a coroutine the loop runs — which every caller
+  in qb, the modules and the examples already does; a flip from another thread was a data race before
+  and is one now. `run_for` honours a sub-millisecond duration it used to cut to zero, and no longer
+  spins a core for its whole window when a watcher is registered. Pinned by
+  `qb-io-test-system-loop-drivers-park`: a reply ends the park at poll latency under `run_until` and
+  `run_sync` (median under 500 µs, against ~2 ms on the Windows base), and an idle loop makes at most
+  two iterations per millisecond under `run_until` and `run_for` (against ~9 under the 50 µs sleep on
+  Linux, and a hot spin under `run_for`).
+
 - **An event type aligned past `qb::EventBucket` is a compile error (Huly QB-269).** Every queue an event crosses
   -- the pipe, the mailbox ring, the activation stash -- places it on a bucket boundary and nothing stronger, and
   `qb::Event` is aligned to exactly one bucket (the cache line, 64 bytes by default). An event declared

@@ -653,7 +653,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
   sanitizers never show. The call emits no instruction and is a no-op on GCC, MSVC and clang-cl; every `qb::ask*` pattern
-  coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:378; request.h:231, resilience.h:468)_
+  coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:388; request.h:231, resilience.h:468)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core
@@ -700,6 +700,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
   drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1548-1561; mixin.h:63-71)_
+- **The standalone drivers park, they do not sleep.** `run_until`, `run_sync` and `run_for` park a pass that
+  did nothing in the loop's own backend: io readiness or a timer ends the park at poll latency, and the 1 ms
+  cap only bounds a wait nothing ends (they used to sleep blind — 50 µs, 1 ms, 1 ms — and a sub-millisecond
+  sleep is served at the millisecond on Windows, so a reply sat unread for 1–2.5 ms). The `status` of
+  `run_until` is read unsynchronised: flip it on the loop thread, from a handler, a callback or a coroutine
+  the loop runs — never from another thread. _(listener.h:1633; coroutine/utils.h:227, :293)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:1533-1545)_

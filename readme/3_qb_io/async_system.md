@@ -75,25 +75,25 @@ The free functions all operate on `listener::current`:
 |---|---|---|
 | `async::run(int flag = 0)` | One turn with a libev flag. `0` blocks until the loop is broken or no active watcher remains. Returns the number of events invoked. | `listener.h:1574` |
 | `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h:1618` |
-| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds, sleeping 50 µs between idle passes so an idle loop does not spin. | `listener.h:1633` |
-| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:1654` |
+| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds; a pass that invoked nothing parks the loop in its backend until a watcher fires — io readiness, a timer — or 1 ms, whichever comes first, so a reply is read at poll latency and an idle loop neither spins nor sleeps blind. Flip `status` on the loop thread (a handler, a callback, a coroutine): it is read unsynchronised. | `listener.h:1633` |
+| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:1664` |
 | `async::defer(func)` | Queue `func` for the tail of this turn. | `listener.h:1600` |
 | `async::run_for(qb::duration)` | Pump the loop and the scheduler for a `steady_clock`-measured window, then return. | `coroutine/utils.h:227` |
-| `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump until it completes, returning its result. | `coroutine/utils.h:285` |
+| `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump until it completes, returning its result. | `coroutine/utils.h:293` |
 
-> **`run_once()` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers (`timercnt == 0`), `EVRUN_ONCE` can block for libev's internal maximum wait time — on the order of 10⁶ seconds. In a pump loop, prefer `run_until` or `run(EVRUN_NOWAIT)`. Both `run_sync`'s pump and `listener::clear()`'s flush avoid `EVRUN_ONCE` for exactly this reason (`src/qb/io/async/coroutine/utils.h:308-312`; `src/qb/io/async/listener.h:846-849`).
+> **`run_once()` and timerfd.** When libev is built with timerfd-based time-jump detection (`QB_EV_USE_TIMERFD=ON`, off by default) and only `ev_io` watchers are active with no heap timers (`timercnt == 0`), a bare `EVRUN_ONCE` can block for libev's internal maximum wait time — on the order of 10⁶ seconds. In a pump loop, prefer `run_until`, `run_sync`, `run_for` or `run(EVRUN_NOWAIT)`: the three drivers park through `run_once_for()`, whose cap is a heap timer, so that wait is never computed (`src/qb/io/async/coroutine/utils.h:316-323`), and `listener::clear()`'s flush avoids `EVRUN_ONCE` for exactly this reason (`src/qb/io/async/listener.h:846-849`).
 
 ## `run_sync` and `run_for` block the calling thread
 
 These two are the bridge from ordinary synchronous code into the coroutine world, and they are the one part of qb-io whose correct use cannot be decided from the signature. The mechanism is simple and it is worth knowing exactly.
 
-`run_sync(awaitable)` spawns the awaitable on this thread's scheduler and then runs a `pump` loop until a captured `done` flag flips (`src/qb/io/async/coroutine/utils.h:298-316`). The pump calls `listener::current.run(EVRUN_NOWAIT)` up to 16 times per pass while coroutines are ready, and otherwise runs one NOWAIT turn and sleeps 1 ms. `run_for(d)` is the same shape without a completion condition: it pumps until a `steady_clock` deadline (`src/qb/io/async/coroutine/utils.h:227-257`).
+`run_sync(awaitable)` spawns the awaitable on this thread's scheduler and then runs a `pump` loop until a captured `done` flag flips (`src/qb/io/async/coroutine/utils.h:306-326`). The pump calls `listener::current.run(EVRUN_NOWAIT)` up to 16 times per pass while coroutines are ready, and otherwise parks the loop in its backend for at most 1 ms — the watcher the awaitable waits on ends the park at poll latency, so an awaited reply resumes the coroutine when it arrives, not a millisecond later. `run_for(d)` is the same shape without a completion condition: it pumps until a `steady_clock` deadline, parking a turn that ran nothing until a watcher fires, the deadline or 1 ms (`src/qb/io/async/coroutine/utils.h:227-265`).
 
 So while `run_sync` is running, **the loop keeps turning**: sockets are serviced, timers fire, deferred callbacks drain, coroutines resume. What does *not* happen is everything the caller would have done after returning.
 
 ### The guard, and what it actually checks
 
-Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:288`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1549-1561`; `src/qb/io/async/coroutine/scheduler.h:741-750`, `:826-829`). When it fires it asserts in debug and throws `std::logic_error`.
+Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:296`, `:228`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1549-1561`; `src/qb/io/async/coroutine/scheduler.h:741-750`, `:826-829`). When it fires it asserts in debug and throws `std::logic_error`.
 
 That covers exactly one case, and covers it well:
 
@@ -405,7 +405,7 @@ Both counters include deferred callbacks and coroutine resumes, not just libev w
 - **Timer callbacks swallow exceptions.** `Timeout` and `ScopedTimeout` wrap the callable in `catch (...)`; so does the deferred drain, and so does the watcher dispatch boundary. Errors that escape your callable are logged at most, never propagated.
 - **`run_sync` / `run_for` block the thread that calls them.** Legitimate in a `main()`, a test or a CLI; a defect inside an actor handler, where the thread is the `VirtualCore` and the framework's guard does not fire. See [the rule above](#the-rule).
 - **`on(event::X&)` silently never fires.** Use `on(event::X&&)` or `on(event::X const&)` for everything except the `with_timeout` timer, which is delivered as an lvalue.
-- **`EVRUN_ONCE` can park for a very long time** under a timerfd-enabled libev build with no heap timers. Pump with `run_until` or `run(EVRUN_NOWAIT)`.
+- **A bare `EVRUN_ONCE` can park for a very long time** under a timerfd-enabled libev build with no heap timers. Pump with `run_until`, `run_sync`, `run_for` (their park is capped by a heap timer) or `run(EVRUN_NOWAIT)`.
 - **Every timed API takes `qb::duration` or another `std::chrono::duration`, never a bare number.** `setTimeout(500)` does not compile, and there is no `double`-seconds overload to fall back on — see [the time vocabulary](../0_foundations/time.md#qbduration-rejects-a-bare-integer).
 - **One thread per listener.** Never share I/O objects, watchers or the loop across threads. If two threads must talk, the actor mailbox is the channel; for a call that must run off the loop, [`offload`](./coroutines.md#offloading-blocking-work) is.
 

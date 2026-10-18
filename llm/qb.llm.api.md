@@ -769,7 +769,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
     *   `void init() noexcept` — no-op (listener self-initializes).
     *   `std::size_t run(int flag = 0)` — run current thread's loop; → invoked events. Throws `std::logic_error` if called from inside a handler/coroutine drain.
     *   `std::size_t run_once()` — EVRUN_ONCE (waits for ≥1 event; may block). Throws the same `std::logic_error` as `run()`.
-    *   `std::size_t run_until(const bool& status)` — loop while `status` (50µs idle sleep). Throws the same `std::logic_error` as `run()`.
+    *   `std::size_t run_until(const bool& status)` — loop while `status`: a pass that invoked nothing parks the loop in its backend until a watcher fires (io readiness, a timer) or 1 ms, whichever first; flip `status` on the loop thread (a handler, a callback, a coroutine — it is read unsynchronised). Throws the same `std::logic_error` as `run()`.
     *   `void break_parent() noexcept`
 *   `class qb::io::async::IRegisteredKernelEvent` — abstract: `virtual ~`, `virtual void stop() noexcept`, `virtual void invoke()`.
 *   use: `qb::io::async::run();` (blocking loop) ; `while (cond) qb::io::async::run_until(cond);`
@@ -877,9 +877,9 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline timer_awaiter sleep(qb::duration duration)` — suspend for a duration (`<= 0` = yield).
 *   `inline socket_awaiter wait_readable(int fd)` / `wait_writable(int fd)` / `wait_for_io(int fd, int events)`.
 *   `inline CoroutineScheduler& coro_scheduler()` — listener's scheduler.
-*   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
-*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1548-1561`)_.
-*   `[T] inline void pin_frame_copy(T& copy) noexcept` — keep a by-value coroutine parameter's frame copy at its own alignment: a memory-operand asm barrier on clang (no instruction emitted), a no-op on GCC, MSVC and clang-cl. Shields LLVM issue 159571 (clang older than 22 on a `byval` ABI — x86-64 Linux / Intel macOS — spills a never-written parameter copy at alignment 8 and reads it at 64). Call it before the first suspension of a coroutine that takes an event by value and never assigns to it; every `qb::ask*` pattern coroutine does (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:378)_
+*   `inline void run_for(qb::duration duration)` — pump loop + drain coroutines for a duration; a turn that ran nothing parks in the backend until a watcher fires, the deadline or 1 ms. Throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`.
+*   `[T<Awaitable>] auto run_sync(Awaitable&& awaitable)` — block current thread until completion; bridges sync code. A pass with no ready coroutine parks in the backend until a watcher fires or 1 ms, so an awaited reply resumes at poll latency. Forbidden inside a running coroutine, and enforced: it throws `std::logic_error` from inside a `run_ready()` drain, like `async::run()`. All five entry points share one guard _(`listener.h:1548-1561`)_.
+*   `[T] inline void pin_frame_copy(T& copy) noexcept` — keep a by-value coroutine parameter's frame copy at its own alignment: a memory-operand asm barrier on clang (no instruction emitted), a no-op on GCC, MSVC and clang-cl. Shields LLVM issue 159571 (clang older than 22 on a `byval` ABI — x86-64 Linux / Intel macOS — spills a never-written parameter copy at alignment 8 and reads it at 64). Call it before the first suspension of a coroutine that takes an event by value and never assigns to it; every `qb::ask*` pattern coroutine does (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:388)_
 *   use: `co_await qb::io::async::sleep(100ms);`
 
 ### Offload (`offload.h`) — since 3.3
