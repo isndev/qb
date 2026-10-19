@@ -268,11 +268,12 @@ class native_backend final : public backend {
     SSL_CTX                              *_ssl_ctx    = nullptr;
     SSL                                  *_ssl        = nullptr;
     ngtcp2_crypto_conn_ref                _conn_ref{};
-    bool                                  _server             = false;
-    bool                                  _server_parent      = false;
-    bool                                  _started            = false;
-    bool                                  _closing            = false;
-    bool                                  _close_event_queued = false;
+    bool                                  _server                = false;
+    bool                                  _server_parent         = false;
+    bool                                  _accepting_connections = true;
+    bool                                  _started               = false;
+    bool                                  _closing               = false;
+    bool                                  _close_event_queued    = false;
     // A read- or credit-triggered writer attempt is due; this does not promise positive output.
     bool _transport_pending = false;
     // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
@@ -317,12 +318,13 @@ public:
 
     void
     start_server(qb::io::endpoint const &local, std::vector<std::string> const &alpn_protocols, tls_config const &tls) override {
-        _server        = true;
-        _server_parent = true;
-        _local         = local;
-        _alpn          = alpn_protocols;
-        _wire_alpn     = make_wire_alpn(_alpn);
-        _server_tls    = tls;
+        _server                = true;
+        _server_parent         = true;
+        _accepting_connections = true;
+        _local                 = local;
+        _alpn                  = alpn_protocols;
+        _wire_alpn             = make_wire_alpn(_alpn);
+        _server_tls            = tls;
         validate_server_tls_config(tls);
         _closing            = false;
         _close_event_queued = false;
@@ -720,6 +722,29 @@ public:
         return _stats;
     }
 
+    std::optional<qb::duration>
+    smoothed_rtt(std::uint64_t connection_id) const noexcept override {
+        if (_server_parent) {
+            const auto *child = server_connection(connection_id);
+            return child ? child->smoothed_rtt(connection_id) : std::nullopt;
+        }
+        if (!_conn || _closing || connection_id != _connection_id)
+            return std::nullopt;
+        ngtcp2_conn_info info{};
+        ngtcp2_conn_get_conn_info(_conn, &info);
+        if (info.smoothed_rtt > static_cast<ngtcp2_duration>(qb::duration::max().count()))
+            return std::nullopt;
+        return qb::duration{static_cast<qb::duration::rep>(info.smoothed_rtt)};
+    }
+
+    bool
+    set_accepting_connections(bool accepting) noexcept override {
+        if (!_server_parent || !_started || _closing)
+            return false;
+        _accepting_connections = accepting;
+        return true;
+    }
+
 private:
     bool
     is_deferred_closed_connection(std::uint64_t connection_id) const noexcept {
@@ -801,6 +826,31 @@ private:
         _packets.push_back(std::move(pkt));
     }
 
+    // A stateless refusal spends no connection/TLS session state. One response no larger than the
+    // input datagram is below the unvalidated-address amplification bound, even on repeated input.
+    void
+    refuse_initial(packet_view datagram) {
+        const auto   *bytes = reinterpret_cast<const std::uint8_t *>(datagram.payload.data());
+        ngtcp2_pkt_hd hd{};
+        if (ngtcp2_accept(&hd, bytes, datagram.payload.size()) != 0)
+            return;
+        // accept() parses the header but does not check the declared Length against the input.
+        const auto header_size = ngtcp2_pkt_decode_hd_long(&hd, bytes, datagram.payload.size());
+        if (header_size < 0 || static_cast<std::size_t>(header_size) > datagram.payload.size()
+            || hd.len > datagram.payload.size() - static_cast<std::size_t>(header_size) || hd.len < 4 + NGTCP2_HP_SAMPLELEN)
+            return;
+        std::array<std::uint8_t, NGTCP2_MAX_UDP_PAYLOAD_SIZE> buf{};
+        const auto                                            n =
+            ngtcp2_crypto_write_connection_close(buf.data(), buf.size(), hd.version, &hd.scid, &hd.dcid, NGTCP2_CONNECTION_REFUSED, nullptr, 0);
+        if (n <= 0 || static_cast<std::size_t>(n) > datagram.payload.size())
+            return;
+        packet pkt;
+        pkt.remote = datagram.remote;
+        pkt.local  = datagram.local;
+        pkt.payload.assign(reinterpret_cast<const std::byte *>(buf.data()), reinterpret_cast<const std::byte *>(buf.data() + n));
+        _packets.push_back(std::move(pkt));
+    }
+
     // Index every Source Connection ID the child currently advertises under its connection id, so
     // packets arriving on a rotated / migrated DCID route to it. ngtcp2 caps the active CID set
     // (active_connection_id_limit), so this is a handful of entries. Add-only: a retired CID left in
@@ -877,6 +927,17 @@ private:
         // attempting to accept (Version Negotiation is not implemented yet).
         if (decode_rv != 0)
             return nullptr;
+
+        return accept_new_server_connection(datagram);
+    }
+
+    // Keep admission, Retry and TLS setup off the established-connection lookup path.
+    QB_NOINLINE QB_COLD native_backend *
+    accept_new_server_connection(packet_view datagram) {
+        if (!_accepting_connections) {
+            refuse_initial(datagram);
+            return nullptr;
+        }
 
         if (_config.max_connections > 0 && _server_connections.size() >= _config.max_connections) {
             // At the connection cap: silently drop this new-connection datagram.
@@ -1696,6 +1757,16 @@ public:
 } // namespace
 #undef QB_IO_NGTCP2_HAS_CALLBACKS_V3
 #endif
+
+std::optional<qb::duration>
+backend::smoothed_rtt(std::uint64_t) const noexcept {
+    return std::nullopt;
+}
+
+bool
+backend::set_accepting_connections(bool) noexcept {
+    return false;
+}
 
 backend_info
 native_backend_info() noexcept {

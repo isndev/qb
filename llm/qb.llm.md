@@ -296,7 +296,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:100-107)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:103-110)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1095-1134; uri.h:485-495)_
@@ -369,10 +369,12 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
   carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
-- QUIC `extend_stream_credit` updates the backend immediately. The endpoint flushes it synchronously outside event dispatch and batches it until the current handlers unwind inside dispatch; direct native callers explicitly drain packets after granting credit. _(src/qb/io/async/quic/endpoint.h:555-568; src/qb/io/quic.cpp:583-600)_
-- Native QUIC `wants_write()` exposes the due writer attempt; readiness can produce an empty packet vector. Queued data the transport refused -- stream or connection credit, congestion window, pacing -- does not make an attempt due: a read, a credit grant or the SDK timer does, so an endpoint never keeps EV_WRITE armed on refused data. _(src/qb/io/quic.cpp:420-435)_
-- A stream ngtcp2 refuses for lack of its OWN credit is parked (`park_credit_blocked_stream`) until the peer's MAX_STREAM_DATA reaches `extend_max_stream_data_cb`; the writer goes on with the next stream, the DATAGRAMs and the control frames. With the connection's credit spent (`conn_get_max_data_left`), DATAGRAMs (never flow controlled) and control frames still go out. _(src/qb/io/quic.cpp:1263-1271,1282-1288,1558-1563)_
-- QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1061-1062,1565-1592)_
+- A server-associated TCP session's `ip()` returns an owned `std::string` from its socket's lazy peer-IP cache. Failed/non-IP lookups are not cached; socket moves transfer the cache, while close, raw release and low-level connection attempts invalidate it. After a raw-handle/static-helper peer mutation, call `transport().invalidate_peer_ip()`. Custom transports without a compatible `peer_ip()` retain their endpoint fallback. _(src/qb/io/async/tcp/client.h:151-165; src/qb/io/system/sys__socket.h:1218-1229)_
+- QUIC `smoothed_rtt(connection_id)` is an optional per-peer duration, not the server's aggregate statistic. `set_accepting_connections(false)` asks a live listener to refuse new handshakes while known CIDs continue; check its boolean result. Custom backends inherit `nullopt` / `false` defaults, so callers must choose an explicit fallback rather than assume these capabilities exist. Neither endpoint call creates a missing backend. _(src/qb/io/quic/backend.h:84-88; src/qb/io/async/quic/endpoint.h:398-406; src/qb/io/quic.cpp:725-745,1761-1769)_
+- QUIC `extend_stream_credit` updates the backend immediately. The endpoint flushes it synchronously outside event dispatch and batches it until the current handlers unwind inside dispatch; direct native callers explicitly drain packets after granting credit. _(src/qb/io/async/quic/endpoint.h:566-579; src/qb/io/quic.cpp:585-602)_
+- Native QUIC `wants_write()` exposes the due writer attempt; readiness can produce an empty packet vector. Queued data the transport refused -- stream or connection credit, congestion window, pacing -- does not make an attempt due: a read, a credit grant or the SDK timer does, so an endpoint never keeps EV_WRITE armed on refused data. _(src/qb/io/quic.cpp:422-437)_
+- A stream ngtcp2 refuses for lack of its OWN credit is parked (`park_credit_blocked_stream`) until the peer's MAX_STREAM_DATA reaches `extend_max_stream_data_cb`; the writer goes on with the next stream, the DATAGRAMs and the control frames. With the connection's credit spent (`conn_get_max_data_left`), DATAGRAMs (never flow controlled) and control frames still go out. _(src/qb/io/quic.cpp:1324-1332,1343-1349,1619-1624)_
+- QUIC `max_streams_bidi` / `max_streams_uni` are concurrent peer-stream quotas. For a peer-initiated bidi or uni stream that reached `stream_open_cb`, the native backend returns one same-direction slot on close; ngtcp2 renews implicitly opened streams itself. _(src/qb/io/quic.cpp:1122-1123,1626-1653)_
 
 ### A client that keeps its connection — `<qb/io/reconnect.h>` (3.3)
 
@@ -798,7 +800,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **A port is shared only by name (3.3): `listen(ep, qb::io::tcp::listen_options{.reuse_port = true})`.**
   _(tcp/listener.h:32-46)_ Every listener that asks shares the port and, on Linux, the kernel balances the accept
   across them -- one listener per core, each serving its own connections. Windows refuses the listen with
-  `ENOPROTOOPT`, from `reuse_port` _(sys__socket.cpp:308-315)_; `socket::reuse_address` sets `SO_REUSEADDR` only.
+  `ENOPROTOOPT`, from `reuse_port` _(sys__socket.cpp:313-320)_; `socket::reuse_address` sets `SO_REUSEADDR` only.
 - **OCSP goes through the Context too (3.3): `on_ocsp_staple` (server) / `on_ocsp_response` (client).** The
   client check asks every server for a staple and judges it through `OcspContext` (`response()` DER, `native()`
   for `OCSP_basic_verify`); `false` fails the handshake, an empty response means nothing was stapled. A typed
@@ -859,7 +861,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:58)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
-  `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:281-298)_
+  `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:286-303)_
 - **`compression.h` hard-`#error`s without `QB_HAS_COMPRESSION`; `crypto.h` does not — its OpenSSL gate is
   per-member.** Including `crypto.h` in a no-SSL build compiles: `qb::crypto` still declares everything that
   needs no OpenSSL (the hex codec the pgsql `bytea` wire format depends on), and the OpenSSL-only members are

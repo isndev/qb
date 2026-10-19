@@ -146,6 +146,16 @@ policy.
 
 ### Added
 
+- **Per-connection QUIC RTT and listener admission controls (Huly QB-1098).**
+  `backend::smoothed_rtt(connection_id)` returns an optional duration for the named native connection;
+  it does not substitute the server's aggregate RTT. `set_accepting_connections(false)` lets a live native
+  listener refuse new Initials with a bounded stateless CONNECTION_REFUSED response while known connection
+  IDs continue normally. The refusal creates no retained connection or TLS session; packet/crypto work may
+  still allocate. Both capabilities have defaults (`nullopt` / `false`), so existing custom backend source
+  remains compatible and can explicitly decline support. The endpoint exposes both operations without
+  creating a backend for a query. Rebuild backend implementations and consumers for the extended vtable,
+  as required by the [binary compatibility policy](./VERSIONING.md#binary-compatibility).
+
 - **`qb/io/reconnect.h`: the reconnect contract's vocabulary, shared by every client that keeps a connection
   (Huly QB-126).** Header-only, names and pure functions: `qb::io::connection_state` (`idle`, `connecting`,
   `handshaking`, `ready`, `reconnecting`, `down`), `qb::io::down_reason` (`user`, `peer`, `protocol`,
@@ -738,6 +748,15 @@ policy.
 
 
 ### Fixed
+
+- **Cache a TCP session's formatted peer IP at its socket owner (Huly QB-1106).** Repeated `ip()` reads
+  reuse a successful lookup instead of calling `getpeername` and formatting it for every request.
+  `ip()` still returns `std::string` by value; custom transports without `peer_ip()` retain their existing
+  fallback. The cache is allocated only when a formatted IP is first requested, follows descriptor moves
+  and swaps, and is cleared by close, raw release and low-level member connection attempts. Failed lookups
+  and non-IP peers remain uncached. Call `invalidate_peer_ip()` after changing the peer through a raw handle
+  or static socket helper. The socket layout changes; rebuild consumers under the existing
+  [binary compatibility policy](./VERSIONING.md#binary-compatibility).
 
 - **`Main::start()` warns when more cores spin at latency 0 than the process can run at once (Huly QB-1082).** A
   core at the default latency never parks and never yields its CPU, so with fewer CPUs than such cores they

@@ -68,6 +68,10 @@
 #include <qb/io/async.h>
 #include <qb/io/async/quic.h>
 
+#ifdef QB_HAS_QUIC
+#include <ngtcp2/ngtcp2.h>
+#endif
+
 #include "../../shared/coroutine_test_support.h"
 #include "../../shared/quic_test_doubles.h"
 #include "../../shared/ssl_fixtures.h"
@@ -419,6 +423,9 @@ TEST(QuicHandshakeNativeBackend, DirectBackendsRouteServerChildOperations) {
 
     auto server = qb::io::quic::make_native_backend();
     auto client = qb::io::quic::make_native_backend();
+    EXPECT_FALSE(server->smoothed_rtt(0).has_value());
+    EXPECT_FALSE(client->smoothed_rtt(0).has_value());
+    EXPECT_FALSE(server->set_accepting_connections(false));
     server->configure(settings);
     client->configure(settings);
 
@@ -454,6 +461,17 @@ TEST(QuicHandshakeNativeBackend, DirectBackendsRouteServerChildOperations) {
     ASSERT_NE(server_connection_id, 0u);
     EXPECT_EQ(server->current_stats().active_connections, 1u);
 
+    ASSERT_TRUE(server->smoothed_rtt(server_connection_id).has_value());
+    ASSERT_TRUE(client->smoothed_rtt(0).has_value());
+    EXPECT_EQ(std::chrono::duration_cast<std::chrono::microseconds>(*server->smoothed_rtt(server_connection_id)).count(),
+              server->current_stats().smoothed_rtt_us);
+    EXPECT_EQ(std::chrono::duration_cast<std::chrono::microseconds>(*client->smoothed_rtt(0)).count(), client->current_stats().smoothed_rtt_us);
+    EXPECT_FALSE(server->smoothed_rtt(0).has_value());
+    EXPECT_FALSE(server->smoothed_rtt(server_connection_id + 1).has_value());
+    EXPECT_FALSE(client->smoothed_rtt(1).has_value());
+    EXPECT_FALSE(client->set_accepting_connections(false));
+    ASSERT_TRUE(server->set_accepting_connections(false)); // the established child below remains routable
+
     auto explicit_stream = server->open_stream(server_connection_id, qb::io::quic::stream_direction::bidirectional);
     auto implicit_stream = server->open_stream(0, qb::io::quic::stream_direction::unidirectional);
     EXPECT_NE(explicit_stream, implicit_stream);
@@ -466,6 +484,7 @@ TEST(QuicHandshakeNativeBackend, DirectBackendsRouteServerChildOperations) {
     server->extend_stream_credit(server_connection_id, explicit_stream, 32);
 
     server->close_connection(server_connection_id, 19, "server child closed");
+    EXPECT_FALSE(server->smoothed_rtt(server_connection_id).has_value());
     auto events = server->drain_events();
     auto closed = std::find_if(events.begin(), events.end(),
                                [](auto const &event) { return event.type == qb::io::quic::backend_event::kind::connection_closed; });
@@ -499,6 +518,150 @@ drive_two_backend_handshake(qb::io::quic::backend &client, qb::io::quic::backend
     }
 }
 } // namespace
+
+namespace quic_admission_test {
+class Refusal : public ::testing::TestWithParam<int> {};
+} // namespace quic_admission_test
+
+using quic_admission_test::Refusal;
+
+TEST_P(Refusal, InitialIsClosedWithoutAConnectionAndAdmissionCanResume) {
+    ASSERT_TRUE(require_ssl_files());
+    const qb::io::endpoint   server_address{"127.0.0.1", 4433};
+    const qb::io::endpoint   client_address{"127.0.0.1", 54321};
+    qb::io::quic::tls_config tls;
+    tls.certificate_file          = ssl_resource_path("cert.pem");
+    tls.private_key_file          = ssl_resource_path("key.pem");
+    auto                   server = qb::io::quic::make_native_backend();
+    qb::io::quic::settings settings;
+    settings.enable_stateless_retry = GetParam() != 0;
+    server->configure(settings);
+    server->start_server(server_address, {"h3"}, tls);
+    tls.verify_peer = false;
+    tls.server_name = "localhost";
+    auto client     = qb::io::quic::make_native_backend();
+    client->start_client(client_address, server_address, {"h3"}, tls);
+    if (GetParam() == 2) {
+        deliver_quic_packets(*client, *server);
+        ASSERT_EQ(server->current_stats().active_connections, 0u);
+        ASSERT_TRUE(server->wants_write());
+        deliver_quic_packets(*server, *client); // obtain Retry before admission is disabled
+    }
+    auto initials = client->drain_packets();
+    ASSERT_FALSE(initials.empty());
+    ASSERT_TRUE(server->set_accepting_connections(false));
+    ASSERT_TRUE(server->set_accepting_connections(false));
+    for (auto const &initial : initials) {
+        server->on_udp_datagram({initial.remote, initial.local, initial.payload});
+        ASSERT_TRUE(server->wants_write());
+        auto refusal = server->drain_packets();
+        ASSERT_EQ(refusal.size(), 1u);
+        EXPECT_LE(refusal.front().payload.size(), initial.payload.size());
+        EXPECT_FALSE(server->wants_write());
+        EXPECT_EQ(server->next_timeout(), std::chrono::steady_clock::time_point::max());
+        client->on_udp_datagram({refusal.front().remote, refusal.front().local, refusal.front().payload});
+    }
+    EXPECT_EQ(server->current_stats().active_connections, 0u);
+    EXPECT_TRUE(server->drain_events().empty()) << "refusal must not close the listener or publish a child";
+    const auto events = client->drain_events();
+    EXPECT_TRUE(std::none_of(events.begin(), events.end(),
+                             [](auto const &event) { return event.type == qb::io::quic::backend_event::kind::connected; }));
+    EXPECT_TRUE(std::any_of(events.begin(), events.end(), [](auto const &event) {
+        return event.type == qb::io::quic::backend_event::kind::connection_closed
+               && event.connection_reason == qb::io::quic::disconnect_reason::application_close;
+    })) << "the native peer must decode the refusal as CONNECTION_CLOSE, not a timeout or unreadable packet";
+
+    ASSERT_TRUE(server->set_accepting_connections(true));
+    auto fresh = qb::io::quic::make_native_backend();
+    fresh->start_client(client_address, server_address, {"h3"}, tls);
+    bool          connected = false;
+    std::uint64_t id        = 0;
+    drive_two_backend_handshake(*fresh, *server, connected, id);
+    EXPECT_TRUE(connected);
+    EXPECT_NE(id, 0u);
+    EXPECT_EQ(server->current_stats().active_connections, 1u);
+}
+
+INSTANTIATE_TEST_SUITE_P(QuicAdmission, Refusal, ::testing::Values(0, 1, 2));
+
+TEST(QuicHandshakeNativeBackend, RefusalDropsMalformedInputAndBoundsCoalescedOutput) {
+    ASSERT_TRUE(require_ssl_files());
+    qb::io::quic::tls_config tls;
+    tls.certificate_file = ssl_resource_path("cert.pem");
+    tls.private_key_file = ssl_resource_path("key.pem");
+    auto server          = qb::io::quic::make_native_backend();
+    server->start_server(qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, tls);
+    ASSERT_TRUE(server->set_accepting_connections(false));
+    tls.verify_peer = false;
+    tls.server_name = "localhost";
+    auto client     = qb::io::quic::make_native_backend();
+    client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, tls);
+    auto initial = client->drain_packets();
+    ASSERT_FALSE(initial.empty());
+    const auto &packet = initial.front();
+    ASSERT_GE(packet.payload.size(), 1200u);
+    ngtcp2_pkt_hd hd{};
+    const auto    header_size =
+        ngtcp2_pkt_decode_hd_long(&hd, reinterpret_cast<const std::uint8_t *>(packet.payload.data()), packet.payload.size());
+    ASSERT_GT(header_size, 0);
+    ASSERT_EQ(hd.type, NGTCP2_PKT_INITIAL);
+    // The decoder stops BEFORE the protected packet number. Length is a varint, not necessarily two bytes
+    // (ngtcp2 currently reserves four). Locate it from the preceding CID and token fields instead of backwards.
+    const auto token_offset = std::size_t{7} + hd.dcid.datalen + hd.scid.datalen;
+    ASSERT_LT(token_offset, static_cast<std::size_t>(header_size));
+    const auto token_length_width = std::size_t{1} << (std::to_integer<unsigned>(packet.payload[token_offset]) >> 6);
+    const auto length_offset      = token_offset + token_length_width + hd.tokenlen;
+    ASSERT_LT(length_offset, static_cast<std::size_t>(header_size));
+    const auto length_width = std::size_t{1} << (std::to_integer<unsigned>(packet.payload[length_offset]) >> 6);
+    ASSERT_EQ(length_offset + length_width, static_cast<std::size_t>(header_size));
+    const auto with_length = [&](std::array<std::byte, 8> const &encoded) {
+        std::vector<std::byte> changed(packet.payload.begin(), packet.payload.begin() + length_offset);
+        changed.insert(changed.end(), encoded.begin(), encoded.end());
+        changed.insert(changed.end(), packet.payload.begin() + header_size, packet.payload.end());
+        return changed;
+    };
+    std::vector<std::vector<std::byte>> malformed;
+    malformed.emplace_back(packet.payload.begin(), packet.payload.begin() + 1199);
+    std::array<std::byte, 8> encoded_length;
+    encoded_length.fill(std::byte{0xff}); // maximum QUIC varint: declared Length exceeds the complete datagram
+    malformed.push_back(with_length(encoded_length));
+    encoded_length.fill(std::byte{0});
+    encoded_length.front() = std::byte{0xc0}; // eight-byte encoding keeps the datagram at least 1200 bytes
+    encoded_length.back()  = std::byte{0x01}; // declared Length has no room for the packet-number sample
+    malformed.push_back(with_length(encoded_length));
+    for (std::size_t i = 1; i <= 2; ++i) {
+        SCOPED_TRACE(i);
+        ngtcp2_pkt_hd mutated{};
+        const auto   *bytes = reinterpret_cast<const std::uint8_t *>(malformed[i].data());
+        ASSERT_GE(malformed[i].size(), 1200u);
+        ASSERT_EQ(ngtcp2_accept(&mutated, bytes, malformed[i].size()), 0)
+            << "the targeted Length defect must reach the additional refusal validation";
+        ASSERT_EQ(ngtcp2_pkt_decode_hd_long(&mutated, bytes, malformed[i].size()), static_cast<ngtcp2_ssize>(length_offset + 8));
+        if (i == 1) {
+            ASSERT_GT(mutated.len, malformed[i].size() - length_offset - 8);
+        } else {
+            ASSERT_EQ(mutated.len, 1u);
+        }
+    }
+    malformed.push_back(packet.payload);
+    std::fill(malformed.back().begin() + 1, malformed.back().begin() + 5, std::byte{0xff}); // unsupported version
+    malformed.emplace_back(1200, std::byte{0});                                             // unknown short-header packet
+    for (std::size_t i = 0; i < malformed.size(); ++i) {
+        SCOPED_TRACE(i);
+        server->on_udp_datagram({packet.remote, packet.local, malformed[i]});
+        EXPECT_FALSE(server->wants_write());
+        EXPECT_TRUE(server->drain_packets().empty());
+        EXPECT_TRUE(server->drain_events().empty());
+        EXPECT_EQ(server->current_stats().active_connections, 0u);
+    }
+    auto coalesced = packet.payload;
+    coalesced.insert(coalesced.end(), packet.payload.begin(), packet.payload.end());
+    server->on_udp_datagram({packet.remote, packet.local, coalesced});
+    const auto response = server->drain_packets();
+    ASSERT_EQ(response.size(), 1u) << "one received datagram funds at most one stateless refusal";
+    EXPECT_LE(response.front().payload.size(), coalesced.size());
+    EXPECT_EQ(server->current_stats().active_connections, 0u);
+}
 
 TEST(QuicHandshakeNativeBackend, StatelessRetryChallengesBeforeAllocatingConnection) {
     ASSERT_TRUE(require_ssl_files());
@@ -1244,7 +1407,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
  * @brief After a direct handshake the server sends a bidirectional stream payload; pumping in both
  *        directions delivers the bytes to the client (recv_stream_data_cb -> stream_data event) and
  *        carries the client's ACK back so the server fires acked_stream_data_offset_cb, emitting a
- *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1530-1556.
+ *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1591-1617.
  */
 TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1305,7 +1468,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  * @brief With DATAGRAM enabled on both ends, the server sends a datagram after the handshake; pumping
  *        delivers it to the client (recv_datagram_cb increments datagrams_received) and carries the
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
- *        incrementing datagrams_acked. Covers quic.cpp:1499-1512 (acked branch) + 1551-1556.
+ *        incrementing datagrams_acked. Covers quic.cpp:1560-1573 (acked branch) + 1551-1556.
  */
 TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1711,7 +1874,7 @@ INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::test
  * @brief A non-QUIC payload delivered to a freshly started server parent fails ngtcp2_accept inside
  *        accept_server_connection, which queues a handshake_failed close event rather than spinning up
  *        a child connection; the parent fans that child event up with no connection added. The parent
- *        stays open with zero active connections. Covers quic.cpp:1145-1157 (the accept-rejection arm).
+ *        stays open with zero active connections. Covers quic.cpp:1206-1218 (the accept-rejection arm).
  */
 TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1755,8 +1918,8 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
 /**
  * @test The server observes its own STOP_SENDING when it stops reading a stream (stream_stop_sending_cb).
  * @brief The client opens a bidi stream and writes; the server stops reading it via stop_stream()
- *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:616-626 (the synchronous stop_sending
- *        event queued by stop_stream) AND quic.cpp:1628-1635 (stream_stop_sending_cb, fired by
+ *        (ngtcp2_conn_shutdown_stream_read). Covers quic.cpp:618-628 (the synchronous stop_sending
+ *        event queued by stop_stream) AND quic.cpp:1689-1696 (stream_stop_sending_cb, fired by
  *        ngtcp2 when the local endpoint drains its transport after shutting down the read side).
  *
  * QUIC/ngtcp2 SEMANTICS — important correction over the prior version of this test, which expected
@@ -1816,8 +1979,8 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     constexpr std::uint64_t app_error = 0x9;
     server->stop_stream(server_connection_id, server_stream_id, app_error);
 
-    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:625) and arms
-    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1629)
+    // stop_stream() synchronously queues a stop_sending stream_closed event (quic.cpp:627) and arms
+    // ngtcp2 to send STOP_SENDING; the next transport drain fires stream_stop_sending_cb (quic.cpp:1690)
     // for the SAME stream/reason. Pump a bounded number of times and collect every stop_sending event
     // the server observes.
     int                               server_stop_sending_count = 0;
@@ -1849,7 +2012,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
  * @brief The parent server is configured with max_connections == 1. A first client completes the
  *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
  *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
- *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:881-894) which DROPS the
+ *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:942-955) which DROPS the
  *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
  *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
  *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
@@ -1931,9 +2094,9 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
  *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1600-1609) and emits a trailing stream_data carrying error_code == 1
+ *        SYNTHESIS arm (quic.cpp:1661-1670) and emits a trailing stream_data carrying error_code == 1
  *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1610-1614), then queues stream_closed(finished).
+ *        (quic.cpp:1671-1675), then queues stream_closed(finished).
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -1998,7 +2161,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
     // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1600-1614) and emits a trailing
+    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1661-1675) and emits a trailing
     // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL

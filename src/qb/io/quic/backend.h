@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -79,6 +80,12 @@ public:
     virtual void close(std::uint64_t application_error_code, std::string_view reason)                                              = 0;
 
     [[nodiscard]] virtual stats current_stats() const noexcept = 0;
+
+    /// The named connection's smoothed RTT estimate, or no value when unavailable. Default: unsupported.
+    [[nodiscard]] virtual std::optional<qb::duration> smoothed_rtt(std::uint64_t connection_id) const noexcept;
+
+    /// Change a live listener's admission policy without closing existing peers. False means unsupported or not a listener.
+    [[nodiscard]] virtual bool set_accepting_connections(bool accepting) noexcept;
 };
 
 [[nodiscard]] std::unique_ptr<backend> make_native_backend();

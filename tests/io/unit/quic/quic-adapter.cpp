@@ -1711,7 +1711,7 @@ TEST(QuicAdapterEndpoint, OversizedUdpPacketTripsTransportFailureAndClosesEndpoi
 
 /**
  * @test connect(uri, alpn) — the two-argument no-TLS overload — backfills server_name from the URI host
- * @brief The convenience `connect(remote_uri, alpn_protocols)` overload (endpoint.h:453-458) constructs a
+ * @brief The convenience `connect(remote_uri, alpn_protocols)` overload (endpoint.h:464-469) constructs a
  *        default tls_config, assigns server_name from the URI host, and forwards to the three-argument
  *        connect with the caller's ALPN. Every existing adapter test reaches connect() through either the
  *        single-arg `connect(uri)` default-argument form or the explicit `connect(uri, tls, alpn)` form;
@@ -1865,4 +1865,19 @@ TEST(QuicAdapterEndpoint, BracedAlpnListSelectsTheVectorOverload) {
     CallbackQuicClient client{make_fake(raw2)};
     ASSERT_TRUE(client.connect(qb::io::uri{"quic://127.0.0.1:4433"}, {"h3"}));
     EXPECT_EQ(raw2->last_alpn, (std::vector<std::string>{"h3"}));
+}
+
+TEST(QuicAdapterEndpoint, ColdCapabilitiesRemainUnavailableForLegacyBackends) {
+    qb::io::async::quic::endpoint empty;
+    EXPECT_FALSE(empty.smoothed_rtt(7).has_value());
+    EXPECT_FALSE(empty.set_accepting_connections(false));
+    EXPECT_EQ(empty.backend(), nullptr) << "a query must not create a native backend";
+
+    FakeQuicBackend              *raw = nullptr; // unchanged old backend: neither new virtual is implemented
+    qb::io::async::quic::endpoint endpoint{make_fake(raw)};
+    raw->stats.smoothed_rtt_us = 123;
+    EXPECT_FALSE(endpoint.smoothed_rtt().has_value());
+    EXPECT_FALSE(endpoint.smoothed_rtt(7).has_value()) << "an aggregate is not a per-connection estimate";
+    EXPECT_FALSE(endpoint.set_accepting_connections(false));
+    EXPECT_FALSE(endpoint.set_accepting_connections(true));
 }

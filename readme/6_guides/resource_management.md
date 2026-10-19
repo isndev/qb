@@ -38,8 +38,8 @@ qb adds owners for the resources it introduces. The key invariant for every one 
 | TLS listener | `qb::io::tcp::ssl::listener` | `src/qb/io/tcp/ssl/listener.h` | Move-only; **takes ownership of the `SSL_CTX`** you pass to `init()` — it is transferred into the listener's value-semantic, reference-counted `qb::io::ssl::Context` member, which frees it when the last copy (and the last `SSL` minted from it) is gone. Not a `std::unique_ptr`. |
 
 <!-- src: src/qb/io/system/file.h:78-79 (copy deleted), :85 (move ctor), :91 (move assign), :99 (~file) -->
-<!-- src: src/qb/io/system/sys__socket.h:880,888,902,908 (copy deleted / move kept), :923 (~socket) -->
-<!-- src: src/qb/io/tcp/socket.h:97 (copy deleted), :102 (move ctor), :108 (move assign) -->
+<!-- src: src/qb/io/system/sys__socket.h:882,890,904,910 (copy deleted / move kept), :925 (~socket) -->
+<!-- src: src/qb/io/tcp/socket.h:99 (copy deleted), :104 (move ctor), :110 (move assign) -->
 <!-- src: src/qb/io/tcp/ssl/socket.h:362 (_ssl_handle unique_ptr); src/qb/io/tcp/ssl/listener.h:45 (listener _ctx is a value-semantic qb::io::ssl::Context, NOT a unique_ptr) -->
 
 ### The actor destruction guarantee

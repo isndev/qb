@@ -62,6 +62,7 @@
  */
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -69,8 +70,14 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+#include <dlfcn.h>
+#include <unistd.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -84,6 +91,55 @@
 using namespace std::chrono_literals;
 using qb::io::test::pump_until;
 using qb::io::test::read_exact_within;
+
+#ifndef _WIN32
+namespace transport_accept_loopback_test {
+thread_local int         watched_peer_fd = -1;
+thread_local std::size_t peer_name_calls = 0;
+
+// Observe the native call, below both client::ip() and the socket implementation.
+// Every use first proves that qb's compiled socket object reaches this interposer.
+class PeerNameScope {
+    int         _previous_fd;
+    std::size_t _previous_calls;
+
+public:
+    explicit PeerNameScope(int fd)
+        : _previous_fd(watched_peer_fd)
+        , _previous_calls(peer_name_calls) {
+        watched_peer_fd = fd;
+        peer_name_calls = 0;
+    }
+
+    ~PeerNameScope() {
+        watched_peer_fd = _previous_fd;
+        peer_name_calls = _previous_calls;
+    }
+
+    [[nodiscard]] std::size_t
+    calls() const noexcept {
+        return peer_name_calls;
+    }
+};
+} // namespace transport_accept_loopback_test
+
+extern "C" int
+getpeername(int fd, sockaddr *address, socklen_t *length)
+#ifdef __linux__
+    noexcept
+#endif
+{
+    using NativeGetPeerName              = decltype(&::getpeername);
+    static const auto native_getpeername = reinterpret_cast<NativeGetPeerName>(::dlsym(RTLD_NEXT, "getpeername"));
+    if (!native_getpeername) {
+        errno = ENOSYS;
+        return -1;
+    }
+    if (fd == transport_accept_loopback_test::watched_peer_fd)
+        ++transport_accept_loopback_test::peer_name_calls;
+    return native_getpeername(fd, address, length);
+}
+#endif
 
 // ===========================================================================
 // PART A — transport::accept mixin, direct loopback (no event loop)
@@ -583,3 +639,362 @@ TEST(IoHandler, BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap) {
     }
     drain_after_clients();
 }
+
+namespace transport_accept_loopback_test {
+
+class PeerServer;
+
+class PeerSession : public qb::io::use<PeerSession>::tcp::client<PeerServer> {
+public:
+    using Protocol = void;
+    const std::string before_socket;
+
+    explicit PeerSession(IOServer &server)
+        : client(server)
+        , before_socket(ip()) {}
+};
+
+class PeerServer : public qb::io::async::io_handler<PeerServer, PeerSession> {};
+
+class LegacyPeerSocket : public qb::io::tcp::socket {
+public:
+    LegacyPeerSocket() = default;
+    explicit LegacyPeerSocket(qb::io::tcp::socket &&socket)
+        : qb::io::tcp::socket(std::move(socket)) {}
+    LegacyPeerSocket(LegacyPeerSocket &&)            = default;
+    LegacyPeerSocket &operator=(LegacyPeerSocket &&) = default;
+    std::string       peer_ip() const                = delete;
+};
+
+class LegacyPeerTransport : public qb::io::stream<LegacyPeerSocket> {
+public:
+    static constexpr bool
+    is_secure() noexcept {
+        return false;
+    }
+};
+
+class LegacyPeerServer;
+class LegacyPeerSession : public qb::io::async::tcp::client<LegacyPeerSession, LegacyPeerTransport, LegacyPeerServer> {
+    using base = qb::io::async::tcp::client<LegacyPeerSession, transport_accept_loopback_test::LegacyPeerTransport, LegacyPeerServer>;
+
+public:
+    using Protocol = void;
+    explicit LegacyPeerSession(IOServer &server)
+        : base(server) {}
+};
+class LegacyPeerServer : public qb::io::async::io_handler<LegacyPeerServer, LegacyPeerSession> {};
+
+class PeerIpCache : public testing::Test {
+protected:
+    void
+    TearDown() override {
+        qb::io::async::listener::current.clear();
+    }
+};
+
+// A complete TCP handshake and bounded accept, without a worker thread or daemon.
+bool
+connect_pair(qb::io::tcp::listener &listener, qb::io::tcp::socket &client, qb::io::tcp::socket &accepted) {
+    if (listener.listen_v4(0, "127.0.0.1") != qb::io::SocketStatus::Done)
+        return false;
+    if (client.connect(listener.local_endpoint(), qb::io::test::kLoopbackWaitBudget) != qb::io::SocketStatus::Done)
+        return false;
+    return qb::io::test::accept_within(listener, accepted);
+}
+
+// Linux normally routes all 127/8 locally; hosts without that alias use ::1.
+// Bind the remote's source explicitly: a destination alias alone would still
+// leave its accepted peer at 127.0.0.1 and weaken the cache-transfer assertions.
+bool
+connect_distinct_pair(qb::io::tcp::listener &listener, qb::io::tcp::socket &client, qb::io::tcp::socket &accepted) {
+    const char *address = "127.0.0.2";
+    if (listener.listen_v4(0, address) != qb::io::SocketStatus::Done) {
+        address = "::1";
+        if (listener.listen_v6(0, address) != qb::io::SocketStatus::Done)
+            return false;
+    }
+    if (client.bind(qb::io::endpoint().as_in(address, 0)) != 0)
+        return false;
+    if (client.connect(listener.local_endpoint(), qb::io::test::kLoopbackWaitBudget) != qb::io::SocketStatus::Done)
+        return false;
+    return qb::io::test::accept_within(listener, accepted);
+}
+
+TEST_F(PeerIpCache, EmptyBeforeInstallationAndAfterExtraction) {
+    static_assert(std::is_same_v<decltype(std::declval<const PeerSession &>().ip()), std::string>);
+    qb::io::tcp::listener listener;
+    qb::io::tcp::socket   remote;
+    qb::io::tcp::socket   accepted;
+    ASSERT_TRUE(connect_pair(listener, remote, accepted));
+    PeerServer server;
+    auto      *session = server.registerSession(std::move(accepted));
+    ASSERT_NE(session, nullptr);
+    EXPECT_TRUE(session->before_socket.empty());
+    EXPECT_EQ(session->ip(), "127.0.0.1");
+    auto retained = server.session(session->id());
+    ASSERT_NE(retained, nullptr);
+    auto [socket, extracted] = server.extractSession(session->id());
+    ASSERT_TRUE(extracted);
+    EXPECT_TRUE(retained->ip().empty()) << "a retained session no longer owns its extracted peer";
+    EXPECT_EQ(socket.peer_endpoint().ip(), "127.0.0.1");
+    auto *replacement = server.registerSession(std::move(socket));
+    ASSERT_NE(replacement, nullptr);
+    EXPECT_TRUE(replacement->before_socket.empty());
+    EXPECT_EQ(replacement->ip(), "127.0.0.1");
+    replacement->stop();
+    replacement->transport().close();
+    EXPECT_TRUE(replacement->ip().empty());
+}
+
+TEST_F(PeerIpCache, FailedLookupDoesNotPoisonTheLaterConnectionOnTheSameSocket) {
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    PeerServer  server;
+    PeerSession session(server);
+    ASSERT_EQ(session.transport().init(), 0);
+    const auto fd = session.transport().native_handle();
+    EXPECT_TRUE(session.ip().empty());
+    ASSERT_EQ(session.transport().connect(listener.local_endpoint(), qb::io::test::kLoopbackWaitBudget), 0);
+    qb::io::tcp::socket accepted;
+    ASSERT_TRUE(qb::io::test::accept_within(listener, accepted));
+    EXPECT_EQ(session.transport().native_handle(), fd);
+    EXPECT_EQ(session.ip(), "127.0.0.1");
+}
+
+TEST_F(PeerIpCache, CustomTransportWithoutPeerIpKeepsThePeerEndpointFallback) {
+    static_assert(std::is_same_v<decltype(std::declval<const LegacyPeerSession &>().ip()), std::string>);
+    qb::io::tcp::listener listener;
+    qb::io::tcp::socket   remote;
+    qb::io::tcp::socket   accepted;
+    ASSERT_TRUE(connect_pair(listener, remote, accepted));
+    LegacyPeerSocket socket(std::move(accepted));
+    LegacyPeerServer server;
+    auto            *session = server.registerSession(std::move(socket));
+    ASSERT_NE(session, nullptr);
+    EXPECT_EQ(session->ip(), "127.0.0.1");
+}
+
+#ifndef _WIN32
+TEST_F(PeerIpCache, RepeatedIpReadsQueryTheNativePeerOnlyOnce) {
+    qb::io::tcp::listener listener;
+    qb::io::tcp::socket   remote;
+    qb::io::tcp::socket   accepted;
+    ASSERT_TRUE(connect_pair(listener, remote, accepted));
+    PeerServer server;
+    auto      *session = server.registerSession(std::move(accepted));
+    ASSERT_NE(session, nullptr);
+    const auto fd = session->transport().native_handle();
+    {
+        PeerNameScope probe(fd);
+        const auto    peer = qb::io::socket::peer_endpoint(fd);
+        ASSERT_TRUE(peer);
+        ASSERT_EQ(probe.calls(), 1u) << "HARNESS REFUSED: the compiled socket call did not reach the native interposer";
+    }
+    PeerNameScope reads(fd);
+    const auto    first  = session->ip();
+    const auto    second = session->ip();
+    const auto    third  = session->ip();
+    EXPECT_EQ(first, "127.0.0.1");
+    EXPECT_EQ(second, first);
+    EXPECT_EQ(third, first);
+    EXPECT_EQ(reads.calls(), 1u) << "three public ip() reads must share one formatted peer lookup";
+}
+
+TEST_F(PeerIpCache, ReplacingAClosedSocketAtTheSameDescriptorQueriesTheNewPeer) {
+    qb::io::tcp::listener first_listener;
+    qb::io::tcp::socket   first_remote;
+    qb::io::tcp::socket   first_accepted;
+    ASSERT_TRUE(connect_pair(first_listener, first_remote, first_accepted));
+    qb::io::tcp::listener next_listener;
+    qb::io::tcp::socket   next_remote;
+    qb::io::tcp::socket   next_accepted;
+    ASSERT_TRUE(connect_distinct_pair(next_listener, next_remote, next_accepted))
+        << "distinct real peer requires the 127.0.0.2 alias or IPv6 loopback";
+    const auto next_ip = next_remote.local_endpoint().ip();
+    ASSERT_NE(next_ip, "127.0.0.1");
+    PeerServer server;
+    auto      *session = server.registerSession(std::move(first_accepted));
+    ASSERT_NE(session, nullptr);
+    auto      &transport = session->transport();
+    const auto old_fd    = transport.native_handle();
+    ASSERT_NE(next_accepted.native_handle(), old_fd);
+    {
+        PeerNameScope probe(old_fd);
+        ASSERT_TRUE(qb::io::socket::peer_endpoint(old_fd));
+        ASSERT_EQ(probe.calls(), 1u) << "HARNESS REFUSED: native getpeername interception is inactive";
+    }
+    ASSERT_EQ(session->ip(), "127.0.0.1");
+    session->stop();
+    // Keep the reference obtained BEFORE priming the cache, and do not read ip()
+    // between close and adoption: neither a getter hook nor seeing fd=-1 may hide
+    // the same-descriptor replacement from this witness.
+    transport.close();
+    const auto adopted = ::dup2(next_accepted.native_handle(), old_fd);
+    ASSERT_EQ(adopted, old_fd);
+    qb::io::socket owned(adopted);
+    next_accepted.close(QB_SD_NONE); // do not shutdown the duplicated connection
+    PeerNameScope replaced(old_fd);
+    transport = std::move(owned);
+    EXPECT_EQ(transport.native_handle(), old_fd);
+    EXPECT_EQ(session->ip(), next_ip);
+    EXPECT_EQ(session->ip(), next_ip);
+    EXPECT_EQ(replaced.calls(), 1u) << "the reused descriptor names a new connection, not the cached old peer";
+}
+
+TEST_F(PeerIpCache, MovingConnectedSocketsTransfersTheirCachedPeerWithTheDescriptor) {
+    qb::io::tcp::listener first_listener;
+    qb::io::tcp::socket   first_remote;
+    qb::io::tcp::socket   first_accepted;
+    ASSERT_TRUE(connect_pair(first_listener, first_remote, first_accepted));
+    qb::io::tcp::listener next_listener;
+    qb::io::tcp::socket   next_remote;
+    qb::io::tcp::socket   next_accepted;
+    ASSERT_TRUE(connect_distinct_pair(next_listener, next_remote, next_accepted))
+        << "distinct real peer requires the 127.0.0.2 alias or IPv6 loopback";
+    const auto next_ip = next_remote.local_endpoint().ip();
+    ASSERT_NE(next_ip, "127.0.0.1");
+    PeerServer server;
+    auto      *first = server.registerSession(std::move(first_accepted));
+    auto      *next  = server.registerSession(std::move(next_accepted));
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(next, nullptr);
+    const auto first_fd = first->transport().native_handle();
+    const auto next_fd  = next->transport().native_handle();
+    {
+        PeerNameScope probe(next_fd);
+        ASSERT_TRUE(qb::io::socket::peer_endpoint(next_fd));
+        ASSERT_EQ(probe.calls(), 1u) << "HARNESS REFUSED: native getpeername interception is inactive";
+    }
+    ASSERT_EQ(first->ip(), "127.0.0.1");
+    ASSERT_EQ(next->ip(), next_ip);
+    first->stop();
+    next->stop();
+    // Existing socket move-assignment swaps descriptors when both sides are open.
+    first->transport() = std::move(next->transport());
+    ASSERT_EQ(first->transport().native_handle(), next_fd);
+    ASSERT_EQ(next->transport().native_handle(), first_fd);
+    {
+        PeerNameScope transferred(next_fd);
+        EXPECT_EQ(first->ip(), next_ip);
+        EXPECT_EQ(first->ip(), next_ip);
+        EXPECT_EQ(transferred.calls(), 0u) << "moving a live connection must not repeat its cached peer lookup";
+    }
+    {
+        PeerNameScope swapped(first_fd);
+        EXPECT_EQ(next->ip(), "127.0.0.1");
+        EXPECT_EQ(swapped.calls(), 0u) << "the source now owns the former destination connection and its cache";
+    }
+}
+
+TEST_F(PeerIpCache, NativeUdpPeerRetargetAndDisconnectInvalidateTheCache) {
+    qb::io::socket first(AF_INET, SOCK_DGRAM, 0);
+    qb::io::socket next(AF_INET, SOCK_DGRAM, 0);
+    qb::io::socket client(AF_INET, SOCK_DGRAM, 0);
+    ASSERT_TRUE(first.is_open());
+    ASSERT_TRUE(next.is_open());
+    ASSERT_TRUE(client.is_open());
+    ASSERT_EQ(first.bind(qb::io::endpoint().as_in("127.0.0.1", 0)), 0);
+    ASSERT_EQ(next.bind(qb::io::endpoint().as_in("127.0.0.1", 0)), 0);
+    ASSERT_NE(first.local_endpoint().port(), next.local_endpoint().port());
+    ASSERT_EQ(client.connect(first.local_endpoint()), 0);
+    const auto fd = client.native_handle();
+    {
+        PeerNameScope probe(fd);
+        ASSERT_TRUE(qb::io::socket::peer_endpoint(fd));
+        ASSERT_EQ(probe.calls(), 1u) << "HARNESS REFUSED: native getpeername interception is inactive";
+    }
+    {
+        PeerNameScope reads(fd);
+        EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+        EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+        EXPECT_EQ(reads.calls(), 1u);
+    }
+    ASSERT_EQ(client.connect(next.local_endpoint()), 0);
+    EXPECT_EQ(client.peer_endpoint().port(), next.local_endpoint().port());
+    {
+        PeerNameScope reads(fd);
+        EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+        EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+        EXPECT_EQ(reads.calls(), 1u) << "retargeting a connected datagram socket changes its peer without changing fd";
+    }
+    ASSERT_EQ(qb::io::socket::connect(fd, first.local_endpoint()), 0);
+    client.invalidate_peer_ip(); // raw/static helpers cannot find the owning C++ socket
+    {
+        PeerNameScope reads(fd);
+        EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+        EXPECT_EQ(reads.calls(), 1u);
+    }
+    qb::io::endpoint invalid;
+    invalid.len(0);
+    EXPECT_NE(client.connect(invalid), 0);
+    const auto after_failed_connect = client.peer_endpoint().ip();
+    {
+        PeerNameScope reads(fd);
+        EXPECT_EQ(client.peer_ip(), after_failed_connect);
+        EXPECT_EQ(reads.calls(), 1u) << "a failed connect attempt must not leave a cached association authoritative";
+    }
+    // AF_UNSPEC disconnect is not supported uniformly by host kernels. Compare
+    // the member operation with a real uncached socket; even a failed native
+    // attempt must invalidate cached peer information.
+    ASSERT_EQ(client.connect(first.local_endpoint()), 0);
+    EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+    qb::io::socket native_control;
+    ASSERT_TRUE(native_control.open(AF_INET, SOCK_DGRAM, 0));
+    ASSERT_EQ(native_control.connect(first.local_endpoint()), 0);
+    const int native_result = qb::io::socket::disconnect(native_control.native_handle());
+    const int native_error  = native_result == 0 ? 0 : qb::io::socket::get_last_errno();
+    const int member_result = client.disconnect();
+    const int member_error  = member_result == 0 ? 0 : qb::io::socket::get_last_errno();
+    EXPECT_EQ(member_result, native_result);
+    EXPECT_EQ(member_error, native_error);
+    const auto actual_peer = qb::io::socket::peer_endpoint(fd).ip();
+    {
+        PeerNameScope reads(fd);
+        EXPECT_EQ(client.peer_ip(), actual_peer);
+        EXPECT_EQ(reads.calls(), 1u);
+    }
+    if (native_result == 0)
+        EXPECT_TRUE(actual_peer.empty());
+    ASSERT_EQ(client.connect(first.local_endpoint()), 0);
+    EXPECT_EQ(client.peer_ip(), "127.0.0.1");
+}
+
+TEST_F(PeerIpCache, GenericSocketAdoptionClosesTheDestinationAndTransfersTheCache) {
+    qb::io::tcp::listener first_listener;
+    qb::io::tcp::socket   first_remote;
+    qb::io::tcp::socket   first_accepted;
+    ASSERT_TRUE(connect_pair(first_listener, first_remote, first_accepted));
+    qb::io::tcp::listener next_listener;
+    qb::io::tcp::socket   next_remote;
+    qb::io::tcp::socket   next_accepted;
+    ASSERT_TRUE(connect_distinct_pair(next_listener, next_remote, next_accepted));
+    const auto next_ip = next_remote.local_endpoint().ip();
+    ASSERT_NE(next_ip, "127.0.0.1");
+    qb::io::socket incoming(next_accepted.release_handle());
+    const auto     next_fd = incoming.native_handle();
+    {
+        PeerNameScope probe(next_fd);
+        ASSERT_TRUE(qb::io::socket::peer_endpoint(next_fd));
+        ASSERT_EQ(probe.calls(), 1u) << "HARNESS REFUSED: native getpeername interception is inactive";
+    }
+    ASSERT_EQ(incoming.peer_ip(), next_ip);
+    PeerServer server;
+    auto      *session = server.registerSession(std::move(first_accepted));
+    ASSERT_NE(session, nullptr);
+    const auto old_fd = session->transport().native_handle();
+    ASSERT_NE(old_fd, next_fd);
+    ASSERT_EQ(session->ip(), "127.0.0.1");
+    session->stop();
+    session->transport() = std::move(incoming);
+    EXPECT_FALSE(incoming.is_open()) << "generic adoption must not swap the old destination back into its source";
+    EXPECT_FALSE(qb::io::socket::peer_endpoint(old_fd)) << "generic adoption closes the previous destination";
+    EXPECT_EQ(session->transport().native_handle(), next_fd);
+    PeerNameScope transferred(next_fd);
+    EXPECT_EQ(session->ip(), next_ip);
+    EXPECT_EQ(session->ip(), next_ip);
+    EXPECT_EQ(transferred.calls(), 0u);
+}
+#endif
+
+} // namespace transport_accept_loopback_test

@@ -28,6 +28,7 @@
 
 #include "../../../uuid.h"
 #include "../io.h"
+#include <string>
 
 namespace qb::io::async::tcp {
 
@@ -147,9 +148,12 @@ public:
      * @brief Get the client's IP address
      * @return IP address
      */
-    [[nodiscard]] inline auto
+    [[nodiscard]] inline std::string
     ip() const {
-        return transport().peer_endpoint().ip();
+        if constexpr (requires { std::string{transport().peer_ip()}; })
+            return std::string{transport().peer_ip()};
+        else
+            return transport().peer_endpoint().ip();
     }
 
     /**
