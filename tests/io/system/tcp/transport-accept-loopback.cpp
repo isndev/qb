@@ -954,8 +954,9 @@ TEST_F(PeerIpCache, NativeUdpPeerRetargetAndDisconnectInvalidateTheCache) {
         EXPECT_EQ(client.peer_ip(), actual_peer);
         EXPECT_EQ(reads.calls(), 1u);
     }
-    if (native_result == 0)
+    if (native_result == 0) {
         EXPECT_TRUE(actual_peer.empty());
+    }
     ASSERT_EQ(client.connect(first.local_endpoint()), 0);
     EXPECT_EQ(client.peer_ip(), "127.0.0.1");
 }
