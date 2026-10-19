@@ -749,6 +749,13 @@ policy.
 
 ### Fixed
 
+- **The stalled-mailbox test no longer assumes full receive batches (Huly QB-1105).** Its
+  previous global retry bound could reject a correct flush under ASan when the receiver drained
+  smaller batches. The test now holds the consumer index fixed, allows two complete warmup
+  passes and requires exactly one refusal in each of the next 64 passes before checking full,
+  ordered delivery. Disabling only the stall bailout makes the same oracle observe 513 refusals
+  per pass and fail. The watchdog is cleanup only; the production flush and its cost are unchanged.
+
 - **Cache a TCP session's formatted peer IP at its socket owner (Huly QB-1106).** Repeated `ip()` reads
   reuse a successful lookup instead of calling `getpeername` and formatting it for every request.
   `ip()` still returns `std::string` by value; custom transports without `peer_ip()` retain their existing
