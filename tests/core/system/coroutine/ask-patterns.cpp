@@ -1168,8 +1168,9 @@ run(ending how, bool self) {
     ASSERT_TRUE(out.checked);
     ASSERT_GE(out.arrivals_after_end, 1);
     EXPECT_EQ(out.result, how == ending::winner ? "winner" : how == ending::timeout ? "timeout" : "cancellation");
-    if (how == ending::winner)
+    if (how == ending::winner) {
         EXPECT_EQ(out.winner, 62);
+    }
     EXPECT_EQ(out.answered_after_end, 0) << "a retired ask response reached the user request function";
 }
 
