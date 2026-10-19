@@ -189,7 +189,7 @@ register_type_id(type_id_slot &slot, char const *const name) noexcept {
                   "block-scope `static type_id_slot`, as qb::detail::type_id_for<T>() does.");
 #endif
         slot.name = name;
-        // The 16-bit id space is GUARDED here (Huly QB-60). `TypeId` is `uint16_t` (ActorId.h:69),
+        // The 16-bit id space is GUARDED here (Huly QB-60). `TypeId` is `uint16_t` (ActorId.h:73),
         // so a `fetch_add` past 65535 would wrap INSIDE the atomic onto the framework's own ids:
         // measured by forcing the counter to 65534, the next three registrations came out 65535,
         // then 0 (the 'unregistered' sentinel), then 1 -- `qb::KillEvent`, so a user event aliased

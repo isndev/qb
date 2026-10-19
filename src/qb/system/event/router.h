@@ -67,19 +67,22 @@ namespace qb::router {
  * `perf` put the two lookups at the top of the profile once the accessors had been inlined.
  *
  * Both keys are ALREADY dense integers: `EventId` is assigned from a counter
- * (`Event::type_to_id`), and a `VirtualCore`'s handlers are its own actors, whose `ServiceId`
- * slots come lowest-free-first from a bitset pool. A router keyed on such an id can be a
+ * (`Event::type_to_id`), and a `VirtualCore`'s handlers are its own actors, whose slots come
+ * from a pool that hands freed slots back first. A router keyed on such an id can be a
  * vector indexed by it — one bounds check and one load where the map cost five dependent
  * ones — without giving up the generic routers: a key with no dense form (the router unit
  * test keys events on `const char *`) keeps the hash map, selected at compile time.
  *
  * Specialise for a key type to enable the dense table. **Contract:** `of(k)` is at most
  * `max_index`, and two keys that can be subscribed on ONE router at the same time yield
- * different indices — the table stores the full key beside the slot and compares it on every
- * hit, so a key that shares an index with a live subscriber is a MISS (never a misdelivery),
- * and `subscribe()` asserts the collision in a debug build. Unsigned integers of at most 16
- * bits are dense by identity; `qb::ActorId` is dense by `sid()` (ActorId.h), which is unique
- * among the actors of one core and a router only ever holds one core's actors.
+ * different indices within their bank — the table stores the full key beside the slot and
+ * compares it on every hit, so a key that shares an index with a live subscriber is a MISS
+ * (never a misdelivery), and `subscribe()` asserts the collision in a debug build. Unsigned
+ * integers of at most 16 bits are dense by identity. `qb::ActorId` projects ordinary slots and
+ * service tags into separate banks (ActorId.h); a router only ever holds one core's actors. A specialisation
+ * may declare `partitioned = true`, `secondary(key)` and `secondary_max_index` to keep a second
+ * dense bank. Then `of(key)` is bounded by the selected bank's maximum, and identical indices
+ * in different banks are independent. Neither bank allocates on lookup or erase.
  *
  * @tparam Key The router key type (`_RawEvent::id_type` or `_RawEvent::id_handler_type`)
  */
@@ -109,15 +112,21 @@ namespace internal {
  *
  * @details The dense table grows geometrically on `insert_or_assign` (a core spawning actors
  * one at a time subscribes one new id per spawn; an exact `resize` there would be quadratic)
- * and never shrinks — `erase` clears the slot, and the pool's lowest-free-first policy hands
- * that slot back to the next actor, so the table stays as compact as the id space it mirrors.
+ * and never shrinks — `erase` clears the slot, and the pool hands a freed slot back before it
+ * opens a new one, so the table stays as compact as the core's peak population.
  *
  * @tparam Key   The key type
  * @tparam Value The stored value; `Value{}` is what an erased slot holds
  */
 template <typename Key, typename Value>
 class key_table {
-    static constexpr bool dense = dense_index<Key>::enabled;
+    static constexpr bool dense       = dense_index<Key>::enabled;
+    static constexpr bool partitioned = [] {
+        if constexpr (dense && requires { dense_index<Key>::partitioned; })
+            return dense_index<Key>::partitioned;
+        else
+            return false;
+    }();
 
     struct Slot {
         Key   key{};
@@ -128,11 +137,32 @@ class key_table {
     using Dense  = qb::allocator::region_vector<Slot>;
     using Sparse = qb::unordered_map<Key, Value>;
 
-    std::conditional_t<dense, Dense, Sparse> _table;
+    struct PartitionedDense {
+        Dense       primary;
+        Dense       secondary;
+        std::size_t secondary_size = 0;
+    };
+
+    // A partitioned key maps its secondary namespace to compact indices instead of growing
+    // through a high encoded slot. Other keys retain exactly the original table storage.
+    std::conditional_t<partitioned, PartitionedDense, std::conditional_t<dense, Dense, Sparse>> _table;
     // The dense table's slot count, kept beside it: `find()` bounds-checks every lookup, and
     // `_table.size()` is a pointer difference divided by `sizeof(Slot)` -- a multiply by a magic
     // constant on every event routed when the slot is 24 bytes wide (QB-182). One load instead.
     std::size_t _dense_size = 0;
+
+    [[nodiscard]] Dense &
+    primary_table() noexcept {
+        if constexpr (partitioned)
+            return _table.primary;
+        else
+            return _table;
+    }
+
+    [[nodiscard]] Dense const &
+    primary_table() const noexcept {
+        return const_cast<key_table *>(this)->primary_table();
+    }
 
 public:
     key_table()  = default;
@@ -146,8 +176,18 @@ public:
     find(Key const &key) noexcept {
         if constexpr (dense) {
             const auto idx = dense_index<Key>::of(key);
+            if constexpr (partitioned) {
+                if (dense_index<Key>::secondary(key)) {
+                    if (likely(idx < _table.secondary_size)) {
+                        auto &slot = _table.secondary[idx];
+                        if (likely(slot.used && slot.key == key))
+                            return &slot.value;
+                    }
+                    return nullptr;
+                }
+            }
             if (likely(idx < _dense_size)) {
-                auto &slot = _table[idx];
+                auto &slot = primary_table()[idx];
                 if (likely(slot.used && slot.key == key))
                     return &slot.value;
             }
@@ -170,20 +210,39 @@ public:
     insert_or_assign(Key const &key, Value value) {
         if constexpr (dense) {
             const auto idx = dense_index<Key>::of(key);
+            if constexpr (partitioned) {
+                if (dense_index<Key>::secondary(key)) {
+                    assert(idx <= dense_index<Key>::secondary_max_index && "dense_index<Key>::of() exceeds secondary_max_index");
+                    auto &table = _table.secondary;
+                    if (idx >= table.size()) {
+                        if (idx >= table.capacity())
+                            qb::allocator::detail::region_reserve(table, idx + 1, dense_index<Key>::secondary_max_index + 1);
+                        table.resize(idx + 1);
+                        _table.secondary_size = table.size();
+                    }
+                    auto &slot = table[idx];
+                    assert((!slot.used || slot.key == key) && "dense_index<Key>: two live keys share one secondary index");
+                    slot.key   = key;
+                    slot.value = std::move(value);
+                    slot.used  = true;
+                    return;
+                }
+            }
             assert(idx <= dense_index<Key>::max_index && "dense_index<Key>::of() exceeds max_index");
-            if (idx >= _table.size()) {
+            auto &table = primary_table();
+            if (idx >= table.size()) {
                 // Grow by CAPACITY, never by size: `reserve(size() * 2)` on every insert asked
                 // for one more element than the previous doubling had left, so each new id
                 // reallocated and copied the whole table -- O(n) per subscribe, O(n^2) per
                 // core, times one table per event type. savina/fib (57 313 actors born and
                 // dead in one window, seven subscriptions each) measured 43 s where CAF
                 // measures 86 ms; with this branch it is the pool's O(1) again.
-                if (idx >= _table.capacity())
-                    qb::allocator::detail::region_reserve(_table, idx + 1, dense_index<Key>::max_index + 1);
-                _table.resize(idx + 1);
-                _dense_size = _table.size();
+                if (idx >= table.capacity())
+                    qb::allocator::detail::region_reserve(table, idx + 1, dense_index<Key>::max_index + 1);
+                table.resize(idx + 1);
+                _dense_size = table.size();
             }
-            auto &slot = _table[idx];
+            auto &slot = table[idx];
             assert((!slot.used || slot.key == key) && "dense_index<Key>: two live keys share one index");
             slot.key   = key;
             slot.value = std::move(value);
@@ -200,7 +259,14 @@ public:
     erase(Key const &key) noexcept {
         if constexpr (dense) {
             if (auto *const value = find(key)) {
-                auto &slot = _table[dense_index<Key>::of(key)];
+                if constexpr (partitioned) {
+                    if (dense_index<Key>::secondary(key)) {
+                        *value                                           = Value{};
+                        _table.secondary[dense_index<Key>::of(key)].used = false;
+                        return;
+                    }
+                }
+                auto &slot = primary_table()[dense_index<Key>::of(key)];
                 *value     = Value{};
                 slot.used  = false;
             }
@@ -210,7 +276,7 @@ public:
     }
 
     /**
-     * @brief Visit every present entry as `f(key, value)`, in index order for a dense table
+     * @brief Visit every present entry as `f(key, value)`, in index order within each dense bank
      * @warning `f` must not insert into or erase from THIS table (see the broadcast snapshot in
      *          `semh::route` for why, and for the idiom).
      */
@@ -218,7 +284,13 @@ public:
     void
     for_each(Func &&f) const {
         if constexpr (dense) {
-            for (auto const &slot : _table)
+            if constexpr (partitioned) {
+                // Preserve the former service-before-ordinary traversal on a core.
+                for (auto const &slot : _table.secondary)
+                    if (slot.used)
+                        f(slot.key, slot.value);
+            }
+            for (auto const &slot : primary_table())
                 if (slot.used)
                     f(slot.key, slot.value);
         } else {

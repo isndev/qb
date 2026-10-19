@@ -32,6 +32,7 @@
 #include <ostream>
 #include <system_error>
 #include <thread>
+#include <type_traits>
 #include <qb/core/VirtualCore.h>
 #include <qb/event.h>
 #include <qb/io/async/listener.h>
@@ -40,16 +41,14 @@
 
 namespace qb {
 VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine) noexcept
-    : VirtualCore(id, engine, 0) {}
-
-VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine, ServiceId const promised_floor) noexcept
     : _index(id)
     , _resolved_index(engine._core_set.resolve(id))
     , _engine(engine)
     , _mail_box(engine.getMailBox(id))
     , _event_buffer(allocator::make_region<EventBuffer>())
     , _pipes(__make_pipes__(_pipe_pool, engine.getNbCore()))
-    , _self_pipe(_pipes[_resolved_index]) {
+    , _self_pipe(_pipes[_resolved_index])
+    , _ids(id) {
     // What this thread's io loop has run so far is not this core's: under `start(false)` the loop is the calling
     // thread's, and it ran the engines before this one (Huly QB-357).
     _io_events_base = io::async::listener::current.total_events_processed();
@@ -63,10 +62,6 @@ VirtualCore::VirtualCore(CoreId const id, SharedCoreCommunication &engine, Servi
             _peer_pipes.push_back(&_pipes[i]);
     _peer_seen_read.assign(_pipes.size(), SIZE_MAX);
     _peer_stalls.assign(_pipes.size(), 0);
-    // Seed the pool above the last registered service id. The base `detail::service_registry_seal` counted this core
-    // alive under the registry mutex before any member was built: every registration before it is visible to this
-    // relaxed load, and none can follow it while the core lives -- it would be refused (Huly QB-1007).
-    _ids.init(std::max(promised_floor, static_cast<ServiceId>(_nb_service.load(std::memory_order_relaxed) + 1)));
     // The five default events resolve through the actor registry, not a handler table: install
     // their resolvers now, before any actor can register one (`memh::install` must precede the
     // first `subscribe<E>` for that type, and `registerEvent<E>` never subscribes a default one).
@@ -88,9 +83,10 @@ VirtualCore::~VirtualCore() noexcept {
     // runs in the wrong order for an actor destructor that uses the core.
     // Cancellation hooks run synchronously and may add referenced actors,
     // growing _actors. Keep no vector iterator or slot reference over cancel().
-    for (std::size_t sid = 0; sid < _actors.size(); ++sid)
-        if (Actor *const actor = _actors[sid].get())
-            actor->__cancel_coro_scope__();
+    for (auto *bank : {&_service_actors, &_actors})
+        for (std::size_t slot = 0; slot < bank->size(); ++slot)
+            if (Actor *const actor = (*bank)[slot].get())
+                actor->__cancel_coro_scope__();
 
     // A suspended onInit frame must die before its actor. Its stash owns raw
     // event bytes, whose payloads need the router's type-erased disposer.
@@ -125,13 +121,18 @@ VirtualCore::~VirtualCore() noexcept {
         drain_activations();
         if (_actor_count == 0)
             break;
-        for (std::size_t sid = 0; sid < _actors.size(); ++sid) {
-            if (Actor *const actor = _actors[sid].get()) {
-                const ActorId id = actor->id();
-                removeActor(id, DownReason::core_stopped);
-                break; // restart after user teardown, which may resize _actors
-            }
+        ActorId next = ActorId::NotFound;
+        for (auto *bank : {&_service_actors, &_actors}) {
+            for (auto const &slot : *bank)
+                if (slot) {
+                    next = slot->id();
+                    break;
+                }
+            if (next.is_instance())
+                break;
         }
+        if (next.is_instance())
+            removeActor(next, DownReason::core_stopped);
     }
 
     // Pipes contain placement-constructed events. Freeing their segments alone
@@ -175,6 +176,11 @@ VirtualCore::~VirtualCore() noexcept {
     // core: under start(false) the thread outlives the engine, and the next engine on it must
     // not inherit a frame of this one.
     listener.recycle_coro_scheduler();
+    // Main owns the initializer until after its worker joins. Return all generations only
+    // after actor/frame/user destruction; startup failures also retire abandoned promises.
+    _ids.clear_reservations();
+    if (_ids_owner != nullptr)
+        *_ids_owner = std::move(_ids);
 }
 
 void
@@ -182,26 +188,61 @@ VirtualCore::__set_stop_token__(qb::stop_token token) noexcept {
     _stop_token = std::move(token);
 }
 
-ActorId
-VirtualCore::__factory_promised_id__(ServiceId const sid) const noexcept {
-    return ActorId(sid, _index);
+void
+VirtualCore::__install_id_pool__(detail::ActorIdPool &pool) {
+    _ids       = pool.take();
+    _ids_owner = &pool;
+    if (_ids.ordinary_slot_count() != 0)
+        allocator::detail::region_resize(_actors, _ids.ordinary_slot_count(), ActorId::MaxOrdinarySlot + 1u);
+    if (_ids.service_slot_count() != 0)
+        allocator::detail::region_resize(_service_actors, _ids.service_slot_count(), std::numeric_limits<ServiceId>::max());
+}
+
+void
+VirtualCore::__prepare_actor_slot__(ActorId const id) {
+    auto             &bank  = id.is_service() ? _service_actors : _actors;
+    const std::size_t slot  = id.is_service() ? id.service_tag() : id.slot();
+    const std::size_t limit = id.is_service() ? std::numeric_limits<ServiceId>::max() : ActorId::MaxOrdinarySlot + 1u;
+    if (slot >= bank.size())
+        // Grow the logical registry geometrically as well as its allocation. Fresh
+        // admissions then initialise/check the extended pointer range once per doubling,
+        // rather than invoking vector growth for every successive ordinary slot.
+        allocator::detail::region_resize(bank, std::max(slot + 1u, bank.size() * 2u), limit);
 }
 
 ActorId
 VirtualCore::__generate_id__() noexcept {
-    if (_pending_factory_id.is_valid()) {
-        const ActorId promised = _pending_factory_id;
-        _pending_factory_id    = ActorId::NotFound;
-        return promised;
-    }
-    if (_ids.empty())
-        return ActorId(ActorId::NotFound);
-    const auto sid = _ids.acquire();
-    if (sid == ActorId::BroadcastSid)
-        return ActorId(ActorId::NotFound);
-    const ActorId id(sid, _index);
+    // A startup factory's incarnation was reserved when it was added (`CoreInitializer::addActor`, QB-263); every
+    // other ordinary actor reserves a fresh one from the same pool, so it can never take a factory's promise.
+    ActorId id        = _factory_actor_id;
+    _factory_actor_id = ActorId::NotFound;
+    if (!id.is_valid())
+        id = _ids.reserve_ordinary();
+    if (!id.is_ordinary() || !_ids.owns_reservation(id))
+        return ActorId::NotFound;
     if (_constructing_actor_id_out != nullptr)
         *_constructing_actor_id_out = id;
+    return id;
+}
+
+ActorId
+VirtualCore::__generate_service_id__(ServiceId const tag) noexcept {
+    ActorId id        = _factory_actor_id;
+    _factory_actor_id = ActorId::NotFound;
+    if (!id.is_valid())
+        id = _ids.reserve_service(tag);
+    if (!id.is_service_instance() || id.service_tag() != tag || !_ids.owns_reservation(id))
+        return ActorId::NotFound;
+    if (_constructing_actor_id_out != nullptr)
+        *_constructing_actor_id_out = id;
+    return id;
+}
+
+ActorId
+VirtualCore::__resolve_destination__(ActorId const id) const noexcept {
+    if (id.is_service_address())
+        if (Actor *const service = __service_slot__(id))
+            return service->id();
     return id;
 }
 
@@ -213,13 +254,16 @@ VirtualCore::unregisterEvents(ActorId const id) const noexcept {
 
 void
 VirtualCore::__rollback_failed_admission__(ActorId const id) noexcept {
-    // An actor may have published registrations and killed itself before its constructor
-    // threw or onInit failed. No earlier actor owns this ID while an admission is active.
+    // An outer guard may observe an admission already removed by the async-init path.
+    // Only the reservation still owned by this exact incarnation can be rolled back.
+    if (!_ids.owns_reservation(id))
+        return;
     __unregisterCallback(id);
     unregisterEvents(id);
     if (unlikely(!_watchers_of.empty() || !_watching.empty()))
         __on_actor_down__(id, DownReason::init_failed);
     std::erase(_actor_to_remove, id);
+    _ids.release(id);
 }
 
 // __getPipe__ is defined inline at the tail of VirtualCore.h: it is called on every push
@@ -252,6 +296,9 @@ VirtualCore::__receive_events__(std::span<EventBucket> events) {
         // disambiguation stalls it behind the store (4K aliasing): 12% of savina/big at one
         // core, measured. `segment_pool` staggers its segments too; this removes the reload.
         const std::size_t width = event->bucket_size;
+        // Bind a logical service once. An activation stash retains this captured incarnation.
+        if (unlikely(event->dest.is_service_address()))
+            event->dest = __resolve_destination__(event->dest);
         // Activation gate: while the destination actor is still Activating (an
         // `onInit()` performed a `co_await`), defer its inbound *unicast business*
         // events into the actor's FIFO stash — replayed in order once it becomes
@@ -587,9 +634,11 @@ VirtualCore::__init__actors__() {
     // startup actor or grow the registry through addRefActor.
     std::vector<ActorId> actors_to_init;
     actors_to_init.reserve(_actor_count);
-    for (const auto &slot : _actors)
-        if (slot)
-            actors_to_init.push_back(slot->id());
+    // Services first, as when they held the lowest slots of one bank.
+    for (auto const *bank : {&_service_actors, &_actors})
+        for (auto const &slot : *bank)
+            if (slot)
+                actors_to_init.push_back(slot->id());
     for (const ActorId id : actors_to_init) {
         Actor *const actor = __actor_slot__(id);
         if (actor == nullptr || actor->_init_started)
@@ -1153,19 +1202,21 @@ VirtualCore::appendActor(std::unique_ptr<Actor> actor_ptr, bool const doInit) no
         return ActorId::NotFound;
     Actor        &actor = *actor_ptr;
     const ActorId id    = actor.id();
-    // Reject an actor built without an id (its core's pool was spent: Huly QB-1014) or a duplicate *before* driving
-    // `onInit()`: a suspended (async) init must never coexist with an append failure, or its live frame is orphaned.
-    if (unlikely(!id.is_valid() || __actor_slot__(id) != nullptr)) {
-        QB_LOG_CRIT("Error Cannot add " << actor << (id.is_valid() ? ": its id is taken" : ": no id was left on its core"));
+    // The direct bank/slot check below rejects an occupied registry entry before init.
+    // No user code runs between these guards; a second exact-instance lookup adds no gate.
+    if (unlikely(!id.is_instance() || !_ids.owns_reservation(id))) {
+        QB_LOG_CRIT("Error Cannot add " << actor << ": its reservation is unavailable");
         return ActorId::NotFound;
     }
+    // Factory stores are prepared when installed; dynamic admission prepares before construction.
+    auto             &bank = id.is_service() ? _service_actors : _actors;
+    const std::size_t slot = id.is_service() ? id.service_tag() : id.slot();
+    if (unlikely(slot >= bank.size() || bank[slot] != nullptr))
+        return ActorId::NotFound;
     if (initActor(actor, doInit).is_valid()) {
-        // Direct-mapped by sid; grow the slot table geometrically (never past the 16-bit id
-        // space) so a burst of fresh ids costs O(1) amortised, not one reallocation each.
-        const std::size_t sid = id._service_id;
-        if (sid >= _actors.size())
-            allocator::detail::region_resize(_actors, std::max<std::size_t>(sid + 1, _actors.size() * 2), ServiceIdPool::kBits + 1);
-        _actors[sid] = std::move(actor_ptr);
+        if (!_ids.mark_live(id))
+            return ActorId::NotFound;
+        bank[slot] = std::move(actor_ptr);
         ++_actor_count;
         QB_LOG_VERB("New " << actor);
         return id;
@@ -1228,14 +1279,14 @@ VirtualCore::removeActor(ActorId const id, DownReason const reason) noexcept {
         // Detach the owning unique_ptr before calling user ~Actor(). A destructor
         // may add a referenced child and resize _actors; a reference to its slot
         // would dangle across that call.
-        std::unique_ptr<Actor> dying = std::move(_actors[id._service_id]);
+        auto             &bank = id.is_service() ? _service_actors : _actors;
+        const std::size_t slot = id.is_service() ? id.service_tag() : id.slot();
+        if (!_ids.mark_retiring(id))
+            return;
+        std::unique_ptr<Actor> dying = std::move(bank[slot]);
         --_actor_count;
-        dying.reset(); // ~Actor() runs here; the slot stays empty for the id's next owner
-        // Only non-service ids are recycled into the pool: a ServiceActor's
-        // id is assigned at static init (see 2.3) and must remain reserved
-        // for the lifetime of the process to keep `ServiceIndex` stable.
-        if (id._service_id > _nb_service.load(std::memory_order_relaxed))
-            _ids.release(id._service_id);
+        dying.reset(); // re-entrant admission cannot take this Retiring slot
+        _ids.release(id);
         // Death watch (Huly QB-51), after the destructor: a watcher learns the actor is gone, not
         // going. Both tables are empty on a core where nobody watches, which is the whole cost.
         if (unlikely(!_watchers_of.empty() || !_watching.empty()))
@@ -1249,7 +1300,11 @@ bool
 VirtualCore::isActorAlive(ActorId const id) const noexcept {
     if (!id.is_valid())
         return false;
-    Actor const *const actor = __actor_slot__(id);
+    Actor const *actor = __actor_slot__(id);
+    // A logical service address deliberately follows the current incarnation. Keep this
+    // fallback off the successful exact-instance path; stale instance IDs never resolve here.
+    if (unlikely(actor == nullptr))
+        actor = __service_slot__(id);
     // Same phase oracle as findActor<T>(): an actor whose async onInit() is still in flight is
     // addressable but not yet active, and one that has been killed is skipped even though its
     // destruction is deferred to the reap phase.
@@ -1282,7 +1337,7 @@ VirtualCore::unregisterCallback(ActorId const id) noexcept {
 // Event Api
 Pipe
 VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
-    return {__getPipe__(dest._core_id), dest, source};
+    return {__getPipe__(dest.index()), dest, source};
 }
 
 bool
@@ -1294,9 +1349,9 @@ VirtualCore::try_send(Event const &event) const noexcept {
     return _engine.send(_resolved_index, event);
 }
 
-// Same-core copies go through detail::event_wire::copy: the 16-byte header as one load (it
-// forwards from the one store reply()/forward() just made), `alive` cleared in the copy, the
-// tail moved without a libc call for a one-bucket event. See event_wire's doc block in Event.h.
+// Same-core copies go through detail::event_wire::copy: the first 16-byte chunk clears
+// `alive`, and the remaining chunks preserve the full source identity and payload. A one-bucket
+// event needs no libc call. See event_wire's doc block in Event.h.
 // The cross-core mailbox is a raw memcpy of the original, so an original that still says
 // `alive` (the module-facing `Actor::send(Event const &)` on an event already replied or
 // forwarded — reply()/forward() themselves clear it in their header rewrite) takes the local
@@ -1305,7 +1360,7 @@ void
 VirtualCore::send(Event const &event) noexcept {
     // The local destination is already known: reserve directly in its stable pipe,
     // without decoding the destination again to discover the same cursor address.
-    if (event.dest._core_id == _index) {
+    if (event.dest.index() == _index) {
         detail::event_wire::copy(_self_pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
         return;
     }
@@ -1321,14 +1376,14 @@ VirtualCore::send(Event const &event) noexcept {
 
 Event &
 VirtualCore::push(Event const &event) noexcept {
-    auto &pipe = __getPipe__(event.dest._core_id);
+    auto &pipe = __getPipe__(event.dest.index());
     // the copy clears `alive` itself, so re-pushing an already replied/forwarded event is fine
     return detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
 }
 
 void
 VirtualCore::reply(Event &event) noexcept {
-    detail::event_wire::swap_dest_source(event); // one 16-byte store the copy loads whole, alive 0
+    detail::event_wire::swap_dest_source(event); // swap complete identities, clear alive before copying
     send(event);
     event.state.bits.alive = 1; // AFTER the copy: the copy — on either transport — carries 0
 }
@@ -1536,7 +1591,7 @@ VirtualCore::__watch__(ActorId const watcher, ActorId const target) noexcept {
         return; // open already: its one answer is on its way, or will be
     const std::uint64_t ticket = ++_watch_tickets;
     open.push_back({target, ticket});
-    const CoreId core = target._core_id;
+    const CoreId core = target.index();
     if (core == _index) {
         __register_watch__(target, watcher, ticket);
         return;
@@ -1566,7 +1621,7 @@ VirtualCore::__unwatch__(ActorId const watcher, ActorId const target) noexcept {
         return; // not open: never watched, or answered already
     if (it->second.empty())
         _watching.erase(it);
-    const CoreId core = target._core_id;
+    const CoreId core = target.index();
     if (core == _index)
         __unregister_watch__(target, watcher);
     else if (_engine._core_set.raw().contains(core) && !_engine.is_core_stopped(_engine._core_set.resolve(core)))
@@ -1577,7 +1632,7 @@ void
 VirtualCore::__register_watch__(ActorId const target, ActorId const watcher, std::uint64_t const ticket) noexcept {
     // An actor killed but not yet reaped still holds its slot: registering then is right, its
     // removal at the end of this pass answers. No actor at all: it never existed or is gone.
-    if (__actor_slot__(target) == nullptr) {
+    if (__actor_slot__(__resolve_destination__(target)) == nullptr) {
         push<detail::WatchDown>(watcher, target, DownReason::unknown, ticket);
         return;
     }
@@ -1629,7 +1684,7 @@ VirtualCore::__on_core_stopping__(CoreId const core) noexcept {
     // stopped by `__watch__`) still delivers one `DownEvent`.
     for (auto const &[watcher, open] : _watching)
         for (WatchEntry const &w : open)
-            if (w.peer._core_id == core)
+            if (w.peer.index() == core)
                 push<detail::WatchDown>(watcher, w.peer, DownReason::core_stopped, w.ticket);
 }
 
@@ -1667,26 +1722,31 @@ VirtualCore::__is_watch_control__(EventId const id) noexcept {
 
 void
 VirtualCore::__on_actor_down__(ActorId const id, DownReason const reason) noexcept {
-    // Its watchers: one answer each. A watcher of this core already killed, not yet reaped, is
-    // skipped -- its own removal closes its watches.
-    if (const auto it = _watchers_of.find(id); it != _watchers_of.end()) {
-        const std::vector<WatchEntry> watchers = std::move(it->second);
-        _watchers_of.erase(it);
-        for (WatchEntry const &w : watchers) {
-            if (w.peer._core_id == _index) {
-                Actor const *const actor = __actor_slot__(w.peer);
-                if (actor == nullptr || !actor->is_alive())
-                    continue;
+    // Logical service watches retain the requested address as their ticket key, while
+    // instance watches retain the exact generation. Retiring blocks replacement until teardown.
+    auto notify = [this, reason](ActorId const target) {
+        if (const auto it = _watchers_of.find(target); it != _watchers_of.end()) {
+            const std::vector<WatchEntry> watchers = std::move(it->second);
+            _watchers_of.erase(it);
+            for (WatchEntry const &w : watchers) {
+                if (w.peer.index() == _index) {
+                    Actor const *const actor = __actor_slot__(w.peer);
+                    if (actor == nullptr || !actor->is_alive())
+                        continue;
+                }
+                push<detail::WatchDown>(w.peer, target, reason, w.ticket);
             }
-            push<detail::WatchDown>(w.peer, id, reason, w.ticket);
         }
-    }
+    };
+    notify(id);
+    if (id.is_service_instance())
+        notify(ActorId::service_address(id.service_tag(), id.index()));
     // Its own watches: closed and withdrawn, so a long-lived target never accumulates dead watchers.
     if (const auto it = _watching.find(id); it != _watching.end()) {
         const std::vector<WatchEntry> open = std::move(it->second);
         _watching.erase(it);
         for (WatchEntry const &w : open) {
-            const CoreId core = w.peer._core_id;
+            const CoreId core = w.peer.index();
             if (core == _index)
                 __unregister_watch__(w.peer, id);
             else if (_engine._core_set.raw().contains(core) && !_engine.is_core_stopped(_engine._core_set.resolve(core)))
@@ -1700,8 +1760,8 @@ VirtualCore::__on_actor_down__(ActorId const id, DownReason const reason) noexce
 
 namespace detail {
 service_registry_seal::service_registry_seal() noexcept {
-    // VirtualCore's base, so this runs before the core seeds `_ids` from `_nb_service`: the floor the constructor
-    // reads is frozen from here until the destructor below, and no registration can land inside the pool.
+    // Keep the existing first-registration policy sealed for the whole core lifetime.
+    // Ordinary slots no longer depend on this registry's tag count.
     std::lock_guard<std::mutex> const lock(VirtualCore::servicesMutex());
     ++VirtualCore::_live_cores;
 }
@@ -1729,17 +1789,15 @@ VirtualCore::__register_service__(std::atomic<ServiceId> &slot, TypeId const tag
     }
     auto const registered = _nb_service.load(std::memory_order_relaxed);
     if (unlikely(_live_cores != 0)) {
-        // Every live core seeded its pool at `registered + 1` and hands those ids to ordinary actors: the id this tag
-        // would get may already be an actor's. Static initialisation registers every tag a program names; a tag that
-        // first appears now -- an image loaded mid-run -- must be loaded before the cores are built. Not stored in
-        // `slot`: the next call, once no core is alive, registers it.
+        // The prototype retains the established policy: load first-time service tags before start.
+        // Not stored in `slot`: registration may be retried once every core is gone.
         QB_LOG_CRIT("Service tag " << qb::event_type_name(tag) << " first registered while " << _live_cores
                                    << " VirtualCore(s) are alive: refused, its service id is NotFound -- load it before Main::start");
         assert(false && "qb: a service tag registered while a VirtualCore is alive is refused (Huly QB-1007) -- see the CRIT log");
         return 0;
     }
-    if (unlikely(registered + 1 >= ActorId::BroadcastSid)) {
-        // 65534 tags: the next id would be BroadcastSid -- a service addressed as "every actor of the core".
+    if (unlikely(registered + 1 >= std::numeric_limits<ServiceId>::max())) {
+        // 65534 tags: encoding tag 65535 in the service band would collide with the broadcast slot.
         QB_LOG_CRIT("Service tag " << qb::event_type_name(tag) << " refused: the service id space is spent (" << registered
                                    << " tags registered)");
         assert(false && "qb: the service id space is exhausted (Huly QB-1007) -- see the CRIT log");
@@ -1754,29 +1812,8 @@ VirtualCore::__register_service__(std::atomic<ServiceId> &slot, TypeId const tag
 
 bool
 VirtualCore::__predicted_ids_hold__(CoreInitializer const &initializer) const noexcept {
-    // `CoreInitializer::addActor` promised each ordinary actor `_next_id++`, counting from the `_nb_service + 1` it read
-    // when it was built; this core's pool draws from the `_nb_service + 1` it read when IT was built, frozen while it
-    // lives. A tag that registered in between -- between the first `core(index)` and `start()` -- moved the pool's floor,
-    // and every promised id now names another actor than the one it was handed for: the tag's service, or the next
-    // ordinary actor. A core that promised no ordinary id has nothing to correct: its floor is simply the current one.
-    // Cold: once per core, at start (Huly QB-1007).
-    auto const promised = static_cast<std::size_t>(
-        std::ranges::count_if(initializer._actor_factories, [](auto const &factory) { return !factory->isService(); }));
-    if (promised == 0)
-        return true;
-    auto const floor          = static_cast<std::size_t>(_nb_service.load(std::memory_order_relaxed)) + 1u;
-    auto const promised_floor = static_cast<std::size_t>(initializer._next_id) - promised;
-    if (likely(promised_floor == floor))
-        return true;
-    std::lock_guard<std::mutex> const lock(servicesMutex()); // the registry map, read below
-    QB_LOG_CRIT("Core(" << _index << ") promised its ordinary actors the ids from " << promised_floor
-                        << ", but service tags registered since moved its pool to " << floor
-                        << ": refusing to start it -- register every service tag before the first core(index)");
-    for (auto const &[tag, sid] : getServices())
-        if (sid >= promised_floor && sid < floor)
-            QB_LOG_CRIT("Core(" << _index << "): service tag " << qb::event_type_name(tag) << " took id " << sid
-                                << ", an id this core had promised to an ordinary actor");
-    return false;
+    return std::ranges::all_of(initializer._actor_factories,
+                               [this](auto const &factory) { return _ids.owns_reservation(factory->reserved_id()); });
 }
 
 // The flush's question on backpressure (Huly QB-979): does this core hold work of its own that
@@ -1891,7 +1928,7 @@ VirtualCore::__refused__(Event &event, std::size_t const pipe_idx) noexcept {
 // the hub shapes paid it, chameneos +9 %, big +6 % on g++-14) and is offered as a spelling instead.
 void
 VirtualCore::push_reply(Event &event) noexcept {
-    detail::event_wire::swap_dest_source(event); // one 16-byte store the copy loads whole, alive 0
+    detail::event_wire::swap_dest_source(event); // swap complete identities, clear alive before copying
     push(event);
     event.state.bits.alive = 1; // AFTER the copy, which carries 0
 }
@@ -1911,7 +1948,7 @@ VirtualCore::push_forward(ActorId const dest, Event &event) noexcept {
 void
 VirtualCore::__send_unpublished__(Event const &event) noexcept {
     _nb_send_blocked += !event.state.bits.alive;
-    auto &pipe = __getPipe__(event.dest._core_id);
+    auto &pipe = __getPipe__(event.dest.index());
     detail::event_wire::copy(pipe.allocate_back(event.bucket_size), event, event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES);
 }
 
@@ -1970,6 +2007,155 @@ VirtualCore::__reap__() noexcept {
     _actor_remove_batch.clear(); // drop the last batch's ids (capacity is kept for reuse)
     return _actor_count == 0;
 }
+
+// Cold incarnation allocation; per-event resolution reads only the actor registry.
+detail::ActorIdPool::ActorIdPool(CoreId const core, ActorSlotId const ordinary_limit, std::uint32_t const generation_limit) noexcept
+    : _core(core)
+    , _ordinary_limit(std::min(ordinary_limit, ActorId::MaxOrdinarySlot))
+    , _generation_limit(generation_limit == 0 ? 1 : generation_limit) {}
+
+detail::ActorIdPool
+detail::ActorIdPool::take() noexcept {
+    static_assert(std::is_nothrow_move_constructible_v<ActorIdPool>);
+    static_assert(std::is_nothrow_move_assignable_v<ActorIdPool>);
+    ActorIdPool result = std::move(*this);
+    *this              = ActorIdPool(_core, _ordinary_limit, _generation_limit);
+    return result;
+}
+
+ActorId
+detail::ActorIdPool::reserve_ordinary() {
+    if (empty())
+        return ActorId::NotFound;
+    if (const ActorSlotId slot = _free_head; slot != 0) {
+        Entry &item = _ordinary[slot];
+        _free_head  = item.state;
+        item.state  = Reserved;
+        return ActorId::ordinary(slot, _core, item.generation);
+    }
+    const ActorSlotId slot = _ordinary.empty() ? 1u : static_cast<ActorSlotId>(_ordinary.size());
+    allocator::detail::region_reserve(_ordinary, static_cast<std::size_t>(slot) + 1u, static_cast<std::size_t>(_ordinary_limit) + 1u);
+    if (_ordinary.empty())
+        _ordinary.emplace_back();                // invalid row zero, never returned as an actor identity
+    _ordinary.emplace_back(Entry{1u, Reserved}); // one new row, without the resize helper
+    return ActorId::ordinary(slot, _core, 1u);
+}
+
+ActorId
+detail::ActorIdPool::reserve_service(ServiceId const tag) {
+    if (_core >= MaxCores || tag == 0 || tag == std::numeric_limits<ServiceId>::max())
+        return ActorId::NotFound;
+    if (tag >= _services.size())
+        allocator::detail::region_resize(_services, static_cast<std::size_t>(tag) + 1u, std::numeric_limits<ServiceId>::max());
+    Entry &item = _services[tag];
+    if (item.state >= Retired)
+        return ActorId::NotFound;
+    item.state = Reserved;
+    return ActorId::service_instance(tag, _core, item.generation);
+}
+
+detail::ActorIdPool::Entry *
+detail::ActorIdPool::entry(ActorId const id) noexcept {
+    // Decode once. The instance domain is every nonzero slot except the service-band
+    // marker and broadcast slot, with a nonzero generation. Retain core, bounds and
+    // generation checks for callers supplying stale or foreign identities.
+    const ActorSlotId slot       = id.slot();
+    const auto        generation = id.generation();
+    if (generation == 0 || id.index() != _core || slot == 0 || slot == ActorId::ServiceBand || slot == ActorId::BroadcastSid)
+        return nullptr;
+    const bool        service = slot > ActorId::ServiceBand;
+    auto             &bank    = service ? _services : _ordinary;
+    const std::size_t index   = service ? static_cast<ServiceId>(slot) : slot;
+    if (index >= bank.size())
+        return nullptr;
+    Entry &item = bank[index];
+    return item.generation == generation ? &item : nullptr;
+}
+
+detail::ActorIdPool::Entry const *
+detail::ActorIdPool::entry(ActorId const id) const noexcept {
+    return const_cast<ActorIdPool *>(this)->entry(id);
+}
+
+void
+detail::ActorIdPool::release(ActorId const id) noexcept {
+    Entry *const item = entry(id);
+    if (item == nullptr || (item->state != Reserved && item->state != Live && item->state != Retiring))
+        return;
+    if (item->generation >= _generation_limit) {
+        item->state = Retired;
+        return;
+    }
+    ++item->generation;
+    if (id.is_service()) {
+        item->state = 0;
+    } else {
+        item->state = _free_head;
+        _free_head  = id.slot();
+    }
+}
+
+bool
+detail::ActorIdPool::mark_live(ActorId const id) noexcept {
+    Entry *const item = entry(id);
+    if (item == nullptr || item->state != Reserved)
+        return false;
+    item->state = Live;
+    return true;
+}
+
+bool
+detail::ActorIdPool::mark_retiring(ActorId const id) noexcept {
+    Entry *const item = entry(id);
+    if (item == nullptr || item->state != Live)
+        return false;
+    item->state = Retiring;
+    return true;
+}
+
+bool
+detail::ActorIdPool::owns_reservation(ActorId const id) const noexcept {
+    Entry const *const item = entry(id);
+    return item != nullptr && item->state == Reserved;
+}
+
+void
+detail::ActorIdPool::clear_reservations() noexcept {
+    for (std::size_t slot = 1; slot < _ordinary.size(); ++slot)
+        if (_ordinary[slot].state == Reserved)
+            release(ActorId::ordinary(static_cast<ActorSlotId>(slot), _core, _ordinary[slot].generation));
+    for (std::size_t tag = 1; tag < _services.size(); ++tag)
+        if (_services[tag].state == Reserved)
+            release(ActorId::service_instance(static_cast<ServiceId>(tag), _core, _services[tag].generation));
+}
+
+bool
+detail::ActorIdPool::empty() const noexcept {
+    if (_core >= MaxCores || _ordinary_limit == 0)
+        return true;
+    return _free_head == 0 && !_ordinary.empty() && _ordinary.size() > _ordinary_limit;
+}
+
+std::size_t
+detail::ActorIdPool::metadata_bytes() const noexcept {
+    return (_ordinary.capacity() + _services.capacity()) * sizeof(Entry);
+}
+
+std::size_t
+detail::ActorIdPool::slot_count() const noexcept {
+    return (_ordinary.empty() ? 0 : _ordinary.size() - 1u) + (_services.empty() ? 0 : _services.size() - 1u);
+}
+
+std::size_t
+detail::ActorIdPool::ordinary_slot_count() const noexcept {
+    return _ordinary.size();
+}
+
+std::size_t
+detail::ActorIdPool::service_slot_count() const noexcept {
+    return _services.size();
+}
+
 } // namespace qb
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &

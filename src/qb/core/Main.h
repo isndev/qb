@@ -49,8 +49,12 @@
 #include "CoreSet.h"
 #include "DeadLetter.h"
 #include "Event.h"
+#include "detail/actor_id_pool.h"
 
 namespace qb {
+namespace detail {
+struct actor_id_pool_test_access;
+}
 
 class Main;
 class VirtualCore;
@@ -121,6 +125,7 @@ constexpr const CoreId NoAffinity = std::numeric_limits<CoreId>::max();
  * Instances are typically obtained via `Main::core(core_id)`.
  */
 class CoreInitializer : nocopy {
+    friend struct detail::actor_id_pool_test_access;
     friend class Main;
     friend class VirtualCore;
 
@@ -203,15 +208,15 @@ public:
     };
 
 private:
-    const CoreId      _index;
-    ServiceId         _next_id;
-    CoreIdSet         _affinity;
-    qb::duration      _latency;
-    qb::duration      _idle_spin;
-    qb::duration      _io_poll_interval;
-    DeadLetterHandler _dead_letter_handler;       ///< handed to the core at thread start (Huly QB-163)
-    bool              _pass_timing       = false; ///< time the core's passes (Huly QB-165)
-    bool              _affinity_explicit = false; ///< `setAffinity()` was called: `_affinity` is CPUs (Huly QB-1081)
+    const CoreId        _index;
+    detail::ActorIdPool _ids; ///< the incarnations this core's factories reserved, and its pool once it runs (QB-970)
+    CoreIdSet           _affinity;
+    qb::duration        _latency;
+    qb::duration        _idle_spin;
+    qb::duration        _io_poll_interval;
+    DeadLetterHandler   _dead_letter_handler;       ///< handed to the core at thread start (Huly QB-163)
+    bool                _pass_timing       = false; ///< time the core's passes (Huly QB-165)
+    bool                _affinity_explicit = false; ///< `setAffinity()` was called: `_affinity` is CPUs (Huly QB-1081)
 
     qb::unordered_set<ServiceId>                _registered_services;
     std::vector<std::unique_ptr<IActorFactory>> _actor_factories;
@@ -1159,8 +1164,8 @@ using engine = Main;
 // header extension in qb.
 //
 // The `#include "Actor.h"` below is deliberate in BOTH its presence and its position.
-//   * Presence: the bodies need `TActorFactory` (Actor.h:2831), the `service_type` concept
-//     (Actor.h:237) and `Service` (Actor.h:2403). Main.h's own DECLARATIONS need none of
+//   * Presence: the bodies need `TActorFactory` (Actor.h:2847), the `service_type` concept
+//     (Actor.h:237) and `Service` (Actor.h:2409). Main.h's own DECLARATIONS need none of
 //     them -- `IActorFactory` is forward-declared at Main.h:55 -- which is why this header
 //     still compiles alone and why the include was never needed above.
 //   * Position: at the tail, not in the include block at the top. Main.h is one of the most
@@ -1176,7 +1181,7 @@ using engine = Main;
 //   * NOT VirtualCore.h. Main.tpp used to pull it, and nothing here needs it: `Main::addActor`
 //     goes through `core(cid)`, a `CoreInitializer` declared above. Adding it would also make
 //     `<qb/core/Main.h>` alone drag <windows.h>/WIN32_LEAN_AND_MEAN/NOMINMAX into every TU,
-//     and it would close a cycle (VirtualCore.h:65 includes this header).
+//     and it would close a cycle (VirtualCore.h:66 includes this header).
 //
 // TEMPLATES ONLY, and the reason outlives the extension: this header is reached both by
 // libqb-core's single amalgamated TU and by every consumer TU, and the include guard stops
@@ -1193,26 +1198,29 @@ class Main;
 template <typename _Actor, typename... _Args>
 ActorId
 CoreInitializer::addActor(_Args &&...args) noexcept {
-    ActorId id = ActorId::NotFound;
-    // C++20: use service_type concept instead of std::is_base_of_v
+    ActorId id;
     if constexpr (service_type<_Actor>) {
-        const ActorId service = Actor::getServiceId<detail::service_tag_t<_Actor>>(_index); // never ServiceIndex: QB-1007
-        if (service.is_valid() && _registered_services.insert(service.sid()).second) {
-            id = service;
-        } else {
+        // getServiceId, never ServiceIndex: a tag refused at registration is 0 (QB-1007).
+        const ServiceId tag = Actor::getServiceId<detail::service_tag_t<_Actor>>(_index).service_tag();
+        if (tag != 0 && _registered_services.insert(tag).second) {
+            id = _ids.reserve_service(tag);
+            if (!id.is_valid())
+                _registered_services.erase(tag);
+        }
+        if (!id.is_valid()) {
             QB_LOG_CRIT("[Start Sequence] Failed to add Service Actor(" << typeid(_Actor).name() << ")"
                                                                         << " in Core(" << _index << ")"
                                                                         << " : Already registered, or its tag was refused");
             return id;
         }
     } else {
-        if (unlikely(_next_id == std::numeric_limits<ServiceId>::max())) {
+        id = _ids.reserve_ordinary();
+        if (unlikely(!id.is_valid())) {
             QB_LOG_CRIT("[Start Sequence] Failed to add Actor(" << typeid(_Actor).name() << ")"
                                                                 << " in Core(" << _index << ")"
                                                                 << " : Max number of Actors reached");
             return id;
         }
-        id = ActorId(_next_id++, _index);
     }
     _actor_factories.push_back(std::make_unique<TActorFactory<_Actor, _Args...>>(id, std::forward<_Args>(args)...));
     return id;

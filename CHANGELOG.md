@@ -9,13 +9,34 @@ policy.
 
 ### Changed
 
+- **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
+  An identity contains a 24-bit slot, an 8-bit core and a 32-bit generation. Ordinary actors and
+  service tags occupy separate slot bands; logical service addresses resolve to the current instance,
+  while saved instance IDs and handles never follow a replacement. A spent generation retires its slot.
+  The ordinary per-core capacity is 16,711,679 live slots; identities are scoped to one engine run.
+  This changes the public codec and binary layout: use `raw64()` / `from_raw()` and rebuild all
+  consumers with the matching headers and libraries. The ABI fingerprint rejects mixed layouts.
+  The occupied event header grows from 16 to 24 bytes; the base event and allocator bucket remain
+  64 bytes. Measured on arm64 (AppleClang) and x86-64 (g++ 14), a plain byte payload fits 40 bytes
+  in one bucket instead of 48 (41 to 48 bytes now take two), a `ServiceEvent` payload 30 instead of
+  42 and a `CorrelatedEvent` payload 32 instead of 40; MSVC x64 measures the same for a plain
+  event, while a `ServiceEvent` or `CorrelatedEvent` subclass with any payload took two buckets there
+  before and still does. Derived event layouts require their own size check. `qb::Actor` stays 96
+  bytes and `ActorHandle` 16. A `BroadcastId` of a core past `qb::MaxCores` is the invalid id, never
+  another core's broadcast. Performance acceptance is still pending.
+  Admission grows the owning registry geometrically and constructs each fresh metadata row directly;
+  instance lookup decodes the slot and generation once. Reservation, generation and retirement checks
+  remain enforced across user constructors, init and destructors. Native performance validation of
+  this cost reduction remains pending; the source exception is documented in VERSIONING.md.
+
 - **Response resolution consumes obsolete own exchanges (Huly QB-1104).** `resolve_ask` and
   `resolve_require` return true for a live delivery or a discarded response to an operation that
   already ended. A true result no longer guarantees a continuation ran. This prevents `answer`,
   `answer_idempotent` and the usual handwritten resolver guard from replying to late replies forever.
-  Registry entries retain their numeric owner across reuse, with per-owner free queues and no
-  generation wrap. The Event layout and correlation codec are unchanged; retained capacity follows
-  the sum of owners' high-water demands plus permanently exhausted entries, rather than peak
+  Registry entries stay with their actor slot across reuse and record the exact incarnation that
+  last held them (the complete 64-bit identity, above), with per-slot free queues and no generation
+  wrap. This fix changes neither the Event layout nor the correlation codec; retained capacity follows
+  the sum of the slots' high-water demands plus permanently exhausted entries, rather than peak
   simultaneous demand alone. The unchanged 22-bit slot domain holds 4,194,304 retained entries
   per worker thread; exhausting it aborts the process, so long-lived high-fanout actor churn
   consumes this capacity even after its requests finish.

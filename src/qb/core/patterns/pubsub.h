@@ -81,12 +81,11 @@ public:
     /** @brief Subscribe an actor (idempotent). It must register a `Topic` handler to receive. */
     void
     subscribe(qb::ActorId who) {
-        // Prune FIRST, before the duplicate scan — the order is load-bearing. `VirtualCore`
-        // recycles actor ids (`ServiceIdPool::release` hands the smallest free sid back), so a new
-        // subscriber very often arrives holding the id of a subscriber that just died. With the
-        // duplicate check first, that id is found in the list and `subscribe()` returns early —
-        // skipping the prune entirely, in precisely the case where it was most needed. Pruning
-        // first also shortens the scan that follows.
+        // Prune FIRST, before the duplicate scan: this is the only path that can grow the list.
+        // Exact instance IDs stop resolving after death even when their slot is reused. Logical
+        // service addresses intentionally track the current incarnation; is_actor_alive applies
+        // the same active/alive phase gate to them. Pruning first bounds stale bookkeeping and
+        // shortens the duplicate scan that follows.
         //
         // This is the only place `_subscribers` can grow, so it is where the bound belongs.
         // Pruning on every publish instead cost a measured 10-14% of dispatch throughput.

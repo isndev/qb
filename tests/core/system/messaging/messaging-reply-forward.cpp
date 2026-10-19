@@ -82,7 +82,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
 
@@ -123,7 +123,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
         co_return true;

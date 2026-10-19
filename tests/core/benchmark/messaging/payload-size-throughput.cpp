@@ -28,7 +28,10 @@
  *     payload-volume column comparable across sizes — `2 * ttl` event-sized copies per run,
  *     excluding control envelopes and the terminal `KillEvent`;
  *   - counters are assigned once after the timed loop;
- *   - a one-shot out-of-loop probe run (`DoNotOptimize`) catches a chain that never terminates.
+ *   - the untimed probe verifies every returned payload; measured hops retain VerifyPayload=false;
+ *   - each measured iteration captures one complete terminal EventT and publishes its count;
+ *     engine/count/snapshot/terminal bytes are checked after join, outside timing. This terminal
+ *     capture has nonzero cost and does not detect corruption repaired before the final delivery.
  */
 
 #include <array>
@@ -37,114 +40,154 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <type_traits>
 #include <qb/actor.h>
 #include <qb/main.h>
 
 #include "../../shared/BenchmarkCores.h"
 #include "../../shared/TestEvent.h"
 
-namespace {
+namespace payload_size_benchmark {
 
-template <std::size_t ExtraWords>
+// Only these byte-only benchmark events may be captured; never copy an owning payload here.
+template <typename EventT>
+struct RunResult {
+    static_assert(std::is_copy_constructible_v<EventT>);
+    static_assert(std::is_trivially_destructible_v<EventT>);
+    static_assert(std::is_trivially_copyable_v<EventT>);
+
+    std::uint64_t         count = 0;
+    std::optional<EventT> terminal;
+
+    [[nodiscard]] bool
+    valid(std::uint64_t const expected) const noexcept {
+        if (count != expected || !terminal.has_value())
+            return false;
+        if constexpr (requires(EventT const &event) { event.payload_valid(); })
+            return terminal->payload_valid();
+        return true;
+    }
+};
+
+template <typename EventT>
 class SizedPongActor final : public qb::Actor {
 public:
     qb::io::async::task<bool>
     onInit() final {
-        registerEvent<SizedPingEvent<ExtraWords>>(*this);
+        registerEvent<EventT>(*this);
         co_return true;
     }
 
     void
-    on(SizedPingEvent<ExtraWords> &event) {
+    on(EventT &event) {
         --event._ttl;
         reply(event);
     }
 };
 
-template <std::size_t ExtraWords>
+template <typename EventT, bool VerifyPayload = false>
 class SizedPingActor final : public qb::Actor {
-    const std::uint64_t                         _max;
-    const qb::ActorId                           _peer;
-    std::uint64_t                               _completed = 0;
-    std::shared_ptr<std::atomic<std::uint64_t>> _tally; // optional cross-thread round-trip count
+    const std::uint64_t                _max;
+    const qb::ActorId                  _peer;
+    std::uint64_t                      _completed  = 0;
+    bool                               _payload_ok = true;
+    std::shared_ptr<RunResult<EventT>> _result; // one writer; read only after the workers join
+    static_assert(sizeof(std::shared_ptr<RunResult<EventT>>) == sizeof(std::shared_ptr<std::atomic<std::uint64_t>>));
 
 public:
-    SizedPingActor(std::uint64_t const max, qb::ActorId const peer, std::shared_ptr<std::atomic<std::uint64_t>> tally = nullptr)
+    SizedPingActor(std::uint64_t const max, qb::ActorId const peer, std::shared_ptr<RunResult<EventT>> result = nullptr)
         : _max(max)
         , _peer(peer)
-        , _tally(std::move(tally)) {}
+        , _result(std::move(result)) {}
 
     ~SizedPingActor() final {
-        if (_tally)
-            _tally->store(_completed, std::memory_order_relaxed);
+        if (_result)
+            _result->count = _payload_ok ? _completed : 0;
     }
 
     qb::io::async::task<bool>
     onInit() final {
-        registerEvent<SizedPingEvent<ExtraWords>>(*this);
-        send<SizedPingEvent<ExtraWords>>(_peer, _max);
+        registerEvent<EventT>(*this);
+        send<EventT>(_peer, _max);
         co_return true;
     }
 
     void
-    on(SizedPingEvent<ExtraWords> &event) {
+    on(EventT &event) {
+        if constexpr (VerifyPayload && requires { event.payload_valid(); })
+            _payload_ok = _payload_ok && event.payload_valid();
         ++_completed; // one inbound hop per completed round-trip ⇒ ends at exactly `_max`
         if (event._ttl)
             reply(event);
         else {
+            // One full snapshot per iteration, before kill; no new validation on the hot hops.
+            if (_result)
+                _result->terminal.emplace(event);
             kill();
             send<qb::KillEvent>(event.getSource());
         }
     }
 };
 
-template <std::size_t ExtraWords>
+template <typename EventT, bool VerifyPayload = false>
 void
 build_payload_pingpong(qb::Main &main, std::uint64_t const ttl, std::uint32_t const pong_core,
-                       std::shared_ptr<std::atomic<std::uint64_t>> const &tally = nullptr) {
-    auto const pong = main.addActor<SizedPongActor<ExtraWords>>(pong_core);
-    main.addActor<SizedPingActor<ExtraWords>>(0, ttl, pong, tally);
+                       std::shared_ptr<RunResult<EventT>> const &result = nullptr) {
+    auto const pong = main.addActor<SizedPongActor<EventT>>(pong_core);
+    main.addActor<SizedPingActor<EventT, VerifyPayload>>(0, ttl, pong, result);
 }
 
-template <std::size_t ExtraWords>
-void
+template <typename EventT>
+bool
 run_payload_pingpong(benchmark::State &state, std::uint64_t const ttl, std::uint32_t const pong_core) {
     // One-shot out-of-loop correctness probe: assert the chain completed exactly `ttl` round-trips
     // (a dropped cross-core reply is caught by a positive check, not only by a join() hang).
     {
-        auto     tally = std::make_shared<std::atomic<std::uint64_t>>(0);
+        auto     result = std::make_shared<RunResult<EventT>>();
         qb::Main probe;
-        build_payload_pingpong<ExtraWords>(probe, ttl, pong_core, tally);
+        build_payload_pingpong<EventT, true>(probe, ttl, pong_core, result);
         probe.start(true);
         probe.join();
-        if (tally->load(std::memory_order_relaxed) != ttl) {
-            state.SkipWithError("payload ping-pong dropped round-trips: completed != initial_ttl");
-            return;
+        if (probe.hasError() || !result->valid(ttl)) {
+            state.SkipWithError("payload ping-pong failed: engine error, altered payload, or incomplete round-trips");
+            return false;
         }
     }
 
     for (auto _ : state) {
         state.PauseTiming();
+        auto     result = std::make_shared<RunResult<EventT>>();
         qb::Main main;
-        build_payload_pingpong<ExtraWords>(main, ttl, pong_core);
+        build_payload_pingpong<EventT>(main, ttl, pong_core, result);
         state.ResumeTiming();
         main.start(true);
         main.join();
+        state.PauseTiming();
+        const bool valid = !main.hasError() && result->valid(ttl);
+        result.reset(); // snapshot storage is freed outside timing, after its sole writer joined
+        state.ResumeTiming();
+        if (!valid) {
+            state.SkipWithError("payload ping-pong measured iteration failed: engine error, incomplete round-trips, missing terminal snapshot, "
+                                "or altered terminal payload");
+            return false;
+        }
     }
 
     const std::uint64_t round_trips = ttl;
-    const std::uint64_t payload     = 2ull * ttl * sizeof(SizedPingEvent<ExtraWords>);
+    const std::uint64_t payload     = 2ull * ttl * sizeof(EventT);
     state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations() * round_trips));
     state.SetBytesProcessed(static_cast<std::int64_t>(state.iterations() * payload));
     state.counters["round_trips_per_s"] = benchmark::Counter(static_cast<double>(round_trips), benchmark::Counter::kIsIterationInvariantRate);
     state.counters["messages_per_s"] =
         benchmark::Counter(static_cast<double>(2ull * ttl + 1ull), benchmark::Counter::kIsIterationInvariantRate);
+    return true;
 }
 
 template <std::size_t ExtraWords>
 void
 BM_PayloadPingPong_Mono(benchmark::State &state) {
-    run_payload_pingpong<ExtraWords>(state, static_cast<std::uint64_t>(state.range(0)), 0);
+    run_payload_pingpong<SizedPingEvent<ExtraWords>>(state, static_cast<std::uint64_t>(state.range(0)), 0);
 }
 
 template <std::size_t ExtraWords>
@@ -155,7 +198,7 @@ BM_PayloadPingPong_XCore(benchmark::State &state) {
         state.SkipWithError("requires-multicore: cross-core payload ping-pong needs >= 2 benchmark cores");
         return;
     }
-    run_payload_pingpong<ExtraWords>(state, static_cast<std::uint64_t>(state.range(0)), cap - 1u);
+    run_payload_pingpong<SizedPingEvent<ExtraWords>>(state, static_cast<std::uint64_t>(state.range(0)), cap - 1u);
 }
 
 template <std::size_t ExtraWords>
@@ -169,7 +212,45 @@ ApplyPayloadTtls(benchmark::Benchmark *b) {
     }
 }
 
-} // namespace
+template <std::size_t Bytes>
+struct ExactPayloadEvent final : qb::Event {
+    static_assert(Bytes >= sizeof(std::uint64_t));
+    std::uint64_t                                            _ttl;
+    std::array<unsigned char, Bytes - sizeof(std::uint64_t)> data{};
+
+    explicit ExactPayloadEvent(std::uint64_t ttl)
+        : _ttl(ttl) {
+        for (std::size_t i = 0; i < data.size(); ++i)
+            data[i] = static_cast<unsigned char>((i * 37u + 11u) & 255u);
+    }
+    bool
+    payload_valid() const noexcept {
+        for (std::size_t i = 0; i < data.size(); ++i)
+            if (data[i] != static_cast<unsigned char>((i * 37u + 11u) & 255u))
+                return false;
+        return true;
+    }
+};
+
+template <std::size_t Bytes, bool CrossCore>
+void
+BM_ExactPayloadPingPong(benchmark::State &state) {
+    const auto cores = qb::bench::cappedBenchmarkCores();
+    if constexpr (CrossCore) {
+        if (cores < 2) {
+            state.SkipWithError("requires-multicore: exact payload ping-pong needs >= 2 cores");
+            return;
+        }
+    }
+    if (!run_payload_pingpong<ExactPayloadEvent<Bytes>>(state, static_cast<std::uint64_t>(state.range(0)), CrossCore ? cores - 1u : 0u))
+        return;
+    state.counters["payload_bytes"] = Bytes;
+    state.counters["event_bytes"]   = sizeof(ExactPayloadEvent<Bytes>);
+}
+
+} // namespace payload_size_benchmark
+
+using namespace payload_size_benchmark;
 
 #define REGISTER_PAYLOAD_MONO(WORDS)                   \
     BENCHMARK_TEMPLATE(BM_PayloadPingPong_Mono, WORDS) \
@@ -198,5 +279,17 @@ REGISTER_PAYLOAD_XCORE(1);
 REGISTER_PAYLOAD_XCORE(7);
 REGISTER_PAYLOAD_XCORE(31);
 REGISTER_PAYLOAD_XCORE(127);
+
+// Exact byte boundaries expose a layout change even when sizeof(Event) remains one bucket.
+// The untimed probe verifies every returned payload; timed actors omit those checks entirely.
+#define REGISTER_EXACT_PAYLOAD(BYTES)                                                                \
+    BENCHMARK_TEMPLATE(BM_ExactPayloadPingPong, BYTES, false)->Arg(4096)->Arg(32768)->UseRealTime(); \
+    BENCHMARK_TEMPLATE(BM_ExactPayloadPingPong, BYTES, true)->Arg(4096)->Arg(32768)->UseRealTime()
+
+REGISTER_EXACT_PAYLOAD(32);
+REGISTER_EXACT_PAYLOAD(40);
+REGISTER_EXACT_PAYLOAD(41);
+REGISTER_EXACT_PAYLOAD(48);
+REGISTER_EXACT_PAYLOAD(49);
 
 BENCHMARK_MAIN();

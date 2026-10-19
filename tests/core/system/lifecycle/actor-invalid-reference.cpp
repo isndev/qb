@@ -82,7 +82,7 @@ TEST(InvalidReference, SendToNeverExistedActorSenderSurvives) {
     qb::Main main;
     // An id that was never registered on core 0: the uint32 layout is {sid:low16, core:high16},
     // so 4242 == {sid 4242, core 0} — a high sid the low-first allocator never hands out.
-    main.addActor<Sender>(0, qb::ActorId(static_cast<uint32_t>(4242)));
+    main.addActor<Sender>(0, qb::ActorId::ordinary(4242, 0, 1));
     main.start(false);
     main.join();
 

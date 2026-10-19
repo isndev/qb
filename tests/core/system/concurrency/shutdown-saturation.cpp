@@ -73,7 +73,7 @@ struct HeavyEvent : public qb::Event {
 };
 
 std::atomic<std::uint64_t> g_received{0};
-std::atomic<std::uint32_t> g_sink_id{0};
+std::atomic<std::uint64_t> g_sink_id{0};
 
 class SlowSinkActor : public qb::Actor {
 public:
@@ -81,7 +81,7 @@ public:
     onInit() final {
         registerEvent<HeavyEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
-        g_sink_id.store(static_cast<std::uint32_t>(id()), std::memory_order_release);
+        g_sink_id.store(id().raw64(), std::memory_order_release);
         co_return true;
     }
     void
@@ -119,7 +119,7 @@ public:
     }
     void
     on(qb::LoopEvent const &) final {
-        const std::uint32_t sink = g_sink_id.load(std::memory_order_acquire);
+        const std::uint64_t sink = g_sink_id.load(std::memory_order_acquire);
         if (!sink)
             return;
         const qb::ActorId dest(sink);

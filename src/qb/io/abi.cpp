@@ -15,7 +15,7 @@
  * qb consumer links qb-io -- `qb::core` names `qb::io` in its own `INTERFACE_LINK_LIBRARIES` --
  * so a definition here is reachable from every consumer, while one in qb-core would not be.
  *
- * The five objects are one byte each and are never read; only their *names* carry information.
+ * The six axis objects are one byte each and are never read; only their *names* carry information.
  * `qb_abi_fingerprint` is the same information as text, so that
  * `strings libqb-io.a | grep '^qb-abi '` answers "how was this archive built?" without a
  * demangler, a symbol table, or a qb checkout.
@@ -47,5 +47,6 @@ const char QB_ABI_SYM_CACHELINE   = 0;
 const char QB_ABI_SYM_EXCEPTIONS  = 0;
 const char QB_ABI_SYM_CORO_DEBUG  = 0;
 const char QB_ABI_SYM_STD_JTHREAD = 0;
+const char QB_ABI_SYM_ACTOR_ID    = 0;
 const char qb_abi_fingerprint[]   = QB_ABI_FINGERPRINT_TEXT;
 }

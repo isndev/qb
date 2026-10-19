@@ -165,9 +165,21 @@ BM_Diamond_Shared_Latency(benchmark::State &state) {
 
 } // namespace
 
-BENCHMARK_TEMPLATE(BM_Pipeline_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_Multicast_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_Diamond_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
-BENCHMARK_TEMPLATE(BM_Diamond_Shared_Latency, LightEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Pipeline_Shared_Latency, RoutedLatencyEvent)
+    ->Arg(1000000)
+    ->ArgName("NB_EVENTS")
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Multicast_Shared_Latency, RoutedLatencyEvent)
+    ->Arg(1000000)
+    ->ArgName("NB_EVENTS")
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Diamond_Latency, RoutedLatencyEvent)->Arg(1000000)->ArgName("NB_EVENTS")->UseRealTime()->Unit(benchmark::kMillisecond);
+BENCHMARK_TEMPLATE(BM_Diamond_Shared_Latency, RoutedLatencyEvent)
+    ->Arg(1000000)
+    ->ArgName("NB_EVENTS")
+    ->UseRealTime()
+    ->Unit(benchmark::kMillisecond);
 
 BENCHMARK_MAIN();

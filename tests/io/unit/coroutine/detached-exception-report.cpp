@@ -26,7 +26,7 @@
  *
  * `Actor::spawn` and `Actor::spawn_detached` were already fixed, by wrapping the user's body in
  * a coroutine that CATCHES and calls `qb::detail::report_unhandled_coroutine_exception`
- * (VirtualCore.h:1707-1714, 1728-1736). The free-function path has no such wrapper. The report
+ * (VirtualCore.h:1589-1596, 1610-1618). The free-function path has no such wrapper. The report
  * now happens in `final_suspend` itself, on the detached branch only.
  *
  * WHAT IS ASSERTED
