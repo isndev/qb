@@ -118,8 +118,13 @@ public:
 
     [[nodiscard]] ask_slot *
     find(std::uint64_t const id) const noexcept {
-        const entry *const e = live(id);
-        return e && e->next == busy ? e->data.slot : nullptr;
+        const auto i = id & slot_mask;
+        if (i >= _assigned)
+            return nullptr;
+        const entry &e = _tab[i];
+        if (e.next != busy || e.gen != static_cast<std::uint32_t>((id >> slot_bits) & gen_max))
+            return nullptr;
+        return e.data.slot;
     }
 
     /// Cold miss classification: all issued generations keep the same numeric owner.
@@ -154,7 +159,14 @@ public:
             return;
         }
         ++e->gen;
-        push_free(owner_queue(owner), static_cast<std::uint32_t>(e - _tab));
+        const auto i = static_cast<std::uint32_t>(id & slot_mask);
+        if (_current_core != owner.index()) [[unlikely]] {
+            release_other_core(owner, i);
+            return;
+        }
+        auto &page = _current_owners->pages[owner.sid() >> 8];
+        assert(page);
+        push_free((*page)[owner.sid() & 255], i);
     }
 
 private:
@@ -213,6 +225,15 @@ private:
         if (!page) [[unlikely]]
             create_page(page);
         return (*page)[sid & 255];
+    }
+
+    QB_NOINLINE void
+    release_other_core(ActorId const owner, std::uint32_t const i) noexcept {
+        const auto found = _owners.find(owner.index());
+        assert(found != _owners.end());
+        auto &page = found->second.pages[owner.sid() >> 8];
+        assert(page);
+        push_free((*page)[owner.sid() & 255], i);
     }
 
     [[nodiscard]] entry *

@@ -172,7 +172,7 @@ it (Huly QB-1100). Its request and its reply then carry the same correlation id 
 tells them apart while the exchange is live: the first arrival is the request and reaches the handler — also when the handler calls
 `resolve_ask` before `answer` calls it again — and the next one is the answer, whatever its form: `reply()`,
 `push_reply()`, a copy of the request, a freshly built event, or the answer of an actor the request was forwarded
-to (`qb/src/qb/core/Actor.cpp:499-518`). The plain ask pays one compare for it at send time. Not from `onInit()`:
+to (`qb/src/qb/core/Actor.cpp:520-539`). The plain ask pays one compare for it at send time. Not from `onInit()`:
 a self-ask before `onInit()` completes could never be answered — the handlers run only afterwards — and throws
 `std::logic_error` at once (`qb/tests/core/system/coroutine/ask-self.cpp`).
 

@@ -242,7 +242,7 @@ Notes on the new pieces:
 
 Both actors run on core 0 here. To distribute them across cores, pass a different `CoreId` to `addActor`; messages cross cores over lock-free queues with no code change. See [the threading model](../2_core_concepts/threading_model.md).
 
-<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:543-554,597-600, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:1055 -->
+<!-- src: examples/01-actors/02-messaging.cpp (the shipped request/response program this section mirrors), qb/src/qb/core/Actor.cpp:564-575,618-621, qb/src/qb/core/ActorId.h:413,470-471, qb/src/qb/core/Main.h:1055 -->
 
 ## 5. Add a non-blocking timer
 
@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:389-430, qb/src/qb/io/async/io.h:341-349,374,530-538, qb/src/qb/core/Actor.h:1514,2313-2315, qb/src/qb/core/Actor.h:864-867, qb/src/qb/core/Actor.cpp:710-721, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
+<!-- src: qb/src/qb/io/async/io.h:389-430, qb/src/qb/io/async/io.h:341-349,374,530-538, qb/src/qb/core/Actor.h:1514,2313-2315, qb/src/qb/core/Actor.h:864-867, qb/src/qb/core/Actor.cpp:731-742, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
 
 ## 6. Build and run
 
@@ -346,7 +346,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/src/qb/core/Main.cpp:803-805 (Main::core throws while running), :575-577 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:543-554 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:475-477 (onInit is where registerEvent belongs) -->
+<!-- src: qb/src/qb/core/Main.cpp:803-805 (Main::core throws while running), :575-577 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:564-575 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:475-477 (onInit is where registerEvent belongs) -->
 
 ## Where to go next
 

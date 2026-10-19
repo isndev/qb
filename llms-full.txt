@@ -587,7 +587,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 
 - **Actors are constructed only on a VirtualCore worker thread.** Never `new MyActor` from `main()` or
   an arbitrary thread (asserts). Use `Main::core(i).addActor<T>(...)` / `addActor<T>(core, ...)` /
-  `addRefActor<T>()`. _(Actor.cpp:543-548)_
+  `addRefActor<T>()`. _(Actor.cpp:564-569)_
 - **The actor object itself comes from its core thread's arena, not from `malloc`.** `qb::Actor` declares
   class-level `operator new` / `operator delete` over `qb::allocator::thread_arena` -- 16-byte size classes
   up to 1 KiB, LIFO reuse per class, chunks from `slab_cache`, no lock and no thread-local init guard on the
@@ -617,7 +617,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:543-565; VirtualCore.cpp:632-640, :797-809, :1125-1147; coroutine/scheduler.h:850-854)_
+  _(Actor.cpp:564-586; VirtualCore.cpp:632-640, :797-809, :1125-1147; coroutine/scheduler.h:850-854)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -672,7 +672,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   enqueue sink reaches (Huly QB-269). Until then it compiled and was constructed misaligned. Keep over-aligned data
   behind a pointer member. _(Event.h `detail::event_fits_bucket_alignment`, `detail::routing_safe_type_id`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
-  replied/forwarded. _(Actor.cpp:732-750)_ They are `send`-family: unordered relative to the handler's
+  replied/forwarded. _(Actor.cpp:753-771)_ They are `send`-family: unordered relative to the handler's
   pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with
   your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
   Raw `send(Event const&)` uses `_self_pipe` directly only when the destination's logical core
