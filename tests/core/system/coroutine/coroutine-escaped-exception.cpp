@@ -10,9 +10,9 @@
  * @file system/coroutine/coroutine-escaped-exception.cpp
  * @brief An exception escaping a `spawn` / `spawn_detached` body is REPORTED, not swallowed.
  *
- * A spawned coroutine has no continuation and no `task<>` owner. `unhandled_exception()` parks the
- * `exception_ptr` in a promise the scheduler then destroys on its frame drain (`task.h:915-916`,
- * `:824`), and nobody ever reads it. Measured before the fix: a `throw std::runtime_error(...)`
+ * Before the fix, a spawned coroutine had no continuation or `task<>` owner to read the exception
+ * saved by `unhandled_exception()`. Its promise was destroyed on the scheduler's frame drain
+ * without reporting it. Measured before the fix: a `throw std::runtime_error(...)`
  * after a `co_await` in a `spawn()` body produced NO output at any log level, left
  * `Main::hasError()` false, and the engine carried on. That was the last silent failure path in
  * the actor surface — an exception out of `onInit()` has been reported since 2.x

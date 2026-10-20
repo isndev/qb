@@ -18,9 +18,9 @@
  *
  * WHAT WAS WRONG
  * --------------
- * `spawn()` detaches the handle (scheduler.h:1025-1038); `unhandled_exception()` stores the
- * exception in the promise (task.h); the frame later reaches `final_suspend` with no
- * continuation and is handed straight to `defer_frame_destruction`. The exception was destroyed
+ * Before the fix, spawn() detached the handle and unhandled_exception() stored the
+ * exception in the promise; the frame later reached final_suspend with no
+ * continuation and was handed straight to defer_frame_destruction. The exception was destroyed
  * with the promise, unobserved: the program simply stopped in the middle of the coroutine with
  * no message on any stream and no non-zero exit anywhere.
  *

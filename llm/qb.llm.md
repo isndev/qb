@@ -296,10 +296,11 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:103-110)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1063; tcp/socket.cpp:103-110)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1095-1134; uri.h:485-495)_
+- **An empty URI query is still present.** `has_query()` reports the delimiter: `/p?` is true and `/p` false even though `encoded_queries()` is empty in both. Presence survives copy/move and is independent of edits to `queries()`; assigning new text recomputes it. _(uri.h:518-520; uri.cpp:1143-1149)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {
@@ -315,7 +316,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
   neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
   copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
-  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:961; combinators.h:191; channel.h:1187)_
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:974; combinators.h:191; channel.h:1187)_
 - **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch

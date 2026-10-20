@@ -823,14 +823,14 @@ namespace detail {
 // Declared in VirtualCore.h next to the two spawn wrappers that call it; see the note there for
 // why a spawned coroutine's exception has nowhere to go and was being dropped in silence.
 //
-// TWO CHANNELS, AND THE SECOND IS NOT BELT-AND-BRACES. `QB_LOG_CRIT` is the structured one and
-// it is a complete no-op unless the build defines QB_WITH_LOGGING or QB_STDOUT_LOGGING
-// (`qb/io.h:269-272`) -- and even when it is live it writes to nanolog, which produces nothing
-// until a program calls `qb::io::log::init()`. So on its own it would leave this report missing
-// in ordinary builds, which is the very failure being fixed. `qb::io::cerr()` is qb's own
-// mutex-guarded stderr (`qb/io.h:166`), always compiled, and is what the engine already uses to
-// announce a failed core init (`Main.cpp:763-764`). Nothing here is on a hot path: reaching this
-// function at all means a coroutine body threw.
+// TWO CHANNELS. `QB_LOG_CRIT` is the structured one; it is a complete no-op unless the build
+// defines QB_WITH_LOGGING or QB_STDOUT_LOGGING. With QB_WITH_LOGGING it writes to nanolog,
+// which LogInitializer opens before main(); the stdout-only fallback writes to qb::io::cout().
+// The independent stderr report therefore remains available when logging is disabled or its
+// file could not be opened. `qb::io::cerr()` is qb's always-compiled, mutex-guarded stderr
+// wrapper. Main's failed-core-init diagnostic also goes to stderr, through std::cerr rather
+// than this wrapper. Nothing here is on a hot path: reaching this function at all means a
+// coroutine body threw.
 void
 report_unhandled_coroutine_exception(ActorId const owner, char const *const api, std::exception_ptr ep) noexcept {
     const auto emit = [&](char const *const what) {

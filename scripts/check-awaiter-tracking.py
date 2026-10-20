@@ -236,9 +236,11 @@ def scan_file(path: str) -> tuple[list[str], int, int, int, int]:
             continue
         checked += 1
         line = src.count("\n", 0, m.start()) + 1
-        note = " ".join(raw_lines[max(0, line - 3) : line])
-        ann = ANNOTATION_RE.search(note)
-        if ann and ann.group(1).strip():
+        # Keep physical lines separate: an empty note must not borrow the next
+        # line's return type or await_suspend definition as its mandatory reason.
+        notes = raw_lines[max(0, line - 3) : line]
+        annotations = (ANNOTATION_RE.search(note) for note in notes)
+        if any(ann and ann.group(1).strip() for ann in annotations):
             annotated += 1
             continue
         if TRACK_RE.match(src, body + 1):

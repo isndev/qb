@@ -937,3 +937,43 @@ TEST(UriParse, ABracketedHostEndsTheAuthorityOrIsFollowedByAPort) {
     EXPECT_EQ(empty_unknown.host(), "example.com");
     EXPECT_TRUE(empty_unknown.port().empty()) << "no default to fall back on";
 }
+
+TEST(UriParse, EmptyQueryPresenceSurvivesOwnedValueOperations) {
+    for (const std::string &text :
+         {std::string{"http://h/?"}, std::string{"http://h/?#f"}, std::string{"http://host.example/"} + std::string(180, 'x') + "?"}) {
+        uri copied, moved, copy_assigned, move_assigned;
+        {
+            uri source{text};
+            copied = uri(source);
+            uri to_move{source};
+            moved         = uri(std::move(to_move));
+            copy_assigned = source;
+            uri to_assign{source};
+            move_assigned = std::move(to_assign);
+        }
+        for (const uri *value : {&copied, &moved, &copy_assigned, &move_assigned}) {
+            ASSERT_TRUE(value->is_valid());
+            EXPECT_TRUE(value->has_query());
+            EXPECT_TRUE(value->encoded_queries().empty());
+            EXPECT_EQ(value->encoded_queries().data(), value->source().data() + value->source().find('?') + 1);
+        }
+        std::swap(copied, moved);
+        EXPECT_TRUE(copied.has_query());
+        EXPECT_TRUE(moved.has_query());
+    }
+}
+
+TEST(UriParse, QueryPresenceFollowsDelimiterNotMapOrFragment) {
+    uri value{"http://h/?x=1"};
+    ASSERT_TRUE(value.has_query());
+    value.queries().clear();
+    EXPECT_TRUE(value.has_query());
+    EXPECT_EQ(value.encoded_queries(), "x=1");
+    value = std::string{"http://h/path#?not-a-query"};
+    EXPECT_FALSE(value.has_query());
+    EXPECT_TRUE(value.encoded_queries().empty());
+    value = std::string{"http://h/?"};
+    EXPECT_TRUE(value.has_query());
+    value = uri{};
+    EXPECT_FALSE(value.has_query());
+}

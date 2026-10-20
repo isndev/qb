@@ -261,9 +261,9 @@ template <typename T>
 concept event_qos0_type = std::is_base_of_v<EventQOS0, T>;
 
 // `service_event_type` was declared HERE through 2.6.0; in 3.0 it moved to Event.h (see the
-// banner at the tail of that header). Pipe.h, which this header includes at :54 -- long
+// banner at the tail of that header). Pipe.h, which this header includes above -- long
 // before this point -- needs the concept for its own template bodies and cannot reach a
-// declaration made down here. It still arrives through the `#include "Event.h"` at :52,
+// declaration made down here. It still arrives through the `#include "Event.h"` above,
 // unchanged, so no consumer has to write anything differently. `event_qos0_type` above stays
 // put: only VirtualCore's bodies use it, and they see a complete Actor.h. This block holds the
 // LINE COUNT -- 87 `Actor.h:NNN` citations anchor below it and a plain deletion moves them all.

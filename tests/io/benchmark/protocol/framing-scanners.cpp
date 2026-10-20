@@ -206,7 +206,7 @@ BM_Protocol_ByteTerminatedNoDelimiter(benchmark::State &state) {
     ProtocolProbe             probe;
     BenchByteTerminated<'\n'> protocol(probe);
 
-    // Build the delimiter-free buffer ONCE: getMessageSize()'s not-found path (base.h:106-108)
+    // Build the delimiter-free buffer ONCE: getMessageSize()'s not-found path (qb/io/protocol/base.h, byte_terminated)
     // only advances the resume cursor `_offset`, it never consumes/mutates the buffer. So the
     // buffer persists, and each iteration must rewind the cursor with protocol.reset() — otherwise
     // _offset stays at end-of-buffer after iteration 1 and every later call scans ZERO bytes,

@@ -120,9 +120,9 @@ public:
     qb::io::async::task<bool>
     onInit() final {
         registerEvent<EventTrait>(*this);
-        // push (ordered) — NOT send: send<E> requires E trivially destructible (Actor.h:861),
-        // which the heap-owning DynamicEvent trait violates. push has no such constraint and the
-        // single kick-off message has nothing to be ordered against, so semantics are unchanged.
+        // Use ordered push consistently for both the light and heap-owning DynamicEvent traits.
+        // send is unordered; trivial destruction is its guideline, not a requirement for every Event.
+        // The single kick-off message has nothing to be ordered against, so ordering adds no dependency.
         push<EventTrait>(_peer, _max_sends);
         co_return true;
     }

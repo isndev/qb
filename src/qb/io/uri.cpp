@@ -1140,7 +1140,7 @@ uri::parse() noexcept {
         _path = "/";
     }
 
-    if (query_begin && query_begin < query_end) {
+    if (query_begin) {
         // Store raw query string
         _raw_queries = make_string_view(query_begin, query_end);
 

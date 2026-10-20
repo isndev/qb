@@ -66,6 +66,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -193,20 +194,22 @@ public:
     struct state {
         connect_result        result = connect_result::direct;
         std::vector<int>      handshake_results{1};
-        std::size_t           handshake_index    = 0u;
-        int                   fd                 = -1;
-        int                   peer_fd            = -1;
-        int                   n_connect_calls    = 0;
-        std::uint16_t         last_remote_port   = 0;
-        int                   disconnect_calls   = 0;
-        int                   connected_calls    = 0;
-        int                   get_optval_calls   = 0;
-        int                   set_insecure_calls = 0;
-        int                   so_error           = 0;
-        int                   get_optval_result  = 0;
-        int                   handshake_calls    = 0;
-        bool                  wants_write        = false; ///< what DirectionalFakeSocket reports for a pending handshake
-        std::function<void()> on_so_error_probe;          ///< run once, inside the connector's SO_ERROR read (its readiness callback)
+        std::size_t           handshake_index     = 0u;
+        int                   fd                  = -1;
+        int                   peer_fd             = -1;
+        int                   n_connect_calls     = 0;
+        std::uint16_t         last_remote_port    = 0;
+        int                   disconnect_calls    = 0;
+        int                   connected_calls     = 0;
+        int                   get_optval_calls    = 0;
+        int                   set_insecure_calls  = 0;
+        int                   so_error            = 0;
+        int                   get_optval_result   = 0;
+        int                   handshake_calls     = 0;
+        int                   native_handle_calls = 0;
+        bool                  wants_write         = false; ///< what DirectionalFakeSocket reports for a pending handshake
+        std::function<void()> on_so_error_probe;           ///< run once, inside the connector's SO_ERROR read (its readiness callback)
+        std::function<void()> on_native_handle_probe;      ///< startup fault witness, before watcher publication
 
         void
         close_native() {
@@ -274,7 +277,12 @@ public:
     // as one of its own fd-table entries; the fake's socket is in no such entry, so on Windows the watcher's
     // registration failed and the loop killed it with one EV_ERROR pass -- the single "turn" the fake used to get.
     [[nodiscard]] socket_type
-    native_handle() const noexcept {
+    native_handle() const {
+        if (_state) {
+            ++_state->native_handle_calls;
+            if (_state->on_native_handle_probe)
+                _state->on_native_handle_probe();
+        }
         return static_cast<socket_type>(_state ? _state->fd : -1);
     }
 
@@ -332,10 +340,16 @@ public:
 
     void
     disconnect() {
-        ++_state->disconnect_calls;
-        _state->close_native();
+        // A successful callback may have taken the socket before it throws.
+        // Like a real moved-from socket, that source is safe to disconnect.
+        if (_state) {
+            ++_state->disconnect_calls;
+            _state->close_native();
+        }
     }
 };
+
+struct ConnectorStartupProbeError {};
 
 // Transport adapter so connect_with_socket<FakeConnectorTransport>(...) resolves
 // the socket type from a transport, exactly like qb::io::transport::tcp.
@@ -853,4 +867,93 @@ TEST_F(TcpConnectorStateMachineTest, FailureDeferredAfterTheWatcherIsReclaimedWh
     EXPECT_FALSE(qb::io::async::listener::current.has_deferred());
     EXPECT_TRUE(weak_sentinel.expired()) << "LEAK: the deferred failure was dropped by clear() but the connector's self-hold was still "
                                             "set -- the connector and its completion callback outlived it";
+}
+
+// The second native_handle read is the argument to registerEvent: arm_io has
+// established its self-hold, but has not allocated or published the watcher.
+// A startup exception must release that hold without delivering a completion.
+TEST_F(TcpConnectorStateMachineTest, StartupThrowBeforeWatcherPublicationReleasesRetentionWithoutCallback) {
+    auto shared                      = std::make_shared<FakeConnectorSocket::state>();
+    shared->result                   = FakeConnectorSocket::connect_result::pending;
+    int                completions   = 0;
+    auto               sentinel      = std::make_shared<int>(169);
+    std::weak_ptr<int> weak_sentinel = sentinel;
+    auto               complete      = [owned = std::move(sentinel), &completions](FakeConnectorSocket &&) {
+        (void) owned;
+        ++completions;
+    };
+    using Operation = qb::io::async::tcp::connector<FakeConnectorSocket, decltype(complete)>;
+    auto operation  = std::make_shared<Operation>(std::move(complete), FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:12"}, 0.);
+    std::weak_ptr<Operation> weak_operation  = operation;
+    long                     owners_at_throw = 0;
+    bool                     work_at_throw   = true;
+    shared->on_native_handle_probe           = [&] {
+        if (shared->native_handle_calls == 2) {
+            owners_at_throw = weak_operation.use_count();
+            work_at_throw   = qb::io::async::listener::current.has_work();
+            throw ConnectorStartupProbeError{};
+        }
+    };
+
+    EXPECT_THROW(operation->run(), ConnectorStartupProbeError);
+    EXPECT_EQ(shared->n_connect_calls, 1);
+    EXPECT_EQ(shared->native_handle_calls, 2);
+    EXPECT_GT(owners_at_throw, 1) << "the fault must occur after the connector acquired its self-hold";
+    EXPECT_FALSE(work_at_throw) << "this witness must precede watcher publication";
+    EXPECT_EQ(completions, 0) << "unwinding startup must not manufacture a connection result";
+    EXPECT_EQ(shared->disconnect_calls, 1);
+    operation.reset();
+    EXPECT_TRUE(weak_operation.expired()) << "startup leaked an unobservable self-hold";
+    EXPECT_TRUE(weak_sentinel.expired()) << "the callback capture outlived failed startup";
+
+    // Keep the causal red clean: the old implementation still owns itself.
+    // Assert the failure first, then use its existing terminal path to reclaim it.
+    if (auto retained = weak_operation.lock())
+        retained->on_deadline();
+    shared->on_native_handle_probe = {};
+    EXPECT_TRUE(weak_operation.expired()) << "base-only cleanup failed to reclaim the witness";
+}
+
+TEST_F(TcpConnectorStateMachineTest, StartupCallbackThrowPreservesDeliveredSocketAndPropagates) {
+    auto shared    = std::make_shared<FakeConnectorSocket::state>();
+    shared->result = FakeConnectorSocket::connect_result::direct;
+    std::optional<FakeConnectorSocket> delivered;
+    int                                completions = 0;
+    auto                               complete    = [&](FakeConnectorSocket &&socket) {
+        ++completions;
+        delivered.emplace(std::move(socket));
+        throw ConnectorStartupProbeError{};
+    };
+    using Operation = qb::io::async::tcp::connector<FakeConnectorSocket, decltype(complete)>;
+    auto operation  = std::make_shared<Operation>(std::move(complete), FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:13"}, 0.);
+    std::weak_ptr<Operation> weak_operation = operation;
+
+    EXPECT_THROW(operation->run(), ConnectorStartupProbeError);
+    EXPECT_EQ(completions, 1);
+    ASSERT_TRUE(delivered.has_value());
+    EXPECT_TRUE(delivered->is_open()) << "rollback must not close the socket already handed to the callback";
+    EXPECT_EQ(shared->disconnect_calls, 0);
+    operation.reset();
+    EXPECT_TRUE(weak_operation.expired());
+    delivered->disconnect();
+}
+
+TEST_F(TcpConnectorStateMachineTest, StartupCallbackThrowWithoutMovingSocketClosesItAndPropagates) {
+    auto shared      = std::make_shared<FakeConnectorSocket::state>();
+    shared->result   = FakeConnectorSocket::connect_result::direct;
+    int  completions = 0;
+    auto complete    = [&](FakeConnectorSocket &&socket) {
+        ++completions;
+        EXPECT_TRUE(socket.is_open());
+        throw ConnectorStartupProbeError{};
+    };
+    using Operation = qb::io::async::tcp::connector<FakeConnectorSocket, decltype(complete)>;
+    auto operation  = std::make_shared<Operation>(std::move(complete), FakeConnectorSocket{shared}, qb::io::uri{"tcp://fake.local:14"}, 0.);
+
+    EXPECT_THROW(operation->run(), ConnectorStartupProbeError);
+    EXPECT_EQ(completions, 1);
+    EXPECT_EQ(shared->disconnect_calls, 1) << "completed_ is already true, but the connector still owns this socket";
+    EXPECT_LT(shared->fd, 0);
+    operation.reset();
+    shared->close_native(); // also leave the unfixed control clean after recording its failed assertions
 }

@@ -146,6 +146,11 @@ policy.
 
 ### Added
 
+- **`uri::has_query()` distinguishes an absent query from an explicitly empty query (Huly
+  QB-169).** Parsing now retains the delimiter presence of `/path?`, while `encoded_queries()`
+  remains empty. Copies and moves preserve it, and assigning new text resets it; no data member
+  is added to `uri`. Mutable query-map edits continue to leave the source text unchanged.
+
 - **Per-connection QUIC RTT and listener admission controls (Huly QB-1098).**
   `backend::smoothed_rtt(connection_id)` returns an optional duration for the named native connection;
   it does not substitute the server's aggregate RTT. `set_accepting_connections(false)` lets a live native
@@ -748,6 +753,18 @@ policy.
 
 
 ### Fixed
+
+- **Async TCP connector startup releases retained work on exception (Huly QB-169).**
+  `run()` invalidates attempts, unregisters its I/O watcher, disconnects the socket it still
+  owns and releases its self-hold before rethrowing. It does not generate another completion
+  or close a socket already moved to an inline callback. Weak deadline timers can remain
+  until they fire or the listener is cleared.
+
+
+- **Empty awaiter-tracking annotations no longer borrow the next source line (Huly QB-1108).**
+  The checker requires a reason on the annotation's physical line, preserving valid reasons
+  under LF and CRLF. Source-comment references and their wording are also reconciled with the
+  current implementation (Huly QB-1102); no executable tokens or physical code lines change.
 
 - **The stalled-mailbox test no longer assumes full receive batches (Huly QB-1105).** Its
   previous global retry bound could reject a correct flush under ASan when the receiver drained

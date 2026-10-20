@@ -311,10 +311,11 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1050; tcp/socket.cpp:103-110)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1063; tcp/socket.cpp:103-110)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1095-1134; uri.h:485-495)_
+- **An empty URI query is still present.** `has_query()` reports the delimiter: `/p?` is true and `/p` false even though `encoded_queries()` is empty in both. Presence survives copy/move and is independent of edits to `queries()`; assigning new text recomputes it. _(uri.h:518-520; uri.cpp:1143-1149)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {
@@ -330,7 +331,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
   neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
   copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
-  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:961; combinators.h:191; channel.h:1187)_
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:974; combinators.h:191; channel.h:1187)_
 - **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
@@ -1482,6 +1483,7 @@ RFC 3986 URI. Parsed on construction.
 *   Authority: after a bracketed IPv6 host comes the end of the authority or `:port`, any other suffix makes the uri invalid; an empty port (`host:` / `[::1]:`) is the scheme's default (3.3, Huly QB-352).
 *   `static uri parse(const std::string& str, int af = AF_INET) noexcept` — factory.
 *   Accessors: `scheme()`, `user_info()`, `host()`, `port()` (string), `[[nodiscard]] uint16_t u_port()` (numeric; 0 if malformed/>65535), `path()`, `fragment()`, `encoded_queries()`, `queries()`, `source()`, `af()`.
+*   `[[nodiscard]] bool has_query() const noexcept` (`uri.h:518`) — whether parsing encountered `?`, including an explicitly empty query. For valid URIs, `/p?` has a query and `/p` does not; `encoded_queries()` is empty for both. Copies/moves preserve presence, text assignment recomputes it, and `queries()` map edits do not change it.
 *   A registered scheme's implicit port is matched without ASCII case (`hTtP` → 80, `HtTpS` → 443); `scheme()` and `source()` retain their original bytes. An explicit port overrides the default; an unregistered scheme without a port has `u_port() == 0` (`uri.cpp:1095-1134`).
 *   `[T<T>] const std::string& query(T&& name, std::size_t index = 0) const` — on a miss returns a reference to a static empty string, so the reference is always safe to keep.
 *   `[T<T>] std::string query_or(T&& name, std::string fallback, std::size_t index = 0) const` — the same lookup with a caller-supplied fallback; returns **by value**, so a literal or temporary fallback is safe.
@@ -1748,6 +1750,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `[T] class client<_Derived, _Transport, _Server = void> : public io<_Derived>, _Transport` — TCP client/session. Server-associated form: `client() = delete`, `explicit client(_Server& server)`. `using transport_io_type = typename _Transport::transport_io_type;`, `using IOServer = _Server;`, `constexpr static bool has_server = true`. Methods: `_Server& server()` / `const _Server& server() const`, `const uuid& id() const noexcept`, `auto shared()`, `std::string ip() const`, `auto port() const`. `ip()` uses the socket's cached `peer_ip()` when compatible, otherwise the custom transport's existing `peer_endpoint().ip()`; `port()` remains uncached (`src/qb/io/async/tcp/client.h:151-165`).
 *   `template <_Derived,_Transport> class client<_Derived,_Transport,void>` — standalone client. `client() noexcept`; `has_server = false`.
 *   `[T] class connector<Socket_, Func_>` — drives a non-blocking connect, self-held until one completion. Since 3.3 it falls back through the addresses (Huly QB-164): a host name resolves to every address of the URI's family; one whose TCP connect is refused, fails (`SO_ERROR`) or does not answer within its share of the deadline (`tcp::connect_attempt_budget`) is closed and the next tried; the deadline stays the whole connect's. A TLS or STARTTLS failure past the TCP connect is final. A socket handed over already open gets the first address only. A `Socket_` without `n_connect(endpoint)` keeps its single `n_connect(uri)` attempt.
+    *   If connector startup throws, `run()` removes its I/O watcher, invalidates pending attempts, disconnects the socket it still owns and releases self-retention before rethrowing, without generating another completion. A socket already moved into an inline completion remains with its recipient. Already-created weak deadline timers can remain; this does not promise an empty event loop. _(src/qb/io/async/tcp/connector.h:530-561)_
 *   Free `connect` overloads:
     *   `[T<Socket_,Func_>] void connect(const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — async connect; `func` called once with the socket (empty on failure/timeout).
     *   `[T<Socket_,Func_>] void connect(Socket_&& existing_socket, const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)`

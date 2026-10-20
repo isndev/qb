@@ -785,7 +785,7 @@ TEST_F(CoroutineSchedulerTests, BurstScheduleResumeStress) {
 
 /**
  * @test schedule_resume / enqueue_for_later dedup the same handle
- * @brief A handle already in-flight is not queued a second time (scheduler.h:426 / :452 dedup branches).
+ * @brief A handle already in-flight is not queued a second time (schedule_resume / enqueue_for_later dedup branches).
  *        A double schedule_resume + double enqueue_for_later of one live, parked frame must leave the
  *        ready queue holding exactly one entry for it — the single-resume coroutine contract.
  */
@@ -829,7 +829,7 @@ TEST_F(CoroutineSchedulerTests, ScheduleResumeAndEnqueueDedup) {
     sched.schedule_resume(h);
     EXPECT_EQ(sched.pending_count(), 1u) << "schedule_resume failed to dedup an in-flight handle";
 
-    // enqueue_for_later for an already-in-flight handle also dedups (scheduler.h:452).
+    // enqueue_for_later for an already-in-flight handle also dedups.
     sched.enqueue_for_later(h);
     EXPECT_EQ(sched.pending_count(), 1u) << "enqueue_for_later failed to dedup an in-flight handle";
 
@@ -845,7 +845,7 @@ TEST_F(CoroutineSchedulerTests, ScheduleResumeAndEnqueueDedup) {
 
 /**
  * @test schedule_resume / enqueue_for_later reject null and done handles
- * @brief The early-return guards (scheduler.h:423 / :443) — a null or completed handle is never queued.
+ * @brief The early-return guards (schedule_resume / enqueue_for_later) — a null or completed handle is never queued.
  */
 TEST_F(CoroutineSchedulerTests, ScheduleAndEnqueueRejectNullAndDone) {
     auto &sched = coro_scheduler();
@@ -871,7 +871,7 @@ TEST_F(CoroutineSchedulerTests, ScheduleAndEnqueueRejectNullAndDone) {
 
 /**
  * @test forget() on an unknown / null handle is a harmless no-op
- * @brief forget(null) returns immediately (scheduler.h:329); forget() of a handle the scheduler never
+ * @brief forget(null) returns immediately; forget() of a handle the scheduler never
  *        tracked leaves all bookkeeping untouched.
  */
 TEST_F(CoroutineSchedulerTests, ForgetUnknownHandleIsNoOp) {
@@ -894,7 +894,7 @@ TEST_F(CoroutineSchedulerTests, ForgetUnknownHandleIsNoOp) {
 
 /**
  * @test register_suspended / unregister_suspended ignore a null handle
- * @brief Both null guards (scheduler.h:695 / :711) — calling with an empty handle must not change the
+ * @brief Both null guards (register_suspended / unregister_suspended) — calling with an empty handle must not change the
  *        suspended count.
  */
 TEST_F(CoroutineSchedulerTests, RegisterSuspendedNullHandleIgnored) {
@@ -909,7 +909,7 @@ TEST_F(CoroutineSchedulerTests, RegisterSuspendedNullHandleIgnored) {
 
 /**
  * @test run_ready() refuses re-entrant invocation
- * @brief The re-entrancy guard (scheduler.h:488-497) returns 0 when run_ready() is called from inside a
+ * @brief The run_ready re-entrancy guard returns 0 when run_ready() is called from inside a
  *        coroutine that is itself running under a run_ready() drain. In a debug build the assert fires;
  *        this test only runs in NDEBUG builds where the guard returns 0 silently (strictly safer path).
  */
@@ -938,7 +938,7 @@ TEST_F(CoroutineSchedulerTests, RunReadyRejectsReentrantCall) {
 /**
  * @test is_draining_ready() reflects the run_ready() window
  * @brief Outside a drain it is false; inside a running coroutine body (which runs under run_ready) it is
- *        true (scheduler.h:570 / in_run_ready_ flag set by the ReentrancyGuard).
+ *        true (in_run_ready_ flag set by the ReentrancyGuard).
  */
 TEST_F(CoroutineSchedulerTests, IsDrainingReadyReflectsRunReadyWindow) {
     auto &sched = coro_scheduler();
@@ -990,7 +990,7 @@ TEST_F(CoroutineSchedulerTests, NestedListenerPassLeavesCoroutinesToTheEnclosing
 
 /**
  * @test spawn_tracked() returns an empty handle for an empty task
- * @brief The early-return when detach() yields no handle (scheduler.h:923-924).
+ * @brief The early-return when detach() yields no handle (spawn_tracked).
  */
 TEST_F(CoroutineSchedulerTests, SpawnTrackedEmptyTaskReturnsNull) {
     auto &sched = coro_scheduler();
@@ -1006,7 +1006,7 @@ TEST_F(CoroutineSchedulerTests, SpawnTrackedEmptyTaskReturnsNull) {
 /**
  * @test spawn_tracked() + cancel_spawned() reclaims a parked helper frame
  * @brief spawn_tracked owns the frame; cancel_spawned destroys it early while it is parked on a long
- *        timer (scheduler.h:247-277), stopping its watcher and dropping it from active_count without
+ *        timer, stopping its watcher and dropping it from active_count without
  *        waiting for the timer. Drives the cancel_spawned ownership-gate + bookkeeping-scrub path.
  */
 TEST_F(CoroutineSchedulerTests, SpawnTrackedThenCancelReclaimsHelper) {
@@ -1046,7 +1046,7 @@ TEST_F(CoroutineSchedulerTests, SpawnTrackedThenCancelReclaimsHelper) {
 
 /**
  * @test cancel_spawned() on a null or non-owned handle is a no-op
- * @brief The null guard (scheduler.h:248-249) and the ownership gate (scheduler.h:254-255): a handle the
+ * @brief The cancel_spawned null guard and ownership gate: a handle the
  *        scheduler never owned is never destroyed.
  */
 TEST_F(CoroutineSchedulerTests, CancelSpawnedNullAndNonOwnedNoOp) {
@@ -1070,7 +1070,7 @@ TEST_F(CoroutineSchedulerTests, CancelSpawnedNullAndNonOwnedNoOp) {
 
 /**
  * @test destroy_all_suspended() tears down a parked owned-root + a non-owned suspended chain
- * @brief Drives both passes of destroy_all_suspended (scheduler.h:723-774): the owned-root cascade (a
+ * @brief Drives both passes of destroy_all_suspended: the owned-root cascade (a
  *        spawn_tracked helper parked on a non-cancellable sleep) and the trailing non-owned suspended
  *        sweep. After it runs, active_count() is 0 and no frame leaked, with the loop still valid.
  */
@@ -1114,9 +1114,9 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedTearsDownMixedFrames) {
 
 /**
  * @test defer_destroy() drains on the next run_ready()
- * @brief A spawned coroutine that completes via symmetric transfer hands its frame to defer_destroy
- *        (scheduler.h:783-787), which run_ready() then frees on its deferred-destroy drain
- *        (scheduler.h:542-549). Proven by the live-frame counter returning to baseline after the drain.
+ * @brief A spawned coroutine completing via symmetric transfer hands its frame to defer_destroy.
+ *        run_ready() then frees it on its deferred-destroy drain. The live-frame counter
+ *        returning to baseline after that drain verifies reclamation.
  */
 TEST_F(CoroutineSchedulerTests, DeferDestroyDrainsCompletedFrame) {
     auto      &sched    = coro_scheduler();
@@ -1212,7 +1212,7 @@ TEST_F(CoroutineSchedulerTests, CurrentBindsAnUnboundLoopScheduler) {
 // STANDALONE-SCHEDULER TEARDOWN PATHS (~CoroutineScheduler drains)
 //
 // The fixture's TLS scheduler is owned by `listener::current` and is not destroyed
-// mid-test, so the scheduler *destructor* drains (scheduler.h:125-170) are never hit
+// mid-test, so the scheduler *destructor* drains (drain_for_teardown) are never hit
 // by the cases above. These tests build a throwaway `CoroutineScheduler` we own
 // outright, populate it deterministically through its public API, then let it die at
 // end of scope so the destructor body runs while we can still assert no frame leaked.
@@ -1266,7 +1266,7 @@ flag_setting_coro(std::atomic<bool> *flag) {
 
 /**
  * @test ~CoroutineScheduler destroys an owned, never-resumed ready handle
- * @brief Destructor ready-queue drain owned-frame branch (scheduler.h:136-140).
+ * @brief Destructor ready-queue drain owned-frame branch (drain_for_teardown).
  *
  * spawn_tracked() puts a frame in BOTH the ready queue and owned_frames_ but leaves it
  * parked at initial_suspend (we never run_ready()). When the scheduler dies the ready
@@ -1301,7 +1301,7 @@ TEST_F(CoroutineSchedulerTests, DestructorDestroysOwnedReadyHandle) {
 
 /**
  * @test ~CoroutineScheduler drains frames_to_destroy_ at teardown
- * @brief Destructor deferred-destroy drain (scheduler.h:147-153) — the branch that frees
+ * @brief Destructor deferred-destroy drain (drain_for_teardown) — the branch that frees
  *        a completed spawned frame that no final run_ready() reclaimed.
  *
  * We spawn_tracked a trivial `co_return` frame and resume it ONCE *outside* run_ready().
@@ -1336,15 +1336,15 @@ TEST_F(CoroutineSchedulerTests, DestructorDrainsDeferredDestroyFrames) {
 
 /**
  * @test cancel_spawned() scrubs a handle out of frames_to_destroy_ before freeing it
- * @brief The defensive deferred-destroy scrub branch (scheduler.h:270-275, esp. the erase
- *        at :296) — a frame that already reached final_suspend (so it is owned AND queued
+ * @brief The defensive deferred-destroy scrub in cancel_spawned: a frame already at
+ *        final_suspend (so it is owned AND queued
  *        for deferred destruction) must be removed from frames_to_destroy_ when
  *        cancel_spawned frees it, so no later drain double-frees it.
  *
  * Construction: spawn_tracked + one manual resume parks the frame at final_suspend with the
  * standalone scheduler as TLS current, so it is simultaneously in owned_frames_ and
  * frames_to_destroy_. cancel_spawned() then passes the ownership gate, finds it in
- * frames_to_destroy_ (the :296 erase), and destroys it exactly once.
+ * frames_to_destroy_, and destroys it exactly once.
  */
 TEST_F(CoroutineSchedulerTests, CancelSpawnedScrubsDeferredDestroyEntry) {
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
@@ -1462,7 +1462,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
 
 /**
  * @test destroy_all_suspended() sweeps a non-owned suspended frame
- * @brief The trailing non-owned suspended sweep (scheduler.h:764-773) — a frame that is
+ * @brief The trailing non-owned suspended sweep (destroy_all_suspended) — a frame that is
  *        registered as suspended on a watcher but is NOT owned by the scheduler (never
  *        spawned) is destroyed by the second pass, stopping its watcher via the awaiter
  *        destructor.
@@ -1524,7 +1524,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame)
 TEST_F(CoroutineSchedulerTests, CurrentSchedulerPtrFreeFunctionMatchesStatic) {
     // The fixture SetUp only calls async::init(), which is a no-op: the listener's
     // CoroutineScheduler is created lazily and installed as the TLS current pointer ONLY on the
-    // first coro_scheduler() access (listener.h:716-720). So we must touch it here to install it
+    // first coro_scheduler() access (listener::coro_scheduler). So we must touch it here to install it
     // before asserting the accessors are non-null — otherwise current_scheduler_ptr() is
     // legitimately null (no scheduler exists yet).
     auto *installed = &qb::io::async::listener::current.coro_scheduler();

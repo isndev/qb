@@ -1454,7 +1454,7 @@ inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Ta
 //
 // TEMPLATES ONLY. Every definition below is a template, and that is the only thing keeping
 // the program linkable. This header is reached by TWO disjoint populations:
-//   * Actor.cpp:32                          -> compiled once, into libqb-core.a
+//   * Actor.cpp includes VirtualCore.h      -> compiled once, into libqb-core.a
 //   * qb/actor.h, qb/main.h, qb/patterns.h,
 //     qb/core/patterns.h, and (since 3.0)
 //     core/patterns/{discovery,supervisor}.h -> compiled in EVERY consumer TU
@@ -1478,7 +1478,7 @@ inline const ServiceId ServiceActor<Tag>::ServiceIndex = Actor::registerIndex<Ta
 // entity in the program, which is the identity-duplication class this release spent a whole
 // step fixing (see qb/utility/abi.h).
 // ============================================================================================
-#include <cassert> // carried from Actor.tpp:27; vestigial there too, kept so the move drops nothing
+#include <cassert> // carried from Actor.tpp; vestigial there too, kept so the move drops nothing
 
 namespace qb {
 

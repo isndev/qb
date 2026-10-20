@@ -28,7 +28,7 @@
 #include <coroutine>
 #include <cstdio>
 #include <exception>
-#include <memory> // std::shared_ptr — async_generator's shared state (:379, :428, :432)
+#include <memory> // std::shared_ptr — async_generator::_alive and next_awaiter shared ownership
 #include <optional>
 #include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 

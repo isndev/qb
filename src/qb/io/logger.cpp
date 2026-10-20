@@ -169,7 +169,7 @@ qb::io::async::abandoned_coroutine_frames_total() noexcept {
 // ------------------------------------------------
 // `initializer` is a namespace-scope static, so this constructor runs during STATIC
 // INITIALISATION — before `main()`, in every binary that links qb-io with QB_WITH_LOGGING
-// (`qbConfig.cmake:147`, default ON). Two visible side effects follow from that, and both are
+// (QB_WITH_LOGGING defaults ON in qbConfig.cmake). Two visible side effects follow from that, and both are
 // deliberate:
 //
 //   * a log file is created in the process's CURRENT WORKING DIRECTORY. The path is the fixed

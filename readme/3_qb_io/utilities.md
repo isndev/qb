@@ -254,7 +254,7 @@ std::string decompressed = qb::gzip::uncompress(compressed.c_str(), compressed.s
 
 ## URI parsing (`qb::io::uri`)
 
-RFC 3986 parsing and percent-encoding. Construction runs `parse()` immediately; `is_valid()` reports whether the source parsed into a structurally valid URI. Component accessors return `std::string_view` borrowing from the URI's owned source string. _(`qb/src/qb/io/uri.h:179-606` — the whole class; `:182` is the owned `_source`, `:203` the private `parse()` the constructors run, `:431-434` `is_valid()`.)_
+RFC 3986 parsing and percent-encoding. Construction runs `parse()` immediately; `is_valid()` reports whether the source parsed into a structurally valid URI. Component accessors return `std::string_view` borrowing from the URI's owned source string. _(`qb/src/qb/io/uri.h:179-612` — the whole class; `:182` is the owned `_source`, `:203` the private `parse()` the constructors run, `:431-434` `is_valid()`.)_
 
 ```cpp
 #include <qb/io/uri.h>
@@ -278,7 +278,9 @@ std::string dec = qb::io::uri::decode(enc);        // "a b/c"
 ```
 <!-- src: qb/tests/io/unit/core/uri-parse.cpp:483-505 -->
 
-`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:486,512-582,591-605`.)_
+`u_port()` parses the port string and returns `0` for a missing, malformed, or out-of-range (`> 65535`) port — it rejects rather than silently truncating (`"99999"` returns `0`, not a wrapped value). `query(name, index = 0)` returns a single decoded value as `std::string const&` (a reference to a static empty string on a miss); `query_or(name, fallback, index = 0)` returns the value **by value** with a custom fallback. `queries()` returns the full `qb::icase_unordered_map<std::vector<std::string>>`, so query keys are case-insensitive and may hold multiple values. `encoded_queries()` returns the raw, undecoded query string. Static helpers `is_valid_scheme`, `is_valid_host`, and `normalize_path` are available for validation and `.`/`..` path resolution. _(`qb/src/qb/io/uri.h:486,512-588,597-611`.)_
+
+`has_query() const noexcept` distinguishes an absent query from an explicitly empty one: `uri{"/p"}.has_query()` is false, while `uri{"/p?"}.has_query()` is true; both return an empty `encoded_queries()` view. A `?` inside the fragment does not introduce a query. Copy/move retain this distinction, and assignment from new text recomputes it. Editing `queries()` still changes only the decoded map. _(`qb/src/qb/io/uri.h:518-520`; `qb/src/qb/io/uri.cpp:1143-1149`.)_
 
 For a registered scheme without an explicit port, the parser finds the service port without ASCII case: `hTtP://host/` gets 80 and `HtTpS://host/` gets 443. `scheme()` and `source()` still return the original spelling, and a written `:port` takes precedence. An unregistered scheme remains syntactically valid but has no implicit port (`u_port() == 0`), so a client must supply one before connecting. The lowercase lookup remains the direct path; a mixed-case miss folds a short scheme on the stack without allocation. _(`qb/src/qb/io/uri.cpp:1095-1134`; `qb/tests/io/unit/core/uri-parse.cpp`.)_
 

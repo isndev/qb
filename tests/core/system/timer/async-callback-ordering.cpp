@@ -115,25 +115,25 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 }
 
 // ---------------------------------------------------------------------------
-// Timing: a fixed-delay chain of N callbacks takes AT LEAST N*delay (each link waits its full delay)
-// and fires EXACTLY N times. Lower bound is a hard invariant; upper bound is a loud deadline.
+// Timing: this test expects a fixed-delay chain to take AT LEAST N*delay and fire EXACTLY N times.
+// The elapsed floor is a regression check on the test host; the upper bound is a loud deadline.
 //
-// "Hard invariant" is a specific claim, so here is what backs it — this is the TIGHTEST floor in
-// the suite (50 links, so 50 chances to come in early) and it has zero slack by design:
-//   - `qb::detail::to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:848) — a
-//     requested delay is never rounded DOWN;
-//   - `async::callback` forces `ev_now_update` immediately before arming (qb/io/async/io.h:425-431),
-//     so each link's deadline is a FRESH clock read plus 1ms, never a stale cached one — that
-//     refresh is exactly what this floor would catch the loss of;
-//   - libev fires a timer only once its clock is strictly PAST the deadline
-//     (`ANHE_at(timers[HEAP0]) < mn_now`, qb/ev/qev.c:4418) against
-//     `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
-// So each link is >= 1ms of monotonic time and the chain is >= N ms. `qb::mono_now()` below reads
-// `steady_clock`, which IS CLOCK_MONOTONIC on Linux and runs at the same rate on macOS; note it is
-// deliberately NOT `Actor::time()`, which is cached per VirtualCore loop turn and so can read a gap
-// UNDER its true elapsed value. Measured headroom: +0.34ms worst over 125 release runs (0.7% of the
-// 50ms nominal), and it only GROWS under load — +334ms worst under 40ms SIGSTOP stalls. Load cannot
-// break this floor; only a broken deadline can. Do not widen it to silence a failure.
+// The 50-link chain was the tightest recorded floor in the suite and has zero slack by design.
+// Its deadline construction relies on the following implementation paths:
+//   - `qb::detail::to_ev_seconds` uses `duration_cast<duration<double>>`, avoiding integer-ms
+//     truncation; floating-point conversion does not guarantee rounding upward;
+//   - `async::callback` starts an event::timer, whose start() refreshes the loop clock with
+//     `ev_now_update` before arming, so each link uses a fresh deadline rather than cached time;
+//     losing that refresh is a regression this elapsed-floor check is intended to expose;
+//   - `timers_reify` in qb/src/qb/ev/ev.c fires only once its clock is strictly past the deadline
+//     (`ANHE_at(timers[HEAP0]) < mn_now`); get_clock selects the configured platform clock,
+//     including POSIX monotonic and Windows paths, with a wall-clock fallback.
+// `qb::mono_now()` below reads steady_clock, which need not be the loop clock on every platform.
+// Thus conversion and cross-clock differences prevent a universal proof of this elapsed floor.
+// We deliberately avoid Actor::time(), which is cached per VirtualCore loop turn. Recorded
+// headroom: +0.34ms worst over 125 release runs (0.7% of the 50ms nominal), increasing to +334ms
+// under 40ms SIGSTOP stalls. These historical measurements do not establish every host's bound.
+// Investigate a failure, including clock selection and deadline refresh; do not silently widen it.
 // ---------------------------------------------------------------------------
 namespace {
 std::atomic<int>      g_timed_fired{0};

@@ -237,7 +237,7 @@ Key behaviors verified in the header:
   asynchronous equivalent of calling `set_insecure()` yourself. The `qbm`
   PostgreSQL (`ssl_root_cert`/`ssl_cert`/`ssl_key`) and Redis (`set_ssl_root_cert` /
   `set_ssl_client_certificate`) clients drive exactly this path.
-  <!-- src: qb/src/qb/io/async/tcp/connector.h:877-880 (starttls_connect, Negotiator_ not deducible), :763 (connect verify_peer), :787 (connect with existing socket), :534-537 (verify_peer applies set_insecure) -->
+  <!-- src: qb/src/qb/io/async/tcp/connector.h:890-893 (starttls_connect, Negotiator_ not deducible), :776 (connect verify_peer), :800 (connect with existing socket), :534-537 (verify_peer applies set_insecure) -->
 - **Return convention.** `connect*` and `n_connect*` return `int`: `0` on success — the
   value of `qb::io::SocketStatus::Done` — and non-zero on failure, generically
   `SocketStatus::Error` (`-1`). `n_connect*` returns the underlying non-blocking TCP
@@ -262,7 +262,7 @@ Key behaviors verified in the header:
   do exactly that on all three paths (a direct connect, the turn that completes an
   in-progress one, a STARTTLS upgrade); until 3.3 they watched both, and every client
   handshake spun the loop for a round trip (Huly QB-301).
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1002-1005 (handshake_wants_write); qb/src/qb/io/async/tcp/connector.h:328-335 (pending_handshake_events), :431, :582, :724 (the three paths) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1002-1005 (handshake_wants_write); qb/src/qb/io/async/tcp/connector.h:328-335 (pending_handshake_events), :431, :595, :737 (the three paths) -->
 - **`read()`'s return convention is not the plain socket's.** It returns the number of
   decrypted bytes on success; **`-1` on an orderly peer shutdown** (OpenSSL's
   `SSL_ERROR_ZERO_RETURN` — the peer sent `close_notify`), so the framework's error path

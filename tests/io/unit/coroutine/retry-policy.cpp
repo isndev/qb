@@ -188,13 +188,13 @@ TEST(RetryBackoffMath, NegativeMaxDelayFloorsToZero) {
 /**
  * @test linear multiply-then-clamp saturates to max_delay for a large representable base.
  *
- * NOTE on the retry.h:142 linear PRE-MULTIPLY overflow guard (`if (base_ms != 0 && mult >
- * max_rep/base_ms) delay_ms = max_ms`): that guard is UNREACHABLE through the public retry_policy
- * interface. policy fields are qb::duration == std::chrono::nanoseconds, so the LARGEST base_delay
+ * NOTE on detail::calculate_delay's linear PRE-MULTIPLY guard (`if (base_ms != 0 && mult >
+ * max_rep/base_ms) delay_ms = max_ms`): the guard is unreachable for the nonnegative delays used
+ * here. Policy fields are qb::duration == std::chrono::nanoseconds, so the LARGEST base_delay
  * storable without overflowing the int64 nanosecond field is INT64_MAX/1e6 ≈ 9.22e12 ms; with the
- * multiplier clamped to 10000 (retry.h:141), base_ms*mult tops out at ~9.22e16 — well under
- * INT64_MAX (9.22e18). So base_ms*mult never overflows for any representable base, and the guard's
- * `delay_ms = max_ms` branch can never be taken; saturation always comes from the trailing clamp.
+ * multiplier clamped to 10000, base_ms*mult tops out at ~9.22e16 — well under INT64_MAX (9.22e18).
+ * Thus the product cannot overflow for a representable nonnegative base, and this domain's
+ * saturation comes from the trailing clamp. This does not classify negative-delay policies.
  * The previous version fed base_delay = 1e18 ms, which overflows the nanosecond field on assignment
  * (1e18 ms = 1e24 ns > INT64_MAX) — UBSan flags the conversion multiply, and the policy is garbage.
  * We therefore test the REACHABLE contract: a large-but-representable base whose computed step
@@ -204,7 +204,7 @@ TEST(RetryBackoffMath, NegativeMaxDelayFloorsToZero) {
  */
 TEST(RetryBackoffMath, LinearLargeBaseMultiplyThenClampSaturates) {
     using namespace std::chrono;
-    // base_ms = 9e9 (9e18 ns, representable). retry_number 20 -> mult 20 -> product 1.8e11 ms (fits
+    // base_ms = 9e9 (9e15 ns, representable). retry_number 20 -> mult 20 -> product 1.8e11 ms (fits
     // int64, no guard), which overshoots max_delay = 1e9 ms, so the trailing clamp saturates it.
     const milliseconds big_max{1'000'000'000LL};
     retry_policy       policy{.base_delay = milliseconds(9'000'000'000LL), .max_delay = big_max, .strategy = backoff_strategy::linear};
@@ -230,23 +230,23 @@ TEST(RetryBackoffMath, ExponentialMidRangeMultiplyThenClamp) {
 
 /**
  * @test exponential_jitter saturates to max_delay (pre-jitter clamp + trailing clamp) and the
- * jitter multiply never wraps for any representable policy.
+ * jitter multiply never wraps for representable nonnegative delays.
  *
- * NOTE on the retry.h:178 jitter-multiply overflow guard (`if (jitter_pct != 0 && delay_ms >
- * max/jitter_pct/2) delay_ms = max_ms`): that guard is UNREACHABLE through the public retry_policy
- * interface. policy fields are qb::duration == std::chrono::nanoseconds, so the LARGEST max_delay
- * that can be stored without overflowing the int64 nanosecond field is INT64_MAX/1e6 ≈ 9.22e12 ms.
- * After duration_cast, max_ms ≤ 9.22e12, and the smallest guard threshold (jitter_pct == 1) is
- * INT64_MAX/1/2 ≈ 4.6e18 ms — so delay_ms * jitter_pct (≤ 9.22e12 * 49 ≈ 4.5e14) can never overflow.
+ * NOTE on detail::calculate_delay's jitter-multiply guard (`if (jitter_pct != 0 && delay_ms >
+ * max/jitter_pct/2) delay_ms = max_ms`): the guard is unreachable for the nonnegative delays used
+ * here. Policy fields are qb::duration == std::chrono::nanoseconds, so the LARGEST max_delay
+ * storable without overflowing the int64 nanosecond field is INT64_MAX/1e6 ≈ 9.22e12 ms.
+ * After duration_cast, max_ms ≤ 9.22e12; the smallest guard threshold is at jitter_pct == 49:
+ * INT64_MAX/49/2 ≈ 9.4e16 ms, above delay_ms. The product is at most 9.22e12 * 49 ≈ 4.5e14.
  * The previous version of this test fed base_delay = 1e15 ms, which itself overflows the nanosecond
- * field on assignment (1e15 ms = 1e24 ns > INT64_MAX), corrupting the policy so calculate_delay
+ * field on assignment (1e15 ms = 1e21 ns > INT64_MAX), corrupting the policy so calculate_delay
  * returned 0ns — a false premise, not a real saturation. We therefore test the REACHABLE contract:
  * a large-but-representable max_delay with a base whose exponential factor blows past it, so every
  * draw lands on the pre-jitter clamp and the trailing clamp pins the result to exactly max_delay.
  */
 TEST(RetryBackoffMath, ExponentialJitterSaturatesToMaxDelay) {
     using namespace std::chrono;
-    // Largest comfortably-representable max_delay (9e12 ms = 9e21 ns < INT64_MAX) and a base whose
+    // Largest comfortably-representable max_delay (9e12 ms = 9e18 ns < INT64_MAX) and a base whose
     // 2^shift factor overflows past it, so the pre-jitter exponential is clamped to max_ms first.
     const milliseconds big_max{9'000'000'000'000LL};
     retry_policy policy{.base_delay = milliseconds(1'000'000'000LL), .max_delay = big_max, .strategy = backoff_strategy::exponential_jitter};

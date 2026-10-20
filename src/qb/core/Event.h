@@ -583,7 +583,7 @@ event_type_name(Event::id_type const id) noexcept {
 /**
  * @typedef EventQOS2
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
- * @details `qb::Event`'s own header already encodes `qos = 2` (:414), so this names the base class itself. The field is
+ * @details `Event::Header::prot` already encodes `qos = 2`, so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
  * retries every other one (`VirtualCore.cpp:1798-1882`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
@@ -971,15 +971,15 @@ using service_event = ServiceEvent;
 // needs it: Pipe's template bodies now sit at the tail of Pipe.h (they shipped as Pipe.tpp),
 // and Actor.h included Pipe.h 91 lines above the concept (the 3.0.0 CHANGELOG links both).
 // It cannot be reached from there. Event.h is where it belongs anyway: the concept
-// constrains `ServiceEvent`, which is declared above at :623, and it needs nothing from
+// constrains `ServiceEvent`, which is declared above, and it needs nothing from
 // `qb::Actor`. Every consumer keeps seeing it, since Actor.h includes this header.
 //
 // `event_qos0_type` deliberately stays at Actor.h:260-261. Only VirtualCore's bodies use it, and
 // they sit in VirtualCore.h, which has a complete Actor.h. Moving it too would be churn.
 //
-// The declaration is placed after the closing brace above, not spliced into the namespace
-// block, so no line of this header moves: Event.h carries cited anchors at :61, :314, :321,
-// :344 and :377, and an insertion higher up would shift all of them.
+// During the template-body migration, this declaration was appended after the closing brace
+// above rather than inserted into the existing namespace block, preserving the earlier
+// declarations' positions and the citations that referred to them.
 // ============================================================================================
 #include <type_traits>
 
@@ -999,8 +999,8 @@ namespace detail {
 // ROUTING-FIELD SHADOW GUARD.
 //
 // `qb::Event` carries its routing header in PRIVATE members -- `state`, `bucket_size`, `id`,
-// `dest`, `source` (:415-420) -- and `ServiceEvent` adds two PUBLIC ones, `forward` and
-// `service_event_id` (:532-533). The three sites that stamp that header
+// `dest`, `source` -- and `ServiceEvent` adds two PUBLIC ones, `forward` and
+// `service_event_id`. The three sites that stamp that header
 // (`VirtualCore::fill_event`, `Pipe::push`, `Pipe::allocated_push`) do it through a value of
 // the *derived* type `T`, e.g. `data.id = ...`. So a user event that declares its own member
 // of the same name HIDES the base one: the write lands in the user's field, the routing header
@@ -1123,7 +1123,7 @@ inline constexpr bool event_fits_bucket_alignment = alignof(T) <= alignof(EventB
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
  *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1320-1323) and
- *          `Pipe::push` / `Pipe::allocated_push` (Pipe.h:307, :333). The two `Pipe` bodies do
+ *          `Pipe::push` / `Pipe::allocated_push` in Pipe.h. The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
  *          Everything else that constructs a user event -- `Actor::push`/`send`/`broadcast`/

@@ -1871,10 +1871,10 @@ INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::test
 
 /**
  * @test A malformed UDP datagram against a started parent server is rejected, not accepted
- * @brief A non-QUIC payload delivered to a freshly started server parent fails ngtcp2_accept inside
- *        accept_server_connection, which queues a handshake_failed close event rather than spinning up
- *        a child connection; the parent fans that child event up with no connection added. The parent
- *        stays open with zero active connections. Covers quic.cpp:1206-1218 (the accept-rejection arm).
+ * @brief The parent rejects this malformed datagram while decoding its connection ID/version in
+ *        find_or_accept_server_connection, before creating a child. The test checks zero active
+ *        connections and no connected event, then verifies that closing the parent still emits
+ *        application_close. It does not require a child handshake_failed event.
  */
 TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
@@ -1887,8 +1887,8 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
     tls.private_key_file = ssl_resource_path("key.pem");
     server->start_server(local, {"h3"}, tls);
 
-    // A long-header-shaped but otherwise garbage payload: large enough that the parent treats it as a
-    // potential initial and routes it into accept_server_connection, where ngtcp2_accept must reject it.
+    // This 64-byte long-header-shaped payload carries an unsupported QUIC version.
+    // The parent's CID/version checks reject it before any child connection or handshake is created.
     std::array<std::byte, 64> junk{};
     junk[0] = std::byte{0xC0}; // long header form bit set, but no valid QUIC initial follows
     for (std::size_t i = 1; i < junk.size(); ++i)
@@ -2012,7 +2012,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
  * @brief The parent server is configured with max_connections == 1. A first client completes the
  *        two-backend handshake (one admitted connection). A SECOND client, with a distinct local
  *        endpoint and connection id, then drives its own initial datagrams at the parent; every one hits
- *        the connection-cap arm of find_or_accept_server_connection (quic.cpp:942-955) which DROPS the
+ *        the connection-cap arm of accept_new_server_connection which DROPS the
  *        datagram — it must NOT queue_close_event on the parent (that would shut the whole listener down
  *        via the sentinel connection_id 0). So: the second client never reaches `connected`, the server
  *        keeps exactly one active connection, the server emits no parent connection_closed event, and the
@@ -2093,10 +2093,10 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  *        CLIENT records `_stream_fin_seen` and is barred from synthesising) and replies with a bare
  *        zero-length FIN of its own. ngtcp2 delivers the client's zero-length FIN to the SERVER without
  *        any recv_stream_data_cb call, so the server's `_stream_fin_seen[id]` stays false; when ngtcp2
- *        fully closes the stream and fires stream_close_cb(app_error_code == 0), the server takes the
- *        SYNTHESIS arm (quic.cpp:1661-1670) and emits a trailing stream_data carrying error_code == 1
- *        (the FIN marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup
- *        (quic.cpp:1671-1675), then queues stream_closed(finished).
+ *        fully closes the stream without NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET, the server's
+ *        stream_close_cb synthesises a trailing stream_data carrying error_code == 1 (the FIN
+ *        marker, empty payload), runs erase_queued_stream_data / _next_stream_offsets cleanup,
+ *        then queues stream_closed(finished). A numeric app_error_code of zero alone is not the gate.
  *
  * SEMANTICS — like STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL teardown artefact:
  * it fires on the endpoint that sent a FIN and never received an inbound data+FIN (here the SERVER),
@@ -2160,9 +2160,9 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     // receives that FIN through recv_stream_data_cb (so the CLIENT records _stream_fin_seen and will
     // NOT synthesise), then FINs its own half with a bare zero-length frame. ngtcp2 delivers the
     // client's zero-length FIN to the server WITHOUT a recv_stream_data_cb call, so the server's
-    // _stream_fin_seen stays false: when ngtcp2 fully closes the stream and fires stream_close_cb with
-    // app_error_code == 0, the server takes the synthesis arm (quic.cpp:1661-1675) and emits a trailing
-    // FIN-marked stream_data (error_code == 1, empty payload) followed by stream_closed(finished).
+    // _stream_fin_seen stays false: stream_close_cb without NGTCP2_STREAM_CLOSE_FLAG_APP_ERROR_CODE_SET
+    // then takes the synthesis arm and emits a trailing FIN-marked stream_data (error_code == 1,
+    // empty payload) followed by stream_closed(finished). Numeric app_error_code alone is not the gate.
     //
     // SEMANTICS — like stop_sending/STOP_SENDING earlier in this file, the FIN-synthesis is a LOCAL
     // teardown artefact: it fires on the endpoint that sent a FIN and never received an inbound data+FIN

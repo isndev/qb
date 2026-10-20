@@ -60,10 +60,10 @@
  *
  * I1 — ORDER assertions are immune to jitter because jitter is COMMON MODE.
  *      `CoroutineScheduler::spawn` does not start the body: `spawn_tracked` only enqueues
- *      (`ready_queue_.push_back({handle, true})`, scheduler.h:1036), so every task spawned before a
+ *      (`ready_queue_.push_back({handle, true})`, CoroutineScheduler::spawn_tracked), so every task spawned before a
  *      pump starts in ONE `run_ready()` drain and arms its timer in ONE loop turn, into libev's
  *      single deadline-ordered heap. `timers_reify` then pops strictly in deadline order
- *      (`ANHE_at(timers[HEAP0]) < mn_now`, ev/qev.c:4418). A stall therefore delays every
+ *      (`ANHE_at(timers[HEAP0]) < mn_now`, ev.c::timers_reify). A stall therefore delays every
  *      timer equally and cannot reorder them — it makes them all fire back-to-back, in order.
  *      Measured (SIGSTOP/SIGCONT injection, 40 ms stall windows, release, macOS): the realized
  *      inter-completion gap of the 15 ms/10 ms pair fell from 5.30 ms to 0.023 ms — 0.5% of its
@@ -85,26 +85,26 @@
  *      Those carry independent jitter and are genuinely margin-limited — see the note in
  *      core/system/coroutine/coroutine-resilience.cpp, which is the one case of that shape here.
  *
- * I2 — ELAPSED-FLOOR assertions (`EXPECT_GE(elapsed, nominal)`) are one-sided. Load only ADDS to a
- *      measured span, so it can only push them further into passing; they fail only if a timer
- *      fires EARLY on the clock the test reads. That is excluded by construction:
- *        - `to_ev_seconds` is `duration_cast<duration<double>>` (qb/system/time.h:848) — it never
- *          rounds a requested delay down;
- *        - `timer_awaiter::await_suspend` (async/coroutine/awaiter.h:352-353) and `async::callback`
- *          (async/io.h:425-431) both force `ev_now_update` immediately before `ev_timer_start`, so
- *          the deadline is a FRESH clock read plus the delay, never a stale cached one;
- *        - `timers_reify` fires only once `mn_now` is strictly PAST that deadline (qev.c:4418),
- *          against `clock_gettime(CLOCK_MONOTONIC)` (qev.c:2876).
- *      So the realized delay is >= the requested one on CLOCK_MONOTONIC. Tests measure with
- *      `steady_clock`/`qb::mono_now()`: on Linux that IS CLOCK_MONOTONIC (identical); on macOS
- *      libc++ uses CLOCK_MONOTONIC_RAW, measured here to run at the same rate (+7.5 ppm, i.e.
- *      0.4 us over a 50 ms span — the two clocks' constant offset is irrelevant to a duration).
- *      Measured worst headroom over 125 release runs per site: the tightest floor in the suite is
- *      the 50 x 1 ms chain in core/system/timer/async-callback-ordering.cpp at +0.34 ms, and every
- *      floor's worst case GREW under load (that chain to +334 ms, the 2 x 20 ms retry floor to
- *      +58 ms). None ever went negative.
- *      A zero-margin floor here is therefore an invariant, not a coin flip — and it is what would
- *      catch a dropped `ev_now_update`. Do not widen one to silence a failure: investigate it.
+ * I2 — ELAPSED-FLOOR assertions (`EXPECT_GE(elapsed, nominal)`) are one-sided regression checks.
+ *      A delayed callback normally adds elapsed time, but these checks also depend on conversion
+ *      and on the relationship between the loop clock and the clock the test reads:
+ *        - `to_ev_seconds` uses `duration_cast<duration<double>>`, avoiding integer-ms truncation;
+ *          floating-point conversion does not guarantee that a delay rounds upward;
+ *        - `timer_awaiter::await_suspend` refreshes the loop clock before arming its watcher;
+ *          `async::callback` delegates the same refresh to event::timer::start, which calls
+ *          `ev_now_update` before arming, so both use a fresh deadline rather than cached time;
+ *        - `timers_reify` in qb/src/qb/ev/ev.c fires only when mn_now is strictly past the deadline;
+ *          get_clock selects the platform clock, with POSIX, Windows and wall-clock fallback paths.
+ *      Tests measure with steady_clock/qb::mono_now(), not necessarily the loop's selected clock.
+ *      The original Linux analysis used CLOCK_MONOTONIC for both; the macOS analysis compared
+ *      libc++'s CLOCK_MONOTONIC_RAW with the loop clock and recorded a +7.5 ppm rate difference
+ *      (about 0.4 us over 50 ms; a constant clock offset cancels when measuring a duration).
+ *      Recorded worst headroom over 125 release runs per site: the tightest floor was the
+ *      50 x 1 ms chain in core/system/timer/async-callback-ordering.cpp at +0.34 ms. Under load,
+ *      that chain's worst case grew to +334 ms and the 2 x 20 ms retry floor's to +58 ms;
+ *      none of those recorded runs went negative. These are historical observations, not a
+ *      universal proof for every host or clock configuration. A lost ev_now_update is one cause
+ *      this check can expose. Investigate a failure rather than silently widening the floor.
  */
 
 #ifndef QB_IO_TESTS_SHARED_COROUTINE_TEST_SUPPORT_H
