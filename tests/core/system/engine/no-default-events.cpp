@@ -12,8 +12,8 @@
  *        it must NOT be told to register instead.
  *
  * `Main::stop()` does not send anything. It stores a signum and bumps a generation counter
- * (`Main.cpp:774-782`); each `VirtualCore` notices the bump on its next pass and synthesises a
- * **`qb::SignalEvent`** addressed to every actor it owns (`VirtualCore.cpp:1396-1429`). Nothing in
+ * (`Main.cpp:885-893`); each `VirtualCore` notices the bump on its next pass and synthesises a
+ * **`qb::SignalEvent`** addressed to every actor it owns (`VirtualCore.cpp:1672-1705`). Nothing in
  * the engine ever constructs a `qb::KillEvent` — that type exists so a PEER can kill an actor by
  * pushing one. So the minimum subscription for a graceful shutdown is `SignalEvent`.
  *
@@ -92,7 +92,7 @@ public:
         co_return true;
     }
     // Both must be declared: any `on` in a derived class hides EVERY base overload, and dispatch
-    // goes through the derived type (`VirtualCore.h:322-326`, `default_trampoline`), so the
+    // goes through the derived type (`VirtualCore.h:218-222`, `default_trampoline`), so the
     // registrations above need these.
     void
     on(qb::SignalEvent const &) {

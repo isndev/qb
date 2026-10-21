@@ -101,8 +101,8 @@ namespace detail {
 // A request and its withdrawal are addressed to the watched actor's CORE, not to the actor: a
 // unicast to an actor still in its `onInit()` is stashed, and dropped with the stash if that fails.
 // Every watch carries a ticket, a number its watcher's core gives it, and its answer carries it
-// back: ids are reused, and the ticket is what tells an answer about an id's previous holder from
-// the answer to a watch of its next one.
+// back: an exact id names one incarnation, but a logical service address is watched again across
+// replacements, and the ticket tells an answer to an earlier watch from the answer to a later one.
 
 /// A watch on its way to the watched actor's core: destination `BroadcastId(that core)`, source the
 /// watcher.

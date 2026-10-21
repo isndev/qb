@@ -30,6 +30,7 @@
 #include <memory>
 #include <type_traits>
 #include <unordered_set>
+#include <vector>
 #include <qb/core/Actor.h>
 #include <qb/core/VirtualCore.h> // also carries Actor's template bodies (was qb/core/Actor.tpp); <windows.h> on Windows
 #include <qb/io/async/listener.h>
@@ -64,14 +65,18 @@ namespace {
  *          owner's slot (one call, not a take followed by a register: `perf` priced every
  *          out-of-line trip through here, TLS guard included, at about as much as the work it
  *          did), look-up = index + compare, release = push; no multiply, no probe, no allocation
- *          once warm. An entry belongs permanently to one numeric ActorId: a late reply must
- *          still identify its owner after the awaiter is gone AND after later asks reuse the entry.
- *          Each owner has its own FIFO. A new owner takes only unassigned entries, not another
- *          owner's retired ones. Thus storage follows the sum of owners' high-water demands,
- *          rather than just the maximum simultaneous demand of the core. The owner queues are
- *          paged and lazy; a warm exchange allocates nothing. An exhausted generation retires
- *          the entry permanently, never wrapping its id. Id 0 stays reserved ("not an ask").
- *          Strictly mono-thread, like everything else in here.
+ *          once warm. An entry belongs permanently to one actor SLOT of one core, and records the
+ *          exact incarnation (the complete 64-bit `ActorId`) that last held it: a late reply must
+ *          still identify its owner after the awaiter is gone AND after later asks reuse the entry
+ *          (Huly QB-1104). Each slot has its own FIFO, which the slot's next incarnations reuse --
+ *          a late reply addressed to a dead incarnation never reaches them, since an exact identity
+ *          never resolves a replacement (QB-971) -- and a new slot takes only unassigned entries,
+ *          never another slot's retired ones. Thus storage follows the sum of the slots'
+ *          high-water demands, rather than just the maximum simultaneous demand of the core; the
+ *          pool reuses freed slots first, so the slot count stays the core's peak population. The
+ *          slot queues are paged and lazy; a warm exchange allocates nothing. An exhausted
+ *          generation retires the entry permanently, never wrapping its id. Id 0 stays reserved
+ *          ("not an ask"). Strictly mono-thread, like everything else in here.
  */
 class ask_table {
 public:
@@ -110,7 +115,7 @@ public:
             e.next      = busy;
         } else {
             // The codec tests and detail callers may take an entry without an awaiter.
-            e.data.owner = static_cast<std::uint32_t>(owner);
+            e.data.owner = owner.raw64();
             e.next       = unbound;
         }
         return (static_cast<std::uint64_t>(owner.index()) << 48) | (static_cast<std::uint64_t>(e.gen) << slot_bits) | i;
@@ -127,7 +132,7 @@ public:
         return e.data.slot;
     }
 
-    /// Cold miss classification: all issued generations keep the same numeric owner.
+    /// Cold miss classification: an issued generation of an entry this exact incarnation holds or last released.
     [[nodiscard]] QB_NOINLINE bool
     obsolete(std::uint64_t const id, ActorId const owner) const noexcept {
         const auto i          = id & slot_mask;
@@ -153,7 +158,7 @@ public:
             return;
         // Capture before ending the pointer member's lifetime; the awaiter may be
         // destroyed as soon as unregister returns. No retired raw pointer survives.
-        e->data.owner = static_cast<std::uint32_t>(owner);
+        e->data.owner = owner.raw64();
         if (e->gen == gen_max) [[unlikely]] {
             e->next = exhausted;
             return;
@@ -164,9 +169,7 @@ public:
             release_other_core(owner, i);
             return;
         }
-        auto &page = _current_owners->pages[owner.sid() >> 8];
-        assert(page);
-        push_free((*page)[owner.sid() & 255], i);
+        push_free(queue_in(*_current_owners, owner), i);
     }
 
 private:
@@ -179,7 +182,7 @@ private:
     struct entry {
         union payload {
             ask_slot     *slot;
-            std::uint32_t owner;
+            std::uint64_t owner; ///< `ActorId::raw64()` of the incarnation that last held the entry
             constexpr payload()
                 : owner(0) {}
         } data;
@@ -187,20 +190,48 @@ private:
         std::uint32_t next = unassigned;
     };
     static_assert(std::is_trivially_copyable_v<entry>);
-    static_assert(sizeof(entry) == sizeof(ask_slot *) + 2 * sizeof(std::uint32_t));
+    static_assert(sizeof(entry) == sizeof(entry::payload) + 2 * sizeof(std::uint32_t));
 
     struct free_queue {
         std::uint32_t head = none;
         std::uint32_t tail = none;
     };
     using queue_page = std::array<free_queue, 256>;
+    // One FIFO per actor slot of a core, in pages of 256 created on first use: ordinary slots (24 bits) in a
+    // directory that grows with the highest slot that asked, service tags (16 bits) in a fixed one -- the
+    // service band's encoded slots sit at the top of the 24-bit range and would otherwise size the first.
     struct owner_directory {
-        std::array<std::unique_ptr<queue_page>, 256> pages;
+        std::vector<std::unique_ptr<queue_page>>     ordinary;
+        std::array<std::unique_ptr<queue_page>, 256> services;
     };
 
     [[nodiscard]] static ActorId
     entry_owner(entry const &e) noexcept {
-        return e.next == busy ? e.data.slot->owner : ActorId{e.data.owner};
+        return e.next == busy ? e.data.slot->owner : ActorId::from_raw(e.data.owner);
+    }
+
+    [[nodiscard]] static std::size_t
+    slot_of(ActorId const owner) noexcept {
+        return owner.is_service() ? owner.service_tag() : owner.slot();
+    }
+
+    [[nodiscard]] static std::unique_ptr<queue_page> &
+    page_in(owner_directory &dir, ActorId const owner) {
+        const std::size_t page = slot_of(owner) >> 8;
+        if (owner.is_service()) [[unlikely]]
+            return dir.services[page];
+        if (page >= dir.ordinary.size()) [[unlikely]]
+            dir.ordinary.resize(page + 1);
+        return dir.ordinary[page];
+    }
+
+    /// The FIFO of `owner`'s slot. Its page exists: `owner_queue` created it before the entry was taken.
+    [[nodiscard]] static free_queue &
+    queue_in(owner_directory &dir, ActorId const owner) noexcept {
+        const std::size_t slot = slot_of(owner);
+        auto             &page = owner.is_service() ? dir.services[slot >> 8] : dir.ordinary[slot >> 8];
+        assert(page);
+        return (*page)[slot & 255];
     }
 
     QB_NOINLINE void
@@ -220,20 +251,17 @@ private:
         // thread hosting successive engines, and pure codec tests with other cores.
         if (_current_core != owner.index()) [[unlikely]]
             select_core(owner.index());
-        const auto sid  = owner.sid();
-        auto      &page = _current_owners->pages[sid >> 8];
+        auto &page = page_in(*_current_owners, owner);
         if (!page) [[unlikely]]
             create_page(page);
-        return (*page)[sid & 255];
+        return (*page)[slot_of(owner) & 255];
     }
 
     QB_NOINLINE void
     release_other_core(ActorId const owner, std::uint32_t const i) noexcept {
         const auto found = _owners.find(owner.index());
         assert(found != _owners.end());
-        auto &page = found->second.pages[owner.sid() >> 8];
-        assert(page);
-        push_free((*page)[owner.sid() & 255], i);
+        push_free(queue_in(found->second, owner), i);
     }
 
     [[nodiscard]] entry *
@@ -567,11 +595,7 @@ Actor::Actor() noexcept
                      "(use Main::core(idx).addActor<T>(...) or addRefActor<T>()), never "
                      "from the main thread or an arbitrary user thread."),
            VirtualCore::_handler->__generate_id__())) {
-    registerEvent<KillEvent>(*this);
-    registerEvent<SignalEvent>(*this);
-    registerEvent<UnregisterCallbackEvent>(*this);
-    registerEvent<PingEvent>(*this);
-    registerEvent<RequireEvent>(*this); // default: route coroutine discovery/liveness replies
+    VirtualCore::__initialize_default_events__(*this);
 }
 
 Actor::Actor(ActorId const id) noexcept
@@ -579,11 +603,7 @@ Actor::Actor(ActorId const id) noexcept
     assert(VirtualCore::_handler != nullptr
            && "Service actors must be constructed from within their owning VirtualCore "
               "worker thread.");
-    registerEvent<KillEvent>(*this);
-    registerEvent<SignalEvent>(*this);
-    registerEvent<UnregisterCallbackEvent>(*this);
-    registerEvent<PingEvent>(*this);
-    registerEvent<RequireEvent>(*this); // default: route coroutine discovery/liveness replies
+    VirtualCore::__initialize_default_events__(*this);
 }
 
 Actor::Actor(no_default_events_t) noexcept
@@ -750,10 +770,24 @@ Actor::to(ActorId const dest) const noexcept {
     return EventBuilder{getPipe(dest)};
 }
 
+namespace {
+
+QB_NOINLINE void
+warn_broadcast_reply(Actor const &actor) noexcept {
+    QB_LOG_WARN(actor << " failed to reply broadcast event");
+}
+
+QB_NOINLINE void
+warn_broadcast_forward(Actor const &actor) noexcept {
+    QB_LOG_WARN(actor << " failed to forward broadcast event");
+}
+
+} // namespace
+
 void
 Actor::reply(Event &event) const noexcept {
     if (unlikely(event.dest.is_broadcast())) {
-        QB_LOG_WARN(*this << " failed to reply broadcast event");
+        warn_broadcast_reply(*this);
         return;
     }
     VirtualCore::_handler->reply(event);
@@ -764,7 +798,7 @@ Actor::forward(ActorId const dest, Event &event) const noexcept {
     // Do not overwrite event.source: reply() routes via swap(dest, source); the
     // original sender must remain the logical client (matches Actor.h contract).
     if (unlikely(event.dest.is_broadcast())) {
-        QB_LOG_WARN(*this << " failed to forward broadcast event");
+        warn_broadcast_forward(*this);
         return;
     }
     VirtualCore::_handler->forward(dest, event);
@@ -816,7 +850,7 @@ CoroContext::time() const noexcept {
 }
 
 Service::Service(ServiceId const sid) noexcept
-    : Actor(ActorId(sid, VirtualCore::_handler->getIndex())) {}
+    : Actor(VirtualCore::_handler->__generate_service_id__(sid)) {}
 
 namespace detail {
 
@@ -834,9 +868,10 @@ namespace detail {
 void
 report_unhandled_coroutine_exception(ActorId const owner, char const *const api, std::exception_ptr ep) noexcept {
     const auto emit = [&](char const *const what) {
-        QB_LOG_CRIT("Actor(" << owner.index() << '.' << owner.sid() << ") " << api << "() coroutine body let an exception escape: " << what
+        QB_LOG_CRIT("Actor(" << owner.index() << '.' << owner.sid() << "@" << owner.generation() << ") " << api
+                             << "() coroutine body let an exception escape: " << what
                              << " -- the frame unwound and the exception was DISCARDED.");
-        qb::io::cerr() << "CRITICAL: qb Actor(" << owner.index() << '.' << owner.sid() << ") " << api
+        qb::io::cerr() << "CRITICAL: qb Actor(" << owner.index() << '.' << owner.sid() << "@" << owner.generation() << ") " << api
                        << "() coroutine body let an exception escape, and it was DISCARDED: " << what
                        << " -- a spawned coroutine has no caller to receive it. Catch it in the body and report through an event." << std::endl;
     };
@@ -937,13 +972,13 @@ Actor::unwatch(ActorId const target) const noexcept {
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &
 qb::operator<<(qb::io::log::stream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << "@" << actor.id().generation() << ")";
     return os;
 }
 #endif
 
 std::ostream &
 qb::operator<<(std::ostream &os, qb::Actor const &actor) {
-    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << ")";
+    os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << "@" << actor.id().generation() << ")";
     return os;
 }

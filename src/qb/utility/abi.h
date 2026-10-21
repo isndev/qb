@@ -39,7 +39,7 @@
  * ```
  * Undefined symbols for architecture arm64:
  *   "_qb_abi_cacheline_128", referenced from:
- *       qb::detail::abi_fingerprint in main.o
+ *       qb::detail::abi_fingerprint_actor64 in main.o
  * ```
  *
  * The archive's side of the story is one command away, and needs no demangler:
@@ -66,15 +66,21 @@
  * (c) *unsound* — it changes the layout of a public type, or the body of an entity the archive
  * also defines.
  *
+ * The numeric layout examples for the configuration axes below are historical measurements
+ * from the 3.0 audit, not current ActorId64 structure sizes. The actor-identity row describes
+ * the current source layout; native mixed-layout verification is a separate requirement.
+ *
  * | axis | symbol | why it qualifies (measured) |
  * |---|---|---|
- * | qb version | `qb_abi_version_M_m_p` | installed headers and archive are one unit; nothing else detects skew, and it is the axis that
- * catches a consumer compiled without qb's CMake usage requirements at all | | cache line | `qb_abi_cacheline_N` | `sizeof(qb::Event)` 64 ->
- * 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 | | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks 8 inline bodies, of
- * which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also* defined by the archive | |
- * coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 | | jthread source |
- * `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps `qb::jthread` 16 ->
- * 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 |
+ * | qb version and identity layout | `qb_abi_version_M_m_p_actor64` | installed headers and archive are one unit; nothing else detects skew,
+ * and it is the axis that catches a consumer compiled without qb's CMake usage requirements at all | | cache line | `qb_abi_cacheline_N` |
+ * `sizeof(qb::Event)` 64 -> 128, `CoroutineFrameAllocator::kAlign` 64 -> 128 | | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions`
+ * forks 8 inline bodies, of which `router::memh<Event,true,void>::subscribe` and `nanolog::NanoLogLine::operator<< <uint16_t>` are *also*
+ * defined by the archive | | coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` 32 -> 40 | |
+ * jthread source | `qb_abi_std_jthread_[01]` | `QB_COMPAT_FORCE_THREAD_FALLBACK` (or a standard library without `__cpp_lib_jthread`) swaps
+ * `qb::jthread` 16 -> 24 and moves every member after it: `qb::Main` 88 -> 96, `qb::VirtualCore` 8648 -> 8656 | | actor identity |
+ * `qb_abi_actor_id_64` | identities widen from 32 to 64 bits and change the event header layout (occupied header 16 to 24 bytes measured on
+ * arm64) |
  *
  * Deliberately **excluded**, each for a reason that must be re-argued before it changes:
  *
@@ -215,6 +221,9 @@
 #define QB_ABI_SYM_EXCEPTIONS QB_ABI_PASTE(qb_abi_exceptions_, QB_ABI_EXCEPTIONS)
 #define QB_ABI_SYM_CORO_DEBUG QB_ABI_PASTE(qb_abi_coroutine_debug_, QB_ABI_CORO_DEBUG)
 #define QB_ABI_SYM_STD_JTHREAD QB_ABI_PASTE(qb_abi_std_jthread_, QB_ABI_STD_JTHREAD)
+// Actor identity changes the event wire layout even within the same release train.
+// Keep this fixed by the source layout, never by a consumer-selectable build option.
+#define QB_ABI_SYM_ACTOR_ID qb_abi_actor_id_64
 
 // The version comes from qb's CMake usage requirements (QB_VERSION_* -- see
 // qb/cmake/qbConfig.cmake, sourced from QB_FRAMEWORK_VERSION), never from a literal written here:
@@ -223,11 +232,13 @@
 // version, it is also missing QB_HAS_SSL / QB_HAS_QUIC / QB_HAS_COMPRESSION, and gets a program
 // whose inline feature answers contradict the archive's out-of-line ones. So that case gets a
 // symbol whose name says what to do about it rather than a misleading `0_0_0`.
+// The layout suffix also makes old headers reject the new archive: retaining the old
+// version symbol would let a 32-bit consumer silently link to 64-bit event operations.
 #if defined(QB_VERSION_MAJOR) && defined(QB_VERSION_MINOR) && defined(QB_VERSION_PATCH)
-#define QB_ABI_SYM_VERSION QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH)
+#define QB_ABI_SYM_VERSION QB_ABI_PASTE(QB_ABI_VERSION_SYM(QB_VERSION_MAJOR, QB_VERSION_MINOR, QB_VERSION_PATCH), _actor64)
 #define QB_ABI_VERSION_TEXT QB_ABI_STR(QB_VERSION_MAJOR) "." QB_ABI_STR(QB_VERSION_MINOR) "." QB_ABI_STR(QB_VERSION_PATCH)
 #else
-#define QB_ABI_SYM_VERSION qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements
+#define QB_ABI_SYM_VERSION qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements_actor64
 #define QB_ABI_VERSION_TEXT "unknown"
 #endif
 
@@ -240,14 +251,14 @@
  */
 #define QB_ABI_FINGERPRINT_TEXT                                                                                  \
     "qb-abi qb=" QB_ABI_VERSION_TEXT " cacheline=" QB_ABI_STR(QB_ABI_CACHELINE_BYTES) " exceptions=" QB_ABI_STR( \
-        QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD)
+        QB_ABI_EXCEPTIONS) " coroutine_debug=" QB_ABI_STR(QB_ABI_CORO_DEBUG) " std_jthread=" QB_ABI_STR(QB_ABI_STD_JTHREAD) " actor_id=64"
 
 #ifdef __cplusplus
 
 // `used` is what makes the check per-translation-unit rather than per-optimiser-whim: without it
 // a constant-initialised, never-read pointer array is discarded at -O1 and above, and a lone
 // oddly-configured TU would slip through. With it, EVERY TU that parses a qb header carries the
-// references. Cost: one 5-word COMDAT array the linker folds to a single copy, and no static
+// references. Cost: one 6-word COMDAT array the linker folds to a single copy, and no static
 // initialiser (the addresses are constant expressions -- qb/core/Event.cpp deliberately carries
 // no __mod_init_func and this must not change that).
 //
@@ -337,7 +348,7 @@
 #endif
 
 // Annotated for the same reason as the identity anchors above: a shared qb built
-// `-fvisibility=hidden` would otherwise stop exporting these six and every consumer would fail to
+// `-fvisibility=hidden` would otherwise stop exporting these seven and every consumer would fail to
 // link. Loud rather than silent, but total. A static archive was never at risk -- hidden
 // visibility governs dynamic export, not static-link resolution.
 extern "C" {
@@ -351,6 +362,8 @@ QB_ABI_ANCHOR extern const char QB_ABI_SYM_EXCEPTIONS;
 QB_ABI_ANCHOR extern const char QB_ABI_SYM_CORO_DEBUG;
 /** @brief Defined by libqb-io, named after the archive's `QB_ABI_STD_JTHREAD`. */
 QB_ABI_ANCHOR extern const char QB_ABI_SYM_STD_JTHREAD;
+/** @brief Defined by libqb-io for the 64-bit actor identity and event wire layout. */
+QB_ABI_ANCHOR extern const char QB_ABI_SYM_ACTOR_ID;
 /** @brief Defined by libqb-io: `QB_ABI_FINGERPRINT_TEXT` as the archive spells it. */
 QB_ABI_ANCHOR extern const char qb_abi_fingerprint[];
 }
@@ -361,9 +374,11 @@ namespace qb::detail {
  * @details Named plainly on purpose: the linker prints it on the `referenced from:` line, and
  *          `abi_fingerprint` is the one grep that leads to this file and its explanation.
  */
-QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint[] = {
-    &QB_ABI_SYM_VERSION, &QB_ABI_SYM_CACHELINE, &QB_ABI_SYM_EXCEPTIONS, &QB_ABI_SYM_CORO_DEBUG, &QB_ABI_SYM_STD_JTHREAD
-};
+// A distinct retained array name prevents mixed 32/64-bit consumer TUs from
+// coalescing away one layout's references before the linker checks them.
+QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint_actor64[] = {&QB_ABI_SYM_VERSION,     &QB_ABI_SYM_CACHELINE,
+                                                                                &QB_ABI_SYM_EXCEPTIONS,  &QB_ABI_SYM_CORO_DEBUG,
+                                                                                &QB_ABI_SYM_STD_JTHREAD, &QB_ABI_SYM_ACTOR_ID};
 } // namespace qb::detail
 
 #endif /* __cplusplus */
@@ -373,8 +388,9 @@ QB_ABI_USED QB_ABI_RETAIN inline const void *const abi_fingerprint[] = {
 // main.obj`, i.e. it names BOTH sides, which no ELF/Mach-O linker will do for an undefined
 // symbol. Verified to be an inert no-op under Apple clang on Mach-O (compiles, emits no
 // linker-option load command, does not fail a mismatched link), hence the guard: it is a bonus
-// where it works, never the mechanism. UNVERIFIED on MSVC -- no Windows toolchain is reachable
-// from this project's development hosts; see dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7.
+// where it works, never the mechanism. MSVC was unavailable in the historical 3.0 audit
+// (dev/analysis/TEMPLATE-LINKAGE-AUDIT-3.0.md section 7). Current ActorId64 mixed-layout
+// rejection still requires its own native verification; a homogeneous package link is not that proof.
 //
 // It goes through `_Pragma`, not `#pragma`, and that is load-bearing rather than stylistic: a
 // `#pragma` line's arguments are NOT macro-expanded. Measured here -- `clang -E` on
@@ -390,6 +406,7 @@ QB_ABI_DETECT_MISMATCH("qb_cacheline", QB_ABI_STR(QB_ABI_CACHELINE_BYTES))
 QB_ABI_DETECT_MISMATCH("qb_exceptions", QB_ABI_STR(QB_ABI_EXCEPTIONS))
 QB_ABI_DETECT_MISMATCH("qb_coroutine_debug", QB_ABI_STR(QB_ABI_CORO_DEBUG))
 QB_ABI_DETECT_MISMATCH("qb_std_jthread", QB_ABI_STR(QB_ABI_STD_JTHREAD))
+QB_ABI_DETECT_MISMATCH("qb_actor_id", "64")
 #endif
 
 #endif /* QB_UTILS_ABI_H */

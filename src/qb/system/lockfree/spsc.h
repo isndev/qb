@@ -412,6 +412,34 @@ protected:
         return input_count;
     }
 
+    // Synchronous producer transaction: fill the two writable runs, then publish once.
+    // The callback is never retained or called on a failed/empty write. It must not re-enter
+    // this producer, and both runs are private until the release store below.
+    template <bool Closable, typename Fill>
+    QB_MSVC_FORCEINLINE size_t
+    enqueue_with(size_t const count, T *const buffer, size_t const max_size, Fill const &fill) noexcept {
+        static_assert(noexcept(fill(buffer, count, buffer, count)));
+        if (!count)
+            return 0;
+        const size_t write = write_index_local_;
+        const size_t avail = [&]() {
+            if constexpr (Closable)
+                return closable_producer_available(write, count, buffer, max_size);
+            else
+                return producer_available(write, count, max_size);
+        }();
+        if (avail < count)
+            return 0;
+        const size_t first = (std::min) (count, max_size - write);
+        fill(buffer + write, first, buffer, count - first);
+        size_t next = write + count;
+        if (next >= max_size)
+            next -= max_size;
+        write_index_local_ = next;
+        write_index_.store(next, std::memory_order_release);
+        return count;
+    }
+
     /// `enqueue(t, buffer, max_size)` for a ring that may be closed: the mark opens it, then the item goes in. Nothing
     /// of the item is handed to the cold call -- an item passed by reference to an out-of-line function is an item
     /// the caller must keep in memory on every write, and MSVC copies it there on the fast path too.
@@ -717,6 +745,13 @@ public:
         return internal::ringbuffer<T>::template enqueue<_All>(t, size, array_.data(), max_size);
     }
 
+    /// Fill one or two writable runs synchronously, all or none; publish after the noexcept callback.
+    template <typename Fill>
+    QB_MSVC_FORCEINLINE size_t
+    enqueue_with(size_t count, Fill const &fill) noexcept {
+        return internal::ringbuffer<T>::template enqueue_with<false>(count, array_.data(), max_size, fill);
+    }
+
     /**
      * @brief Dequeue multiple elements from the buffer
      *
@@ -926,6 +961,13 @@ public:
     inline size_t
     enqueue(T const *t, size_t size) noexcept {
         return base::template closable_enqueue<_All>(t, size, this->array_.data(), base::max_size);
+    }
+
+    /// The first transaction opens committed storage before invoking its callback.
+    template <typename Fill>
+    QB_MSVC_FORCEINLINE size_t
+    enqueue_with(size_t count, Fill const &fill) noexcept {
+        return spsc::internal::ringbuffer<T>::template enqueue_with<true>(count, this->array_.data(), base::max_size, fill);
     }
 };
 

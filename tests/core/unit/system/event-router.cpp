@@ -35,6 +35,7 @@
  * asserted to actually fire for an unregistered event id.
  */
 
+#include <cstdint>
 #include <memory>
 #include <new>
 #include <stdexcept>
@@ -42,6 +43,7 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include <qb/core/ActorId.h>
 #include <qb/system/event/router.h>
 
 struct ActorId {
@@ -737,3 +739,530 @@ TEST(EventRouting, MemhOnErrorReturnPreservesTransferredOwnership) {
 }
 
 } // namespace router_throw_test
+
+TEST(EventRouting, ActorIdentityBanksSeparateOrdinaryAndServiceSlots) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    const auto                                        ordinary = qb::ActorId::ordinary(7, 2, 9);
+    const auto                                        service  = qb::ActorId::service_instance(7, 2, 9);
+    table.insert_or_assign(ordinary, 17);
+    table.insert_or_assign(service, 29);
+    ASSERT_NE(table.find(ordinary), nullptr);
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(ordinary), 17);
+    EXPECT_EQ(*table.find(service), 29);
+    EXPECT_EQ(table.find(qb::ActorId::service_address(7, 2)), nullptr);
+    std::size_t visited = 0;
+    int         sum     = 0;
+    table.for_each([&](qb::ActorId key, int value) {
+        EXPECT_TRUE(key == ordinary || key == service);
+        if (visited == 0) {
+            EXPECT_EQ(key, service) << "preserve the former service-first traversal";
+        }
+        ++visited;
+        sum += value;
+    });
+    EXPECT_EQ(visited, 2u);
+    EXPECT_EQ(sum, 46);
+    table.erase(qb::ActorId::ordinary(8, 2, 9)); // exactly beyond the primary bank's end
+    table.erase(service);
+    EXPECT_EQ(table.find(service), nullptr);
+    ASSERT_NE(table.find(ordinary), nullptr);
+    EXPECT_EQ(*table.find(ordinary), 17);
+    table.erase(ordinary);
+    EXPECT_EQ(table.find(ordinary), nullptr);
+}
+
+TEST(EventRouting, ActorIdentityLookupAndEraseRejectStaleIncarnations) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    for (bool service : {false, true}) {
+        const auto old  = service ? qb::ActorId::service_instance(42, 3, 0x12345678) : qb::ActorId::ordinary(42, 3, 0x12345678);
+        const auto next = service ? qb::ActorId::service_instance(42, 3, 0x12345679) : qb::ActorId::ordinary(42, 3, 0x12345679);
+        table.insert_or_assign(old, 1);
+        EXPECT_EQ(table.find(next), nullptr);
+        table.erase(old);
+        table.insert_or_assign(next, 2);
+        EXPECT_EQ(table.find(old), nullptr);
+        table.erase(old);
+        const auto foreign = service ? qb::ActorId::service_instance(42, 4, 0x12345679) : qb::ActorId::ordinary(42, 4, 0x12345679);
+        table.erase(foreign);
+        if (service)
+            table.erase(qb::ActorId::service_address(42, 3));
+        ASSERT_NE(table.find(next), nullptr);
+        EXPECT_EQ(*table.find(next), 2);
+        table.erase(next);
+        EXPECT_EQ(table.find(next), nullptr);
+    }
+}
+
+TEST(EventRouting, ActorIdentityHighSlotAndServiceTagRemainIndependent) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    const auto                                        high    = qb::ActorId::ordinary(200000, 255, 0x89abcdef);
+    const auto                                        service = qb::ActorId::service_instance(65534, 255, 0xfedcba98);
+    table.insert_or_assign(high, 1);
+    table.insert_or_assign(service, 2);
+    ASSERT_NE(table.find(high), nullptr);
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(high), 1);
+    EXPECT_EQ(*table.find(service), 2);
+    EXPECT_EQ(table.find(qb::ActorId::ordinary(200000, 254, 0x89abcdef)), nullptr);
+    EXPECT_EQ(table.find(qb::ActorId::service_instance(65534, 254, 0xfedcba98)), nullptr);
+    table.erase(qb::ActorId::ordinary(200000, 254, 0x89abcdef));
+    table.erase(qb::ActorId::service_instance(65534, 254, 0xfedcba98));
+    ASSERT_NE(table.find(high), nullptr);
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(high), 1);
+    EXPECT_EQ(*table.find(service), 2);
+}
+
+TEST(EventRouting, ActorIdentityEraseReachesServiceWhenPrimaryBankIsEmpty) {
+    qb::router::internal::key_table<qb::ActorId, int> table;
+    const auto                                        service = qb::ActorId::service_instance(7, 255, 0x12345678);
+    table.insert_or_assign(service, 29);
+    table.erase(qb::ActorId::ordinary(7, 255, 0x12345678));
+    table.erase(qb::ActorId::service_address(7, 255));
+    table.erase(qb::BroadcastId(255));
+    ASSERT_NE(table.find(service), nullptr);
+    EXPECT_EQ(*table.find(service), 29);
+    table.erase(service);
+    EXPECT_EQ(table.find(service), nullptr);
+}
+
+namespace event_router_partitioned_erase_test {
+
+struct Key {
+    std::uint16_t slot       = 0;
+    std::uint16_t generation = 0;
+    bool          secondary  = false;
+
+    bool operator==(Key const &) const noexcept = default;
+};
+
+struct Value {
+    static inline unsigned resets = 0;
+    int                    number = 0;
+
+    Value() = default;
+    explicit Value(int value) noexcept
+        : number(value) {}
+    Value(Value const &) = default;
+    Value &
+    operator=(Value const &other) noexcept {
+        resets += other.number == 0;
+        number = other.number;
+        return *this;
+    }
+};
+
+} // namespace event_router_partitioned_erase_test
+
+namespace qb::router {
+
+template <>
+struct dense_index<event_router_partitioned_erase_test::Key> {
+    using Key                                        = event_router_partitioned_erase_test::Key;
+    static constexpr bool        enabled             = true;
+    static constexpr bool        partitioned         = true;
+    static constexpr std::size_t max_index           = 15;
+    static constexpr std::size_t secondary_max_index = 15;
+    // No primary_excludes_secondary trait: both projections intentionally overlap.
+    static bool
+    secondary(Key const &key) noexcept {
+        return key.secondary;
+    }
+    static std::size_t
+    of(Key const &key) noexcept {
+        return key.slot;
+    }
+    static std::size_t
+    primary_of(Key const &key) noexcept {
+        return key.slot;
+    }
+    static std::size_t
+    secondary_of(Key const &key) noexcept {
+        return key.slot;
+    }
+};
+
+} // namespace qb::router
+
+TEST(EventRouting, PartitionedEraseKeepsOverlappingProjectionsWithoutTheOptionalTrait) {
+    using Key = event_router_partitioned_erase_test::Key;
+    qb::router::internal::key_table<Key, int> table;
+    const Key                                 primary{7, 1, false};
+    const Key                                 secondary{7, 1, true};
+    const Key                                 replacement{7, 2, true};
+    table.insert_or_assign(primary, 17);
+    table.insert_or_assign(secondary, 29);
+    table.erase(secondary);
+    EXPECT_EQ(table.find(secondary), nullptr);
+    ASSERT_NE(table.find(primary), nullptr);
+    EXPECT_EQ(*table.find(primary), 17);
+    table.insert_or_assign(replacement, 31);
+    table.erase(secondary);
+    table.erase(primary);
+    EXPECT_EQ(table.find(primary), nullptr);
+    ASSERT_NE(table.find(replacement), nullptr);
+    EXPECT_EQ(*table.find(replacement), 31);
+}
+
+TEST(EventRouting, ActorIdentityEraseDoesNotResetAnAlreadyUnusedSlot) {
+    using Value = event_router_partitioned_erase_test::Value;
+    for (bool service : {false, true}) {
+        qb::router::internal::key_table<qb::ActorId, Value> table;
+        const auto key = service ? qb::ActorId::service_instance(7, 2, 9) : qb::ActorId::ordinary(7, 2, 9);
+        table.insert_or_assign(key, Value{17});
+        Value::resets = 0;
+        table.erase(key);
+        EXPECT_EQ(Value::resets, 1u);
+        table.erase(key); // the stale key is still stored, but used is now false
+        EXPECT_EQ(Value::resets, 1u);
+        EXPECT_EQ(table.find(key), nullptr);
+    }
+}
+
+namespace event_router_identity_semh_test {
+
+struct Probe {
+    unsigned destroyed         = 0;
+    unsigned payload_destroyed = 0;
+    unsigned undelivered       = 0;
+};
+
+struct Payload {
+    Probe        &probe;
+    std::uint64_t stamp = 0xfedcba9876543210ULL;
+    explicit Payload(Probe &value)
+        : probe(value) {}
+    ~Payload() {
+        ++probe.payload_destroyed;
+    }
+};
+
+template <typename Key>
+struct OwnedEvent {
+    using id_type         = std::uint16_t;
+    using id_handler_type = Key;
+    Key                      dest;
+    Probe                   &probe;
+    bool                     alive = false;
+    std::unique_ptr<Payload> payload;
+
+    OwnedEvent(Key target, Probe &value)
+        : dest(target)
+        , probe(value)
+        , payload(std::make_unique<Payload>(value)) {}
+    ~OwnedEvent() {
+        ++probe.destroyed;
+    }
+    Key
+    getDestination() const noexcept {
+        return dest;
+    }
+    bool
+    is_alive() const noexcept {
+        return alive;
+    }
+    void
+    __retire__() noexcept {
+        alive = true;
+    }
+    static void
+    __undelivered__(OwnedEvent &event) noexcept {
+        ++event.probe.undelivered;
+    }
+};
+
+template <typename Key>
+struct Handler {
+    Key      key;
+    unsigned hits      = 0;
+    bool     live      = true;
+    bool     transfer  = false;
+    bool     throw_now = false;
+
+    Key
+    id() const noexcept {
+        return key;
+    }
+    bool
+    is_alive() const noexcept {
+        return live;
+    }
+    void
+    on(OwnedEvent<Key> &event) {
+        ++hits;
+        ASSERT_NE(event.payload, nullptr);
+        EXPECT_EQ(event.payload->stamp, 0xfedcba9876543210ULL);
+        if (transfer)
+            event.alive = true;
+        if (throw_now)
+            throw std::runtime_error("identity-keyed handler failed");
+    }
+};
+
+// The router owns the placement-constructed lifetime; inspect only the external
+// probe after dispatch, and clean up explicitly if a faulty router left it alive.
+template <typename Key>
+void
+route_owned(qb::router::semh<OwnedEvent<Key>> &router, Key target, Probe &probe) {
+    using Event = OwnedEvent<Key>;
+    alignas(Event) unsigned char storage[sizeof(Event)];
+    const auto                   destroyed = probe.destroyed;
+    const auto                   released  = probe.payload_destroyed;
+    auto                        *event     = new (storage) Event(target, probe);
+    router.template route<true>(*event);
+    EXPECT_EQ(probe.destroyed, destroyed + 1u);
+    EXPECT_EQ(probe.payload_destroyed, released + 1u);
+    if (probe.destroyed == destroyed)
+        event->~Event();
+}
+
+TEST(EventRouting, ActorIdentitySemhRoutesOnlyTheCurrentCompleteIdentityAndBroadcastsBothBanks) {
+    Probe                                     probe;
+    qb::router::semh<OwnedEvent<qb::ActorId>> router;
+    const auto                                ordinary_id = qb::ActorId::ordinary(7, 3, 0x12345678);
+    const auto                                service_id  = qb::ActorId::service_instance(7, 3, 0x12345678);
+    Handler<qb::ActorId>                      ordinary{ordinary_id};
+    Handler<qb::ActorId>                      service{service_id};
+    ASSERT_NE(ordinary_id.raw64() >> 32u, 0u);
+    ASSERT_NE(ordinary_id.raw64(), service_id.raw64());
+
+    router.subscribe(service); // a service must route even while the primary bank is empty
+    route_owned(router, service_id, probe);
+    EXPECT_EQ(service.hits, 1u);
+    router.subscribe(ordinary);
+    route_owned(router, ordinary_id, probe);
+    route_owned(router, service_id, probe);
+    EXPECT_EQ(ordinary.hits, 1u);
+    EXPECT_EQ(service.hits, 2u);
+
+    route_owned(router, qb::ActorId::ordinary(7, 3, 0x12345677), probe);
+    route_owned(router, qb::ActorId::ordinary(7, 4, 0x12345678), probe);
+    route_owned(router, qb::ActorId::service_instance(7, 3, 0x12345677), probe);
+    route_owned(router, qb::ActorId::service_instance(7, 4, 0x12345678), probe);
+    // Address-following belongs to the engine; a raw router subscription names an instance.
+    route_owned(router, qb::ActorId::service_address(7, 3), probe);
+    route_owned(router, qb::ActorId::ordinary(8, 3, 0x12345678), probe);
+    EXPECT_EQ(probe.undelivered, 6u);
+    EXPECT_EQ(ordinary.hits, 1u);
+    EXPECT_EQ(service.hits, 2u);
+
+    router.unsubscribe(ordinary_id);
+    router.unsubscribe(service_id);
+    Handler<qb::ActorId> next_ordinary{qb::ActorId::ordinary(7, 3, 0x12345679)};
+    Handler<qb::ActorId> next_service{qb::ActorId::service_instance(7, 3, 0x12345679)};
+    router.subscribe(next_ordinary);
+    router.subscribe(next_service);
+    route_owned(router, ordinary_id, probe);
+    route_owned(router, service_id, probe);
+    EXPECT_EQ(probe.undelivered, 8u);
+    router.unsubscribe(ordinary_id); // an old incarnation must not erase its replacement
+    router.unsubscribe(service_id);
+    route_owned(router, next_ordinary.id(), probe);
+    route_owned(router, next_service.id(), probe);
+    EXPECT_EQ(next_ordinary.hits, 1u);
+    EXPECT_EQ(next_service.hits, 1u);
+
+    route_owned(router, qb::ActorId(qb::BroadcastId(3)), probe);
+    EXPECT_EQ(next_ordinary.hits, 2u);
+    EXPECT_EQ(next_service.hits, 2u);
+    next_ordinary.live = false;
+    route_owned(router, qb::ActorId(qb::BroadcastId(3)), probe);
+    EXPECT_EQ(next_ordinary.hits, 2u);
+    EXPECT_EQ(next_service.hits, 3u);
+    EXPECT_EQ(probe.undelivered, 8u);
+    EXPECT_EQ(ordinary.hits, 1u);
+    EXPECT_EQ(service.hits, 2u);
+}
+
+TEST(EventRouting, ActorIdentitySemhPreservesTransferredOwnershipOnThrowAndDisposesUntransferredPayload) {
+    for (bool secondary : {false, true}) {
+        using Event = OwnedEvent<qb::ActorId>;
+        Probe                   probe;
+        qb::router::semh<Event> router;
+        Handler<qb::ActorId>    handler{secondary ? qb::ActorId::service_instance(7, 3, 0x12345678) : qb::ActorId::ordinary(7, 3, 0x12345678)};
+        router.subscribe(handler);
+        handler.throw_now = true;
+        handler.transfer  = true;
+        alignas(Event) unsigned char storage[sizeof(Event)];
+        auto                        *transferred = new (storage) Event(handler.id(), probe);
+        EXPECT_THROW(router.template route<true>(*transferred), std::runtime_error);
+        EXPECT_EQ(probe.destroyed, 0u);
+        EXPECT_EQ(probe.payload_destroyed, 0u);
+        if (probe.destroyed == 0u) {
+            EXPECT_TRUE(transferred->is_alive());
+            ASSERT_NE(transferred->payload, nullptr);
+            EXPECT_EQ(transferred->payload->stamp, 0xfedcba9876543210ULL);
+            transferred->~Event(); // the receiving owner releases it in this isolated unit fixture
+        }
+        EXPECT_EQ(probe.destroyed, 1u);
+        EXPECT_EQ(probe.payload_destroyed, 1u);
+
+        handler.transfer    = false;
+        auto *untransferred = new (storage) Event(handler.id(), probe);
+        EXPECT_THROW(router.template route<true>(*untransferred), std::runtime_error);
+        EXPECT_EQ(probe.destroyed, 2u);
+        EXPECT_EQ(probe.payload_destroyed, 2u);
+        if (probe.destroyed == 1u)
+            untransferred->~Event();
+        EXPECT_EQ(handler.hits, 2u);
+        EXPECT_EQ(probe.undelivered, 0u);
+    }
+}
+
+} // namespace event_router_identity_semh_test
+
+namespace event_router_overlapping_semh_test {
+
+struct Key {
+    std::uint16_t slot       = 0;
+    std::uint16_t generation = 0;
+    bool          secondary  = false;
+    bool          broadcast  = false;
+    bool
+    is_broadcast() const noexcept {
+        return broadcast;
+    }
+    bool operator==(Key const &) const noexcept = default;
+};
+inline unsigned invalid_primary_projections = 0;
+
+} // namespace event_router_overlapping_semh_test
+
+namespace qb::router {
+
+template <>
+struct dense_index<event_router_overlapping_semh_test::Key> {
+    using Key                                        = event_router_overlapping_semh_test::Key;
+    static constexpr bool        enabled             = true;
+    static constexpr bool        partitioned         = true;
+    static constexpr bool        broadcast_secondary = true;
+    static constexpr std::size_t max_index           = 15;
+    static constexpr std::size_t secondary_max_index = 15;
+    // No exclusion trait: both banks use [0,15], and primary_of is defined only
+    // for primary keys. Generic routing must respect that customization contract.
+    static bool
+    secondary(Key const &key) noexcept {
+        return key.secondary;
+    }
+    static std::size_t
+    of(Key const &key) noexcept {
+        return key.slot;
+    }
+    static std::size_t
+    secondary_of(Key const &key) noexcept {
+        return key.slot;
+    }
+    static std::size_t
+    primary_of(Key const &key) noexcept {
+        if (key.secondary)
+            ++event_router_overlapping_semh_test::invalid_primary_projections;
+        return key.slot;
+    }
+};
+
+} // namespace qb::router
+
+namespace event_router_overlapping_semh_test {
+
+TEST(EventRouting, PartitionedSemhKeepsOverlappingBanksWithoutTheOptionalExclusionTrait) {
+    using namespace event_router_identity_semh_test;
+    Probe                             probe;
+    qb::router::semh<OwnedEvent<Key>> router;
+    Handler<Key>                      primary{Key{7, 1, false, false}};
+    Handler<Key>                      secondary{Key{7, 1, true, false}};
+    const Key                         broadcast{15, 0, true, true};
+    invalid_primary_projections = 0;
+    router.subscribe(primary);
+    router.subscribe(secondary);
+    route_owned(router, primary.id(), probe);
+    route_owned(router, secondary.id(), probe);
+    route_owned(router, broadcast, probe);
+    EXPECT_EQ(primary.hits, 2u);
+    EXPECT_EQ(secondary.hits, 2u);
+
+    route_owned(router, Key{7, 2, true, false}, probe);
+    router.unsubscribe(secondary.id());
+    route_owned(router, secondary.id(), probe);
+    route_owned(router, primary.id(), probe);
+    EXPECT_EQ(primary.hits, 3u);
+    EXPECT_EQ(secondary.hits, 2u);
+    EXPECT_EQ(probe.undelivered, 2u);
+    EXPECT_EQ(invalid_primary_projections, 0u);
+}
+
+} // namespace event_router_overlapping_semh_test
+
+namespace event_router_occupancy_test {
+
+TEST(EventRouting, GenericDenseOccupancyKeepsDefaultValuesAndNullPointersPresent) {
+    qb::router::internal::key_table<std::uint16_t, int>    values;
+    qb::router::internal::key_table<std::uint16_t, void *> pointers;
+    values.insert_or_assign(0, 0); // Neither the key nor the value is an occupancy sentinel.
+    pointers.insert_or_assign(0, nullptr);
+    ASSERT_NE(values.find(0), nullptr);
+    ASSERT_NE(pointers.find(0), nullptr);
+    EXPECT_EQ(*values.find(0), 0);
+    EXPECT_EQ(*pointers.find(0), nullptr);
+    unsigned value_visits = 0, pointer_visits = 0;
+    values.for_each([&](std::uint16_t key, int value) {
+        EXPECT_EQ(key, 0);
+        EXPECT_EQ(value, 0);
+        ++value_visits;
+    });
+    pointers.for_each([&](std::uint16_t key, void *value) {
+        EXPECT_EQ(key, 0);
+        EXPECT_EQ(value, nullptr);
+        ++pointer_visits;
+    });
+    EXPECT_EQ(value_visits, 1u);
+    EXPECT_EQ(pointer_visits, 1u);
+    values.erase(0);
+    pointers.erase(0);
+    EXPECT_EQ(values.find(0), nullptr);
+    EXPECT_EQ(pointers.find(0), nullptr);
+}
+
+TEST(EventRouting, HeterogeneousSemhCopyAndRvalueCopyKeepIndependentFullIdentityBanks) {
+    using namespace event_router_identity_semh_test;
+    using Router = qb::router::semh<OwnedEvent<qb::ActorId>>;
+    Probe                probe;
+    Handler<qb::ActorId> ordinary{qb::ActorId::ordinary(1024, 3, 0x89abcdef)};
+    Handler<qb::ActorId> service{qb::ActorId::service_instance(7, 3, 0xfedcba98)};
+    Handler<qb::ActorId> overwritten{qb::ActorId::ordinary(9, 3, 0x12345678)};
+    Router               original;
+    original.subscribe(ordinary);
+    original.subscribe(service);
+    Router copied(original);
+    Router assigned;
+    assigned.subscribe(overwritten);
+    assigned = original;
+    // Declared destructors suppress implicit moves: these are the current copy
+    // operations on rvalues. Source tables must still retain their subscribers.
+    Router rvalue_copied(std::move(original));
+    Router rvalue_assigned;
+    rvalue_assigned = std::move(copied);
+    for (auto *router : {&original, &copied, &assigned, &rvalue_copied, &rvalue_assigned}) {
+        route_owned(*router, ordinary.id(), probe);
+        route_owned(*router, service.id(), probe);
+    }
+    EXPECT_EQ(ordinary.hits, 5u);
+    EXPECT_EQ(service.hits, 5u);
+    EXPECT_EQ(probe.undelivered, 0u);
+    route_owned(assigned, overwritten.id(), probe);
+    EXPECT_EQ(overwritten.hits, 0u);
+    EXPECT_EQ(probe.undelivered, 1u);
+    assigned.unsubscribe(ordinary.id());
+    rvalue_copied.unsubscribe(service.id());
+    route_owned(assigned, ordinary.id(), probe);
+    route_owned(rvalue_copied, service.id(), probe);
+    route_owned(original, ordinary.id(), probe);
+    route_owned(copied, service.id(), probe);
+    EXPECT_EQ(probe.undelivered, 3u);
+    EXPECT_EQ(ordinary.hits, 6u);
+    EXPECT_EQ(service.hits, 6u);
+    EXPECT_EQ(probe.destroyed, 15u);
+    EXPECT_EQ(probe.payload_destroyed, 15u);
+}
+
+} // namespace event_router_occupancy_test

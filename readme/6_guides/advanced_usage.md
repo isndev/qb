@@ -238,7 +238,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 `Actor::spawn()` and `Actor::spawn_detached()` are the two supported ways to run a C++20 coroutine inside an actor. Both launch the coroutine in an *isolated context* on the actor's own `VirtualCore` and return immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. They differ only in lifetime:
 
 - **`spawn()` — recommended default.** *Scoped* to the actor: `kill()` cancels it at the next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` with cancellation-aware operations (`ctx.sleep`, `ctx.until_cancelled`, `ctx.cancellation_point`, `ctx.cancellable`). Request/response patterns (`qb::ask`, `qb::ask_all`, `qb::run_saga`, …) are free functions in `qb/patterns.h` built on it.
-- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1753-1764; qb/src/qb/core/VirtualCore.cpp:974-976 -->
+- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1683-1694; qb/src/qb/core/VirtualCore.cpp:1064-1066 -->
 
 The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which both entry points share.
 
@@ -290,7 +290,7 @@ The result arrives as an ordinary event handler — `on(ProcessingComplete&)` �
 
 ## Service actors for shared logic
 
-A `qb::ServiceActor<Tag>` is a singleton-style actor: exactly one instance per `VirtualCore` per `Tag`. Other actors on the same core reach it directly with `getService<T>()`, which returns a raw pointer (or `nullptr` if no such service exists on that core) — no `ActorId` lookup, no event round-trip. This is the idiomatic home for per-core shared infrastructure: a connection pool, a config cache, a metrics sink, a logger.
+A `qb::ServiceActor<Tag>` is a singleton-style actor: exactly one instance per `VirtualCore` per `Tag`. Other actors on the same core reach it directly with `getService<T>()`, which returns a raw pointer (or `nullptr` if no such service exists on that core) — a same-core tag lookup with no event round-trip. This is the idiomatic home for per-core shared infrastructure: a connection pool, a config cache, a metrics sink, a logger.
 
 ```cpp
 // <!-- src: qb/tests/core/system/actor/actor-add.cpp -->
@@ -335,8 +335,9 @@ engine.core(0)
 **Properties and pitfalls.**
 
 - One instance **per core**: `getService<T>()` only resolves a service that exists on the *calling* actor's core. For cross-core access, send an event to the service's `ActorId` instead of holding a pointer. The returned pointer must never be cached and dereferenced from another core's thread.
-- A `ServiceActor`'s service id is allocated once per `Tag` — at static initialization, for every tag the program names — and reserved for the process lifetime; the id is never recycled, so service ids stay stable even as ordinary actors come and go. A tag whose first registration comes while a core is alive (an image loaded mid-run) is refused: its id is `NotFound` and its service cannot be added until every core is gone, so load such an image before `Main::start` ([Writing actors](../4_qb_core/actor.md#services-one-per-core-per-tag)).
+- The tag's `ServiceId` index is allocated once per process and stays stable, but `Actor::id()` names a nonzero-generation service instance. `getServiceId<Tag>(core)` returns its separate generation-zero logical address. Logical messages bind to the current instance once on receipt; a stored instance ID or handle cannot resolve a replacement within that engine run. First registration while a core lives remains refused (invalid address, CRIT, debug assert), so load images introducing tags before `Main::start`. Ordinary capacity is independent of registered tags. Source: `src/qb/core/ActorId.h` (`service_address`, `service_instance`), `src/qb/core/VirtualCore.cpp` (`__register_service__`, `__receive_events__`); see [Writing actors](../4_qb_core/actor.md#services-one-per-core-per-tag).
 - The service is still an actor: it has a mailbox and can `registerEvent`/`on(...)` like any other actor. `getService<T>()` is a fast path for same-core callers, not a replacement for the event system across cores.
+- Capture `service->id()` for a specific incarnation, or keep `getServiceId<Tag>(core)` when requests intentionally follow the current service. `getService<T>()` is phase-blind: non-null can mean Activating or killed but not yet reaped; cache/dereference a raw pointer only while its instance still exists on this core. A service handle's `ready_async()` snapshots its instance when called and will not switch targets if the handle is reassigned before the task is awaited. Source: `src/qb/core/VirtualCore.h` (`VirtualCore::getService`), `src/qb/core/Actor.h` (`ActorHandle::ready_async`).
 
 ## Composing qbm modules
 

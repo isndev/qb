@@ -42,6 +42,8 @@
  * @ingroup Tests
  */
 
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -258,6 +260,144 @@ TEST(SpscCachedIndex, WriteRoomOnTheDynamicRingHonoursItsRuntimeCapacity) {
     EXPECT_EQ(ring.write_room(100), 2u);
     EXPECT_EQ(ring.enqueue(three, 2), 2u);
     EXPECT_EQ(ring.write_room(1), 0u);
+}
+
+// ---- synchronous producer transactions -------------------------------------------------------
+
+TEST(SpscCachedIndex, EnqueueWithDoesNotCallTheFillerForZeroOrAnInsufficientWrite) {
+    Ring        ring{};
+    std::size_t calls = 0;
+    int         next  = 100;
+    auto const  fill  = [&](int *first, std::size_t first_count, int *second, std::size_t second_count) noexcept {
+        ++calls;
+        for (std::size_t i = 0; i < first_count; ++i)
+            first[i] = next++;
+        for (std::size_t i = 0; i < second_count; ++i)
+            second[i] = next++;
+    };
+
+    EXPECT_EQ(ring.enqueue_with(0, fill), 0u);
+    EXPECT_EQ(ring.enqueue_with(kCap + 1, fill), 0u);
+    EXPECT_EQ(calls, 0u);
+    EXPECT_TRUE(ring.empty());
+    ASSERT_EQ(ring.enqueue_with(kCap, fill), kCap);
+    EXPECT_EQ(calls, 1u);
+    EXPECT_EQ(ring.enqueue_with(1, fill), 0u) << "full";
+    EXPECT_EQ(ring.enqueue_with(0, fill), 0u);
+    EXPECT_EQ(calls, 1u);
+
+    int out[2];
+    ASSERT_EQ(ring.dequeue(out, 2), 2u);
+    EXPECT_EQ(out[0], 100);
+    EXPECT_EQ(out[1], 101);
+    EXPECT_EQ(ring.enqueue_with(3, fill), 0u) << "two slots free: no partial callback";
+    EXPECT_EQ(calls, 1u);
+    ASSERT_EQ(ring.enqueue_with(2, fill), 2u) << "refresh must see the two freed slots";
+    EXPECT_EQ(calls, 2u);
+    std::vector<int> drained(kCap);
+    ASSERT_EQ(ring.dequeue(drained.data(), drained.size()), kCap);
+    EXPECT_EQ(drained, (std::vector<int>{102, 103, 104, 105, 106, 107, 108, 109}));
+    EXPECT_TRUE(ring.empty());
+}
+
+TEST(SpscCachedIndex, EnqueueWithWrapPreservesUnreadItemsAndPresentsBothRunsInOrder) {
+    Ring      ring{};
+    const int prefix[7] = {1, 2, 3, 4, 5, 6, 7};
+    ASSERT_EQ(ring.enqueue(prefix, 7), 7u);
+    int removed[5];
+    ASSERT_EQ(ring.dequeue(removed, 5), 5u);
+
+    std::size_t calls = 0, first_size = 0, second_size = 0;
+    ASSERT_EQ(ring.enqueue_with(4,
+                                [&](int *first, std::size_t first_count, int *second, std::size_t second_count) noexcept {
+                                    ++calls;
+                                    first_size  = first_count;
+                                    second_size = second_count;
+                                    for (std::size_t i = 0; i < first_count; ++i)
+                                        first[i] = 8 + static_cast<int>(i);
+                                    for (std::size_t i = 0; i < second_count; ++i)
+                                        second[i] = 8 + static_cast<int>(first_count + i);
+                                }),
+              4u);
+    EXPECT_EQ(calls, 1u);
+    EXPECT_EQ(first_size, 2u) << "the storage has nine slots and the writer is at slot seven";
+    EXPECT_EQ(second_size, 2u);
+    std::vector<int> drained(6);
+    ASSERT_EQ(ring.dequeue(drained.data(), drained.size()), drained.size());
+    EXPECT_EQ(drained, (std::vector<int>{6, 7, 8, 9, 10, 11}));
+    EXPECT_TRUE(ring.empty());
+}
+
+TEST(SpscCachedIndex, EnqueueWithExactEndStartsTheNextWriteAtTheFirstSlot) {
+    Ring      ring{};
+    const int prefix[5] = {1, 2, 3, 4, 5};
+    ASSERT_EQ(ring.enqueue(prefix, 5), 5u);
+    int removed[5];
+    ASSERT_EQ(ring.dequeue(removed, 5), 5u);
+
+    std::size_t first_size = 0, second_size = 0;
+    int         next = 10;
+    auto const  fill = [&](int *first, std::size_t first_count, int *second, std::size_t second_count) noexcept {
+        first_size  = first_count;
+        second_size = second_count;
+        for (std::size_t i = 0; i < first_count; ++i)
+            first[i] = next++;
+        for (std::size_t i = 0; i < second_count; ++i)
+            second[i] = next++;
+    };
+    ASSERT_EQ(ring.enqueue_with(4, fill), 4u);
+    EXPECT_EQ(first_size, 4u);
+    EXPECT_EQ(second_size, 0u) << "exact end is one run, not an extra slot";
+    ASSERT_EQ(ring.enqueue_with(2, fill), 2u);
+    EXPECT_EQ(first_size, 2u);
+    EXPECT_EQ(second_size, 0u);
+    std::vector<int> drained(6);
+    ASSERT_EQ(ring.dequeue(drained.data(), drained.size()), drained.size());
+    EXPECT_EQ(drained, (std::vector<int>{10, 11, 12, 13, 14, 15}));
+    EXPECT_TRUE(ring.empty());
+}
+
+TEST(SpscCachedIndex, EnqueueWithDoesNotPublishTheFirstRunBeforeTheCallbackFinishesTheSecond) {
+    Ring      ring{};
+    const int prefix[7] = {1, 2, 3, 4, 5, 6, 7};
+    ASSERT_EQ(ring.enqueue(prefix, 7), 7u);
+    int removed[7];
+    ASSERT_EQ(ring.dequeue(removed, 7), 7u); // the next four slots wrap as two plus two
+
+    std::atomic<bool> entered{false}, finish{false}, done{false};
+    std::size_t       published = 0, first_size = 0, second_size = 0;
+    std::thread       producer([&] {
+        published = ring.enqueue_with(4, [&](int *first, std::size_t first_count, int *second, std::size_t second_count) noexcept {
+            first_size  = first_count;
+            second_size = second_count;
+            for (std::size_t i = 0; i < first_count; ++i)
+                first[i] = 100 + static_cast<int>(i);
+            entered.store(true, std::memory_order_release);
+            while (!finish.load(std::memory_order_acquire))
+                std::this_thread::yield();
+            for (std::size_t i = 0; i < second_count; ++i)
+                second[i] = 100 + static_cast<int>(first_count + i);
+        });
+        done.store(true, std::memory_order_release);
+    });
+
+    // No fatal assertion until the producer is released and joined: a refused transaction
+    // or a missing callback must fail the test rather than leave a joinable thread behind.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!entered.load(std::memory_order_acquire) && !done.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    EXPECT_TRUE(entered.load(std::memory_order_acquire));
+    EXPECT_TRUE(ring.empty()) << "even the filled first run is unpublished while the callback is pending";
+    finish.store(true, std::memory_order_release);
+    producer.join();
+
+    ASSERT_EQ(published, 4u);
+    EXPECT_EQ(first_size, 2u);
+    EXPECT_EQ(second_size, 2u);
+    std::vector<int> drained(4);
+    ASSERT_EQ(ring.dequeue(drained.data(), drained.size()), drained.size());
+    EXPECT_EQ(drained, (std::vector<int>{100, 101, 102, 103}));
+    EXPECT_TRUE(ring.empty());
 }
 
 // ---- two threads, thousands of wraps ------------------------------------------------------------

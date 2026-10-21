@@ -85,7 +85,7 @@ struct FatEvent : public qb::Event {
         : seq(s) {}
 };
 
-std::atomic<std::uint32_t> g_sink_id{0};
+std::atomic<std::uint64_t> g_sink_id{0};
 std::atomic<bool>          g_sink_ready{false};
 
 // Runtime witnesses that the scenario actually happened, mirroring `g_received` in the sibling
@@ -104,7 +104,7 @@ public:
     onInit() final {
         registerEvent<FatEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
-        g_sink_id.store(static_cast<std::uint32_t>(id()), std::memory_order_release);
+        g_sink_id.store(id().raw64(), std::memory_order_release);
         g_sink_ready.store(true, std::memory_order_release);
         co_return true;
     }

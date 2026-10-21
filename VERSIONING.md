@@ -2,7 +2,8 @@
 
 # Versioning and compatibility
 
-qb follows [Semantic Versioning 2.0.0](https://semver.org/). The version is defined in
+qb follows [Semantic Versioning 2.0.0](https://semver.org/), with the explicitly approved 3.3
+source exceptions described below. The version is defined in
 `cmake/qbConfig.cmake` (`QB_FRAMEWORK_VERSION`) and consumed by `project()` in `CMakeLists.txt` — that
 file is the single source of truth, and every other version string in the tree is a copy of it.
 
@@ -28,7 +29,7 @@ Given a version `MAJOR.MINOR.PATCH`:
   source-breaking API changes.
 - **MINOR** (`2.x.0`) — new, backward-compatible features. Existing code that compiles against `2.0` keeps
   compiling against `2.x`. New deprecations may be introduced (see below) but nothing already deprecated is
-  removed.
+  removed, except for the approved 3.3 source corrections documented below.
 - **MAJOR** (`x.0.0`) — changes that may require source edits, including removals of previously deprecated
   APIs.
 
@@ -53,7 +54,7 @@ Ordinary calls retain their spelling. Taking an untyped address can require an e
 `auto p = &qb::redis::extract_integer<>` instead of `&qb::redis::extract_integer`, and
 `&qb::redis::parser::RespParser::parse<>` for the corresponding parser member.
 
-This exception does not relax the source-compatibility policy for unrelated APIs. Consumers rebuild as
+This Redis exception does not relax the source-compatibility policy for unrelated APIs. Consumers rebuild as
 required below. Huly QB-1019 tracks restoring the previous address syntax while preserving the real
 C++20/C++23 ABI separation and ordinary-path performance; it does not block this accepted correction.
 
@@ -81,6 +82,35 @@ neither. `append`, `+=`, `compare`, `find`, `rfind`, `starts_with`, `ends_with`,
 constructor, `assign` and `operator=` never accepted it. A null `const char *` held in a variable
 still compiles and is still undefined, as it is for `std::string`.
 
+### Approved 3.3 exception: complete actor identities
+
+The maintainer approved the ActorId64 source correction for 3.3 (Huly QB-970 and QB-971),
+subject to performance validation. This is an explicit exception to minor-release source
+compatibility; rebuilding alone does not restore removed source syntax.
+
+Actor identities now carry slot, core and incarnation generation in 64 bits. The public 32-bit
+codec and implicit integer export are removed. Consumers storing an identity use `raw64()` and
+`ActorId::from_raw(std::uint64_t)`; consumers testing for absence use `is_valid()` rather than a
+numeric comparison with zero. A legacy 32-bit identity cannot recover its missing generation.
+Do not truncate, reinterpret or silently resolve it to the current actor occupying a slot.
+
+The slot accessor `sid()` returns `ActorSlotId`, a 32-bit storage type for a 24-bit slot; it is
+not a 16-bit service tag. Use `slot()` for the slot and `service_tag()` for a service tag. A
+logical `service_address(tag, core)` follows service replacement; an exact actor identity or
+handle remains attached to one incarnation. Identities apply within one engine run, not as
+persistent names or globally unique identities across runs or machines.
+
+Rebuild the complete framework, modules and consumer object graph with coherent headers and
+archives. The actor64 fingerprint rejects mixed layouts where its references are retained; it
+does not define a portable wire format, migrate persistent data or certify separately linked
+plugins. External storage or transport must define width, byte order and format version itself.
+The installed `SameMajorVersion` package check does not encode these source exceptions: a
+successful version check is not proof that an unmodified 32-bit consumer source compiles.
+
+No source exception is approved for unrelated APIs. The train changes its version only through
+the release procedure; this approval does not authorize a release, waive performance validation
+or make ActorId64 a drop-in binary replacement.
+
 ## Binary compatibility
 
 **qb promises no binary compatibility between any two versions, in either direction, including
@@ -103,7 +133,7 @@ header-only framework: most of what a consumer compiles is qb's headers, so most
 layout-visible by construction. Several build options additionally change code generation on their
 own — `QB_ENABLE_NATIVE_ARCH`, `QB_ENABLE_LTO`, `QB_ENABLE_FAST_MATH`, and any sanitizer.
 
-### The fingerprint: five axes, enforced at link time
+### The fingerprint: six axes, enforced at link time
 
 `src/qb/utility/abi.h` gives the archive one symbol per axis, named after the value **it** was
 compiled with, and makes every consumer translation unit that parses a qb header reference one
@@ -113,18 +143,20 @@ There is no opt-out macro: each axis is a configuration in which the two sides a
 together, so the remedy is to rebuild qb, not to silence the check.
 
 An axis qualifies only if a mismatch is simultaneously *possible* in a build that otherwise compiles,
-*silent* under every tool, and *unsound*. Five qualify:
+*silent* under every tool, and *unsound*. Six qualify:
 
 | Axis | Symbol | What differs when it is violated |
 |---|---|---|
-| qb version | `qb_abi_version_M_m_p` | anything (see above) — and it is the axis that catches a consumer compiled with a hand-written `-I`/`-l` line instead of qb's CMake usage requirements |
+| qb version and identity layout | `qb_abi_version_M_m_p_actor64` | anything (see above) — and it is the axis that catches a consumer compiled with a hand-written `-I`/`-l` line instead of qb's CMake usage requirements |
 | cache line | `qb_abi_cacheline_N` | `KNOWN_L1_CACHE_LINE_SIZE` re-lays out `qb::Event` and the coroutine frame pool |
 | exceptions | `qb_abi_exceptions_[01]` | `-fno-exceptions` forks inline bodies the archive also defines |
 | coroutine debug | `qb_abi_coroutine_debug_[01]` | `QB_DEBUG_COROUTINES` grows `task<T>::promise_type` |
 | jthread source | `qb_abi_std_jthread_[01]` | a standard library without `__cpp_lib_jthread`, or `QB_COMPAT_FORCE_THREAD_FALLBACK`, resizes `qb::jthread` and moves every member after it in `qb::Main` and `qb::VirtualCore` |
+| actor identity | `qb_abi_actor_id_64` | identities widen from 32 to 64 bits and change the event header layout; occupied header 16 to 24 bytes was measured on arm64, not asserted for every ABI; the token is fixed by source |
 
-Measured against an installed `3.0.0` prefix (macOS 26 / arm64, AppleClang 21), one axis moved per
-row, everything else held equal:
+The following historical measurements used an installed `3.0.0` prefix (macOS 26 / arm64,
+AppleClang 21), before the actor-identity layout token. One axis moved per row, everything else
+held equal; the symbol names below describe that prefix, not the current actor64 archive:
 
 ```
 consumer configuration                     result
@@ -153,9 +185,20 @@ On MSVC and clang-cl the same axes are additionally emitted as `#pragma detect_m
 which the Microsoft linker reports as `LNK2038` naming **both** values. That pragma is an inert
 no-op on Mach-O and ELF, so it is a bonus where it works and never the mechanism.
 
+
+### Actor identity requires a coherent rebuild
+
+The actor64 source layout adds `qb_abi_actor_id_64` and suffixes the version symbol with
+`_actor64`, including the unknown-version diagnostic. Old headers therefore cannot resolve their
+old version symbol in the new archive. The retained reference array also has a distinct name,
+so mixed old/new consumer translation units cannot coalesce away one layout's references.
+Rebuild the complete consumer/module graph with coherent headers and archives. These checks
+validate fingerprint references; they do not convert event bytes, restore a lost generation,
+validate general ABI compatibility or certify separately linked plugins.
+
 ### What the fingerprint does *not* protect
 
-**It is a detector for five specific silent misconfigurations, not a general ABI checker.** It
+**It is a detector for six specific silent misconfigurations, not a general ABI checker.** It
 compares qb's configuration against qb's configuration. It cannot see, and does not claim to see:
 
 - **The compiler, or its version.** See the next section — this is the one with a worked example.
@@ -226,7 +269,7 @@ never been configured anywhere. Treat it as unsupported for the 3.0 series. What
 ### Diagnosing a mismatch
 
 1. The link error already names the axis and the value *your* translation unit was compiled with —
-   for example `_qb_abi_cacheline_128`, `referenced from: qb::detail::abi_fingerprint in main.o`.
+   for example `_qb_abi_cacheline_128`, `referenced from: qb::detail::abi_fingerprint_actor64 in main.o`.
 2. The archive's side of the story needs no demangler and no qb source tree:
 
    ```sh
@@ -239,7 +282,7 @@ never been configured anywhere. Treat it as unsupported for the 3.0 series. What
    prefixes is a `diff`. See [INSTALL.md](./INSTALL.md).
 4. **Consume qb through `find_package` or `add_subdirectory`.** A hand-written `-I`/`-l` line misses
    qb's usage requirements — not only the version, but the feature macros — and yields the
-   `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements` symbol by design.
+   `qb_abi_version_unknown__compile_with_qb_s_cmake_usage_requirements_actor64` symbol by design.
 
 ## Deprecation policy
 

@@ -42,7 +42,7 @@
 #include <qb/utility/abi.h>
 #include <typeinfo>
 #include <utility>
-// detail::event_wire moves the 16-byte event header as ONE machine word (see its doc block).
+// detail::event_wire preserves both complete identities and copies in 16-byte chunks (see its doc block).
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #include <emmintrin.h>
 #define QB_EVENT_WIRE_SSE2 1
@@ -83,7 +83,7 @@ namespace detail {
  * @warning The boundary is GUARDED since 3.3 (Huly QB-60): registering a type when 65535 ids
  *          have been drawn prints which type could not be registered and aborts (fail-stop,
  *          in `register_type_id`, Event.cpp -- a cold path, run once per type). Unguarded, the
- *          `uint16_t` `TypeId` (ActorId.h:69) wrapped *inside* the atomic onto the framework's
+ *          `uint16_t` `TypeId` (ActorId.h:73) wrapped *inside* the atomic onto the framework's
  *          own reserved ids. Measured, by forcing the counter to 65534:
  *
  *              type_id<TA1> = 65535
@@ -299,7 +299,7 @@ prepare_event_storage([[maybe_unused]] void *const raw, [[maybe_unused]] std::si
 #endif
 }
 
-struct event_wire; // defined after qb::Event: the header as one 16-byte unit
+struct event_wire; // defined after qb::Event: complete identities copied in 16-byte chunks
 } // namespace detail
 
 /**
@@ -480,25 +480,22 @@ public:
     /*!
      * @brief Get the destination actor ID
      * @return ID of the destination actor that should receive this event
-     * @details The copy is ONE 32-bit read (`std::bit_cast`), not a member-wise one. Copied member
-     *          by member, the two 16-bit halves were re-packed by g++'s -O3 block vectorizer into a
-     *          vector register as soon as a router branch called out of line (Huly QB-163), and the
-     *          service id that indexes the handler table came back out through `movd` + `pextrw`
-     *          on every event routed (+1.3 % on the one-core push probe, measured).
+     * @details The full 64-bit representation is copied with `std::bit_cast`, preserving its
+     *          generation, core and slot without member-wise reconstruction.
      */
     [[nodiscard]] inline id_handler_type
     getDestination() const noexcept {
-        static_assert(sizeof(id_handler_type) == sizeof(std::uint32_t));
-        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint32_t>(dest));
+        static_assert(sizeof(id_handler_type) == sizeof(std::uint64_t));
+        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint64_t>(dest));
     }
     /*!
      * @brief Get the source actor ID
      * @return ID of the source actor that sent this event
-     * @details One 32-bit read, for the reason given on `getDestination()`.
+     * @details The complete 64-bit representation, as for `getDestination()`.
      */
     [[nodiscard]] inline id_handler_type
     getSource() const noexcept {
-        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint32_t>(source));
+        return std::bit_cast<id_handler_type>(std::bit_cast<std::uint64_t>(source));
     }
     /*!
      * @brief Get the size of the event in bytes
@@ -585,7 +582,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `Event::Header::prot` already encodes `qos = 2`, so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:1798-1882`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:2056-2140`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -646,52 +643,28 @@ struct ServiceEvent : public Event {
 
 namespace detail {
 /*!
- * @struct event_wire
- * @ingroup EventCore
- * @brief The framework header of every event — bytes 0..15: `state`, `bucket_size`, `id`,
- *        `dest`, `source` — handled as ONE 16-byte machine unit.
- * @details Every event that reaches a handler is COPIED into a pipe (`reply()`, `forward()`, a
- *          same-core `send`), and the copy starts with a wide load of those first bytes. Written
- *          field by field just before — `reply()` is two 4-byte stores, `dest` and `source` —
- *          that load spans several in-flight stores and **cannot be forwarded**: the CPU stalls
- *          until they retire. Measured on savina/bank-transaction (one `qb::ask` per transfer):
- *          libc's `memmove` was 4.3 % of the core, all of it on the 32-byte load over `reply()`'s
- *          swap — and before that, `deliver_thunk`'s first header load sat behind the receive
- *          loop's `alive = 0` byte store for 70 % of the thunk's time.
- *
- *          So the header is composed in a register and written back **once** (`swap_dest_source`
- *          for `reply()`, `set_dest` for `forward()`), and the copy reads it back as ONE
- *          16-byte load of exactly the bytes that store wrote — the one shape every store
- *          forwarder accepts — then moves the tail. Both rewrites and the copy clear `alive`
- *          in the register, for free: **an event handed to any transport carries `alive == 0`**,
- *          whatever its original said — the same-core copy clears it again, and the
- *          cross-core mailbox, which is a raw `memcpy`, relocates a header the rewrite already
- *          cleared. `reply()`/`forward()` raise the ORIGINAL's flag after the copy, and that is
- *          what the dispatcher reads to skip the destructor of an event whose bytes moved on;
- *          replying and then forwarding the same event therefore yields two copies, each
- *          owning its bytes and destroyed once (`messaging-reply-forward.cpp`, RelayChain).
- *
- *          SSE2 and NEON carry the header in one vector register; the fallback is two 64-bit
- *          words, which every other target forwards just as well. The layout it relies on is
- *          pinned by the static assertions below, against `qb::Event` itself — a reordered
- *          member fails to compile here rather than corrupting a reply.
- *
- *          What it deliberately does NOT do: the payload. A responder that writes its answer
- *          fields and then calls `reply()` has the same wide-load-over-narrow-stores shape on
- *          the TAIL of the copy, and no framework code can reorder a user's stores; it is one
- *          stall per reply, inherent to copy-out, and the documented cost of `reply()`.
+ * @brief Internal event transport operations for the 64-bit actor identity layout.
+ * @details The occupied header is 24 bytes: state/count/type followed by two 64-bit
+ *          identities. Local and reply copies clear the copied event's liveness bit;
+ *          copy_transport_bucket preserves every byte, including that bit, and expects
+ *          its caller to supply a transport-ready event. Reply/forward mark their original
+ *          alive once its bytes have been copied.
+ *          Rewrites preserve complete identities, including their generations. They do not
+ *          promise the single-vector store shape of the former 16-byte occupied header.
+ *          Payload bytes are copied unchanged, in complete allocator buckets.
  */
 struct event_wire {
-    static constexpr std::size_t header_bytes = 16;
-    static constexpr uint32_t    alive_bit    = 1u << 24; // Event::Header::bits::alive (bit 24)
+    static constexpr std::size_t header_bytes          = 16; // SIMD copy chunk, not the occupied header.
+    static constexpr std::size_t occupied_header_bytes = 24;
+    static constexpr uint32_t    alive_bit             = 1u << 24; // Event::Header::bits::alive (bit 24)
 
     static_assert(std::endian::native == std::endian::little, "event_wire composes the header word in little-endian lane order");
     static_assert(std::is_standard_layout_v<Event>, "the header is addressed by offset");
     static_assert(sizeof(Event::Header) == 4 && offsetof(Event, state) == 0);
     static_assert(offsetof(Event, bucket_size) == 4 && sizeof(Event::bucket_size) == 2);
     static_assert(offsetof(Event, id) == 6 && sizeof(Event::id) == 2);
-    static_assert(offsetof(Event, dest) == 8 && sizeof(ActorId) == 4);
-    static_assert(offsetof(Event, source) == 12);
+    static_assert(offsetof(Event, dest) == 8 && sizeof(ActorId) == 8);
+    static_assert(offsetof(Event, source) == 16);
     static_assert(std::is_trivially_copyable_v<ActorId>);
     static_assert(QB_LOCKFREE_EVENT_BUCKET_BYTES >= 2 * header_bytes, "a bucket must hold the header and leave a 16-byte-aligned tail");
 
@@ -707,61 +680,111 @@ struct event_wire {
     }
 #endif
 
-    /*!
-     * @brief `reply()`'s header: `dest` and `source` exchanged, `alive` cleared, one store.
-     */
-    static inline void
-    swap_dest_source(Event &e) noexcept {
 #if defined(QB_EVENT_WIRE_SSE2)
-        auto *const p = reinterpret_cast<__m128i *>(&e);
-        _mm_storeu_si128(p, _mm_andnot_si128(alive_mask(), _mm_shuffle_epi32(_mm_loadu_si128(p), _MM_SHUFFLE(2, 3, 1, 0))));
-#elif defined(QB_EVENT_WIRE_NEON)
-        auto *const      p = reinterpret_cast<uint32_t *>(&e);
-        const uint32x4_t h = vld1q_u32(p);
-        vst1q_u32(p, vbicq_u32(vcombine_u32(vget_low_u32(h), vrev64_u32(vget_high_u32(h))), alive_mask()));
+    // MSVC retains the two-iteration loop for the default bucket. Spell out those
+    // constant offsets; other configured bucket sizes keep their exact tail bound.
+    static QB_MSVC_FORCEINLINE void
+    copy_bucket_tail(unsigned char *d, unsigned char const *s) noexcept {
+        if constexpr (QB_LOCKFREE_EVENT_BUCKET_BYTES == 64) {
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(d + 32), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s + 32)));
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(d + 48), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s + 48)));
+        } else {
+            for (std::size_t off = 32; off < QB_LOCKFREE_EVENT_BUCKET_BYTES; off += 16)
+                _mm_storeu_si128(reinterpret_cast<__m128i *>(d + off), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s + off)));
+        }
+    }
+#endif
+
+    // An unchanged transport bucket. Keep source and the first payload word separate:
+    // a handler or constructor may have just written either one independently.
+    static inline void
+    copy_transport_bucket(void *output, Event const &event) noexcept {
+        auto *const       d = static_cast<unsigned char *>(output);
+        auto const *const s = reinterpret_cast<unsigned char const *>(&event);
+#if defined(QB_EVENT_WIRE_SSE2)
+        _mm_storeu_si128(reinterpret_cast<__m128i *>(d), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s)));
+        _mm_storel_epi64(reinterpret_cast<__m128i *>(d + 16), _mm_loadl_epi64(reinterpret_cast<__m128i const *>(s + 16)));
+        _mm_storel_epi64(reinterpret_cast<__m128i *>(d + 24), _mm_loadl_epi64(reinterpret_cast<__m128i const *>(s + 24)));
+        copy_bucket_tail(d, s);
 #else
-        auto *const p = reinterpret_cast<unsigned char *>(&e);
-        uint64_t    lo, ids;
-        std::memcpy(&lo, p, sizeof lo);
-        std::memcpy(&ids, p + offsetof(Event, dest), sizeof ids);
-        lo &= ~static_cast<uint64_t>(alive_bit);
-        ids = (ids >> 32) | (ids << 32);
-        std::memcpy(p, &lo, sizeof lo);
-        std::memcpy(p + offsetof(Event, dest), &ids, sizeof ids);
+        std::memcpy(d, s, QB_LOCKFREE_EVENT_BUCKET_BYTES);
+#endif
+    }
+
+    // Copy the first contiguous run of a reply. The first bucket contains all 24 header
+    // bytes. Its source identity load must not overlap the handler's fresh payload stores.
+    static inline void
+    copy_reply(void *output, Event const &e, std::size_t bytes) noexcept {
+        auto         *d = static_cast<unsigned char *>(output);
+        auto const   *s = reinterpret_cast<unsigned char const *>(&e);
+        std::uint64_t meta;
+        std::memcpy(&meta, s, 8);
+        meta &= ~static_cast<std::uint64_t>(alive_bit);
+        std::memcpy(d, &meta, 8);
+        std::memcpy(d + 8, &e.source, 8);
+        std::memcpy(d + 16, &e.dest, 8);
+#if defined(QB_EVENT_WIRE_SSE2)
+        if constexpr (QB_LOCKFREE_EVENT_BUCKET_BYTES >= 64) {
+            _mm_storel_epi64(reinterpret_cast<__m128i *>(d + 24), _mm_loadl_epi64(reinterpret_cast<__m128i const *>(s + 24)));
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(d + 32), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s + 32)));
+            _mm_storeu_si128(reinterpret_cast<__m128i *>(d + 48), _mm_loadu_si128(reinterpret_cast<__m128i const *>(s + 48)));
+            if (bytes > 64)
+                std::memcpy(d + 64, s + 64, bytes - 64);
+        } else {
+            std::memcpy(d + 24, s + 24, bytes - 24);
+        }
+#else
+        std::memcpy(d + 24, s + 24, bytes - 24);
 #endif
     }
 
     /*!
-     * @brief `forward()`'s header: `dest` replaced, `alive` cleared, one store.
+     * @brief `reply()`'s header: complete `dest` and `source` exchanged, `alive` cleared.
+     */
+    static inline void
+    swap_dest_source(Event &e) noexcept {
+#if defined(QB_EVENT_WIRE_SSE2)
+        // Two 16-byte stores laid exactly where copy() then loads: [0, 16) = state..id with `alive` cleared and the
+        // new dest, [16, 32) = the new source and the first 8 payload bytes rewritten unchanged. Each of the copy's
+        // first two loads forwards from ONE store of its own size. Scalar 8-byte stores (and the 4-byte bit-field
+        // clear) under those 16-byte loads defeat store-to-load forwarding on x86: every reply() stalled its copy
+        // until the stores retired (Huly QB-970 perf lot, MSVC 19.51). The 16-bit codec's header was one 16-byte
+        // store for the same reason. reply() already requires its event to occupy its bucket: copy() reads all of it.
+        auto *const   p  = reinterpret_cast<__m128i *>(&e);
+        const __m128i c0 = _mm_loadu_si128(p);
+        const __m128i c1 = _mm_loadu_si128(p + 1);
+        _mm_storeu_si128(p, _mm_unpacklo_epi64(_mm_andnot_si128(alive_mask(), c0), c1));
+        _mm_storeu_si128(p + 1, _mm_unpackhi_epi64(c0, c1));
+#else
+        const ActorId previous = e.dest;
+        e.dest                 = e.source;
+        e.source               = previous;
+        e.state.bits.alive     = 0;
+#endif
+    }
+
+    /*!
+     * @brief `forward()`'s header: complete `dest` replaced, `alive` cleared.
      */
     static inline void
     set_dest(Event &e, ActorId const dest) noexcept {
-        const auto bits = std::bit_cast<uint32_t>(dest);
 #if defined(QB_EVENT_WIRE_SSE2)
-        auto *const   p    = reinterpret_cast<__m128i *>(&e);
-        const __m128i keep = _mm_set_epi32(-1, 0, -1, static_cast<int>(~alive_bit)); // lane 2 cleared
-        const __m128i lane = _mm_slli_si128(_mm_cvtsi32_si128(static_cast<int>(bits)), 8);
-        _mm_storeu_si128(p, _mm_or_si128(_mm_and_si128(_mm_loadu_si128(p), keep), lane));
-#elif defined(QB_EVENT_WIRE_NEON)
-        auto *const p = reinterpret_cast<uint32_t *>(&e);
-        vst1q_u32(p, vbicq_u32(vsetq_lane_u32(bits, vld1q_u32(p), 2), alive_mask()));
+        // `dest` lies in the copy's first 16-byte chunk: one store of that chunk, `alive` cleared, so the copy that
+        // follows forwards from it (see swap_dest_source).
+        auto *const p = reinterpret_cast<__m128i *>(&e);
+        _mm_storeu_si128(p, _mm_unpacklo_epi64(_mm_andnot_si128(alive_mask(), _mm_loadu_si128(p)),
+                                               _mm_loadl_epi64(reinterpret_cast<const __m128i *>(&dest))));
 #else
-        auto *const p = reinterpret_cast<unsigned char *>(&e);
-        uint64_t    lo, ids;
-        std::memcpy(&lo, p, sizeof lo);
-        std::memcpy(&ids, p + offsetof(Event, dest), sizeof ids);
-        lo &= ~static_cast<uint64_t>(alive_bit);
-        ids = (ids & 0xFFFFFFFF00000000ull) | bits;
-        std::memcpy(p, &lo, sizeof lo);
-        std::memcpy(p + offsetof(Event, dest), &ids, sizeof ids);
+        e.dest             = dest;
+        e.state.bits.alive = 0;
 #endif
     }
 
     /*!
      * @brief Copy `bytes` bytes of `src` (a whole number of buckets) to `dst`.
-     * @details The header travels as one 16-byte load/store with `alive` cleared in the copy;
-     *          a one-bucket event — the common case — finishes with three more 16-byte moves and
-     *          never calls libc, a wider one hands its tail to `memcpy`.
+     * @details The first 16-byte chunk carries `alive`, cleared in the copy.
+     *          The SIMD paths copy a one-bucket event inline, preserving the full source identity
+     *          and payload; a wider event hands its tail to `memcpy`.
      * @return `*dst` as the copied event.
      */
     static inline Event &
@@ -772,8 +795,9 @@ struct event_wire {
         const __m128i h = _mm_loadu_si128(reinterpret_cast<const __m128i *>(s));
         _mm_storeu_si128(reinterpret_cast<__m128i *>(d), _mm_andnot_si128(alive_mask(), h));
         if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES)) {
-            for (std::size_t off = header_bytes; off < QB_LOCKFREE_EVENT_BUCKET_BYTES; off += 16)
-                _mm_storeu_si128(reinterpret_cast<__m128i *>(d + off), _mm_loadu_si128(reinterpret_cast<const __m128i *>(s + off)));
+            _mm_storel_epi64(reinterpret_cast<__m128i *>(d + 16), _mm_loadl_epi64(reinterpret_cast<__m128i const *>(s + 16)));
+            _mm_storel_epi64(reinterpret_cast<__m128i *>(d + 24), _mm_loadl_epi64(reinterpret_cast<__m128i const *>(s + 24)));
+            copy_bucket_tail(d, s);
             return *reinterpret_cast<Event *>(dst);
         }
 #elif defined(QB_EVENT_WIRE_NEON)
@@ -1122,7 +1146,7 @@ inline constexpr bool event_fits_bucket_alignment = alignof(T) <= alignof(EventB
  * @return `Event::type_to_id<T>()` -- identical value, identical cost (the checks are
  *         compile-time only and this compiles to the same load as the call it replaced).
  * @details Called from the three -- and, measured, only three -- sites that stamp the routing
- *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1320-1323) and
+ *          header on a derived-typed value: `VirtualCore::fill_event` (VirtualCore.h:1250-1253) and
  *          `Pipe::push` / `Pipe::allocated_push` in Pipe.h. The two `Pipe` bodies do
  *          NOT call `fill_event`; they duplicate it, so a guard placed only in `fill_event`
  *          would miss `Actor::to(dest).push<E>()` and `allocated_push<E>()` entirely.
@@ -1174,7 +1198,7 @@ routing_safe_type_id() noexcept {
 
     // The OTHER contract every enqueue sink owes, and the one that used to be checked at only
     // one of the three. `VirtualCore::fill_event` has carried this assertion since 2.x
-    // (VirtualCore.h:1325-1328), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
+    // (VirtualCore.h:1255-1258), so `Actor::push` and `Actor::send` were guarded; `Pipe::push` and
     // `Pipe::allocated_push` duplicate `fill_event` rather than calling it, so
     // `getPipe(dest).push<E>()` and `.allocated_push<E>()` were not -- exactly the gap the
     // routing-field guard above was written to close for the header fields. MEASURED on this
@@ -1186,7 +1210,7 @@ routing_safe_type_id() noexcept {
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
     // full, and it discards it WITHOUT disposing it -- `__refused__` returns false for
-    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:1798-1809). Every other event is
+    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:2056-2067). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See

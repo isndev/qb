@@ -2,9 +2,9 @@
  * @file qb/source/core/tests/shared/TestEvent.h
  * @brief Shared event payloads for the qb-core latency / throughput benchmarks.
  *
- * \c LightEvent / \c TestEvent are the timestamp-carrying latency-sample events (steady- and
- * high-resolution-clock \c _timepoint) consumed by the ping-pong / multicast / pipeline
- * latency benches via \c ConsumerActor / \c ProducerActor.
+ * \c LightEvent / \c TestEvent carry a timestamp and a numeric TTL for ping-pong work.
+ * \c RoutedLatencyEvent instead carries a complete return ActorId for the multicast / pipeline
+ * latency benches via \c ConsumerActor / \c ProducerActor; an address is never narrowed into a TTL.
  *
  * The payload-size axis types are hoisted here from the former per-bench local
  * re-declarations (bm-ping-pong.cpp, bm-payload-throughput.cpp) so the "event size" sweep
@@ -45,6 +45,16 @@ struct LightEvent : public qb::Event {
     explicit LightEvent(uint32_t const ttl)
         : _timepoint(std::chrono::steady_clock::now())
         , _ttl(ttl) {}
+};
+
+/// Latency sample whose return path is an actor identity, independent of a hop-count TTL.
+struct RoutedLatencyEvent : public qb::Event {
+    std::chrono::steady_clock::time_point _timepoint;
+    qb::ActorId                           _reply_to;
+
+    explicit RoutedLatencyEvent(qb::ActorId reply_to)
+        : _timepoint(std::chrono::steady_clock::now())
+        , _reply_to(reply_to) {}
 };
 
 struct TestEvent : public qb::Event {

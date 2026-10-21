@@ -33,19 +33,36 @@
  * self-terminate and the engine drains, with the ctest TIMEOUT as the only backstop.
  */
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <coroutine>
+#include <cstdlib>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/actor.h>
+#include <qb/core/detail/actor_id_pool.h>
 #include <qb/main.h>
 
-namespace {
+namespace qb::detail {
+struct actor_id_pool_test_access {
+    static void
+    limit(CoreInitializer &core, ActorSlotId ordinary_limit, std::uint32_t generation_limit = ActorId::MaxGeneration) {
+        if (!core._actor_factories.empty()) {
+            ADD_FAILURE() << "pool limits must be installed before creating factory promises";
+            std::abort();
+        }
+        core._ids = ActorIdPool(core._index, ordinary_limit, generation_limit);
+    }
+};
+} // namespace qb::detail
+
+namespace actor_add_test {
 
 // ---------------------------------------------------------------------------
 // Observability atoms (reset per test). Mirror in-actor outcomes to the body.
@@ -78,7 +95,7 @@ public:
     TestServiceActor() = delete;
     explicit TestServiceActor(bool init)
         : _ret_init(init) {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_TRUE(id().is_valid());
         EXPECT_EQ(nullptr, getService<TestServiceActor>()); // not yet registered at ctor time
         g_service_ctor_ran.store(true);
         kill();
@@ -115,7 +132,7 @@ public:
     TestActor() = delete;
     explicit TestActor(bool init)
         : _ret_init(init) {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_TRUE(id().is_valid());
         kill();
     }
 
@@ -134,7 +151,7 @@ public:
     TestRefActor() = delete;
     explicit TestRefActor(bool init)
         : _ret_init(init) {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_TRUE(id().is_valid());
     }
 
     qb::io::async::task<bool>
@@ -190,7 +207,7 @@ TEST(AddActor, ShouldReturnValidActorIdAtStart) {
     qb::Main main;
     auto     id = main.addActor<TestServiceActor>(0, true);
     main.addActor<CheckServiceActor>(0);
-    EXPECT_NE(static_cast<std::uint32_t>(id), 0u);
+    EXPECT_TRUE(id.is_valid());
 
     main.start(false);
     main.join();
@@ -208,7 +225,10 @@ TEST(AddActor, ShouldReturnValidServiceActorIdAtStart) {
     // drawn when `ServiceActor<Tag>::ServiceIndex` is dynamically initialised, and the standard leaves
     // that order unspecified across Tags: with the nine service Tags of this file, g++ gives `Tag` 1
     // and MSVC 9. Asserting 1 tested the compiler, not qb.
-    EXPECT_EQ(static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(qb::Actor::getServiceId<Tag>(0)));
+    EXPECT_TRUE(id.is_service_instance());
+    EXPECT_EQ(id.service_tag(), qb::Actor::getServiceId<Tag>(0).service_tag());
+    EXPECT_EQ(id.index(), qb::Actor::getServiceId<Tag>(0).index());
+    EXPECT_NE(id, qb::Actor::getServiceId<Tag>(0));
 
     main.start(false);
     main.join();
@@ -234,12 +254,13 @@ TEST(AddActorUsingCoreBuilder, ShouldRetrieveValidOrderedActorIdList) {
     auto     builder = main.core(0).builder().addActor<TestServiceActor>(true).addActor<TestActor>(true);
     EXPECT_TRUE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 2u);
-    EXPECT_EQ(static_cast<std::uint32_t>(builder.idList()[0]), static_cast<std::uint32_t>(qb::Actor::getServiceId<Tag>(0))); // service id
-    EXPECT_NE(static_cast<std::uint32_t>(builder.idList()[1]), 0u);
+    EXPECT_TRUE(builder.idList()[0].is_service_instance());
+    EXPECT_EQ(builder.idList()[0].service_tag(), qb::Actor::getServiceId<Tag>(0).service_tag());
+    EXPECT_TRUE(builder.idList()[1].is_valid());
     builder.addActor<TestServiceActor>(true); // duplicate service → builder invalidates
     EXPECT_FALSE(static_cast<bool>(builder));
     EXPECT_EQ(builder.idList().size(), 3u);
-    EXPECT_EQ(static_cast<std::uint32_t>(builder.idList()[2]), 0u); // failed add → NotFound id
+    EXPECT_FALSE(builder.idList()[2].is_valid()); // failed add → NotFound id
 
     main.start(false);
     main.join();
@@ -697,9 +718,9 @@ TEST(AddReferencedActor, ThrowingServiceConstructorWithdrawsDeathWatchBeforeRetr
 }
 
 struct OrdinaryPoisonPoke : qb::Event {};
-std::atomic<std::uint32_t> g_ordinary_poison_id{0};
-std::atomic<std::uint32_t> g_ordinary_nested_id{0};
-std::atomic<std::uint32_t> g_ordinary_healthy_id{0};
+std::atomic<std::uint64_t> g_ordinary_poison_id{0};
+std::atomic<std::uint64_t> g_ordinary_nested_id{0};
+std::atomic<std::uint64_t> g_ordinary_healthy_id{0};
 std::atomic<int>           g_ordinary_poison_events{0};
 std::atomic<int>           g_ordinary_poison_callbacks{0};
 std::atomic<int>           g_ordinary_healthy_events{0};
@@ -712,9 +733,9 @@ class OrdinaryPoison
     , public qb::ICallback {
 public:
     OrdinaryPoison() {
-        g_ordinary_poison_id.store(static_cast<std::uint32_t>(id()));
+        g_ordinary_poison_id.store(id().raw64());
         const auto nested = addRefActor<OrdinaryNested>();
-        g_ordinary_nested_id.store(static_cast<std::uint32_t>(nested.id()));
+        g_ordinary_nested_id.store(nested.id().raw64());
         registerEvent<OrdinaryPoisonPoke>(*this);
         registerCallback(*this);
         throw std::runtime_error("ordinary constructor failed");
@@ -733,7 +754,7 @@ public:
 class OrdinaryHealthy : public qb::Actor {
 public:
     OrdinaryHealthy() {
-        g_ordinary_healthy_id.store(static_cast<std::uint32_t>(id()));
+        g_ordinary_healthy_id.store(id().raw64());
         registerEvent<OrdinaryPoisonPoke>(*this);
     }
     void
@@ -750,8 +771,8 @@ public:
             (void) addRefActor<OrdinaryPoison>();
         } catch (std::runtime_error const &) {
             g_ordinary_poison_caught.store(true);
-            push<OrdinaryPoisonPoke>(qb::ActorId(g_ordinary_poison_id.load()));
-            push<qb::KillEvent>(qb::ActorId(g_ordinary_nested_id.load()));
+            push<OrdinaryPoisonPoke>(qb::ActorId::from_raw(g_ordinary_poison_id.load()));
+            push<qb::KillEvent>(qb::ActorId::from_raw(g_ordinary_nested_id.load()));
         }
         const auto healthy = addRefActor<OrdinaryHealthy>();
         if (healthy.valid())
@@ -761,7 +782,7 @@ public:
     }
 };
 
-TEST(AddReferencedActor, OrdinaryConstructorFailureClearsRegistrationsAndKeepsIdReserved) {
+TEST(AddReferencedActor, OrdinaryConstructorFailureClearsRegistrationsAndAdvancesTheReusedSlot) {
     g_ordinary_poison_id.store(0);
     g_ordinary_nested_id.store(0);
     g_ordinary_healthy_id.store(0);
@@ -782,6 +803,10 @@ TEST(AddReferencedActor, OrdinaryConstructorFailureClearsRegistrationsAndKeepsId
     EXPECT_NE(g_ordinary_healthy_id.load(), 0u);
     EXPECT_NE(g_ordinary_nested_id.load(), g_ordinary_poison_id.load());
     EXPECT_NE(g_ordinary_healthy_id.load(), g_ordinary_poison_id.load());
+    const auto poison  = qb::ActorId::from_raw(g_ordinary_poison_id.load());
+    const auto healthy = qb::ActorId::from_raw(g_ordinary_healthy_id.load());
+    EXPECT_EQ(healthy.slot(), poison.slot()) << "cleanup must return the failed parent's capacity";
+    EXPECT_GT(healthy.generation(), poison.generation());
     EXPECT_EQ(g_ordinary_poison_events.load(), 0);
     EXPECT_EQ(g_ordinary_poison_callbacks.load(), 0);
     EXPECT_EQ(g_ordinary_healthy_events.load(), 0);
@@ -890,7 +915,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_TRUE(id().is_valid());
         push<qb::KillEvent>(id());               // self
         push<qb::KillEvent>(qb::BroadcastId(1)); // every actor on core 1
         co_return true;
@@ -909,7 +934,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_TRUE(id().is_valid());
         co_return true;
     }
 };
@@ -932,15 +957,452 @@ TEST(KillActor, BroadcastKillLeavesNoSurvivors) {
 }
 
 // ===========================================================================
-// A core whose id pool is spent (Huly QB-1014).
-//
-// An actor draws its id in `Actor::Actor()`; once every id of its core is taken it gets NotFound. Until 3.3
-// `appendActor` drove that actor's `onInit()` before noticing the id, so the coroutine of an actor the core then
-// destroyed ran -- and when it suspended, its frame was parked in the core's activations under NotFound, alive
-// until the core's teardown, while its actor was gone. Now `addRefActor` refuses a spent core before constructing
-// anything, and `appendActor` refuses an id-less actor before its `onInit()`. Both paths are driven: the plain one
-// (the pool is spent before the add), and the one only `appendActor` can catch -- a first base, built before
-// `qb::Actor`, that takes the last ids itself. The fillers that spend the pool are ~65 000 actors on one core.
+// Both deaths are reaped in one batch. The first destructor enqueues an event for its
+// own ID; the second destructor creates a same-type actor before the next receive pass.
+// An old ActorHandle resolves by ID, so it can alias that replacement as well.
+struct ReapedIdProbe : qb::Event {
+    bool fresh;
+    explicit ReapedIdProbe(bool is_fresh)
+        : fresh(is_fresh) {}
+};
+std::atomic<int>  g_reaped_stale_deliveries{0};
+std::atomic<int>  g_reaped_fresh_deliveries{0};
+std::atomic<bool> g_reaped_slot_reused{false};
+std::atomic<bool> g_reaped_handle_aliased{false};
+
+class ReapedIdTarget : public qb::Actor {
+    bool _emit_on_destroy;
+
+public:
+    explicit ReapedIdTarget(bool emit_on_destroy)
+        : _emit_on_destroy(emit_on_destroy) {
+        registerEvent<ReapedIdProbe>(*this);
+    }
+    ~ReapedIdTarget() override {
+        if (_emit_on_destroy)
+            push<ReapedIdProbe>(id(), false);
+    }
+
+    void
+    on(ReapedIdProbe &event) {
+        if (event.fresh) {
+            g_reaped_fresh_deliveries.fetch_add(1);
+            kill();
+        } else {
+            g_reaped_stale_deliveries.fetch_add(1);
+        }
+    }
+};
+
+class ReapedIdCreator : public qb::Actor {
+    qb::ActorHandle<ReapedIdTarget> _old;
+
+public:
+    explicit ReapedIdCreator(qb::ActorHandle<ReapedIdTarget> old)
+        : _old(old) {}
+    ~ReapedIdCreator() override {
+        const auto replacement = addRefActor<ReapedIdTarget>(false);
+        if (replacement.valid()) {
+            g_reaped_slot_reused.store(replacement.id().slot() == _old.id().slot() && replacement.id().generation() > _old.id().generation());
+            g_reaped_handle_aliased.store(_old.get() == replacement.get());
+            push<ReapedIdProbe>(replacement.id(), true);
+        }
+    }
+};
+
+class ReapedIdDriver
+    : public qb::Actor
+    , public qb::ICallback {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        const auto old     = addRefActor<ReapedIdTarget>(true);
+        const auto creator = addRefActor<ReapedIdCreator>(old);
+        push<qb::KillEvent>(old.id());
+        push<qb::KillEvent>(creator.id());
+        registerCallback(*this);
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (g_reaped_fresh_deliveries.load() == 1)
+            kill();
+    }
+};
+
+TEST(AddReferencedActor, ReapedIdMustNotAliasOldHandleOrQueuedEvent) {
+    g_reaped_stale_deliveries.store(0);
+    g_reaped_fresh_deliveries.store(0);
+    g_reaped_slot_reused.store(false);
+    g_reaped_handle_aliased.store(false);
+
+    qb::Main main;
+    main.addActor<ReapedIdDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_reaped_fresh_deliveries.load(), 1);
+    EXPECT_TRUE(g_reaped_slot_reused.load()) << "the witness must reuse the old slot";
+    EXPECT_FALSE(g_reaped_handle_aliased.load());
+    EXPECT_EQ(g_reaped_stale_deliveries.load(), 0);
+}
+
+struct ReplacedServiceTag {};
+struct ReplacedServiceProbe : qb::Event {
+    bool fresh;
+    explicit ReplacedServiceProbe(bool is_fresh)
+        : fresh(is_fresh) {}
+};
+std::atomic<int>  g_replaced_service_destroyed{0};
+std::atomic<int>  g_replaced_service_events{0};
+std::atomic<int>  g_old_service_events{0};
+std::atomic<bool> g_replaced_service_admitted{false};
+std::atomic<bool> g_replaced_service_instance_changed{false};
+std::atomic<bool> g_old_service_handle_resolved{false};
+std::atomic<bool> g_old_service_base_handle_resolved{false};
+std::atomic<bool> g_old_service_moved_handle_resolved{false};
+std::atomic<bool> g_old_service_ready{false};
+std::atomic<bool> g_old_service_async_checked{false};
+std::atomic<bool> g_old_service_async_ready{false};
+std::atomic<bool> g_new_service_handle_resolved{false};
+
+class ReplacedService : public qb::ServiceActor<ReplacedServiceTag> {
+public:
+    ReplacedService() {
+        registerEvent<ReplacedServiceProbe>(*this);
+    }
+    ~ReplacedService() override {
+        g_replaced_service_destroyed.fetch_add(1);
+    }
+
+    void
+    on(ReplacedServiceProbe &event) {
+        if (event.fresh) {
+            g_replaced_service_events.fetch_add(1);
+            kill();
+        } else {
+            g_old_service_events.fetch_add(1);
+        }
+    }
+};
+
+class ReplacedServiceDriver
+    : public qb::Actor
+    , public qb::ICallback {
+    qb::ActorHandle<ReplacedService> _old;
+    qb::ActorHandle<qb::Actor>       _old_as_actor;
+    bool                             _replacement_attempted = false;
+
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        _old = addRefActor<ReplacedService>();
+        if (_old.valid()) {
+            _old_as_actor = qb::ActorHandle<qb::Actor>(_old.get());
+            push<qb::KillEvent>(_old.id());
+            registerCallback(*this);
+        } else {
+            kill();
+        }
+        co_return true;
+    }
+
+    void
+    on(qb::LoopEvent const &) final {
+        if (!_replacement_attempted && g_replaced_service_destroyed.load() == 1) {
+            _replacement_attempted = true;
+            const auto replacement = addRefActor<ReplacedService>();
+            g_replaced_service_admitted.store(replacement.valid());
+            g_replaced_service_instance_changed.store(replacement.valid() && replacement.id() != _old.id()
+                                                      && replacement.id().slot() == _old.id().slot());
+            g_old_service_handle_resolved.store(_old.get() != nullptr);
+            g_old_service_base_handle_resolved.store(_old_as_actor.get() != nullptr);
+            auto old_copy = _old;
+            auto old_move = std::move(old_copy);
+            g_old_service_moved_handle_resolved.store(old_move.get() != nullptr);
+            g_old_service_ready.store(_old.ready() || static_cast<bool>(_old));
+            g_new_service_handle_resolved.store(replacement.get() != nullptr);
+            spawn([old = _old, fresh = replacement](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                auto source      = old;
+                auto wait        = source.ready_async(ctx);
+                source           = fresh; // the lazy task must already own the old handle's identity
+                const bool ready = co_await wait;
+                g_old_service_async_ready.store(ready);
+                g_old_service_async_checked.store(true);
+            });
+            if (replacement.valid()) {
+                push<ReplacedServiceProbe>(_old.id(), false); // an exact stale instance must miss
+                push<ReplacedServiceProbe>(getServiceId<ReplacedServiceTag>(getIndex()), true);
+            } else {
+                kill();
+            }
+        } else if (_replacement_attempted && g_replaced_service_events.load() == 1 && g_old_service_async_checked.load()) {
+            kill();
+        }
+    }
+};
+
+TEST(AddReferencedActor, ServiceIdReachesReplacementButOldHandleDoesNotResolveIt) {
+    g_replaced_service_destroyed.store(0);
+    g_replaced_service_events.store(0);
+    g_old_service_events.store(0);
+    g_replaced_service_admitted.store(false);
+    g_replaced_service_instance_changed.store(false);
+    g_old_service_handle_resolved.store(false);
+    g_old_service_base_handle_resolved.store(false);
+    g_old_service_moved_handle_resolved.store(false);
+    g_old_service_ready.store(false);
+    g_old_service_async_checked.store(false);
+    g_old_service_async_ready.store(false);
+    g_new_service_handle_resolved.store(false);
+
+    ASSERT_TRUE(qb::Actor::getServiceId<ReplacedServiceTag>(0).is_service_address());
+    qb::Main main;
+    main.addActor<ReplacedServiceDriver>(0);
+    main.start(false);
+    main.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_replaced_service_admitted.load());
+    EXPECT_TRUE(g_replaced_service_instance_changed.load());
+    EXPECT_FALSE(g_old_service_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_base_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_moved_handle_resolved.load());
+    EXPECT_FALSE(g_old_service_ready.load());
+    EXPECT_TRUE(g_old_service_async_checked.load());
+    EXPECT_FALSE(g_old_service_async_ready.load());
+    EXPECT_TRUE(g_new_service_handle_resolved.load());
+    EXPECT_EQ(g_replaced_service_events.load(), 1);
+    EXPECT_EQ(g_old_service_events.load(), 0);
+    EXPECT_EQ(g_replaced_service_destroyed.load(), 2);
+}
+
+std::vector<qb::ActorId>   g_failed_ids;
+std::atomic<int>           g_failed_payloads{0};
+std::atomic<std::uint64_t> g_after_failures_id{0};
+
+struct FailedAdmissionLifetime {
+    FailedAdmissionLifetime() {
+        ++g_failed_payloads;
+    }
+    ~FailedAdmissionLifetime() {
+        --g_failed_payloads;
+    }
+};
+
+class AdmissionFailure : public qb::Actor {
+    FailedAdmissionLifetime _lifetime;
+
+public:
+    explicit AdmissionFailure(bool throw_in_constructor) {
+        g_failed_ids.push_back(id());
+        if (throw_in_constructor)
+            throw std::runtime_error("failed after reserving an identity");
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        co_return false;
+    }
+};
+
+class FailureReuseDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        for (unsigned i = 0; i < 128; ++i) {
+            try {
+                (void) addRefActor<AdmissionFailure>(i % 2 == 0);
+            } catch (std::runtime_error const &) {
+            }
+        }
+        const auto fresh = addRefActor<OrdinaryNested>();
+        g_after_failures_id.store(fresh.id().raw64());
+        if (fresh.valid())
+            push<qb::KillEvent>(fresh.id());
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddReferencedActor, FailedAdmissionsReturnCapacityWithDistinctFullIdentities) {
+    g_failed_ids.clear();
+    g_failed_payloads.store(0);
+    g_after_failures_id.store(0);
+    qb::Main main;
+    qb::detail::actor_id_pool_test_access::limit(main.core(0), 16);
+    main.addActor<FailureReuseDriver>(0);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    ASSERT_EQ(g_failed_ids.size(), 128u) << "every failure must actually construct, not merely attempt admission";
+    EXPECT_EQ(g_failed_payloads.load(), 0);
+    for (std::size_t i = 1; i < g_failed_ids.size(); ++i) {
+        EXPECT_EQ(g_failed_ids[i].slot(), g_failed_ids[0].slot());
+        EXPECT_GT(g_failed_ids[i].generation(), g_failed_ids[i - 1].generation());
+    }
+    const auto fresh = qb::ActorId::from_raw(g_after_failures_id.load());
+    EXPECT_TRUE(fresh.is_valid());
+    EXPECT_EQ(fresh.slot(), g_failed_ids.back().slot());
+    EXPECT_GT(fresh.generation(), g_failed_ids.back().generation());
+}
+
+std::atomic<std::uint64_t> g_promised_parent_actual{0};
+std::atomic<std::uint64_t> g_promised_peer_actual{0};
+std::atomic<std::uint64_t> g_promised_child_actual{0};
+
+class PromisedChild : public qb::Actor {
+public:
+    PromisedChild() {
+        g_promised_child_actual.store(id().raw64());
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        kill();
+        co_return true;
+    }
+};
+class PromisedParent : public qb::Actor {
+public:
+    PromisedParent() {
+        g_promised_parent_actual.store(id().raw64());
+        (void) addRefActor<PromisedChild>();
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        kill();
+        co_return true;
+    }
+};
+class PromisedPeer : public qb::Actor {
+public:
+    PromisedPeer() {
+        g_promised_peer_actual.store(id().raw64());
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        kill();
+        co_return true;
+    }
+};
+
+TEST(AddActor, PreStartPromisesSurviveNestedConstructionAndClearInvalidatesOldPromises) {
+    g_promised_parent_actual.store(0);
+    g_promised_peer_actual.store(0);
+    g_promised_child_actual.store(0);
+    qb::Main   main;
+    auto      &core    = main.core(0);
+    const auto cleared = core.addActor<PromisedPeer>();
+    core.clear();
+    const auto parent = core.addActor<PromisedParent>();
+    const auto peer   = core.addActor<PromisedPeer>();
+    ASSERT_TRUE(parent.is_valid());
+    ASSERT_TRUE(peer.is_valid());
+    EXPECT_EQ(parent.slot(), cleared.slot());
+    EXPECT_NE(parent, cleared);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    EXPECT_EQ(g_promised_parent_actual.load(), parent.raw64());
+    EXPECT_EQ(g_promised_peer_actual.load(), peer.raw64());
+    const auto child = qb::ActorId::from_raw(g_promised_child_actual.load());
+    EXPECT_TRUE(child.is_valid());
+    EXPECT_NE(child, parent);
+    EXPECT_NE(child, peer);
+}
+
+TEST(AddActor, StartupFailureReturnsThePoolBeforeAnAuthorizedRetry) {
+    reset_atoms();
+    g_promised_peer_actual.store(0);
+    qb::Main   main;
+    const auto failed = main.core(0).addActor<TestActor>(false);
+    main.start(false);
+    main.join();
+    ASSERT_TRUE(main.hasError());
+    const auto retry = main.core(0).addActor<PromisedPeer>();
+    ASSERT_TRUE(retry.is_valid());
+    EXPECT_EQ(retry.slot(), failed.slot());
+    EXPECT_GT(retry.generation(), failed.generation());
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_promised_peer_actual.load(), retry.raw64());
+}
+
+struct PopulationProbe : qb::Event {};
+std::atomic<int>         g_population_alive{0};
+std::atomic<int>         g_population_built{0};
+std::atomic<int>         g_population_peak{0};
+std::atomic<bool>        g_population_routed{false};
+std::vector<qb::ActorId> g_population_ids;
+
+class PopulationTarget : public qb::Actor {
+public:
+    PopulationTarget() {
+        ++g_population_alive;
+        ++g_population_built;
+        registerEvent<PopulationProbe>(*this);
+    }
+    ~PopulationTarget() override {
+        --g_population_alive;
+    }
+    void
+    on(PopulationProbe &event) {
+        reply(event);
+    }
+};
+
+class PopulationDriver : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<PopulationProbe>(*this);
+        for (unsigned i = 0; i < 200000; ++i) {
+            const auto target = addRefActor<PopulationTarget>();
+            if (!target.valid())
+                break;
+            g_population_ids.push_back(target.id());
+        }
+        g_population_peak.store(g_population_alive.load());
+        if (!g_population_ids.empty())
+            push<PopulationProbe>(g_population_ids.back());
+        else
+            push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        co_return true;
+    }
+    void
+    on(PopulationProbe const &event) {
+        g_population_routed.store(event.getSource() == g_population_ids.back());
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+    }
+};
+
+TEST(AddReferencedActor, HoldsTwoHundredThousandLiveOrdinaryActorsOnOneCore) {
+    g_population_alive.store(0);
+    g_population_built.store(0);
+    g_population_peak.store(0);
+    g_population_routed.store(false);
+    g_population_ids.clear();
+    g_population_ids.reserve(200000);
+    qb::Main main;
+    main.addActor<PopulationDriver>(0);
+    main.start(false);
+    main.join();
+    ASSERT_FALSE(main.hasError());
+    EXPECT_EQ(g_population_built.load(), 200000);
+    EXPECT_EQ(g_population_peak.load(), 200000) << "all targets must coexist before the first kill";
+    EXPECT_EQ(g_population_alive.load(), 0);
+    EXPECT_TRUE(g_population_routed.load());
+    ASSERT_EQ(g_population_ids.size(), 200000u);
+    std::sort(g_population_ids.begin(), g_population_ids.end());
+    EXPECT_EQ(std::adjacent_find(g_population_ids.begin(), g_population_ids.end()), g_population_ids.end());
+    EXPECT_GT(g_population_ids.back().slot(), 65535u);
+}
+
+// An admission reserves its ID BEFORE construction. A first base can spend the other slots,
+// but cannot steal the enclosing actor's promise. The next admission must be refused before
+// constructing an actor or a parked frame. A bounded internal pool exercises the real boundary.
 // ===========================================================================
 
 std::atomic<int>      g_spent_fillers{0};      // fillers admitted
@@ -966,7 +1428,7 @@ public:
     }
 };
 
-// Built BEFORE the qb::Actor base of the class below: the pool is spent when Actor::Actor() draws its id.
+// Built BEFORE the qb::Actor base: the other slots are spent before its reserved ID is claimed.
 struct SpendsTheCoreFirst {
     SpendsTheCoreFirst() {
         if (g_spent_drain)
@@ -1052,18 +1514,19 @@ TEST(AddReferencedActor, ASpentIdPoolRefusesTheActorBeforeItsOnInitRuns) {
     g_spent_driver_ran.store(false);
 
     qb::Main main;
+    qb::detail::actor_id_pool_test_access::limit(main.core(0), 64);
     main.addActor<SpentDriver>(0);
     main.start(false);
     main.join();
 
     EXPECT_FALSE(main.hasError());
     ASSERT_TRUE(g_spent_driver_ran.load()) << "the driver's onInit never ran";
-    EXPECT_GT(g_spent_fillers.load(), 60000) << "the fillers did not spend the core's id pool";
+    EXPECT_EQ(g_spent_fillers.load(), 62) << "driver and enclosing admission already own two of the 64 slots";
     EXPECT_EQ(g_spent_filler_inits.load(), g_spent_fillers.load()) << "onInit() ran for a filler the core refused";
-    // The path only appendActor sees: constructed (its first base spent the pool), refused before its onInit().
-    EXPECT_TRUE(g_late_drawn_refused.load());
+    // The enclosing actor keeps its reservation even though its first base filled every other slot.
+    EXPECT_FALSE(g_late_drawn_refused.load());
     EXPECT_EQ(g_late_drawn_ctors.load(), 1);
-    EXPECT_EQ(g_late_drawn_inits.load(), 0) << "onInit() ran for an actor that has no id";
+    EXPECT_EQ(g_late_drawn_inits.load(), 1);
     // The plain path: nothing is left, so nothing is constructed and no frame can outlive anything.
     EXPECT_TRUE(g_parked_refused.load());
     EXPECT_EQ(g_parked_ctors.load(), 0) << "an actor was constructed on a core that had no id left";
@@ -1072,7 +1535,7 @@ TEST(AddReferencedActor, ASpentIdPoolRefusesTheActorBeforeItsOnInitRuns) {
     EXPECT_EQ(g_parked_frames.load(), 0);
 }
 
-} // namespace
+} // namespace actor_add_test
 
 namespace actor_add_red_witness_test {
 
@@ -1972,3 +2435,378 @@ TEST(AddActor, QB362RefusedAdmissionInAllocatorPreservesLaterStartupBindings) {
     check_allocator_factory_binding(true);
 }
 } // namespace actor_add_allocator_factory_test
+
+namespace actor_add_transition_growth_test {
+
+constexpr unsigned kBurst = 128;
+
+struct Probe {
+    qb::ActorId parent;
+    qb::ActorId replacement;
+    unsigned    init_children       = 0;
+    unsigned    destructor_children = 0;
+    unsigned    children_built      = 0;
+    unsigned    children_destroyed  = 0;
+    bool        reused_while_owned  = false;
+    bool        parent_destroyed    = false;
+};
+
+class Child final : public qb::Actor {
+    std::shared_ptr<Probe> _probe;
+
+public:
+    explicit Child(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {
+        ++_probe->children_built;
+    }
+    ~Child() final {
+        ++_probe->children_destroyed;
+    }
+};
+
+class GrowingParent final : public qb::Actor {
+    std::shared_ptr<Probe> _probe;
+
+    unsigned
+    add_children() {
+        unsigned admitted = 0;
+        for (unsigned i = 0; i < kBurst; ++i) {
+            const auto child = addRefActor<Child>(_probe);
+            if (child.valid()) {
+                ++admitted;
+                _probe->reused_while_owned |= child.id().slot() == id().slot();
+            }
+        }
+        return admitted;
+    }
+
+public:
+    explicit GrowingParent(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        _probe->parent = id();
+        // This admission is still Reserved. Enough fresh rows are added to move both
+        // banks before appendActor commits it; no pointer into either bank may survive.
+        _probe->init_children = add_children();
+        kill();
+        co_return true;
+    }
+    ~GrowingParent() final {
+        // The parent's slot is now detached but Retiring. Another burst grows both
+        // banks again before removeActor completes the release.
+        _probe->destructor_children = add_children();
+        _probe->parent_destroyed    = true;
+    }
+};
+
+class Driver final
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<Probe> _probe;
+
+public:
+    explicit Driver(std::shared_ptr<Probe> probe)
+        : _probe(std::move(probe)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        (void) addRefActor<GrowingParent>(_probe);
+        registerCallback(*this);
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (!_probe->parent_destroyed || _probe->replacement.is_valid())
+            return;
+        // Every child is still live, so the parent is the only reusable slot.
+        _probe->replacement = addRefActor<Child>(_probe).id();
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+    }
+};
+
+TEST(AddReferencedActor, AdmissionAndRetirementSurviveNestedRegistryGrowth) {
+    auto     probe = std::make_shared<Probe>();
+    qb::Main main;
+    qb::detail::actor_id_pool_test_access::limit(main.core(0), 512, 2);
+    main.addActor<Driver>(0, probe);
+    main.start(false);
+    main.join();
+
+    ASSERT_FALSE(main.hasError());
+    EXPECT_TRUE(probe->parent_destroyed);
+    EXPECT_EQ(probe->init_children, kBurst);
+    EXPECT_EQ(probe->destructor_children, kBurst);
+    EXPECT_FALSE(probe->reused_while_owned);
+    ASSERT_TRUE(probe->replacement.is_valid());
+    EXPECT_EQ(probe->replacement.slot(), probe->parent.slot());
+    EXPECT_EQ(probe->replacement.generation(), probe->parent.generation() + 1);
+    EXPECT_EQ(probe->children_built, 2 * kBurst + 1);
+    EXPECT_EQ(probe->children_destroyed, probe->children_built);
+}
+
+} // namespace actor_add_transition_growth_test
+
+namespace actor_add_lifecycle_witness_test {
+
+struct ExhaustionProbe {
+    std::array<qb::ActorId, 4> attempts{};
+    unsigned                   constructors        = 0;
+    unsigned                   destructors         = 0;
+    unsigned                   same_tag_attempts   = 0;
+    unsigned                   same_tag_refusals   = 0;
+    bool                       checked_after_limit = false;
+};
+
+struct ExhaustedServiceTag {};
+
+template <typename Base>
+class CountedTarget final : public Base {
+    std::shared_ptr<ExhaustionProbe> _probe;
+    bool                             _try_same_tag;
+
+public:
+    CountedTarget(std::shared_ptr<ExhaustionProbe> probe, bool try_same_tag)
+        : _probe(std::move(probe))
+        , _try_same_tag(try_same_tag) {
+        ++_probe->constructors;
+    }
+    ~CountedTarget() final {
+        if constexpr (qb::service_type<Base>) {
+            if (_try_same_tag) {
+                ++_probe->same_tag_attempts;
+                // The registry slot is detached, but its incarnation is still Retiring.
+                // A mistaken early release must not allow this nested constructor to run.
+                const auto nested = this->template addRefActor<CountedTarget>(_probe, false);
+                _probe->same_tag_refusals += !nested.valid();
+                if (nested.valid())
+                    this->template push<qb::KillEvent>(nested.id());
+            }
+        }
+        ++_probe->destructors;
+    }
+};
+
+using OrdinaryTarget = CountedTarget<qb::Actor>;
+using ServiceTarget  = CountedTarget<qb::ServiceActor<ExhaustedServiceTag>>;
+
+template <typename Target>
+class ExhaustionDriver final
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<ExhaustionProbe> _probe;
+    unsigned                         _phase = 0;
+
+public:
+    explicit ExhaustionDriver(std::shared_ptr<ExhaustionProbe> probe)
+        : _probe(std::move(probe)) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        _probe->attempts[0] = addRefActor<Target>(_probe, true).id();
+        if (_probe->attempts[0].is_valid()) {
+            registerCallback(*this);
+            push<qb::KillEvent>(_probe->attempts[0]);
+        } else {
+            kill();
+        }
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (_phase == 0 && _probe->destructors >= 1) {
+            _phase = 1;
+            // A callback runs after removeActor has returned, including its final pool transition.
+            _probe->attempts[1] = addRefActor<Target>(_probe, true).id();
+            if (_probe->attempts[1].is_valid())
+                push<qb::KillEvent>(_probe->attempts[1]);
+            else
+                push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        } else if (_phase == 1 && _probe->destructors >= 2) {
+            _phase = 2;
+            // The generation limit is two. Repeating the refusal also checks that the
+            // first failed attempt cannot make the exhausted row available again.
+            _probe->attempts[2]         = addRefActor<Target>(_probe, false).id();
+            _probe->attempts[3]         = addRefActor<Target>(_probe, false).id();
+            _probe->checked_after_limit = true;
+            push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+        }
+    }
+};
+
+template <typename Target>
+void
+check_generation_exhaustion() {
+    auto     probe = std::make_shared<ExhaustionProbe>();
+    qb::Main main;
+    // Keep the driver alive in slot one. An ordinary target has exactly one usable
+    // slot; a service has its independent tag row, with the same generation limit.
+    qb::detail::actor_id_pool_test_access::limit(main.core(0), qb::service_type<Target> ? 1 : 2, 2);
+    ASSERT_TRUE(main.addActor<ExhaustionDriver<Target>>(0, probe).is_valid());
+    main.start(false);
+    main.join();
+
+    ASSERT_FALSE(main.hasError());
+    EXPECT_TRUE(probe->checked_after_limit);
+    ASSERT_TRUE(probe->attempts[0].is_instance());
+    ASSERT_TRUE(probe->attempts[1].is_instance());
+    EXPECT_EQ(probe->attempts[0].slot(), probe->attempts[1].slot());
+    EXPECT_EQ(probe->attempts[0].generation(), 1u);
+    EXPECT_EQ(probe->attempts[1].generation(), 2u);
+    EXPECT_FALSE(probe->attempts[2].is_valid());
+    EXPECT_FALSE(probe->attempts[3].is_valid());
+    EXPECT_EQ(probe->constructors, 2u);
+    EXPECT_EQ(probe->destructors, 2u);
+    if constexpr (qb::service_type<Target>) {
+        EXPECT_EQ(probe->same_tag_attempts, 2u);
+        EXPECT_EQ(probe->same_tag_refusals, 2u);
+    }
+}
+
+TEST(AddReferencedActor, OrdinaryGenerationExhaustionPermanentlyRefusesTheOnlyReusableSlot) {
+    check_generation_exhaustion<OrdinaryTarget>();
+}
+
+TEST(AddReferencedActor, ServiceRefusesItsRetiringTagThenReusesAndPermanentlyExhaustsIt) {
+    ASSERT_TRUE(qb::Actor::getServiceId<ExhaustedServiceTag>(0).is_service_address());
+    check_generation_exhaustion<ServiceTarget>();
+}
+
+enum class GrowthRole : unsigned { parent, child, replacement };
+
+struct ServiceGrowthProbe {
+    std::array<qb::ActorId, 3>   ids{};
+    std::array<unsigned, 3>      constructors{};
+    std::array<unsigned, 3>      destructors{};
+    std::function<qb::ActorId()> admit_child;
+    bool                         grow_during_init      = false;
+    bool                         child_resolved        = false;
+    bool                         checked_after_removal = false;
+};
+
+template <unsigned Index>
+struct GrowthTag {};
+
+template <unsigned Index>
+class GrowingService final : public qb::ServiceActor<GrowthTag<Index>> {
+    std::shared_ptr<ServiceGrowthProbe> _probe;
+    GrowthRole                          _role;
+
+    void
+    grow() {
+        _probe->ids[static_cast<unsigned>(GrowthRole::child)] = _probe->admit_child();
+    }
+
+public:
+    GrowingService(std::shared_ptr<ServiceGrowthProbe> probe, GrowthRole role)
+        : _probe(std::move(probe))
+        , _role(role) {
+        ++_probe->constructors[static_cast<unsigned>(_role)];
+    }
+    qb::io::async::task<bool>
+    onInit() final {
+        if (_role == GrowthRole::parent && _probe->grow_during_init)
+            grow(); // the parent's dynamic admission is still Reserved
+        co_return true;
+    }
+    ~GrowingService() final {
+        if (_role == GrowthRole::parent && !_probe->grow_during_init)
+            grow(); // the parent's slot is detached but still Retiring
+        ++_probe->destructors[static_cast<unsigned>(_role)];
+    }
+};
+
+using AdmitService = qb::ActorId (*)(qb::Actor &, std::shared_ptr<ServiceGrowthProbe> const &, GrowthRole);
+
+template <unsigned Index>
+qb::ActorId
+admit_service(qb::Actor &host, std::shared_ptr<ServiceGrowthProbe> const &probe, GrowthRole role) {
+    return host.addRefActor<GrowingService<Index>>(probe, role).id();
+}
+
+class ServiceGrowthDriver final
+    : public qb::Actor
+    , public qb::ICallback {
+    std::shared_ptr<ServiceGrowthProbe> _probe;
+    AdmitService                        _low;
+    AdmitService                        _high;
+
+public:
+    ServiceGrowthDriver(std::shared_ptr<ServiceGrowthProbe> probe, AdmitService low, AdmitService high)
+        : _probe(std::move(probe))
+        , _low(low)
+        , _high(high) {}
+    qb::io::async::task<bool>
+    onInit() final {
+        _probe->admit_child = [this] {
+            return _high(*this, _probe, GrowthRole::child);
+        };
+        _probe->ids[0] = _low(*this, _probe, GrowthRole::parent);
+        if (_probe->ids[0].is_valid()) {
+            registerCallback(*this);
+            push<qb::KillEvent>(_probe->ids[0]);
+        } else {
+            kill();
+        }
+        co_return true;
+    }
+    void
+    on(qb::LoopEvent const &) final {
+        if (_probe->destructors[0] == 0 || _probe->checked_after_removal)
+            return;
+        _probe->checked_after_removal = true;
+        _probe->child_resolved        = is_actor_alive(_probe->ids[1]);
+        _probe->ids[2]                = _low(*this, _probe, GrowthRole::replacement);
+        push<qb::KillEvent>(qb::BroadcastId(getIndex()));
+    }
+    ~ServiceGrowthDriver() final {
+        _probe->admit_child = {}; // never retain a callable referring to the dead driver
+    }
+};
+
+void
+check_service_bank_growth(bool grow_during_init) {
+    struct Entry {
+        qb::ServiceId tag;
+        AdmitService  admit;
+    };
+    std::array<Entry, 2> entries{{
+        {qb::Actor::getServiceId<GrowthTag<0>>(0).service_tag(), &admit_service<0>},
+        {qb::Actor::getServiceId<GrowthTag<1>>(0).service_tag(), &admit_service<1>},
+    }};
+    std::sort(entries.begin(), entries.end(), [](Entry const &lhs, Entry const &rhs) { return lhs.tag < rhs.tag; });
+    ASSERT_NE(entries[0].tag, 0);
+    ASSERT_LT(entries[0].tag, entries[1].tag);
+    // Both service banks start empty: the only startup factory is an ordinary driver.
+    // The parent's tag establishes their first size; the higher tag extends each bank
+    // while the parent is Reserved or Retiring. This test observes identities and
+    // lifetimes, not the addresses or capacities of the backing allocations.
+    auto probe              = std::make_shared<ServiceGrowthProbe>();
+    probe->grow_during_init = grow_during_init;
+    qb::Main main;
+    qb::detail::actor_id_pool_test_access::limit(main.core(0), 1, 2);
+    ASSERT_TRUE(main.addActor<ServiceGrowthDriver>(0, probe, entries[0].admit, entries[1].admit).is_valid());
+    main.start(false);
+    main.join();
+
+    ASSERT_FALSE(main.hasError());
+    EXPECT_TRUE(probe->checked_after_removal);
+    EXPECT_TRUE(probe->child_resolved);
+    for (unsigned i = 0; i < probe->ids.size(); ++i) {
+        ASSERT_TRUE(probe->ids[i].is_service_instance()) << i;
+        EXPECT_EQ(probe->constructors[i], 1u) << i;
+        EXPECT_EQ(probe->destructors[i], 1u) << i;
+    }
+    EXPECT_EQ(probe->ids[0].service_tag(), entries[0].tag);
+    EXPECT_EQ(probe->ids[1].service_tag(), entries[1].tag);
+    EXPECT_EQ(probe->ids[2].slot(), probe->ids[0].slot());
+    EXPECT_EQ(probe->ids[2].generation(), probe->ids[0].generation() + 1);
+}
+
+TEST(AddReferencedActor, ServiceAdmissionSurvivesNestedServiceBankGrowth) {
+    check_service_bank_growth(true);
+}
+
+TEST(AddReferencedActor, ServiceRetirementSurvivesNestedServiceBankGrowth) {
+    check_service_bank_growth(false);
+}
+
+} // namespace actor_add_lifecycle_witness_test

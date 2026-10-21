@@ -451,19 +451,21 @@ TEST(RelocatablePayload, ShortStdStringEventCrossesCoresWithoutTrippingTheGuard)
 // nothing.
 namespace {
 
-/// Writes EVERY byte after `qb::Event`'s header, so it leaves a recognisable pattern behind in the
-/// sender's outbound pipe once flushed. All-`0xAB` is not a mappable address, so it crosses the
-/// guard cleanly; the payload is trivially destructible and holds no pointer at all.
+/// One header followed by a reserved tail: the sender poisons the WHOLE allocated range.
+/// Separate filler events would leave an unpoisoned routing header at each bucket boundary.
+/// All-`0xAB` is not a mappable address; the event remains trivially destructible.
 struct FillerEvent : public qb::Event {
-    std::uint8_t fill[QB_LOCKFREE_EVENT_BUCKET_BYTES - 16];
-    FillerEvent() {
-        std::memset(fill, 0xAB, sizeof(fill));
+    [[nodiscard]] bool
+    has_poisoned_tail(std::size_t bytes_reserved) const {
+        const auto *bytes = reinterpret_cast<const std::uint8_t *>(this);
+        for (std::size_t i = qb::detail::event_wire::occupied_header_bytes; i < bytes_reserved; ++i)
+            if (bytes[i] != 0xAB)
+                return false;
+        return true;
     }
 };
-static_assert(sizeof(FillerEvent) == QB_LOCKFREE_EVENT_BUCKET_BYTES,
-              "FillerEvent must be exactly one bucket and must start immediately after Event's 16 header "
-              "bytes — if the header changed size, resize `fill`; do not delete this assert, it is what "
-              "keeps the poison covering the padded event's dead bytes");
+static_assert(qb::detail::event_wire::occupied_header_bytes < QB_LOCKFREE_EVENT_BUCKET_BYTES);
+static_assert(sizeof(FillerEvent) == QB_LOCKFREE_EVENT_BUCKET_BYTES, "FillerEvent must occupy exactly one poisoned bucket on every ABI");
 
 /// The shape of a real payload: live members that stop short of the end of the bucket. The string
 /// is long, so it is heap-backed on every stdlib (never self-referential) and, on libstdc++, leaves
@@ -475,8 +477,13 @@ struct PaddedEvent : public qb::Event {
         : text(48, 'p')
         , seq(s) {}
 };
+static_assert(sizeof(PaddedEvent) >= sizeof(FillerEvent));
+static_assert(sizeof(PaddedEvent) % QB_LOCKFREE_EVENT_BUCKET_BYTES == 0,
+              "the reserved poison must cover exactly PaddedEvent's whole bucket footprint");
 
 std::atomic<const void *> g_poisoned_slot{nullptr};
+std::atomic<std::size_t>  g_poisoned_bytes{0};
+std::atomic<bool>         g_poison_written{false};
 std::atomic<const void *> g_padded_slot{nullptr};
 std::atomic<std::size_t>  g_tail_begin{0};
 std::atomic<std::size_t>  g_tail_end{0};
@@ -513,14 +520,22 @@ public:
         registerCallback(*this);
         // Poison the slot. This core's outbound pipe to `_to`'s core carries nothing else, so the
         // next event queued after the flush lands on exactly these bytes.
-        g_poisoned_slot.store(&getPipe(_to).push<FillerEvent>(), std::memory_order_relaxed);
+        auto       pipe           = getPipe(_to);
+        auto      &first          = pipe.allocated_push<FillerEvent>(sizeof(PaddedEvent) - sizeof(FillerEvent));
+        const auto bytes_reserved = first.getSize();
+        auto      *bytes          = reinterpret_cast<std::uint8_t *>(&first);
+        std::memset(bytes + qb::detail::event_wire::occupied_header_bytes, 0xAB,
+                    bytes_reserved - qb::detail::event_wire::occupied_header_bytes);
+        g_poisoned_slot.store(&first, std::memory_order_relaxed);
+        g_poisoned_bytes.store(bytes_reserved, std::memory_order_relaxed);
+        g_poison_written.store(first.has_poisoned_tail(bytes_reserved), std::memory_order_relaxed);
         co_return true;
     }
 
     void
     on(qb::LoopEvent const &) final {
-        // __flush_all__ runs once per loop turn and then `pipe.reset()`s the drained pipe, so by
-        // the third callback the poison is on the wire and the pipe cursor is back at 0.
+        // __flush_all__ consumes the published range; the emptied standard segment is rewound.
+        // By the third callback the poison is on the wire and the pipe cursor is back at 0.
         if (_turn++ < 2)
             return;
 
@@ -544,6 +559,12 @@ public:
 
 void
 run_prepared_storage_probe() {
+    g_poisoned_slot  = nullptr;
+    g_poisoned_bytes = 0;
+    g_poison_written = false;
+    g_padded_slot    = nullptr;
+    g_tail_begin = g_tail_end = 0;
+    g_tail_nonzero            = -1;
     qb::Main main;
     auto     rcv = main.addActor<SlotRecv>(1);
     main.addActor<SlotSend>(0, rcv);
@@ -566,8 +587,14 @@ TEST(RelocatablePayload, EventStorageIsPreparedSoDeadBytesCannotTripTheGuard) {
     ASSERT_EQ(g_poisoned_slot.load(), g_padded_slot.load())
         << "the padded event did not land in the slot the filler poisoned, so this test would prove "
            "nothing — something else queued into this core's outbound pipe";
+    ASSERT_TRUE(g_poison_written.load()) << "the filler did not actually write 0xAB into every dead byte";
     ASSERT_GT(g_tail_end.load(), g_tail_begin.load())
         << "PaddedEvent has no tail padding on this ABI, so there is no dead region left to check";
+    const auto tail_begin = g_tail_begin.load();
+    const auto tail_end   = g_tail_end.load();
+    ASSERT_EQ(g_poisoned_bytes.load(), sizeof(PaddedEvent)) << "the filler did not reserve exactly the padded event's footprint";
+    ASSERT_GE(tail_begin, qb::detail::event_wire::occupied_header_bytes) << "PaddedEvent's dead tail overlaps the protected routing header";
+    ASSERT_EQ(tail_end, g_poisoned_bytes.load()) << "the checked tail must extend to the end of the wholly poisoned reservation";
 
     EXPECT_EQ(g_tail_nonzero.load(), 0) << g_tail_nonzero.load() << " of the " << (g_tail_end.load() - g_tail_begin.load())
                                         << " tail-padding bytes at [" << g_tail_begin.load() << ',' << g_tail_end.load()

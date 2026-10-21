@@ -60,6 +60,7 @@
 #include <qb/utility/compat.h>
 #include "Actor.h"
 #include "DeathWatch.h"
+#include "detail/actor_id_pool.h"
 #include "Event.h"
 #include "ICallback.h"
 #include "Main.h"
@@ -93,15 +94,9 @@ class VirtualCore : detail::service_registry_seal {
         Event::__core_scope__ = core != nullptr ? core->_index : Event::NoCoreScope;
     }
     /**
-     * @brief The service registry (Huly QB-1007): `_nb_service` counts the registered tags, `_live_cores` the cores
-     *        alive, and both are written under `servicesMutex()` only.
-     * @details A tag registers through `Actor::registerIndex<Tag>()` -- at static initialisation for every tag the
-     *          program names, through `ServiceActor<Tag>::ServiceIndex` -- and gets `_nb_service + 1`. A core seeds
-     *          its id pool at `_nb_service + 1` and stays counted in `_live_cores` (its empty base
-     *          `detail::service_registry_seal`) until it is gone. While a core is counted `_nb_service` cannot
-     *          move: a tag registering then would take an id that pool hands to ordinary actors, so
-     *          `__register_service__` refuses it. The relaxed loads outside the mutex (`CoreInitializer`, the
-     *          pool's recycling test) read a value that only moves while no core exists.
+     * @brief Process-wide service tags. First-time registration remains frozen while cores live.
+     * @details Actor slots now have a disjoint namespace. Keeping the existing registration
+     * refusal is an intentional prototype policy, independent of ordinary pool capacity.
      */
     QB_ABI_ANCHOR static inline std::atomic<ServiceId> _nb_service{0};
     QB_ABI_ANCHOR static inline std::size_t            _live_cores = 0;
@@ -120,9 +115,9 @@ class VirtualCore : detail::service_registry_seal {
         return mtx;
     }
     /// `Actor::registerIndex<Tag>()`'s cold path (VirtualCore.cpp): the id of `tag`, registered now if it is new -- or
-    /// 0, refused, while a core is alive or once the 16-bit id space is spent. Publishes it in `slot`.
+    /// 0, refused, while a core is alive or once the 16-bit service-tag space is spent. Publishes it in `slot`.
     static ServiceId __register_service__(std::atomic<ServiceId> &slot, TypeId tag) noexcept;
-    /// At start (`Main::start_thread`): whether the ordinary ids `initializer` promised are the ones this core draws.
+    /// At start (`Main::start_thread`): whether this core owns every reserved identity the initializer promised.
     [[nodiscard]] bool __predicted_ids_hold__(CoreInitializer const &initializer) const noexcept;
 
 public:
@@ -168,7 +163,6 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
-    VirtualCore(CoreId id, SharedCoreCommunication &engine, ServiceId promised_floor) noexcept;
     // The router's report of a unicast it could not deliver reaches the dead-letter path through
     // the thread's current core (Huly QB-163).
     friend void Event::__undelivered__(Event &) noexcept;
@@ -186,18 +180,9 @@ private:
     using Mailbox     = SharedCoreCommunication::Mailbox;
     using EventBuffer = std::array<EventBucket, MaxRingEvents>;
     /**
-     * @brief The actor registry: one slot per service id, indexed by `ActorId::sid()`.
-     * @details A dense vector, not a hash map. Every id this core hands out comes from
-     * `ServiceIdPool` -- a 16-bit index the pool recycles lowest-first -- so the registry
-     * is a direct-mapped table: `_actors[sid]` is the actor, `nullptr` is an empty slot,
-     * and `__actor_slot__()` is the one lookup (an O(1) index plus an id compare that
-     * refuses another core's id). The node-based `qb::unordered_map` it replaces cost one
-     * `malloc` + one `free` and two hashed probes per actor lifetime; savina/fib creates and
-     * destroys 57 313 actors inside one measured window, where that was measurable. Actor
-     * addresses are unchanged by growth -- the actor lives on the heap behind its
-     * `unique_ptr`; only the slot moves -- so every raw pointer `findActor<T>()` ever
-     * handed out stays as valid as it was. The live count is `_actor_count`: the vector's
-     * `size()` is the highest sid ever seen plus one, not the population.
+     * @brief Instance registry with independent ordinary-slot and service-tag banks.
+     * @details Lookup allocates nothing and compares the complete incarnation ID. Growth
+     * moves owning pointers, never actors; services never resize a row to their encoded slot.
      */
     using ActorMap    = allocator::region_vector<std::unique_ptr<Actor>>;
     using CallbackMap = qb::unordered_map<ActorId, ICallback *>;
@@ -214,100 +199,11 @@ private:
     using RemoveActorList = allocator::detail::region_stack<ActorId>;
     using DyingActorSet   = qb::unordered_set<ActorId>;
 
-    /**
-     * @class ServiceIdPool
-     * @ingroup Engine
-     * @brief O(1) bitset-based pool of free `ServiceId` slots.
-     * @details
-     * Replaces the historical `std::set<ServiceId>` free-list with a contiguous
-     * bitset (8 KiB per VirtualCore) allowing branch-predicted, allocation-free,
-     * constant-time `acquire` / `release` operations, plus efficient empty checks.
-     *
-     * A word-level cursor (`_next_word`) accelerates `acquire()` by resuming the
-     * scan from the last known word containing a free bit instead of rescanning
-     * from index 0. `std::countr_zero` extracts the first free bit per word in
-     * a single CPU instruction on modern targets.
-     *
-     * Thread-model: owned exclusively by a single `VirtualCore` worker thread;
-     * no synchronization is performed.
-     */
-    class ServiceIdPool {
-    public:
-        static constexpr std::size_t kBits  = ActorId::BroadcastSid; // 65535 usable SIDs.
-        static constexpr std::size_t kWords = (kBits + 63u) / 64u;   // 1024 × 64-bit words.
+    using AvailableIdList = detail::ActorIdPool;
 
-    private:
-        std::array<std::uint64_t, kWords> _bits{};        ///< Bit = 1 → SID free, bit = 0 → SID taken.
-        std::size_t                       _next_word = 0; ///< Scan cursor for fast `acquire()`.
-        std::size_t                       _count     = 0; ///< Cached population count.
-
-    public:
-        /**
-         * @brief Mark all service ids in the closed range `[min_sid, kBits)` as free.
-         * @param min_sid First service id to make available (typically `_nb_service + 1`).
-         */
-        void
-        init(ServiceId min_sid) noexcept {
-            _bits.fill(0u);
-            _count     = 0;
-            _next_word = 0;
-            // Set bits [min_sid, kBits) to 1.
-            for (std::size_t sid = static_cast<std::size_t>(min_sid); sid < kBits; ++sid) {
-                _bits[sid / 64u] |= (std::uint64_t{1} << (sid % 64u));
-                ++_count;
-            }
-            // Prime the cursor to the first word that contains a free bit.
-            _next_word = static_cast<std::size_t>(min_sid) / 64u;
-        }
-
-        /**
-         * @brief Acquire the smallest free service id available.
-         * @return A valid `ServiceId` or `ActorId::BroadcastSid` if the pool is exhausted.
-         */
-        [[nodiscard]] ServiceId
-        acquire() noexcept {
-            if (!_count)
-                return ActorId::BroadcastSid;
-            for (std::size_t w = _next_word; w < kWords; ++w) {
-                if (auto word = _bits[w]; word) {
-                    const auto bit = static_cast<std::size_t>(std::countr_zero(word));
-                    _bits[w]       = word & (word - 1u); // Clear lowest set bit.
-                    _next_word     = w;                  // Remember for next acquire.
-                    --_count;
-                    return static_cast<ServiceId>(w * 64u + bit);
-                }
-            }
-            return ActorId::BroadcastSid;
-        }
-
-        /**
-         * @brief Return a service id to the pool.
-         * @param sid A previously acquired service id.
-         */
-        void
-        release(ServiceId sid) noexcept {
-            if (sid >= kBits)
-                return;
-            const std::size_t   w = static_cast<std::size_t>(sid) / 64u;
-            const std::uint64_t m = std::uint64_t{1} << (static_cast<std::size_t>(sid) % 64u);
-            if (!(_bits[w] & m)) {
-                _bits[w] |= m;
-                ++_count;
-                if (w < _next_word)
-                    _next_word = w; // Backtrack cursor so smallest SID reuse is preferred.
-            }
-        }
-
-        [[nodiscard]] bool
-        empty() const noexcept {
-            return _count == 0;
-        }
-        [[nodiscard]] std::size_t
-        size() const noexcept {
-            return _count;
-        }
-    };
-    using AvailableIdList = ServiceIdPool;
+    // Constructor-only base handlers. Keep public registration separate: derived registrations
+    // replace these pointers with their own concrete actor type.
+    static void __initialize_default_events__(Actor &actor) noexcept;
 
     /**
      * @brief The dispatch stored in `Actor::_default_on` for a default event registered by `_Actor`.
@@ -407,9 +303,10 @@ private:
                         entries.resize(base);
                     }
                 } restore{snapshot, base};
-                for (auto const &slot : _core._actors)
-                    if (Actor *const actor = slot.get())
-                        snapshot.push_back(actor);
+                for (auto const *bank : {&_core._service_actors, &_core._actors})
+                    for (auto const &slot : *bank)
+                        if (Actor *const actor = slot.get())
+                            snapshot.push_back(actor);
                 const std::size_t end = snapshot.size();
                 for (std::size_t i = base; i < end; ++i)
                     dispatch(*snapshot[i], event);
@@ -457,7 +354,7 @@ private:
             else if constexpr (std::is_same_v<_Control, detail::WatchDown>)
                 _core.__on_watch_down__(event.getDestination(), event.getSource(), event.reason, event.ticket);
             else
-                _core.__on_core_stopping__(event.getSource()._core_id);
+                _core.__on_core_stopping__(event.getSource().index());
         }
 
         void
@@ -498,7 +395,8 @@ private:
     // actors management
     AvailableIdList _ids;
     ActorMap        _actors;
-    std::size_t     _actor_count = 0; ///< live slots in `_actors` (its size() is the sid high-water mark)
+    ActorMap        _service_actors;
+    std::size_t     _actor_count = 0; ///< live actors across both registry banks
     CallbackMap     _actor_callbacks;
     /**
      * @brief Flat, cache-friendly snapshot of registered callbacks.
@@ -741,7 +639,6 @@ private:
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
     std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
     bool                                                _tearing_down  = false; ///< terminal teardown refuses new actors
-    ActorId _pending_factory_id = ActorId::NotFound; ///< the startup factory's promised ID (QB-263), in the padding: no member moves
     /// The tick phase's snapshot of `_callback_list` (Huly QB-257): a tick handler may register or
     /// unregister actors during the dispatch (`addRefActor`), so the dispatch walks a copy. A member rather
     /// than the `thread_local` it was in the loop, whose guard and destructor registration were a TLS derivation
@@ -766,8 +663,14 @@ private:
      * @return Newly generated actor ID for use within this core
      */
     [[nodiscard]] ActorId __generate_id__() noexcept;
+    [[nodiscard]] ActorId __generate_service_id__(ServiceId tag) noexcept;
 
     // Event Management
+#ifdef QB_WITH_LOGGING
+    // Formatting only: the caller owns the single level check and its log metadata.
+    template <typename _Event, typename _Actor>
+    static void __write_subscription_log__(_Actor &actor, char const *file, char const *function, std::uint32_t line) noexcept;
+#endif
     template <typename _Event, typename _Actor>
     void registerEvent(_Actor &actor) noexcept;
     template <typename _Event, typename _Actor>
@@ -836,18 +739,22 @@ private:
      * @brief Initialize a new actor
      * @param actor Actor to initialize
      * @param doInit Whether to call the actor's init method
-     * @return ID of the initialized actor or Invalid ID if initialization failed
+     * @pre appendActor has verified the actor's reserved identity, which is immutable.
+     * @return True if initialization succeeded or is pending, false if it failed
      */
-    [[nodiscard]] ActorId initActor(Actor &actor, bool doInit) noexcept;
+    [[nodiscard]] bool initActor(Actor &actor, bool doInit) noexcept;
     /*!
      * @brief Add an actor to the core
      * @param actor Actor to add
+     * @param reserved_id Exact reservation owned by the caller's guard through this call
      * @param doInit Whether to call the actor's init method
-     * @return ID of the added actor or Invalid ID if addition failed
+     * @return True if the actor was added, false if addition failed
      */
-    [[nodiscard]] ActorId appendActor(std::unique_ptr<Actor> actor, bool doInit = false) noexcept;
+    [[nodiscard]] bool appendActor(std::unique_ptr<Actor> actor, ActorId reserved_id, bool doInit = false) noexcept;
     /// Destroy an actor; `reason` is what its watchers are told (Huly QB-51).
     void removeActor(ActorId id, DownReason reason = DownReason::killed) noexcept;
+    // Called only for an activating id; false defers teardown until its init frame completes.
+    [[nodiscard]] QB_NOINLINE bool __prepare_activating_removal__(ActorId id) noexcept;
 
     // --- Asynchronous initialization driver (the *Activating* phase) ---------
     /// Outcome of driving an actor's `onInit()` coroutine once.
@@ -974,7 +881,9 @@ private:
      * @param id The actor identifier to test.
      * @return true iff `id` names an actor that is alive **and** active (its `onInit()` has
      *         completed) on this VirtualCore.
-     * @details The type-erased sibling of `findActor<T>()`: one hash lookup, no `dynamic_cast`.
+     * @details Exact instance IDs use the dense registry and never follow a reused slot.
+     *          A logical service address tests the current service incarnation with the same
+     *          active/alive phase gate. Unlike this query, `findActor<T>()` requires an instance.
      *          It exists for bookkeeping that holds bare ids — a subscriber list, a routing
      *          table — and needs to drop entries whose actor has been destroyed. The framework
      *          does the same thing for its own subscription map in `removeActor()`
@@ -992,14 +901,33 @@ private:
      * @details Phase-blind: hands back Activating and killed-not-yet-reaped actors alike.
      *          The phase gates live in the callers (`findActor`, `isActorAlive`).
      */
-    [[nodiscard]] Actor *
+    [[nodiscard]] QB_MSVC_FORCEINLINE Actor *
     __actor_slot__(ActorId const id) const noexcept {
-        const std::size_t sid = id._service_id;
-        if (sid >= _actors.size())
+        // One compare picks the bank: every slot above the band marker reads the service bank by its tag. The
+        // broadcast slot lands on tag 0xFFFF, past every service row (tags stop at 0xFFFE), and misses; the hit
+        // compares the complete identity anyway. MSVC 19.51 stopped inlining this lookup once it chose a bank (24
+        // instructions and a call per lookup, twice per removal, Huly QB-970 perf lot): forced, as before the split.
+        const ActorSlotId slot    = id.slot();
+        const bool        service = slot > ActorId::ServiceBand;
+        auto const       &bank    = service ? _service_actors : _actors;
+        const std::size_t index   = service ? static_cast<ServiceId>(slot) : slot;
+        if (index >= bank.size())
             return nullptr;
-        Actor *const raw = _actors[sid].get();
+        Actor *const raw = bank[index].get();
         return (raw != nullptr && raw->id() == id) ? raw : nullptr;
     }
+
+    [[nodiscard]] Actor *
+    __service_slot__(ActorId const address) const noexcept {
+        if (!address.is_service_address() || address.index() != _index)
+            return nullptr;
+        const std::size_t tag = address.service_tag();
+        return tag < _service_actors.size() ? _service_actors[tag].get() : nullptr;
+    }
+
+    [[nodiscard]] ActorId __resolve_destination__(ActorId id) const noexcept;
+    void                  __prepare_actor_slot__(ActorId id);
+    void                  __install_id_pool__(detail::ActorIdPool &pool);
 
     template <typename _Actor>
     void registerCallback(_Actor &actor) noexcept;
@@ -1036,7 +964,13 @@ private:
      */
     Event &push(Event const &event) noexcept;
     void   reply(Event &event) noexcept;
-    void   forward(ActorId dest, Event &event) noexcept;
+    // Keep local allocation and copy register pressure out of remote replies.
+    QB_NOINLINE void reply_local(Event &event) noexcept;
+    // Keep the mailbox transaction's register pressure out of same-core replies.
+    QB_NOINLINE void reply_remote(Event &event) noexcept;
+    void             forward(ActorId dest, Event &event) noexcept;
+    // Keep remote publication's register pressure out of same-core forwarding.
+    QB_NOINLINE void forward_remote(ActorId dest, Event &event) noexcept;
     //! The push-family answers (Huly QB-976): reply()/forward() with push's ordering -- the copy goes into
     //! the outbound pipe behind everything this core queued to the destination, same core and cross-core alike.
     void push_reply(Event &event) noexcept;
@@ -1105,12 +1039,10 @@ public:
     [[nodiscard]] CoreStats getCoreStats() const noexcept;
 
 private:
-    // A service constructor may add another service before either reaches `_actors`.
-    std::vector<ServiceId> _constructing_services;
-    // The innermost dynamic ordinary-actor construction records the ID drawn by Actor::Actor().
-    [[nodiscard]] ActorId __factory_promised_id__(ServiceId sid) const noexcept;
-    ActorId              *_constructing_actor_id_out = nullptr;
-    void                  __rollback_failed_admission__(ActorId id) noexcept;
+    // Dynamic admission records the reserved incarnation across nested user allocation hooks.
+    ActorId              _factory_actor_id = ActorId::NotFound;
+    detail::ActorIdPool *_ids_owner        = nullptr; ///< cold initializer ownership transfer at install/teardown
+    void                 __rollback_failed_admission__(ActorId id) noexcept;
 };
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::VirtualCore const &core);
@@ -1137,9 +1069,24 @@ std::ostream &operator<<(std::ostream &os, qb::VirtualCore const &core);
 // in VirtualCore.cpp.
 // ============================================================================================
 
+#ifdef QB_WITH_LOGGING
 template <typename _Event, typename _Actor>
-void
-VirtualCore::registerEvent(_Actor &actor) noexcept {
+QB_NOINLINE void
+VirtualCore::__write_subscription_log__(_Actor &actor, char const *file, char const *function, std::uint32_t line) noexcept {
+    // Match QB_LOG_VERB's enabled expression without testing the level a second time.
+    // Keep the typed id/name expressions here so a disabled log never evaluates them.
+    (void) (nanolog::NanoLog()
+            == (nanolog::NanoLogLine(nanolog::LogLevel::VERBOSE, file, function, line)
+                << "Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>()));
+}
+#endif
+
+template <typename _Event, typename _Actor>
+#if defined(_MSC_VER)
+QB_NOINLINE
+#endif
+    void
+    VirtualCore::registerEvent(_Actor &actor) noexcept {
     // Never subscribe an actor that failed id allocation (service-id pool
     // exhausted -> __generate_id__ returned NotFound). Its constructor still
     // runs registerEvent for the default events, but appendActor() rejects it
@@ -1148,7 +1095,12 @@ VirtualCore::registerEvent(_Actor &actor) noexcept {
     // sent to a default/NotFound ActorId.
     if (unlikely(!actor.id().is_valid()))
         return;
+#ifdef QB_WITH_LOGGING
+    if (nanolog::is_logged(nanolog::LogLevel::VERBOSE))
+        __write_subscription_log__<_Event>(actor, __FILE__, __func__, __LINE__);
+#else
     QB_LOG_VERB("Actor(" << actor.id() << ") subscribed to " << ActorProxy::getName<_Event>());
+#endif
     if constexpr (is_default_event<_Event>) {
         // The five default events dispatch through the actor registry (`qb::default_events_t`):
         // the subscription is the actor's own dispatch pointer, and the resolver the constructor
@@ -1176,82 +1128,60 @@ VirtualCore::addReferencedActor(_Init &&...init) {
     // admission before allocating or invoking a user constructor; no new frame may enter a dying scheduler.
     if (unlikely(_tearing_down))
         return nullptr;
-    // A dynamic child built by a factory allocator or constructor must draw from the
-    // ordinary pool. The outer factory keeps its promised ID until its own base ctor.
-    struct FactoryPromisePause {
-        ActorId &slot;
-        ActorId  saved;
-        explicit FactoryPromisePause(ActorId &value) noexcept
-            : slot(value)
-            , saved(value) {
-            slot = ActorId::NotFound;
-        }
-        ~FactoryPromisePause() noexcept {
-            slot = saved;
-        }
-    } pause{_pending_factory_id};
-    auto construct = [&]() -> _Actor * {
-        // The allocation customization point TActorFactory uses, so a user's qb::allocate_actor<_Actor> serves
-        // engine-created and dynamically-added actors alike (PMR/pool support, 2.13).
-        auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
-        std::unique_ptr<_Actor> actor_ptr(raw_actor);
-        // The ActorProxy customization point: the same demangled name and typed id_type as factory-created actors.
-        ActorProxy::setTypeInfo<_Actor>(*raw_actor);
-        if (appendActor(std::move(actor_ptr), true).is_valid())
-            return raw_actor;
-        return nullptr;
-    };
 
+    // Clear a factory promise before any nested allocation hook can create a child (QB-263): a dynamic child built
+    // by a factory's allocator or constructor reserves its own incarnation, and the outer factory keeps its promise
+    // until its own base constructor. Every admission owns its reservation before the user allocator/constructor runs.
+    const ActorId previous_factory_id = _factory_actor_id;
+    _factory_actor_id                 = ActorId::NotFound;
+    ActorId admission_id              = ActorId::NotFound;
     struct AdmissionGuard {
         VirtualCore &core;
         ActorId     &id;
-        ActorId     *previous_id_out;
-        bool         service;
+        ActorId      previous_factory_id;
         bool         admitted = false;
         ~AdmissionGuard() noexcept {
             if (!admitted && id.is_valid())
                 core.__rollback_failed_admission__(id);
-            if (service)
-                core._constructing_services.pop_back();
-            else
-                core._constructing_actor_id_out = previous_id_out;
+            core._factory_actor_id = previous_factory_id;
         }
-    };
+    } guard{*this, admission_id, previous_factory_id};
 
     if constexpr (service_type<_Actor>) {
-        // A service's constructor may register custom events. Constructing a duplicate would replace the live
-        // service's router entry before appendActor rejects it, leaving a pointer to the destroyed duplicate behind.
-        // The id comes from registerIndex<Tag>(), never ServiceIndex; 0 is a tag refused at registration (QB-1007).
-        const ServiceId sid      = Actor::registerIndex<detail::service_tag_t<_Actor>>();
-        bool            occupied = sid == 0 || __actor_slot__(ActorId(sid, _index)) != nullptr;
-        for (ServiceId const constructing : _constructing_services)
-            occupied |= constructing == sid;
-        if (unlikely(occupied)) {
-            QB_LOG_CRIT("Error Cannot add Service Actor (its tag was refused, or it is already here): " << typeid(_Actor).name());
-            return nullptr;
-        }
-        _constructing_services.push_back(sid);
-        ActorId        admission_id(sid, _index);
-        AdmissionGuard guard{*this, admission_id, nullptr, true};
-        auto *const    actor = construct();
-        guard.admitted       = actor != nullptr;
-        return actor;
+        // The tag comes from registerIndex<Tag>(), never ServiceIndex; 0 is a tag refused at registration (QB-1007).
+        // A service already here, or one still being constructed, holds its tag's entry: the reservation is refused
+        // before a duplicate's constructor could replace the live service's router entries.
+        const ServiceId tag = Actor::registerIndex<detail::service_tag_t<_Actor>>();
+        admission_id        = _ids.reserve_service(tag);
     } else {
-        // Every id of this core is taken: refuse before constructing, not after its constructor ran (Huly QB-1014).
-        if (unlikely(_ids.empty())) {
-            QB_LOG_CRIT("Error Cannot add Actor " << typeid(_Actor).name() << ": every id of " << *this << " is taken");
-            return nullptr;
-        }
-        // A failed ordinary constructor returns no pointer, but Actor::Actor() reserved an ID; nested adds replace this slot.
-        ActorId        admission_id    = ActorId::NotFound;
-        ActorId *const previous_id_out = _constructing_actor_id_out;
-        _constructing_actor_id_out     = &admission_id;
-        AdmissionGuard guard{*this, admission_id, previous_id_out, false};
-        auto *const    actor = construct();
-        guard.admitted       = actor != nullptr;
-        // A failed constructor's ID is not recycled: an event its body published may still be queued for that ID.
-        return actor;
+        // Refused before constructing, not after its constructor ran, when the core has no slot left (QB-1014).
+        admission_id = _ids.reserve_ordinary();
     }
+    if (unlikely(!admission_id.is_valid())) {
+        QB_LOG_CRIT("Error Cannot add Actor " << typeid(_Actor).name() << " on " << *this
+                                              << ": its slot is unavailable (a service tag refused or already here, or no slot left)");
+        return nullptr;
+    }
+    _factory_actor_id = admission_id;
+    // The registry grows out of line, only past its high-water mark; the test stays inline (the call alone was
+    // 23 instructions per admission on MSVC 19.51).
+    if constexpr (service_type<_Actor>) {
+        if (admission_id.service_tag() >= _service_actors.size()) [[unlikely]]
+            __prepare_actor_slot__(admission_id);
+    } else {
+        if (admission_id.slot() >= _actors.size()) [[unlikely]]
+            __prepare_actor_slot__(admission_id);
+    }
+    // The allocation customization point TActorFactory uses, so a user's qb::allocate_actor<_Actor> serves
+    // engine-created and dynamically-added actors alike (PMR/pool support, 2.13).
+    auto                   *raw_actor = qb::allocate_actor<_Actor>(std::forward<_Init>(init)...);
+    std::unique_ptr<_Actor> actor_ptr(raw_actor);
+    // The ActorProxy customization point: the same demangled name and typed id_type as factory-created actors.
+    ActorProxy::setTypeInfo<_Actor>(*raw_actor);
+    if (!appendActor(std::move(actor_ptr), admission_id, true))
+        return nullptr;
+    guard.admitted = true;
+    return raw_actor;
 }
 
 template <typename _Actor>
@@ -1277,7 +1207,7 @@ VirtualCore::findActor(ActorId const id) const noexcept {
 template <typename _ServiceActor>
 _ServiceActor *
 VirtualCore::getService() const noexcept {
-    Actor *const raw = __actor_slot__(ActorId(Actor::registerIndex<detail::service_tag_t<_ServiceActor>>(), _index));
+    Actor *const raw = __service_slot__(ActorId::service_address(Actor::registerIndex<detail::service_tag_t<_ServiceActor>>(), _index));
     if (raw == nullptr) {
         QB_LOG_CRIT("Failed to get Service[" << typeid(_ServiceActor).name() << "]"
                                              << " in Core(" << _index << ")"
@@ -1339,7 +1269,7 @@ template <typename T, typename... _Init>
 void
 VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noexcept {
     router::ensure_disposer<Event, T>(); // no-op for the trivially-destructible events send requires
-    auto                 &pipe        = __getPipe__(dest._core_id);
+    auto                 &pipe        = __getPipe__(dest.index());
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
     // Allocate raw + prepare + placement-new rather than a typed allocate: the bucket range
     // must be deterministic BEFORE the payload runs. See detail::prepare_event_storage.
@@ -1355,7 +1285,7 @@ VirtualCore::send(ActorId const dest, ActorId const source, _Init &&...init) noe
     // the flush delivers it with the rest, and counts it then; this path counts its own: the
     // publication, or the full mailbox it met (Huly QB-356), out of line so that the published
     // path runs straight into the epilogue.
-    if (dest._core_id != _index) {
+    if (dest.index() != _index) {
         if (try_send(data)) {
             pipe.free_back(BUCKET_SIZE);
             ++_metrics._nb_event_sent;
@@ -1384,7 +1314,7 @@ VirtualCore::push(ActorId const dest, ActorId const source, _Init &&...init) noe
     // THE enqueue funnel for Actor::push / to().push / reply / forward: guarantee this type can
     // be freed on any drop path even if no actor ever subscribes to it. See Pipe.h.
     router::ensure_disposer<Event, T>();
-    auto                 &pipe        = __getPipe__(dest._core_id);
+    auto                 &pipe        = __getPipe__(dest.index());
     constexpr std::size_t BUCKET_SIZE = allocator::getItemSize<T, EventBucket>();
     // Raw + prepare + placement-new, not pipe.allocate_back<T>(...) — see
     // detail::prepare_event_storage: the guard in SharedCoreCommunication::send scans this whole
@@ -1667,7 +1597,7 @@ struct coro_count_guard {
  *          MEASURED before this landed, a `throw std::runtime_error(...)` after a `co_await` in a `spawn` body
  *          produced no output at any log level, left `Main::hasError()` false, and the engine ran on. That is the
  *          only silent failure path left in the actor surface — `onInit()` throwing is already reported at
- *          `VirtualCore.cpp:644-654`, and this brings the two into line. It does not change control flow: the frame
+ *          `VirtualCore.cpp:734-744`, and this brings the two into line. It does not change control flow: the frame
  *          still unwinds, RAII still runs and the counter guard above still fires, exactly as before.
  *          Defined out of line in `Actor.cpp` so this header pulls in no I/O machinery, and so the reporting policy
  *          lives in one place. `qb::io::async::cancelled_error` never reaches here — both wrappers below take it

@@ -531,3 +531,56 @@ TEST(DenseMemhInstall, UnsubscribeByIdSkipsAResolverThatOwnsNoHandlers) {
 }
 
 } // namespace event_router_dense_test
+
+namespace event_router_occupancy_reentry_test {
+using namespace event_router_dense_test;
+using Router = qb::router::semh<HitEvent>;
+
+struct ReentrantHandler : FakeActor {
+    Router    &router;
+    FakeActor &removed;
+    FakeActor &added;
+    bool       nested = false;
+
+    ReentrantHandler(Router &table, FakeActor &old_handler, FakeActor &new_handler)
+        : FakeActor(1)
+        , router(table)
+        , removed(old_handler)
+        , added(new_handler) {}
+
+    void
+    on(HitEvent &) noexcept {
+        ++hits;
+        if (nested)
+            return;
+        nested = true;
+        router.unsubscribe(removed.id());
+        router.subscribe(added); // New distant logical slot; capacity may already be cached.
+        HitEvent inner;
+        inner.dest = DenseId{kBroadcast, 0};
+        router.route(inner);
+    }
+};
+
+TEST(EventRouting, HeterogeneousSemhNestedBroadcastKeepsOuterSnapshotDuringSubscriptionGrowth) {
+    Router           router;
+    FakeActor        removed(2), added(60000);
+    ReentrantHandler first(router, removed, added);
+    router.subscribe(first);
+    router.subscribe(removed);
+    HitEvent outer;
+    outer.dest = DenseId{kBroadcast, 0};
+    router.route(outer);
+    EXPECT_TRUE(first.nested);
+    EXPECT_EQ(first.hits, 2u);   // Once in each snapshot.
+    EXPECT_EQ(removed.hits, 1u); // Still live in outer snapshot, absent from inner.
+    EXPECT_EQ(added.hits, 1u);   // Inner only: not present when outer was snapshotted.
+    HitEvent next;
+    next.dest = DenseId{kBroadcast, 0};
+    router.route(next);
+    EXPECT_EQ(first.hits, 3u);
+    EXPECT_EQ(removed.hits, 1u);
+    EXPECT_EQ(added.hits, 2u);
+}
+
+} // namespace event_router_occupancy_reentry_test

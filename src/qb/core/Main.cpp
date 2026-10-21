@@ -42,11 +42,7 @@ namespace qb {
 // CoreInitializer
 CoreInitializer::CoreInitializer(CoreId const index)
     : _index(index)
-    // 2.3: `_nb_service` is now a `std::atomic<ServiceId>`. A relaxed load is
-    // sufficient here — every writer (see `Actor::registerIndex<Tag>()`) has
-    // already published its value through the associated magic-static
-    // acquire edge before this constructor runs.
-    , _next_id(static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1))
+    , _ids(index)
     , _affinity{index}
     , _latency{}
     , _idle_spin{kDefaultIdleSpin}
@@ -58,7 +54,7 @@ CoreInitializer::~CoreInitializer() noexcept {
 
 void
 CoreInitializer::clear() noexcept {
-    _next_id = static_cast<ServiceId>(VirtualCore::_nb_service.load(std::memory_order_relaxed) + 1);
+    _ids.clear_reservations();
     _affinity.clear();
     _actor_factories.clear();
     _registered_services.clear();
@@ -264,6 +260,40 @@ event_points_into_itself(Event const &event) noexcept {
 
 bool
 SharedCoreCommunication::send(CoreId const source_index, Event const &event) const noexcept {
+    if (event.bucket_size != 1) [[unlikely]]
+        return send_large(source_index, event);
+#ifndef NDEBUG
+    if (unlikely(event_points_into_itself(event))) {
+        QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                             << event.getDestination()
+                             << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                                "the transport relocates events with memcpy and never runs the source destructor. "
+                                "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                                "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                                "(short strings are self-referential on libstdc++).");
+        assert(false
+               && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                  "see the QB_LOG_CRIT above and Actor::push's @warning");
+    }
+#endif
+    const CoreId dest_index = _core_set.resolve(event.dest.index());
+    auto        &mailbox    = *_mail_boxes[dest_index];
+    struct SingleCopy {
+        Event const &event;
+        QB_MSVC_FORCEINLINE void
+        operator()(EventBucket *first, std::size_t, EventBucket *, std::size_t) const noexcept {
+            detail::event_wire::copy_transport_bucket(first, event);
+        }
+    };
+    // The physical producer index remains the caller's, including forwarded events.
+    if (!mailbox.ringOf(source_index).enqueue_with(1, SingleCopy{event}))
+        return false;
+    mailbox.notify();
+    return true;
+}
+
+bool
+SharedCoreCommunication::send_large(CoreId const source_index, Event const &event) const noexcept {
 #ifndef NDEBUG
     if (unlikely(event_points_into_itself(event))) {
         QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
@@ -292,6 +322,84 @@ SharedCoreCommunication::send(CoreId const source_index, Event const &event) con
     }
 
     return false;
+}
+
+bool
+SharedCoreCommunication::send_reply(CoreId const source_index, Event &event) const noexcept {
+    if (event.bucket_size != 1) [[unlikely]]
+        return send_reply_large(source_index, event);
+#ifndef NDEBUG
+    if (unlikely(event_points_into_itself(event))) {
+        QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                             << event.getDestination()
+                             << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                                "the transport relocates events with memcpy and never runs the source destructor. "
+                                "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                                "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                                "(short strings are self-referential on libstdc++).");
+        assert(false
+               && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                  "see the QB_LOG_CRIT above and Actor::push's @warning");
+    }
+#endif
+    const CoreId dest_index = _core_set.resolve(event.source.index());
+    auto        &mailbox    = *_mail_boxes[dest_index];
+    struct SingleReplyFill {
+        Event &event;
+        QB_MSVC_FORCEINLINE void
+        operator()(EventBucket *first, std::size_t, EventBucket *, std::size_t) const noexcept {
+            detail::event_wire::copy_reply(first, event, QB_LOCKFREE_EVENT_BUCKET_BYTES);
+            const ActorId previous = event.dest;
+            event.dest             = event.source;
+            event.source           = previous;
+            event.state.bits.alive = 1;
+        }
+    };
+    if (!mailbox.ringOf(source_index).enqueue_with(1, SingleReplyFill{event}))
+        return false;
+    mailbox.notify();
+    return true;
+}
+
+bool
+SharedCoreCommunication::send_reply_large(CoreId const source_index, Event &event) const noexcept {
+#ifndef NDEBUG
+    if (unlikely(event_points_into_itself(event))) {
+        QB_LOG_CRIT("Event[" << qb::event_type_name(event.getID()) << '#' << event.getID() << "] from " << event.getSource() << " to "
+                             << event.getDestination()
+                             << " holds a pointer into its own storage, so it cannot be delivered cross-core: "
+                                "the transport relocates events with memcpy and never runs the source destructor. "
+                                "Use qb::string<N> for inline text, or keep the data on the heap behind a "
+                                "shared_ptr/unique_ptr member. A by-value std::string is the usual cause "
+                                "(short strings are self-referential on libstdc++).");
+        assert(false
+               && "qb: event payload is not trivially relocatable (holds a pointer into itself) — "
+                  "see the QB_LOG_CRIT above and Actor::push's @warning");
+    }
+#endif
+    const CoreId dest_index = _core_set.resolve(event.source.index());
+    auto        &mailbox    = *_mail_boxes[dest_index];
+    auto        &ring       = mailbox.ringOf(source_index);
+    struct ReplyFill {
+        Event &event;
+        QB_MSVC_FORCEINLINE void
+        operator()(EventBucket *first, std::size_t first_count, EventBucket *second, std::size_t second_count) const noexcept {
+            const std::size_t bytes = first_count * QB_LOCKFREE_EVENT_BUCKET_BYTES;
+            detail::event_wire::copy_reply(first, event, bytes);
+            if (second_count)
+                std::memcpy(second, reinterpret_cast<unsigned char const *>(&event) + bytes, second_count * QB_LOCKFREE_EVENT_BUCKET_BYTES);
+            // Only header fields are touched. All payload copies finish before release;
+            // the receiver may destroy its relocated payload immediately after publication.
+            const ActorId previous = event.dest;
+            event.dest             = event.source;
+            event.source           = previous;
+            event.state.bits.alive = 1;
+        }
+    };
+    if (!ring.enqueue_with(event.bucket_size, ReplyFill{event}))
+        return false;
+    mailbox.notify();
+    return true;
 }
 
 SharedCoreCommunication::RunSent
@@ -536,7 +644,7 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             VirtualCore::__bind_thread__(nullptr);
         }
     } thread_context_guard;
-    VirtualCore core(initializer.getIndex(), params.shared_com, initializer._next_id);
+    VirtualCore core(initializer.getIndex(), params.shared_com);
     stop_notice.resolved_index = core._resolved_index;
     // The signals raised before this engine's start are not its core's to deliver (Huly QB-364).
     core._last_signal_generation = params.signal_mark.generation;
@@ -567,8 +675,11 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
     bool entered_workflow = false;
     try {
         // Init VirtualCore
-        auto      &core_factory = initializer._actor_factories;
-        const auto cpus         = place_core(initializer.getIndex(), initializer.getAffinity(), initializer._affinity_explicit); // Huly QB-1081
+        auto &core_factory = initializer._actor_factories;
+        // The pool the factories reserved their incarnations in becomes the core's: a dynamic actor draws from it
+        // and can never take a factory's promise (QB-263, QB-970).
+        core.__install_id_pool__(initializer._ids);
+        const auto cpus = place_core(initializer.getIndex(), initializer.getAffinity(), initializer._affinity_explicit); // Huly QB-1081
         if (!core.__predicted_ids_hold__(initializer) || !core.__init__(cpus)) { // the first: Huly QB-1007
             QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
@@ -576,27 +687,27 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
             QB_LOG_CRIT(core << " Started with 0 Actor");
             params.sync_start.store(VirtualCore::Error::NoActor, std::memory_order_release);
         } else {
-            // Factories promise ordinary IDs in registration order. The pool begins
-            // above all of them, so a reentrant child cannot steal a later promise.
-            const auto ordinary_count =
-                static_cast<ServiceId>(std::ranges::count_if(core_factory, [](auto const &factory) { return !factory->isService(); }));
-            ServiceId next_promised = static_cast<ServiceId>(initializer._next_id - ordinary_count);
-            bool      failed        = false;
+            // Each factory was reserved its incarnation by `CoreInitializer::addActor`, in registration order, and
+            // `__generate_id__` / `__generate_service_id__` hand it to the actor's base constructor: a reentrant
+            // child reserves a fresh one and cannot steal a later factory's promise (QB-263). A factory that fails
+            // -- its constructor threw, its onInit() returned false -- gives its reservation back exactly once, with
+            // the slot's generation advanced (QB-970); the ones never reached are released with the pool.
+            bool failed = false;
             for (auto const &factory : core_factory) {
-                const bool service = factory->isService();
                 struct FactoryPromiseScope {
-                    ActorId &slot;
-                    ActorId  previous;
-                    FactoryPromiseScope(ActorId &target, ActorId promised) noexcept
-                        : slot(target)
-                        , previous(target) {
-                        slot = promised;
-                    }
+                    VirtualCore &core;
+                    ActorId      previous;
+                    ActorId      reserved;
+                    bool         admitted = false;
                     ~FactoryPromiseScope() noexcept {
-                        slot = previous;
+                        if (!admitted)
+                            core.__rollback_failed_admission__(reserved);
+                        core._factory_actor_id = previous;
                     }
-                } promise{core._pending_factory_id, service ? ActorId{} : core.__factory_promised_id__(next_promised++)};
-                if (!core.appendActor(std::unique_ptr<Actor>(factory->create())).is_valid()) {
+                } promise{core, core._factory_actor_id, factory->reserved_id()};
+                core._factory_actor_id = promise.reserved;
+                promise.admitted       = core.appendActor(std::unique_ptr<Actor>(factory->create()), promise.reserved);
+                if (!promise.admitted) {
                     failed = true;
                     break;
                 }

@@ -91,8 +91,15 @@ The sources live under `qb/tests/core/benchmark/`, grouped into five subgroups (
 | `messaging/ping-pong-throughput.cpp` | `ping-pong-throughput` | Ping-pong throughput across `TinyEvent` / `BigEvent` (and heap-owning / checksum) payload shapes, swept over actor count, round-trips, and core count. |
 | `messaging/ping-pong-latency.cpp` | `ping-pong-latency` | Per-round-trip ping-pong latency (mono-core, cross-core, and a raw-SPSC reference path). |
 | `messaging/forward-vs-direct.cpp` | `forward-vs-direct` | Direct ping-pong versus a one-hop `forward` relay at the same logical TTL. |
-| `messaging/ask-roundtrip.cpp` | `ask-roundtrip` | Native coroutine `qb::ask` request/response round-trip latency (same-core and cross-core). |
+| `messaging/ask-roundtrip.cpp` | `ask-roundtrip` | Native coroutine `qb::ask` request/response latency: ordinary same-core/cross-core targets and matched logical-service/exact-service-instance targets. |
 | `messaging/ask-all-fanout.cpp` | `ask-all-fanout` | Scatter-gather fan-out latency: `qb::ask_all` (await every reply) versus `qb::ask_any` (first wins). |
+
+The two same-core service cells create the same service type, run 50,000 sequential requests,
+and differ only in the destination captured before execution. The logical cell keeps its logical
+address for every request; the instance cell keeps the exact incarnation. An untimed specialization
+checks every request sequence and doubled response value before either cell is measured. Engine
+errors or missing samples reject a measured iteration. Compare both revisions with this same
+fixture; an older fixture without the service registration has a different legacy ID layout.
 
 ### `topology/` — chain, fan-out, and diamond latency
 
