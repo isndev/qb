@@ -1045,6 +1045,11 @@ uri::parse() noexcept {
     if (p < p_end && *p == '?') {
         p++; // Skip '?'
         query_begin = p;
+#if defined(__GNUC__) && !defined(__clang__)
+        // GCC keeps the no-query path lean when presence is recorded here and only
+        // nonempty contents reach the decoding block. Other compilers retain its original shape.
+        _raw_queries = std::string_view{query_begin, 0};
+#endif
 
         // For query, we're more lenient - accept all characters except '#'
         while (p < p_end && *p != '#') {
@@ -1140,7 +1145,11 @@ uri::parse() noexcept {
         _path = "/";
     }
 
-    if (query_begin) {
+    if (query_begin
+#if defined(__GNUC__) && !defined(__clang__)
+        && query_begin < query_end
+#endif
+    ) {
         // Store raw query string
         _raw_queries = make_string_view(query_begin, query_end);
 

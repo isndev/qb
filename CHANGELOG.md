@@ -190,6 +190,9 @@ policy.
   QB-169).** Parsing now retains the delimiter presence of `/path?`, while `encoded_queries()`
   remains empty. Copies and moves preserve it, and assigning new text resets it; no data member
   is added to `uri`. Mutable query-map edits continue to leave the source text unchanged.
+  Under GCC, presence is recorded when the delimiter is scanned and only nonempty
+  contents reach the decoding block, preserving its short path for URIs without a query.
+  Other compilers retain the original finalization; both paths preserve the same URI value.
 
 - **Per-connection QUIC RTT and listener admission controls (Huly QB-1098).**
   `backend::smoothed_rtt(connection_id)` returns an optional duration for the named native connection;
