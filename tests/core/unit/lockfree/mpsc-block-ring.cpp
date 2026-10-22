@@ -210,8 +210,9 @@ TEST(MpscBlockRing, EnqueueWithOpensOnlyItsClosedProducerBeforeFillingAndRefuses
     EXPECT_EQ(first_size, kCap);
     EXPECT_EQ(second_size, 0u);
     for (std::size_t i = 0; i < kProducers; ++i)
-        if (i != producer)
+        if (i != producer) {
             EXPECT_EQ(seen_read_index(block, i), 1u) << "another producer's ring was opened";
+        }
     EXPECT_EQ(ring.enqueue_with(1, fill), 0u) << "full";
     EXPECT_EQ(ring.enqueue_with(0, fill), 0u);
     EXPECT_EQ(calls, 1u);

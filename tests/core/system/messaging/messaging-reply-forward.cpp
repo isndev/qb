@@ -945,8 +945,9 @@ public:
         EXPECT_EQ(event.front, front_value(expected));
         const bool owner_ok = event.owner.get() == _probe.owner_address && event.owner != nullptr;
         EXPECT_TRUE(owner_ok);
-        if (owner_ok)
+        if (owner_ok) {
             EXPECT_EQ(event.owner->stamp, front_value(expected));
+        }
 
         std::size_t mismatch = event.tail.size();
         for (std::size_t i = 0; i < event.tail.size(); ++i) {
@@ -1080,8 +1081,9 @@ public:
         EXPECT_EQ(event.front, front_value(expected));
         const bool owner_ok = event.owner.get() == _probe.wire.owner_address && event.owner != nullptr;
         EXPECT_TRUE(owner_ok);
-        if (owner_ok)
+        if (owner_ok) {
             EXPECT_EQ(event.owner->stamp, front_value(expected));
+        }
         std::size_t mismatch = event.tail.size();
         for (std::size_t i = 0; i < event.tail.size(); ++i) {
             if (event.tail[i] != ThreeBucketEvent::tail_byte(expected, i)) {
