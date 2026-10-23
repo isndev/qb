@@ -271,6 +271,17 @@ void write_text(snapshot const &snap, std::string &out);
  */
 void describe(snapshot &snap, qb::CoreStats const &stats, qb::CoreId core);
 
+/**
+ * @brief Describes an autonomous listener's dispatch timing and its last run's event count.
+ * @details Pass `listener.dispatch_timing()` and `listener.nb_invoked_event()` on the listener's thread.
+ *          `qb_io_last_run_events` is a gauge, not a cumulative counter. With recorded timing, adds
+ *          `qb_io_dispatches_timed_total`, `qb_io_dispatch_time_seconds_total` and last/max/recent-max
+ *          duration gauges. Dispatch timing covers libev watcher callbacks, not deferred callbacks or
+ *          coroutine resumes outside that dispatch. This adapter neither enables timing nor reads a clock.
+ *          Give distinct listeners distinct labels; do not sum last/max gauges from unrelated listeners.
+ */
+void describe_dispatch(snapshot &snap, qb::TimingStats const &stats, std::uint64_t last_run_events, label_set labels);
+
 } // namespace qb::metrics
 
 #endif // QB_CORE_METRICS_H

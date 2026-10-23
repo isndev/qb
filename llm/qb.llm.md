@@ -446,6 +446,12 @@ overflow says so in band, with one gap marker. What becomes of work submitted ou
 client's documented policy: qbm-redis HOLDS it until the client is ready, up to its command timeout;
 qbm-pgsql REFUSES it.
 
+The shared `reconnect_policy` grows its delay in integer milliseconds. Stop at the cap or at a
+stationary value (zero, multiplier at most one, or truncation back to the same millisecond); the
+attempt count must not make a stationary backoff more expensive. Apply jitter once after growth,
+never to a zero delay, and cap the jittered result at the largest whole millisecond representable by
+`qb::duration` before converting it back to nanoseconds.
+
 ### Coroutines inside an actor
 
 **Use `spawn()`. It is the default and the safe one.** `spawn()` binds the coroutine to a per-actor
@@ -784,6 +790,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   is dropped and counted. Nothing runs and nothing is shared between two scrapes: the counters stay the core's own
   integers. Names: `qb_<layer>_<name>_<unit>[_total]`, base units; a family made on several cores carries `core` or is
   summed by the merge. _(metrics.h:208; metrics_registry.h:178, :201)_
+- **Autonomous listener metrics are dispatch metrics, not whole-loop metrics.**
+  `describe_dispatch(snapshot&, TimingStats const&, uint64_t last_run_events, label_set)` in
+  `<qb/core/metrics.h>` consumes `listener.dispatch_timing()` and `listener.nb_invoked_event()`
+  on that listener's thread. The last run count is a gauge, never `_total`; timing families
+  are omitted until `count > 0`. It installs nothing and reads no clock. Link `qb::core` for
+  the model even without actors. Give listeners distinct labels so last/max gauges are not summed.
+  _(metrics.h:283)_
 - **A blocking handler shows in the pass time -- on a core that times its passes.** `CoreInitializer::setPassTiming()`
   (off by default, decided at thread start) fills `CoreStats::pass_time`, a `qb::TimingStats` of the core's passes
   with the park excluded: `recent_max`, the longest pass of the last one to two seconds, is the stall gauge. It costs

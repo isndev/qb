@@ -217,4 +217,32 @@ TEST(MetricsText, DescribeCoreStatsLabelsEveryCoreSample) {
         EXPECT_NE(timed_text.find(line), std::string::npos) << line << "\nin:\n" << timed_text;
 }
 
+TEST(MetricsText, ListenerDispatchScopeIsExplicitAndLastRunEventsIsAGauge) {
+    snapshot untimed;
+    qb::metrics::describe_dispatch(untimed, qb::TimingStats{}, 7, {{"listener", "standalone"}});
+    EXPECT_EQ(untimed.families().size(), 1u);
+    const auto *events = untimed.find("qb_io_last_run_events");
+    ASSERT_NE(events, nullptr);
+    EXPECT_EQ(events->type, qb::metrics::metric_type::gauge);
+    EXPECT_EQ(events->samples[0].number.integer(), 7u);
+    EXPECT_EQ(untimed.find("qb_io_dispatches_timed_total"), nullptr);
+
+    qb::TimingStats stats;
+    stats.count      = 9007199254740993ULL;
+    stats.total      = std::chrono::milliseconds(125);
+    stats.last       = std::chrono::milliseconds(2);
+    stats.max        = std::chrono::milliseconds(10);
+    stats.recent_max = std::chrono::milliseconds(5);
+    snapshot timed;
+    qb::metrics::describe_dispatch(timed, stats, 0, {{"listener", "standalone"}});
+    const auto text = qb::metrics::write_text(timed);
+    for (const auto *line :
+         {"qb_io_last_run_events{listener=\"standalone\"} 0\n", "qb_io_dispatches_timed_total{listener=\"standalone\"} 9007199254740993\n",
+          "qb_io_dispatch_time_seconds_total{listener=\"standalone\"} 0.125\n",
+          "qb_io_dispatch_last_duration_seconds{listener=\"standalone\"} 0.002\n",
+          "qb_io_dispatch_max_duration_seconds{listener=\"standalone\"} 0.01\n",
+          "qb_io_dispatch_recent_max_duration_seconds{listener=\"standalone\"} 0.005\n"})
+        EXPECT_NE(text.find(line), std::string::npos) << line;
+}
+
 } // namespace metrics_text_test

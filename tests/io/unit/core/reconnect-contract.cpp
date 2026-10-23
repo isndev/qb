@@ -37,6 +37,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <limits>
 #include <random>
 #include <set>
 #include <string_view>
@@ -195,6 +196,43 @@ TEST(ReconnectPolicy, ZeroInitialDelayStaysZeroEvenJittered) {
     const auto   policy = qb::io::reconnect_policy{}.with_initial_delay(0ms).with_jitter(true);
     EXPECT_EQ(policy.next_delay(1, &rng), qb::duration::zero());
     EXPECT_EQ(policy.next_delay(5, &rng), qb::duration::zero()) << "zero times any multiplier is zero: immediate retries were asked for";
+}
+
+TEST(ReconnectPolicy, StationaryWaitKeepsItsValueAndDrawsJitterOnce) {
+    // Exercise a long reconnection run without a timer or a wall-clock assertion.
+    // Both calls must leave the RNG at the same position, including at a fixed point
+    // created by truncating a fractional multiplier to integer milliseconds.
+    for (const auto initial : {0ms, 1ms, 200ms}) {
+        for (const double growth : {0.5, 1.0, 1.001}) {
+            const auto   policy = qb::io::reconnect_policy{}.with_initial_delay(initial).with_multiplier(growth);
+            std::mt19937 short_run{20261023};
+            std::mt19937 long_run{20261023};
+            EXPECT_EQ(policy.next_delay(1, &short_run), policy.next_delay(1'000'000, &long_run));
+            EXPECT_EQ(short_run, long_run);
+        }
+    }
+}
+
+TEST(ReconnectPolicy, ZeroWaitDoesNotMultiplyByInfinity) {
+    const auto   policy = qb::io::reconnect_policy{}.with_initial_delay(0ms).with_multiplier(std::numeric_limits<double>::infinity());
+    std::mt19937 rng{11};
+    const auto   unchanged = rng;
+    EXPECT_EQ(policy.next_delay(2, &rng), qb::duration::zero());
+    EXPECT_EQ(rng, unchanged) << "zero delay consumes no jitter draw";
+}
+
+TEST(ReconnectPolicy, JitterAtDurationLimitStaysRepresentable) {
+    const auto   policy = qb::io::reconnect_policy{}.with_initial_delay(qb::duration::max()).with_max_delay(qb::duration::max());
+    const auto   max_ms = std::chrono::duration_cast<std::chrono::milliseconds>(qb::duration::max());
+    std::mt19937 rng{20261023};
+    bool         saturated = false;
+    for (int i = 0; i < 128; ++i) {
+        const auto wait = policy.next_delay(1, &rng);
+        EXPECT_GE(wait, max_ms * 3 / 4);
+        EXPECT_LE(wait, max_ms);
+        saturated = saturated || wait == max_ms;
+    }
+    EXPECT_TRUE(saturated) << "positive jitter at the duration limit must saturate, not wrap";
 }
 
 TEST(ReconnectPolicy, InitialDelayAboveTheCapIsTheCap) {

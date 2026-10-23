@@ -342,6 +342,34 @@ int main() {
 
 Pinned by `qb/tests/core/unit/metrics/metrics-text.cpp` (the exposition byte for byte, the merge) and `qb/tests/core/system/engine/metrics-scrape.cpp` (two cores through one registry, a core without one reported down, a throwing source contained).
 
+### Autonomous listeners and module adapters
+
+The model also describes an autonomous `qb::io::async::listener`, without an actor registry:
+
+```cpp
+qb::metrics::snapshot snapshot;
+auto &loop = qb::io::async::listener::current;
+qb::metrics::describe_dispatch(snapshot, loop.dispatch_timing(), loop.nb_invoked_event(),
+                               {{"listener", "main"}});
+```
+<!-- src: qb/src/qb/core/metrics.h:283; qb/src/qb/io/async/listener.h:1472 -->
+
+`qb_io_last_run_events` is a gauge of the last `run`, not a cumulative total or a rate.
+When the supplied timing has observations, the adapter adds dispatch count/time counters
+and last/max/recent-max duration gauges, all durations in seconds. Watcher dispatch excludes
+deferred callbacks and coroutine resumes outside it. Timing remains opt-in through
+`set_dispatch_timing`; the adapter does not read a clock or install instrumentation.
+Reading `dispatch_timing()` itself obtains the current time for its recent-maximum window.
+Link `qb::core` for the value model even when the application has no actors. Distinct
+listeners need distinct labels, particularly for last/max gauges.
+
+PostgreSQL and Redis offer explicit snapshot overloads in `<qbm/pgsql/metrics.h>` and
+`<qbm/redis/metrics.h>`. Read client snapshots on their owner core in a synchronous
+registry source. Declare the returned handle after client members, so it unregisters first.
+Do not retain a raw pointer beyond the owner's lifetime or send a live client across cores.
+The runnable `07-applications/04-observability` example in qb-examples combines these
+adapters, HTTP metrics and two registries, with a private listener and a Prometheus/Grafana stack.
+
 ## Shutdown
 
 ### Three triggers, one path

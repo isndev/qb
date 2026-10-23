@@ -168,14 +168,18 @@ is).
 - **`qb::io::reconnect_policy`** -- the backoff of a run: `max_attempts` (-1 = unlimited), `initial_delay` (100 ms),
   `max_delay` (30 s), `multiplier` (2.0), `jitter` (a quarter either way), `connect_timeout` (zero = the client's
   own), `on_retry`; `next_delay(attempt, rng)` and `allows_attempt(attempts)` are pure, so a policy is tested on its
-  own. It is not `qb::io::async::retry_policy`, which retries a coroutine body on an exception.
+  own. Growth is evaluated in integer milliseconds and stops when the next step equals the current
+  delay, including zero or a fractional multiplier truncated back to the same millisecond. Jitter is
+  applied once afterwards; a zero wait remains zero, and a jittered wait saturates at the largest
+  whole millisecond representable by `qb::duration`. It is not `qb::io::async::retry_policy`, which
+  retries a coroutine body on an exception.
 
 What the clients promise, in short: an explicit disconnect is terminal and only a peer's loss starts a run; a refused
 handshake is terminal and a transport failure during one is one more attempt; in-flight work fails once, with the
 reason; nothing waits for ever. What becomes of work submitted outside `ready` is each client's documented policy:
 qbm-redis holds it until the client is ready, up to its command timeout; qbm-pgsql refuses it.
 
-<!-- src: qb/src/qb/io/reconnect.h:63-80 (connection_state), :117-133 (down_reason), :167-173 (gap_reason), :201-204 (gap_info), :218-308 (reconnect_policy) -->
+<!-- src: qb/src/qb/io/reconnect.h:63-80 (connection_state), :117-133 (down_reason), :167-173 (gap_reason), :201-204 (gap_info), :218-314 (reconnect_policy) -->
 
 ### Stream abstractions
 

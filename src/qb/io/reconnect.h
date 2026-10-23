@@ -274,10 +274,12 @@ struct reconnect_policy {
      * @brief The wait after `attempt` failed attempts, before attempt `attempt + 1`.
      * @details Zero for `attempt < 1` (the first attempt is immediate); `initial_delay` after one
      *          failure; then `initial_delay * multiplier^(attempt - 1)`, each step capped at
-     *          `max_delay`, in integer milliseconds. With `jitter` on and an `rng` given, a uniform
+     *          `max_delay`, in integer milliseconds. Growth stops at a fixed point (including zero
+     *          and a fractional step truncated to the same millisecond). With `jitter` on and an `rng` given, a uniform
      *          +-25 % of the wait is added, and the result never drops below 1 ms once the wait was
      *          positive: a policy whose waits are zero (an `initial_delay` of zero) stays at zero, on
-     *          purpose, since that is what was asked for.
+     *          purpose, since that is what was asked for. Jitter saturates at the largest whole
+     *          millisecond representable by `qb::duration` rather than overflowing on conversion.
      */
     [[nodiscard]] qb::duration
     next_delay(int attempt, std::mt19937 *rng = nullptr) const {
@@ -288,14 +290,18 @@ struct reconnect_policy {
         const rep    max_ms   = std::max<rep>(0, std::chrono::duration_cast<std::chrono::milliseconds>(max_delay).count());
         rep          delay_ms = std::clamp<rep>(std::chrono::duration_cast<std::chrono::milliseconds>(initial_delay).count(), 0, max_ms);
         const double growth   = std::max(1.0, multiplier);
-        for (int i = 1; i < attempt && delay_ms < max_ms; ++i) {
-            const double next = static_cast<double>(delay_ms) * growth;
-            delay_ms          = next >= static_cast<double>(max_ms) ? max_ms : static_cast<rep>(next);
+        for (int i = 1; i < attempt && delay_ms > 0 && delay_ms < max_ms; ++i) {
+            const double next    = static_cast<double>(delay_ms) * growth;
+            const rep    next_ms = next >= static_cast<double>(max_ms) ? max_ms : static_cast<rep>(next);
+            if (next_ms == delay_ms)
+                break;
+            delay_ms = next_ms;
         }
         if (jitter && rng != nullptr && delay_ms > 0) {
             const rep                          quarter = delay_ms / 4;
             std::uniform_int_distribution<rep> dist{-quarter, quarter};
-            delay_ms = std::max<rep>(1, delay_ms + dist(*rng));
+            constexpr rep max_representable_ms = std::chrono::duration_cast<std::chrono::milliseconds>(qb::duration::max()).count();
+            delay_ms                           = std::clamp<rep>(delay_ms + dist(*rng), 1, max_representable_ms);
         }
         return qb::duration{std::chrono::milliseconds{delay_ms}};
     }

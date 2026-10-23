@@ -7,6 +7,13 @@ policy.
 
 ## [Unreleased]
 
+### Added
+
+- **Snapshot adapters for autonomous listener metrics (Huly QB-154).**
+  `qb::metrics::describe_dispatch` exposes watcher-dispatch timing in seconds and
+  `qb_io_last_run_events` as a gauge. It neither enables timing nor reads a clock;
+  deferred callbacks and coroutine resumes outside watcher dispatch are not measured.
+
 ### Changed
 
 - **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
@@ -796,6 +803,14 @@ policy.
 
 
 ### Fixed
+
+- **Bound stationary reconnect backoff (Huly QB-608).** `qb::io::reconnect_policy::next_delay`
+  stops once an integer-millisecond step no longer grows, so zero, constant and truncated fractional
+  waits do not repeat work for every failed attempt. Rounding, the cap and the single final jitter
+  draw are preserved. A zero wait also avoids multiplying by an infinite factor and converting NaN
+  to an integer. Jitter saturates at the largest whole millisecond representable by `qb::duration`,
+  preventing an overflow when a near-limit delay converts back to nanoseconds. HTTP, PostgreSQL
+  and Redis use this shared policy; their connection lifecycle is unchanged.
 
 - **Async TCP connector startup releases retained work on exception (Huly QB-169).**
   `run()` invalidates attempts, unregisters its I/O watcher, disconnects the socket it still

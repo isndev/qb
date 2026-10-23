@@ -436,6 +436,24 @@ describe(snapshot &snap, qb::CoreStats const &stats, qb::CoreId const core) {
     }
 }
 
+void
+describe_dispatch(snapshot &snap, qb::TimingStats const &stats, std::uint64_t const last_run_events, label_set labels) {
+    snap.gauge("qb_io_last_run_events", "Events dispatched during the listener's last run, not a cumulative count.")
+        .add(labels, last_run_events);
+    if (stats.count == 0)
+        return;
+    auto const seconds = [](qb::duration const d) {
+        return std::chrono::duration<double>(d).count();
+    };
+    snap.counter("qb_io_dispatches_timed_total", "Libev watcher dispatches timed by the listener.").add(labels, stats.count);
+    snap.counter("qb_io_dispatch_time_seconds_total", "Time in timed libev watcher callbacks, outside deferred work excluded.")
+        .add(labels, seconds(stats.total));
+    snap.gauge("qb_io_dispatch_last_duration_seconds", "Duration of the listener's last timed dispatch.").add(labels, seconds(stats.last));
+    snap.gauge("qb_io_dispatch_max_duration_seconds", "Longest timed dispatch since timing began.").add(labels, seconds(stats.max));
+    snap.gauge("qb_io_dispatch_recent_max_duration_seconds", "Longest timed dispatch of the last one to two seconds.")
+        .add(std::move(labels), seconds(stats.recent_max));
+}
+
 source_handle::source_handle(std::weak_ptr<detail::source_list> list, std::uint64_t const id) noexcept
     : _list(std::move(list))
     , _id(id) {}
