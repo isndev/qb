@@ -7,8 +7,8 @@
  * core IDs, service IDs, and actor IDs, as well as utilities for set operations on
  * collections of core IDs.
  *
- * The ActorId is a compound identifier that includes both the core ID where an actor
- * is located and a service ID that uniquely identifies the actor within that core.
+ * ActorId combines a core, an actor slot and an incarnation generation. Logical
+ * service addresses use a separate slot band and resolve to the current instance.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -29,10 +29,12 @@
 #ifndef QB_ACTORID_H
 #define QB_ACTORID_H
 #include <algorithm>
+#include <compare>
 #include <bitset>
 #include <cstdint>
 #include <bit>
 #include <limits>
+#include <iosfwd>
 #include <unordered_set>
 #include <vector>
 // include from qb
@@ -59,6 +61,8 @@ using CoreId = uint16_t;
  * @ingroup Core
  */
 using ServiceId = uint16_t;
+/** @brief Unsigned storage for a 24-bit ordinary or service actor slot. */
+using ActorSlotId = uint32_t;
 
 /**
  * @typedef TypeId
@@ -378,99 +382,164 @@ using CoreIdSet = CoreIdBitSet;
  * @ingroup Actor
  * @brief Unique identifier for actors
  * @details
- * ActorId combines a service/actor identifier with a core identifier to form a unique
- * identifier for an actor within the actor system. It provides methods for creating,
- * comparing, and validating actor IDs.
+ * ActorId stores generation32, core8 and slot24 in a 64-bit value. Ordinary
+ * instances use slots 1..0xFEFFFF and a nonzero generation. The 0xFFxxxx band
+ * holds service tags; generation zero names a logical service address, while
+ * a nonzero generation identifies one service incarnation. Slot 0xFFFFFF with
+ * generation zero is the per-core broadcast address. Equality compares every bit.
+ * Identities are scoped to an engine run, not a process-global or durable epoch.
  */
 class ActorId {
-    // Every member is defined in-class, deliberately: they are one-liners called on EVERY event
-    // from code instantiated in the USER'S translation unit (the router's dispatch trampoline,
-    // `semh::route`'s hash lookup, `Event`'s default-constructed ids in `Actor::push`). Defined
-    // out of line in ActorId.cpp they were real calls into the archive there -- measured with
-    // perf on savina/counting at cores=1, g++ 14 -O3, no LTO: the constructor, is_broadcast()
-    // and operator uint32_t() together took ~10% of a dispatch-bound profile.
-    template <typename T>
+    template <typename>
     friend struct std::hash;
-    template <typename T>
+    template <typename>
     friend struct qb::router::dense_index;
-
     friend class CoreInitializer;
     friend class SharedCoreCommunication;
     friend class VirtualCore;
     friend class Actor;
     friend class Service;
 
-private:
-    ServiceId _service_id;
-    CoreId    _core_id;
+    std::uint64_t _value{0};
+
+    static constexpr std::uint64_t
+    pack(ActorSlotId slot, CoreId core, std::uint32_t generation) noexcept {
+        return (static_cast<std::uint64_t>(generation) << 32u) | (static_cast<std::uint64_t>(core) << 24u) | slot;
+    }
+
+    // The domain (is_instance() || is_service_address() || is_broadcast() of the value): an ordinary slot needs a
+    // generation; the service band takes any; the broadcast slot only generation 0. Slot and generation are decoded
+    // once.
+    static constexpr bool
+    valid_raw(std::uint64_t raw) noexcept {
+        const auto s = static_cast<ActorSlotId>(raw & BroadcastSid);
+        const auto g = static_cast<std::uint32_t>(raw >> 32u);
+        if (s - 1u < MaxOrdinarySlot) // 1..MaxOrdinarySlot; slot 0 wraps
+            return g != 0;
+        return s > ServiceBand && (s != BroadcastSid || g == 0);
+    }
+
+    // A value its named factory has just proven valid. The checked raw constructor would decode it a second time:
+    // on MSVC 19.51 that re-check kept `ordinary()` out of line, and the pool built every actor id through three
+    // calls (`ordinary`, the raw constructor, `is_valid`) -- 47 instructions per admission, single-stepped.
+    struct trusted_t {};
+    constexpr ActorId(trusted_t, std::uint64_t raw) noexcept
+        : _value(raw) {}
 
 protected:
-    ActorId(ServiceId id, CoreId index) noexcept
-        : _service_id(id)
-        , _core_id(index) {}
+    // Existing two-component internal call sites name a logical service, not an incarnation.
+    ActorId(ServiceId tag, CoreId core) noexcept
+        : ActorId(service_address(tag, core)) {}
 
 public:
-    static constexpr uint32_t  NotFound     = 0;
-    static constexpr ServiceId BroadcastSid = (std::numeric_limits<ServiceId>::max)();
+    static constexpr std::uint64_t NotFound        = 0;
+    static constexpr ActorSlotId   BroadcastSid    = 0x00ffffffu;
+    static constexpr ActorSlotId   ServiceBand     = 0x00ff0000u;
+    static constexpr ActorSlotId   MaxOrdinarySlot = ServiceBand - 1u;
+    static constexpr std::uint32_t MaxGeneration   = (std::numeric_limits<std::uint32_t>::max)();
 
-    /*!
-     * ActorId() == ActorId::NotFound
-     */
-    ActorId() noexcept
-        : _service_id(0)
-        , _core_id(0) {}
-    /*!
-     * @private
-     * internal function
-     */
-    ActorId(uint32_t id) noexcept {
-        *this = std::bit_cast<ActorId>(id);
+    constexpr ActorId() noexcept = default;
+    // No lossy 32-bit round trip is supported by this experimental codec.
+    ActorId(std::uint32_t) = delete;
+    constexpr ActorId(std::uint64_t raw) noexcept
+        : _value(valid_raw(raw) ? raw : 0) {}
+
+    [[nodiscard]] static constexpr ActorId
+    from_raw(std::uint64_t raw) noexcept {
+        return ActorId(raw);
     }
-
-    /**
-     * @brief Conversion operator to uint32_t
-     * @return The ActorId as a 32-bit unsigned integer
-     */
-    [[nodiscard]]
-    operator uint32_t() const noexcept {
-        return std::bit_cast<uint32_t>(*this);
+    [[nodiscard]] static constexpr ActorId
+    from_parts(ActorSlotId slot, CoreId core, std::uint32_t generation) noexcept {
+        if (core >= MaxCores || slot == 0 || slot > BroadcastSid)
+            return {};
+        return ActorId(pack(slot, core, generation));
     }
-
-    /*!
-     * @brief Get the service identifier component of this ActorId
-     * @return Service identifier
-     */
-    [[nodiscard]] ServiceId
+    // The three named factories check their whole domain themselves -- the same refusals `from_parts` and the raw
+    // constructor made -- and build the value trusted: a tag 1..0xFFFE is a service-band slot, an ordinary slot
+    // 1..MaxOrdinarySlot with a nonzero generation an ordinary instance, on a core the codec carries.
+    [[nodiscard]] static constexpr ActorId
+    service_address(ServiceId tag, CoreId core) noexcept {
+        if (tag == 0 || tag == (std::numeric_limits<ServiceId>::max)() || core >= MaxCores)
+            return {};
+        return ActorId(trusted_t{}, pack(ServiceBand | tag, core, 0));
+    }
+    [[nodiscard]] static constexpr ActorId
+    service_instance(ServiceId tag, CoreId core, std::uint32_t generation) noexcept {
+        if (generation == 0 || tag == 0 || tag == (std::numeric_limits<ServiceId>::max)() || core >= MaxCores)
+            return {};
+        return ActorId(trusted_t{}, pack(ServiceBand | tag, core, generation));
+    }
+    [[nodiscard]] static constexpr ActorId
+    ordinary(ActorSlotId slot, CoreId core, std::uint32_t generation) noexcept {
+        // `slot - 1u` wraps for slot 0: one comparison refuses 0 and everything above MaxOrdinarySlot
+        if (slot - 1u >= MaxOrdinarySlot || generation == 0 || core >= MaxCores)
+            return {};
+        return ActorId(trusted_t{}, pack(slot, core, generation));
+    }
+    [[nodiscard]] constexpr std::uint64_t
+    raw64() const noexcept {
+        return _value;
+    }
+    [[nodiscard]] constexpr ActorSlotId
+    slot() const noexcept {
+        return static_cast<ActorSlotId>(_value & BroadcastSid);
+    }
+    [[nodiscard]] constexpr ActorSlotId
     sid() const noexcept {
-        return _service_id;
+        return slot();
     }
-
-    /*!
-     * @brief Get the core identifier component of this ActorId
-     * @return VirtualCore identifier
-     */
-    [[nodiscard]] CoreId
+    [[nodiscard]] constexpr CoreId
     index() const noexcept {
-        return _core_id;
+        return static_cast<CoreId>((_value >> 24u) & 0xffu);
     }
-
-    /*!
-     * @brief Check if this ActorId represents a broadcast identifier
-     * @return true if ActorId is a Core broadcast id, false otherwise
-     */
-    [[nodiscard]] bool
+    [[nodiscard]] constexpr std::uint32_t
+    generation() const noexcept {
+        return static_cast<std::uint32_t>(_value >> 32u);
+    }
+    [[nodiscard]] constexpr ServiceId
+    service_tag() const noexcept {
+        return static_cast<ServiceId>(slot());
+    }
+    [[nodiscard]] constexpr bool
     is_broadcast() const noexcept {
-        return _service_id == BroadcastSid;
+        return slot() == BroadcastSid;
+    }
+    [[nodiscard]] constexpr bool
+    is_service() const noexcept {
+        return slot() > ServiceBand && slot() < BroadcastSid;
+    }
+    [[nodiscard]] constexpr bool
+    is_service_address() const noexcept {
+        // generation first: an instance id -- every event's ordinary destination -- answers on one test
+        return generation() == 0 && is_service();
+    }
+    [[nodiscard]] constexpr bool
+    is_service_instance() const noexcept {
+        return is_service() && generation() != 0;
+    }
+    [[nodiscard]] constexpr bool
+    is_ordinary() const noexcept {
+        return slot() != 0 && slot() <= MaxOrdinarySlot && generation() != 0;
+    }
+    // is_instance() and is_valid() decode the slot once (same domains as the predicates they used to chain:
+    // is_ordinary() || is_service_instance(), and is_instance() || is_service_address() || is_broadcast()). Chained,
+    // they were ten compares MSVC 19.51 would not inline: `is_valid()` cost 11 instructions per call out of line.
+    [[nodiscard]] constexpr bool
+    is_instance() const noexcept {
+        // a nonzero generation on any slot 1..0xFFFFFE but the service-band marker
+        return generation() != 0;
+    }
+    // Every constructor stores 0 or a value of the domain (the raw one through valid_raw(), the named factories by
+    // their own checks), so a nonzero value IS a valid one: the domain test runs once, where a value is made, not on
+    // every read. On MSVC 19.51 the decoded test was 10-13 instructions at each of the five default-event
+    // registrations of every actor (single-stepped, Huly QB-970 perf lot).
+    [[nodiscard]] constexpr bool
+    is_valid() const noexcept {
+        return _value != 0;
     }
 
-    /*!
-     * @brief Check if this ActorId can name an actor: its service id is not 0, which no actor ever holds (Huly QB-1007)
-     * @return false for NotFound and for every `(0, core)` id, true otherwise -- a `BroadcastId` included
-     */
-    [[nodiscard]] bool
-    is_valid() const noexcept {
-        return _service_id != 0;
-    }
+    friend constexpr bool operator==(ActorId, ActorId) noexcept  = default;
+    friend constexpr auto operator<=>(ActorId, ActorId) noexcept = default;
 };
 
 /**
@@ -491,7 +560,7 @@ public:
      * @ingroup Actor
      */
     explicit BroadcastId(uint32_t const core_id) noexcept
-        : ActorId(BroadcastSid, static_cast<CoreId>(core_id)) {}
+        : ActorId(core_id < MaxCores ? ActorId::from_parts(BroadcastSid, static_cast<CoreId>(core_id), 0) : ActorId{}) {}
 };
 
 /**
@@ -565,6 +634,7 @@ using actor_is_set = ActorIdSet;
  * @ingroup Core
  */
 using core_id_set = CoreIdSet;
+std::ostream &operator<<(std::ostream &os, ActorId const &id);
 #ifdef QB_WITH_LOGGING
 qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 #endif
@@ -572,24 +642,45 @@ qb::io::log::stream &operator<<(qb::io::log::stream &os, qb::ActorId const &id);
 
 namespace qb::router {
 /**
- * @brief The dense form of an `ActorId` is its `ServiceId` slot.
- * @details A router only ever holds the actors of ONE `VirtualCore` — each core owns its
- *          `router::memh<Event>` and subscribes its own actors to it — and within a core the
- *          `ServiceId` comes lowest-free-first from `VirtualCore::ServiceIdPool`, so `sid()`
- *          is unique among a router's live keys and stays as compact as the core's actor
- *          count. The table compares the full id on every hit, so an event addressed to
- *          another core's actor with the same slot is dropped exactly as the hash map dropped
- *          it. See `router::dense_index` for the contract and the measurement behind it.
+ * @brief Dense per-core lookup: ordinary slot in the first bank, service tag in the second.
+ * @details Each router belongs to one VirtualCore. The table compares the complete identity,
+ *          including generation and core, on every hit. A service's high encoded slot never
+ *          sizes the ordinary bank. Logical addresses must be resolved by the receiving core
+ *          before dispatch to an instance subscription.
  */
 template <>
 struct dense_index<qb::ActorId> {
-    static constexpr bool        enabled   = true;
-    static constexpr std::size_t max_index = std::numeric_limits<ServiceId>::max();
+    static constexpr bool        enabled             = true;
+    static constexpr std::size_t max_index           = ActorId::MaxOrdinarySlot;
+    static constexpr bool        partitioned         = true;
+    static constexpr std::size_t secondary_max_index = std::numeric_limits<ServiceId>::max();
+    // primary_of() keeps the encoded slot even for services and broadcast. Those slots
+    // exceed ServiceBand, while the primary bank's size never exceeds MaxOrdinarySlot + 1.
+    static constexpr bool primary_excludes_secondary = true;
+    [[nodiscard]] static bool
+    secondary(qb::ActorId const &id) noexcept {
+        // Every slot above the band marker: the service tags and the broadcast slot (is_service() || is_broadcast()
+        // for every valid id, in one compare). No subscription is keyed on an invalid id; were one, the table's
+        // complete-key compare would miss it in either bank.
+        return id.slot() > ActorId::ServiceBand;
+    }
 
     [[nodiscard]] static std::size_t
     of(qb::ActorId const &id) noexcept {
-        return static_cast<std::size_t>(id.sid());
+        return secondary(id) ? secondary_of(id) : primary_of(id);
     }
+    /// The full slot for every key; secondary keys project beyond the primary bank's maximum.
+    [[nodiscard]] static std::size_t
+    primary_of(qb::ActorId const &id) noexcept {
+        return static_cast<std::size_t>(id.slot());
+    }
+    /// The compact tag of a key known to lie in the secondary bank.
+    [[nodiscard]] static std::size_t
+    secondary_of(qb::ActorId const &id) noexcept {
+        return static_cast<std::size_t>(id.service_tag());
+    }
+    /// The broadcast id (slot 0xFFFFFF) lies above the band marker: secondary() holds it (key_table::broadcast_secondary).
+    static constexpr bool broadcast_secondary = true;
 };
 } // namespace qb::router
 
@@ -612,7 +703,10 @@ struct hash<qb::ActorId> {
      */
     std::size_t
     operator()(qb::ActorId const &val) const noexcept {
-        return static_cast<uint32_t>(val);
+        const auto bits = val.raw64();
+        if constexpr (sizeof(std::size_t) >= sizeof(bits))
+            return static_cast<std::size_t>(bits);
+        return static_cast<std::size_t>(bits ^ (bits >> 32u));
     }
 };
 } // namespace std

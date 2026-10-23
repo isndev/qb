@@ -38,10 +38,15 @@
  * FIFO with those pushes, same core and cross-core (PushReply*).
  */
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <future>
 #include <gtest/gtest.h>
+#include <memory>
 #include <numeric>
 #include <thread>
 #include <vector>
@@ -62,6 +67,7 @@ static std::atomic<int> g_answers_home{0}; // replies + forwards observed back a
 class RequesterActor final : public qb::Actor {
     const qb::ActorId _to;
     int               _received = 0;
+    const bool        _allocated_tail;
 
     void
     finishIfDone() {
@@ -73,8 +79,9 @@ class RequesterActor final : public qb::Actor {
     }
 
 public:
-    explicit RequesterActor(qb::ActorId const to)
-        : _to(to) {}
+    explicit RequesterActor(qb::ActorId const to, bool allocated_tail = false)
+        : _to(to)
+        , _allocated_tail(allocated_tail) {}
 
     ~RequesterActor() final {
         EXPECT_EQ(_received, 2);
@@ -82,7 +89,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
 
@@ -90,7 +97,15 @@ public:
             push<TestEvent>(qb::BroadcastId(_to.index()));
             push<EventForward>(qb::BroadcastId(_to.index()));
         }
-        push<TestEvent>(_to);
+        if (_allocated_tail) {
+            auto &event = getPipe(_to).allocated_push<TestEvent>(32);
+            std::fill(std::begin(event._data), std::end(event._data), std::uint8_t{0x5a});
+            event._sum           = 32 * 0x5a;
+            event.has_extra_data = true;
+            qb::test::copyAllocatedPayload(event);
+        } else {
+            push<TestEvent>(_to);
+        }
         push<EventForward>(_to);
         co_return true;
     }
@@ -123,7 +138,7 @@ public:
 
     qb::io::async::task<bool>
     onInit() final {
-        EXPECT_NE(static_cast<std::uint32_t>(id()), 0u);
+        EXPECT_NE(id().raw64(), 0u);
         registerEvent<TestEvent>(*this);
         registerEvent<EventForward>(*this);
         co_return true;
@@ -799,3 +814,354 @@ TEST(ReplyIsImmediate, CrossCoreReplyIsPublishedBeforeTheHandlerReturns) {
     EXPECT_TRUE(g_eager_direct.load()) << "reply() waited for the pass-end flush";
     EXPECT_EQ(g_eager_markers.load(), 2);
 }
+
+// Exercise reply past byte 64, including a tail checked after it comes home.
+TEST(MessagingReplyForward, SameCoreAllocatedTail) {
+    g_answers_home = 0;
+    qb::Main main;
+    main.addActor<RequesterActor>(0, main.addActor<ResponderActor>(0), true);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_answers_home.load(), 2);
+}
+
+namespace messaging_reply_wrap_test {
+
+constexpr std::size_t kBucket = QB_LOCKFREE_EVENT_BUCKET_BYTES;
+// SharedCoreCommunication uses max_deliverable_buckets as its SPSC capacity;
+// spsc::ringbuffer<T, N> allocates N + 1 physical positions, including the empty slot.
+constexpr std::size_t kPhysicalSlots = qb::detail::max_deliverable_buckets + 1u;
+constexpr std::size_t kRounds        = kPhysicalSlots + 2u;
+static_assert(kPhysicalSlots > 3u && kPhysicalSlots % 3u != 0u);
+
+struct OwnedValue;
+struct Probe {
+    std::array<qb::ActorId, 2> ids{};
+    std::array<std::size_t, 2> received{};
+    std::array<std::size_t, 2> replied{};
+    std::atomic<unsigned>      constructed{0};
+    std::atomic<unsigned>      event_destroyed{0};
+    std::atomic<unsigned>      owner_destroyed{0};
+    OwnedValue                *owner_address = nullptr;
+};
+
+struct OwnedValue {
+    Probe        &probe;
+    std::uint64_t stamp = 0;
+
+    explicit OwnedValue(Probe &p) noexcept
+        : probe(p) {}
+    ~OwnedValue() {
+        probe.owner_destroyed.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+constexpr std::uint64_t
+front_value(std::uint64_t const hop) noexcept {
+    return 0xfedcba9876543210ULL ^ (hop * 0x9e3779b97f4a7c15ULL);
+}
+
+// The first member exercises the beginning of the derived payload, including ABIs
+// that reuse Event's tail padding immediately after its occupied 24-byte header.
+struct Prefix : qb::Event {
+    std::uint64_t               front = 0;
+    std::unique_ptr<OwnedValue> owner;
+    std::uint64_t               hop = 0;
+
+    explicit Prefix(Probe &p)
+        : owner(std::make_unique<OwnedValue>(p)) {
+        p.owner_address = owner.get();
+        p.constructed.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+static_assert(sizeof(Prefix) <= 2u * kBucket);
+
+struct ThreeBucketEvent : Prefix {
+    // Alignment makes this tail start after the prefix's last occupied bucket on
+    // either base-tail-padding ABI. It ends at the last byte of bucket three.
+    alignas(kBucket) std::array<std::uint8_t, 3u * kBucket - sizeof(Prefix)> tail{};
+
+    explicit ThreeBucketEvent(Probe &p)
+        : Prefix(p) {
+        set_hop(0);
+    }
+    ~ThreeBucketEvent() {
+        owner->probe.event_destroyed.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    static std::uint8_t
+    tail_byte(std::uint64_t const step, std::size_t const i) noexcept {
+        // Every complete eight-byte word carries the hop in its upper half:
+        // stale ring bytes cannot pass merely because an eight-bit pattern repeats.
+        const std::uint64_t word = (step << 32u) | (0xa5000000u + static_cast<std::uint32_t>(i / 8u));
+        return static_cast<std::uint8_t>(word >> ((i % 8u) * 8u));
+    }
+    void
+    set_hop(std::uint64_t const step) noexcept {
+        hop          = step;
+        front        = front_value(step);
+        owner->stamp = front;
+        for (std::size_t i = 0; i < tail.size(); ++i)
+            tail[i] = tail_byte(step, i);
+    }
+};
+static_assert(sizeof(ThreeBucketEvent) == 3u * kBucket);
+static_assert(qb::allocator::getItemSize<ThreeBucketEvent, EventBucket>() == 3u);
+
+class Endpoint final : public qb::Actor {
+    Probe            &_probe;
+    const std::size_t _side;
+
+    void
+    finish() {
+        push<qb::KillEvent>(_probe.ids[1u - _side]);
+        kill();
+    }
+
+public:
+    Endpoint(Probe &probe, std::size_t side)
+        : _probe(probe)
+        , _side(side) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<ThreeBucketEvent>(*this);
+        if (_side == 0u)
+            push<ThreeBucketEvent>(_probe.ids[1], _probe);
+        co_return true;
+    }
+
+    void
+    on(ThreeBucketEvent &event) {
+        // The actor-local receive count, not the transported hop, is the oracle.
+        const std::uint64_t expected = 2u * _probe.received[_side] + (_side == 0u ? 1u : 0u);
+        ++_probe.received[_side];
+        EXPECT_FALSE(event.is_alive());
+        EXPECT_EQ(event.getSize(), 3u * kBucket);
+        EXPECT_EQ(event.getDestination().raw64(), _probe.ids[_side].raw64());
+        EXPECT_EQ(event.getSource().raw64(), _probe.ids[1u - _side].raw64());
+        EXPECT_EQ(event.hop, expected);
+        EXPECT_EQ(event.front, front_value(expected));
+        const bool owner_ok = event.owner.get() == _probe.owner_address && event.owner != nullptr;
+        EXPECT_TRUE(owner_ok);
+        if (owner_ok) {
+            EXPECT_EQ(event.owner->stamp, front_value(expected));
+        }
+
+        std::size_t mismatch = event.tail.size();
+        for (std::size_t i = 0; i < event.tail.size(); ++i) {
+            if (event.tail[i] != ThreeBucketEvent::tail_byte(expected, i)) {
+                mismatch = i;
+                break;
+            }
+        }
+        EXPECT_EQ(mismatch, event.tail.size()) << "tail byte " << mismatch << ", hop " << expected;
+        if (!owner_ok || event.hop != expected || event.front != front_value(expected) || mismatch != event.tail.size()) {
+            if (!owner_ok) {
+                // An omitted second span can corrupt the pointer representation. This
+                // is still the only token: restore its known owner for orderly failure
+                // cleanup, without deleting or dereferencing the corrupted pointer.
+                (void) event.owner.release();
+                event.owner.reset(_probe.owner_address);
+            }
+            finish();
+            return;
+        }
+        if (_side == 0u && _probe.received[0] == kRounds) {
+            finish(); // retain this last relocation: one event and one owner destructor
+            return;
+        }
+
+        event.set_hop(expected + 1u);
+        const auto before = getCoreStats();
+        reply(event); // both directions use the public reply path, including wrapped replies
+        ++_probe.replied[_side];
+        const auto after = getCoreStats();
+        EXPECT_EQ(after.events_sent, before.events_sent + 1u);
+        EXPECT_EQ(after.buckets_sent, before.buckets_sent + 3u);
+        EXPECT_EQ(after.sends_blocked, before.sends_blocked) << "a queued fallback would not witness send_reply_large";
+        // Publication transfers ownership: only local/core counters are read after reply.
+    }
+};
+
+TEST(MessagingReplyForward, CrossCoreThreeBucketOwnedReplyWrapsBothRings) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the owned reply must cross two mailbox rings";
+    Probe    probe;
+    qb::Main main;
+    probe.ids[0] = main.addActor<Endpoint>(0, std::ref(probe), std::size_t{0});
+    probe.ids[1] = main.addActor<Endpoint>(1, std::ref(probe), std::size_t{1});
+    ASSERT_NE(probe.ids[0].raw64() >> 32u, 0u);
+    ASSERT_NE(probe.ids[1].raw64() >> 32u, 0u);
+    ASSERT_NE(probe.ids[0].raw64(), probe.ids[1].raw64());
+
+    // Bound a lost/corrupted reply without adding traffic to the ring phase.
+    // The timeout is an escape hatch, not an elapsed-time assertion.
+    std::promise<void> finished;
+    auto               finished_future = finished.get_future();
+    std::atomic<bool>  timed_out{false};
+    std::thread        watchdog([&] {
+        if (finished_future.wait_for(std::chrono::seconds{10}) != std::future_status::ready) {
+            timed_out.store(true, std::memory_order_relaxed);
+            qb::Main::stop();
+        }
+    });
+    main.start(true);
+    main.join();
+    finished.set_value();
+    watchdog.join();
+
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(probe.received[0], kRounds) << "watchdog stopped the engine: " << timed_out.load(std::memory_order_relaxed);
+    EXPECT_EQ(probe.received[1], kRounds);
+    EXPECT_EQ(probe.replied[0], kRounds - 1u);
+    EXPECT_EQ(probe.replied[1], kRounds);
+    EXPECT_EQ(probe.constructed.load(), 1u);
+    EXPECT_EQ(probe.event_destroyed.load(), 1u);
+    EXPECT_EQ(probe.owner_destroyed.load(), 1u);
+    // With only this token in flight, each ring advances by three. gcd(3, P) == 1
+    // and > P replies per direction visit every start position, including P-1 and P-2,
+    // irrespective of the initial phase. Removing send_reply_large's second memcpy
+    // must corrupt the checked final bucket before either chain can finish.
+}
+
+} // namespace messaging_reply_wrap_test
+
+namespace messaging_large_forward_test {
+
+using messaging_reply_wrap_test::front_value;
+using messaging_reply_wrap_test::kBucket;
+using messaging_reply_wrap_test::ThreeBucketEvent;
+
+struct Probe {
+    messaging_reply_wrap_test::Probe wire;
+    bool                             remote = true;
+    std::array<qb::ActorId, 3>       ids{};
+    std::array<unsigned, 3>          received{};
+};
+
+// A(core 0) pushes to B(core 0 or 1), B forwards to C(core 0), C replies locally to A.
+// With remote B, its physical producer differs from the preserved source identity.
+class Endpoint final : public qb::Actor {
+    Probe            &_probe;
+    const std::size_t _side;
+
+    void
+    finish() {
+        for (auto const target : _probe.ids)
+            if (target != id())
+                push<qb::KillEvent>(target);
+        kill();
+    }
+
+public:
+    Endpoint(Probe &probe, std::size_t side)
+        : _probe(probe)
+        , _side(side) {}
+
+    qb::io::async::task<bool>
+    onInit() final {
+        registerEvent<ThreeBucketEvent>(*this);
+        if (_side == 0u)
+            push<ThreeBucketEvent>(_probe.ids[1], _probe.wire);
+        co_return true;
+    }
+
+    void
+    on(ThreeBucketEvent &event) {
+        constexpr std::array<std::uint64_t, 3> expected_hops{2, 0, 1};
+        const auto                             expected = expected_hops[_side];
+        ++_probe.received[_side];
+        EXPECT_FALSE(event.is_alive());
+        EXPECT_EQ(event.getSize(), 3u * kBucket);
+        EXPECT_EQ(event.getDestination().raw64(), _probe.ids[_side].raw64());
+        EXPECT_EQ(event.getSource().raw64(), _probe.ids[_side == 0u ? 2u : 0u].raw64());
+        EXPECT_EQ(event.hop, expected);
+        EXPECT_EQ(event.front, front_value(expected));
+        const bool owner_ok = event.owner.get() == _probe.wire.owner_address && event.owner != nullptr;
+        EXPECT_TRUE(owner_ok);
+        if (owner_ok) {
+            EXPECT_EQ(event.owner->stamp, front_value(expected));
+        }
+        std::size_t mismatch = event.tail.size();
+        for (std::size_t i = 0; i < event.tail.size(); ++i) {
+            if (event.tail[i] != ThreeBucketEvent::tail_byte(expected, i)) {
+                mismatch = i;
+                break;
+            }
+        }
+        EXPECT_EQ(mismatch, event.tail.size()) << "tail byte " << mismatch << ", hop " << expected;
+        if (!owner_ok || event.hop != expected || event.front != front_value(expected) || mismatch != event.tail.size()) {
+            if (!owner_ok) {
+                (void) event.owner.release();
+                event.owner.reset(_probe.wire.owner_address);
+            }
+            finish();
+            return;
+        }
+        if (_side == 0u) {
+            finish(); // the sole event and its owner are destroyed after this final handler
+        } else if (_side == 1u) {
+            event.set_hop(1);
+            const auto before = getCoreStats();
+            forward(_probe.ids[2], event);
+            const auto after = getCoreStats();
+            EXPECT_EQ(after.events_sent, before.events_sent + (_probe.remote ? 1u : 0u));
+            EXPECT_EQ(after.buckets_sent, before.buckets_sent + (_probe.remote ? 3u : 0u));
+            EXPECT_EQ(after.sends_blocked, before.sends_blocked)
+                << "local forwarding does not publish; remote forwarding must witness send_large";
+            // No access to the transferred payload after publication.
+        } else {
+            event.set_hop(2);
+            reply(event);
+        }
+    }
+};
+
+void
+run_large_forward(bool const remote) {
+    Probe probe;
+    probe.remote = remote;
+    qb::Main main;
+    probe.ids[0] = main.addActor<Endpoint>(0, std::ref(probe), std::size_t{0});
+    probe.ids[1] = main.addActor<Endpoint>(remote ? qb::CoreId{1} : qb::CoreId{0}, std::ref(probe), std::size_t{1});
+    probe.ids[2] = main.addActor<Endpoint>(0, std::ref(probe), std::size_t{2});
+    for (auto const actor : probe.ids)
+        ASSERT_NE(actor.raw64() >> 32u, 0u);
+    ASSERT_NE(probe.ids[0].raw64(), probe.ids[2].raw64());
+
+    std::promise<void> finished;
+    auto               done = finished.get_future();
+    std::atomic<bool>  timed_out{false};
+    std::thread        watchdog([&] {
+        if (done.wait_for(std::chrono::seconds{10}) != std::future_status::ready) {
+            timed_out.store(true, std::memory_order_relaxed);
+            qb::Main::stop();
+        }
+    });
+    main.start(true);
+    main.join();
+    finished.set_value();
+    watchdog.join();
+
+    EXPECT_FALSE(timed_out.load(std::memory_order_relaxed));
+    EXPECT_FALSE(main.hasError());
+    for (auto const received : probe.received)
+        EXPECT_EQ(received, 1u);
+    EXPECT_EQ(probe.wire.constructed.load(), 1u);
+    EXPECT_EQ(probe.wire.event_destroyed.load(), 1u);
+    EXPECT_EQ(probe.wire.owner_destroyed.load(), 1u);
+}
+
+TEST(MessagingReplyForward, SameCoreThreeBucketOwnedForwardPreservesSourceAndWholePayload) {
+    run_large_forward(false);
+}
+
+TEST(MessagingReplyForward, CrossCoreThreeBucketOwnedForwardPreservesSourceAndWholePayload) {
+    if (std::thread::hardware_concurrency() < 2u)
+        GTEST_SKIP() << "requires-multicore: the large forward must cross a mailbox";
+    run_large_forward(true);
+}
+
+} // namespace messaging_large_forward_test

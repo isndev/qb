@@ -42,11 +42,14 @@ tcp_open_family_refuses(socket const &self, qb::io::endpoint const &ep) noexcept
 } // namespace
 
 socket::socket(io::socket &&sock) noexcept
-    : io::socket(sock.release_handle()) {}
+    : io::socket(std::move(sock)) {}
 
 socket &
 socket::operator=(io::socket &&sock) noexcept {
-    static_cast<io::socket &>(*this) = sock.release_handle();
+    if (static_cast<io::socket *>(this) == &sock)
+        return *this;
+    close();
+    static_cast<io::socket &>(*this) = std::move(sock);
     return *this;
 }
 

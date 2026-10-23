@@ -18,7 +18,7 @@
  * up in the gtest report.
  *
  * The contracts and why they matter:
- *   - `sizeof(CoreId)==2`, `sizeof(ActorId)==4`, `sizeof(EventId)==2` — the id ABI that lets an
+ *   - `sizeof(CoreId)==2`, `sizeof(ActorId)==8`, `sizeof(EventId)==2` — the id ABI that lets an
  *     `ActorId` pack into the pipe header and an `EventId` index the per-core dispatch table.
  *   - `EventQOS0/1/2` are all trivially destructible — events are byte-relocated (memcpy'd)
  *     through the lock-free ring with no per-move ctor/dtor, which is only sound if the QOS
@@ -67,12 +67,12 @@ struct NonTriviallyDestructibleEvent : public TriviallyDestructibleEvent {
 // ---------------------------------------------------------------------------
 
 static_assert(sizeof(qb::CoreId) == 2, "CoreId must be a 16-bit id");
-static_assert(sizeof(qb::ActorId) == 4, "ActorId must pack {ServiceId,CoreId} into 32 bits");
+static_assert(sizeof(qb::ActorId) == 8, "ActorId must preserve its slot, core and incarnation in 64 bits");
 static_assert(sizeof(qb::EventId) == 2, "EventId must be a 16-bit type id");
 
 TEST(EventTraits, IdSizes) {
     EXPECT_EQ(sizeof(qb::CoreId), 2u);
-    EXPECT_EQ(sizeof(qb::ActorId), 4u);
+    EXPECT_EQ(sizeof(qb::ActorId), 8u);
     EXPECT_EQ(sizeof(qb::EventId), 2u);
 }
 

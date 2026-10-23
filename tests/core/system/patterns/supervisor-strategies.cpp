@@ -19,9 +19,9 @@
  *   - it scripts crashes *causally* off those acks (crash k is fired by the (initial+k)-th ack, so
  *     the (k+1)-th restart cannot begin until the k-th completes — no wall clock spaces crashes);
  *   - it proves each restarted slot was genuinely re-spawned (a second `SpawnAck` for that slot ⇒
- *     `spawn_child(slot)` re-ran a fresh `onInit`). The `ActorId` itself may recycle — the freed sid
- *     is the smallest-free and the replacement reclaims it (ServiceIdPool prefers the lowest sid) —
- *     so the framework-truth oracle is "the slot re-acked", not index-inequality;
+ *     `spawn_child(slot)` re-ran a fresh `onInit`). The replacement may take the freed actor slot
+ *     (under a new generation, so its full `ActorId` differs) — the framework-truth oracle stays
+ *     "the slot re-acked", not index-inequality;
  *   - it ends the run deterministically: either at an exact target ack-count (restart cases) or,
  *     for "no restart should happen" cases, after a bounded self-`Settle` countdown that gives a
  *     spurious restart time to ack before the engine stops.
@@ -148,10 +148,10 @@ public:
         if (e.slot < _last_id.size()) {
             if (_slot_acks[e.slot] > 0) {
                 // A re-ack on this slot proves `spawn_child(slot)` re-ran: the slot was genuinely
-                // replaced by a freshly-`onInit`'d actor. Note: the *ActorId* itself may recycle —
-                // the freed sid is the smallest-free and is reclaimed by the replacement
-                // (VirtualCore::ServiceIdPool prefers the lowest sid), so asserting index-inequality
-                // would be flaky/wrong. The framework-truth here is "the slot was re-spawned".
+                // replaced by a freshly-`onInit`'d actor. Note: the replacement may take the freed
+                // actor slot (under a new generation, so its full ActorId still differs), so
+                // asserting index-inequality would be flaky/wrong. The framework-truth here is
+                // "the slot was re-spawned".
                 EXPECT_TRUE(e.who.is_valid()) << "restarted slot " << e.slot << " must be valid";
                 g_slot_replaced.store(true);
             }
@@ -743,7 +743,7 @@ TEST(ActorSupervisor, ChildDiesWithoutStopRestartedInWatchMode) {
 }
 
 // The three strategies again, in watch mode: a child that stop()s is restarted by its ChildDown, and
-// its replacement -- or a sibling's -- most likely reuses its id. Settling 50 passes instead of
+// its replacement -- or a sibling's -- may reuse its slot with a new incarnation. Settling 50 passes instead of
 // stopping at the expected count, a second restart (the outgoing child's DownEvent taken for its
 // replacement) would show as an extra spawn.
 static void
@@ -850,13 +850,16 @@ TEST(ActorSupervisor, SyncInitFailureRestartedNextPassInWatchMode) {
 
 // ===========================================================================
 // 10. A slot the supervisor gives up on holds no child (Huly QB-51; found by
-//     examples/04-patterns/02-supervisor). Ids are reused: the dead child's id went to the next actor
+//     examples/04-patterns/02-supervisor). With 32-bit ids the dead child's id went to the next actor
 //     spawned, and the supervisor's teardown -- a KillEvent to every child it remembered -- killed that
-//     unrelated actor. And in watch mode, one death escalates once, not once per notification.
+//     unrelated actor; since 3.3 that id names the dead incarnation only (QB-970), and the slot still
+//     forgets it. And in watch mode, one death escalates once, not once per notification.
 // ===========================================================================
 namespace {
 std::atomic<int>  g_escalations{0};
-std::atomic<bool> g_id_reused{false};
+std::atomic<bool> g_slot_reused{false};
+std::atomic<bool> g_incarnation_changed{false};
+std::atomic<bool> g_given_up_child_empty{false};
 std::atomic<bool> g_bystander_alive{false};
 
 struct GaveUp : public qb::Event {};
@@ -878,6 +881,7 @@ protected:
     void
     on_escalate() override {
         ++g_escalations;
+        g_given_up_child_empty.store(!child(0).is_valid());
         push<GaveUp>(_director);
     }
 };
@@ -886,7 +890,8 @@ protected:
 class Bystander : public qb::Actor {};
 
 // Crashes every child once (two deaths: one restart, then the escalation), spawns a bystander that
-// reuses the dead child's id, kills the supervisor, and checks 20 passes later who is still alive.
+// reuses the dead child's slot with a new generation, kills the supervisor, and checks 20 passes later
+// who is still alive. Also inspect child(0), so incarnation-safe routing cannot hide a stale supervisor slot.
 class Director : public qb::Actor {
     struct Tick : public qb::Event {};
 
@@ -916,8 +921,9 @@ public:
     on(GaveUp const &) {
         if (_bystander.is_valid())
             return; // a second escalation is the defect the count reports; do not stack the scenario
-        _bystander  = addRefActor<Bystander>().id();
-        g_id_reused = _bystander == _last_child;
+        _bystander            = addRefActor<Bystander>().id();
+        g_slot_reused         = _bystander.index() == _last_child.index() && _bystander.slot() == _last_child.slot();
+        g_incarnation_changed = _bystander.generation() != _last_child.generation();
         push<qb::KillEvent>(_sup); // its teardown kills its children -- and must not kill the bystander
         push<Tick>(id());
     }
@@ -936,9 +942,11 @@ public:
 void
 run_giving_up(qb::supervision const mode) {
     reset_globals();
-    g_escalations     = 0;
-    g_id_reused       = false;
-    g_bystander_alive = false;
+    g_escalations          = 0;
+    g_slot_reused          = false;
+    g_incarnation_changed  = false;
+    g_given_up_child_empty = false;
+    g_bystander_alive      = false;
     qb::Main main;
     main.addActor<Director>(0, mode);
     main.start(false);
@@ -946,8 +954,10 @@ run_giving_up(qb::supervision const mode) {
     EXPECT_FALSE(main.hasError());
     EXPECT_EQ(g_spawns.load(), 2) << "1 initial + 1 restart, then the cap";
     EXPECT_EQ(g_escalations.load(), 1) << "one death past the cap, one escalation";
-    ASSERT_TRUE(g_id_reused.load()) << "the case needs the bystander to reuse the dead child's id";
-    EXPECT_TRUE(g_bystander_alive.load()) << "the supervisor's teardown killed an actor that reused its dead child's id";
+    ASSERT_TRUE(g_slot_reused.load()) << "the case needs the bystander to reuse the dead child's slot";
+    ASSERT_TRUE(g_incarnation_changed.load()) << "a reused slot must receive a new incarnation";
+    EXPECT_TRUE(g_given_up_child_empty.load()) << "an escalated supervisor slot must hold no stale child identity";
+    EXPECT_TRUE(g_bystander_alive.load()) << "the supervisor's teardown killed an actor that reused its dead child's slot";
 }
 } // namespace
 

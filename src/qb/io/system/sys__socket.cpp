@@ -66,6 +66,11 @@ namespace qb::io {
 QB__NS_INLINE
 namespace inet {
 
+struct socket::peer_ip_cache {
+    char        text[IN_MAX_ADDRSTRLEN]{};
+    std::size_t length = 0;
+};
+
 namespace {
 
 bool
@@ -529,6 +534,7 @@ socket::operator=(socket &&right) {
 socket &
 socket::swap(socket &rhs) {
     std::swap(this->fd, rhs.fd);
+    this->_peer_ip.swap(rhs._peer_ip);
 #if defined(_WIN32)
     std::swap(this->_nonblocking, rhs._nonblocking);
 #endif
@@ -538,6 +544,7 @@ socket::swap(socket &rhs) {
 bool
 socket::open(int af, int type, int protocol) {
     if (invalid_socket == this->fd) {
+        invalidate_peer_ip();
         this->fd = ::socket(af, type, protocol);
 #if defined(_WIN32)
         // A freshly created socket is in blocking mode on Windows.
@@ -559,6 +566,7 @@ bool
 socket::open_ex(int af, int type, int protocol) {
 #if !defined(WP8)
     if (invalid_socket == this->fd) {
+        invalidate_peer_ip();
         SOCKET sock = ::WSASocket(af, type, protocol, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
         DWORD dwBytes = 0;
@@ -626,6 +634,7 @@ socket_type
 socket::release_handle(void) {
     socket_type result = this->fd;
     this->fd           = invalid_socket;
+    invalidate_peer_ip();
     return result;
 }
 
@@ -738,6 +747,7 @@ socket::connect(const char *addr, u_short port) {
 }
 int
 socket::connect(const endpoint &ep) {
+    invalidate_peer_ip();
     return socket::connect(fd, ep);
 }
 int
@@ -762,6 +772,7 @@ socket::connect_n(const char *addr, u_short port, const qb::duration &wtimeout) 
 // untouched is a failed first ioctl, which happens only to a descriptor that is not an open socket.
 int
 socket::connect_n(const endpoint &ep, const qb::duration &wtimeout) {
+    invalidate_peer_ip();
     const int r = this->connect_n(this->fd, ep, wtimeout);
 #if defined(_WIN32)
     _nonblocking = 0; // the timed connect leaves the socket blocking, connected or not
@@ -828,6 +839,7 @@ socket::connect_n(socket_type s, const endpoint &ep, const qb::duration &wtimeou
 
 int
 socket::connect_n(const endpoint &ep) {
+    invalidate_peer_ip();
     const int r = socket::connect_n(this->fd, ep);
 #if defined(_WIN32)
     _nonblocking = 1; // the untimed connect leaves the socket non-blocking (its connect is in progress)
@@ -843,6 +855,7 @@ socket::connect_n(socket_type s, const endpoint &ep) {
 
 int
 socket::disconnect() const {
+    invalidate_peer_ip();
     return socket::disconnect(this->fd);
 }
 int
@@ -1083,6 +1096,27 @@ socket::peer_endpoint(socket_type fd) {
     return ep;
 }
 
+std::string
+socket::peer_ip() const {
+    if (!_peer_ip) {
+        const auto peer = peer_endpoint();
+        if (!peer)
+            return {};
+        peer_ip_cache cached;
+        const auto    text = peer.inaddr_to_string(cached.text, [](const in_addr *) { return true; }, [](const in6_addr *) { return true; });
+        if (!text)
+            return {};
+        cached.length = std::strlen(text);
+        _peer_ip      = std::make_unique<peer_ip_cache>(cached);
+    }
+    return std::string(_peer_ip->text, _peer_ip->length);
+}
+
+void
+socket::invalidate_peer_ip() const noexcept {
+    _peer_ip.reset();
+}
+
 int
 socket::set_keepalive(int flag, int idle, int interval, int probes) {
     return set_keepalive(this->fd, flag, idle, interval, probes);
@@ -1147,6 +1181,7 @@ socket::shutdown(int how) const {
 
 void
 socket::close(int shut_how) {
+    invalidate_peer_ip();
     if (is_open()) {
         if (shut_how >= 0)
             ::shutdown(this->fd, shut_how);

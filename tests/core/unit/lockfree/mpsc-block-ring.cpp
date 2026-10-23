@@ -181,6 +181,56 @@ TEST(MpscBlockRing, AClosedRingIsEmptyToItsConsumerAndItsProducersFirstWriteOpen
     EXPECT_TRUE(block.enqueue(1, item(1, kCap + 1)));
 }
 
+TEST(MpscBlockRing, EnqueueWithOpensOnlyItsClosedProducerBeforeFillingAndRefusesWithoutACallback) {
+    ClosedBlock           block(kProducers);
+    constexpr std::size_t producer = 5;
+    auto                 &ring     = block.ringOf(producer);
+    std::size_t           calls = 0, first_seen_read = 1, first_size = 0, second_size = 0;
+    std::uint64_t         next = 0;
+    auto const            fill = [&](std::uint64_t *first, std::size_t first_count, std::uint64_t *second, std::size_t second_count) noexcept {
+        if (!calls)
+            first_seen_read = seen_read_index(block, producer);
+        ++calls;
+        first_size  = first_count;
+        second_size = second_count;
+        for (std::size_t i = 0; i < first_count; ++i)
+            first[i] = item(producer, next++);
+        for (std::size_t i = 0; i < second_count; ++i)
+            second[i] = item(producer, next++);
+    };
+
+    EXPECT_EQ(ring.enqueue_with(0, fill), 0u);
+    EXPECT_EQ(calls, 0u);
+    EXPECT_EQ(seen_read_index(block, producer), 1u) << "an empty transaction must leave the ring closed";
+    EXPECT_FALSE(block.has_data());
+
+    ASSERT_EQ(ring.enqueue_with(kCap, fill), kCap);
+    EXPECT_EQ(calls, 1u);
+    EXPECT_EQ(first_seen_read, 0u) << "opening, including Windows page commitment, precedes the callback";
+    EXPECT_EQ(first_size, kCap);
+    EXPECT_EQ(second_size, 0u);
+    for (std::size_t i = 0; i < kProducers; ++i)
+        if (i != producer) {
+            EXPECT_EQ(seen_read_index(block, i), 1u) << "another producer's ring was opened";
+        }
+    EXPECT_EQ(ring.enqueue_with(1, fill), 0u) << "full";
+    EXPECT_EQ(ring.enqueue_with(0, fill), 0u);
+    EXPECT_EQ(calls, 1u);
+
+    std::vector<std::uint64_t> expected;
+    for (std::uint64_t seq = 0; seq < kCap; ++seq)
+        expected.push_back(item(producer, seq));
+    EXPECT_EQ(drain(block), expected);
+
+    // The opened ring must retain normal snapshot refresh and wrap behaviour.
+    ASSERT_EQ(ring.enqueue_with(2, fill), 2u);
+    EXPECT_EQ(calls, 2u);
+    EXPECT_EQ(first_size, 1u);
+    EXPECT_EQ(second_size, 1u);
+    EXPECT_EQ(drain(block), (std::vector<std::uint64_t>{item(producer, kCap), item(producer, kCap + 1)}));
+    EXPECT_FALSE(block.has_data());
+}
+
 TEST(MpscBlockRing, ProducersOpeningTheirRingsWhileTheConsumerWalksDeliverEveryItemOnceAndInOrder) {
     // Each round, a block of closed rings, the consumer walking it before and while eight producers open theirs. The
     // region cache lends each round the block the last one left, its slots holding that round's items: a closed ring

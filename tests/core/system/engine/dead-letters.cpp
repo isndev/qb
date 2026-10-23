@@ -101,7 +101,7 @@ struct Loaded : qb::Event {
     Counted payload;
 };
 
-const qb::ActorId kNobody(9999u); // sid 9999 on core 0 (the uint32 form: sid low, core high) -- no actor ever has it
+const qb::ActorId kNobody = qb::ActorId::ordinary(9999, 0, 1); // no actor ever holds this instance
 
 // --- 1. the reason, whichever router path dropped it -------------------------------------------
 
@@ -419,7 +419,9 @@ public:
 // actor there and was a `not_found` letter; a BROADCAST was fanned out to every actor of that core: on an
 // engine of cores 1 and 3, a `Hello` to `BroadcastId(2)` reached core 1's actors, and a `KillEvent` so
 // addressed killed them all. It now reaches no actor and is reported once, `not_found`, by the core it
-// reached, its payload disposed -- whatever primitive sent it and whatever router path meets it.
+// reached, its payload disposed -- whatever primitive sent it and whatever router path meets it. A core id past
+// qb::MaxCores is not a core at all: an identity carries 8 bits of core (QB-970), so `BroadcastId(300)` is the
+// invalid id, never a broadcast to another core, and what it carries is a unicast to NotFound.
 
 struct Hello : qb::Event {
     Counted payload;
@@ -470,17 +472,17 @@ public:
             (void) ctx;
             qb::Main::stop();
         });
-        broadcast<Hello>();                        // control: every listener, once
-        push<Hello>(qb::BroadcastId(kHighCore));   // control: this core's listener, once
-        push<Hello>(qb::BroadcastId(2));           // absent, between the two
-        push<Hello>(qb::BroadcastId(0));           // absent, below
-        push<Hello>(qb::BroadcastId(5));           // absent, above
-        push<Hello>(qb::BroadcastId(300));         // past qb::MaxCores
-        push<Orphan>(qb::BroadcastId(2));          // a type nobody subscribed: the router's other path
-        push<qb::KillEvent>(qb::BroadcastId(2));   // a default event: kills nobody
-        send<Ping>(qb::BroadcastId(2));            // send: straight into the first core's ring
-        push<Ping>(qb::ActorId(2u << 16 | 9999u)); // control: a unicast to an absent core is not_found
-        push<Sync>(_low_listener);                 // FIFO behind all of the above, to the first core
+        broadcast<Hello>();                              // control: every listener, once
+        push<Hello>(qb::BroadcastId(kHighCore));         // control: this core's listener, once
+        push<Hello>(qb::BroadcastId(2));                 // absent, between the two
+        push<Hello>(qb::BroadcastId(0));                 // absent, below
+        push<Hello>(qb::BroadcastId(5));                 // absent, above
+        push<Hello>(qb::BroadcastId(300));               // past qb::MaxCores: names no core, a unicast to NotFound
+        push<Orphan>(qb::BroadcastId(2));                // a type nobody subscribed: the router's other path
+        push<qb::KillEvent>(qb::BroadcastId(2));         // a default event: kills nobody
+        send<Ping>(qb::BroadcastId(2));                  // send: straight into the first core's ring
+        push<Ping>(qb::ActorId::ordinary(9999u, 2, 1u)); // control: a unicast to an absent core is not_found
+        push<Sync>(_low_listener);                       // FIFO behind all of the above, to the first core
         co_return true;
     }
 };
@@ -505,6 +507,7 @@ TEST(DeadLetters, ABroadcastToACoreTheEngineDoesNotRunReachesNoActor) {
         main.join();
         ASSERT_FALSE(main.hasError());
     }
+    EXPECT_FALSE(qb::BroadcastId(300).is_valid()) << "a core past qb::MaxCores is no core: never wrapped onto 300 % 256";
     EXPECT_TRUE(g_synced.load()) << "the first core's listener was killed by a KillEvent addressed to core 2";
     EXPECT_EQ(g_misaddressed.load(), 0) << "a broadcast to a core the engine does not run reached the first core's actors";
     EXPECT_EQ(g_hello_on[kLowCore].load(), 1) << "control: broadcast<Hello>() reaches core 1 once";
@@ -521,8 +524,8 @@ TEST(DeadLetters, ABroadcastToACoreTheEngineDoesNotRunReachesNoActor) {
         EXPECT_NE(l.destination.index(), kHighCore);
         (l.destination.is_broadcast() ? broadcasts : unicasts) += 1;
     }
-    EXPECT_EQ(broadcasts, 7u) << "four Hello, the Orphan, the KillEvent and the sent Ping, each reported once";
-    EXPECT_EQ(unicasts, 1u) << "control: the unicast to core 2";
+    EXPECT_EQ(broadcasts, 6u) << "three Hello, the Orphan, the KillEvent and the sent Ping, each reported once";
+    EXPECT_EQ(unicasts, 2u) << "control: the unicast to core 2, and the Hello to BroadcastId(300), which is NotFound";
 }
 
 TEST(DeadLetters, AHandlerThatThrowsIsContainedAndTheLetterStillCounted) {

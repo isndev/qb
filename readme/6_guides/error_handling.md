@@ -44,7 +44,7 @@ The consequence: when an `on(Event&)` handler or an `on(qb::LoopEvent const&)` t
 
 This is a deliberate fail-stop design: a thrown exception signals that an invariant the actor relied on has been violated, and the runtime declines to keep running corrupt or half-initialized state. It is not a recovery mechanism. The handler-level corollary is below.
 
-> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:567-624`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
+> **Note.** Both arms of the `start_thread` boundary are caught: `catch (const std::exception &)` logs `what()`, and a `catch (...)` beside it logs "Non-standard exception thrown". Both select the error by phase: a throw before `__workflow__` stores `ExceptionThrown`, while a runtime throw stores the distinct marker (`src/qb/core/Main.cpp:675-735`). A non-`std::exception` throw therefore does not escape this `noexcept` boundary and terminate the process. Prefer `std::exception` subtypes so the log can say *what* was thrown.
 
 ```mermaid
 flowchart TD
@@ -180,7 +180,7 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:504-514`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:505-515`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
 `kill()` notifies the actor's watchers — each gets one `qb::DownEvent{…, killed}`, after the destructor ran — and nobody else. To tell a supervisor *why*, `push` it a notification *before* calling `kill()` (see [Supervision](#supervision)).
 
@@ -250,7 +250,7 @@ public:
 };
 ```
 
-The rest of the contract — `unwatch()` is final even for an answer already on its way, ids are reused so a replacement's predecessor must be unwatched before the replacement is watched, a watcher that dies first is never told — is in [Writing actors](../4_qb_core/actor.md#death-watch-learning-that-another-actor-is-gone). Before 3.3 the only ways to learn of a death were the dying actor's own report and a health check with a timeout; both remain useful, for what death watch cannot see.
+The rest of the contract — `unwatch()` is final even for an answer already on its way, slots are reused but a replacement gets a new generation, so an exact id never answers for its replacement (a logical service address does, and its watch is answered for the instance present when it registered), a watcher that dies first is never told — is in [Writing actors](../4_qb_core/actor.md#death-watch-learning-that-another-actor-is-gone). Before 3.3 the only ways to learn of a death were the dying actor's own report and a health check with a timeout; both remain useful, for what death watch cannot see.
 
 ### Learning that an actor is stuck: a health check
 
@@ -299,7 +299,7 @@ void Worker::on(const DoWork &event) {
 
 On a detected failure the supervisor picks a policy:
 
-- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). It is a new actor even when its id is the old one's — ids are reused — so unwatch the old id before watching the new actor, and update any routing tables.
+- **Restart.** Create a fresh instance with `addActor` / `addRefActor`. The new actor's `onInit()` is responsible for re-establishing state (reload from a store, query siblings, or start clean). A replacement has a new instance ID even when its slot is reused. Withdraw obsolete watches and update routing tables to that identity; use a logical service address only when following replacements is intended.
 - **Delegate.** Reassign the failed worker's pending work to a healthy peer in the pool.
 - **Escalate.** If a worker fails repeatedly, or the failure is structural, notify a higher-level manager or alerting actor instead of restarting in a loop.
 - **Degrade or stop.** If a critical dependency is gone, stop dependent actors or switch the subsystem into a reduced-capability mode rather than serving incorrect results.
@@ -383,7 +383,7 @@ A throw from inside a callback does **not** reach the `VirtualCore` fail-stop bo
 
 `callback()` with a positive timeout allocates a self-deleting `Timeout<F>` on the heap and hands ownership to the event loop. The closure runs at some *later* loop iteration. If that closure captures `this` (an actor) by raw pointer or reference, and the actor is destroyed before the timer fires, the callback dereferences freed memory. ASan does not always catch this — the timing is loop-dependent.
 
-`is_alive()` is **not** a guard for a callback that captures `this`: it reads a member of the actor, so calling it after destruction is already a use-after-free (`qb/src/qb/core/Actor.h:864-867`). Same-core execution does not extend the actor's lifetime. Bind the wait to the actor's cancellation scope with `spawn` and `co_await ctx.sleep(delay)`, then send a self-addressed event through the context; the coroutine must not access actor members after suspension (`qb/src/qb/core/Actor.h:1513-1514`).
+`is_alive()` is **not** a guard for a callback that captures `this`: it reads a member of the actor, so calling it after destruction is already a use-after-free (`qb/src/qb/core/Actor.h:869-872`). Same-core execution does not extend the actor's lifetime. Bind the wait to the actor's cancellation scope with `spawn` and `co_await ctx.sleep(delay)`, then send a self-addressed event through the context; the coroutine must not access actor members after suspension (`qb/src/qb/core/Actor.h:1520-1521`).
 
 Another option is to **own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback cannot run after the actor is gone:
 
@@ -457,7 +457,7 @@ Decision table:
 - **Fire-and-forget callbacks that capture `this`.** A deferred `callback()` can run after the actor is destroyed; even calling `is_alive()` through that pointer is a use-after-free. Use an actor-scoped `spawn` with `ctx.sleep()` and a context event, or own the timer with `scoped_callback`.
 - **Reusing a `not_ok()` protocol.** `not_ok()` is irreversible and `reset()` does not clear it. To continue on the same transport, install a new protocol with `switch_protocol`.
 - **Reading `hasError()` mid-run.** It reflects the start barrier and is only meaningful after the engine has stopped. For live health, `watch()` the actors you depend on (one `DownEvent` when one is gone) and `co_await qb::ping` the ones that might be stuck — see [Supervision](#supervision).
-- **Watching a replacement while its predecessor's answer is on its way.** Ids are reused, and watching an id already watched is a no-op until its answer arrives: that answer — about the predecessor — would answer the new watch. `unwatch()` the outgoing actor before watching its replacement.
+- **Reusing a logical service watch while its predecessor's answer is on its way.** Instance generations distinguish replacements. A logical service watch, however, retains its requested address and captured incarnation until answered; watching that same address again is a no-op while pending. `unwatch()` the address before starting a new watch of it.
 
 ## See also
 

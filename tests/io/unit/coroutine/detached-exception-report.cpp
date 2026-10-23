@@ -18,15 +18,15 @@
  *
  * WHAT WAS WRONG
  * --------------
- * `spawn()` detaches the handle (scheduler.h:1025-1038); `unhandled_exception()` stores the
- * exception in the promise (task.h); the frame later reaches `final_suspend` with no
- * continuation and is handed straight to `defer_frame_destruction`. The exception was destroyed
+ * Before the fix, spawn() detached the handle and unhandled_exception() stored the
+ * exception in the promise; the frame later reached final_suspend with no
+ * continuation and was handed straight to defer_frame_destruction. The exception was destroyed
  * with the promise, unobserved: the program simply stopped in the middle of the coroutine with
  * no message on any stream and no non-zero exit anywhere.
  *
  * `Actor::spawn` and `Actor::spawn_detached` were already fixed, by wrapping the user's body in
  * a coroutine that CATCHES and calls `qb::detail::report_unhandled_coroutine_exception`
- * (VirtualCore.h:1707-1714, 1728-1736). The free-function path has no such wrapper. The report
+ * (VirtualCore.h:1637-1644, 1658-1666). The free-function path has no such wrapper. The report
  * now happens in `final_suspend` itself, on the detached branch only.
  *
  * WHAT IS ASSERTED

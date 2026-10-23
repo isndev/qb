@@ -53,7 +53,7 @@ event handled in an ordinary `on()`.** Use a bare `callback` only for work that 
 outlive its actor. See [the `async::callback` lifetime rules](./error_handling.md) and
 [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone) for
 the full contract.
-<!-- src: qb/src/qb/core/Actor.h:1514,2313-2315, qb/src/qb/core/Actor.h:864-867, qb/src/qb/core/Actor.cpp:738-744, qb/src/qb/io/async/io.h:341-349,374 -->
+<!-- src: qb/src/qb/core/Actor.h:1521,2320-2322, qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:758-764, qb/src/qb/io/async/io.h:341-349,374 -->
 
 ## Recipe: one-shot timer
 
@@ -243,7 +243,7 @@ private:
 The chain stops itself: `kill()` cancels the actor's coroutine scope, so a parked `ctx.sleep` unwinds
 rather than pushing one more tick at a dead actor. A `callback`-based chain has no such property — its
 timer is loop-owned, so the last one armed still fires, and `[this]` inside it is a use-after-free.
-<!-- src: qb/src/qb/core/Actor.cpp:731-742 -->
+<!-- src: qb/src/qb/core/Actor.cpp:751-762 -->
 
 **Pitfalls.**
 
@@ -776,8 +776,9 @@ public:
   the id when the watch arrived) or `core_stopped`. Watching an actor already watched is a no-op until
   that answer arrives.
 - `unwatch(id)` guarantees no `DownEvent` of that watch afterwards, even one already on its way.
-- Ids are reused: the replacement you spawn for a dead actor is likely to get its id. Unwatch the
-  outgoing actor before you watch its replacement, or the old answer answers the new watch.
+- Slots can be reused, but a replacement has a different instance ID. Withdraw an obsolete watch
+  when changing dependencies. If you reuse a logical service address, `unwatch` it before requesting
+  a new watch; an outstanding watch of that address remains tied to its captured incarnation.
 - Death watch tells you an actor is *gone*, not that it is *stuck*: for a live actor that stopped
   answering, `co_await qb::ping(ctx, id, timeout)`.
 

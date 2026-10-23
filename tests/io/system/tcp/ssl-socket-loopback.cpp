@@ -160,7 +160,7 @@ public:
 // The socket is flipped NON-BLOCKING first, and that is what makes `deadline` a
 // deadline. Both helpers were written for a non-blocking socket — the `ret == 0`
 // arm below is `ssl::socket::read()` mapping SSL_ERROR_WANT_READ/WANT_WRITE to 0
-// ("no data ready; not an error", ssl/socket.cpp:1015-1021), and NonBlockingReadWithNoDataReportsWouldBlock
+// ("no data ready; not an error", ssl::socket::read), and NonBlockingReadWithNoDataReportsWouldBlock
 // pins exactly that return. On a blocking socket that arm is unreachable, so the
 // loop parked inside SSL_read and re-checked `deadline` only between reads it
 // could never return from: a peer that stopped writing without sending
@@ -205,7 +205,7 @@ read_exactly(qb::io::tcp::ssl::socket &socket, void *data, std::size_t size, std
 }
 
 // Same contract, same reason for the flip: `ssl::socket::write()` maps WANT_WRITE /
-// WANT_READ to 0 (ssl/socket.cpp:1042-1050), so the `ret == 0` arm below is the
+// WANT_READ to 0 (ssl::socket::write), so the `ret == 0` arm below is the
 // would-block retry — dead on a blocking socket, which is where this loop's deadline
 // went. Read and write agree on the mode, so neither has to restore it.
 ::testing::AssertionResult
@@ -1425,7 +1425,7 @@ TEST(SSLSocketLoopback, InitClientUpgradesAlreadyConnectedSocket) {
 // ===========================================================================
 // Post-handshake authentication success leg.
 //
-// FRAMEWORK CONTRACT (verified against source/io/src/tcp/ssl/socket.cpp:1242): the
+// FRAMEWORK CONTRACT (qb::io::tcp::ssl::socket wrapper): the
 // misleadingly-named socket::request_client_post_handshake_auth() wraps OpenSSL's
 // SSL_verify_client_post_handshake(), which is a SERVER-ONLY operation — it makes the
 // *server* send a post-handshake CertificateRequest to the client. It must therefore be

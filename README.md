@@ -94,8 +94,9 @@ flowchart TB
     proc --> os["the OS readiness API — epoll · kqueue · wepoll · io_uring"]
 ```
 
-**Where an event goes.** A `qb::ActorId` is `{ServiceId, CoreId}` in 32 bits, and the core half *is*
-the routing decision: a send resolves the destination core and appends bytes to a buffer dedicated to
+**Where an event goes.** A `qb::ActorId` packs a 32-bit generation, an 8-bit core and a 24-bit
+slot into 64 bits. The core selects the receiving thread; the complete identity rejects stale
+incarnations after slot reuse: a send resolves the destination core and appends bytes to a buffer dedicated to
 it. Nothing looks an actor up across a thread boundary, and the actor state path carries no lock, no
 atomic and no fence. `push` is ordered per sender and receiver; `send` is unordered and reserved for
 one-off notices.

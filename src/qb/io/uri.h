@@ -513,6 +513,12 @@ public:
         return _raw_queries;
     }
 
+    /** @brief Whether a query delimiter occurred, including an explicitly empty query. */
+    [[nodiscard]] bool
+    has_query() const noexcept {
+        return _raw_queries.data() != nullptr;
+    }
+
     /**
      * @brief Returns the parsed query parameters of this URI
      * @return The query parameters as a map

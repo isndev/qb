@@ -99,7 +99,7 @@ Some qb-io suites exist only when their optional dependency is present:
 
 <!-- src: qb/tests/io/unit/CMakeLists.txt:75-84 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:91-92`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:90-102`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:91-92`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:94-106`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
 ### Running under sanitizers
 
@@ -173,7 +173,7 @@ TEST(Duration, DefaultAndExplicit) {
 
 <!-- src: qb/tests/core/unit/system/time.cpp:64-72 -->
 
-A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true` (`qb/src/qb/core/Main.h:1009`), spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:1034`). Passing `start(false)` instead turns the calling thread into a worker; call `join()` afterward if other cores may still run. The calling thread blocks inline until its core stops, and `start(false)` puts its affinity back when it returns (`qb/src/qb/core/Main.h:1009`, `qb/src/qb/core/Main.cpp:725-733`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
+A system test drives the actor runtime. The common pattern is `start()` then `join()`: `Main::start(bool async = true)` defaults to `async = true` (`qb/src/qb/core/Main.h:1022`), spawning worker threads and returning after the startup barrier succeeds (or failed workers finish teardown), after which `join()` blocks until every core has stopped (`qb/src/qb/core/Main.h:1047`). Passing `start(false)` instead turns the calling thread into a worker; call `join()` afterward if other cores may still run. The calling thread blocks inline until its core stops, and `start(false)` puts its affinity back when it returns (`qb/src/qb/core/Main.h:1022`, `qb/src/qb/core/Main.cpp:836-844`). Either way, collect results into an `std::atomic` (or a response event) and assert after the run completes, including on `Main::hasError()`.
 
 ```cpp
 // A minimal actor system test.
@@ -217,7 +217,7 @@ TEST(WorkerSuite, HandlesPing) {
 
 <!-- src: qb/tests/core/system/event/service-event-ring.cpp:171-174 -->
 
-`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:255,1055`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
+`Main::addActor<A>(core_id, args...)` is a convenience equivalent to `core(core_id).addActor<A>(args...)`; both return an `ActorId` (`qb/src/qb/core/Main.h:260,1068`). For staged work inside a test — sequencing steps or waiting on a condition — schedule continuations with `qb::io::async::callback` from within the actors rather than sleeping in the test thread.
 
 ### Registering the test with CMake
 

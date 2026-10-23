@@ -156,11 +156,11 @@ jobs:
             Probe probe{}; unsigned char wire[sizeof(Probe)];
             for (std::size_t i = 0; i < sizeof(wire); ++i) wire[i] = (unsigned char) i;
             std::memcpy((void *) &probe, wire, sizeof(Probe));
-            std::uint32_t dest{}, src{}, first{}; std::uint16_t id{};
-            std::memcpy(&dest, wire + 8, 4); std::memcpy(&src, wire + 12, 4);
-            std::memcpy(&first, wire + 16, 4); std::memcpy(&id, wire + 6, 2);
-            const bool ok = (std::uint32_t) probe.getDestination() == dest
-                         && (std::uint32_t) probe.getSource() == src
+            std::uint64_t dest{}, src{}; std::uint32_t first{}; std::uint16_t id{};
+            std::memcpy(&dest, wire + 8, 8); std::memcpy(&src, wire + 16, 8);
+            std::memcpy(&first, wire + 24, 4); std::memcpy(&id, wire + 6, 2);
+            const bool ok = probe.getDestination().raw64() == dest
+                         && probe.getSource().raw64() == src
                          && (std::uint32_t) probe.getID() == id
                          && probe.payload == first;
             std::printf("abi: sizeof(Event)=%zu sizeof(id_type)=%zu %s\n",

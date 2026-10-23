@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1398-1400`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1674-1676`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -261,9 +261,9 @@ template <typename T>
 concept event_qos0_type = std::is_base_of_v<EventQOS0, T>;
 
 // `service_event_type` was declared HERE through 2.6.0; in 3.0 it moved to Event.h (see the
-// banner at the tail of that header). Pipe.h, which this header includes at :54 -- long
+// banner at the tail of that header). Pipe.h, which this header includes above -- long
 // before this point -- needs the concept for its own template bodies and cannot reach a
-// declaration made down here. It still arrives through the `#include "Event.h"` at :52,
+// declaration made down here. It still arrives through the `#include "Event.h"` above,
 // unchanged, so no consumer has to write anything differently. `event_qos0_type` above stays
 // put: only VirtualCore's bodies use it, and they see a complete Actor.h. This block holds the
 // LINE COUNT -- 87 `Actor.h:NNN` citations anchor below it and a plain deletion moves them all.
@@ -381,8 +381,9 @@ class Actor : nocopy {
      *          registering `_Actor` type and calls its `on(_Event &)` — so a derived class that
      *          re-registers a default event with its own type (`registerEvent<qb::KillEvent>(*this)`
      *          from `onInit()`) replaces the base handler exactly as it did through the table.
-     *          Indexed by `qb::default_event_index<E>`. Written only by `VirtualCore::registerEvent`
-     *          / `unregisterEvent`, read only by the core's `DefaultEventResolver<E>` on the owning
+     *          Indexed by `qb::default_event_index<E>`. Initialized by the base constructor through
+     *          `VirtualCore::__initialize_default_events__`, then written by `registerEvent` /
+     *          `unregisterEvent`. Read only by the core's `DefaultEventResolver<E>` on the owning
      *          thread; all five are nullptr for an actor built with `qb::no_default_events`.
      */
     using DefaultDispatch = void (*)(Actor &, Event &);
@@ -526,8 +527,8 @@ public:
      *          ignored. The watch ends with the watcher: a watcher that dies first is never
      *          notified, and its watches are withdrawn. Costs nothing to an actor nobody watches,
      *          nor to any pass.
-     * @note Ids are reused once their actor is gone: an id watched again before the `DownEvent` of
-     *       its previous holder arrived is answered by that event.
+     * @note Reused slots have different instance IDs. A logical service watch resolves once
+     *       on the target core; its answer retains the logical address that was requested.
      */
     void watch(ActorId target) const noexcept;
 
@@ -828,7 +829,11 @@ public:
     [[nodiscard]] qb::wall_time now() const noexcept;
 
     /**
-     * @private
+     * @brief Return the logical service address for tag T on a core.
+     * @details This generation-zero address is resolved to the current incarnation by
+     *          the receiving core. It differs from a service actor's instance `id()`.
+     *          Validity does not prove that the service exists. Keep an instance id or
+     *          ActorHandle when a later replacement must not become the destination.
      */
     template <typename T>
     [[nodiscard]] static ActorId getServiceId(CoreId index) noexcept;
@@ -1173,8 +1178,10 @@ public:
      *         completed; `false` for an invalid id, an actor on another core, one whose async
      *         `onInit()` is still in flight, and one that has been killed.
      * @details
-     * The untyped counterpart of `qb::ActorHandle<T>::ready()`: one hash lookup, no
-     * `dynamic_cast`, no knowledge of the concrete type. It exists for bookkeeping that stores
+     * Exact instance IDs never follow a reused slot; a logical service address checks the
+     * current incarnation. Both use the same active/alive gate. Handles stay tied to exact
+     * instances. No `dynamic_cast` or knowledge of the concrete type is needed.
+     * It exists for bookkeeping that stores
      * bare `ActorId`s — a subscriber list, a routing table, a worker registry — and must drop
      * entries whose actor has gone. The framework prunes its **own** such map when an actor dies
      * (`VirtualCore::removeActor` → `unregisterEvents`), so any user-space mirror of it needs
@@ -2586,6 +2593,12 @@ using RefActorHandle = ActorHandle<_Actor>;
  * @details Used internally by the framework to abstract actor construction.
  */
 class IActorFactory {
+    ActorId _reserved_id;
+
+protected:
+    explicit IActorFactory(ActorId id = {}) noexcept
+        : _reserved_id(id) {}
+
 public:
     virtual ~IActorFactory() = default;
     /**
@@ -2593,6 +2606,10 @@ public:
      * @return Pointer to the created Actor.
      */
     virtual Actor *create() = 0;
+    [[nodiscard]] ActorId
+    reserved_id() const noexcept {
+        return _reserved_id;
+    }
     /**
      * @brief Checks if the factory creates a service actor.
      * @return True if it creates a service actor, false otherwise.
@@ -2833,12 +2850,11 @@ class TActorFactory
     , public ActorProxy {
     using Tuple = std::tuple<typename actor_factory_param<_Args>::type...>;
 
-    ActorId _id;
-    Tuple   _parameters;
+    Tuple _parameters;
 
 public:
     explicit TActorFactory(ActorId const id, _Args &&...args)
-        : _id(id)
+        : IActorFactory(id)
         , _parameters(actor_factory_forward<_Args>(std::forward<_Args>(args))...) {}
 
     Actor *

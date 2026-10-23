@@ -120,7 +120,7 @@ qb::io::async::report_detached_coroutine_exception(std::exception_ptr ep) noexce
             std::rethrow_exception(ep);
         } catch (qb::io::async::cancelled_error const &) {
             // Cancellation is the teardown protocol, not a failure — the same exemption
-            // `actor_coro_wrapper` makes (VirtualCore.h:1707-1713). A `when_any` loser or a
+            // `actor_coro_wrapper` makes (VirtualCore.h:1637-1643). A `when_any` loser or a
             // cancelled scope must not print a CRITICAL line.
             return;
         } catch (std::exception const &e) {
@@ -169,7 +169,7 @@ qb::io::async::abandoned_coroutine_frames_total() noexcept {
 // ------------------------------------------------
 // `initializer` is a namespace-scope static, so this constructor runs during STATIC
 // INITIALISATION — before `main()`, in every binary that links qb-io with QB_WITH_LOGGING
-// (`qbConfig.cmake:147`, default ON). Two visible side effects follow from that, and both are
+// (QB_WITH_LOGGING defaults ON in qbConfig.cmake). Two visible side effects follow from that, and both are
 // deliberate:
 //
 //   * a log file is created in the process's CURRENT WORKING DIRECTORY. The path is the fixed

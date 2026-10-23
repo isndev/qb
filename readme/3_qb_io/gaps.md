@@ -16,8 +16,8 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 |---|---|---|
 | `co_await sleep(qb::duration)` | a `ev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
 | `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
-| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:1027` |
-| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:1253` |
+| `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:1040` |
+| `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:1266` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:627` |
 | `co_await offload(fn, args...)` | a pool thread running the call; the coroutine resumes on its own loop | `coroutine/offload.h:302` |
 
@@ -59,13 +59,13 @@ The bridge in the other direction is the one qbm's three modules use, and it is 
 
 ## QUIC has no coroutine surface at all
 
-Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight QUIC sources — `src/qb/io/quic.h`, `quic.cpp`, `quic/types.h`, `quic/backend.h`, `async/quic.h` and the five headers under `async/quic/`. The whole surface is callback and virtual dispatch: `endpoint::dispatch(event::…)` overloads (`src/qb/io/async/quic/endpoint.h:61-76`) forwarded to your class by `requires`-guarded detection.
+Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight QUIC sources — `src/qb/io/quic.h`, `quic.cpp`, `quic/types.h`, `quic/backend.h`, `async/quic.h` and the five headers under `async/quic/`. The whole surface is callback and virtual dispatch: `endpoint::dispatch(event::…)` overloads (`src/qb/io/async/quic/endpoint.h:62-77`) forwarded to your class by `requires`-guarded detection.
 
 Three properties of the design make an awaiter genuinely hard here, and they are visible in the code rather than being a matter of taste:
 
-- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:675`). `wait_readable` has nothing to park on.
-- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:328`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
-- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:258-295`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
+- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:686`). `wait_readable` has nothing to park on.
+- **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:329`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
+- **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:259-296`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
 
 Use the callback surface, and if you want coroutine ergonomics on top of it, park on your own `async_awaiter<T>` that a `dispatch(event::stream_data)` handler completes — after copying the payload.
 
@@ -73,7 +73,7 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 `event::signal<Sig>` wraps a libev `ev::sig` watcher (`src/qb/io/async/event/signal.h:82`) and is delivered like any other event: register it, implement `on(event::signal<SIGINT>&)`. There is no `co_await wait_signal(SIGINT)`.
 
-Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1396-1429`). That is the supported path, and it is an actor-tier concern.
+Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1672-1705`). That is the supported path, and it is an actor-tier concern.
 
 ## File I/O is watched metadata plus a blocking read
 
@@ -90,17 +90,17 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 ## Hostname resolution is synchronous — including inside `co_await tcp::connect`
 
-`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1482-1525`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
+`qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1497-1540`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
-That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:763-767`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:87-97`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
+That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:776-780`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:90-100`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
 
 There is no asynchronous resolver in the tree, so the honest options are:
 
-- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:259`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
+- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:262`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
 - Resolve on the offload pool, then connect to the addresses it returns, with the same fallback -- the lookup blocks a pool thread, not the loop:
 
   ```cpp
-  // src: derived from qb/src/qb/io/async/coroutine/offload.h:302 (offload), qb/src/qb/io/system/sys__socket.h:1432 (resolve_v4), qb/src/qb/io/async/tcp/connector.h:1050 (connect over a list)
+  // src: derived from qb/src/qb/io/async/coroutine/offload.h:302 (offload), qb/src/qb/io/system/sys__socket.h:1447 (resolve_v4), qb/src/qb/io/async/tcp/connector.h:1063 (connect over a list)
   auto endpoints = co_await qb::io::async::offload(
       [](std::string host, unsigned short port) {
           std::vector<qb::io::endpoint> out;

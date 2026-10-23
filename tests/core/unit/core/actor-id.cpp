@@ -11,17 +11,9 @@
  * @file unit/core/actor-id.cpp
  * @brief `qb::ActorId` / `qb::BroadcastId` / `qb::CoreIdBitSet` value types (`qb/core/ActorId.h`).
  *
- * Pure bit-packing and bitset logic: NO actor is ever instantiated, NO `qb::Main`, NO event loop.
- * Round-trip and packing assertions check *derived* structure (`sid()` / `index()` recovered from
- * the packed `uint32`), not the raw value the test set, so they verify the codec rather than echo
- * input. `CoreIdBitSet` cases pin the out-of-range filter (>= MaxCores silently ignored) and the
- * exact membership including the boundary value.
- *
- * Added over the original: NON-broadcast `(sid, index)` construction (every prior case routed
- * through `BroadcastId`, so the normal-service packing path — sid != BroadcastSid — was untested;
- * exercised here via a test-only subclass that exposes the protected two-arg ctor the same way
- * `BroadcastId` does); the exact 255-valid / 256-ignored `CoreIdBitSet` boundary (the original only
- * probed 300); and a set-from-raw round-trip equality (`CoreIdBitSet(b.raw()) == b` by membership).
+ * Engine-free codec, identity and bitset tests. Literal packed values are an independent oracle
+ * for the 24-slot / 8-core / 32-generation representation. Ordinary instances, service addresses
+ * and service instances stay distinct; a rejected value never becomes an address by narrowing.
  */
 
 #include <algorithm>
@@ -29,11 +21,14 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <type_traits>
+#include <unordered_set>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include <qb/core/Actor.h> // qb::detail::ask_take & co — the correlation-id codec and the pending-ask registry
 #include <qb/core/ActorId.h>
+#include <qb/core/detail/actor_id_pool.h>
 
 using qb::ActorId;
 using qb::BroadcastId;
@@ -42,12 +37,10 @@ using qb::CoreIdBitSet;
 using qb::ServiceId;
 
 namespace {
-// Test-only handle that exposes ActorId's protected (ServiceId, CoreId) constructor — the
-// normal-service packing path. Mirrors how qb::BroadcastId (a public subclass) reaches the same
-// protected ctor with BroadcastSid; here we drive it with an arbitrary non-broadcast sid.
+// Ordinary owners for the engine-free ask-registry cases below.
 struct NormalId : public ActorId {
-    NormalId(ServiceId sid, CoreId index) noexcept
-        : ActorId(sid, index) {}
+    NormalId(qb::ActorSlotId slot, CoreId index) noexcept
+        : ActorId(ActorId::ordinary(slot, index, 1)) {}
 };
 } // namespace
 
@@ -56,17 +49,20 @@ struct NormalId : public ActorId {
 TEST(ActorId, DefaultIsNotFoundAndInvalid) {
     ActorId id;
     EXPECT_FALSE(id.is_valid());
-    EXPECT_EQ(static_cast<std::uint32_t>(id), ActorId::NotFound);
+    EXPECT_EQ(id.raw64(), 0u);
     EXPECT_FALSE(id.is_broadcast());
 }
 
-TEST(ActorId, Uint32RoundTripPreservesSidAndIndex) {
-    BroadcastId   b(7); // sid = BroadcastSid, index = 7
-    std::uint32_t packed = static_cast<std::uint32_t>(b);
-    ActorId       round(packed); // unpack
-    EXPECT_EQ(static_cast<std::uint32_t>(round), packed);
-    EXPECT_EQ(round.sid(), b.sid());
-    EXPECT_EQ(round.index(), b.index());
+TEST(ActorId, Raw64RoundTripPreservesAllThreeComponents) {
+    constexpr auto id = ActorId::ordinary(0x123456u, 255, 0x11223344u);
+    EXPECT_EQ(id.raw64(), 0x11223344ff123456ull);
+    const auto round = ActorId::from_raw(0x11223344ff123456ull);
+    EXPECT_EQ(round, id);
+    EXPECT_EQ(round.slot(), 0x123456u);
+    EXPECT_EQ(round.index(), 255u);
+    EXPECT_EQ(round.generation(), 0x11223344u);
+    EXPECT_TRUE(round.is_ordinary());
+    EXPECT_TRUE(round.is_instance());
 }
 
 TEST(ActorId, BroadcastIdProperties) {
@@ -77,65 +73,275 @@ TEST(ActorId, BroadcastIdProperties) {
     EXPECT_EQ(b.index(), static_cast<CoreId>(3));
 }
 
-TEST(ActorId, EqualityViaUint32) {
-    BroadcastId b(5);
-    ActorId     a(static_cast<std::uint32_t>(b));
-    EXPECT_EQ(static_cast<std::uint32_t>(a), static_cast<std::uint32_t>(b));
-    ActorId none;
-    EXPECT_NE(static_cast<std::uint32_t>(a), static_cast<std::uint32_t>(none));
+TEST(ActorId, SameSlotDifferentGenerationIsADifferentUnorderedKey) {
+    const auto old         = ActorId::ordinary(0x10000u, 5, 1);
+    const auto replacement = ActorId::ordinary(0x10000u, 5, 0x80000001u);
+    EXPECT_EQ(old.slot(), replacement.slot());
+    EXPECT_EQ(old.index(), replacement.index());
+    EXPECT_NE(old, replacement);
+    std::unordered_set<ActorId> ids{old, replacement};
+    EXPECT_EQ(ids.size(), 2u);
+    EXPECT_EQ(ids.count(old), 1u);
+    EXPECT_EQ(ids.count(replacement), 1u);
+    ids.erase(old);
+    EXPECT_EQ(ids.count(replacement), 1u);
 }
 
-TEST(ActorId, NonBroadcastSidIndexConstruction) {
-    // The normal-service path: a non-broadcast sid packs with a core index and survives the
-    // uint32 round-trip with both components recoverable. (Every other case routes through
-    // BroadcastId, whose sid is always BroadcastSid — this exercises sid != BroadcastSid.)
-    constexpr ServiceId sid   = 5;
-    constexpr CoreId    index = 2;
-    NormalId            id(sid, index);
-
-    EXPECT_EQ(id.sid(), sid);
-    EXPECT_EQ(id.index(), index);
-    EXPECT_FALSE(id.is_broadcast()) << "a sid below BroadcastSid is NOT a broadcast id";
-    EXPECT_TRUE(id.is_valid()) << "a non-zero service id is valid";
-
-    // uint32 codec is a faithful inverse: unpacking the packed value recovers both components.
-    const std::uint32_t packed = static_cast<std::uint32_t>(id);
-    ActorId             round(packed);
-    EXPECT_EQ(round.sid(), sid);
-    EXPECT_EQ(round.index(), index);
-    EXPECT_EQ(static_cast<std::uint32_t>(round), packed);
-    EXPECT_FALSE(round.is_broadcast());
-
-    // A normal id with the same components but a different core is a distinct value.
-    NormalId other(sid, static_cast<CoreId>(index + 1));
-    EXPECT_NE(static_cast<std::uint32_t>(id), static_cast<std::uint32_t>(other));
-
-    // Boundary: sid == BroadcastSid IS broadcast even via this construction path.
-    NormalId asBroadcast(ActorId::BroadcastSid, index);
-    EXPECT_TRUE(asBroadcast.is_broadcast());
-
-    // The all-zero packing is exactly NotFound / invalid.
-    NormalId zero(0, 0);
-    EXPECT_EQ(static_cast<std::uint32_t>(zero), ActorId::NotFound);
-    EXPECT_FALSE(zero.is_valid());
+TEST(ActorId, LogicalServiceAndCapturedInstanceAreDistinct) {
+    const auto address  = ActorId::service_address(0x1234u, 7);
+    const auto instance = ActorId::service_instance(0x1234u, 7, 0x88776655u);
+    EXPECT_EQ(address.raw64(), 0x0000000007ff1234ull);
+    EXPECT_EQ(instance.raw64(), 0x8877665507ff1234ull);
+    EXPECT_EQ(address.service_tag(), 0x1234u);
+    EXPECT_EQ(address.slot(), 0xff1234u);
+    EXPECT_TRUE(address.is_service_address());
+    EXPECT_FALSE(address.is_instance());
+    EXPECT_TRUE(instance.is_service_instance());
+    EXPECT_TRUE(instance.is_instance());
+    EXPECT_NE(address, instance);
+    EXPECT_EQ(ActorId::from_raw(instance.raw64()), instance);
+    EXPECT_FALSE(ActorId::ordinary(address.slot(), 7, 1).is_valid());
 }
 
-// No actor ever holds service id 0: every core's pool starts above the registered service tags, and a tag's id
-// starts at 1. So an id whose sid is 0 names nothing on ANY core, not only on core 0 (Huly QB-1007). Until 3.3
-// `is_valid()` tested the whole packed value, and `(0, core)` read valid on every core but 0 -- the very id a
-// service was given when its tag's `ServiceIndex` was read before its static initialiser had run.
 TEST(ActorId, ServiceIdZeroIsInvalidOnEveryCore) {
     for (CoreId const core : {CoreId{0}, CoreId{1}, CoreId{3}, CoreId{255}, std::numeric_limits<CoreId>::max()}) {
-        NormalId const id(0, core);
-        ASSERT_EQ(id.sid(), ServiceId{0});
-        ASSERT_EQ(id.index(), core);
-        EXPECT_FALSE(id.is_valid()) << "(0, " << core << ") names no actor";
-        EXPECT_FALSE(ActorId(static_cast<std::uint32_t>(id)).is_valid()) << "(0, " << core << ") unpacked from its raw value";
+        EXPECT_FALSE(ActorId::service_address(0, core).is_valid());
+        EXPECT_FALSE(ActorId::ordinary(0, core, 1).is_valid());
     }
-    // Validity is the service id alone: sid 1 on core 0, the smallest packed value an actor can have, is valid...
     EXPECT_TRUE(NormalId(1, 0).is_valid());
-    // ...and so is a broadcast id, core 0 included.
     EXPECT_TRUE(BroadcastId(0).is_valid());
+}
+
+TEST(ActorId, DecoderRejectsMalformedKindsAndConstructorsCheckCoreBeforeNarrowing) {
+    // Literal encodings: zero ordinary generation, service tag zero, and a generated broadcast.
+    for (const std::uint64_t raw :
+         {0x0000000007000001ull, 0x0000000107000000ull, 0x0000000007ff0000ull, 0x0000000107ff0000ull, 0x0000000107ffffffull}) {
+        const auto rejected = ActorId::from_raw(raw);
+        EXPECT_FALSE(rejected.is_valid()) << raw;
+        EXPECT_EQ(rejected.raw64(), 0u);
+    }
+    EXPECT_FALSE(ActorId::ordinary(1, 256, 1).is_valid());
+    EXPECT_FALSE(ActorId::service_address(1, 256).is_valid());
+    EXPECT_FALSE(ActorId::service_instance(1, 256, 1).is_valid());
+    EXPECT_FALSE(BroadcastId(256).is_valid());
+    EXPECT_FALSE(BroadcastId(65536).is_valid());
+    EXPECT_FALSE(ActorId::ordinary(1, 0, 0).is_valid());
+    EXPECT_FALSE(ActorId::service_instance(1, 0, 0).is_valid());
+    EXPECT_FALSE(ActorId::service_address(65535, 0).is_valid());
+    const auto last = ActorId::ordinary(0xfeffffu, 255, 0xffffffffu);
+    EXPECT_EQ(last.raw64(), 0xfffffffffffeffffull);
+    EXPECT_TRUE(last.is_valid());
+    EXPECT_EQ(BroadcastId(255).raw64(), 0x00000000ffffffffull);
+}
+
+static_assert(!std::is_constructible_v<ActorId, std::uint32_t>, "a 32-bit value cannot preserve an instance identity");
+static_assert(!std::is_convertible_v<ActorId, std::uint32_t>, "use the explicit lossless codec");
+static_assert(!std::is_convertible_v<ActorId, std::uint64_t>, "use raw64 rather than implicit numeric persistence");
+static_assert(std::is_trivially_copyable_v<ActorId>);
+static_assert(sizeof(ActorId) == 8);
+
+TEST(ActorIdPool, ReleasedInstancesAdvanceAndExhaustedGenerationRetiresTheSlot) {
+    qb::detail::ActorIdPool pool(3, 2, 3);
+    const auto              first = pool.reserve_ordinary();
+    const auto              other = pool.reserve_ordinary();
+    ASSERT_TRUE(first.is_valid());
+    ASSERT_TRUE(other.is_valid());
+    ASSERT_NE(first.slot(), other.slot());
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid());
+    EXPECT_TRUE(pool.mark_live(first));
+    pool.release(first);
+
+    const auto second = pool.reserve_ordinary();
+    ASSERT_EQ(second.slot(), first.slot());
+    EXPECT_EQ(second.generation(), 2u);
+    EXPECT_NE(second, first);
+    pool.release(first); // a stale release must not return the current owner's slot
+    EXPECT_TRUE(pool.owns_reservation(second));
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid());
+    pool.release(second);
+
+    const auto last = pool.reserve_ordinary();
+    ASSERT_EQ(last.slot(), first.slot());
+    EXPECT_EQ(last.generation(), 3u);
+    EXPECT_TRUE(pool.mark_live(last));
+    EXPECT_TRUE(pool.mark_retiring(last));
+    pool.release(last);
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid()) << "an exhausted generation must retire, never wrap";
+    pool.release(other);
+    const auto reused_other = pool.reserve_ordinary();
+    EXPECT_EQ(reused_other.slot(), other.slot());
+    EXPECT_EQ(reused_other.generation(), 2u);
+    EXPECT_EQ(pool.ordinary_slot_count(), 3u) << "the indexed bank includes its unused slot-zero row";
+}
+
+TEST(ActorIdPool, LogicalServiceIsNeverAReservationAndServiceGenerationCannotWrap) {
+    qb::detail::ActorIdPool pool(7, 1, 2);
+    const auto              ordinary = pool.reserve_ordinary();
+    const auto              first    = pool.reserve_service(65534);
+    ASSERT_TRUE(first.is_service_instance());
+    EXPECT_EQ(first.service_tag(), 65534u);
+    EXPECT_EQ(first.index(), 7u);
+    EXPECT_FALSE(pool.reserve_service(65534).is_valid());
+    EXPECT_FALSE(pool.owns_reservation(ActorId::service_address(65534, 7)));
+    EXPECT_EQ(pool.ordinary_slot_count(), 2u) << "one ordinary slot plus row zero; a service must not grow this bank";
+    EXPECT_LT(pool.metadata_bytes(), 1024u * 1024u) << "one service must not allocate the 24-bit address space";
+    EXPECT_TRUE(pool.mark_live(first));
+    pool.release(first);
+    const auto second = pool.reserve_service(65534);
+    ASSERT_TRUE(second.is_valid());
+    EXPECT_EQ(second.generation(), 2u);
+    EXPECT_NE(second, first);
+    pool.release(first);
+    EXPECT_TRUE(pool.owns_reservation(second));
+    pool.release(second);
+    EXPECT_FALSE(pool.reserve_service(65534).is_valid());
+    EXPECT_TRUE(pool.owns_reservation(ordinary));
+}
+
+TEST(ActorIdPool, ClearingPromisesInvalidatesReservationsAndPreservesLiveOwners) {
+    qb::detail::ActorIdPool pool(0, 2, 3);
+    const auto              live     = pool.reserve_ordinary();
+    const auto              promised = pool.reserve_ordinary();
+    ASSERT_TRUE(pool.mark_live(live));
+    pool.clear_reservations();
+    const auto replacement = pool.reserve_ordinary();
+    EXPECT_EQ(replacement.slot(), promised.slot());
+    EXPECT_NE(replacement, promised);
+    pool.release(promised);
+    EXPECT_TRUE(pool.owns_reservation(replacement));
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid()) << "clear must keep the live owner's capacity taken";
+}
+
+TEST(ActorIdPool, TakingAndReturningMetadataPreservesGenerationAndResetsTheSource) {
+    qb::detail::ActorIdPool owner(7, 2, 3);
+    const auto              first = owner.reserve_ordinary();
+    owner.release(first);
+    const auto live = owner.reserve_ordinary();
+    ASSERT_EQ(live.generation(), 2u);
+    ASSERT_TRUE(owner.mark_live(live));
+    {
+        auto worker = owner.take();
+        EXPECT_EQ(owner.metadata_bytes(), 0u);
+        EXPECT_EQ(owner.slot_count(), 0u);
+        EXPECT_GT(worker.metadata_bytes(), 0u);
+        worker.release(live);
+        owner = worker.take();
+        EXPECT_EQ(worker.metadata_bytes(), 0u);
+        EXPECT_EQ(worker.slot_count(), 0u);
+    } // destroying the emptied worker must not free the metadata returned to owner
+    const auto last = owner.reserve_ordinary();
+    EXPECT_EQ(last.slot(), first.slot());
+    EXPECT_EQ(last.index(), 7u);
+    EXPECT_EQ(last.generation(), 3u);
+    owner.release(last);
+    const auto other = owner.reserve_ordinary();
+    EXPECT_NE(other.slot(), first.slot()) << "the transferred generation ceiling must still retire the slot";
+    EXPECT_FALSE(owner.reserve_ordinary().is_valid()) << "the transferred ordinary limit remains two";
+}
+
+TEST(ActorIdPool, FreeIdentitiesKeepIndependentGenerationsAndRejectUnownedTransitions) {
+    qb::detail::ActorIdPool pool(255, 3, 3);
+    const auto              first  = pool.reserve_ordinary();
+    const auto              second = pool.reserve_ordinary();
+    const auto              third  = pool.reserve_ordinary();
+    ASSERT_TRUE(pool.mark_live(first));
+    pool.release(first);
+    const auto first_again = pool.reserve_ordinary();
+    ASSERT_EQ(first_again.slot(), first.slot());
+    ASSERT_EQ(first_again.generation(), 2u);
+    pool.release(first_again);
+    pool.release(second);
+    pool.release(third);
+
+    // A free row's link can contain a different row's generation. Even an identity
+    // matching those bits must not make the free row Reserved, Live or releasable.
+    for (const auto id :
+         {first, second, third, ActorId::ordinary(second.slot(), 255, 3), ActorId::ordinary(third.slot(), 255, 2),
+          ActorId::ordinary(second.slot(), 254, 3), ActorId::ordinary(third.slot(), 254, 2)}) {
+        EXPECT_FALSE(pool.owns_reservation(id));
+        EXPECT_FALSE(pool.mark_live(id));
+        EXPECT_FALSE(pool.mark_retiring(id));
+        pool.release(id);
+    }
+
+    const auto third_again  = pool.reserve_ordinary();
+    const auto second_again = pool.reserve_ordinary();
+    const auto first_last   = pool.reserve_ordinary();
+    EXPECT_EQ(third_again, ActorId::ordinary(third.slot(), 255, 2));
+    EXPECT_EQ(second_again, ActorId::ordinary(second.slot(), 255, 2));
+    EXPECT_EQ(first_last, ActorId::ordinary(first.slot(), 255, 3));
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid());
+
+    for (const auto id : {third_again, second_again, first_last}) {
+        const auto foreign = ActorId::ordinary(id.slot(), 254, id.generation());
+        EXPECT_FALSE(pool.owns_reservation(foreign));
+        EXPECT_FALSE(pool.mark_live(foreign));
+        EXPECT_FALSE(pool.mark_retiring(foreign));
+        pool.release(foreign);
+        EXPECT_TRUE(pool.owns_reservation(id));
+    }
+    ASSERT_TRUE(pool.mark_live(third_again));
+    ASSERT_TRUE(pool.mark_retiring(third_again));
+    pool.release(third_again);
+    pool.release(first_last); // this row retires at its generation ceiling
+    pool.release(second_again);
+    const auto second_last = pool.reserve_ordinary();
+    const auto third_last  = pool.reserve_ordinary();
+    EXPECT_EQ(second_last, ActorId::ordinary(second.slot(), 255, 3));
+    EXPECT_EQ(third_last, ActorId::ordinary(third.slot(), 255, 3));
+    pool.release(second_last);
+    pool.release(third_last);
+    EXPECT_TRUE(pool.empty());
+    EXPECT_FALSE(pool.reserve_ordinary().is_valid());
+    EXPECT_EQ(pool.ordinary_slot_count(), 4u);
+}
+
+TEST(ActorIdPool, ClearAndTakePreserveFreeIdentitiesBesideLiveActorsAndServices) {
+    qb::detail::ActorIdPool owner(255, 3, 3);
+    const auto              first        = owner.reserve_ordinary();
+    const auto              second       = owner.reserve_ordinary();
+    const auto              live         = owner.reserve_ordinary();
+    const auto              service      = owner.reserve_service(65534);
+    const auto              live_service = owner.reserve_service(1);
+    ASSERT_TRUE(owner.mark_live(live));
+    ASSERT_TRUE(owner.mark_live(live_service));
+    owner.release(first);
+    owner.clear_reservations();
+
+    auto worker = owner.take();
+    EXPECT_EQ(owner.slot_count(), 0u);
+    worker.clear_reservations(); // only free links and Live rows remain
+    EXPECT_EQ(worker.reserve_ordinary(), ActorId::ordinary(second.slot(), 255, 2));
+    EXPECT_EQ(worker.reserve_ordinary(), ActorId::ordinary(first.slot(), 255, 2));
+    const auto service_again = worker.reserve_service(65534);
+    EXPECT_EQ(service_again, ActorId::service_instance(65534, 255, 2));
+    const auto foreign = ActorId::service_instance(65534, 254, 2);
+    EXPECT_FALSE(worker.mark_live(foreign));
+    worker.release(foreign);
+    EXPECT_TRUE(worker.owns_reservation(service_again));
+    EXPECT_FALSE(worker.owns_reservation(ActorId::service_address(65534, 255)));
+    EXPECT_FALSE(worker.reserve_ordinary().is_valid());
+    EXPECT_FALSE(worker.reserve_service(1).is_valid());
+
+    worker.clear_reservations();
+    owner = worker.take();
+    EXPECT_EQ(worker.slot_count(), 0u);
+    const auto first_last  = owner.reserve_ordinary();
+    const auto second_last = owner.reserve_ordinary();
+    EXPECT_EQ(first_last, ActorId::ordinary(second.slot(), 255, 3));
+    EXPECT_EQ(second_last, ActorId::ordinary(first.slot(), 255, 3));
+    const auto service_last = owner.reserve_service(65534);
+    EXPECT_EQ(service_last, ActorId::service_instance(65534, 255, 3));
+    owner.release(first_last);
+    owner.release(second_last);
+    owner.release(service_last);
+    EXPECT_FALSE(owner.reserve_ordinary().is_valid());
+    EXPECT_FALSE(owner.reserve_service(65534).is_valid());
+    owner.release(live);
+    owner.release(live_service);
+    EXPECT_EQ(owner.reserve_ordinary(), ActorId::ordinary(live.slot(), 255, 2));
+    EXPECT_EQ(owner.reserve_service(1), ActorId::service_instance(1, 255, 2));
+    EXPECT_NE(service, service_again);
 }
 
 // `ask_take()` names the OWNER actor's core index in the high 16 bits of the id, so two
@@ -197,6 +403,7 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     const NormalId          owner(5, 3);
     const NormalId          other_actor_same_core(6, 3);
     const NormalId          same_sid_other_core(5, 4);
+    const auto              same_slot_new_incarnation = ActorId::ordinary(5, 3, 0x80000001u);
     qb::Event               resp{};
 
     probe_slot          p{owner};
@@ -206,6 +413,7 @@ TEST(ActorId, AskRegistryReleasedIdMissesAndSlotReuseAdvancesGeneration) {
     // same actor index on another core (the id's core bits do not match the delivering actor's).
     EXPECT_FALSE(qb::detail::ask_deliver(id, other_actor_same_core, resp));
     EXPECT_FALSE(qb::detail::ask_deliver(id, same_sid_other_core, resp));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, same_slot_new_incarnation, resp));
     EXPECT_EQ(p.delivered, 0);
     EXPECT_TRUE(qb::detail::ask_deliver(id, owner, resp));
     EXPECT_EQ(p.delivered, 1);
@@ -394,15 +602,34 @@ TEST(ActorId, AskCompletionCanDestroyItsSlotAndGrowTheTableInline) {
         qb::detail::ask_unregister(id);
 }
 
+// The retired entry keeps its owner's COMPLETE identity (QB-1104 on the 64-bit codec): the widest ordinary
+// slot, the last core and the last generation all survive the release, and a neighbour on any one axis -- the
+// same slot on another core, another slot, the previous incarnation of the same slot -- is not its owner.
 TEST(ActorId, RetiredAskPreservesTheEntireOwnerCodec) {
-    const NormalId owner(65534, 65535), wrong_core(65534, 65534), wrong_sid(65533, 65535);
-    const auto     id = qb::detail::ask_take(owner, nullptr);
-    EXPECT_EQ(id >> 48, 65535u);
+    constexpr CoreId last_core            = static_cast<CoreId>(qb::MaxCores - 1);
+    const ActorId    owner                = ActorId::ordinary(ActorId::MaxOrdinarySlot, last_core, ActorId::MaxGeneration);
+    const ActorId    wrong_core           = ActorId::ordinary(ActorId::MaxOrdinarySlot, last_core - 1, ActorId::MaxGeneration);
+    const ActorId    wrong_slot           = ActorId::ordinary(ActorId::MaxOrdinarySlot - 1, last_core, ActorId::MaxGeneration);
+    const ActorId    previous_incarnation = ActorId::ordinary(ActorId::MaxOrdinarySlot, last_core, ActorId::MaxGeneration - 1);
+    ASSERT_TRUE(owner.is_ordinary() && wrong_core.is_ordinary() && wrong_slot.is_ordinary() && previous_incarnation.is_ordinary());
+    const auto id = qb::detail::ask_take(owner, nullptr);
+    EXPECT_EQ(id >> 48, static_cast<std::uint64_t>(last_core));
     qb::detail::ask_unregister(id);
     qb::Event response{};
     EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
     EXPECT_FALSE(qb::detail::ask_deliver(id, wrong_core, response));
-    EXPECT_FALSE(qb::detail::ask_deliver(id, wrong_sid, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, wrong_slot, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(id, previous_incarnation, response));
+
+    // A service incarnation (its slot in the service band, its queue in the tag directory) keeps its identity too.
+    const ActorId service       = ActorId::service_instance(65534, last_core, ActorId::MaxGeneration);
+    const ActorId service_other = ActorId::service_instance(65533, last_core, ActorId::MaxGeneration);
+    ASSERT_TRUE(service.is_service_instance() && service_other.is_service_instance());
+    const auto sid = qb::detail::ask_take(service, nullptr);
+    qb::detail::ask_unregister(sid);
+    EXPECT_TRUE(qb::detail::ask_deliver(sid, service, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(sid, service_other, response));
+    EXPECT_FALSE(qb::detail::ask_deliver(sid, ActorId::service_address(65534, last_core), response));
 }
 
 TEST(ActorId, AskRegistryRejectsUnissuedTokensAndForeignCoreRelease) {

@@ -33,11 +33,13 @@
 #include <chrono>
 #include <errno.h>
 #include <functional>
+#include <memory>
 #include <sstream>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <string>
 #include <vector>
 
 #include <qb/io/config.h>
@@ -1214,6 +1216,19 @@ public:
     QB__DECL static endpoint peer_endpoint(socket_type);
 
     /**
+     * @brief Return the peer IP, cached after a successful lookup and formatting.
+     * @note The cache follows socket ownership and is cleared by close, release or a
+     *       member connection attempt. Failed lookups and non-IP peers are not cached.
+     *       After changing a peer through native_handle() or a static/raw socket helper,
+     *       call invalidate_peer_ip() before reading it again. Access is confined to the
+     *       owning thread, like the asynchronous session using this accessor.
+     */
+    [[nodiscard]] QB__DECL std::string peer_ip() const;
+
+    /** @brief Forget a cached peer IP after an external native-handle mutation. */
+    QB__DECL void invalidate_peer_ip() const noexcept;
+
+    /**
      * @brief Configure TCP keepalive
      * @params : flag:     1.on, 0.off
      *           idle:     time(secs) to send keepalive when no data interaction
@@ -1557,6 +1572,8 @@ private:
     // set_nonblocking(). Mutable because set_nonblocking()/test_nonblocking() are const.
     mutable int _nonblocking = 0;
 #endif
+    struct peer_ip_cache;
+    mutable std::unique_ptr<peer_ip_cache> _peer_ip;
 }; // namespace inet
 
 } // namespace inet

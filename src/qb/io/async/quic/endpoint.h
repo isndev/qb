@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -393,6 +394,16 @@ public:
     [[nodiscard]] qb::io::quic::stats const &
     stats() const noexcept {
         return _stats;
+    }
+    /// Per-peer RTT estimate; id zero names a client's connection or a server's sole connected peer.
+    [[nodiscard]] std::optional<qb::duration>
+    smoothed_rtt(std::uint64_t connection_id = 0) const noexcept {
+        return _backend ? _backend->smoothed_rtt(connection_for(connection_id)) : std::nullopt;
+    }
+    /// Refuse new handshakes on a live listener while preserving existing peers; false means unsupported.
+    [[nodiscard]] bool
+    set_accepting_connections(bool accepting) noexcept {
+        return _backend && _backend->set_accepting_connections(accepting);
     }
     [[nodiscard]] qb::io::endpoint const &
     local_endpoint() const noexcept {

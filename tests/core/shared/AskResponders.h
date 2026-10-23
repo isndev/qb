@@ -76,12 +76,13 @@ public:
     }
 };
 
-/// Behavioural alias for `Echoer` — the "always-answers market" in resilience/ask vocabulary.
-class Market : public qb::Actor {
+/// The same market handler for an ordinary actor or a service fixture.
+template <typename ActorBase>
+class MarketResponder : public ActorBase {
 public:
     qb::io::async::task<bool>
     onInit() override {
-        registerEvent<Ping>(*this);
+        this->template registerEvent<Ping>(*this);
         co_return true;
     }
     void
@@ -89,6 +90,9 @@ public:
         qb::answer(*this, p, [](Ping const &r) { return r.seq * 2; });
     }
 };
+
+/// Behavioural alias for `Echoer` — the "always-answers market" in resilience/ask vocabulary.
+class Market : public MarketResponder<qb::Actor> {};
 
 /// Registers the handler but never replies → every `ask` against it times out.
 class SilentMarket : public qb::Actor {

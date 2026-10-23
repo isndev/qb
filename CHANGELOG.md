@@ -9,13 +9,53 @@ policy.
 
 ### Changed
 
+- **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
+  An identity contains a 24-bit slot, an 8-bit core and a 32-bit generation. Ordinary actors and
+  service tags occupy separate slot bands; logical service addresses resolve to the current instance,
+  while saved instance IDs and handles never follow a replacement. A spent generation retires its slot.
+  The ordinary per-core capacity is 16,711,679 live slots; identities are scoped to one engine run.
+  This changes the public codec and binary layout: use `raw64()` / `from_raw()` and rebuild all
+  consumers with the matching headers and libraries. The ABI fingerprint rejects mixed layouts.
+  The occupied event header grows from 16 to 24 bytes; the base event and allocator bucket remain
+  64 bytes. Measured on arm64 (AppleClang) and x86-64 (g++ 14), a plain byte payload fits 40 bytes
+  in one bucket instead of 48 (41 to 48 bytes now take two), a `ServiceEvent` payload 30 instead of
+  42 and a `CorrelatedEvent` payload 32 instead of 40; MSVC x64 measures the same for a plain
+  event, while a `ServiceEvent` or `CorrelatedEvent` subclass with any payload took two buckets there
+  before and still does. Derived event layouts require their own size check. `qb::Actor` stays 96
+  bytes and `ActorHandle` 16. A `BroadcastId` of a core past `qb::MaxCores` is the invalid id, never
+  another core's broadcast. The source exception is documented in VERSIONING.md.
+  Admission retains exact reservations across user allocation, construction and init; retirement
+  prevents reuse during a destructor and reacquires metadata afterwards. Ordinary free links carry
+  the next complete identity. Heterogeneous subscription slots use their non-null dispatch pointer
+  for occupancy, retaining full-ID comparison; the measured x64 slot size is 24 rather than 32 bytes,
+  which does not imply a proportional reduction in allocated memory. Local large replies copy the
+  complete bucket range before rewriting the header; remote replies fill the producer ring before
+  publishing it, including across wrap, with unchanged full-ring fallback and ownership rules.
+  **Performance decision (2026-10-21, Huly QB-970 / QB-900):** the maintainer accepted candidate
+  T (`tableoccupancy1`), including its trade-offs against candidate C (`callbackempty1`). Windows
+  x64/MSVC and WSL2 x86-64/GCC screening covered 44 configurations: six QVO shapes in three core/wait
+  modes on each OS, plus four payloads on each OS. Each campaign used eight randomized common blocks,
+  three identical binary copies and three repetitions per process; estimates compare medians of
+  24 launch medians per arm/cell, with 95% common-block bootstrap intervals. Against contemporaneous
+  develop, 30 intervals favoured T and 14 crossed zero; none was wholly adverse. This is not universal
+  zero regression or equivalence, and the pointwise intervals are not multiplicity-adjusted.
+  Six T/C costs had wholly adverse intervals: Windows fork-join creation 2-core park +10.12%
+  [5.28, 14.35], ping-pong 1-core spin +2.77% [1.16, 3.56], Big 1-core spin +1.16% [0.15, 2.08],
+  TestEvent payload +1.40% [0.49, 2.35]; WSL Big 2-core park +0.87% [0.27, 2.60] and thread-ring
+  1-core spin +1.67% [1.05, 2.81]. The largest cost is against C: that creation cell is -0.24%
+  [-4.52, 4.06] against develop, an uncertain result. WSL Fibonacci improved against C in all three
+  modes (-5.86%, -6.10%, -6.61%); against develop the corresponding changes are -11.01%, -4.71%
+  and -4.63%, all with favourable intervals. These measurements include compiled-code placement;
+  no quantified residual cost has been proven inevitable for ActorId64.
+
 - **Response resolution consumes obsolete own exchanges (Huly QB-1104).** `resolve_ask` and
   `resolve_require` return true for a live delivery or a discarded response to an operation that
   already ended. A true result no longer guarantees a continuation ran. This prevents `answer`,
   `answer_idempotent` and the usual handwritten resolver guard from replying to late replies forever.
-  Registry entries retain their numeric owner across reuse, with per-owner free queues and no
-  generation wrap. The Event layout and correlation codec are unchanged; retained capacity follows
-  the sum of owners' high-water demands plus permanently exhausted entries, rather than peak
+  Registry entries stay with their actor slot across reuse and record the exact incarnation that
+  last held them (the complete 64-bit identity, above), with per-slot free queues and no generation
+  wrap. This fix changes neither the Event layout nor the correlation codec; retained capacity follows
+  the sum of the slots' high-water demands plus permanently exhausted entries, rather than peak
   simultaneous demand alone. The unchanged 22-bit slot domain holds 4,194,304 retained entries
   per worker thread; exhausting it aborts the process, so long-lived high-fanout actor churn
   consumes this capacity even after its requests finish.
@@ -145,6 +185,24 @@ policy.
   synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
 
 ### Added
+
+- **`uri::has_query()` distinguishes an absent query from an explicitly empty query (Huly
+  QB-169).** Parsing now retains the delimiter presence of `/path?`, while `encoded_queries()`
+  remains empty. Copies and moves preserve it, and assigning new text resets it; no data member
+  is added to `uri`. Mutable query-map edits continue to leave the source text unchanged.
+  Under GCC, presence is recorded when the delimiter is scanned and only nonempty
+  contents reach the decoding block, preserving its short path for URIs without a query.
+  Other compilers retain the original finalization; both paths preserve the same URI value.
+
+- **Per-connection QUIC RTT and listener admission controls (Huly QB-1098).**
+  `backend::smoothed_rtt(connection_id)` returns an optional duration for the named native connection;
+  it does not substitute the server's aggregate RTT. `set_accepting_connections(false)` lets a live native
+  listener refuse new Initials with a bounded stateless CONNECTION_REFUSED response while known connection
+  IDs continue normally. The refusal creates no retained connection or TLS session; packet/crypto work may
+  still allocate. Both capabilities have defaults (`nullopt` / `false`), so existing custom backend source
+  remains compatible and can explicitly decline support. The endpoint exposes both operations without
+  creating a backend for a query. Rebuild backend implementations and consumers for the extended vtable,
+  as required by the [binary compatibility policy](./VERSIONING.md#binary-compatibility).
 
 - **`qb/io/reconnect.h`: the reconnect contract's vocabulary, shared by every client that keeps a connection
   (Huly QB-126).** Header-only, names and pure functions: `qb::io::connection_state` (`idle`, `connecting`,
@@ -738,6 +796,39 @@ policy.
 
 
 ### Fixed
+
+- **Async TCP connector startup releases retained work on exception (Huly QB-169).**
+  `run()` invalidates attempts, unregisters its I/O watcher, disconnects the socket it still
+  owns and releases its self-hold before rethrowing. It does not generate another completion
+  or close a socket already moved to an inline callback. Weak deadline timers can remain
+  until they fire or the listener is cleared.
+
+
+- **Empty awaiter-tracking annotations no longer borrow the next source line (Huly QB-1108).**
+  The checker requires a reason on the annotation's physical line, preserving valid reasons
+  under LF and CRLF. Source-comment references and their wording are also reconciled with the
+  current implementation (Huly QB-1102); no executable tokens or physical code lines change.
+
+- **The stalled-mailbox test no longer assumes full receive batches (Huly QB-1105).** Its
+  previous global retry bound could reject a correct flush under ASan when the receiver drained
+  smaller batches. The test now holds the consumer index fixed, allows two complete warmup
+  passes and requires exactly one refusal in each of the next 64 passes before checking full,
+  ordered delivery. Disabling only the stall bailout makes the same oracle observe 513 refusals
+  per pass and fail. The watchdog is cleanup only; the production flush and its cost are unchanged.
+
+- **Cache a TCP session's formatted peer IP at its socket owner (Huly QB-1106).** Repeated `ip()` reads
+  reuse a successful lookup instead of calling `getpeername` and formatting it for every request.
+  `ip()` still returns `std::string` by value; custom transports without `peer_ip()` retain their existing
+  fallback. The cache is allocated only when a formatted IP is first requested, follows descriptor moves
+  and swaps, and is cleared by close, raw release and low-level member connection attempts. Failed lookups
+  and non-IP peers remain uncached. Call `invalidate_peer_ip()` after changing the peer through a raw handle
+  or static socket helper. The socket layout changes; rebuild consumers under the existing
+  [binary compatibility policy](./VERSIONING.md#binary-compatibility).
+
+- **The unhandled-event disposal fixture is repeatable (Huly QB-1115).** Each run resets its
+  destination and handled counters and asserts that no payload remains live, instead of masking
+  a leak by resetting the live counter. Repeated and shuffled runs no longer inherit a prior run's
+  destination. This is a test-fixture correction, independent of the performance decision above.
 
 - **`Main::start()` warns when more cores spin at latency 0 than the process can run at once (Huly QB-1082).** A
   core at the default latency never parks and never yields its CPU, so with fewer CPUs than such cores they

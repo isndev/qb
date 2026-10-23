@@ -67,19 +67,25 @@ namespace qb::router {
  * `perf` put the two lookups at the top of the profile once the accessors had been inlined.
  *
  * Both keys are ALREADY dense integers: `EventId` is assigned from a counter
- * (`Event::type_to_id`), and a `VirtualCore`'s handlers are its own actors, whose `ServiceId`
- * slots come lowest-free-first from a bitset pool. A router keyed on such an id can be a
+ * (`Event::type_to_id`), and a `VirtualCore`'s handlers are its own actors, whose slots come
+ * from a pool that hands freed slots back first. A router keyed on such an id can be a
  * vector indexed by it — one bounds check and one load where the map cost five dependent
  * ones — without giving up the generic routers: a key with no dense form (the router unit
  * test keys events on `const char *`) keeps the hash map, selected at compile time.
  *
  * Specialise for a key type to enable the dense table. **Contract:** `of(k)` is at most
  * `max_index`, and two keys that can be subscribed on ONE router at the same time yield
- * different indices — the table stores the full key beside the slot and compares it on every
- * hit, so a key that shares an index with a live subscriber is a MISS (never a misdelivery),
- * and `subscribe()` asserts the collision in a debug build. Unsigned integers of at most 16
- * bits are dense by identity; `qb::ActorId` is dense by `sid()` (ActorId.h), which is unique
- * among the actors of one core and a router only ever holds one core's actors.
+ * different indices within their bank — the table stores the full key beside the slot and
+ * compares it on every hit, so a key that shares an index with a live subscriber is a MISS
+ * (never a misdelivery), and `subscribe()` asserts the collision in a debug build. Unsigned
+ * integers of at most 16 bits are dense by identity. `qb::ActorId` projects ordinary slots and
+ * service tags into separate banks (ActorId.h); a router only ever holds one core's actors. A specialisation
+ * may declare `partitioned = true`, `secondary(key)` and `secondary_max_index` to keep a second
+ * dense bank. Then `of(key)` is bounded by the selected bank's maximum, and identical indices
+ * in different banks are independent. Neither bank allocates on lookup or erase.
+ * A partitioned specialisation may also declare `primary_excludes_secondary = true` when
+ * `primary_of(key)` is defined for every key and exceeds `max_index` for every secondary key.
+ * Then an index inside the primary bank's bounds proves that no secondary lookup is needed.
  *
  * @tparam Key The router key type (`_RawEvent::id_type` or `_RawEvent::id_handler_type`)
  */
@@ -102,6 +108,30 @@ struct dense_index<Key> {
 
 namespace internal {
 
+// The generic table keeps occupancy independent of Value: even Value{} or nullptr
+// can be a present entry. Alternative storage must be selected explicitly.
+struct explicit_key_occupancy {
+    template <typename Key, typename Value>
+    struct Slot {
+        Key   key{};
+        Value value{};
+        bool  used = false;
+
+        bool
+        occupied() const noexcept {
+            return used;
+        }
+        void
+        mark_used() noexcept {
+            used = true;
+        }
+        void
+        mark_unused() noexcept {
+            used = false;
+        }
+    };
+};
+
 /**
  * @brief The router's key → value table: a vector indexed by `dense_index<Key>::of()` when
  *        the key has a dense form, a `qb::unordered_map` otherwise. Same four operations
@@ -109,30 +139,73 @@ namespace internal {
  *
  * @details The dense table grows geometrically on `insert_or_assign` (a core spawning actors
  * one at a time subscribes one new id per spawn; an exact `resize` there would be quadratic)
- * and never shrinks — `erase` clears the slot, and the pool's lowest-free-first policy hands
- * that slot back to the next actor, so the table stays as compact as the id space it mirrors.
+ * and never shrinks — `erase` clears the slot, and the pool hands a freed slot back before it
+ * opens a new one, so the table stays as compact as the core's peak population.
  *
  * @tparam Key   The key type
  * @tparam Value The stored value; `Value{}` is what an erased slot holds
  */
-template <typename Key, typename Value>
+template <typename Key, typename Value, typename Occupancy = explicit_key_occupancy>
 class key_table {
-    static constexpr bool dense = dense_index<Key>::enabled;
+    static constexpr bool dense       = dense_index<Key>::enabled;
+    static constexpr bool partitioned = [] {
+        if constexpr (dense && requires { dense_index<Key>::partitioned; })
+            return dense_index<Key>::partitioned;
+        else
+            return false;
+    }();
 
-    struct Slot {
-        Key   key{};
-        Value value{};
-        bool  used = false;
-    };
+public:
+    /// Secondary projections cannot fall within an allocated primary bank.
+    static constexpr bool primary_excludes_secondary = [] {
+        if constexpr (partitioned && requires { dense_index<Key>::primary_excludes_secondary; })
+            return dense_index<Key>::primary_excludes_secondary;
+        else
+            return false;
+    }();
+
+    /// A partitioned key whose broadcast key lies in the secondary bank (`dense_index<Key>::broadcast_secondary`):
+    /// a router can then send a unicast to the primary bank on ONE test, `is_secondary(key)` false, and leave the
+    /// broadcast walk and the secondary lookup to its out-of-line half (semh<E, void>::dispatch_event).
+    static constexpr bool broadcast_secondary = [] {
+        if constexpr (partitioned && requires { dense_index<Key>::broadcast_secondary; })
+            return dense_index<Key>::broadcast_secondary;
+        else
+            return false;
+    }();
+
+private:
+    using Slot = typename Occupancy::template Slot<Key, Value>;
 
     using Dense  = qb::allocator::region_vector<Slot>;
     using Sparse = qb::unordered_map<Key, Value>;
 
-    std::conditional_t<dense, Dense, Sparse> _table;
+    struct PartitionedDense {
+        Dense       primary;
+        Dense       secondary;
+        std::size_t secondary_size = 0;
+    };
+
+    // A partitioned key maps its secondary namespace to compact indices instead of growing
+    // through a high encoded slot. Other keys retain exactly the original table storage.
+    std::conditional_t<partitioned, PartitionedDense, std::conditional_t<dense, Dense, Sparse>> _table;
     // The dense table's slot count, kept beside it: `find()` bounds-checks every lookup, and
     // `_table.size()` is a pointer difference divided by `sizeof(Slot)` -- a multiply by a magic
     // constant on every event routed when the slot is 24 bytes wide (QB-182). One load instead.
     std::size_t _dense_size = 0;
+
+    [[nodiscard]] Dense &
+    primary_table() noexcept {
+        if constexpr (partitioned)
+            return _table.primary;
+        else
+            return _table;
+    }
+
+    [[nodiscard]] Dense const &
+    primary_table() const noexcept {
+        return const_cast<key_table *>(this)->primary_table();
+    }
 
 public:
     key_table()  = default;
@@ -145,10 +218,18 @@ public:
     [[nodiscard]] Value *
     find(Key const &key) noexcept {
         if constexpr (dense) {
+            if constexpr (partitioned) {
+                // The secondary bank answers out of line. Inline beside the primary one, it made this lookup too
+                // big for MSVC 19.51 to inline into the resolvers: one call and 22 instructions per routed event
+                // where the unpartitioned table was 12 inline (single-stepped, Huly QB-970 perf lot).
+                if (dense_index<Key>::secondary(key)) [[unlikely]]
+                    return find_secondary(key);
+                return find_primary(key);
+            }
             const auto idx = dense_index<Key>::of(key);
             if (likely(idx < _dense_size)) {
-                auto &slot = _table[idx];
-                if (likely(slot.used && slot.key == key))
+                auto &slot = primary_table()[idx];
+                if (likely(slot.occupied() && slot.key == key))
                     return &slot.value;
             }
             return nullptr;
@@ -163,6 +244,58 @@ public:
         return const_cast<key_table *>(this)->find(key);
     }
 
+    /// A partitioned key's bank (dense_index<Key>::secondary)
+    [[nodiscard]] static bool
+    is_secondary(Key const &key) noexcept {
+        return dense_index<Key>::secondary(key);
+    }
+
+    /// Probe a primary projection: bounds, occupancy and complete key are always checked.
+    /// Callers either classified the key or proved primary_excludes_secondary for a speculative probe.
+    [[nodiscard]] QB_MSVC_FORCEINLINE Value *
+    find_primary(Key const &key) noexcept {
+        const std::size_t idx = dense_index<Key>::primary_of(key);
+        if (likely(idx < _dense_size)) {
+            auto &slot = _table.primary[idx];
+            if (likely(slot.occupied() && slot.key == key))
+                return &slot.value;
+        }
+        return nullptr;
+    }
+    [[nodiscard]] QB_MSVC_FORCEINLINE Value const *
+    find_primary(Key const &key) const noexcept {
+        return const_cast<key_table *>(this)->find_primary(key);
+    }
+
+    /// find()'s secondary bank (a partitioned key only: instantiated from that branch alone); out of line
+    [[nodiscard]] QB_NOINLINE Value *
+    find_secondary(Key const &key) noexcept {
+        const std::size_t idx = dense_index<Key>::secondary_of(key);
+        if (idx < _table.secondary_size) {
+            auto &slot = _table.secondary[idx];
+            if (slot.occupied() && slot.key == key)
+                return &slot.value;
+        }
+        return nullptr;
+    }
+    [[nodiscard]] Value const *
+    find_secondary(Key const &key) const noexcept {
+        return const_cast<key_table *>(this)->find_secondary(key);
+    }
+
+    /// erase()'s secondary bank, out of line
+    QB_NOINLINE void
+    erase_secondary(Key const &key) noexcept {
+        const std::size_t idx = dense_index<Key>::secondary_of(key);
+        if (idx < _table.secondary_size) {
+            auto &slot = _table.secondary[idx];
+            if (slot.occupied() && slot.key == key) {
+                slot.value = Value{};
+                slot.mark_unused();
+            }
+        }
+    }
+
     /**
      * @brief Store a value under a key, replacing any value already there
      */
@@ -170,24 +303,43 @@ public:
     insert_or_assign(Key const &key, Value value) {
         if constexpr (dense) {
             const auto idx = dense_index<Key>::of(key);
+            if constexpr (partitioned) {
+                if (dense_index<Key>::secondary(key)) {
+                    assert(idx <= dense_index<Key>::secondary_max_index && "dense_index<Key>::of() exceeds secondary_max_index");
+                    auto &table = _table.secondary;
+                    if (idx >= table.size()) {
+                        if (idx >= table.capacity())
+                            qb::allocator::detail::region_reserve(table, idx + 1, dense_index<Key>::secondary_max_index + 1);
+                        table.resize(idx + 1);
+                        _table.secondary_size = table.size();
+                    }
+                    auto &slot = table[idx];
+                    assert((!slot.occupied() || slot.key == key) && "dense_index<Key>: two live keys share one secondary index");
+                    slot.key   = key;
+                    slot.value = std::move(value);
+                    slot.mark_used();
+                    return;
+                }
+            }
             assert(idx <= dense_index<Key>::max_index && "dense_index<Key>::of() exceeds max_index");
-            if (idx >= _table.size()) {
+            auto &table = primary_table();
+            if (idx >= table.size()) {
                 // Grow by CAPACITY, never by size: `reserve(size() * 2)` on every insert asked
                 // for one more element than the previous doubling had left, so each new id
                 // reallocated and copied the whole table -- O(n) per subscribe, O(n^2) per
                 // core, times one table per event type. savina/fib (57 313 actors born and
                 // dead in one window, seven subscriptions each) measured 43 s where CAF
                 // measures 86 ms; with this branch it is the pool's O(1) again.
-                if (idx >= _table.capacity())
-                    qb::allocator::detail::region_reserve(_table, idx + 1, dense_index<Key>::max_index + 1);
-                _table.resize(idx + 1);
-                _dense_size = _table.size();
+                if (idx >= table.capacity())
+                    qb::allocator::detail::region_reserve(table, idx + 1, dense_index<Key>::max_index + 1);
+                table.resize(idx + 1);
+                _dense_size = table.size();
             }
-            auto &slot = _table[idx];
-            assert((!slot.used || slot.key == key) && "dense_index<Key>: two live keys share one index");
+            auto &slot = table[idx];
+            assert((!slot.occupied() || slot.key == key) && "dense_index<Key>: two live keys share one index");
             slot.key   = key;
             slot.value = std::move(value);
-            slot.used  = true;
+            slot.mark_used();
         } else {
             _table.insert_or_assign(key, std::move(value));
         }
@@ -198,11 +350,52 @@ public:
      */
     void
     erase(Key const &key) noexcept {
+        if constexpr (primary_excludes_secondary) {
+            // The bound proves the bank for this projection. Keep the secondary classification
+            // after the primary bound, so a primary hit needs only the complete-key check below.
+            // An ordinary miss still classifies before returning; a service miss reaches its bank.
+            const std::size_t idx = dense_index<Key>::primary_of(key);
+            if (idx < _dense_size) {
+                auto &slot = _table.primary[idx];
+                if (slot.occupied() && slot.key == key) {
+                    slot.value = Value{};
+                    slot.mark_unused();
+                }
+            } else if (dense_index<Key>::secondary(key)) [[unlikely]] {
+                erase_secondary(key);
+            }
+            return;
+        }
+        if constexpr (partitioned) {
+            // A leaf for the primary bank, the secondary one out of line: with both inline MSVC 19.51 saved six
+            // registers on every call, and every actor removal calls this once per event type the core routes
+            // (a miss, 29 instructions, where the unpartitioned table took 4 -- Huly QB-970 perf lot).
+            if (dense_index<Key>::secondary(key)) [[unlikely]] {
+                erase_secondary(key);
+                return;
+            }
+            const std::size_t idx = dense_index<Key>::primary_of(key);
+            if (idx < _dense_size) {
+                auto &slot = _table.primary[idx];
+                if (slot.occupied() && slot.key == key) {
+                    slot.value = Value{};
+                    slot.mark_unused();
+                }
+            }
+            return;
+        }
         if constexpr (dense) {
             if (auto *const value = find(key)) {
-                auto &slot = _table[dense_index<Key>::of(key)];
+                if constexpr (partitioned) {
+                    if (dense_index<Key>::secondary(key)) {
+                        *value = Value{};
+                        _table.secondary[dense_index<Key>::of(key)].mark_unused();
+                        return;
+                    }
+                }
+                auto &slot = primary_table()[dense_index<Key>::of(key)];
                 *value     = Value{};
-                slot.used  = false;
+                slot.mark_unused();
             }
         } else {
             _table.erase(key);
@@ -210,7 +403,7 @@ public:
     }
 
     /**
-     * @brief Visit every present entry as `f(key, value)`, in index order for a dense table
+     * @brief Visit every present entry as `f(key, value)`, in index order within each dense bank
      * @warning `f` must not insert into or erase from THIS table (see the broadcast snapshot in
      *          `semh::route` for why, and for the idiom).
      */
@@ -218,8 +411,14 @@ public:
     void
     for_each(Func &&f) const {
         if constexpr (dense) {
-            for (auto const &slot : _table)
-                if (slot.used)
+            if constexpr (partitioned) {
+                // Preserve the former service-before-ordinary traversal on a core.
+                for (auto const &slot : _table.secondary)
+                    if (slot.occupied())
+                        f(slot.key, slot.value);
+            }
+            for (auto const &slot : primary_table())
+                if (slot.occupied())
                     f(slot.key, slot.value);
         } else {
             for (auto const &it : _table)
@@ -519,6 +718,33 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         Trampoline dispatch = nullptr;
     };
 
+    // Only subscribe() creates a live Entry, with a non-null typed trampoline.
+    // Erasure assigns Entry{}, so the dispatch pointer is an exact occupancy bit.
+    // Keep this opt-in private: arbitrary key_table values may legitimately be null.
+    struct EntryOccupancy {
+        template <typename Key, typename Value>
+        struct Slot {
+            static_assert(std::is_same_v<Value, Entry>);
+            Key   key{};
+            Value value{};
+
+            bool
+            occupied() const noexcept {
+                return value.dispatch != nullptr;
+            }
+            void
+            mark_used() const noexcept {
+                assert(value.dispatch != nullptr);
+            }
+            void
+            mark_unused() const noexcept {
+                assert(value.dispatch == nullptr);
+            }
+        };
+    };
+
+    using Table = internal::key_table<_HandlerId, Entry, EntryOccupancy>;
+
     /**
      * @brief Typed trampoline: performs the `void*` → `_Handler*` recast and
      *        invokes the handler's `on(event)` method, honouring the
@@ -536,7 +762,7 @@ class semh<_RawEvent, void> : public internal::EventPolicy {
         }
     }
 
-    internal::key_table<_HandlerId, Entry> _subscribed_handlers;
+    Table _subscribed_handlers;
 
 public:
     semh()           = default;
@@ -576,15 +802,42 @@ private:
     // ones included -- jumped to it from route() (TinyEvent 1-core, part of +12.9 %).
     QB_MSVC_FORCEINLINE void
     dispatch_event(_RawEvent &event) const {
-        if constexpr (qb::has_is_broadcast<_HandlerId>) {
-            // Keep the broadcast walk out of line so unicast has no snapshot prologue.
-            if (unlikely(event.getDestination().is_broadcast())) {
-                route_broadcast(event);
-                return;
+        if constexpr (qb::has_is_broadcast<_HandlerId> && Table::broadcast_secondary) {
+            if constexpr (Table::primary_excludes_secondary) {
+                // This trait proves that every secondary projection lies beyond the primary bank.
+                // A successful primary lookup has already checked bounds, occupancy and the FULL key.
+                // Classify the bank only on a miss; broadcasts and service instances still use
+                // the existing secondary dispatch, and stale primary keys remain undelivered.
+                auto const *const entry = _subscribed_handlers.find_primary(event.getDestination());
+                if (likely(entry != nullptr)) {
+                    dispatch_entry(entry, event);
+                } else if (Table::is_secondary(event.getDestination())) {
+                    dispatch_secondary(event);
+                } else {
+                    dispatch_entry(nullptr, event);
+                }
+            } else {
+                if (unlikely(Table::is_secondary(event.getDestination()))) {
+                    dispatch_secondary(event);
+                    return;
+                }
+                dispatch_entry(_subscribed_handlers.find_primary(event.getDestination()), event);
             }
+        } else {
+            if constexpr (qb::has_is_broadcast<_HandlerId>) {
+                // Keep the broadcast walk out of line so unicast has no snapshot prologue.
+                if (unlikely(event.getDestination().is_broadcast())) {
+                    route_broadcast(event);
+                    return;
+                }
+            }
+            dispatch_entry(_subscribed_handlers.find(event.getDestination()), event);
         }
+    }
 
-        if (auto *const entry = _subscribed_handlers.find(event.getDestination()); likely(entry != nullptr)) [[likely]] {
+    QB_MSVC_FORCEINLINE void
+    dispatch_entry(Entry const *const entry, _RawEvent &event) const {
+        if (likely(entry != nullptr)) [[likely]] {
             const auto  dispatch = entry->dispatch;
             auto *const target   = entry->handler;
             QB_ASSUME(dispatch != nullptr);
@@ -593,6 +846,16 @@ private:
             if constexpr (internal::reports_undelivered<_RawEvent>)
                 _RawEvent::__undelivered__(event);
         }
+    }
+
+    // dispatch_event()'s secondary half: the broadcast walk, or a key of the secondary bank
+    QB_NOINLINE void
+    dispatch_secondary(_RawEvent &event) const {
+        if (event.getDestination().is_broadcast()) {
+            route_broadcast(event);
+            return;
+        }
+        dispatch_entry(_subscribed_handlers.find_secondary(event.getDestination()), event);
     }
 
 public:

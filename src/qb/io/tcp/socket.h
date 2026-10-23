@@ -71,10 +71,12 @@ public:
     // Methods inherited from the base socket (made public via using-declarations)
     using qb::io::socket::close;
     using qb::io::socket::get_optval;
+    using qb::io::socket::invalidate_peer_ip;
     using qb::io::socket::is_open;
     using qb::io::socket::local_endpoint;
     using qb::io::socket::native_handle;
     using qb::io::socket::peer_endpoint;
+    using qb::io::socket::peer_ip;
     using qb::io::socket::release_handle;
     using qb::io::socket::set_nonblocking;
     using qb::io::socket::set_optval;

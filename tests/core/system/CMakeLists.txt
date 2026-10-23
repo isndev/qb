@@ -61,8 +61,8 @@ endif ()
 # --- actor ------------------------------------------------------------------
 # actor-add and actor-dependency each bring up a SECOND VirtualCore -- actor-add's
 # BroadcastKillLeavesNoSurvivors puts its sender on core 0 and 1024 targets on core 1
-# (actor/actor-add.cpp:922-925), and three of actor-dependency's cases run cores 0+1 to
-# completion (actor/actor-dependency.cpp:141-143, :155-157, :169-171). Neither is guarded by
+# (actor/actor-add.cpp:947-950), and three of actor-dependency's cases run cores 0+1 to
+# completion in actor/actor-dependency.cpp. Neither is guarded by
 # hardware_concurrency(), so both belong under the shared qb-multicore lock the label derives.
 qb_add_test(MODULE qb-core TIER system NAME actor-add        SOURCES actor/actor-add.cpp         DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 qb_add_test(MODULE qb-core TIER system NAME actor-dependency SOURCES actor/actor-dependency.cpp  DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
@@ -102,7 +102,7 @@ qb_add_test(MODULE qb-core TIER system NAME actor-resource-cleanup   SOURCES lif
 qb_add_test(MODULE qb-core TIER system NAME actor-invalid-reference  SOURCES lifecycle/actor-invalid-reference.cpp  DEPENDS ${PROJECT_NAME})
 # main-shutdown is the most exposed of the three that were missing `requires-multicore`: both of
 # its cases build cores 0+1, start the engine ASYNC (`main.start(true)`) and then assert a
-# WALL-CLOCK bound -- `elapsed.count() < 10` at lifecycle/main-shutdown.cpp:63 and :80. A timing
+# WALL-CLOCK bound -- `elapsed.count() < 10` in both lifecycle/main-shutdown.cpp cases. A timing
 # assertion measured on an oversubscribed engine is a timing assertion measuring the scheduler,
 # not the shutdown path it names.
 qb_add_test(MODULE qb-core TIER system NAME main-shutdown            SOURCES lifecycle/main-shutdown.cpp            DEPENDS ${PROJECT_NAME} LABELS slow requires-multicore)
@@ -214,8 +214,8 @@ qb_add_test(MODULE qb-core TIER system NAME coroutine-dump SOURCES coroutine/cor
 # once every core is gone. Single-core engines on the calling thread.
 qb_add_test(MODULE qb-core TIER system NAME service-registration SOURCES actor/service-registration.cpp DEPENDS ${PROJECT_NAME})
 # flush-yields-to-inbound pins the flush's backpressure rule (Huly QB-979): a core whose peer's ring is full and
-# that has inbound work of its own -- here a self-addressed chain -- tries the head event once per pass and runs
-# that work, so `sends_blocked` never exceeds `loop_passes` (513 per blocked pass before); the flood arrives whole.
+# that has inbound work -- a self-addressed chain -- tries the head once per pass while the peer is held still.
+# After two full warmup passes, 64 measured passes require 64 refusals (513 each without the rule); FIFO stays whole.
 qb_add_test(MODULE qb-core TIER system NAME flush-yields-to-inbound SOURCES concurrency/flush-yields-to-inbound.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 # engine-restart-faults and engine-restart-mailboxes pin that an engine started after another one in the same process
 # builds its per-core buffers in memory its predecessor left faulted (Huly QB-1012): the router's tables, the actor

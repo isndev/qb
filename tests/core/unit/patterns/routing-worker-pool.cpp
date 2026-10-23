@@ -41,7 +41,7 @@ using qb::WorkerPool;
 // next() — round-robin cycling.
 // ===========================================================================
 TEST(WorkerPoolUnit, RoundRobinCyclesAndWraps) {
-    ActorId    a(1), b(2), c(3);
+    const auto a = ActorId::ordinary(1, 0, 1), b = ActorId::ordinary(2, 0, 1), c = ActorId::ordinary(3, 0, 1);
     WorkerPool r{{a, b, c}};
     EXPECT_EQ(r.size(), 3u);
     EXPECT_FALSE(r.empty());
@@ -64,7 +64,7 @@ TEST(WorkerPoolUnit, RoundRobinCyclesAndWraps) {
 // for_key() — sticky-by-key, deterministic, and well-spread.
 // ===========================================================================
 TEST(WorkerPoolUnit, ForKeyIsStickyAndDistributes) {
-    ActorId    w0(10), w1(20), w2(30);
+    const auto w0 = ActorId::ordinary(10, 0, 1), w1 = ActorId::ordinary(20, 0, 1), w2 = ActorId::ordinary(30, 0, 1);
     WorkerPool r{{w0, w1, w2}};
 
     // Exact modulus mapping, not just "some worker".
@@ -106,7 +106,7 @@ TEST(WorkerPoolUnit, AddRemoveResizesPool) {
     EXPECT_TRUE(r.empty());
     EXPECT_EQ(r.size(), 0u);
 
-    ActorId a(1), b(2);
+    const auto a = ActorId::ordinary(1, 0, 1), b = ActorId::ordinary(2, 0, 1);
     r.add(a);
     r.add(b);
     EXPECT_FALSE(r.empty());
@@ -123,7 +123,7 @@ TEST(WorkerPoolUnit, AddRemoveResizesPool) {
 // remove() — wrap the cursor after a shrink; empty-edge safety; reuse after refill.
 // ===========================================================================
 TEST(WorkerPoolUnit, RemoveWrapsCursorAndHandlesEmptyEdges) {
-    ActorId    a(1), b(2), c(3);
+    const auto a = ActorId::ordinary(1, 0, 1), b = ActorId::ordinary(2, 0, 1), c = ActorId::ordinary(3, 0, 1);
     WorkerPool r{{a, b, c}};
     (void) r.next(); // cursor -> 1
     (void) r.next(); // cursor -> 2 (points at the last slot)
@@ -155,7 +155,7 @@ TEST(WorkerPoolUnit, RemoveWrapsCursorAndHandlesEmptyEdges) {
 // past 0 -- and the cursor used to stay there: the next refill's next() read past the end (here the
 // stale `a` the vector's retained capacity still held), never the worker just added.
 TEST(WorkerPoolUnit, EmptyingTheRemoveOfADuplicatedIdResetsTheCursor) {
-    ActorId    a(1), b(2), c(3);
+    const auto a = ActorId::ordinary(1, 0, 1), b = ActorId::ordinary(2, 0, 1), c = ActorId::ordinary(3, 0, 1);
     WorkerPool r{{a, a, a}};
     (void) r.next(); // cursor -> 1
     (void) r.next(); // cursor -> 2
@@ -176,7 +176,7 @@ TEST(WorkerPoolUnit, EmptyingTheRemoveOfADuplicatedIdResetsTheCursor) {
 // (Missing case the source never exercised: stickiness holds only *until* size changes.)
 // ===========================================================================
 TEST(WorkerPoolUnit, ForKeyRemapsAfterRemoveShrinksModulus) {
-    ActorId    w0(10), w1(20), w2(30);
+    const auto w0 = ActorId::ordinary(10, 0, 1), w1 = ActorId::ordinary(20, 0, 1), w2 = ActorId::ordinary(30, 0, 1);
     WorkerPool r{{w0, w1, w2}};
 
     // Key 7: 7 % 3 == 1 -> w1, before the pool shrinks.

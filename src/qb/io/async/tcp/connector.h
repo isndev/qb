@@ -527,7 +527,7 @@ public:
      *          deadlines), or -- refused at once -- leaves its address for the next (see the class note).
      */
     void
-    run() {
+    run() try {
         QB_LOG_DEBUG("Started async connect to " << host_);
         // Apply the TLS verification policy before the (non-blocking) connect so
         // it is in effect when the handshake starts. No-op for plain sockets.
@@ -545,6 +545,19 @@ public:
             return;
         }
         start_next();
+    } catch (...) {
+        // Startup may throw after arm_io retained this connector, or after its
+        // watcher was published but before a deadline timer could be allocated.
+        // Keep this object alive while breaking retention and unwinding its IO.
+        auto rollback_hold = std::move(self_hold_);
+        completed_         = true;
+        ++attempt_; // already-created weak attempt timers must not deliver later
+        if (auto *interface = std::exchange(io_iface_, nullptr))
+            listener::current.unregisterEvent(interface);
+        // Also clean up after a throwing inline completion. A socket moved to
+        // that completion is empty here and must remain owned by its recipient.
+        socket_.disconnect();
+        throw;
     }
 
     /**

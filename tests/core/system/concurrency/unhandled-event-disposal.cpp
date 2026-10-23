@@ -65,7 +65,7 @@ struct HandledEvent : qb::Event {
     Tracked p;
 }; // registered by the receiver
 
-std::atomic<std::uint32_t> g_dst{0};
+std::atomic<std::uint64_t> g_dst{0};
 std::atomic<int>           g_handled{0};
 
 class Receiver : public qb::Actor {
@@ -74,7 +74,7 @@ public:
     onInit() final {
         registerEvent<HandledEvent>(*this);
         registerEvent<qb::KillEvent>(*this);
-        g_dst.store(static_cast<std::uint32_t>(id()));
+        g_dst.store(id().raw64());
         co_return true;
     }
     void
@@ -119,7 +119,9 @@ public:
 } // namespace
 
 TEST(UnhandledEventDisposal, EventWithNoSubscriberStillDisposesItsPayload) {
-    g_live.store(0);
+    ASSERT_EQ(g_live.load(), 0);
+    g_dst.store(0);
+    g_handled.store(0);
     {
         qb::Main main;
         main.addActor<Receiver>(0);

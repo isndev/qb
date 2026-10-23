@@ -313,7 +313,7 @@ TEST(UDPSocket, Ipv6MulticastRejectsBadInputsAndAcceptsValidGroups) {
 //
 // The v6 half is where two kernels genuinely disagree, and the disagreement is in the
 // KERNEL, not in qb: join/leave_multicast_group are a faithful passthrough here
-// (`resolve_iface_index("") == 0`, socket.cpp:56, and the same `ipv6_mreq` reaches the same
+// (`resolve_iface_index("") == 0`, qb/io/udp/socket.cpp, and the same `ipv6_mreq` reaches the same
 // `setsockopt`). Measured with raw `setsockopt` and no qb code in the loop:
 //
 //   Linux 6.12    join(idx=0) = 0    leave(idx=0) = 0

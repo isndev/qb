@@ -77,6 +77,31 @@ The lower layer is a thin, move-only wrapper over a native socket handle. The up
 
 `qb::io::socket` and the typed sockets are **move-only**: copy construction and copy assignment are deleted, and the destructor closes the handle. Pass them by value to transfer ownership (for example, moving an accepted socket from a listener into a session), never by copy.
 
+### Peer IPs and socket ownership
+
+A server-associated TCP session's `ip() const` returns `std::string` by value. Its normal TCP/TLS transport
+uses `socket::peer_ip()`: the first successful IP lookup is formatted and retained by the socket, so repeated
+reads reuse it. A transport that does not provide a compatible `peer_ip()` keeps the existing
+`peer_endpoint().ip()` fallback. `port()` and `peer_endpoint()` still perform their ordinary queries.
+<!-- src: qb/src/qb/io/async/tcp/client.h:151-165 (ip and port), qb/src/qb/io/system/sys__socket.cpp:1099-1118 (peer_ip and invalidate_peer_ip) -->
+
+The cache is empty until an IP is successfully requested. An unconnected socket or a non-IP peer returns
+an empty string without allocating or remembering a cache entry, so a failed lookup before connection
+cannot poison a later connection. A returned string may itself allocate; this is not a promise of
+allocation-free IP access. The cache follows the descriptor through moves and swaps. Closing or releasing
+the socket clears it, as do the low-level socket's member connection/disconnection attempts, even when an
+attempt fails. Adopting a generic `io::socket` into a TCP socket closes the old destination before
+transferring the incoming descriptor and its cache; a fresh raw-handle adoption starts uncached.
+<!-- src: qb/src/qb/io/system/sys__socket.cpp:535-541 (swap), :634-638 (release_handle), :749-751 (connect), :774-780 (timed connect_n), :841-859 (connect_n and disconnect), :1099-1118 (peer_ip), :1182-1189 (close); qb/src/qb/io/tcp/socket.cpp:44-53 (generic socket adoption) -->
+
+The wrapper cannot observe a peer changed through a raw descriptor or a static socket helper. After
+such an operation, call `invalidate_peer_ip()` on the owning socket before reading its IP again. Keep
+these accesses on the owning thread. A released raw handle loses the cache; a fresh wrapper starts a new
+ownership period. The added cache changes the socket layout, so rebuild consumers according to the
+[binary compatibility policy](../../VERSIONING.md#binary-compatibility); its size depends on the target's
+layout and alignment, not just the size of a pointer.
+<!-- src: qb/src/qb/io/system/sys__socket.h:1218-1229 (peer_ip and invalidate_peer_ip) -->
+
 ### The CRTP sandwich, and the one rule the type system does not enforce
 
 A working session is three independent pieces glued by CRTP, and knowing which piece owns what is what makes the next rule make sense.
@@ -94,7 +119,7 @@ flowchart TB
     I -. "drives" .-> P
     P -. "reads _io.in(), writes _io.on(message)" .-> D
 ```
-<!-- src: qb/src/qb/io/async/tcp/client.h:46-52 (the base list), qb/src/qb/io/async/io.h:2116 (io), :2118-2119 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
+<!-- src: qb/src/qb/io/async/tcp/client.h:47-53 (the base list), qb/src/qb/io/async/io.h:2116 (io), :2118-2119 (the protocol members), qb/src/qb/io/transport/tcp.h:42 (the transport) -->
 
 **Base destruction order is the reverse of the base list — so the transport, which owns the fd, is destroyed *before* the `io<Derived>` base, which owns the watcher.** Leave the watcher armed until the `io<Derived>` destructor and libev's `ev_io_stop` runs against an already-closed descriptor, corrupting its per-fd bookkeeping (`anfds[fd]`). That is an intermittent use-after-close whose symptom is a later crash somewhere else entirely, in `clear_pending` or `fd_change`.
 
@@ -105,9 +130,9 @@ The fix is the same in every composition, and it is a **destructor body**, becau
     this->_async_event.stop();
 }
 ```
-<!-- src: qb/src/qb/io/async/tcp/client.h:229-231 -->
+<!-- src: qb/src/qb/io/async/tcp/client.h:233-235 -->
 
-Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:106-108`, `:229-231`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:107-109`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
+Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:107-109`, `:233-235`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:107-109`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
 
 **If you write your own composition of an `async::io`/`input`/`output` base with a transport, you owe it that destructor.** Nothing in the type system asks for it. Server-associated sessions are the most exposed case, because `dispose()` deliberately does *not* stop their watcher — the server owns that lifecycle — so without the destructor the watcher routinely outlives its fd (`src/qb/io/async/io.h:3269-3271`).
 
@@ -209,7 +234,7 @@ The Unix-domain-socket entry points (`connect_un`, `n_connect_un`, and `tcp::lis
 
 The timed `connect(endpoint, qb::duration)` overload performs a non-blocking connect and waits up to `wtimeout` for completion. Non-positive durations are clamped to zero, meaning a single poll. On expiry the call fails and the underlying error is read through the static base accessor `qb::io::socket::get_last_errno()` (it is not re-exported as a typed-socket member).
 
-Only a descriptor the `connect` over a list opens itself is replaced between two attempts: a socket already open before the call -- its descriptor may carry options -- gets the first address only (`src/qb/io/tcp/socket.cpp:116-129`). The by-name connects build their list with `qb::io::tcp::resolve_endpoints(af, host, port)`, every address of the family in the resolver's order (`src/qb/io/tcp/socket.cpp:87-97`); resolve on the [offload pool](./coroutines.md#offloading-blocking-work) and pass the list yourself when the lookup must stay off the loop.
+Only a descriptor the `connect` over a list opens itself is replaced between two attempts: a socket already open before the call -- its descriptor may carry options -- gets the first address only (`src/qb/io/tcp/socket.cpp:119-132`). The by-name connects build their list with `qb::io::tcp::resolve_endpoints(af, host, port)`, every address of the family in the resolver's order (`src/qb/io/tcp/socket.cpp:90-100`); resolve on the [offload pool](./coroutines.md#offloading-blocking-work) and pass the list yourself when the lookup must stay off the loop.
 
 <!-- src: qb/src/qb/io/tcp/socket.h -->
 
@@ -231,7 +256,7 @@ A blocking listener blocks in `accept()`; a non-blocking listener (`set_nonblock
 
 The server-side bind sets a platform-correct address-reuse option. On POSIX it sets `SO_REUSEADDR`, so a restarted listener can rebind its port immediately while old connections linger in `TIME_WAIT`. On Windows it instead sets `SO_EXCLUSIVEADDRUSE`: binding a port already in active use fails fast with `WSAEADDRINUSE`, and no other process can hijack (silently shadow) the port — Windows already allows rebinding `TIME_WAIT` ports with no option set, and its `SO_REUSEADDR` has hijack semantics that would let a second bind succeed yet never accept.
 
-**Sharing a port, by name (3.3).** `listen_options{.reuse_port = true}` sets `SO_REUSEPORT` between the socket's creation and its bind (`src/qb/io/tcp/listener.h:32-46`). Every listener that asks shares the port; one that did not ask is refused it, so two unrelated servers still never share one by accident. On Linux the kernel balances incoming connections across the listeners that share the port -- one listener per `VirtualCore`, each accepting and serving its own connections, with no acceptor handing sockets to another core. macOS and the BSDs share the bind without balancing. Windows has no such option, and a listen that asks for it fails with `ENOPROTOOPT` rather than binding a port nobody else may take (`src/qb/io/system/sys__socket.cpp:308-315`). The low-level twin is `socket::reuse_port(bool)`; `socket::reuse_address(bool)` sets `SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too, sharing the port of whoever called it without saying so (`src/qb/io/system/sys__socket.h:1229-1244`). A complete run is `examples/05-services/05-sharded-accept`: four cores, one port, the distribution measured.
+**Sharing a port, by name (3.3).** `listen_options{.reuse_port = true}` sets `SO_REUSEPORT` between the socket's creation and its bind (`src/qb/io/tcp/listener.h:32-46`). Every listener that asks shares the port; one that did not ask is refused it, so two unrelated servers still never share one by accident. On Linux the kernel balances incoming connections across the listeners that share the port -- one listener per `VirtualCore`, each accepting and serving its own connections, with no acceptor handing sockets to another core. macOS and the BSDs share the bind without balancing. Windows has no such option, and a listen that asks for it fails with `ENOPROTOOPT` rather than binding a port nobody else may take (`src/qb/io/system/sys__socket.cpp:313-320`). The low-level twin is `socket::reuse_port(bool)`; `socket::reuse_address(bool)` sets `SO_REUSEADDR` only since 3.3 -- it set `SO_REUSEPORT` too, sharing the port of whoever called it without saying so (`src/qb/io/system/sys__socket.h:1244-1259`). A complete run is `examples/05-services/05-sharded-accept`: four cores, one port, the distribution measured.
 
 <!-- src: qb/src/qb/io/tcp/listener.h -->
 
