@@ -218,8 +218,8 @@ That reference **stays valid until the handler or callback that obtained it retu
 
 The pipe is segmented (`qb::allocator::segmented_pipe`, `src/qb/system/allocator/segmented_pipe.h:377-378`). `allocate_back` has two branches, and neither moves anything already queued:
 
-- **Fast path** — the reservation fits in the tail segment: a compare and a cursor add (`src/qb/system/allocator/segmented_pipe.h:523-530`). Nothing moves.
-- **Growth** — the tail cannot hold the reservation, so a segment is taken from the core's pool (or carved from a slab, the first time) and linked behind it (`src/qb/system/allocator/segmented_pipe.h:466`). What the earlier segments hold is untouched; there is no reallocation and no compaction, so no earlier reference moves.
+- **Fast path** — the reservation fits in the tail segment: a compare and a cursor add (`src/qb/system/allocator/segmented_pipe.h:530-537`). Nothing moves.
+- **Growth** — the tail cannot hold the reservation, so a segment is taken from the core's pool (or carved from a slab, the first time) and linked behind it (`src/qb/system/allocator/segmented_pipe.h:473`). What the earlier segments hold is untouched; there is no reallocation and no compaction, so no earlier reference moves.
 
 What ends the reference is the engine **consuming** the event, and it only does that between handlers: the next receive pass for a same-core destination (`src/qb/core/VirtualCore.cpp:424-431`), the next flush for a remote one (`src/qb/core/VirtualCore.cpp:642`). So the reference is good for the rest of the handler that obtained it:
 

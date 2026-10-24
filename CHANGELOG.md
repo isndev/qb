@@ -846,6 +846,12 @@ policy.
   out-of-line first call that registers once (idempotent under the registry's lock, so racing threads
   agree). Apple clang 21 / M4 Pro, a one-core burst of a million one-bucket events: 3.45 -> 2.24 ns a
   push (v3.2.1: 2.83), 122 -> 100 instructions per event pushed and delivered.
+  Removing those instructions uncovered a stall they had been hiding: `segmented_pipe::allocate_back`
+  loaded its write cursor and its limit as one 16-byte `ldp`, and a 16-byte load that overlaps the
+  8-byte store of the cursor the previous allocation left in the store buffer cannot be forwarded,
+  so a reply followed by a push on the same pipe waited for that store to commit on every event
+  (savina/big, one core: +30 % against v3.2.1 with the guard gone). The read cursor now sits between
+  the two write cursors (`_wcur`, `_rcur`, `_wend`), two 8-byte loads: big 1c -12 %, counting 1c -23 %.
 
 - **A same-core `reply()` or `forward()` copies its event inline on arm64 again (macOS validation,
   2026-10-23).** The copy had an SSE2 path and, elsewhere, `memcpy(d + 24, s + 24, bytes - 24)`: a size
