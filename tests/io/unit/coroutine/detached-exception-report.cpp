@@ -12,7 +12,7 @@
  * @brief An exception escaping a DETACHED coroutine is reported, not silently dropped.
  *
  * `exception-propagation.cpp` covers the OWNED case: a `task<T>` someone awaits stores the
- * exception in its promise and `await_resume()` rethrows it (task.h:756-757). This file covers
+ * exception in its promise and `await_resume()` rethrows it (task.h:817-818). This file covers
  * the case with no owner — `qb::io::async::coro_scheduler().spawn(t)` — where that rethrow
  * never runs, because nothing awaits the frame.
  *
@@ -26,7 +26,7 @@
  *
  * `Actor::spawn` and `Actor::spawn_detached` were already fixed, by wrapping the user's body in
  * a coroutine that CATCHES and calls `qb::detail::report_unhandled_coroutine_exception`
- * (VirtualCore.h:1637-1644, 1658-1666). The free-function path has no such wrapper. The report
+ * (VirtualCore.h:1659-1666, 1680-1688). The free-function path has no such wrapper. The report
  * now happens in `final_suspend` itself, on the detached branch only.
  *
  * WHAT IS ASSERTED

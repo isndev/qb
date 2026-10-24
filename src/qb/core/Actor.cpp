@@ -680,10 +680,10 @@ Actor::is_active() const noexcept {
     return _alive && _activated;
 }
 
-Pipe
-Actor::getPipe(ActorId const dest) const noexcept {
-    return VirtualCore::_handler->getProxyPipe(dest, id());
-}
+// Actor::getPipe, Actor::to and the EventBuilder's constructor are inline at the tail of VirtualCore.h:
+// a 24-byte Pipe (ActorId64) comes back through memory from an out-of-line call, and every
+// getPipe(dest).push<E>() stored it and read it back. The lines below keep their numbers, which
+// documents and source comments cite.
 
 CoreId
 Actor::getIndex() const noexcept {
@@ -762,13 +762,13 @@ Actor::kill() const noexcept {
     VirtualCore::_handler->killActor(id());
 }
 
-Actor::EventBuilder::EventBuilder(Pipe const &pipe) noexcept
-    : dest_pipe(pipe) {}
-
-Actor::EventBuilder
-Actor::to(ActorId const dest) const noexcept {
-    return EventBuilder{getPipe(dest)};
-}
+// Actor::EventBuilder's constructor and Actor::to(ActorId) are inline at the tail of VirtualCore.h,
+// beside Actor::getPipe (see above): `to(dest).push<E>()` built its EventBuilder around a Pipe
+// returned through memory, as `getPipe(dest).push<E>()` did.
+//
+// This paragraph holds the seven lines the two definitions took, so that every line below keeps
+// the number documents and source comments cite (dev/agent/cite-sweep.py, check-source-citations.py).
+//
 
 namespace {
 

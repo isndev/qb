@@ -40,9 +40,17 @@ struct suspension_record {
     std::uint64_t stamp; ///< `qb::tsc_ticks()`, or `qb::mono_now()` in ns when the table has no counter
 };
 
+/// A `task` frame allocated with tracking on (`note_task_frame`): how to read whom it transfers back to, and the kind
+/// the record of the coroutine awaiting it carries.
+struct task_frame {
+    continuation_of_fn continuation;
+    char const        *kind;
+};
+
 struct suspension_table {
     std::unordered_map<void const *, suspension_record> records;              ///< with tracking on
     std::unordered_map<void const *, std::string>       names;                ///< the frames named at spawn, tracking or not
+    std::unordered_map<void const *, task_frame>        tasks;                ///< task frames allocated with tracking on
     double                                              ticks_per_ns = 0.;    ///< 0: the stamps are monotonic ns
     bool                                                calibrated   = false; ///< ticks_per_ns measured (the first time tracking went on)
 };
@@ -196,6 +204,25 @@ release_if_idle(suspension_table *t) noexcept {
     set_frames(false);
 }
 
+/// On GCC and Clang an awaited task's awaiter records nothing (coroutine/tracking.h, note_task_frame): the coroutine
+/// awaiting a task is recorded here instead, when the task -- or a coroutine it awaits -- parks. The parking frame is
+/// alive and on this thread, and so is each coroutine up its chain, suspended in a `co_await`: from the parking frame
+/// up, each registered task names the coroutine it transfers back to, recorded as waiting on it since now -- the first
+/// recorded suspension under the await, so the task's synchronous start is not counted. A link already recorded ends
+/// the walk: the chain above it was recorded with it, and nothing up there can have parked since.
+void
+record_awaiting_tasks(suspension_table &t, void const *child, std::uint64_t const now) {
+    for (auto f = t.tasks.find(child); f != t.tasks.end(); f = t.tasks.find(child)) {
+        void const *const parent = f->second.continuation(child);
+        if (!parent)
+            return;
+        if (auto const r = t.records.find(parent); r != t.records.end() && r->second.waits_on == child)
+            return;
+        t.records.insert_or_assign(parent, suspension_record{f->second.kind, child, now});
+        child = parent;
+    }
+}
+
 } // namespace
 
 void
@@ -204,9 +231,11 @@ note_suspension(void *frame, char const *kind, void const *waits_on) noexcept {
     if (!t)
         return;
     try {
-        t->records.insert_or_assign(frame, suspension_record{kind, waits_on, stamp(*t)});
+        const std::uint64_t now = stamp(*t);
+        t->records.insert_or_assign(frame, suspension_record{kind, waits_on, now});
+        record_awaiting_tasks(*t, frame, now);
     } catch (...) {
-        // out of memory: this suspension goes unrecorded, the coroutine is not affected
+        // out of memory: this suspension, or the record of a coroutine awaiting it, goes unrecorded; nothing else
     }
 }
 
@@ -217,9 +246,52 @@ forget_frame(void const *frame) noexcept {
         return;
     if (!t->records.empty())
         t->records.erase(frame);
+    if (!t->tasks.empty())
+        if (auto const f = t->tasks.find(frame); f != t->tasks.end()) {
+            // the coroutine that awaited this task waits on it no longer; the pool hands this address to its next task
+            if (auto const r = t->records.find(f->second.continuation(frame)); r != t->records.end() && r->second.waits_on == frame)
+                t->records.erase(r);
+            t->tasks.erase(f);
+        }
     if (!t->names.empty() && t->names.erase(frame) != 0)
         release_if_idle(t);
 }
+
+void
+note_task_frame(void const *frame, continuation_of_fn continuation, char const *kind) noexcept {
+    if (!suspension_tracking::on)
+        return;
+    auto *t = table();
+    if (!t)
+        return;
+    try {
+        t->tasks.insert_or_assign(frame, task_frame{continuation, kind});
+    } catch (...) {
+        // out of memory: the coroutine awaiting this frame keeps its previous record in a dump, it is not affected
+    }
+}
+
+#if !(defined(_MSC_VER) && !defined(__clang__))
+void
+note_suspension_if_tracked(void *frame, char const *kind, void const *waits_on) noexcept {
+    if (suspension_tracking::on)
+        note_suspension(frame, kind, waits_on);
+}
+
+std::coroutine_handle<>
+track_then_if_tracked(void *frame, char const *kind, void const *waits_on, std::coroutine_handle<> next) noexcept {
+    if (!suspension_tracking::on)
+        return next; // another thread opened the gate: this one does not track, the transfer goes straight on
+    suspension_tracking::pending = pending_suspension{frame, kind, waits_on, next};
+    return std::coroutine_handle<>::from_address(suspension_tracking::recorder);
+}
+
+void
+forget_frame_if_seen(void const *frame) noexcept {
+    if (suspension_tracking::frames)
+        forget_frame(frame);
+}
+#endif
 
 bool
 name_frame(void const *frame, std::string_view const name) noexcept {
@@ -266,8 +338,10 @@ bool
 set_thread_tracking(bool const enable) noexcept {
     if (!enable) {
         (void) set_on(false);
+        CoroutineFrameAllocator::set_tracking(false);
         if (auto *t = table()) {
             t->records.clear();
+            t->tasks.clear();
             release_if_idle(t);
         }
         return true;
@@ -284,6 +358,7 @@ set_thread_tracking(bool const enable) noexcept {
         return false; // out of memory: no recorder, tracking stays off
     }
     set_frames(true);
+    CoroutineFrameAllocator::set_tracking(true); // every frame allocated from here registers (task.h)
     return true;
 }
 

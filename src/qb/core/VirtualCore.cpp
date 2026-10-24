@@ -1448,10 +1448,10 @@ VirtualCore::unregisterCallback(ActorId const id) noexcept {
 }
 
 // Event Api
-Pipe
-VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
-    return {__getPipe__(dest.index()), dest, source};
-}
+// VirtualCore::getProxyPipe is inline at the tail of VirtualCore.h with Actor::getPipe, which
+// returns its 24-byte Pipe: out of line, the Pipe went back through memory on every
+// getPipe(dest).push<E>(). The lines are kept, which documents cite.
+//
 
 bool
 VirtualCore::try_send(Event const &event) const noexcept {
@@ -1507,7 +1507,7 @@ void
 VirtualCore::reply_local(Event &event) noexcept {
     auto *const       raw   = _self_pipe.allocate_back(event.bucket_size);
     const std::size_t bytes = event.bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES;
-    if (bytes > 64) {
+    if (bytes > QB_LOCKFREE_EVENT_BUCKET_BYTES) { // more than one bucket (a literal 64 sent every arm64 event here)
         // Copy the contiguous range before composing its final reply header.
         // Use memcpy's returned destination; capture the header only after the call.
         auto *const   d           = static_cast<unsigned char *>(std::memcpy(raw, &event, bytes));
@@ -1547,7 +1547,12 @@ VirtualCore::reply_local(Event &event) noexcept {
         std::memcpy(d + 24, s + 24, bytes - 24);
     }
 #else
-    std::memcpy(d + 24, s + 24, bytes - 24);
+    // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
+    // call to memmove on every event of a target without SSE2 (arm64: 128-byte buckets).
+    if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
+        std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
+    else
+        std::memcpy(d + 24, s + 24, bytes - 24);
 #endif
     event.state.bits.alive = 1;
     return;
@@ -1593,7 +1598,12 @@ VirtualCore::forward(ActorId const dest, Event &event) noexcept {
             std::memcpy(d + 24, s + 24, bytes - 24);
         }
 #else
-        std::memcpy(d + 24, s + 24, bytes - 24);
+        // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
+        // call to memmove on every event of a target without SSE2 (arm64: 128-byte buckets).
+        if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
+            std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
+        else
+            std::memcpy(d + 24, s + 24, bytes - 24);
 #endif
         event.dest             = dest;
         event.state.bits.alive = 1;

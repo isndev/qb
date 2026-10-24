@@ -141,7 +141,7 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // awaits the frame, so `await_resume()` (the only place that rethrows) never runs and the
 // exception dies with the promise. `Actor::spawn` / `spawn_detached` already report through
 // `qb::detail::report_unhandled_coroutine_exception` because their wrapper coroutines CATCH
-// (VirtualCore.h:1637-1644, 1658-1666) and therefore leave the wrapper promise clean — so they do
+// (VirtualCore.h:1659-1666, 1680-1688) and therefore leave the wrapper promise clean — so they do
 // not reach here and cannot double-report. The free-function path,
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
@@ -198,6 +198,17 @@ void report_abandoned_coroutine_frames(std::size_t count, void const *scheduler)
 // [, align_val_t]) only under __cpp_sized_deallocation, and clang leaves that off (<= 18).
 namespace detail {
 
+/// The coroutine a `task` frame transfers back to, read through its promise type (the registry's reader,
+/// coroutine/tracking.h): null until it is awaited. Read only from a live frame on its own thread -- one that parks, a
+/// coroutine suspended in a `co_await` up its chain, one being destroyed. On GCC and Clang a frame's address is the
+/// block its `operator new` returned, which is what the frame is registered under.
+template <typename Promise>
+[[nodiscard]] void const *
+task_continuation_of(void const *frame) noexcept {
+    auto const h = std::coroutine_handle<Promise>::from_address(const_cast<void *>(frame));
+    return promise_of(h).continuation_.address(); // promise_of: QB-200's over-aligned promise
+}
+
 class CoroutineFrameAllocator {
 public:
     // Cache line: a coroutine frame may hold a by-value qb::Event subtype, which
@@ -217,24 +228,38 @@ public:
     // baseline after coroutines complete, guarding against frame leaks.
     QB_ABI_ANCHOR static inline thread_local long live_frames = 0;
 
+    /// The frame of a coroutine whose promise is `Promise`, awaited under `*Kind` (suspension tracking,
+    /// coroutine/tracking.h). The fast path is the pool's: a bucket's head, popped. Everything else -- an oversized
+    /// frame, an empty bucket, and every frame while this thread tracks its suspensions -- is `allocate_slow`, one
+    /// call, so that a coroutine's ramp (where this inlines) is the size it was before tracking existed: a test added
+    /// here cost parallel_map +2.5 % on Apple clang 21 -- not its own instructions but the ramps it stopped inlining.
+    template <typename Promise, char const *const *Kind>
     [[nodiscard]] static void *
     allocate(std::size_t size) {
         ++live_frames;
         const std::size_t idx = bucket_index(size);
-        if (idx == 0 || idx > kMaxBucket) {
-            return ::operator new(size, std::align_val_t{kAlign});
+        if (idx != 0 && idx <= kMaxBucket) {
+            // pool() lazily constructs the thread_local BucketPool on first use,
+            // which sets pool_alive(). allocate() is only ever called from a running
+            // coroutine (never from a destructor during thread teardown), so the pool
+            // is always in its alive window here.
+            auto &head = (*pool().active)[idx - 1];
+            if (head) {
+                void *p = head;
+                head    = *static_cast<void **>(p);
+                return p;
+            }
         }
-        // buckets() lazily constructs the thread_local BucketPool on first use,
-        // which sets pool_alive(). allocate() is only ever called from a running
-        // coroutine (never from a destructor during thread teardown), so the pool
-        // is always in its alive window here.
-        auto &head = buckets()[idx - 1];
-        if (head) {
-            void *p = head;
-            head    = *static_cast<void **>(p);
-            return p;
-        }
-        return ::operator new(idx * kAlign, std::align_val_t{kAlign});
+        return allocate_slow<Promise, Kind>(size);
+    }
+
+    /// While a thread tracks its suspensions, every frame it allocates goes through `allocate_slow`, which registers
+    /// it (`note_task_frame`): the pool's heads are read through `active`, pointed at an array of empty buckets, so
+    /// that the fast path finds nothing and falls through -- no test of its own. Frees still go to the real heads.
+    static void
+    set_tracking(bool const on) noexcept {
+        auto &p  = pool();
+        p.active = on ? &empty_buckets() : &p.heads;
     }
 
     static void
@@ -252,9 +277,31 @@ public:
             ::operator delete(p, std::align_val_t{kAlign});
             return;
         }
-        auto &head               = buckets()[idx - 1];
+        auto &head               = pool().heads[idx - 1];
         *static_cast<void **>(p) = head;
         head                     = p;
+    }
+
+    /// The slow path of `allocate`: the oversized frame, the empty bucket, and, while this thread tracks, every frame,
+    /// registered here under its promise type and `*Kind` -- out of line, so the ramp never sees the frame's address
+    /// reach a call. Only the frame of a `task` promise comes here (QB_CORO_PROMISE_POOLED_NEW_DELETE).
+    template <typename Promise, char const *const *Kind>
+    [[nodiscard]] static QB_NOINLINE void *
+    allocate_slow(std::size_t size) {
+        auto             &pl  = pool();
+        const std::size_t idx = bucket_index(size);
+        void             *p;
+        if (idx == 0 || idx > kMaxBucket) {
+            p = ::operator new(size, std::align_val_t{kAlign});
+        } else if (auto &head = pl.heads[idx - 1]; head) {
+            p    = head;
+            head = *static_cast<void **>(p);
+        } else {
+            p = ::operator new(idx * kAlign, std::align_val_t{kAlign});
+        }
+        if (pl.active != &pl.heads)
+            note_task_frame(p, &task_continuation_of<Promise>, *Kind);
+        return p;
     }
 
 private:
@@ -292,7 +339,8 @@ private:
     // Blocks were allocated bucket-sized (idx * kAlign) and cache-line aligned, and are
     // freed with the aligned -- UNSIZED -- ::operator delete; the size is a hint, not a contract.
     struct BucketPool {
-        BucketArray heads{};
+        BucketArray  heads{};
+        BucketArray *active = &heads; ///< `heads`, or `empty_buckets()` while this thread tracks (set_tracking)
         BucketPool() noexcept {
             pool_alive() = true;
         }
@@ -311,31 +359,40 @@ private:
         }
     };
 
-    QB_ABI_ANCHOR static BucketArray &
-    buckets() noexcept {
+    QB_ABI_ANCHOR static BucketPool &
+    pool() noexcept {
         thread_local BucketPool pool;
-        return pool.heads;
+        return pool;
+    }
+
+    /// The buckets a tracking thread's `allocate` reads: never written (a head is written only when it is non-null).
+    QB_ABI_ANCHOR static BucketArray &
+    empty_buckets() noexcept {
+        static BucketArray empty{};
+        return empty;
     }
 };
 
 // Mixin helper: inherit from this (or paste via explicit forwarding) to get
 // the pooled new/delete pair. We inject the operators via a macro rather
 // than a CRTP base to keep the promise layout identical (coroutine frames
-// are sensitive to promise size / alignment).
-#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                                               \
-    static void *operator new(std::size_t sz) {                                                           \
-        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);                            \
-    }                                                                                                     \
-    static void operator delete(void *p, std::size_t sz) noexcept {                                       \
-        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);                              \
-    }                                                                                                     \
-    static void operator delete(void *p) noexcept {                                                       \
-        /* Unsized delete fallback (used when sized-deallocation is off).   */                            \
-        /* We cannot recover the original bucket index, so we surrender the */                            \
-        /* block to the global allocator — correct but slower. Modern C++20 */                            \
-        /* compilers default to sized deallocation, so this path is cold.   */                            \
-        /* Match allocate()'s aligned ::operator new.                       */                            \
-        ::operator delete(p, std::align_val_t{::qb::io::async::detail::CoroutineFrameAllocator::kAlign}); \
+// are sensitive to promise size / alignment). While a thread tracks suspensions, the frame is registered by the
+// allocator's slow path under the enclosing task's `qb_suspension_kind` (CoroutineFrameAllocator::allocate_slow); an
+// elided frame never parks and runs no `operator new`: it needs no entry.
+#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                                                       \
+    static void *operator new(std::size_t sz) {                                                                   \
+        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate<promise_type, &qb_suspension_kind>(sz); \
+    }                                                                                                             \
+    static void operator delete(void *p, std::size_t sz) noexcept {                                               \
+        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);                                      \
+    }                                                                                                             \
+    static void operator delete(void *p) noexcept {                                                               \
+        /* Unsized delete fallback (used when sized-deallocation is off).   */                                    \
+        /* We cannot recover the original bucket index, so we surrender the */                                    \
+        /* block to the global allocator — correct but slower. Modern C++20 */                                    \
+        /* compilers default to sized deallocation, so this path is cold.   */                                    \
+        /* Match allocate()'s aligned ::operator new.                       */                                    \
+        ::operator delete(p, std::align_val_t{::qb::io::async::detail::CoroutineFrameAllocator::kAlign});         \
     }
 
 /**
@@ -724,10 +781,14 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
+#if defined(_MSC_VER) && !defined(__clang__)
         // Suspension tracking: recorded LAST, on the cold branch (coroutine/tracking.h, track_then), once the
         // continuation is set and before the transfer -- nothing resumes in between.
         if (detail::tracking_on()) [[unlikely]]
             return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
+#endif
+        // GCC and Clang record nothing here: a call would keep Clang from eliding a synchronous child into its caller,
+        // and the caller's record is derived from this frame's registration (note_task_frame) when a dump reads them.
         // Symmetric transfer: return the handle to resume
         // The compiler will resume it directly without recursion
         return handle_;
@@ -1005,9 +1066,12 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
+#if defined(_MSC_VER) && !defined(__clang__)
         // Suspension tracking: recorded last, on the cold branch, as in task<T>::await_suspend.
         if (detail::tracking_on()) [[unlikely]]
             return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
+#endif
+        // GCC and Clang: derived from the frame's registration, as in task<T>::await_suspend.
         // Symmetric transfer: return the handle to resume
         return handle_;
     }

@@ -797,6 +797,58 @@ policy.
 
 ### Fixed
 
+- **Clang: suspension tracking off costs a load and a branch again (macOS validation, 2026-10-23).**
+  Written inline as `gate && thread_local`, the test let Clang on Darwin compute the thread_local's
+  address -- a call through its TLV descriptor -- before the gate, on every suspension and frame
+  destruction with tracking off, and the inline record cost the transfer awaiters two saved registers.
+  On GCC and Clang the inline half is now the gate alone; the thread-local test and the record are
+  the cold, out-of-line half (`note_suspension_if_tracked`, `track_then_if_tracked`,
+  `forget_frame_if_seen`). MSVC keeps its measured shape. Apple clang 21 / M4 Pro against v3.2.1:
+  async_stream filter/map/reduce +24.2 % -> +1.4 %.
+
+- **Clang: an awaited `task` is elided into its caller again with tracking compiled in (macOS
+  validation, 2026-10-24).** The awaiter of a `task` recorded, at the `co_await`, that its coroutine
+  waits on the task's frame -- and a frame whose address reaches a call is one Clang does not
+  allocate inside its caller (CoroElide): every synchronous `co_await helper()` paid a heap frame
+  (parallel_map +3 % against v3.2.1). On GCC and Clang that awaiter now records nothing: a `task` frame
+  allocated while its thread tracks is registered by the frame allocator's slow path
+  (`CoroutineFrameAllocator::allocate_slow`, `note_task_frame`), and the coroutine awaiting it is
+  recorded -- kind `task`, the task as `waits_on`, aged from then -- when the task, or a coroutine
+  under it, parks (`record_awaiting_tasks`, coroutine/tracking.cpp); the record goes with the task's
+  frame. An elided frame never parks and runs no `operator new`, so it needs no entry. The allocator
+  tests nothing on its fast path: a tracking thread reads the pool's heads through a pointer at an
+  array of empty buckets, so every allocation falls through to the slow path -- a test written in
+  `operator new` had cost parallel_map +2.5 % through the ramps Clang stopped inlining, not through
+  its own instructions. MSVC records at the await as before and the derived record defers to it.
+  Apple clang 21 / M4 Pro against v3.2.1: parallel_map +3.0 % -> +0.4 %, shared_task fan-out +2.0 % ->
+  -0.1 %, the stream cell +1.4 %, instructions per parallel_map item back to v3.2.1's. Pinned by
+  `ACoroutineAwaitingATaskWaitsSinceTheTaskParkedNotSinceItsOwnEarlierWait`
+  (`tests/io/system/coroutine/suspension-tracking.cpp`): the derived record replaces the one the
+  coroutine's earlier wait left, and the next task the pool hands a freed frame to does not inherit it.
+
+- **Broadcast fan-out back below v3.2.1 (macOS validation, 2026-10-23).** The broadcast snapshots
+  (`router::internal::snapshot_stack`) keep their region storage (QB-1012) but append by store and
+  index: `push_back` on a `std::vector` with a non-default allocator ran libc++'s construct transaction
+  per element. And the two-bank walk of ActorId64's partitioned table is one loop kept rolled: its two
+  copies of the body let the AArch64 machine outliner fold them into two calls per occupied slot.
+  Eight-sink `BM_Fanout_Deliveries<Broadcast>`, Apple clang 21: develop +23.3 %, now -10.4 % against
+  v3.2.1.
+
+- **A same-core `reply()` or `forward()` copies its event inline on arm64 again (macOS validation,
+  2026-10-23).** The copy had an SSE2 path and, elsewhere, `memcpy(d + 24, s + 24, bytes - 24)`: a size
+  known only at run time, so a call into the C library on every event of a target without SSE2; and
+  `reply_local` routed every event over 64 bytes -- every event of an arm64 build, whose bucket is the
+  128-byte cache line -- to its whole-range `memcpy`. A one-bucket event now takes a constant-size copy
+  (`event_wire::copy_reply`, `VirtualCore::reply_local`, `VirtualCore::forward`) and the multi-bucket
+  test is the bucket size. Savina Big, one core, spinning, against v3.2.1: develop +3.8 %, now -9.8 %.
+
+- **`getPipe(dest).push<E>()` and `to(dest).push<E>()` no longer pay a `Pipe` round trip through
+  memory (macOS validation, 2026-10-23).** A `Pipe` is 24 bytes since ActorId64, past what AAPCS64
+  and SysV return in registers; `Actor::getPipe`, `Actor::to`, the `EventBuilder` constructor and
+  `VirtualCore::getProxyPipe` are now inline at the tail of `VirtualCore.h` (they are no longer
+  exported symbols of libqb-core). Apple clang 21, one million messages against v3.2.1: PipePush and
+  ToPush +4 to +5 % before, -2 % on one core and -5 % across cores now.
+
 - **Async TCP connector startup releases retained work on exception (Huly QB-169).**
   `run()` invalidates attempts, unregisters its I/O watcher, disconnects the socket it still
   owns and releases its self-hold before rethrowing. It does not generate another completion

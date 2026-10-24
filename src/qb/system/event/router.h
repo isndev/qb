@@ -108,6 +108,36 @@ struct dense_index<Key> {
 
 namespace internal {
 
+/**
+ * @brief A broadcast's handler snapshot, one per thread and router type: a stack of `[base, end)`
+ *        frames -- a handler may broadcast again -- held as a region of slots and a logical end.
+ * @details An append is a store and an increment. Appended through `push_back` on a `region_stack`
+ *          (a `std::vector` on a non-default allocator), each element paid libc++'s construct
+ *          transaction, its end pointer spilled to the stack and reloaded (Apple clang 21: the
+ *          eight-sink broadcast fan-out +22 % against v3.2.1, which appended to a `std::vector` with
+ *          the default allocator). The slots stay a region past 64 KiB (Huly QB-1012), grown by
+ *          doubling out of line; a frame is popped by setting `end` back to its base.
+ */
+template <typename T>
+struct snapshot_stack {
+    qb::allocator::region_vector<T> slots;
+    std::size_t                     end = 0;
+
+    void
+    push(T const &value) {
+        if (end == slots.size()) [[unlikely]]
+            grow();
+        slots[end++] = value;
+    }
+
+    QB_NOINLINE void
+    grow() {
+        std::size_t const capacity = slots.size();
+        qb::allocator::detail::region_resize(slots, capacity != 0 ? capacity * 2 : 16,
+                                             capacity * 4 > 65536 ? capacity * 4 : std::size_t{65536});
+    }
+};
+
 // The generic table keeps occupancy independent of Value: even Value{} or nullptr
 // can be a present entry. Alternative storage must be selected explicitly.
 struct explicit_key_occupancy {
@@ -412,14 +442,24 @@ public:
     for_each(Func &&f) const {
         if constexpr (dense) {
             if constexpr (partitioned) {
-                // Preserve the former service-before-ordinary traversal on a core.
-                for (auto const &slot : _table.secondary)
+                // Preserve the former service-before-ordinary traversal on a core. One loop over the two
+                // banks, kept rolled, not one loop per bank: two copies of the body let the AArch64 machine
+                // outliner fold them into shared calls, two calls per occupied slot of every broadcast walk
+                // (Apple clang 21: the eight-sink broadcast fan-out +15 % at ActorId64's integration).
+#if defined(__clang__)
+#pragma clang loop unroll(disable)
+#elif defined(__GNUC__)
+#pragma GCC unroll 1
+#endif
+                for (Dense const *bank : {&_table.secondary, &_table.primary})
+                    for (auto const &slot : *bank)
+                        if (slot.occupied())
+                            f(slot.key, slot.value);
+            } else {
+                for (auto const &slot : primary_table())
                     if (slot.occupied())
                         f(slot.key, slot.value);
             }
-            for (auto const &slot : primary_table())
-                if (slot.occupied())
-                    f(slot.key, slot.value);
         } else {
             for (auto const &it : _table)
                 f(it.first, it.second);
@@ -639,19 +679,19 @@ private:
                         return; // another core's: reported, disposed by route() (Huly QB-268)
                 }
                 // Snapshot before dispatch: a handler may (un)subscribe on THIS table.
-                static thread_local qb::allocator::detail::region_stack<_Handler *> bcast_snapshot;
-                const std::size_t                                                   base = bcast_snapshot.size();
+                static thread_local internal::snapshot_stack<_Handler *> bcast_snapshot;
+                const std::size_t                                        base = bcast_snapshot.end;
                 struct RestoreSnapshot {
-                    qb::allocator::region_vector<_Handler *> &entries;
-                    std::size_t                               base;
+                    internal::snapshot_stack<_Handler *> &entries;
+                    std::size_t                           base;
                     ~RestoreSnapshot() {
-                        entries.resize(base);
+                        entries.end = base;
                     }
                 } restore{bcast_snapshot, base};
-                _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push_back(handler); });
-                const std::size_t end = bcast_snapshot.size();
+                _subscribed_handlers.for_each([](auto const &, _Handler *const handler) { bcast_snapshot.push(handler); });
+                const std::size_t end = bcast_snapshot.end;
                 for (std::size_t i = base; i < end; ++i)
-                    invoke(*bcast_snapshot[i], event);
+                    invoke(*bcast_snapshot.slots[i], event);
                 return;
             }
         }
@@ -878,23 +918,23 @@ public:
             if (!_RawEvent::__broadcast_here__(event))
                 return; // another core's: reported, disposed by route() (Huly QB-268)
         }
-        static thread_local qb::allocator::detail::region_stack<Entry> bcast_snapshot;
-        const std::size_t                                              base = bcast_snapshot.size();
+        static thread_local internal::snapshot_stack<Entry> bcast_snapshot;
+        const std::size_t                                   base = bcast_snapshot.end;
         struct RestoreSnapshot {
-            qb::allocator::region_vector<Entry> &entries;
-            std::size_t                          base;
+            internal::snapshot_stack<Entry> &entries;
+            std::size_t                      base;
             ~RestoreSnapshot() {
-                entries.resize(base);
+                entries.end = base;
             }
         } restore{bcast_snapshot, base};
-        _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push_back(entry); });
-        const std::size_t end = bcast_snapshot.size();
+        _subscribed_handlers.for_each([](auto const &, Entry const &entry) { bcast_snapshot.push(entry); });
+        const std::size_t end = bcast_snapshot.end;
         for (std::size_t i = base; i < end; ++i) {
             // `subscribe()` always sets both fields atomically, so the function pointer is
             // never null for a live entry (finding 2.17, C++23 `[[assume]]`); load into
             // locals so the predicate is side-effect-free.
-            const auto  dispatch = bcast_snapshot[i].dispatch;
-            auto *const target   = bcast_snapshot[i].handler;
+            const auto  dispatch = bcast_snapshot.slots[i].dispatch;
+            auto *const target   = bcast_snapshot.slots[i].handler;
             QB_ASSUME(dispatch != nullptr);
             dispatch(target, event);
         }

@@ -106,18 +106,18 @@ task<void> caller() {
 
 | Property | Detail | Source |
 |---|---|---|
-| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:436`, `:817` |
-| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:508-509` |
-| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:675-676`, `:697-698` |
-| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:572`, `:756-757` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:724-725` |
-| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:201` |
+| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:493`, `:878` |
+| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:565-566` |
+| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:732-733`, `:754-755` |
+| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:629`, `:817-818` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:781-782` |
+| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:212` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:748-766 -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:809-827 -->
 
 > `task<T>` is move-only. Pass it to `spawn` (or any consumer) with `std::move`. `coro_scheduler().spawn(t)` is a compile error; write `coro_scheduler().spawn(std::move(t))`. See the [`spawn(Callable)` overload](#the-scheduler) for the case where you want to hand a lambda directly.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:697-698; scheduler.h:458 (Factbook) -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:754-755; scheduler.h:458 (Factbook) -->
 
 ### `shared_task<T>` — one computation, many awaiters
 
@@ -402,7 +402,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:627`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:936`) | connect success, failure, or the connector's own deadline |
 | `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
-| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:725`) | the inner coroutine finishing |
+| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:782`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:453`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:794`) | whichever comes first |
@@ -428,7 +428,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:133-135`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:492-493`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1219-1220`); a destroyed `ch.recv()` whose sender already wrote through its result slot re-buffers the value so the message is not lost (`channel.h:303-305`). The send side has nothing to repair: a parked `ch.send()` or `send_for()` is served by its wake, which hands the value over before resuming it, so a sender reclaimed after its wake has sent, exactly once (Huly QB-272).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:488-495`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
-`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:665-668`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
+`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:722-725`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
 
 One consequence for your own code: **a coroutine's locals are destroyed at `co_return`, not when the frame is later freed.** Anything a deferred operation needs must be owned by the frame — a parameter or a capture — not borrowed from a caller's stack.
 
@@ -824,7 +824,7 @@ public:
 | Event handlers stay `void on(Event&)` | `registerEvent` requires a `void` handler; a `task<void> on(Event&)` breaks actor dispatch | `Actor.h:1016` |
 | Use `spawn()` (or `spawn_detached()`) for coroutine work | isolates the coroutine from live actor state | `Actor.h:1521`, `:1484` |
 | Capture by **value** inside the lambda | a reference (or `this`) dangles after the first `co_await` | `Actor.h:1443-1445`, `:1501-1502`; examples/03-coroutines/02-actor-coroutines.cpp:138 |
-| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1721-1734` (`push` and `push_to`); `qb/src/qb/system/event/router.h:839-858` (missing destination → report), `:783-793` (dispose), `qb/src/qb/core/VirtualCore.cpp:1789-1793` (dead letter); when the event type itself is unregistered, `qb/src/qb/system/event/router.h:1451-1489` |
+| Communicate via `ctx.push` / `ctx.push_to` | preserves message-passing semantics; an event addressed to an actor that is already gone finds no subscribed handler, so it is reported as a dead letter and disposed instead of delivered | `Actor.h:1721-1734` (`push` and `push_to`); `qb/src/qb/system/event/router.h:879-898` (missing destination → report), `:823-833` (dispose), `qb/src/qb/core/VirtualCore.cpp:1799-1803` (dead letter); when the event type itself is unregistered, `qb/src/qb/system/event/router.h:1491-1529` |
 | Process results in a synchronous handler | guarantees exclusive access to actor state | `Actor.h:1439-1441` |
 
 `spawn()` and `spawn_detached()` must be called on the actor's own `VirtualCore` thread (each debug-asserts that a thread-local scheduler exists). They are the only supported way to use coroutines inside an actor — `run`, `run_for` and `run_sync` block that thread, and [the framework's guard does not fire from a handler](./async_system.md#the-guard-and-what-it-actually-checks).
@@ -883,7 +883,7 @@ for (int i = 0; i < 5; ++i) {
 ```
 
 Three rules cover every case: function parameters are copied into the coroutine frame, so passing data as an argument is always safe; the `spawn(Callable)` and `coroutine_scope::spawn(Callable)` overloads move the closure into an owning frame for you; and a coroutine local lives until `co_return`, not until the frame is destroyed. Note that a coroutine's locals are destroyed at `co_return` — not when the spawned frame is later freed — so anything a deferred operation needs must be owned by the frame (a parameter or a capture), not borrowed from a caller stack.
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:573-604 (spawn Callable), :1036 (invoke_owned_), task.h:697-698; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:601 -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:573-604 (spawn Callable), :1036 (invoke_owned_), task.h:754-755; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:601 -->
 
 > **Scheduler teardown.** `~CoroutineScheduler` destroys only ready-queue frames it owns plus deferred completed frames; *suspended* frames are intentionally left alone because their libev watchers still reference them. Stop the event loop before destroying the scheduler. The listener does this on its own destruction (`reset_coro_scheduler()` runs `destroy_all_suspended()` first, so a frame parked on the listener's scheduler is destroyed, not abandoned), and a `VirtualCore` does the same at its teardown through `recycle_coro_scheduler()`, which keeps the scheduler and its storage for the next engine on the thread; a scheduler owned directly and destroyed with frames still suspended abandons them, and says so in every build: one WARNING line on `qb::io::cerr` and the count added to `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally (Huly QB-84).
 <!-- src: qb/src/qb/io/async/coroutine/scheduler.h:336-366 (rationale), :367-371, :396-433 (teardown, the abandoned-frame report at :424-425), :386-390 (`recycle()`), task.h:150-164 (report_abandoned_coroutine_frames / abandoned_coroutine_frames_total) -->
@@ -934,12 +934,15 @@ is actually parked; `dump()` returns the same as `std::vector<parked_coroutine>`
 
 | | Tracking off (the default) | Tracking on |
 |---|---|---|
-| A suspension costs | one load of a process-wide count and one branch while no thread tracks — names or not — no thread-local access, no clock, nothing in the frame | a record: kind, the CPU counter, the awaited frame; a task's or a generator's hand-over takes one more hop, through the thread's recorder coroutine |
+| A suspension costs | one load of a process-wide count and one branch while no thread tracks — names or not — no thread-local access, no clock, nothing in the frame | a record: kind, the CPU counter, the awaited frame; a generator's hand-over takes one more hop, through the thread's recorder coroutine, and every `task` frame is allocated through the frame pool's slow path, registered |
 | A frame's destruction costs | the same while no thread tracks or names; one thread-local read while one does | the erasure of its record (a hash lookup) |
 | The dump lists | the roots, by name, and the coroutines parked on a loop watcher (`"watcher"`) | every coroutine parked on a labelled awaiter, with its age, chained through the tasks and generators it awaits |
 
-Every awaiter of qb and of the modules labels its suspension in `await_suspend` — first thing, or, for the two that
-hand the thread straight to another coroutine (a task's, a generator's), last, just before they hand it over:
+Every awaiter of qb and of the modules labels its suspension in `await_suspend` — first thing, or, for a generator's,
+which hands the thread straight to the producer, last, just before it hands it over. A `task`'s awaiter records nothing
+on GCC and Clang: the coroutine awaiting a task is recorded when the task, or a coroutine under it, parks — from the
+frame the allocator registered — and a task that completes without parking leaves no record (a call in that awaiter,
+with or without a frame's address, is what kept Clang from allocating a synchronous child inside its caller):
 
 | Kind | Waits on | Header |
 |---|---|---|
@@ -958,6 +961,8 @@ What to know before reading a dump:
 
 - **It is per thread.** Tracking, records and the dump belong to the thread that runs the coroutines; call them
   there. Turning tracking on records the suspensions from then on, and turning it off drops every record.
+- **A coroutine awaiting a task is listed once the task parks**, and its age counts from then: before that, it shows
+  its previous wait, as a coroutine in the ready queue does.
 - **A record is the coroutine's LAST labelled suspension.** A coroutine already in the ready queue still shows the
   wait it is leaving. An awaitable of your own labels itself with `qb::io::async::track_suspension(h, "kind")` as
   the first statement of its `await_suspend` — `kind` must outlive the wait; a literal — or the coroutine parked on
@@ -971,7 +976,7 @@ What to know before reading a dump:
   pays nothing for them: the test is the one the promise destructor already makes for the records.
 - `dump()` allocates and sorts the parked coroutines: a diagnostic, not a hot-path call.
 
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:309 (parked_coroutine), :611/:618 (spawn with a name), :633/:637 (set_suspension_tracking/suspension_tracking), :647/:651 (dump/dump to a stream); qb/src/qb/io/async/coroutine/tracking.h:125 (the branch), :164 (track_suspension for your own awaitable); qb/src/qb/io/async/coroutine/tracking.cpp:342 (longest waits first); qb/src/qb/core/Actor.h:1531/:1535 (spawn/spawn_detached with a name) -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:309 (parked_coroutine), :611/:618 (spawn with a name), :633/:637 (set_suspension_tracking/suspension_tracking), :647/:651 (dump/dump to a stream); qb/src/qb/io/async/coroutine/tracking.h:140 (the branch), :222 (track_suspension for your own awaitable); qb/src/qb/io/async/coroutine/tracking.cpp:417 (longest waits first); qb/src/qb/core/Actor.h:1531/:1535 (spawn/spawn_detached with a name) -->
 
 ## Debug tracing
 
