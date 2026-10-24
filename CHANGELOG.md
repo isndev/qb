@@ -7,13 +7,6 @@ policy.
 
 ## [Unreleased]
 
-### Added
-
-- **Snapshot adapters for autonomous listener metrics (Huly QB-154).**
-  `qb::metrics::describe_dispatch` exposes watcher-dispatch timing in seconds and
-  `qb_io_last_run_events` as a gauge. It neither enables timing nor reads a clock;
-  deferred callbacks and coroutine resumes outside watcher dispatch are not measured.
-
 ### Changed
 
 - **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
@@ -192,6 +185,11 @@ policy.
   synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
 
 ### Added
+
+- **Snapshot adapters for autonomous listener metrics (Huly QB-154).**
+  `qb::metrics::describe_dispatch` exposes watcher-dispatch timing in seconds and
+  `qb_io_last_run_events` as a gauge. It neither enables timing nor reads a clock;
+  deferred callbacks and coroutine resumes outside watcher dispatch are not measured.
 
 - **`uri::has_query()` distinguishes an absent query from an explicitly empty query (Huly
   QB-169).** Parsing now retains the delimiter presence of `/path?`, while `encoded_queries()`
