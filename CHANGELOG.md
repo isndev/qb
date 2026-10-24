@@ -804,6 +804,19 @@ policy.
 
 ### Fixed
 
+- **Windows installed-header consumers (Huly QB-1131).** `sys__ifaddrs.h` now
+  exposes its POSIX aliases only off Windows, so including every installed header
+  no longer requires the unavailable `ifaddrs.h`. The backend selector contains
+  the Microsoft CRT deprecation diagnostic at its single `getenv` read, restoring
+  the consumer's warning state immediately afterwards. The installed-header guard
+  recognizes CMake's native Windows include paths and passes the intended warning
+  groups through clang-cl without enabling `-Weverything`.
+
+- **Reject incomplete coroutine scheduler benchmark batches (Huly QB-1129).**
+  Spawn, large-frame, timer-chain and nested-await measurements check every batch
+  before publishing throughput. An expired drain reports an error and reclaims
+  remaining spawned frames while their completion counter and event loop are alive.
+
 - **Bound stationary reconnect backoff (Huly QB-608).** `qb::io::reconnect_policy::next_delay`
   stops once an integer-millisecond step no longer grows, so zero, constant and truncated fractional
   waits do not repeat work for every failed attempt. Rounding, the cap and the single final jitter

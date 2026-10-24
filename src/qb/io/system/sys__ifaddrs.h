@@ -6,7 +6,7 @@
  * `qb::io` namespace. Every supported POSIX platform ships `ifaddrs.h`; an
  * Android target below API level 24, which lacks it, is refused at compile
  * time (Windows lists its addresses through `getaddrinfo()` on the host
- * name instead and never includes this header).
+ * name instead; this header declares no aliases there).
  * @ingroup Networking
  */
 
@@ -15,6 +15,7 @@
 
 #include <qb/io/config.h>
 
+#if !defined(_WIN32)
 #if !(defined(ANDROID) || defined(__ANDROID__)) || __ANDROID_API__ >= 24
 #include <ifaddrs.h>
 namespace qb::io {
@@ -41,5 +42,6 @@ using ::getifaddrs;
 // live -- and Android is not a qb platform: it was removed rather than repaired (Huly QB-321).
 #error "qb requires getifaddrs(): Android API level 24 or later"
 #endif
+#endif // !defined(_WIN32)
 
 #endif

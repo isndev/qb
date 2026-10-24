@@ -727,7 +727,15 @@ private:
      */
     [[nodiscard]] static unsigned int
     _resolve_backend_flags() noexcept {
+#if defined(_MSC_VER)
+#pragma warning(push)
+// The CRT deprecates getenv; this read needs neither ownership nor an allocation.
+#pragma warning(disable : 4996)
+#endif
         const char *env = std::getenv("QB_EV_BACKEND");
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
         if (!env || !*env)
             return EVFLAG_AUTO;
 

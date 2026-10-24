@@ -243,7 +243,13 @@ message(STATUS "hostile: -I (not -isystem) for ${_qb_desystemed}")
 # -Wundefined-func-template is CLANG-ONLY -- gcc has no equivalent and rejects the flag
 # outright, which would turn this gate into a compiler-not-found failure on every gcc runner.
 # -Wall -Wextra -Werror carry on both, and they are what a -I consumer trips over first.
-set(QB_SELFC_WARN -Wall -Wextra -Werror)
+# clang-cl treats -Wall as /Wall (= -Weverything), not clang's -Wall.
+# Pass the intended warning group to its clang driver explicitly.
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  set(QB_SELFC_WARN /clang:-Wall /clang:-Wextra /clang:-Werror)
+else()
+  set(QB_SELFC_WARN -Wall -Wextra -Werror)
+endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   list(APPEND QB_SELFC_WARN -Wundefined-func-template)
   message(STATUS "hostile: -Wundefined-func-template ON (${CMAKE_CXX_COMPILER_ID})")
@@ -260,6 +266,8 @@ EOF
   # which is how the clang-only assertion below silently degraded to "NOTE: not clang" on a
   # machine where the compiler is AppleClang. Hand it to the shell explicitly.
   echo 'file(WRITE "${CMAKE_BINARY_DIR}/qb-selfc-compiler-id.txt" "${CMAKE_CXX_COMPILER_ID}")'
+  # CMake sees native paths after MSYS argument conversion; Ninja uses that spelling too.
+  echo 'file(WRITE "${CMAKE_BINARY_DIR}/qb-selfc-prefix.txt" "${CMAKE_PREFIX_PATH}")'
   echo 'include(srcs.cmake)'
   echo 'add_library(selfcontain OBJECT ${SELFC_SRCS})'
   echo 'target_link_libraries(selfcontain PRIVATE ${QB_SELFC_LINK})'
@@ -281,12 +289,19 @@ if [ "$HOSTILE" = 1 ]; then
   gen="$(find "$BUILD_DIR/b" -maxdepth 1 \( -name 'build.ninja' -o -name 'Makefile' \) | head -1)"
   [ -n "$gen" ] || fail "--hostile: cannot find the generated build file to verify the flags"
   flags="$(cat "$gen" "$BUILD_DIR/b"/CMakeFiles/*/flags.make 2>/dev/null || cat "$gen")"
+  prefix_for_flags="$(cat "$BUILD_DIR/b/qb-selfc-prefix.txt")"
+  [ -n "$prefix_for_flags" ] || fail "--hostile: CMake did not record the native prefix"
+  # clang-cl's Ninja rules use backslashes; the GNU frontend uses forward slashes.
+  # Normalize only a native Windows prefix before comparing the observed flags.
+  case "$prefix_for_flags" in
+    [A-Za-z]:/*) flags="${flags//\\//}" ;;
+  esac
   case "$flags" in
-    *"-isystem $PREFIX/include"*)
+    *"-isystem $prefix_for_flags/include"*|*"-imsvc$prefix_for_flags/include"*|*"-imsvc $prefix_for_flags/include"*|*"/external:I$prefix_for_flags/include"*|*"-external:I$prefix_for_flags/include"*)
       fail "--hostile: the prefix is STILL on -isystem -- every -W* inside qb's headers is silenced, this gate would prove nothing" ;;
   esac
   case "$flags" in
-    *"-I$PREFIX/include"*|*"-I $PREFIX/include"*) say "hostile: confirmed -I $PREFIX/include (not -isystem)" ;;
+    *"-I$prefix_for_flags/include"*|*"-I $prefix_for_flags/include"*) say "hostile: confirmed -I $prefix_for_flags/include (not -isystem)" ;;
     *) fail "--hostile: the prefix appears on neither -I nor -isystem -- cannot tell what this gate measured" ;;
   esac
   # Clang-only flag: require it when the compiler is clang, and say so loudly when it is not,
@@ -320,7 +335,7 @@ if [ "$rc" -ne 0 ]; then
   # ld says neither "error:" nor "FAILED:". Grepping only the compiler's vocabulary is how a
   # link gate reports "3 broken" for 4 broken things and prints none of the symbol names.
   grep -E '(^FAILED:|error:|warning:|Undefined symbols|undefined (reference|symbol)|^ +"|^ +_)' \
-       "$BUILD_DIR/build.log" | sed "s#$PREFIX/include/##g" | head -250
+       "$BUILD_DIR/build.log" | sed "s#$PREFIX/include/##g" | sed -n '1,250p'
   say "=========================================="
   bad_h="$(grep -c '^FAILED:.*/tu/' "$BUILD_DIR/build.log" || true)"
   bad_e="$(grep -c '^FAILED:.*[ /]entry_' "$BUILD_DIR/build.log" || true)"

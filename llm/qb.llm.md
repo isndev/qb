@@ -825,17 +825,17 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:74-86; async/io.h:88-93, :108-109, :117-121)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1548-1561; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1556-1569; mixin.h:63-71)_
 - **The standalone drivers park, they do not sleep.** `run_until`, `run_sync` and `run_for` park a pass that
   did nothing in the loop's own backend: io readiness or a timer ends the park at poll latency, and the 1 ms
   cap only bounds a wait nothing ends (they used to sleep blind — 50 µs, 1 ms, 1 ms — and a sub-millisecond
   sleep is served at the millisecond on Windows, so a reply sat unread for 1–2.5 ms). The `status` of
   `run_until` is read unsynchronised: flip it on the loop thread, from a handler, a callback or a coroutine
-  the loop runs — never from another thread. _(listener.h:1633; coroutine/utils.h:227, :293)_
+  the loop runs — never from another thread. _(listener.h:1641; coroutine/utils.h:227, :293)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1533-1545)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:384-424)_ _(listener.h:1600)_
+  them. _(listener.h:1541-1553)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:384-424)_ _(listener.h:1608)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:574-603)_

@@ -42,10 +42,12 @@ reset_async_context() {
 }
 
 template <typename Predicate>
-void
+[[nodiscard]] bool
 drain_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
     const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (!predicate() && std::chrono::steady_clock::now() < deadline) {
+    while (!predicate()) {
+        if (std::chrono::steady_clock::now() >= deadline)
+            return false;
         coro_scheduler().run_ready();
         // Non-blocking pump: fire what is due, resume what is ready, never sleep. The previous
         // `run_for(1ms)` slept 1 ms per trip (~5 ms at Windows' timer granularity) even on the
@@ -53,6 +55,24 @@ drain_until(Predicate &&predicate, std::chrono::milliseconds timeout) {
         // work (0 CPU-time per iteration was the tell).
         qb::io::async::run(EVRUN_NOWAIT);
     }
+    return true;
+}
+
+// Check every batch before crediting its requested work. On timeout, reclaim the
+// spawned roots while their completion counter and the event loop are still alive;
+// listener::clear() alone detaches watchers but does not reclaim suspended frames.
+[[nodiscard]] bool
+finish_iteration(benchmark::State &state, bool completed) {
+    state.PauseTiming();
+    if (!completed)
+        coro_scheduler().recycle();
+    reset_async_context();
+    if (!completed) {
+        state.SkipWithError("coroutine batch did not complete before its deadline");
+        return false;
+    }
+    state.ResumeTiming();
+    return true;
 }
 
 task<void>
@@ -112,12 +132,11 @@ BM_Coroutine_SpawnImmediate(benchmark::State &state) {
         for (int i = 0; i < count; ++i)
             coro_scheduler().spawn(complete_immediately(&completed));
 
-        drain_until([&completed, count]() { return completed.load() == count; }, 250ms);
+        const bool drained = drain_until([&completed, count]() { return completed.load() == count; }, 250ms);
         benchmark::DoNotOptimize(completed.load(std::memory_order_relaxed));
 
-        state.PauseTiming();
-        reset_async_context();
-        state.ResumeTiming();
+        if (!finish_iteration(state, drained))
+            return;
     }
 
     state.SetItemsProcessed(state.iterations() * count);
@@ -139,12 +158,11 @@ BM_Coroutine_LargeFrame(benchmark::State &state) {
             coro_scheduler().spawn(large_frame_task(&completed, frame));
         }
 
-        drain_until([&completed, count]() { return completed.load() == count; }, 500ms);
+        const bool drained = drain_until([&completed, count]() { return completed.load() == count; }, 500ms);
         benchmark::DoNotOptimize(completed.load(std::memory_order_relaxed));
 
-        state.PauseTiming();
-        reset_async_context();
-        state.ResumeTiming();
+        if (!finish_iteration(state, drained))
+            return;
     }
 
     state.SetItemsProcessed(state.iterations() * count);
@@ -165,12 +183,11 @@ BM_Coroutine_ConcurrentTimers(benchmark::State &state) {
         for (int i = 0; i < count; ++i)
             coro_scheduler().spawn(sleep_and_complete(&completed, delay));
 
-        drain_until([&completed, count]() { return completed.load() == count; }, delay + 500ms);
+        const bool drained = drain_until([&completed, count]() { return completed.load() == count; }, delay + 500ms);
         benchmark::DoNotOptimize(completed.load(std::memory_order_relaxed));
 
-        state.PauseTiming();
-        reset_async_context();
-        state.ResumeTiming();
+        if (!finish_iteration(state, drained))
+            return;
     }
 
     state.SetItemsProcessed(state.iterations() * count);
@@ -190,12 +207,12 @@ BM_Coroutine_ChainedTimers(benchmark::State &state) {
         for (int i = 0; i < chains; ++i)
             coro_scheduler().spawn(chain_sleep_and_complete(&completed, chain_length));
 
-        drain_until([&completed, chains]() { return completed.load() == chains; }, std::chrono::milliseconds(chain_length) + 500ms);
+        const bool drained =
+            drain_until([&completed, chains]() { return completed.load() == chains; }, std::chrono::milliseconds(chain_length) + 500ms);
         benchmark::DoNotOptimize(completed.load(std::memory_order_relaxed));
 
-        state.PauseTiming();
-        reset_async_context();
-        state.ResumeTiming();
+        if (!finish_iteration(state, drained))
+            return;
     }
 
     state.SetItemsProcessed(state.iterations() * chains * chain_length);
@@ -215,12 +232,12 @@ BM_Coroutine_NestedAwait(benchmark::State &state) {
         for (int i = 0; i < iterations; ++i)
             coro_scheduler().spawn(nested_await(&completed, depth));
 
-        drain_until([&completed, iterations]() { return completed.load() == iterations; }, std::chrono::milliseconds(depth) + 500ms);
+        const bool drained =
+            drain_until([&completed, iterations]() { return completed.load() == iterations; }, std::chrono::milliseconds(depth) + 500ms);
         benchmark::DoNotOptimize(completed.load(std::memory_order_relaxed));
 
-        state.PauseTiming();
-        reset_async_context();
-        state.ResumeTiming();
+        if (!finish_iteration(state, drained))
+            return;
     }
 
     state.SetItemsProcessed(state.iterations() * iterations * depth);
