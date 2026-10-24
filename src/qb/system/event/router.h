@@ -29,6 +29,7 @@
 #ifndef QB_EVENT_ROUTER_H
 #define QB_EVENT_ROUTER_H
 #include <algorithm>
+#include <atomic>
 #include <cassert>
 #include <concepts>
 #include <limits>
@@ -1656,15 +1657,33 @@ public:
  * statically knows each type entering the system.
  *
  * `if constexpr` emits NOTHING for the common trivially-destructible event; a non-trivial type
- * pays one function-local static guard (a well-predicted relaxed load) per enqueue.
+ * pays one relaxed load of a flag and a well-predicted branch per enqueue -- not a guarded
+ * `static const`: a guard's acquire load costs seven instructions a call and keeps every store
+ * before it alive across it, so the event header's zero-initialised fields were stored twice
+ * (`qb::detail::type_id_for`, Event.h, measured the same shape on the push path).
  */
+template <typename _RawEvent, typename _Event>
+QB_NOINLINE QB_COLD void register_disposer(std::atomic<bool> &registered) noexcept;
+
 template <typename _RawEvent, typename _Event>
 QB_ABI_ANCHOR inline void
 ensure_disposer() noexcept {
     if constexpr (!std::is_trivially_destructible_v<_Event>) {
-        static const typename memh<_RawEvent>::template SafeDispose<_Event> registered{};
-        (void) registered;
+        static std::atomic<bool> registered{false}; // constant-initialised: no guard
+        if (!registered.load(std::memory_order_relaxed)) [[unlikely]]
+            register_disposer<_RawEvent, _Event>(registered);
     }
+}
+
+/// The cold half of `ensure_disposer`: the one registration (the guarded static that was on the hot path,
+/// idempotent under the disposers' lock, so racing threads agree), then the flag. Out of line: the enqueue
+/// sites are the hot path of every event, and this runs once per type.
+template <typename _RawEvent, typename _Event>
+QB_NOINLINE QB_COLD void
+register_disposer(std::atomic<bool> &registered) noexcept {
+    static const typename memh<_RawEvent>::template SafeDispose<_Event> once{};
+    (void) once;
+    registered.store(true, std::memory_order_relaxed);
 }
 
 } // namespace qb::router

@@ -1548,7 +1548,7 @@ VirtualCore::reply_local(Event &event) noexcept {
     }
 #else
     // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
-    // call to memmove on every event of a target without SSE2 (arm64: 128-byte buckets).
+    // call to memmove on every event of a target without SSE2 -- arm64 takes this path, 40 bytes an event.
     if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
         std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
     else
@@ -1599,7 +1599,7 @@ VirtualCore::forward(ActorId const dest, Event &event) noexcept {
         }
 #else
         // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
-        // call to memmove on every event of a target without SSE2 (arm64: 128-byte buckets).
+        // call to memmove on every event of a target without SSE2 -- arm64 takes this path, 40 bytes an event.
         if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
             std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
         else

@@ -347,8 +347,8 @@ Service-to-service event.
 
 #### Event templates
 *   `[T<_Args...>] struct WithData : Event { std::tuple<_Args...> data; explicit WithData(_Args&&...); }`
-*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:929-930`)_.
-*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:938-939`)_.
+*   `[T<_Args...>] class WithoutData : Event {}` — a **template** (`_Args...` is a placeholder, unused): spell it `WithoutData<>`, never bare `WithoutData` _(`Event.h:940-941`)_.
+*   `[T<_Args...>] struct AskData : WithoutData<_Args...> {}` — likewise `AskData<>` _(`Event.h:949-950`)_.
 *   `[T<_Args...>] struct FillEvent : WithData<_Args...> { FillEvent(); explicit FillEvent(_Args&&...); }`
 
 Aliases: `using VirtualPipe = allocator::segmented_pipe<EventBucket>;` — a segmented FIFO (256 KB segments from a per-core `segment_pool`, carved eight to a 2 MB slab from the process-wide `allocator::slab_cache`) that never moves a queued event; `Actor::push`'s returned reference is valid until the handler that obtained it returns.

@@ -834,13 +834,27 @@ policy.
   Eight-sink `BM_Fanout_Deliveries<Broadcast>`, Apple clang 21: develop +23.3 %, now -10.4 % against
   v3.2.1.
 
+- **A push, a send or a reply no longer checks a guarded static on every event (macOS validation,
+  2026-10-24).** `qb::detail::type_id_for<T>()` held the type's id in a `static const` with a dynamic
+  initialiser, and every enqueue of an event of a non-trivially-destructible type initialised another
+  (`router::ensure_disposer`): seven instructions of guard check -- an acquire load -- per call, and the
+  compiler keeps every store before an acquire alive across it, so the event header's zero-initialised
+  `dest` and `source` were stored and then stored again by `fill_event`. With ActorId64's wider header
+  that dead store stopped merging with the payload's, and savina/counting on one core went +10 %
+  against v3.2.1 (bisected to the engine-loop commit of QB-251, which only moved the code around it).
+  Both now read a constant-initialised relaxed atomic -- the id, or a flag -- and take a cold,
+  out-of-line first call that registers once (idempotent under the registry's lock, so racing threads
+  agree). Apple clang 21 / M4 Pro, a one-core burst of a million one-bucket events: 3.45 -> 2.24 ns a
+  push (v3.2.1: 2.83), 122 -> 100 instructions per event pushed and delivered.
+
 - **A same-core `reply()` or `forward()` copies its event inline on arm64 again (macOS validation,
   2026-10-23).** The copy had an SSE2 path and, elsewhere, `memcpy(d + 24, s + 24, bytes - 24)`: a size
-  known only at run time, so a call into the C library on every event of a target without SSE2; and
-  `reply_local` routed every event over 64 bytes -- every event of an arm64 build, whose bucket is the
-  128-byte cache line -- to its whole-range `memcpy`. A one-bucket event now takes a constant-size copy
-  (`event_wire::copy_reply`, `VirtualCore::reply_local`, `VirtualCore::forward`) and the multi-bucket
-  test is the bucket size. Savina Big, one core, spinning, against v3.2.1: develop +3.8 %, now -9.8 %.
+  known only at run time -- 40 bytes for a one-bucket event -- so a call into the C library on every
+  event of a target without SSE2, which is every arm64 build. A one-bucket event now takes a
+  constant-size copy (`event_wire::copy_reply`, `VirtualCore::reply_local`, `VirtualCore::forward`) and
+  `reply_local`'s multi-bucket test is spelled as the bucket size rather than a literal 64 (the same
+  value on every default build: the bucket is the 64-byte line unless `KNOWN_L1_CACHE_LINE_SIZE` says
+  otherwise). Savina Big, one core, spinning, against v3.2.1: develop +3.8 %, now -9.8 %.
 
 - **`getPipe(dest).push<E>()` and `to(dest).push<E>()` no longer pay a `Pipe` round trip through
   memory (macOS validation, 2026-10-23).** A `Pipe` is 24 bytes since ActorId64, past what AAPCS64

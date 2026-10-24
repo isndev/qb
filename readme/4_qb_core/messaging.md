@@ -32,7 +32,7 @@ A logical `getServiceId<Tag>(core)` destination selects the service current when
 
 Nothing in that path looks an actor up by identity across a thread boundary. The sender resolves a **core**, appends bytes to a buffer it owns exclusively, and the destination core turns those bytes back into an event on its own thread. The one cross-thread structure is the mailbox ring, and it is reached only from the flush.
 
-Both buffers store the same unit. A `qb::VirtualPipe` is `qb::allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:972`) — a FIFO of 256 KB segments drawn from the core's `segment_pool` (`src/qb/core/VirtualCore.h:380`; the pool carves them eight to a 2 MB slab from the process-wide `slab_cache`, [Buffers](../0_foundations/buffers.md#events)), which grows by linking a segment and never moves an event once queued — and an `EventBucket` is one cache line wide — `QB_LOCKFREE_EVENT_BUCKET_BYTES`, which is `QB_LOCKFREE_CACHELINE_BYTES`, 64 bytes on common targets (`src/qb/utility/prefix.h:66-68`, `:138-140`). An event occupies a whole number of contiguous buckets and records that count in its own 16-bit header. The destination side is a `SharedCoreCommunication::Mailbox`, one per core, reached through `getMailBox(CoreId)`; it derives from `qb::lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>` — many producers, one consumer, no lock (`src/qb/core/Main.h:514`, `:726-727`, `:861`). Its idle-wait policy is a `qb::duration` set per core; [the engine page](./engine.md#latency-what-a-core-does-when-it-has-nothing-to-do) owns that.
+Both buffers store the same unit. A `qb::VirtualPipe` is `qb::allocator::segmented_pipe<EventBucket>` (`src/qb/core/Event.h:983`) — a FIFO of 256 KB segments drawn from the core's `segment_pool` (`src/qb/core/VirtualCore.h:380`; the pool carves them eight to a 2 MB slab from the process-wide `slab_cache`, [Buffers](../0_foundations/buffers.md#events)), which grows by linking a segment and never moves an event once queued — and an `EventBucket` is one cache line wide — `QB_LOCKFREE_EVENT_BUCKET_BYTES`, which is `QB_LOCKFREE_CACHELINE_BYTES`, 64 bytes on common targets (`src/qb/utility/prefix.h:66-68`, `:138-140`). An event occupies a whole number of contiguous buckets and records that count in its own 16-bit header. The destination side is a `SharedCoreCommunication::Mailbox`, one per core, reached through `getMailBox(CoreId)`; it derives from `qb::lockfree::mpsc::block_ringbuffer<EventBucket, MaxRingEvents>` — many producers, one consumer, no lock (`src/qb/core/Main.h:514`, `:726-727`, `:861`). Its idle-wait policy is a `qb::duration` set per core; [the engine page](./engine.md#latency-what-a-core-does-when-it-has-nothing-to-do) owns that.
 
 That is also why the send API needs no handle to the runtime. `VirtualCore::_handler` is a `thread_local` pointer to "the core running on this thread" (`src/qb/core/VirtualCore.h:87`), and because actors are thread-affine it is always the right core — so `Actor::push` is one forward through it:
 
@@ -68,10 +68,10 @@ The journey of a single `push` across a core boundary, in the order it happens.
 **On the sending core, inside the handler.**
 
 1. `Actor::push<E>(dest, args...)` forwards to `VirtualCore::push<E>(dest, id(), args...)`.
-2. `router::ensure_disposer<Event, E>()` registers a type-erased destructor for `E` if it is not trivially destructible. This runs at the *enqueue* funnel because that is the one place which statically knows the type; without it every drop path later would free bytes without running `~E()` (`src/qb/core/VirtualCore.h:1316`; `src/qb/system/event/router.h:1661-1668`).
+2. `router::ensure_disposer<Event, E>()` registers a type-erased destructor for `E` if it is not trivially destructible. This runs at the *enqueue* funnel because that is the one place which statically knows the type; without it every drop path later would free bytes without running `~E()` (`src/qb/core/VirtualCore.h:1316`; `src/qb/system/event/router.h:1668-1687`).
 3. `__getPipe__(dest.index())` selects the outbound buffer for the destination core.
 4. `pipe.allocate_back(BUCKET_SIZE)` reserves `ceil(sizeof(E) / 64)` buckets at the tail. `BUCKET_SIZE` is `allocator::getItemSize<E, EventBucket>()` (`src/qb/system/allocator/pipe.h:42-44`).
-5. `detail::prepare_event_storage` zeroes that whole bucket range **in debug builds only** — the relocation guard in step 9 scans it, and an event's range is never fully written by its payload (`src/qb/core/Event.h:295-300`).
+5. `detail::prepare_event_storage` zeroes that whole bucket range **in debug builds only** — the relocation guard in step 9 scans it, and an event's range is never fully written by its payload (`src/qb/core/Event.h:306-311`).
 6. The event is placement-newed into the reservation, then `fill_event` stamps `id`, `dest`, `source` and `bucket_size` into the header (`src/qb/core/VirtualCore.h:1322-1328`, `:1250-1266`).
 7. `push` returns a reference into the pipe. It stays valid until the handler that obtained it returns — see [below](#the-reference-push-returns-lives-until-your-handler-returns).
 
@@ -87,8 +87,8 @@ The journey of a single `push` across a core boundary, in the order it happens.
 12. `__receive__` calls `_mail_box.consume_all(fn, _event_buffer->data(), MaxRingEvents)`, which copies a contiguous batch out of *each* producer ring into the core's own `EventBuffer` — the third argument bounds one producer's batch, not the total, so every peer core is read on every pass (`src/qb/core/VirtualCore.cpp:432-441`).
 13. `__receive_events__` walks that batch bucket-by-bucket, `reinterpret_cast`ing each offset to an `Event *` and trusting `bucket_size` to find the next one. A `bucket_size == 0` would make the walk stand still, so it is checked and the batch abandoned (`src/qb/core/VirtualCore.cpp:320-331`).
 14. A logical service destination is resolved to the current instance before activation/stashing; ordinary instance destinations are already complete. `_router.route(*event, onError)` then performs exact-instance dispatch. It does not reset event liveness: the transport copy already has `alive == 0`. Source: `src/qb/core/VirtualCore.cpp` (`__receive_events__`).
-15. The router resolves `event.getID()` to the per-type resolver. Actor destinations probe the ordinary bank first; a miss classifies service/broadcast destinations for the secondary path. Bounds, occupancy and the complete 64-bit key are checked before `dispatch_trampoline` recasts the stored pointer and calls `handler.on(event)` (`src/qb/system/event/router.h:795-898`).
-16. After the handler returns, or while its exception unwinds if it throws, the same call disposes the event -- a guard's destructor, not a catch block, which would stop MSVC from inlining `route()`: `~E()` runs exactly once, on the receiving core, at an address the event was never constructed at (`src/qb/system/event/router.h:823-833`).
+15. The router resolves `event.getID()` to the per-type resolver. Actor destinations probe the ordinary bank first; a miss classifies service/broadcast destinations for the secondary path. Bounds, occupancy and the complete 64-bit key are checked before `dispatch_trampoline` recasts the stored pointer and calls `handler.on(event)` (`src/qb/system/event/router.h:796-899`).
+16. After the handler returns, or while its exception unwinds if it throws, the same call disposes the event -- a guard's destructor, not a catch block, which would stop MSVC from inlining `route()`: `~E()` runs exactly once, on the receiving core, at an address the event was never constructed at (`src/qb/system/event/router.h:824-834`).
 
 Two things in that sequence are worth pinning down, because they are where the surprises live: step 11 (nobody destroys the source copy) and step 16 (somebody destroys the *relocated* copy).
 
@@ -103,13 +103,13 @@ if constexpr (qb::has_is_alive<_RawEvent>) {
         handler.on(event);
 }
 ```
-<!-- src: qb/src/qb/system/event/router.h:793-802 -->
+<!-- src: qb/src/qb/system/event/router.h:794-803 -->
 
 While a killed actor is still registered before its reap, dispatch checks `is_alive()` on the destination core: the event is copied, flushed, routed and disposed, but its handler is skipped. After reap removes its subscription, the missing-handler or missing-type path above handles the unicast as a dead letter and still disposes it.
 
 ### An event nobody subscribed to
 
-If no resolver for the event type was ever installed on the destination core, `memh::route` takes its `onError` branch. `VirtualCore` hands a unicast to `__dead_letter__` with reason `unhandled` when an actor lives under the destination id, or `not_found` when none does; it stays silent for a broadcast (`src/qb/core/VirtualCore.cpp:384-393`) -- unless the broadcast names a core the engine does not run, which `Event::__broadcast_here__` refuses -- one inline compare of the broadcast's core with the thread's (`Event::__core_scope__`, bound with `VirtualCore::_handler` by `VirtualCore::__bind_thread__`) -- and its cold half `Event::__broadcast_elsewhere__` reports as `not_found`: the question the router's broadcast branch and the default events' resolver ask before they fan one out (Huly QB-268): every id outside the core set lands on the first core, and such a broadcast is owed to none of its actors. The router disposes the event through the registry populated at enqueue (`src/qb/system/event/router.h:1491-1529`). A resolver persists after its last subscription is removed: in that case its per-handler lookup reports a missing destination through `Event::__undelivered__`, then disposes the event (`src/qb/system/event/router.h:879-898`, `:823-833`; `src/qb/core/VirtualCore.cpp:1795-1803`). Both paths are why `ensure_disposer` belongs at enqueue rather than `subscribe`: a type pushed but never subscribed still needs its payload destroyed.
+If no resolver for the event type was ever installed on the destination core, `memh::route` takes its `onError` branch. `VirtualCore` hands a unicast to `__dead_letter__` with reason `unhandled` when an actor lives under the destination id, or `not_found` when none does; it stays silent for a broadcast (`src/qb/core/VirtualCore.cpp:384-393`) -- unless the broadcast names a core the engine does not run, which `Event::__broadcast_here__` refuses -- one inline compare of the broadcast's core with the thread's (`Event::__core_scope__`, bound with `VirtualCore::_handler` by `VirtualCore::__bind_thread__`) -- and its cold half `Event::__broadcast_elsewhere__` reports as `not_found`: the question the router's broadcast branch and the default events' resolver ask before they fan one out (Huly QB-268): every id outside the core set lands on the first core, and such a broadcast is owed to none of its actors. The router disposes the event through the registry populated at enqueue (`src/qb/system/event/router.h:1492-1530`). A resolver persists after its last subscription is removed: in that case its per-handler lookup reports a missing destination through `Event::__undelivered__`, then disposes the event (`src/qb/system/event/router.h:880-899`, `:824-834`; `src/qb/core/VirtualCore.cpp:1795-1803`). Both paths are why `ensure_disposer` belongs at enqueue rather than `subscribe`: a type pushed but never subscribed still needs its payload destroyed.
 
 ## The primitives at a glance
 
@@ -196,7 +196,7 @@ It fires only for types deriving from `qb::EventQOS0`. A plain `qb::Event` subcl
 
 That assertion is quoted above from `VirtualCore::fill_event`, which is where it lived alone until 3.0 — and `fill_event` is reached by `push` and `send` but **not** by `Pipe::push` / `Pipe::allocated_push`, which duplicate it. So `to(dest).push<E>()` and `getPipe(dest).allocated_push<E>()` accepted a QoS-0 event owning heap and leaked it on every backpressure drop: measured at 18977 live payloads out of 20000 enqueued, against a core too busy to drain. The same rule now also sits in `qb::detail::routing_safe_type_id<T>` (`src/qb/core/Event.h`), the one function all four spellings call — the same place, and for the same reason, as the routing-field shadow guard.
 
-> **QoS is a binary backpressure policy, not a priority order.** `qb::EventQOS2` and `qb::EventQOS1` are both `using … = Event` (`src/qb/core/Event.h:588`, `:598`); the base `Event` header encodes `qos = 2` and `EventQOS0`'s constructor sets it to `0` (`src/qb/core/Event.h:432`, `:605-609`). The only read of that field is the flush's `if (!event.state.bits.qos)` gate (`src/qb/core/VirtualCore.cpp:2070`). Events drain in FIFO order whatever their QoS.
+> **QoS is a binary backpressure policy, not a priority order.** `qb::EventQOS2` and `qb::EventQOS1` are both `using … = Event` (`src/qb/core/Event.h:599`, `:609`); the base `Event` header encodes `qos = 2` and `EventQOS0`'s constructor sets it to `0` (`src/qb/core/Event.h:443`, `:616-620`). The only read of that field is the flush's `if (!event.state.bits.qos)` gate (`src/qb/core/VirtualCore.cpp:2070`). Events drain in FIFO order whatever their QoS.
 
 **Prefer `push`.** `send` buys the possibility of skipping one flush cycle on a cross-core hop and costs the ordering guarantee outright. Reach for it when ordering is genuinely irrelevant *and* you have measured that it matters.
 
@@ -291,7 +291,7 @@ returns to the original client. It has separate local-copy and remote-publicatio
 
 ### `alive` is an ownership bit, and it is settled at the copy
 
-`Event::is_alive()` answers one question for the dispatcher: *did this event's bytes move on?* After the handler returns, the router runs `~E()` only if the bit is clear (`src/qb/system/event/router.h:566-569`). The contract since 3.2 is that **every delivered copy carries `alive == 0`** — `swap_dest_source` and `set_dest` clear the bit when rewriting the complete IDs, and `event_wire::copy` clears it in the copy — while `reply()`/`forward()` raise the ORIGINAL's flag only after the copy has been taken. Three consequences follow:
+`Event::is_alive()` answers one question for the dispatcher: *did this event's bytes move on?* After the handler returns, the router runs `~E()` only if the bit is clear (`src/qb/system/event/router.h:567-570`). The contract since 3.2 is that **every delivered copy carries `alive == 0`** — `swap_dest_source` and `set_dest` clear the bit when rewriting the complete IDs, and `event_wire::copy` clears it in the copy — while `reply()`/`forward()` raise the ORIGINAL's flag only after the copy has been taken. Three consequences follow:
 
 - **Receipt does not rewrite liveness.** A relocated event already has `alive == 0`. Logical service receipt may rewrite the destination once to capture its instance before activation/routing.
 - **A reply or forward consumes the event.** Do not reply and then forward the same object: both operations relocate its bytes without invoking a payload copy constructor, so repeating one can duplicate ownership held by a `unique_ptr` or fail to increment shared ownership. Construct distinct typed output events before the first transfer when one input must fan out.
@@ -310,8 +310,8 @@ slot. Only this private entry type uses `dispatch != nullptr` for occupancy: sub
 a non-null trampoline, and erase resets the entry. Generic key tables keep a separate occupancy bit,
 so a zero value or null pointer can still be present. The ordinary and service banks retain full-ID
 comparison; neither lookup nor erase allocates. Broadcast snapshots copy handler/dispatch pairs and
-restore their own range on nested dispatch (`src/qb/system/event/router.h:141-164`, `:761-786`,
-`:916-941`). On the measured x64 builds the heterogeneous slot is 24 bytes instead of 32; allocator
+restore their own range on nested dispatch (`src/qb/system/event/router.h:142-165`, `:762-787`,
+`:917-942`). On the measured x64 builds the heterogeneous slot is 24 bytes instead of 32; allocator
 rounding and cached-region adoption mean this is a slot-size reduction, not a promise about RSS.
 
 ## `broadcast`, and the two ways to fan out
@@ -324,7 +324,7 @@ for (const auto it : _engine._core_set.raw())
 
 One `send` per registered core, addressed to `BroadcastId(core)`. Note `init...` rather than `std::forward<_Init>(init)...`: forwarding an rvalue would move it into the first core's event and leave every later core constructing from moved-from arguments — an empty string on every core but one (`src/qb/core/VirtualCore.h:1302-1306`).
 
-On the receiving side, a broadcast destination makes the router snapshot every subscribed handler for that type into a `thread_local` buffer and then dispatch from the snapshot, because a handler may subscribe or unsubscribe during the walk — a handler can register another actor for that event type, growing its dense bank (or rehashing the generic sparse table) under a live iterator (`src/qb/system/event/router.h:916-941`).
+On the receiving side, a broadcast destination makes the router snapshot every subscribed handler for that type into a `thread_local` buffer and then dispatch from the snapshot, because a handler may subscribe or unsubscribe during the walk — a handler can register another actor for that event type, growing its dense bank (or rehashing the generic sparse table) under a live iterator (`src/qb/system/event/router.h:917-942`).
 
 To reach every actor on **one** core, push to a `qb::BroadcastId` instead. That keeps `push`'s ordering, because it goes through the ordinary tail allocation:
 
@@ -417,15 +417,15 @@ What it does **not** cover:
     id_handler_type dest;
     id_handler_type source;
 ```
-<!-- src: qb/src/qb/core/Event.h:413-438 -->
+<!-- src: qb/src/qb/core/Event.h:424-449 -->
 
 Three details are load-bearing:
 
 - **The bit-fields live in a named struct, never as bare union members.** In a union every member sits at offset 0 and each bit-field declarator is its own member, so `alive`, `qos` and `factor` would all alias one another *and* `prot[0]`: writing `alive` would rewrite `qos`, and `reply()` would mutate the `'q'` of the magic on every call. Inside a struct the `: 16, : 8` padding declarators do their job and place `alive` at bit 24 — `prot[3]`, the one byte the default initialiser encodes.
-- **`id_type` is `EventId` (a `uint16_t`) in every build mode.** It used to be `const char *` under `!NDEBUG`, which moved `dest` from offset 8 to offset 16. Cross-core events are memcpy-relocated and `libqb-core` is installable, so a consumer built with the other `NDEBUG` read `dest` at the wrong offset and routed to a garbage `ActorId`, silently. The human-readable name moved to a side registry — `qb::event_type_name(id)`, diagnostics only (`src/qb/core/Event.h:366-379`, `:575-578`).
-- **`bucket_size` is 16 bits**, which is where the 65536-bucket wrap in the previous section comes from, and it is what keeps the whole header inside one cache line. `getSize()` multiplies it back out by the bucket size (`src/qb/core/Event.h:504-507`).
+- **`id_type` is `EventId` (a `uint16_t`) in every build mode.** It used to be `const char *` under `!NDEBUG`, which moved `dest` from offset 8 to offset 16. Cross-core events are memcpy-relocated and `libqb-core` is installable, so a consumer built with the other `NDEBUG` read `dest` at the wrong offset and routed to a garbage `ActorId`, silently. The human-readable name moved to a side registry — `qb::event_type_name(id)`, diagnostics only (`src/qb/core/Event.h:377-390`, `:586-589`).
+- **`bucket_size` is 16 bits**, which is where the 65536-bucket wrap in the previous section comes from, and it is what keeps the whole header inside one cache line. `getSize()` multiplies it back out by the bucket size (`src/qb/core/Event.h:515-518`).
 
-Type ids are dense and assigned once per type through a magic static, then recorded in a process-wide registry keyed by `typeid(T).name()` so that a second image whose own magic static failed to coalesce recovers the id `T` already has instead of minting a colliding one (`src/qb/core/Event.h:251-257`). A `type_id<T>()` value is stable for the life of the process and **not** stable across runs; do not persist it.
+Type ids are dense and assigned once per type on first use, cached in a per-type block-scope static (a relaxed atomic read on every enqueue, no guard), and recorded in a process-wide registry keyed by `typeid(T).name()` so that a second image whose own static failed to coalesce recovers the id `T` already has instead of minting a colliding one (`src/qb/core/Event.h:251-268`). A `type_id<T>()` value is stable for the life of the process and **not** stable across runs; do not persist it.
 
 ## `noexcept` on the message path
 

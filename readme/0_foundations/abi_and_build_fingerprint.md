@@ -125,7 +125,7 @@ Each exclusion must be re-argued before it changes (`qb/src/qb/utility/abi.h:85-
 
 ## `QB_ABI_ANCHOR`: entities that must exist exactly once per process
 
-A handful of qb entities are *identity* rather than data: the event type-id counter, the per-type magic static that draws from it, the router's disposer table, the `ServiceActor` registry, the per-thread `listener` and `VirtualCore`, the coroutine frame pool, and the `no_protocol()` null-object sentinel — which is compared **by address**.
+A handful of qb entities are *identity* rather than data: the event type-id counter, the per-type static that caches an id drawn from it, the router's disposer table, the `ServiceActor` registry, the per-thread `listener` and `VirtualCore`, the coroutine frame pool, and the `no_protocol()` null-object sentinel — which is compared **by address**.
 
 Every one of them is a vague-linkage entity: an `inline` variable, a static data member of a class template, or a function-local `static`. Vague linkage means "N definitions, the linker keeps one", and *which* linker does the keeping matters. The static linker folds them within one image; the dynamic linker coalesces the remaining weak definitions **across** images. That second step is what `-fvisibility=hidden` turns off (`qb/src/qb/utility/abi.h:295-305`).
 

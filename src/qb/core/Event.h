@@ -251,9 +251,20 @@ TypeId register_type_name(TypeId id, char const *name) noexcept;
 template <typename T>
 [[nodiscard]] QB_ABI_ANCHOR inline TypeId
 type_id_for() noexcept {
-    static type_id_slot slot{};
-    static const TypeId id = register_type_id(slot, typeid(T).name());
-    return id;
+    static type_id_slot        slot{}; // constant-initialised: no guard
+    static std::atomic<TypeId> id{0};  // constant-initialised: no guard
+    // A relaxed load and a cold first call, not a guarded `static const`: the guard's acquire load ran on
+    // every push, send and reply (seven instructions a call), and sat between the event's construction and
+    // `fill_event`, where the compiler keeps a store alive across an acquire -- the zero-initialised
+    // dest/source of every event were stored, then stored again. Measured on Apple clang 21 / M4 Pro, a
+    // one-core 1M-event burst: 3.45 -> 2.24 ns a push, 122 -> 100 instructions an event delivered
+    // (savina/counting 1c +10 % against v3.2.1 with ActorId64's wider header, -20 % after).
+    TypeId value = id.load(std::memory_order_relaxed);
+    if (value == 0) [[unlikely]] {
+        value = register_type_id(slot, typeid(T).name()); // idempotent under the registry's lock: racing threads agree
+        id.store(value, std::memory_order_relaxed);
+    }
+    return value;
 }
 
 /**
@@ -735,7 +746,7 @@ struct event_wire {
         }
 #else
         // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
-        // call to memmove on every event of a target without SSE2 (arm64: 128-byte buckets).
+        // call to memmove on every event of a target without SSE2 -- arm64 takes this path, 40 bytes an event.
         if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
             std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
         else

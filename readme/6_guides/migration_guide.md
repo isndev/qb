@@ -176,7 +176,7 @@ int main() {
 
 The manual `Job` may keep a field called `id`. A derived `qb::Event` may not: `Event::id`
 is a routing field, and the event-construction guard rejects an accessible shadow. The
-migrated payload uses `job_id` consistently. <!-- src: qb/src/qb/core/Event.h:1163-1170 -->
+migrated payload uses `job_id` consistently. <!-- src: qb/src/qb/core/Event.h:1174-1181 -->
 
 Notes on the translation:
 

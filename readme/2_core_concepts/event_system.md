@@ -27,7 +27,7 @@ Every message exchanged between actors derives publicly from `qb::Event`, define
 | `is_alive()` | `bool` | Framework liveness bit used during event reuse by `reply()`/`forward()`. |
 | `getSize()` | `std::size_t` | Total bytes the event occupies in the pipe (its bucket count times the bucket size). |
 
-The type identifier is assigned by `qb::type_id<T>()`, a dense, collision-free 16-bit counter incremented once per distinct type through a magic-static barrier (`qb::detail::type_id_for`). It is stable for the lifetime of the process and safe across concurrent first use; you do not assign or compare it manually.
+The type identifier is assigned by `qb::type_id<T>()`, a dense, collision-free 16-bit counter incremented once per distinct type on its first use and cached in a per-type block-scope static (`qb::detail::type_id_for`: a constant-initialised slot and a relaxed atomic, no guard on the hot path). It is stable for the lifetime of the process and safe across concurrent first use; you do not assign or compare it manually.
 
 Treat events as plain data carriers. The receiving actor reads the data and decides what to do; keep behavior in the actor, not in the event.
 
