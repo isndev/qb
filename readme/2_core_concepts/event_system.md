@@ -27,7 +27,7 @@ Every message exchanged between actors derives publicly from `qb::Event`, define
 | `is_alive()` | `bool` | Framework liveness bit used during event reuse by `reply()`/`forward()`. |
 | `getSize()` | `std::size_t` | Total bytes the event occupies in the pipe (its bucket count times the bucket size). |
 
-The type identifier is assigned by `qb::type_id<T>()`, a dense, collision-free 16-bit counter incremented once per distinct type through a magic-static barrier (`qb::detail::type_id_for`). It is stable for the lifetime of the process and safe across concurrent first use; you do not assign or compare it manually.
+The type identifier is assigned by `qb::type_id<T>()`, a dense, collision-free 16-bit counter incremented once per distinct type on its first use and cached in a per-type block-scope static (`qb::detail::type_id_for`: a constant-initialised slot and a relaxed atomic, no guard on the hot path). It is stable for the lifetime of the process and safe across concurrent first use; you do not assign or compare it manually.
 
 Treat events as plain data carriers. The receiving actor reads the data and decides what to do; keep behavior in the actor, not in the event.
 
@@ -110,7 +110,7 @@ _Event &push(ActorId const &dest, _Args &&...args) const noexcept;
 `push<E>(dest, args...)` constructs an `E` in the pipe from this actor (the source) to `dest` and returns a **mutable reference** to it. Set any additional fields on that reference before your handler returns. Use `push` unless you have a specific reason not to.
 
 > **The returned reference lives until the handler or callback that obtained it returns** — not one instruction longer, and whatever is pushed in between. The pipe is segmented: a later `push`/`send`/`broadcast` resolving to that core links a new segment when it needs room and never reallocates or compacts what an earlier push placed. The engine consumes the event only between handlers, and that is when the reference dies — so a coroutine handler must be done with it **before its first `co_await`**, and it must never be stored in a member. (Until 3.2 the pipe was contiguous and the reference died at the very next event queued to that core; code written to that rule is still correct.) Pinned by `SegmentedPipeContract.*` in `qb/tests/io/unit/core/segmented-pipe.cpp` and `PushReferenceStability.*` in `qb/tests/core/system/messaging/push-reference-stability.cpp`.
-<!-- src: qb/src/qb/core/Actor.h:1106-1118; qb/src/qb/core/Pipe.h:118-128 -->
+<!-- src: qb/src/qb/core/Actor.h:1114-1126; qb/src/qb/core/Pipe.h:119-129 -->
 
 ```cpp
 // src: derived from qb/src/qb/core/Actor.h (push, mutable-reference idiom)

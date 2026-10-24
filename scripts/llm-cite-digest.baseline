@@ -12,55 +12,55 @@
 # excerpt rather than as an opaque hash.  Fields: doc <TAB> cited-spec <TAB>
 # digest <TAB> excerpt.  Keyed WITHOUT the doc's own line number, so
 # re-flowing a paragraph does not re-key the file.
-llm/qb.llm.api.md	Actor.h:1407-1417	84fc8982e239	* @brief `addRefActor<T>()` marked `[[nodiscard]]` — same call, same ...
-llm/qb.llm.api.md	Actor.h:1426-1484	348256583ed8	/**
-llm/qb.llm.api.md	Actor.h:1486-1521	ebacec412d5d	/**
-llm/qb.llm.api.md	Actor.h:1531-1531	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
-llm/qb.llm.api.md	Actor.h:1535-1535	f39703789923	void spawn_detached(std::string_view name, Func &&func) const;
-llm/qb.llm.api.md	Actor.h:1537-1553	fdcc13b19f97	/**
-llm/qb.llm.api.md	Actor.h:1702-1711	dadd4620b634	class CoroContext {
-llm/qb.llm.api.md	Actor.h:2153-2260	bb1e47a5f85b	struct activation_awaiter {
-llm/qb.llm.api.md	Actor.h:2279-2390	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:2310-2314	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
-llm/qb.llm.api.md	Actor.h:2386-2389	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.api.md	Actor.h:2398-2401	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.api.md	Actor.h:2475-2484	5522188c5d2b	static qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:2503-2523	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.api.md	Actor.h:2514-2520	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:2522-2526	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:2552-2556	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
-llm/qb.llm.api.md	Actor.h:2557-2562	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
-llm/qb.llm.api.md	Actor.h:2586-2587	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2907-2907	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2915-2915	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
-llm/qb.llm.api.md	Actor.h:517-533	3a24e13e66c4	/**
-llm/qb.llm.api.md	Actor.h:563-584	c0770292de14	static void *
-llm/qb.llm.api.md	Actor.h:781-801	6d433ed7aa37	/**
-llm/qb.llm.api.md	Actor.h:841-858	11edeff824dc	/**
-llm/qb.llm.api.md	Actor.h:874-918	5c5465b8e08f	/**
+llm/qb.llm.api.md	Actor.h:1418-1428	84fc8982e239	* @brief `addRefActor<T>()` marked `[[nodiscard]]` — same call, same ...
+llm/qb.llm.api.md	Actor.h:1437-1495	348256583ed8	/**
+llm/qb.llm.api.md	Actor.h:1497-1532	ebacec412d5d	/**
+llm/qb.llm.api.md	Actor.h:1542-1542	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
+llm/qb.llm.api.md	Actor.h:1546-1546	f39703789923	void spawn_detached(std::string_view name, Func &&func) const;
+llm/qb.llm.api.md	Actor.h:1548-1564	fdcc13b19f97	/**
+llm/qb.llm.api.md	Actor.h:1713-1722	dadd4620b634	class CoroContext {
+llm/qb.llm.api.md	Actor.h:2164-2271	bb1e47a5f85b	struct activation_awaiter {
+llm/qb.llm.api.md	Actor.h:2290-2401	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.api.md	Actor.h:2321-2325	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
+llm/qb.llm.api.md	Actor.h:2397-2400	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.api.md	Actor.h:2409-2412	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.api.md	Actor.h:2486-2495	5522188c5d2b	static qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:2514-2534	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.api.md	Actor.h:2525-2531	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:2533-2537	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:2563-2567	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
+llm/qb.llm.api.md	Actor.h:2568-2573	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.api.md	Actor.h:2597-2598	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2918-2918	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2926-2926	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:521-537	3a24e13e66c4	/**
+llm/qb.llm.api.md	Actor.h:567-588	c0770292de14	static void *
+llm/qb.llm.api.md	Actor.h:786-806	6d433ed7aa37	/**
+llm/qb.llm.api.md	Actor.h:846-863	11edeff824dc	/**
+llm/qb.llm.api.md	Actor.h:879-923	5c5465b8e08f	/**
 llm/qb.llm.api.md	CoreStats.h:52-89	bb97fba05afb	struct CoreStats {
 llm/qb.llm.api.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std::uint8_t {
 llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
-llm/qb.llm.api.md	Event.h:924-925	e76bd16e4192	template <typename... _Args>
-llm/qb.llm.api.md	Event.h:933-934	46b3869d9c8b	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
+llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
 llm/qb.llm.api.md	VirtualCore.cpp:1064-1066	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1391-1406	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
-llm/qb.llm.api.md	VirtualCore.cpp:1710-1712	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
-llm/qb.llm.api.md	VirtualCore.cpp:1796-1805	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
-llm/qb.llm.api.md	VirtualCore.cpp:1820-1824	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1828-1835	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
-llm/qb.llm.api.md	VirtualCore.cpp:1853-1859	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
-llm/qb.llm.api.md	VirtualCore.cpp:1879-1898	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1900-1910	5c14683bf048	void
+llm/qb.llm.api.md	VirtualCore.cpp:1720-1722	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
+llm/qb.llm.api.md	VirtualCore.cpp:1806-1815	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
+llm/qb.llm.api.md	VirtualCore.cpp:1830-1834	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1838-1845	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
+llm/qb.llm.api.md	VirtualCore.cpp:1863-1869	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
+llm/qb.llm.api.md	VirtualCore.cpp:1889-1908	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1910-1920	5c14683bf048	void
 llm/qb.llm.api.md	VirtualCore.cpp:674-718	4af0dfc264b3	// Snapshot identities, not pointers: a previous onInit may destroy a...
 llm/qb.llm.api.md	VirtualCore.cpp:878-899	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
 llm/qb.llm.api.md	VirtualCore.h:1208-1230	4f679e59b3c4	_ServiceActor *
-llm/qb.llm.api.md	VirtualCore.h:1451-1465	090b760196e5	template <typename _Actor>
-llm/qb.llm.api.md	VirtualCore.h:1685-1687	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1685-1694	5626538722c5	Actor::spawn_detached(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1699-1702	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	VirtualCore.h:1699-1710	4592a4bd1df3	Actor::spawn(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1458-1472	090b760196e5	template <typename _Actor>
+llm/qb.llm.api.md	VirtualCore.h:1692-1694	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1692-1701	5626538722c5	Actor::spawn_detached(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1706-1709	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
+llm/qb.llm.api.md	VirtualCore.h:1706-1717	4592a4bd1df3	Actor::spawn(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
 llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
@@ -109,8 +109,8 @@ llm/qb.llm.api.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint
 llm/qb.llm.api.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.api.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.api.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1944-1977	9effe2d193b3	void
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2301-2317	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1954-1987	9effe2d193b3	void
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2311-2327	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.api.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:222-255	9554d137f47e	drain_backend_packets() {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:346-360	e6a54fbc82e3	if (_credit_packets_pending && _backend) {
@@ -152,69 +152,69 @@ llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:415-440	c921a75d78cd	// Synchron
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:749-753	fa4f2498297e	template <typename Fill>
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:967-971	2c64ca2d9e32	template <typename Fill>
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
-llm/qb.llm.api.md	task.h:749-764	f2192a619a48	await_resume() {
+llm/qb.llm.api.md	task.h:758-773	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
-llm/qb.llm.api.md	tracking.cpp:308-390	8adad8be0d3f	std::vector<parked_coroutine>
-llm/qb.llm.api.md	tracking.h:164-164	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
+llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine>
+llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1100-1139	7001d24b2fe3	if (port_begin && port_begin < port_end) {
 llm/qb.llm.api.md	uri.h:518-518	ad1019a20273	has_query() const noexcept {
 llm/qb.llm.md	Actor.cpp:592-597	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:592-607	6e87f36f759e	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:788-805	846f083df48d	Actor::reply(Event &event) const noexcept {
-llm/qb.llm.md	Actor.h:1074-1079	411d83537697	* This is the primary and recommended method for sending events. Even...
-llm/qb.llm.md	Actor.h:1119-1125	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
-llm/qb.llm.md	Actor.h:1134-1138	31e37e853c4c	* Events sent using `send()` are not guaranteed to be received in the...
-llm/qb.llm.md	Actor.h:1378-1383	4dff7d7441e7	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...
-llm/qb.llm.md	Actor.h:1404-1404	70a286fe36e6	ActorHandle<_Actor> addRefActor(_Args &&...args) const;
-llm/qb.llm.md	Actor.h:1426-1484	348256583ed8	/**
-llm/qb.llm.md	Actor.h:1484-1484	c83d000c16b8	void spawn_detached(Func &&func) const;
-llm/qb.llm.md	Actor.h:1486-1521	ebacec412d5d	/**
-llm/qb.llm.md	Actor.h:1521-1521	f9f0e3c13c7d	void spawn(Func &&func) const;
-llm/qb.llm.md	Actor.h:1531-1531	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
-llm/qb.llm.md	Actor.h:1537-1553	fdcc13b19f97	/**
-llm/qb.llm.md	Actor.h:1697-1703	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
-llm/qb.llm.md	Actor.h:2279-2390	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:2359-2389	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
-llm/qb.llm.md	Actor.h:2386-2389	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.md	Actor.h:2398-2401	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.md	Actor.h:2503-2523	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.md	Actor.h:2557-2562	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
-llm/qb.llm.md	Actor.h:517-540	36939744466b	/**
-llm/qb.llm.md	Actor.h:563-584	c0770292de14	static void *
-llm/qb.llm.md	Actor.h:781-801	6d433ed7aa37	/**
-llm/qb.llm.md	Actor.h:804-821	c8539992454c	* @brief Get current time from the VirtualCore's perspective (nanosec...
-llm/qb.llm.md	Actor.h:874-918	5c5465b8e08f	/**
+llm/qb.llm.md	Actor.cpp:780-797	846f083df48d	Actor::reply(Event &event) const noexcept {
+llm/qb.llm.md	Actor.h:1082-1087	411d83537697	* This is the primary and recommended method for sending events. Even...
+llm/qb.llm.md	Actor.h:1127-1133	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
+llm/qb.llm.md	Actor.h:1142-1146	31e37e853c4c	* Events sent using `send()` are not guaranteed to be received in the...
+llm/qb.llm.md	Actor.h:1389-1394	4dff7d7441e7	* @return A phase-aware `qb::ActorHandle<_Actor>`. The handle's `id()...
+llm/qb.llm.md	Actor.h:1415-1415	70a286fe36e6	ActorHandle<_Actor> addRefActor(_Args &&...args) const;
+llm/qb.llm.md	Actor.h:1437-1495	348256583ed8	/**
+llm/qb.llm.md	Actor.h:1495-1495	c83d000c16b8	void spawn_detached(Func &&func) const;
+llm/qb.llm.md	Actor.h:1497-1532	ebacec412d5d	/**
+llm/qb.llm.md	Actor.h:1532-1532	f9f0e3c13c7d	void spawn(Func &&func) const;
+llm/qb.llm.md	Actor.h:1542-1542	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
+llm/qb.llm.md	Actor.h:1548-1564	fdcc13b19f97	/**
+llm/qb.llm.md	Actor.h:1708-1714	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
+llm/qb.llm.md	Actor.h:2290-2401	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.md	Actor.h:2370-2400	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
+llm/qb.llm.md	Actor.h:2397-2400	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.md	Actor.h:2409-2412	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.md	Actor.h:2514-2534	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.md	Actor.h:2568-2573	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.md	Actor.h:521-544	36939744466b	/**
+llm/qb.llm.md	Actor.h:567-588	c0770292de14	static void *
+llm/qb.llm.md	Actor.h:786-806	6d433ed7aa37	/**
+llm/qb.llm.md	Actor.h:809-826	c8539992454c	* @brief Get current time from the VirtualCore's perspective (nanosec...
+llm/qb.llm.md	Actor.h:879-923	5c5465b8e08f	/**
 llm/qb.llm.md	CoreStats.h:52-89	bb97fba05afb	struct CoreStats {
 llm/qb.llm.md	DeadLetter.h:42-61	a6bc410ac76b	enum class DeadLetterReason : std::uint8_t {
 llm/qb.llm.md	DeathWatch.h:36-96	727ef60e200b	/*!
-llm/qb.llm.md	Event.h:889-902	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
+llm/qb.llm.md	Event.h:905-918	63da79c13fa5	* @details Presence IS the status (a dead actor never replies), so th...
 llm/qb.llm.md	ICallback.h:16-19	88e747230d39	* @warning The tick handler is executed on the `VirtualCore`'s event-...
 llm/qb.llm.md	Main.cpp:686-688	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:914-916	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Main.h:319-336	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
-llm/qb.llm.md	Pipe.h:138-153	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
+llm/qb.llm.md	Pipe.h:139-154	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
 llm/qb.llm.md	VirtualCore.cpp:1064-1066	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.md	VirtualCore.cpp:1215-1238	7547315e7512	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
 llm/qb.llm.md	VirtualCore.cpp:1387-1406	e56ce31e4af5	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
 llm/qb.llm.md	VirtualCore.cpp:1473-1488	27e395b7dc18	VirtualCore::send(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1631-1638	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1820-1835	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1879-1909	a67fb186c7ff	void
-llm/qb.llm.md	VirtualCore.cpp:1945-1977	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:2170-2174	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1641-1648	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1830-1845	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1889-1919	a67fb186c7ff	void
+llm/qb.llm.md	VirtualCore.cpp:1955-1987	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:2180-2184	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
 llm/qb.llm.md	VirtualCore.cpp:722-730	dda6174d86c3	// `task` starts suspended: resume once to reach the first `co_await`...
 llm/qb.llm.md	VirtualCore.cpp:887-899	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
 llm/qb.llm.md	VirtualCore.h:1019-1031	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	VirtualCore.h:1208-1230	4f679e59b3c4	_ServiceActor *
-llm/qb.llm.md	VirtualCore.h:1635-1644	1de53ea4e457	actor_coro_wrapper(Func func, CoroContext ctx, coro_census_ref counte...
-llm/qb.llm.md	VirtualCore.h:1656-1666	987a5a9d759b	actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
-llm/qb.llm.md	VirtualCore.h:1683-1694	095ce8f5dddd	template <typename Func>
+llm/qb.llm.md	VirtualCore.h:1642-1651	1de53ea4e457	actor_coro_wrapper(Func func, CoroContext ctx, coro_census_ref counte...
+llm/qb.llm.md	VirtualCore.h:1663-1673	987a5a9d759b	actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
+llm/qb.llm.md	VirtualCore.h:1690-1701	095ce8f5dddd	template <typename Func>
 llm/qb.llm.md	async/io.h:108-109	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:117-121	4ab46a163948	~base() {
 llm/qb.llm.md	async/io.h:88-93	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
 llm/qb.llm.md	async/listener.h:74-86	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
-llm/qb.llm.md	channel.h:1187-1187	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
+llm/qb.llm.md	channel.h:1200-1200	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
 llm/qb.llm.md	channel.h:182-182	2f5606bfe61b	send_awaiter(const send_awaiter &)            = delete;
 llm/qb.llm.md	combinators.h:191-191	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
 llm/qb.llm.md	combinators.h:66-66	2e37ad078057	* @details `when_all`, `when_any`, `race` and `coro_with_timeout` sto...
@@ -281,7 +281,7 @@ llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2301-2317	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2311-2327	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:398-406	a1c4380f4ec5	/// Per-peer RTT estimate; id zero names a client's connection or a s...
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
@@ -324,7 +324,7 @@ llm/qb.llm.md	time.h:8-25	980581677f9f	*  - `qb::duration`  — a span. Signed, 
 llm/qb.llm.md	time.h:93-93	5ca19947bbc8	using duration = std::chrono::nanoseconds;
 llm/qb.llm.md	time.h:96-96	93d026d68ec7	using mono_time = std::chrono::steady_clock::time_point;
 llm/qb.llm.md	time.h:99-99	49cf8beff960	using wall_time = std::chrono::system_clock::time_point;
-llm/qb.llm.md	tracking.h:164-164	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
+llm/qb.llm.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.md	type_traits.h:744-753	c06907c9bdbd	_qb_detect_own() noexcept {                                          ...
 llm/qb.llm.md	type_traits.h:920-920	d9321c5c623d	inline constexpr bool has_own_on = ::has_method_on<D, void, Evt>::tem...
 llm/qb.llm.md	uri.cpp:1045-1053	7bcfaab8cb54	if (p < p_end && *p == '?') {

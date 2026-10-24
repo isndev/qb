@@ -90,6 +90,7 @@ namespace qb {
  */
 class Pipe {
     friend class VirtualCore;
+    friend class Actor;
 
     VirtualPipe *pipe;
     ActorId      dest;

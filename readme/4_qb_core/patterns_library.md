@@ -52,22 +52,22 @@ this page only states what the patterns depend on.
   hold (quorum tallies, dedup caches, breaker state) needs no locking
   (`qb/src/qb/core/patterns/scatter.h:155-157`, `qb/src/qb/core/patterns/idempotency.h:60-62`).
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
-  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1497-1499`);
+  `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1508-1510`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1553`, `:2398-2402`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1564`, `:2409-2413`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
-  `qb/src/qb/core/Actor.h:1702,1722,1734,1743,1750,1758`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2279-2280,2292-2296,2320-2322`). **Never capture `this` past a `co_await`** — capture by
-  value (`qb/src/qb/core/Actor.h:1501-1503`).
+  `qb/src/qb/core/Actor.h:1713,1733,1745,1754,1761,1769`) plus the scope token and cancellation-aware `sleep`
+  (`qb/src/qb/core/Actor.h:2290-2291,2303-2307,2331-2333`). **Never capture `this` past a `co_await`** — capture by
+  value (`qb/src/qb/core/Actor.h:1512-1514`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
-  (`qb/src/qb/core/Event.h:851-852`); `qb::AskEvent` derives from it for the request/response API
-  (`qb/src/qb/core/Actor.h:1772`);
+  (`qb/src/qb/core/Event.h:867-868`); `qb::AskEvent` derives from it for the request/response API
+  (`qb/src/qb/core/Actor.h:1783`);
   `qb::PingEvent` / `qb::RequireEvent` derive from it for
-  discovery (`qb/src/qb/core/Event.h:874,893`). Because the id sits at a uniform offset, the
+  discovery (`qb/src/qb/core/Event.h:890,909`). Because the id sits at a uniform offset, the
   per-core continuation registry can deliver a reply even to an actor that is still *Activating*
   (inside `onInit()`), so the whole library works during init
-  (`qb/src/qb/core/Event.h:844-848`).
+  (`qb/src/qb/core/Event.h:860-864`).
 
 ### Cancellation, timeout and failure — the common contract
 
@@ -75,7 +75,7 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 
 - **Cancel-on-kill.** When an actor is killed/destroyed its scope token is cancelled; any pattern
   parked on a cancellation-aware wait wakes within the next loop iteration and throws
-  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1490-1494`).
+  `qb::io::async::cancelled_error` (`qb/src/qb/core/Actor.h:1501-1505`).
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:298-302`).
@@ -153,7 +153,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   sending nothing, if the budget is already spent (`request.h:410-415`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
-(`qb/src/qb/core/Actor.h:1573-1596`); one actor can both ask and answer the same event type
+(`qb/src/qb/core/Actor.h:1584-1607`); one actor can both ask and answer the same event type
 because `answer`/`resolve_ask` disambiguate replies from inbound requests
 (`qb/tests/core/system/coroutine/ask-patterns.cpp:22-23`).
 
@@ -247,7 +247,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,455-462 and qb/src/qb/core/Actor.h:1573-1596 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,455-462 and qb/src/qb/core/Actor.h:1584-1607 -->
 
 ---
 
@@ -362,7 +362,7 @@ of a type within a time window.
   replies for the whole window, returning the responders' ids (empty if none)
   (`discovery.h:189-224`).
 - Replies are routed automatically by `Actor`'s default `on(RequireEvent&)` (which calls
-  `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:676-691`). Both work
+  `resolve_require`) — **no handler boilerplate** (`qb/src/qb/core/Actor.h:680-695`). Both work
   inside `onInit()` because replies reach an *Activating* asker through the continuation registry
   (`discovery.h:173-175`, `:197-201`). Throws `cancelled_error` on kill; never throws on timeout
   (a timed-out `ping` returns `false`, a timed-out `require` returns the partial set)
@@ -838,8 +838,8 @@ public:
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
 `co_await` directly in `onInit()`. Replies reach the still-*Activating* asker through the
-continuation registry (`qb/src/qb/core/Actor.h:1537-1553`,
-`qb/src/qb/core/Event.h:844-848`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
+continuation registry (`qb/src/qb/core/Actor.h:1548-1564`,
+`qb/src/qb/core/Event.h:860-864`). The init suite exercises `ask`, `ask_retry`, `ask_all`,
 `ask_any`, `ask_guarded`, `ask_quorum`, `ask_by`, `run_saga` and `rate_limiter` all inside `onInit()`
 (`qb/tests/core/system/init/init-patterns.cpp:105-107,166,203,260,295,327,367,398,503`).
 
@@ -885,7 +885,7 @@ qb::io::async::task<bool> onInit() override {
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
   carry failure in the response payload (`request.h:447-454`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
-  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1501-1503`). The
+  actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1512-1514`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by
   `std::shared_ptr` and captured by value so they outlive the actor
   (`resilience.h:115-118`, `:268-271`, `:360-362`).

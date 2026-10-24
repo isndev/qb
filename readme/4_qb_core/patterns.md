@@ -41,7 +41,7 @@ The patterns also use two timing tools from `qb-io`:
   `scoped_callback` held as an actor member when you want a cancellable handle.
 - `Actor::time()` returns a per-iteration cached nanosecond timestamp — uniform within one handler.
   For a fresh reading use `qb::unix_nanos(qb::wall_now())` (`qb/system/time.h`).
-<!-- src: qb/src/qb/core/Actor.h:1521,2320-2322, qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/io/async/io.h:341-349,374 -->
+<!-- src: qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.h:874-877, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/io/async/io.h:341-349,374 -->
 
 ## The patterns library (`<qb/core/patterns.h>`)
 
@@ -157,7 +157,7 @@ Two rules keep an actor FSM correct:
   actor's coroutine scope; if you want a timer handle instead, hold a `scoped_callback` as a member so
   the actor's own destructor cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures)
   and [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/core/VirtualCore.cpp:2222-2227,1391-1406 -->
+  <!-- src: qb/src/qb/core/Actor.h:874-877, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/core/VirtualCore.cpp:2232-2237,1391-1406 -->
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -231,7 +231,7 @@ refused at registration — first named while a core was alive — it is `{0, co
 > the service you get back may not have finished initializing. If you need that guarantee, ask it
 > (`push` an event, or `co_await qb::ask(...)`) rather than touching its state. A non-null pointer is
 > therefore **not** evidence that the service is alive or ready.
-<!-- src: qb/src/qb/core/Actor.h:845-855 (not phase-gated, by design); qb/src/qb/core/Actor.h:886-907 (the Activating inventory table) -->
+<!-- src: qb/src/qb/core/Actor.h:850-860 (not phase-gated, by design); qb/src/qb/core/Actor.h:891-912 (the Activating inventory table) -->
 
 > **Pitfall:** prefer sending events to the service's `id()` over calling its methods through the
 > `getService<T>()` pointer. A direct call bypasses the event queue and runs synchronously inside
@@ -435,7 +435,7 @@ Key points:
   `qb::io::async::callback([this, id_]{ if (is_alive()) … }, 500ms)` — does not work: that timer is
   owned by the loop, it fires long after `VirtualCore` has reaped the actor, and `is_alive()` reads an
   actor member, so evaluating the guard is itself the use-after-free.
-  <!-- src: qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:751-762 -->
+  <!-- src: qb/src/qb/core/Actor.h:874-877, qb/src/qb/core/Actor.cpp:751-762 -->
 
 For an exchange that fans out to an external network service, drive the I/O from a coroutine instead
 of a peer actor — see [Coroutines](#coroutines-for-async-io) below.
@@ -448,7 +448,7 @@ own the child — the child manages its own lifecycle and must `kill()` itself. 
 dangles: it caches the `ActorId`, and `get()` resolves the live pointer on demand, returning
 `nullptr` while the child is still *Activating* (async `onInit` in flight), after a failed
 init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable
-(`Actor.h:2557-2562`). The child has its own `ActorId` and receives events normally.
+(`Actor.h:2568-2573`). The child has its own `ActorId` and receives events normally.
 
 ```cpp
 // src: derived from qb/tests/core/system/actor/actor-add.cpp
@@ -588,7 +588,7 @@ Supervision techniques:
   each worker before killing itself. There is no automatic parent/child teardown; the cooperative
   `kill()` model means you choose the order.
 - **Prefer `RefActorHandle` for same-core workers** so `get()` after a worker has died yields
-  `nullptr` rather than a stale pointer; only dereference after `ready()` (`Actor.h:2557-2571`). For workers on other cores, hold their `ActorId`s and
+  `nullptr` rather than a stale pointer; only dereference after `ready()` (`Actor.h:2568-2582`). For workers on other cores, hold their `ActorId`s and
   rely on the router dropping events to dead ids.
 
 ## Dependency resolution with require
@@ -715,7 +715,7 @@ specific: `spawn` increments the very counter this handler is polling
 member-owned `scoped_callback` gives the same lifetime binding without touching the count. A bare
 `qb::io::async::callback` would give neither — its timer is owned by the loop, so it can fire after
 the actor is gone, and the `is_alive()` guard above is only valid because the *handle* is a member.
-<!-- src: qb/src/qb/core/VirtualCore.h:1699-1710, qb/src/qb/io/async/io.h:530-538 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1706-1717, qb/src/qb/io/async/io.h:530-538 -->
 
 The full coroutine contract — the dangling-closure rule, the `task<void>` type, the scheduler, and
 the safety requirements — lives on the [Coroutines](../3_qb_io/coroutines.md) page. The footgun to
@@ -738,13 +738,13 @@ context.
   cancels the watcher. See
   [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures) and
   [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/core/VirtualCore.cpp:2222-2227,1391-1406 -->
+  <!-- src: qb/src/qb/core/Actor.h:874-877, qb/src/qb/core/Actor.cpp:751-762, qb/src/qb/core/VirtualCore.cpp:2232-2237,1391-1406 -->
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.
 - **Calling `handle->method()` on a non-active child.** `addRefActor<T>()` returns a phase-aware
   `qb::ActorHandle<T>` whose `get()` yields `nullptr` while the child is Activating, after a failed
-  init, or once it died. `operator->` asserts in debug when unavailable (`Actor.h:2557-2562`).
+  init, or once it died. `operator->` asserts in debug when unavailable (`Actor.h:2568-2573`).
   Gate direct calls on `handle.ready()` (or
   `co_await handle.ready_async(context())`); prefer sending to `handle.id()` after checking `handle.valid()`.
 - **Cross-core `ActorHandle` use.** Handles are same-core only. Reach actors on other cores by
@@ -752,7 +752,7 @@ context.
 - **Treating `require<T>()` as a live registry.** It is a one-shot ping answered only by actors
   alive at that instant. Presence *is* the status — `qb::RequireEvent` carries only `type` and the
   inherited `correlation_id`, and there is **no status field** to test. Re-issue it to rediscover,
-  and detect deaths through your own protocol. (`qb/src/qb/core/Event.h:893`)
+  and detect deaths through your own protocol. (`qb/src/qb/core/Event.h:909`)
 - **Calling a `getService<T>()` pointer's mutating methods.** A direct call runs synchronously and
   bypasses the queue — a re-entrancy hazard. Send an event to the service's `id()` instead.
 

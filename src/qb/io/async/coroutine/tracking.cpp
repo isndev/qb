@@ -221,6 +221,28 @@ forget_frame(void const *frame) noexcept {
         release_if_idle(t);
 }
 
+#if !(defined(_MSC_VER) && !defined(__clang__))
+void
+note_suspension_if_tracked(void *frame, char const *kind, void const *waits_on) noexcept {
+    if (suspension_tracking::on)
+        note_suspension(frame, kind, waits_on);
+}
+
+std::coroutine_handle<>
+track_then_if_tracked(void *frame, char const *kind, void const *waits_on, std::coroutine_handle<> next) noexcept {
+    if (!suspension_tracking::on)
+        return next; // another thread opened the gate: this one does not track, the transfer goes straight on
+    suspension_tracking::pending = pending_suspension{frame, kind, waits_on, next};
+    return std::coroutine_handle<>::from_address(suspension_tracking::recorder);
+}
+
+void
+forget_frame_if_seen(void const *frame) noexcept {
+    if (suspension_tracking::frames)
+        forget_frame(frame);
+}
+#endif
+
 bool
 name_frame(void const *frame, std::string_view const name) noexcept {
     auto *t = table_or_create();

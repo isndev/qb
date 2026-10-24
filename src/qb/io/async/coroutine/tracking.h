@@ -112,6 +112,7 @@ for_each_suspension(Out &&out) {
     visit_suspensions(&out, [](void *ctx, suspension_view const &v) { (*static_cast<std::remove_reference_t<Out> *>(ctx))(v); });
 }
 
+#if defined(_MSC_VER) && !defined(__clang__)
 /// The awaiters' test: this thread records its suspensions. Behind `gate.tracking`: while no thread tracks -- names or
 /// not -- one load of a global and one branch.
 [[nodiscard]] inline bool
@@ -146,6 +147,49 @@ track_frame_destroyed(void const *frame) noexcept {
     if (suspension_tracking::gate.frames.load(std::memory_order_relaxed) != 0 && suspension_tracking::frames) [[unlikely]]
         forget_frame(frame);
 }
+#else
+/// GCC and Clang: the inline half is the gate alone, and the thread-local test moves into the cold, out-of-line half.
+/// Written inline, `gate && thread_local` let Clang on Darwin compute the thread_local's address -- a call through its
+/// TLV descriptor -- BEFORE the gate, on every suspension and every frame destruction with tracking off, and the cold
+/// branch's live values could also require saved registers. The cold helpers preserve the global-only inline gate;
+/// generated frames and inlining still depend on the compiler and caller. Earlier macOS measurements were of an
+/// earlier implementation, not this composition. MSVC keeps the recorder hand-over shape above.
+
+/// The cold halves (coroutine/tracking.cpp): each tests this thread's flag, then records, hands over or erases.
+QB_NOINLINE QB_COLD void note_suspension_if_tracked(void *frame, char const *kind, void const *waits_on) noexcept;
+QB_NOINLINE QB_COLD std::coroutine_handle<> track_then_if_tracked(void *frame, char const *kind, void const *waits_on,
+                                                                  std::coroutine_handle<> next) noexcept;
+QB_NOINLINE QB_COLD void                    forget_frame_if_seen(void const *frame) noexcept;
+
+/// The awaiters' test, here the gate alone: some thread records its suspensions. Whether THIS thread does is tested
+/// by the cold half it guards (`track_suspension`, `track_then`), so a thread that does not track only pays the call.
+[[nodiscard]] inline bool
+tracking_on() noexcept {
+    return suspension_tracking::gate.tracking.load(std::memory_order_relaxed) != 0;
+}
+
+/// What an awaiter of qb calls first thing in `await_suspend` (see the MSVC form above for the parameters).
+inline void
+track_suspension(void *frame, char const *kind, void const *waits_on = nullptr) noexcept {
+    if (tracking_on()) [[unlikely]]
+        note_suspension_if_tracked(frame, kind, waits_on);
+}
+
+/// The record of an awaiter that TRANSFERS to another coroutine, behind `tracking_on()`: `next` itself when this thread
+/// does not track, else this thread's recorder, which records the suspension and transfers to `next`.
+[[nodiscard]] inline std::coroutine_handle<>
+track_then(void *frame, char const *kind, void const *waits_on, std::coroutine_handle<> next) noexcept {
+    return track_then_if_tracked(frame, kind, waits_on, next);
+}
+
+/// What a frame's destruction calls (the destructor of the `task` and `async_generator` promises). Behind
+/// `gate.frames`: while no thread tracks or names, one load of a global and one branch.
+inline void
+track_frame_destroyed(void const *frame) noexcept {
+    if (suspension_tracking::gate.frames.load(std::memory_order_relaxed) != 0) [[unlikely]]
+        forget_frame_if_seen(frame);
+}
+#endif
 
 } // namespace qb::io::async::detail
 

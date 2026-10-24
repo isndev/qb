@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:389-430, qb/src/qb/io/async/io.h:341-349,374,530-538, qb/src/qb/core/Actor.h:1521,2320-2322, qb/src/qb/core/Actor.h:869-872, qb/src/qb/core/Actor.cpp:751-762, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
+<!-- src: qb/src/qb/io/async/io.h:389-430, qb/src/qb/io/async/io.h:341-349,374,530-538, qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.h:874-877, qb/src/qb/core/Actor.cpp:751-762, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
 
 ## 6. Build and run
 
@@ -346,7 +346,7 @@ A non-zero exit code means `engine.hasError()` reported a core that terminated o
 - **Do not block in a handler or callback.** `on(...)` handlers and `qb::io::async::callback` bodies run on the core's event-loop thread; a blocking call stalls every actor on that core. Use the async surface in [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md) instead.
 - **Subscribe with `registerEvent<T>` in `onInit()`, not your constructor.** `onInit()` is the documented initialization hook: it runs once the actor is fully appended to its core, and `co_return false` from it aborts creation cleanly. A constructor cannot signal initialization failure that way.
 
-<!-- src: qb/src/qb/core/Main.cpp:914-916 (Main::core throws while running), :686-688 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:592-599 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:476-478 (onInit is where registerEvent belongs) -->
+<!-- src: qb/src/qb/core/Main.cpp:914-916 (Main::core throws while running), :686-688 (Error::NoActor for a 0-actor core), qb/src/qb/core/Actor.cpp:592-599 (ctor asserts the worker thread), qb/src/qb/core/Actor.h:480-482 (onInit is where registerEvent belongs) -->
 
 ## Where to go next
 

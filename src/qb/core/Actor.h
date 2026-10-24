@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1674-1676`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1684-1686`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -408,6 +408,10 @@ class Actor : nocopy {
      */
     explicit Actor(ActorId id) noexcept;
 
+    // Keep Actor.h independent of VirtualCore.h; cross the archive boundary with a
+    // single buffer reference instead of returning the 24-byte Pipe through memory.
+    [[nodiscard]] static VirtualPipe &pipe_buffer_for(CoreId core) noexcept;
+
 protected:
     /**
      * @brief The service id of `Tag`, registering `Tag` on first use: the ONE reader of a service id (Huly QB-1007)
@@ -709,11 +713,12 @@ public:
         Pipe dest_pipe;
 
         /**
-         * @brief Construct a new EventBuilder for the given pipe
-         *
-         * @param pipe The destination pipe to send events to
+         * @brief Build the owning destination pipe in place, without an intermediate copy
+         * @param actor The sending actor
+         * @param dest The destination actor
          */
-        explicit EventBuilder(Pipe const &pipe) noexcept;
+        explicit EventBuilder(Actor const &actor, ActorId dest) noexcept
+            : dest_pipe(actor.getPipe(dest)) {}
 
     public:
         EventBuilder()                                 = delete;
@@ -1060,7 +1065,10 @@ public:
      * same underlying communication pipe to that destination. Event ordering is maintained per pipe.
      * @see Actor::EventBuilder
      */
-    [[nodiscard]] EventBuilder to(ActorId dest) const noexcept;
+    [[nodiscard]] EventBuilder
+    to(ActorId dest) const noexcept {
+        return EventBuilder{*this, dest};
+    }
 
     /**
      * @brief Send a new event in an ordered fashion to a destination actor, returning a reference to it.
@@ -1368,7 +1376,10 @@ public:
      * @see Pipe::push
      * @see Pipe::allocated_push
      */
-    [[nodiscard]] Pipe getPipe(ActorId dest) const noexcept;
+    [[nodiscard]] Pipe
+    getPipe(ActorId dest) const noexcept {
+        return {pipe_buffer_for(dest.index()), dest, id()};
+    }
 
     /**
      * @brief Create a new referenced actor on the same VirtualCore and return a handle to it.

@@ -251,9 +251,20 @@ TypeId register_type_name(TypeId id, char const *name) noexcept;
 template <typename T>
 [[nodiscard]] QB_ABI_ANCHOR inline TypeId
 type_id_for() noexcept {
-    static type_id_slot slot{};
-    static const TypeId id = register_type_id(slot, typeid(T).name());
-    return id;
+    static type_id_slot        slot{}; // constant-initialised: no guard
+    static std::atomic<TypeId> id{0};  // constant-initialised: no guard
+    // A relaxed load and a cold first call, not a guarded `static const`: the guard's acquire load ran on
+    // every push, send and reply (seven instructions a call), and sat between the event's construction and
+    // `fill_event`, where the compiler keeps a store alive across an acquire -- the zero-initialised
+    // dest/source of every event were stored, then stored again. Measured on Apple clang 21 / M4 Pro, a
+    // one-core 1M-event burst: 3.45 -> 2.24 ns a push, 122 -> 100 instructions an event delivered
+    // (savina/counting 1c +10 % against v3.2.1 with ActorId64's wider header, -20 % after).
+    TypeId value = id.load(std::memory_order_relaxed);
+    if (value == 0) [[unlikely]] {
+        value = register_type_id(slot, typeid(T).name()); // idempotent under the registry's lock: racing threads agree
+        id.store(value, std::memory_order_relaxed);
+    }
+    return value;
 }
 
 /**
@@ -582,7 +593,7 @@ event_type_name(Event::id_type const id) noexcept {
  * @brief An alias OF `qb::Event`, not a distinct type — and QoS is a drop policy, not a dispatch priority.
  * @details `Event::Header::prot` already encodes `qos = 2`, so this names the base class itself. The field is
  * read in exactly ONE place and as a BINARY gate: the cross-core flush drops a `qos == 0` event on backpressure and
- * retries every other one (`VirtualCore.cpp:2056-2140`). Events drain FIFO whatever their QoS; nothing is processed "before".
+ * retries every other one (`VirtualCore.cpp:2066-2150`). Events drain FIFO whatever their QoS; nothing is processed "before".
  * @ingroup EventCore
  */
 using EventQOS2 = Event;
@@ -734,7 +745,12 @@ struct event_wire {
             std::memcpy(d + 24, s + 24, bytes - 24);
         }
 #else
-        std::memcpy(d + 24, s + 24, bytes - 24);
+        // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
+        // call to memmove on every event of a target without SSE2 -- arm64 takes this path, 40 bytes an event.
+        if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
+            std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
+        else
+            std::memcpy(d + 24, s + 24, bytes - 24);
 #endif
     }
 
@@ -1210,7 +1226,7 @@ routing_safe_type_id() noexcept {
     // WHY ONLY EventQOS0. QoS is a binary backpressure policy, not a priority. A `qos == 0`
     // event is the one thing the cross-core flush is allowed to DISCARD when a peer's mailbox is
     // full, and it discards it WITHOUT disposing it -- `__refused__` returns false for
-    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:2056-2067). Every other event is
+    // `if (!event.state.bits.qos)`, with no `_router.dispose()` (VirtualCore.cpp:2066-2077). Every other event is
     // retried, and every event that is actually DELIVERED has its destructor run exactly once by
     // the receiving core whichever primitive queued it -- which is why a plain `qb::Event`
     // subclass owning heap is legitimate here and is deliberately NOT rejected. See

@@ -294,22 +294,22 @@ private:
                     Event::__broadcast_elsewhere__(event); // another core's: reported, disposed by resolve() (QB-268)
                     return;
                 }
-                static thread_local allocator::detail::region_stack<Actor *> snapshot;
-                const std::size_t                                            base = snapshot.size();
+                static thread_local router::internal::snapshot_stack<Actor *> snapshot; // router.h: why not push_back
+                const std::size_t                                             base = snapshot.end;
                 struct RestoreSnapshot {
-                    allocator::region_vector<Actor *> &entries;
-                    std::size_t                        base;
+                    router::internal::snapshot_stack<Actor *> &entries;
+                    std::size_t                                base;
                     ~RestoreSnapshot() {
-                        entries.resize(base);
+                        entries.end = base;
                     }
                 } restore{snapshot, base};
                 for (auto const *bank : {&_core._service_actors, &_core._actors})
                     for (auto const &slot : *bank)
                         if (Actor *const actor = slot.get())
-                            snapshot.push_back(actor);
-                const std::size_t end = snapshot.size();
+                            snapshot.push(actor);
+                const std::size_t end = snapshot.end;
                 for (std::size_t i = base; i < end; ++i)
-                    dispatch(*snapshot[i], event);
+                    dispatch(*snapshot.slots[i], event);
             } else if (Actor *const actor = _core.__actor_slot__(dest)) [[likely]] {
                 dispatch(*actor, event);
             } else [[unlikely]] {
@@ -1350,6 +1350,13 @@ VirtualCore::__getPipe__(CoreId const core) noexcept {
     // `CoreId` is 16 bits wide and `MaxCores` is 256: the bounds check keeps the same contract
     // `CoreSet::resolve` had (an out-of-range id aliases index 0, never an out-of-bounds read).
     return *_pipe_of_core[likely(core < MaxCores) ? core : 0];
+}
+
+// This private helper is inline where the complete VirtualCore is visible.
+// Actor's public pipe wrappers are defined in Actor.h, including for direct-header consumers.
+inline Pipe
+VirtualCore::getProxyPipe(ActorId const dest, ActorId const source) noexcept {
+    return {__getPipe__(dest.index()), dest, source};
 }
 
 template <typename Tag>

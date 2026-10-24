@@ -398,7 +398,7 @@ public:
         if (!_buffer.empty()) {
             T value = std::move(_buffer.front());
             _buffer.pop_front();
-            wake_one_sender();
+            wake_one_sender_if_any();
             return value;
         }
         return std::nullopt;
@@ -468,7 +468,7 @@ public:
         if (!_buffer.empty()) {
             T val = std::move(_buffer.front());
             _buffer.pop_front();
-            wake_one_sender();
+            wake_one_sender_if_any();
             state->resolve(idx, std::any(std::move(val)));
             return;
         }
@@ -834,8 +834,10 @@ private:
      *
      * Out of line, empty check included: inlined, this hand-off (two `pop_front` sites, an entry held across the
      * `deliver()` call) entered the receive loop of every caller, and g++-14 then kept the caller's own loop values
-     * in memory -- `try_recv` +45 % (Huly QB-272). One call per pop instead; an inline empty check with only the
-     * hand-off out of line is faster on g++ but measured +7 % on MSVC.
+     * in memory -- `try_recv` +45 % (Huly QB-272). One call per pop on MSVC, where an inline empty check with only
+     * the hand-off out of line measured +7 %; GCC and Clang take that inline check (`wake_one_sender_if_any`): it
+     * was faster on g++ in QB-272's measurement, and on Apple clang 21 the call on every `try_recv` pop cost the
+     * try_send/try_recv cell +2.3 % against v3.2.1 (macOS validation, 2026-10-24).
      */
     QB_NOINLINE void
     wake_one_sender() {
@@ -855,6 +857,17 @@ private:
             schedule_via_current(h);
             return;
         }
+    }
+
+    /// The pop sites' wake: see `wake_one_sender` for why the test is inline on GCC and Clang and not on MSVC.
+    void
+    wake_one_sender_if_any() {
+#if defined(_MSC_VER) && !defined(__clang__)
+        wake_one_sender();
+#else
+        if (!_send_waiters.empty()) [[unlikely]]
+            wake_one_sender();
+#endif
     }
 
     qb::growable_ring<T>                   _buffer;

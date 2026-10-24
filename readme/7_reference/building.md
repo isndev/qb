@@ -338,8 +338,8 @@ descriptor that the dynamic linker coalesces. Nothing about how you spell them c
 
 **`-fvisibility=hidden` in a consumer stops the coalescing.** Every anchor above carries
 `QB_ABI_ANCHOR` (`visibility("default")`) so it keeps merging. One case that annotation cannot
-reach: the per-type magic static inside `type_id_for<T>()` is *block-scope*, and a block-scope
-static cannot be put back in the export trie. So type identity no longer lives there — the magic
+reach: the per-type static inside `type_id_for<T>()` is *block-scope*, and a block-scope
+static cannot be put back in the export trie. So type identity no longer lives there — that
 static caches an id owned by `qb::detail::_type_id_registry`, one shared list keyed by
 `typeid(T).name()`. That also covers two separate copies of `libqb-core.a` in one process.
 
@@ -383,7 +383,7 @@ the tail of `<qb/core/VirtualCore.h>` (they were `Actor.tpp` through 2.6.0), bec
 complete `qb::VirtualCore`. Including `VirtualCore.h` directly supplies those bodies and is
 covered by an installed-entry-point link test. The umbrellas remain the usual entry points:
 `VirtualCore.h` also brings `<windows.h>`, `WIN32_LEAN_AND_MEAN` and `NOMINMAX` into a TU.
-<!-- src: qb/src/qb/core/VirtualCore.h:1467-1471; qb/scripts/installed-entry-points/qb_core_VirtualCore_h.cpp:21-42 -->
+<!-- src: qb/src/qb/core/VirtualCore.h:1474-1478; qb/scripts/installed-entry-points/qb_core_VirtualCore_h.cpp:21-42 -->
 
 `<qb/main.h>` was on the wrong side of that table until 3.0.0.
 

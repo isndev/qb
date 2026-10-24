@@ -37,6 +37,7 @@
 #include <memory>
 #include <new>
 #include <qb/system/event/router.h>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -537,16 +538,18 @@ using namespace event_router_dense_test;
 using Router = qb::router::semh<HitEvent>;
 
 struct ReentrantHandler : FakeActor {
-    Router    &router;
-    FakeActor &removed;
-    FakeActor &added;
-    bool       nested = false;
+    Router                 &router;
+    FakeActor              &removed;
+    FakeActor              &added;
+    std::vector<FakeActor> &extra;
+    bool                    nested = false;
 
-    ReentrantHandler(Router &table, FakeActor &old_handler, FakeActor &new_handler)
+    ReentrantHandler(Router &table, FakeActor &old_handler, FakeActor &new_handler, std::vector<FakeActor> &extra_handlers)
         : FakeActor(1)
         , router(table)
         , removed(old_handler)
-        , added(new_handler) {}
+        , added(new_handler)
+        , extra(extra_handlers) {}
 
     void
     on(HitEvent &) noexcept {
@@ -556,6 +559,8 @@ struct ReentrantHandler : FakeActor {
         nested = true;
         router.unsubscribe(removed.id());
         router.subscribe(added); // New distant logical slot; capacity may already be cached.
+        for (auto &handler : extra)
+            router.subscribe(handler);
         HitEvent inner;
         inner.dest = DenseId{kBroadcast, 0};
         router.route(inner);
@@ -563,24 +568,37 @@ struct ReentrantHandler : FakeActor {
 };
 
 TEST(EventRouting, HeterogeneousSemhNestedBroadcastKeepsOuterSnapshotDuringSubscriptionGrowth) {
-    Router           router;
-    FakeActor        removed(2), added(60000);
-    ReentrantHandler first(router, removed, added);
-    router.subscribe(first);
-    router.subscribe(removed);
-    HitEvent outer;
-    outer.dest = DenseId{kBroadcast, 0};
-    router.route(outer);
-    EXPECT_TRUE(first.nested);
-    EXPECT_EQ(first.hits, 2u);   // Once in each snapshot.
-    EXPECT_EQ(removed.hits, 1u); // Still live in outer snapshot, absent from inner.
-    EXPECT_EQ(added.hits, 1u);   // Inner only: not present when outer was snapshotted.
-    HitEvent next;
-    next.dest = DenseId{kBroadcast, 0};
-    router.route(next);
-    EXPECT_EQ(first.hits, 3u);
-    EXPECT_EQ(removed.hits, 1u);
-    EXPECT_EQ(added.hits, 2u);
+    // A fresh thread gives the router a fresh TLS snapshot on EVERY GTest repetition.
+    // Outer: two entries. Inner: first + added + 17 extras, so the live snapshot grows
+    // from two to 21 entries while the outer frame still has one recipient to visit.
+    std::thread([] {
+        Router                 router;
+        FakeActor              removed(2), added(60000);
+        std::vector<FakeActor> extra;
+        extra.reserve(17);
+        for (uint16_t slot = 100; slot < 117; ++slot)
+            extra.emplace_back(slot);
+        ReentrantHandler first(router, removed, added, extra);
+        router.subscribe(first);
+        router.subscribe(removed);
+        HitEvent outer;
+        outer.dest = DenseId{kBroadcast, 0};
+        router.route(outer);
+        EXPECT_TRUE(first.nested);
+        EXPECT_EQ(first.hits, 2u);   // Once in each snapshot.
+        EXPECT_EQ(removed.hits, 1u); // Still live in outer snapshot, absent from inner.
+        EXPECT_EQ(added.hits, 1u);   // Inner only: not present when outer was snapshotted.
+        for (auto const &handler : extra)
+            EXPECT_EQ(handler.hits, 1u);
+        HitEvent next;
+        next.dest = DenseId{kBroadcast, 0};
+        router.route(next);
+        EXPECT_EQ(first.hits, 3u);
+        EXPECT_EQ(removed.hits, 1u);
+        EXPECT_EQ(added.hits, 2u);
+        for (auto const &handler : extra)
+            EXPECT_EQ(handler.hits, 2u);
+    }).join();
 }
 
 } // namespace event_router_occupancy_reentry_test

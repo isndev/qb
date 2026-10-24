@@ -16,7 +16,7 @@
  *    loop watcher, without what they wait on;
  *  - on, each awaiter of qb records what its coroutine waits on (sleep, mutex, semaphore, event, latch, channel,
  *    offload, generator), and a coroutine awaiting a task or a generator records its frame, so the dump chains a root
- *    to its leaf;
+ *    to its leaf; a coroutine awaiting a task waits since the task parked, whatever it waited on before;
  *  - an awaitable of your own labels itself with `track_suspension(h, kind)`, or leaves the previous record;
  *  - a record ages, the longest waits come first, a record goes with its frame; turning tracking off drops all;
  *  - a name lives as long as its frame, whether its root is cancelled or completes, tracking on or off;
@@ -414,6 +414,59 @@ TEST_F(SuspensionTracking, AChainLeadsFromItsRootToTheLeafAndTheRecordAges) {
     EXPECT_TRUE(coro_scheduler().dump().empty());
 }
 
+TEST_F(SuspensionTracking, ACoroutineAwaitingATaskWaitsSinceItsNewAwaitNotSinceItsOwnEarlierWait) {
+    // A new task await must replace the coroutine's earlier wait, including for a child created before that wait
+    // and for the next task the pool hands its predecessor's freed frame. This checks the new await and frame reuse;
+    // it does not distinguish the instant of the await from the child's first park.
+    ASSERT_TRUE(coro_scheduler().set_suspension_tracking(true));
+    async_event      first;
+    async_event      second;
+    async_event      third;
+    async_event      fourth;
+    std::atomic<int> stage{0};
+    std::atomic<int> out{0};
+    coro_scheduler().spawn("tasks-in-turn", [&]() -> task<void> {
+        auto created_first = suspension_tracking_test::leaf(&second); // awaited after the wait below
+        co_await first.wait();
+        stage = 1;
+        out += co_await created_first;
+        stage = 2;
+        out += co_await suspension_tracking_test::leaf(&third); // a temporary: freed before the next line
+        stage = 3;
+        out += co_await suspension_tracking_test::leaf(&fourth);
+    });
+    void const *previous_leaf = nullptr;
+    auto        release       = [&](async_event &ev, int const reached) {
+        run_for(30ms); // the wait before: a record aged from it is 30 ms too old
+        ev.set();
+        const auto released = std::chrono::steady_clock::now();
+        ASSERT_TRUE(qb::io::test::pump_until([&] { return stage.load() == reached; }));
+        run_for(2ms);
+        const auto  dump = coro_scheduler().dump();
+        const auto  then = std::chrono::steady_clock::now() - released;
+        auto const *root = named(dump, "tasks-in-turn");
+        ASSERT_TRUE(root && root->waits_on) << suspension_tracking_test::dump_text();
+        auto const *body = at(dump, root->waits_on);
+        ASSERT_TRUE(body && body->waits_on) << suspension_tracking_test::dump_text();
+        EXPECT_EQ(suspension_tracking_test::chain_kinds(dump, "tasks-in-turn"), (std::vector<std::string_view>{"task", "task", "event"}))
+            << "stage " << reached << ":\n"
+            << suspension_tracking_test::dump_text();
+        EXPECT_LT(body->age, then + 15ms) << "stage " << reached << ": the wait on the task counts an earlier wait:\n"
+                                          << suspension_tracking_test::dump_text();
+        if (reached == 3) {
+            ASSERT_EQ(body->waits_on, previous_leaf) << "the pool did not hand the freed frame back: this case cannot see a stale link";
+        }
+        previous_leaf = body->waits_on;
+    };
+    ASSERT_NO_FATAL_FAILURE(release(first, 1));
+    ASSERT_NO_FATAL_FAILURE(release(second, 2));
+    ASSERT_NO_FATAL_FAILURE(release(third, 3));
+    fourth.set();
+    ASSERT_TRUE(qb::io::test::pump_until([&] { return out.load() == 21; }));
+    run_for(2ms);
+    EXPECT_TRUE(coro_scheduler().dump().empty());
+}
+
 TEST_F(SuspensionTracking, ACancelledRootTakesItsRecordAndItsNameWithIt) {
     ASSERT_TRUE(coro_scheduler().set_suspension_tracking(true));
     std::atomic<int> done{0};
@@ -532,6 +585,76 @@ TEST_F(SuspensionTracking, TurningTrackingOffDropsEveryRecord) {
 
     ev.set();
     ASSERT_TRUE(qb::io::test::pump_until([&] { return done.load() == 1; }));
+}
+
+TEST_F(SuspensionTracking, ATaskCreatedBeforeTrackingStillLinksItsAwaiter) {
+    ASSERT_FALSE(CoroutineScheduler::suspension_tracking());
+    async_event       ev;
+    std::atomic<int>  out{0};
+    auto              child       = suspension_tracking_test::leaf(&ev); // allocated with tracking OFF
+    void const *const child_frame = child.handle().address();
+    ASSERT_TRUE(coro_scheduler().set_suspension_tracking(true));
+    coro_scheduler().spawn("created-off", [&child, &out]() -> task<void> { out = co_await child; });
+    ASSERT_TRUE(qb::io::test::pump_until([&] {
+        const auto dump = coro_scheduler().dump();
+        return kind_of(at(dump, child_frame)) == "event";
+    })) << "the pre-existing child did not reach its labelled park";
+    const auto dump = coro_scheduler().dump();
+    EXPECT_EQ(suspension_tracking_test::chain_kinds(dump, "created-off"), (std::vector<std::string_view>{"task", "task", "event"}))
+        << suspension_tracking_test::dump_text();
+    ev.set();
+    ASSERT_TRUE(qb::io::test::pump_until([&] { return out.load() == 7; }));
+    child = {}; // the retained completed child owns its frame until here
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return coro_scheduler().dump().empty(); }));
+}
+
+TEST_F(SuspensionTracking, ReenabledTrackingLinksTasksThatSurvivedTheFirstPark) {
+    ASSERT_TRUE(coro_scheduler().set_suspension_tracking(true));
+    async_event       first;
+    async_event       second;
+    std::atomic<int>  stage{0};
+    std::atomic<int>  out{0};
+    auto              child       = suspension_tracking_test::leaf(&second); // allocated before tracking is disabled
+    void const *const child_frame = child.handle().address();
+    coro_scheduler().spawn("toggle-live", [&first, &child, &stage, &out]() -> task<void> {
+        co_await first.wait();
+        stage = 1;
+        out   = co_await child;
+    });
+    ASSERT_TRUE(qb::io::test::pump_until([&] {
+        const auto dump = coro_scheduler().dump();
+        return leaf_kind(dump, "toggle-live") == "event";
+    })) << "the live parent did not reach its first labelled park";
+    ASSERT_EQ(stage.load(), 0);
+    const auto  before      = coro_scheduler().dump();
+    auto const *root_before = named(before, "toggle-live");
+    ASSERT_TRUE(root_before && root_before->waits_on);
+    void const *const body_frame = root_before->waits_on;
+    ASSERT_EQ(kind_of(at(before, body_frame)), "event");
+    ASSERT_TRUE(coro_scheduler().set_suspension_tracking(false));
+    const auto  off  = coro_scheduler().dump();
+    auto const *root = named(off, "toggle-live");
+    ASSERT_NE(root, nullptr);
+    EXPECT_EQ(root->kind, nullptr);
+    ASSERT_TRUE(coro_scheduler().set_suspension_tracking(true));
+    first.set();
+    ASSERT_TRUE(qb::io::test::pump_until([&] {
+        const auto dump = coro_scheduler().dump();
+        return stage.load() == 1 && kind_of(at(dump, child_frame)) == "event";
+    })) << "the surviving child did not reach its labelled park after reactivation";
+    const auto dump = coro_scheduler().dump();
+    // Only the body's NEW await must be recorded. The root wrapper has remained
+    // suspended throughout OFF -> ON and need not regain its erased old record.
+    auto const *body = at(dump, body_frame);
+    EXPECT_EQ(kind_of(body), "task") << suspension_tracking_test::dump_text();
+    if (body) {
+        EXPECT_EQ(body->waits_on, child_frame);
+    }
+    EXPECT_EQ(kind_of(at(dump, child_frame)), "event");
+    second.set();
+    ASSERT_TRUE(qb::io::test::pump_until([&] { return out.load() == 7; }));
+    child = {};
+    EXPECT_TRUE(qb::io::test::pump_until([&] { return coro_scheduler().dump().empty(); }));
 }
 
 TEST_F(SuspensionTracking, AThreadCountsInTheGatesWhileItTracksOrNamesAndNotAfterItsExit) {

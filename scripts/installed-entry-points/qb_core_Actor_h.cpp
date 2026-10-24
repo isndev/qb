@@ -12,8 +12,13 @@
 //
 // What this file DOES hold Actor.h to: entering here must still reach the archive. is_alive(),
 // getName() and kill() are non-template members declared here and defined in libqb-core.
+// The public pipe wrappers must also be usable from this header alone. Live pointers to
+// getPipe/to below force their definitions and archive dependency into the link, without
+// invoking either outside a worker. EventBuilder retains its private constructor
+// and public, owning copy; only its push<E> template still requires the umbrella.
 #include <qb/core/Actor.h>
 #include <cstdio>
+#include <type_traits>
 
 class CoreActorActor : public qb::Actor {
 public:
@@ -29,7 +34,26 @@ use_archive(const CoreActorActor &a) {
     a.kill();
 }
 
+using Builder = qb::Actor::EventBuilder;
+static_assert(!std::is_default_constructible_v<Builder>);
+static_assert(!std::is_constructible_v<Builder, qb::Pipe const &>);
+static_assert(!std::is_constructible_v<Builder, qb::Actor const &, qb::ActorId>);
+static_assert(std::is_nothrow_copy_constructible_v<Builder>);
+
+Builder
+copy_builder(Builder const &value) noexcept {
+    return value;
+}
+
 int
 main() {
+    using GetPipe             = qb::Pipe (qb::Actor::*)(qb::ActorId) const noexcept;
+    using To                  = Builder (qb::Actor::*)(qb::ActorId) const noexcept;
+    GetPipe volatile get_pipe = &qb::Actor::getPipe;
+    To volatile to            = &qb::Actor::to;
+    auto volatile copy        = &copy_builder;
+    (void) get_pipe;
+    (void) to;
+    (void) copy;
     return 0;
 }

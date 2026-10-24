@@ -680,9 +680,9 @@ Actor::is_active() const noexcept {
     return _alive && _activated;
 }
 
-Pipe
-Actor::getPipe(ActorId const dest) const noexcept {
-    return VirtualCore::_handler->getProxyPipe(dest, id());
+VirtualPipe &
+Actor::pipe_buffer_for(CoreId const core) noexcept {
+    return VirtualCore::_handler->__getPipe__(core);
 }
 
 CoreId
@@ -760,14 +760,6 @@ Actor::kill() const noexcept {
     // no scoped coroutine was ever spawned.
     __cancel_coro_scope__();
     VirtualCore::_handler->killActor(id());
-}
-
-Actor::EventBuilder::EventBuilder(Pipe const &pipe) noexcept
-    : dest_pipe(pipe) {}
-
-Actor::EventBuilder
-Actor::to(ActorId const dest) const noexcept {
-    return EventBuilder{getPipe(dest)};
 }
 
 namespace {

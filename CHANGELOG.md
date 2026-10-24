@@ -812,6 +812,47 @@ policy.
   preventing an overflow when a near-limit delay converts back to nanoseconds. HTTP, PostgreSQL
   and Redis use this shared policy; their connection lifecycle is unchanged.
 
+- **Separate the cold suspension-tracking work on GCC and Clang.** The inline gate checks the process-wide count;
+  the thread-local check, recording and erasure live in `note_suspension_if_tracked`, `track_then_if_tracked` and
+  `forget_frame_if_seen`. MSVC retains its recorder hand-over shape. The frame allocator keeps its pool-hit path
+  inline and routes empty buckets and oversized frames to `CoroutineFrameAllocator::allocate_slow`.
+
+- **Record each task await independently of frame allocation.** Every compiler records a task's new await through
+  the tail-recording path, replacing the coroutine's previous wait. This also covers a child allocated before tracking
+  is enabled and a child retained across a tracking off/on cycle. The allocation-time task registry is removed.
+  `ACoroutineAwaitingATaskWaitsSinceItsNewAwaitNotSinceItsOwnEarlierWait`,
+  `ATaskCreatedBeforeTrackingStillLinksItsAwaiter` and `ReenabledTrackingLinksTasksThatSurvivedTheFirstPark`
+  in `tests/io/system/coroutine/suspension-tracking.cpp` cover new waits, frame reuse and those tracking transitions.
+
+- **Append broadcast snapshots directly to region storage.** `router::internal::snapshot_stack` preserves its
+  region allocation and appends by store and index. The partitioned ActorId table retains both banks and full keys;
+  the two-bank walk is kept as one loop on compilers that support the unroll-control annotation.
+
+- **Keep one-bucket event copies explicit on targets without SSE2.** `event_wire::copy_reply`,
+  `VirtualCore::reply_local` and `VirtualCore::forward` use a constant-size copy for one bucket, including a 128-byte
+  bucket. The multi-bucket boundary follows the configured bucket size.
+
+- **Construct public pipe wrappers in `Actor.h`.** `Actor::getPipe`, `Actor::to` and the `EventBuilder` constructor
+  are inline where callers including `Actor.h` can see them. The private `pipe_buffer_for` crosses the archive
+  boundary with a single `VirtualPipe` reference; the caller constructs its `Pipe` with the destination and source.
+  The builder initializes its owning pipe directly from that prvalue, avoiding an intermediate pipe copy
+  in MSVC coroutine loops. The two full actor identities and the public builder API are unchanged.
+  `VirtualCore::getProxyPipe` remains inline in `VirtualCore.h`. The previous macOS measurements concern an earlier
+  implementation; they are not performance results for this composed source.
+
+- **A push, a send or a reply no longer checks a guarded static on every event (macOS validation,
+  2026-10-24).** `qb::detail::type_id_for<T>()` held the type's id in a `static const` with a dynamic
+  initialiser, and every enqueue of an event of a non-trivially-destructible type initialised another
+  (`router::ensure_disposer`): seven instructions of guard check -- an acquire load -- per call, and the
+  compiler keeps every store before an acquire alive across it, so the event header's zero-initialised
+  `dest` and `source` were stored and then stored again by `fill_event`. With ActorId64's wider header
+  that dead store stopped merging with the payload's, and savina/counting on one core went +10 %
+  against v3.2.1 (bisected to the engine-loop commit of QB-251, which only moved the code around it).
+  Both now read a constant-initialised relaxed atomic -- the id, or a flag -- and take a cold,
+  out-of-line first call that registers once (idempotent under the registry's lock, so racing threads
+  agree). Apple clang 21 / M4 Pro, a one-core burst of a million one-bucket events: 3.45 -> 2.24 ns a
+  push (v3.2.1: 2.83), 122 -> 100 instructions per event pushed and delivered.
+
 - **Async TCP connector startup releases retained work on exception (Huly QB-169).**
   `run()` invalidates attempts, unregisters its I/O watcher, disconnects the socket it still
   owns and releases its self-hold before rethrowing. It does not generate another completion

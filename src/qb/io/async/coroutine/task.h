@@ -141,7 +141,7 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // awaits the frame, so `await_resume()` (the only place that rethrows) never runs and the
 // exception dies with the promise. `Actor::spawn` / `spawn_detached` already report through
 // `qb::detail::report_unhandled_coroutine_exception` because their wrapper coroutines CATCH
-// (VirtualCore.h:1637-1644, 1658-1666) and therefore leave the wrapper promise clean — so they do
+// (VirtualCore.h:1644-1651, 1665-1673) and therefore leave the wrapper promise clean — so they do
 // not reach here and cannot double-report. The free-function path,
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
@@ -217,24 +217,24 @@ public:
     // baseline after coroutines complete, guarding against frame leaks.
     QB_ABI_ANCHOR static inline thread_local long live_frames = 0;
 
+    /// The common pool hit stays in the coroutine ramp; empty buckets and oversized frames take allocate_slow.
     [[nodiscard]] static void *
     allocate(std::size_t size) {
         ++live_frames;
         const std::size_t idx = bucket_index(size);
-        if (idx == 0 || idx > kMaxBucket) {
-            return ::operator new(size, std::align_val_t{kAlign});
+        if (idx != 0 && idx <= kMaxBucket) {
+            // pool() lazily constructs the thread_local BucketPool on first use,
+            // which sets pool_alive(). allocate() is only ever called from a running
+            // coroutine (never from a destructor during thread teardown), so the pool
+            // is always in its alive window here.
+            auto &head = pool().heads[idx - 1];
+            if (head) {
+                void *p = head;
+                head    = *static_cast<void **>(p);
+                return p;
+            }
         }
-        // buckets() lazily constructs the thread_local BucketPool on first use,
-        // which sets pool_alive(). allocate() is only ever called from a running
-        // coroutine (never from a destructor during thread teardown), so the pool
-        // is always in its alive window here.
-        auto &head = buckets()[idx - 1];
-        if (head) {
-            void *p = head;
-            head    = *static_cast<void **>(p);
-            return p;
-        }
-        return ::operator new(idx * kAlign, std::align_val_t{kAlign});
+        return allocate_slow(size);
     }
 
     static void
@@ -252,9 +252,18 @@ public:
             ::operator delete(p, std::align_val_t{kAlign});
             return;
         }
-        auto &head               = buckets()[idx - 1];
+        auto &head               = pool().heads[idx - 1];
         *static_cast<void **>(p) = head;
         head                     = p;
+    }
+
+    /// Keep empty-bucket and oversized allocation out of the coroutine ramp. Tracking is owned by the awaiters.
+    [[nodiscard]] static QB_NOINLINE void *
+    allocate_slow(std::size_t size) {
+        const std::size_t idx = bucket_index(size);
+        if (idx == 0 || idx > kMaxBucket)
+            return ::operator new(size, std::align_val_t{kAlign});
+        return ::operator new(idx * kAlign, std::align_val_t{kAlign});
     }
 
 private:
@@ -311,17 +320,17 @@ private:
         }
     };
 
-    QB_ABI_ANCHOR static BucketArray &
-    buckets() noexcept {
+    QB_ABI_ANCHOR static BucketPool &
+    pool() noexcept {
         thread_local BucketPool pool;
-        return pool.heads;
+        return pool;
     }
 };
 
 // Mixin helper: inherit from this (or paste via explicit forwarding) to get
 // the pooled new/delete pair. We inject the operators via a macro rather
 // than a CRTP base to keep the promise layout identical (coroutine frames
-// are sensitive to promise size / alignment).
+// are sensitive to promise size / alignment). Allocation carries no tracking metadata; each await records itself.
 #define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                                               \
     static void *operator new(std::size_t sz) {                                                           \
         return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);                            \
@@ -724,8 +733,8 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
-        // Suspension tracking: recorded LAST, on the cold branch (coroutine/tracking.h, track_then), once the
-        // continuation is set and before the transfer -- nothing resumes in between.
+        // Record LAST, after setting the continuation and before transferring. Tracking may be enabled after this
+        // task was allocated, or reenabled while it lives, so every new await records independently of allocation.
         if (detail::tracking_on()) [[unlikely]]
             return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
         // Symmetric transfer: return the handle to resume
@@ -1005,7 +1014,7 @@ public:
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
         detail::promise_of(handle_).continuation_ = caller;
-        // Suspension tracking: recorded last, on the cold branch, as in task<T>::await_suspend.
+        // Record this await even if tracking was enabled after allocation, as in task<T>::await_suspend.
         if (detail::tracking_on()) [[unlikely]]
             return detail::track_then(caller.address(), qb_suspension_kind, handle_.address(), handle_);
         // Symmetric transfer: return the handle to resume
