@@ -96,7 +96,7 @@ Both return immediately and **share the same safety contract**, because a corout
 
 - **Never access actor members after a `co_await`.** The actor may have been destroyed while the coroutine was suspended; touching `this->_member` afterwards is undefined behaviour.
 - **Copy everything you need by value before the first `co_await`.** Do not capture `this` or a reference to a member.
-- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1553-1571 -->
+- **After suspension, use only the context.** `ctx.push<Event>(...)` (to the spawning actor), `ctx.push_to<Event>(dest, ...)`, `ctx.broadcast<Event>(...)`, `ctx.id()` and `ctx.time()` are safe; an event addressed to an actor that is gone finds no handler and is disposed. <!-- src: qb/src/qb/core/VirtualCore.h:1554-1572 -->
 - **Keep coroutines short-lived.** The longer one runs, the wider the window in which its actor can be destroyed.
 
 ```cpp
@@ -120,7 +120,7 @@ spawn([this](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1570-1572,1613-1614; qb/src/qb/io/async/listener.h:1391,1380-1387; qb/src/qb/core/Actor.cpp:708-731 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and fall back to that accessor when none exists yet, so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1570-1572,1613-1614; qb/src/qb/io/async/listener.h:1391,1380-1387; qb/src/qb/core/Actor.cpp:703-726 -->
 
 What a `kill()` does to a coroutine that is already parked is on [Writing actors](../4_qb_core/actor.md#killed-while-parked) (the actor-lifecycle half) and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) (which awaiters are cancellation-aware).
 
@@ -176,7 +176,7 @@ qb::io::async::callback([this, task_id]() {
 }, std::chrono::seconds(5));
 ```
 
-`Actor::is_alive()` is a plain read of the actor's `_alive` member. If the actor was already destroyed when the timer fires, *evaluating the guard* is the heap-use-after-free — the branch never gets the chance to protect anything. That is measured, not theoretical: a pre-3.0 example carried exactly this shape at eight sites and AddressSanitizer aborted on it, 3 runs of 3. That program has since been retired; the shape has not. <!-- src: qb/src/qb/core/Actor.h:874-877 -->
+`Actor::is_alive()` is a plain read of the actor's `_alive` member. If the actor was already destroyed when the timer fires, *evaluating the guard* is the heap-use-after-free — the branch never gets the chance to protect anything. That is measured, not theoretical: a pre-3.0 example carried exactly this shape at eight sites and AddressSanitizer aborted on it, 3 runs of 3. That program has since been retired; the shape has not. <!-- src: qb/src/qb/core/Actor.h:870-873 -->
 
 Two arguments are commonly offered for the guard, and neither holds:
 
@@ -194,7 +194,7 @@ void arm(int task_id) {
     });
 }
 ```
-<!-- src: qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.cpp:751-762 -->
+<!-- src: qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.cpp:746-757 -->
 
 Copy by value everything the body needs before the first `co_await`, and **never capture `this`**. The `ScopedCoroContext` carries the actor's `ActorId` by value, so the only way back into the actor is a `push` — which is exactly the message-back pattern, now with no member access at all. Handle the event in an ordinary `on(Event&)` handler and every state change happens on an actor the dispatcher has already proved is alive.
 
@@ -278,7 +278,7 @@ public:
 };
 ```
 
-Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.cpp:751-762, examples/01-actors/06-doing-things-later.cpp:240-253 -->
+Three things the coroutine form buys here. The `co_await ctx.sleep(timeout)` is cancelled by `kill()`, so a dying actor does not leave a five-second timer armed against it. Nothing captures `this`, so there is no member access to get wrong. And `_pending` — a `std::map` whose iterators the coroutine would otherwise be holding across a suspension — is only ever reached from a handler, where the actor is live by construction. <!-- src: qb/src/qb/core/Actor.h:1532,2331-2333, qb/src/qb/core/Actor.cpp:746-757, examples/01-actors/06-doing-things-later.cpp:240-253 -->
 
 `startOperation` takes a `qb::duration` — the canonical span type used for every timeout, delay and interval in the public API. It is an alias for `std::chrono::nanoseconds` and accepts any finer-or-equal chrono literal implicitly (`5s`, `200ms`), while rejecting a bare integer at compile time. <!-- src: qb/src/qb/system/time.h:93 -->
 
@@ -450,7 +450,7 @@ Synchronous file I/O (`qb::io::sys::file::read` / `write`) blocks the calling th
 - **`run_sync` / `run_for` inside a handler.** The thread you block is the `VirtualCore`. The framework's guard does not fire, the loop keeps turning so the I/O looks healthy, and the only symptom is actor latency. Use `spawn` + `co_await`.
 - **Expecting `callback(f)` or a zero delay to defer.** A non-positive duration runs `func()` inline at the call site. Use a strictly positive delay, or `defer(f)`.
 - **Passing a `double` as a delay.** `callback`, `with_timeout` and `connect` take `qb::duration` (a `std::chrono` span), never seconds-as-`double`. Write `5s` or `std::chrono::milliseconds(200)`; a bare integer does not compile. <!-- src: qb/src/qb/system/time.h:93 -->
-- **Touching `this` after the actor died.** A delayed `callback` outlives its actor, and `is_alive()` inside the closure does not save you — reading `_alive` on a destroyed actor *is* the invalid access. Bind the delay to the actor instead: `spawn` + `co_await ctx.sleep(...)` + a self-addressed event, or own a `scoped_callback` handle as a member so the destructor cancels it. <!-- src: qb/src/qb/core/Actor.h:874-877 -->
+- **Touching `this` after the actor died.** A delayed `callback` outlives its actor, and `is_alive()` inside the closure does not save you — reading `_alive` on a destroyed actor *is* the invalid access. Bind the delay to the actor instead: `spawn` + `co_await ctx.sleep(...)` + a self-addressed event, or own a `scoped_callback` handle as a member so the destructor cancels it. <!-- src: qb/src/qb/core/Actor.h:870-873 -->
 - **Accessing actor state after `co_await`.** Copy state by value before the first suspension and use only the `CoroContext` afterwards.
 - **Sharing I/O objects across cores.** An async object is bound to one core's loop. Never hand it to another thread; move a socket into an event instead. <!-- src: qb/src/qb/io/async/listener.h:74-75,77-89 -->
 - **Blocking the loop at all.** A synchronous `read`, a `sleep`, a mutex wait, or an unbounded computation in a handler, a callback or an `on(qb::LoopEvent const&)` tick freezes the entire core. `defer` changes the turn, not the thread; use non-blocking I/O, `ctx.offload`, or a worker actor on a separate core when this core must remain responsive.

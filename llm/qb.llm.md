@@ -528,7 +528,7 @@ task does not keep that core alive, and its loop exits when its last actor dies.
 on that core alive until the task reports completion (or complete the work before shutdown). It cannot be used
 with `qb::ask` or any patterns-library helper, all of which require a `ScopedCoroContext`; passing a
 `CoroContext` there is a compile error, not a runtime risk. _(Actor.h:1437-1495;
-VirtualCore.h:1690-1701; coroutine-detached.cpp:878-938)_
+VirtualCore.h:1691-1702; coroutine-detached.cpp:878-938)_
 The core loop breaks when `__reap__()` reports the last actor gone. _(VirtualCore.cpp:1064-1066)_
 
 ```cpp
@@ -619,7 +619,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   in flight). Instance generations distinguish replacements; logical service watch tickets distinguish
   repeated watches of the same address. `qb::Supervisor(...,
   qb::supervision::watch)` restarts children gone for any reason. Death watch says *gone*; `co_await qb::ping` says
-  *responsive*. _(Actor.h:521-544; DeathWatch.h:36-96)_
+  *responsive*. _(Actor.h:517-540; DeathWatch.h:36-96)_
 - **reply vs forward** — both reuse the received event (require a non-const `on(Event&)` handler).
   `reply(e)` swaps dest↔source; `forward(dest, e)` keeps the original source. Neither works on
   broadcast events (dropped). After the call the event is consumed — do not touch it. Both are
@@ -648,7 +648,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   built it destroys it, on its own thread, in the reap phase. Under AddressSanitizer the arena poisons a
   block it holds, so a read through a dead actor's pointer (a `this` captured by a loop-owned callback, a
   handle read without its gate) is reported as `use-after-poison` -- the report `malloc` used to give and
-  the arena had taken away. _(Actor.h:567-588, thread_arena.h:126-171)_
+  the arena had taken away. _(Actor.h:563-584, thread_arena.h:126-171)_
 - **An engine's per-core buffers outlive it, mapped, for the next engine; `region_cache::trim()` gives them back.**
   What a core builds that grows with the engine -- the router's handler table of each event type, the actor
   registry, the kill queues, the callback list, the broadcast snapshots, the receive buffer -- and the mailbox
@@ -675,7 +675,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   _(offload.h:24-40; Actor.h:2397-2400)_
 - **`push`/`send`/`broadcast` and the messaging hot path are `noexcept`.** A throw across that boundary
   (e.g. OOM growing the pipe, or a throwing event constructor) calls `std::terminate()`. Keep events
-  small and allocation-light. _(Actor.h:1127-1133; Pipe.h:139-154)_
+  small and allocation-light. _(Actor.h:1123-1129; Pipe.h:148-163)_
 - **`send<T>()` is unordered; `push<T>()` is ordered.** Trivial destructibility is a guideline on `send`
   and a `static_assert` only when `T` derives from `qb::EventQOS0` — the one kind the cross-core flush
   may DROP undisposed. A DELIVERED event is disposed exactly once whichever primitive queued it, so a
@@ -683,7 +683,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   "faster" is not one: `send` hands the event to the peer's ring at once instead of the pass's batched
   flush, which wins for ONE event with nothing behind it to batch (a request the sender then idles
   for) and LOSES on sustained traffic (all-to-all, 120 actors: 26.1 ns per round trip against `push`'s
-  24.9, measured in the qb-vs-others benchmark, TUNING guide §9.6). _(Actor.h:1082-1087, :1142-1146)_
+  24.9, measured in the qb-vs-others benchmark, TUNING guide §9.6). _(Actor.h:1078-1083, :1138-1142)_
 - **An actor lives on the core where it was created, for life: qb has no migration and no
   work-stealing.** `addActor<T>(core, ...)` is a topology decision, and the cost it decides is the
   core crossing: a ring of actors spread `i % cores` crosses a core on EVERY hop (112 ns a hop on two
@@ -722,7 +722,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   enqueue sink reaches (Huly QB-269). Until then it compiled and was constructed misaligned. Keep over-aligned data
   behind a pointer member. _(Event.h `detail::event_fits_bucket_alignment`, `detail::routing_safe_type_id`)_
 - **`reply`/`forward` consume the event and need a non-const `on(Event&)`;** broadcast events can't be
-  replied/forwarded. _(Actor.cpp:780-797)_ They are `send`-family: unordered relative to the handler's
+  replied/forwarded. _(Actor.cpp:775-792)_ They are `send`-family: unordered relative to the handler's
   pushes. `push_reply`/`push_forward` are the `push`-family twins (same reuse, same guard, FIFO with
   your pushes to that destination). _(VirtualCore.cpp `push_reply`, `push_forward`)_
   Raw `send(Event const&)` uses `_self_pipe` directly only when the destination's logical core
@@ -741,8 +741,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   pointer says nothing about phase: `push` it an event (the dispatch gate defers to an Activating
   target and drops to a dead one) rather than read its state, and re-check `is_active()` yourself
   before a direct call that must not land mid-init or post-kill. Every other lookup (`findActor`,
-  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1208-1230;
-  the inventory table Actor.h:879-923)_
+  every `ActorHandle` accessor, `is_actor_alive`) withholds on `is_active()`. _(VirtualCore.h:1209-1231;
+  the inventory table Actor.h:875-919)_
 - **A service tag registers before the cores, or not while they live.** Its 16-bit tag is
   process-stable, while every actual service incarnation has a nonzero-generation ActorId.
   First registration while a core lives remains refused: `getServiceId<Tag>()` yields an invalid
@@ -755,8 +755,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   it can finish afterwards only while another actor keeps the same VirtualCore running);
   both must be called from the actor's own worker thread. An exception escaping either body (other than
   `cancelled_error`) is caught by the wrapper and REPORTED on `std::cerr`; it reaches no caller, so catch it in the
-  body and answer through an event. _(`spawn_detached` Actor.h:1495 / VirtualCore.h:1642-1651; `spawn` Actor.h:1532 /
-  VirtualCore.h:1663-1673)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1064-1066)_
+  body and answer through an event. _(`spawn_detached` Actor.h:1495 / VirtualCore.h:1643-1652; `spawn` Actor.h:1532 /
+  VirtualCore.h:1664-1674)_ The core loop breaks when `__reap__()` reports no actors. _(VirtualCore.cpp:1064-1066)_
 - **A by-value parameter that the coroutine never assigns to: `qb::io::async::pin_frame_copy(param)` first** — clang
   older than 22 on x86-64 Linux / Intel macOS folds the copy into the caller's `byval` slot and spills it into the frame
   at alignment 8 while reading it at 64 (LLVM issue 159571): a layout-dependent crash at `-O2`/`-O3` that `-O0` and the
@@ -773,12 +773,12 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
   fail `timeout_error` without sending. For a
   continuously-updating value use `qb::wall_now()` /
-  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:809-826; VirtualCore.h:1019-1031; VirtualCore.cpp:1641-1648)_
+  `qb::unix_nanos(qb::wall_now())`. _(Actor.h:805-822; VirtualCore.h:1020-1032; VirtualCore.cpp:1641-1648)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of
   `qb::CoreStats` — cumulative counters the core's thread writes and never resets: passes, events received, events
   published into another core's mailbox, publishes that met a full mailbox, `EventQOS0` drops, io callbacks.
   Same-core traffic is received and never "sent", and a counter moves after the event it counts was handled. Nothing
-  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:786-806; CoreStats.h:52-89)_
+  is shared or atomic: to see every core, ask one responder per core (`qb::ask_all`). _(Actor.h:782-802; CoreStats.h:52-89)_
 - **Metrics are pulled at scrape time, never pushed (Huly QB-154).** `qb::metrics::snapshot` (`<qb/core/metrics.h>`,
   plain values, no actor) is what a source reports -- families of counters, gauges and histograms -- and
   `qb::metrics::write_text()` renders it in the Prometheus text format 0.0.4. `engine.addActor<qb::metrics::Registry>(core)`

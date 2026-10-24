@@ -46,11 +46,11 @@ Use `push()`. It is the default and covers nearly every case.
 | `push<Event>(dest, …)` | Ordered: FIFO per sender→receiver pair | Any event, including members with non-trivial destructors (`std::vector`, `std::shared_ptr`, `std::unique_ptr`) |
 | `send<Event>(dest, …)` | **Unordered**, even to the same destination | Compiler-enforced only for `qb::EventQOS0`-derived events (POD members or `qb::string<N>`); for a plain `qb::Event` it is a guideline, and heap-owning payloads are disposed correctly |
 
-`send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/src/qb/core/Actor.h` (`push` at `qb/src/qb/core/Actor.h:1133`, `send` at `:1156`).
+`send()` exists for narrow, profiled cases where same-core latency matters and ordering does not; misusing it produces ordering bugs that are hard to trace. Both signatures are in `qb/src/qb/core/Actor.h` (`push` at `qb/src/qb/core/Actor.h:1129`, `send` at `:1152`).
 
 Neither row admits a **by-value `std::string`**, and that exclusion is independent of the ordering/destructibility axis above: the runtime relocates events with raw `memcpy`, copying the bytes to a new address and abandoning the source without running a destructor there. A member that points into its own storage — which is exactly what a *short* `std::string` is on libstdc++, whose small-string buffer is addressed by an internal pointer — keeps addressing the old bytes afterwards, so the receiver reads reused memory and `~basic_string()` frees an address that never came from the heap. This is not cross-core-only: the source pipe `memcpy`s what it already holds when it grows, and `reply`/`forward` byte-recycle the event, so a same-core `push` is exposed too. libc++ recomputes `data()` from `this`, which is why the defect corrupts on Linux while passing every macOS test. Use `qb::string<N>` for bounded text, or box the string in a `std::shared_ptr`. See [Messaging](../4_qb_core/messaging.md#payloads-must-be-trivially-relocatable-not-merely-copyable) for the full rule.
 
-One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/src/qb/core/Actor.h:1129`; the three declarations are `push` at `:1052`, `send` at `:1156` and `broadcast` at `:1274`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
+One contract applies to both, and to `broadcast()`: they are declared `noexcept`. If growing the pipe buffer or running an event constructor throws — for example, an allocation failure under memory pressure — the throw crosses the `noexcept` boundary and calls `std::terminate()` (`qb/src/qb/core/Actor.h:1125`; the three declarations are `push` at `:1048`, `send` at `:1152` and `broadcast` at `:1270`). Keep events small and allocation-light. Full messaging semantics live in [Messaging](../4_qb_core/messaging.md).
 
 ## Why is `qb::string<N>` preferred over `std::string` for event fields?
 
@@ -96,7 +96,7 @@ qb does not implement an Erlang-style supervision tree, and it does not catch ex
 3. **Typed I/O error events.** Network and protocol failures arrive as events (for example `qb::io::async::event::disconnected`), not as exceptions, so you handle them in an `on()` overload like any other message.
 4. **Death watch** (since 3.3). Any actor can `watch()` another, on any core, and receives one `qb::DownEvent` once it is gone — after its destructor ran, whatever ended it.
 
-To signal a *local* failure, `co_return false` from `onInit()` (it is a `qb::io::async::task<bool>` coroutine, so a plain `return false;` does not compile) to abort an actor's startup, or call `kill()` to terminate an actor cleanly (`qb/src/qb/core/Actor.h:477-479,500-501` and `:519`). Restart strategies with an intensity cap ship as `qb::Supervisor` (`<qb/core/patterns/supervisor.h>`), which in `qb::supervision::watch` mode restarts a child gone for any reason; health checks are `co_await qb::ping(ctx, id, timeout)`; what a failure means for the rest of your application is your policy. The full treatment, including the `qb::Main` failure-reporting API, is in [Error handling and resilience](../6_guides/error_handling.md).
+To signal a *local* failure, `co_return false` from `onInit()` (it is a `qb::io::async::task<bool>` coroutine, so a plain `return false;` does not compile) to abort an actor's startup, or call `kill()` to terminate an actor cleanly (`qb/src/qb/core/Actor.h:473-475,496-497` and `:515`). Restart strategies with an intensity cap ship as `qb::Supervisor` (`<qb/core/patterns/supervisor.h>`), which in `qb::supervision::watch` mode restarts a child gone for any reason; health checks are `co_await qb::ping(ctx, id, timeout)`; what a failure means for the rest of your application is your policy. The full treatment, including the `qb::Main` failure-reporting API, is in [Error handling and resilience](../6_guides/error_handling.md).
 
 ## Can I use coroutines inside an actor?
 
@@ -148,7 +148,7 @@ Through `ActorId` values, obtained in one of several ways:
 - **At creation.** Capture the `ActorId` returned (or the handle) when you add an actor, and pass it to the actors that need to reach it.
 - **In event payloads.** Include `id()` in an event so the receiver can reply.
 - **Service actors.** A `ServiceActor<Tag>` is a per-core singleton. Same-core actors fetch a typed pointer with `getService<T>()`; any core resolves its id with `getServiceId<Tag>(core_id)`.
-- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:1255-1256`).
+- **`require<T...>()`.** Ask the framework to locate live instances of given actor types; matching actors reply with `qb::RequireEvent` carrying their `ActorId` (`qb/src/qb/core/Actor.h:1251-1252`).
 - **A custom registry actor** you write, acting as a naming service.
 
 Patterns are detailed in [Actor patterns](../4_qb_core/patterns.md).

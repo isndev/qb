@@ -90,8 +90,9 @@ class VirtualCore : detail::service_registry_seal {
     /// both, so they cannot disagree.
     static void
     __bind_thread__(VirtualCore *const core) noexcept {
-        _handler              = core;
-        Event::__core_scope__ = core != nullptr ? core->_index : Event::NoCoreScope;
+        _handler               = core;
+        Event::__core_scope__  = core != nullptr ? core->_index : Event::NoCoreScope;
+        Pipe::__pipe_of_core__ = core != nullptr ? core->_pipe_of_core.data() : nullptr; // Actor::getPipe's table
     }
     /**
      * @brief Process-wide service tags. First-time registration remains frozen while cores live.

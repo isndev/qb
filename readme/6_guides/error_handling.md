@@ -180,7 +180,7 @@ struct ValidationResult : qb::Event {
 
 ### Self-termination with `kill()`
 
-If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:509-519`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
+If an actor reaches a state from which it cannot safely continue, it calls `this->kill()`. `kill()` is `noexcept` and schedules the actor for removal at the end of the current loop iteration (the actor finishes the current handler first, and may still process events already in its queue — `kill()` stops *new* events reaching it, not the ones already queued; `src/qb/core/Actor.h:505-515`). This is the right last step in a `catch` block for an unrecoverable, *local* fault — it removes one actor without taking down the core.
 
 `kill()` notifies the actor's watchers — each gets one `qb::DownEvent{…, killed}`, after the destructor ran — and nobody else. To tell a supervisor *why*, `push` it a notification *before* calling `kill()` (see [Supervision](#supervision)).
 
@@ -383,7 +383,7 @@ A throw from inside a callback does **not** reach the `VirtualCore` fail-stop bo
 
 `callback()` with a positive timeout allocates a self-deleting `Timeout<F>` on the heap and hands ownership to the event loop. The closure runs at some *later* loop iteration. If that closure captures `this` (an actor) by raw pointer or reference, and the actor is destroyed before the timer fires, the callback dereferences freed memory. ASan does not always catch this — the timing is loop-dependent.
 
-`is_alive()` is **not** a guard for a callback that captures `this`: it reads a member of the actor, so calling it after destruction is already a use-after-free (`qb/src/qb/core/Actor.h:874-877`). Same-core execution does not extend the actor's lifetime. Bind the wait to the actor's cancellation scope with `spawn` and `co_await ctx.sleep(delay)`, then send a self-addressed event through the context; the coroutine must not access actor members after suspension (`qb/src/qb/core/Actor.h:1531-1532`).
+`is_alive()` is **not** a guard for a callback that captures `this`: it reads a member of the actor, so calling it after destruction is already a use-after-free (`qb/src/qb/core/Actor.h:870-873`). Same-core execution does not extend the actor's lifetime. Bind the wait to the actor's cancellation scope with `spawn` and `co_await ctx.sleep(delay)`, then send a self-addressed event through the context; the coroutine must not access actor members after suspension (`qb/src/qb/core/Actor.h:1531-1532`).
 
 Another option is to **own the timer with `scoped_callback`** so it is cancelled deterministically when the actor dies. `scoped_callback` returns `std::unique_ptr<ScopedTimeout<…>>`; store it as an actor member. When the actor is destroyed, the member's destructor stops the watcher and releases its registration, so the callback cannot run after the actor is gone:
 

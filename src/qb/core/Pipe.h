@@ -93,8 +93,17 @@ class Pipe {
     friend class Actor;
 
     VirtualPipe *pipe;
-    ActorId      dest;
-    ActorId      source;
+
+    ActorId dest;
+    ActorId source;
+
+    /// This thread's table of outbound pipes by logical `CoreId` (`VirtualCore::_pipe_of_core`), bound with the core
+    /// by `VirtualCore::__bind_thread__` and null on a thread that runs no core. It is what lets `Actor::getPipe`
+    /// resolve a destination inline in `Actor.h`, without naming `VirtualCore`: a call out of line returned the
+    /// 24-byte `Pipe` through memory (ActorId64), and an out-of-line accessor of the table cost the push cells half
+    /// of what the inline shape gives back (PipePush -13 % against v3.2.1 through a call, -27 % inline; macOS
+    /// validation, 2026-10-24). Anchored like `Event::__core_scope__`: one descriptor per thread, not per image.
+    QB_ABI_ANCHOR static inline thread_local VirtualPipe *const *__pipe_of_core__ = nullptr;
 
     Pipe(VirtualPipe &i_pipe, ActorId i_dest, ActorId i_source) noexcept
         : pipe(&i_pipe)

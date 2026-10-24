@@ -408,10 +408,6 @@ class Actor : nocopy {
      */
     explicit Actor(ActorId id) noexcept;
 
-    // Keep Actor.h independent of VirtualCore.h; cross the archive boundary with a
-    // single buffer reference instead of returning the 24-byte Pipe through memory.
-    [[nodiscard]] static VirtualPipe &pipe_buffer_for(CoreId core) noexcept;
-
 protected:
     /**
      * @brief The service id of `Tag`, registering `Tag` on first use: the ONE reader of a service id (Huly QB-1007)
@@ -1378,7 +1374,11 @@ public:
      */
     [[nodiscard]] Pipe
     getPipe(ActorId dest) const noexcept {
-        return {pipe_buffer_for(dest.index()), dest, id()};
+        // Inline, through the thread's pipe table (`Pipe::__pipe_of_core__`, bound with the core): Actor.h stays
+        // independent of VirtualCore.h and the 24-byte Pipe never crosses a call -- neither returned through memory
+        // nor fetched by an out-of-line accessor (PipePush -13 % through such a call, -27 % here, against v3.2.1).
+        const CoreId core = dest.index();
+        return {*Pipe::__pipe_of_core__[core < MaxCores ? core : CoreId{0}], dest, id()};
     }
 
     /**

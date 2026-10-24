@@ -680,11 +680,6 @@ Actor::is_active() const noexcept {
     return _alive && _activated;
 }
 
-VirtualPipe &
-Actor::pipe_buffer_for(CoreId const core) noexcept {
-    return VirtualCore::_handler->__getPipe__(core);
-}
-
 CoreId
 Actor::getIndex() const noexcept {
     return VirtualCore::_handler->getIndex();

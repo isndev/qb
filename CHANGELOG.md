@@ -833,12 +833,14 @@ policy.
   bucket. The multi-bucket boundary follows the configured bucket size.
 
 - **Construct public pipe wrappers in `Actor.h`.** `Actor::getPipe`, `Actor::to` and the `EventBuilder` constructor
-  are inline where callers including `Actor.h` can see them. The private `pipe_buffer_for` crosses the archive
-  boundary with a single `VirtualPipe` reference; the caller constructs its `Pipe` with the destination and source.
-  The builder initializes its owning pipe directly from that prvalue, avoiding an intermediate pipe copy
-  in MSVC coroutine loops. The two full actor identities and the public builder API are unchanged.
-  `VirtualCore::getProxyPipe` remains inline in `VirtualCore.h`. The previous macOS measurements concern an earlier
-  implementation; they are not performance results for this composed source.
+  are inline where callers including `Actor.h` can see them, and `getPipe` resolves its destination through the
+  thread's table of outbound pipes (`Pipe::__pipe_of_core__`, bound with the core by `VirtualCore::__bind_thread__`
+  as `Event::__core_scope__` is): no `VirtualCore` name in `Actor.h`, and no call on the path -- a 24-byte `Pipe`
+  (ActorId64) returned through memory had cost PipePush/ToPush +4 % against v3.2.1 on Apple clang 21, and an
+  out-of-line accessor of the table (`pipe_buffer_for`, the first composed shape) gave back half the gain (-13 %
+  where the inline shape measures -27 %). The builder initializes its owning pipe directly from that prvalue,
+  avoiding an intermediate pipe copy in MSVC coroutine loops. The two full actor identities and the public builder
+  API are unchanged. `VirtualCore::getProxyPipe` remains inline in `VirtualCore.h`.
 
 - **A push, a send or a reply no longer checks a guarded static on every event (macOS validation,
   2026-10-24).** `qb::detail::type_id_for<T>()` held the type's id in a `static const` with a dynamic

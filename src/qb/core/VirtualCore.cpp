@@ -1449,7 +1449,7 @@ VirtualCore::unregisterCallback(ActorId const id) noexcept {
 
 // Event Api
 // VirtualCore::getProxyPipe is inline in VirtualCore.h. Actor::getPipe is inline in Actor.h,
-// where it constructs its Pipe from the private pipe_buffer_for's scalar buffer reference.
+// where it resolves the destination through the thread's pipe table (Pipe::__pipe_of_core__).
 // The lines are kept, which documents cite.
 //
 
