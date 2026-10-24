@@ -404,9 +404,16 @@ private:
     pool_type *_pool;
     header    *_head = nullptr; /**< oldest segment with live items, or nullptr */
     header    *_tail = nullptr; /**< segment allocations go into, or nullptr */
-    T         *_rcur = nullptr; /**< read cursor inside `_head` */
     T         *_wcur = nullptr; /**< write cursor inside `_tail` */
+    T         *_rcur = nullptr; /**< read cursor inside `_head` -- deliberately BETWEEN the two write cursors */
     T         *_wend = nullptr; /**< one past the last item `_tail` can hold */
+    // `_rcur` sits between `_wcur` and `_wend` so that `allocate_back`'s test loads them as two 8-byte loads,
+    // never one 16-byte pair: adjacent, Clang on arm64 fused them into an `ldp`, and a 16-byte load that
+    // overlaps the 8-byte store of `_wcur` the previous allocation left in the store buffer cannot be
+    // forwarded -- the load waits for the store to commit. A reply followed by a push on the same pipe
+    // (savina/big, one core) paid that wait on every event once the push path lost the guard-check
+    // instructions that used to cover it: +30 % against v3.2.1 on Apple clang 21 / M4 Pro, -12 % with this
+    // order; the one-core counting burst went from -8 % to -23 % (macOS validation, 2026-10-24).
 
     [[nodiscard]] T *
     front_end() const noexcept {
@@ -490,8 +497,8 @@ public:
         : _pool(rhs._pool)
         , _head(std::exchange(rhs._head, nullptr))
         , _tail(std::exchange(rhs._tail, nullptr))
-        , _rcur(std::exchange(rhs._rcur, nullptr))
         , _wcur(std::exchange(rhs._wcur, nullptr))
+        , _rcur(std::exchange(rhs._rcur, nullptr))
         , _wend(std::exchange(rhs._wend, nullptr)) {}
 
     segmented_pipe &
