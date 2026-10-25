@@ -184,6 +184,11 @@ policy.
   credit updates from a dispatch batch after its handlers unwind. Sends and other mutators keep their
   synchronous drains. An interrupted credit flush retains its retry obligation for the same backend.
 
+- **The embedded event loop is qev 5.2.0.** `qb/src/qb/ev/` stays byte-identical to the qev tag
+  (`dev/agent/check-qev-identity.py`): `ev_periodic_count_addr`, the `EVFLAG_NOSIGMASK` correction
+  and the loop fixes listed under qev's own 5.2.0 section ship with this release, and
+  `THIRD-PARTY-NOTICES` names the fork version.
+
 ### Added
 
 - **Snapshot adapters for autonomous listener metrics (Huly QB-154).**
