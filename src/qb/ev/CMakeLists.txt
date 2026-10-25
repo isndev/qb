@@ -397,6 +397,13 @@ if (BUILD_STATIC_LIBS OR BUILD_SHARED_LIBS)
     # config header is PUBLIC, so without this gate they reached -- and could silently override --
     # every consumer translation unit that includes <qb/io.h>. See config.h.cmakein.
     target_compile_definitions(qev PRIVATE QB_EV_BUILDING_LIBRARY=1)
+    if (EV_LIBRARY_TYPE STREQUAL "SHARED")
+        # A Windows consumer imports the library's two exported variables (ev_default_loop_ptr,
+        # ev_rt_now) only through __declspec(dllimport) -- ev.h's EV_API_DATA_DECL turns on it. The
+        # definition travels with the target, so every translation unit that links the DLL gets it:
+        # the suites here, a find_package(qev) consumer, the libevent layer compiled on its own.
+        target_compile_definitions(qev INTERFACE QEV_DLL=1)
+    endif ()
 
     # The language level is a CONTRACT, not a hope: the sources use C99 designated initialisers and
     # `//` comments, and a consumer compiling with -std=c89 would fail deep inside ev.h instead of

@@ -218,6 +218,19 @@ typedef EV_TSTAMP_T ev_tstamp;
 #define EV_API_DECL extern
 #endif
 
+/* qev: the two exported DATA symbols, ev_default_loop_ptr and ev_rt_now. A translation unit that
+   links the shared library on Windows reaches an exported variable only through
+   __declspec(dllimport): an exported function imports by itself through its thunk, a variable does
+   not, and CMake's WINDOWS_EXPORT_ALL_SYMBOLS exports it without telling the importing side (the
+   5.2.0 Windows archive job failed exactly there, LNK2019 on EV_DEFAULT_UC in the libevent layer).
+   The shared `qev` target carries QEV_DLL as an INTERFACE definition; the library's own translation
+   units (QB_EV_BUILDING_LIBRARY) and every static or EV_API_STATIC build keep EV_API_DECL. */
+#if defined(_WIN32) && defined(QEV_DLL) && !defined(QB_EV_BUILDING_LIBRARY) && !defined(EV_API_STATIC)
+#define EV_API_DATA_DECL __declspec(dllimport) extern
+#else
+#define EV_API_DATA_DECL EV_API_DECL
+#endif
+
 /* EV_PROTOTYPES can be used to switch of prototype declarations */
 #ifndef EV_PROTOTYPES
 #define EV_PROTOTYPES 1
@@ -584,13 +597,12 @@ typedef struct stat ev_statdata;
     /* you can call this as often as you like */
     EV_API_DECL struct ev_loop *ev_default_loop(unsigned int flags EV_CPP(= 0)) EV_NOEXCEPT;
 
-#ifdef EV_API_STATIC
-    EV_API_DECL struct ev_loop *ev_default_loop_ptr;
-#endif
+    /* qev: declared once at file scope, not as libev's block-scope `extern` inside the inline below --
+       a dllimport declaration has no block-scope form, and the one declaration serves every mode
+       (static API, static library, shared library). */
+    EV_API_DATA_DECL struct ev_loop *ev_default_loop_ptr;
 
     EV_INLINE struct ev_loop *ev_default_loop_uc_(void) EV_NOEXCEPT {
-        extern struct ev_loop *ev_default_loop_ptr;
-
         return ev_default_loop_ptr;
     }
 
@@ -607,7 +619,7 @@ typedef struct stat ev_statdata;
 
 EV_API_DECL int ev_default_loop (unsigned int flags EV_CPP (= 0)) EV_NOEXCEPT; /* returns true when successful */
 
-EV_API_DECL ev_tstamp ev_rt_now;
+EV_API_DATA_DECL ev_tstamp ev_rt_now;
 
 EV_INLINE ev_tstamp
 ev_now (void) EV_NOEXCEPT
