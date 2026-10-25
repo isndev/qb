@@ -138,9 +138,9 @@ int main() {
 
 `addActor<T>(core, args...)` returns the new actor's `ActorId` (`src/qb/core/Main.h:1068`), which you pass to `push()` to address it from anywhere in the system. The dispatcher's `push<WorkEvent>` calls cross thread boundaries transparently: the framework places each event into the destination core's mailbox, and the destination core delivers it to the right `on()` handler during its own loop. From the handler's point of view there is no difference between a same-core and a cross-core message.
 
-By default `start()` is asynchronous: on success it returns after all cores pass the startup barrier, and you call `join()` later to block until shutdown. A pre-loop failure joins those workers before returning. (`src/qb/core/Main.h:1022`, `src/qb/core/Main.cpp:860-865`)
+By default `start()` is asynchronous: on success it returns after all cores pass the startup barrier, and you call `join()` later to block until shutdown. A pre-loop failure joins those workers before returning. (`src/qb/core/Main.h:1022`, `src/qb/core/Main.cpp:876-881`)
 
-> All actors and per-core configuration must be set up **before** `Main::start()`. `Main::core()` throws `std::runtime_error` once the engine is running. (`src/qb/core/Main.cpp:914-916`)
+> All actors and per-core configuration must be set up **before** `Main::start()`. `Main::core()` throws `std::runtime_error` once the engine is running. (`src/qb/core/Main.cpp:930-932`)
 
 ## Two threading surfaces: lock-free internals, single-thread-per-core code
 
@@ -185,7 +185,7 @@ Both calls return the `CoreInitializer` for chaining and must run before `start(
 - **Blocking inside a handler or `on(qb::LoopEvent const&)`.** Both run on the `VirtualCore` event-loop thread. A blocking call (a synchronous syscall, a sleep, a long computation) stalls that core and every actor on it. Use [`qb-io`](./async_io.md)'s non-blocking operations instead. (`src/qb/core/ICallback.h:16`)
 - **Using `send()` where order matters.** `send()` gives no ordering guarantee even same-core, same-destination, and requires trivially-destructible events. Default to `push()`. The requirement is compiler-enforced only for events deriving from `qb::EventQOS0`, because those are the only ones the flush may drop undisposed; the `static_assert` sits in `qb::detail::routing_safe_type_id`, which every enqueue sink calls. A plain `qb::Event` subclass holding a `std::string` compiles, is never dropped, and is disposed exactly once. (`src/qb/core/Actor.h:1152`, `src/qb/core/Event.h`, `src/qb/core/VirtualCore.h:1257-1259`)
 - **Touching another core's actor state directly.** Holding a raw pointer to an actor on another core and calling its methods bypasses the model and races. Address it by `ActorId` and `push()`. (`src/qb/core/Actor.h:338-345`, `src/qb/core/VirtualCore.h:398`)
-- **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`src/qb/core/Main.cpp:914-916`)
+- **Configuring cores after `start()`.** Affinity, latency, and actor placement must be set before the engine runs; `Main::core()` throws once started. (`src/qb/core/Main.cpp:930-932`)
 
 ## See also
 

@@ -240,17 +240,33 @@ namespace {
  *          at offsets 40 and 56 of a 64-byte event whose live members end at 52. Do not remove the
  *          prepare calls without also removing this guard.
  */
+/// The three words every event opens with -- the header, `dest`, `source` -- are routing, never a
+/// payload pointer, and the two identities are 64-bit values that READ as addresses: a generation-1
+/// `ActorId` is `0x0000'0001'cc'ssssss`, which is exactly the band where macOS arm64 maps a process's
+/// first regions when its ASLR slide is small. Measured on the 3.3.0 candidate: the per-core receive
+/// buffer landed at `0x1'00ff'0000` and the reply's `source` -- the core-0 metrics registry,
+/// `0x1'00ff'0001` -- sat 1 byte inside its own event's range, 3 times in 20 000 launches of
+/// `qb-core-test-system-metrics-scrape` (Huly QB-1140). So the scan starts after the routing words,
+/// only a target inside the PAYLOAD counts (a self-pointer never addresses the routing header), and a
+/// payload word that merely repeats `dest` or `source` -- an event carrying the id it came from -- is
+/// the same identity, not a pointer.
+constexpr std::size_t routing_header_bytes = 3 * sizeof(std::uint64_t);
+static_assert(sizeof(ActorId) == sizeof(std::uint64_t), "the routing header is three 64-bit words");
+
 [[nodiscard]] bool
 event_points_into_itself(Event const &event) noexcept {
-    const auto *const base  = reinterpret_cast<const unsigned char *>(&event);
-    const std::size_t bytes = event.getSize(); // bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES
-    const auto        lo    = reinterpret_cast<std::uintptr_t>(base);
-    const auto        hi    = lo + bytes;
+    const auto *const   base    = reinterpret_cast<const unsigned char *>(&event);
+    const std::size_t   bytes   = event.getSize(); // bucket_size * QB_LOCKFREE_EVENT_BUCKET_BYTES
+    const auto          lo      = reinterpret_cast<std::uintptr_t>(base);
+    const auto          hi      = lo + bytes;
+    const auto          payload = lo + routing_header_bytes;
+    const std::uint64_t dest    = event.getDestination().raw64();
+    const std::uint64_t source  = event.getSource().raw64();
 
-    for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= bytes; off += alignof(std::uintptr_t)) {
+    for (std::size_t off = routing_header_bytes; off + sizeof(std::uintptr_t) <= bytes; off += alignof(std::uintptr_t)) {
         std::uintptr_t word = 0;
         std::memcpy(&word, base + off, sizeof(word));
-        if (word >= lo && word < hi)
+        if (word >= payload && word < hi && word != dest && word != source)
             return true;
     }
     return false;

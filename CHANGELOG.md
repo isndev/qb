@@ -807,6 +807,19 @@ policy.
 
 ### Fixed
 
+- **The Debug relocation guard no longer mistakes a 64-bit `ActorId` for a pointer into its own event (Huly QB-1140).**
+  `SharedCoreCommunication`'s debug-only check refuses to `memcpy`-relocate a cross-core event whose bytes hold
+  a pointer into the event itself (a by-value `std::string` on libstdc++, a buffer cursor). It scanned every word
+  from offset 0, routing header included, and since the 64-bit identities a generation-1 `ActorId` reads
+  `0x0000'0001'cc'ssssss`: an address of the band where macOS arm64 maps a process's first regions when its
+  ASLR slide is small. When the per-core receive buffer landed on such a page the reply's `source` sat inside
+  its own event's range and the guard aborted a Debug process on a perfectly relocatable payload -- 3 times in
+  20 000 launches of `qb-core-test-system-metrics-scrape`, once in the 3.3.0 release gate's `feature-gates`
+  suite, never under lldb (which disables ASLR) and never on Linux or Windows (their heaps sit elsewhere). The
+  scan now starts after the three routing words, counts only a target inside the payload (a self-pointer never
+  addresses the header) and ignores a payload word that merely repeats `dest` or `source`. Release builds are
+  untouched (`#ifndef NDEBUG`); the guard's controls (`RelocatablePayloadDeathTest`, `RelocatablePayload`) hold
+  and the fixed test survives 20 000 shuffled launches.
 - **A qb installed without SSL loads again with `find_package(qb)` (Huly QB-1138).** `QB_HAS_ARGON2`
   was defined only when OpenSSL was found. A build with `QB_WITH_SSL=OFF`, or one where OpenSSL was
   missing and SSL was turned off for that reason, therefore installed a `qbConfig.cmake` containing

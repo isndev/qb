@@ -78,8 +78,8 @@ The journey of a single `push` across a core boundary, in the order it happens.
 **Later in the same loop pass, in `__flush_all__`.**
 
 8. The flush walks each non-empty outbound pipe one segment at a time — `front()` is the head segment's live range, and no event straddles two — stepping over whole events by their `bucket_size` (`src/qb/core/VirtualCore.cpp:533-559`).
-9. `try_send` → `SharedCoreCommunication::send(_resolved_index, event)`. In a debug build this first scans the event's whole bucket range for a pointer-sized word addressing that same range and aborts if it finds one (`src/qb/core/Main.cpp:297-310`).
-10. `enqueue(source_index, buckets, bucket_size)` copies the buckets into the destination mailbox's SPSC ring for *this* producer core — constructed since 3.3 in `Main::start()` without its slots, which on Windows the first event this core ever sends there commits (`src/qb/system/lockfree/mpsc.h:910-928`, `src/qb/system/lockfree/spsc.h:302-311`) — then `notify()` wakes a parked consumer (`src/qb/core/Main.cpp:319-321`). The producer slot is **this core's** resolved index, never `event.source` — `forward()` preserves the original sender, so deriving the slot from it would let two threads write one single-producer ring (`src/qb/core/Main.cpp:312-316`).
+9. `try_send` → `SharedCoreCommunication::send(_resolved_index, event)`. In a debug build this first scans the event's whole bucket range for a pointer-sized word addressing that same range and aborts if it finds one (`src/qb/core/Main.cpp:313-326`).
+10. `enqueue(source_index, buckets, bucket_size)` copies the buckets into the destination mailbox's SPSC ring for *this* producer core — constructed since 3.3 in `Main::start()` without its slots, which on Windows the first event this core ever sends there commits (`src/qb/system/lockfree/mpsc.h:910-928`, `src/qb/system/lockfree/spsc.h:302-311`) — then `notify()` wakes a parked consumer (`src/qb/core/Main.cpp:335-337`). The producer slot is **this core's** resolved index, never `event.source` — `forward()` preserves the original sender, so deriving the slot from it would let two threads write one single-producer ring (`src/qb/core/Main.cpp:328-332`).
 11. On success the pipe cursor advances past the event. Its destructor is **not** run here: the bytes now live in the ring, and the receiver owns them.
 
 **On the destination core, on its next pass.**
@@ -241,7 +241,7 @@ C++20 has no `is_trivially_relocatable` trait, clang's builtin rejects `std::vec
 
 | Where | What moves it | Applies to a same-core `push`? |
 |---|---|---|
-| `reply` / `forward` | same-core paths compose a copy in the stable self pipe; remote replies fill their producer ring before publication, with a full-ring fallback into the outbound pipe (`src/qb/core/VirtualCore.cpp:1498-1630`; `src/qb/core/Main.cpp:327-403`) | **yes** |
+| `reply` / `forward` | same-core paths compose a copy in the stable self pipe; remote replies fill their producer ring before publication, with a full-ring fallback into the outbound pipe (`src/qb/core/VirtualCore.cpp:1498-1630`; `src/qb/core/Main.cpp:343-419`) | **yes** |
 | The cross-core hop | sender pipe → mailbox ring → receive buffer: two more `memcpy`s | no |
 
 For a destination on the current logical core, raw `send` reserves directly in that core's stable `_self_pipe`, avoiding a second destination lookup before updating the write cursor. It still copies and clears the transported `alive` flag; cross-core routing, fallback buffering and metrics retain their existing paths (`src/qb/core/VirtualCore.cpp:1473-1488`, `:2180-2184`).
@@ -260,9 +260,9 @@ for (std::size_t off = 0; off + sizeof(std::uintptr_t) <= bytes; off += alignof(
         return true;
 }
 ```
-<!-- src: qb/src/qb/core/Main.cpp:250-256 -->
+<!-- src: qb/src/qb/core/Main.cpp:266-272 -->
 
-It is `#ifndef NDEBUG`, so release pays nothing (`src/qb/core/Main.cpp:297`). Two gaps follow from where it sits:
+It is `#ifndef NDEBUG`, so release pays nothing (`src/qb/core/Main.cpp:313`). Two gaps follow from where it sits:
 
 - **It never runs for same-core delivery**, which does not go through the mailbox layer at all — the exact path the table above says is *not* exempt.
 - **It looks for a word addressing the event's current bytes.** A self-pointer that an earlier pipe growth already left dangling now points at the old buffer, outside the scanned range, and passes.
@@ -280,7 +280,7 @@ A remote reply reserves all required ring slots before copying. Its synchronous 
 both contiguous runs at wrap, rewrites the original header, then publishes once with a release store.
 The receiving core may consume and destroy the payload immediately after publication. A full ring
 runs no fill callback and leaves the original unchanged until the normal buffered fallback takes it
-(`src/qb/core/Main.cpp:327-403`; `src/qb/system/lockfree/spsc.h:415-440`;
+(`src/qb/core/Main.cpp:343-419`; `src/qb/system/lockfree/spsc.h:415-440`;
 `src/qb/core/VirtualCore.cpp:1562-1573`).
 
 `forward` changes the destination while **preserving the original source**, so a downstream reply
