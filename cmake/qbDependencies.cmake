@@ -120,7 +120,7 @@ endif()
 # Optional Dependencies
 # -----------------------------------------------------------------------------
 qb_status_message("Searching for optional dependencies...")
-
+set(QB_HAS_ARGON2 FALSE) # defined on every path, SSL or not: qbConfig.cmake.in tests it unconditionally (QB-1138)
 # OpenSSL (optional, for SSL/TLS support)
 if(QB_WITH_SSL)
     find_package(OpenSSL QUIET)

@@ -807,6 +807,14 @@ policy.
 
 ### Fixed
 
+- **A qb installed without SSL loads again with `find_package(qb)` (Huly QB-1138).** `QB_HAS_ARGON2`
+  was defined only when OpenSSL was found. A build with `QB_WITH_SSL=OFF`, or one where OpenSSL was
+  missing and SSL was turned off for that reason, therefore installed a `qbConfig.cmake` containing
+  `if( OR FALSE OR FALSE OR FALSE)`, and the consumer's configure stopped at "Unknown arguments
+  specified". The variable is now defined on every path, which also fills the `argon2=` field of
+  `share/qb/abi-fingerprint.txt`. The defect dates from 3.0.0 and went unseen because every install
+  the CI made had SSL; `install-consume` now installs a build without SSL and consumes it.
+
 - **Windows installed-header consumers (Huly QB-1131).** `sys__ifaddrs.h` now
   exposes its POSIX aliases only off Windows, so including every installed header
   no longer requires the unavailable `ifaddrs.h`. The backend selector contains

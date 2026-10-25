@@ -418,6 +418,68 @@ jobs:
           says /tmp/nl-bad.log "must be AUTO, ON or OFF" \
             || { echo "::error::the tri-state validation did not fire"; cat /tmp/nl-bad.log; exit 1; }
 
+      # Every other install in this workflow has SSL, which is how QB-1138 shipped from 3.0.0 on:
+      # QB_HAS_ARGON2 was defined only when OpenSSL was found, so an install without SSL wrote
+      # `if( OR FALSE OR FALSE OR FALSE)` into qbConfig.cmake and no consumer could load it.
+      # This one has no SSL, and it is consumed, built and RUN. Control: the fingerprint must say
+      # ssl=FALSE, or the cell tests the configuration every other cell already covers.
+      - name: An install WITHOUT SSL is loadable by find_package(qb)
+        run: |
+          set -euo pipefail
+          cmake -S . -B b-nossl -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PWD/_nossl" \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF -DQB_WITH_SSL=OFF
+          cmake --build b-nossl --parallel
+          cmake --install b-nossl
+
+          fp=_nossl/share/qb/abi-fingerprint.txt
+          grep -Eq '(^|[[:space:]])ssl=FALSE([[:space:]]|$)' "$fp" \
+            || { echo "::error::the install under test has SSL -- this cell would be vacuous"; cat "$fp"; exit 1; }
+          grep -Eq '(^|[[:space:]])argon2=[^[:space:]]' "$fp" \
+            || { echo "::error::argon2= is empty in an install without SSL (QB-1138)"; cat "$fp"; exit 1; }
+
+          mkdir -p _nossl_consumer && cd _nossl_consumer
+          cat > CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.24)
+          project(qb_nossl_consumer LANGUAGES CXX)
+          find_package(qb CONFIG REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE qb::core)
+          EOF
+          cat > main.cpp <<'EOF'
+          #include <qb/actor.h>
+          #include <qb/main.h>
+          #include <atomic>
+          #include <cstdio>
+          constexpr int kPings = 5;
+          std::atomic<int> g_pings{0};
+          struct Ping : qb::Event { int n; explicit Ping(int v) : n(v) {} };
+          class Receiver : public qb::Actor {
+          public:
+              qb::io::async::task<bool> onInit() override { registerEvent<Ping>(*this); co_return true; }
+              void on(Ping const &e) { g_pings.fetch_add(1); if (e.n >= kPings) kill(); }
+          };
+          class Sender : public qb::Actor, public qb::ICallback {
+              qb::ActorId _target; int _n = 1;
+          public:
+              explicit Sender(qb::ActorId t) : _target(t) {}
+              qb::io::async::task<bool> onInit() override { registerCallback(*this); co_return true; }
+              void on(qb::LoopEvent const &) override { push<Ping>(_target, _n++); if (_n > kPings) kill(); }
+          };
+          int main() {
+              qb::Main engine;
+              const auto receiver = engine.addActor<Receiver>(0);
+              engine.addActor<Sender>(0, receiver);
+              engine.start();
+              engine.join();
+              std::printf("qb installed without SSL: %d/%d events delivered\n", g_pings.load(), kPings);
+              return g_pings.load() == kPings && !engine.hasError() ? 0 : 1;
+          }
+          EOF
+          cmake -S . -B b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/_nossl"
+          cmake --build b
+          ./b/consumer
+
       # The file's whole contract is that the `qb-abi` line is READ OUT OF THE INSTALLED ARCHIVE
       # rather than re-derived, so it cannot drift from the artefact. Check exactly that: the
       # installed line must be byte-identical to the string inside the archive.
