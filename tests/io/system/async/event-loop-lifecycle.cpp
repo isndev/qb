@@ -85,19 +85,21 @@ public:
 };
 
 // A with_timeout subject whose real expiry handler counts how many times it has
-// actually fired. We push its deadline out once (via updateTimeout) after the
-// timer has already been armed, forcing the internal `on(event::timer&)` to take
-// its RESCHEDULE arm (io.h: after > 0 -> re-arm, don't dispatch) before the real
-// fire eventually lands.
+// actually fired, and stamps when. We push its deadline out once (via updateTimeout)
+// after the timer has already been armed, forcing the internal `on(event::timer&)`
+// to take its RESCHEDULE arm (io.h: after > 0 -> re-arm, don't dispatch) before the
+// real fire eventually lands.
 class ReschedulableTimer : public async::with_timeout<ReschedulableTimer> {
 public:
-    std::atomic<int> fires{0};
+    std::atomic<int>                      fires{0};
+    std::chrono::steady_clock::time_point fired_at{};
 
     explicit ReschedulableTimer(qb::duration timeout)
         : with_timeout(timeout) {}
 
     void
     on(async::event::timer const &) {
+        fired_at = std::chrono::steady_clock::now();
         fires.fetch_add(1);
     }
 };
@@ -496,26 +498,34 @@ TEST_F(EventLoopLifecycleTest, RegisterUnregisterChurnIsStableAndSafe) {
 // When the libev timer expires but `_last_activity` was refreshed more recently
 // than `_timeout` ago, with_timeout::on must NOT dispatch the derived handler;
 // it re-arms the watcher for the remaining slice (io.h `after > 0` branch). We
-// drive that by bumping the deadline once after the first arm, then proving the
-// real handler still fires exactly once after the extended deadline.
+// drive that by recording activity half a window after the arm, then proving the
+// real handler fires exactly once and no earlier than a full window after that
+// activity -- the original deadline sits half a window after it.
+//
+// The spacer does not pump the loop: a libev timer expires only inside a pass, so
+// the activity is on record before the first expiry is ever processed, whatever
+// the host does meanwhile. The previous shape pumped the loop for its spacer and
+// asserted the handler had not fired yet; a hosted macOS runner that held the
+// process past the 40 ms window during that pump dispatched the handler before
+// the activity was recorded (Huly QB-1141). A stall anywhere in this shape only
+// lengthens the slice `on` re-arms, and the bound below holds because a re-arm
+// fires at `_last_activity + _timeout`, never before.
 TEST_F(EventLoopLifecycleTest, WithTimeoutReschedulesWhenActivityIsRecent) {
-    ReschedulableTimer timer(40ms);
+    constexpr auto     kTimeout = 40ms;
+    ReschedulableTimer timer(kTimeout);
 
-    // Let ~half the original window elapse, then record fresh activity. The next
-    // libev expiry (at the original 40ms mark) now sees `_last_activity` only
-    // ~20ms old against a 40ms timeout => after ~= 20ms > 0 => RESCHEDULE.
-    // A never-true predicate pumps the loop for the full budget; the false return
-    // is expected and must be consumed (the helper is [[nodiscard]]).
-    const bool half_elapsed = pump_until([&] { return false; }, 20ms, 5ms);
-    EXPECT_FALSE(half_elapsed) << "spacer pump unexpectedly satisfied";
+    std::this_thread::sleep_for(kTimeout / 2);
+    const auto activity_at = std::chrono::steady_clock::now();
     timer.updateTimeout();
+    EXPECT_EQ(timer.fires.load(), 0) << "nothing can dispatch before the loop runs a pass";
 
-    // The derived handler must still be pending right after we pushed it out.
-    EXPECT_EQ(timer.fires.load(), 0) << "handler dispatched before the extended deadline";
-
-    // It must eventually fire exactly once, after the re-armed slice elapses.
+    // It must fire exactly once, and only once a full window has passed since the activity.
     EXPECT_TRUE(pump_until([&] { return timer.fires.load() >= 1; })) << "rescheduled with_timeout handler never fired";
     EXPECT_EQ(timer.fires.load(), 1) << "rescheduled handler fired more than once";
+    const auto since_activity = timer.fired_at - activity_at;
+    EXPECT_GE(since_activity, kTimeout)
+        << "the handler fired " << std::chrono::duration_cast<std::chrono::microseconds>(since_activity).count()
+        << " us after the activity, inside the window: on() dispatched at the original deadline instead of re-arming";
 }
 
 // =============================================================================

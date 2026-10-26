@@ -36,6 +36,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -409,28 +410,26 @@ TEST(CoreParkWake, CrossCorePushWakesACoreParkedOnItsMailbox) {
 
 // ---- an offload returning on a pool thread ------------------------------------------------------
 
-std::atomic<int>          g_offload_rounds{0};
-std::atomic<std::int64_t> g_offload_worst_ns{-1};
+constexpr int kOffloadRounds = 10;
 
-/// Awaits `kRounds` offloads one after the other, each a 20 ms call on the pool, and keeps the
-/// WORST delay between a call returning (stamped on the pool thread) and its coroutine resuming on
+std::atomic<int>                                      g_offload_rounds{0};
+std::array<std::atomic<std::int64_t>, kOffloadRounds> g_offload_late_ns{};
+
+/// Awaits `kOffloadRounds` offloads one after the other, each a 20 ms call on the pool, and keeps
+/// EVERY delay between a call returning (stamped on the pool thread) and its coroutine resuming on
 /// this core. The core has nothing else to do: between two returns it parks, in its loop, and only
 /// the pool's send can end that park before the cap.
 class OffloadingActor : public qb::Actor {
 public:
-    static constexpr int kRounds = 10;
-
     qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            for (int i = 0; i < kRounds; ++i) {
+            for (int i = 0; i < kOffloadRounds; ++i) {
                 const std::int64_t returned_at = co_await ctx.offload([] {
                     std::this_thread::sleep_for(20ms);
                     return now_ns();
                 });
-                const std::int64_t late        = now_ns() - returned_at;
-                if (late > g_offload_worst_ns.load(std::memory_order_acquire))
-                    g_offload_worst_ns.store(late, std::memory_order_release);
+                g_offload_late_ns[static_cast<std::size_t>(i)].store(now_ns() - returned_at, std::memory_order_release);
                 g_offload_rounds.fetch_add(1, std::memory_order_acq_rel);
             }
             ctx.push<qb::KillEvent>();
@@ -439,14 +438,80 @@ public:
     }
 };
 
+/// What the rounds say about the wake, told apart from what the host did to one of them.
+struct OffloadVerdict {
+    std::chrono::nanoseconds median{};
+    int                      at_the_cap = 0;
+    std::string              reason; ///< empty when the resumes read as a working wake
+};
+
+std::string
+join_ms(std::array<std::int64_t, kOffloadRounds> const &late_ns) {
+    std::string out;
+    for (const auto ns : late_ns)
+        out += (out.empty() ? "" : " ") + std::to_string(ns / 1'000'000) + "." + std::to_string(ns / 1'000 % 1'000 / 100);
+    return out;
+}
+
+/// A wake that fell through to the park cap is late by the cap itself (the job's 20 ms aside), and
+/// it is late on EVERY round the mechanism misses: a resume at or past nine tenths of the cap counts
+/// as "at the cap", and a median past half the cap is a wake that does not happen. A host stall is
+/// one round late by the stall's length, whatever that is -- 381 ms on a hosted macOS runner, with
+/// the nine other rounds prompt (Huly QB-1141) -- so one round at the cap is tolerated, never two: a
+/// wake lost one time in five shows up as two. The single worst delay, which the assertion used to
+/// read, cannot tell the two apart.
+OffloadVerdict
+offload_verdict(std::array<std::int64_t, kOffloadRounds> late_ns, std::chrono::nanoseconds const cap) {
+    std::sort(late_ns.begin(), late_ns.end());
+    OffloadVerdict v;
+    v.median          = std::chrono::nanoseconds{late_ns[kOffloadRounds / 2]};
+    const auto at_cap = cap * 9 / 10;
+    v.at_the_cap      = static_cast<int>(
+        std::count_if(late_ns.begin(), late_ns.end(), [&](std::int64_t const ns) { return std::chrono::nanoseconds{ns} >= at_cap; }));
+    if (v.median >= cap / 2)
+        v.reason = "the resumes waited for the park cap: median "
+                   + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(v.median).count()) + " ms after the call returned";
+    else if (v.at_the_cap > 1)
+        v.reason = std::to_string(v.at_the_cap) + " rounds waited the full park cap: the wake is lost intermittently";
+    return v;
+}
+
+TEST(CoreParkWake, OffloadVerdictTellsAHostStallFromAMissedWake) {
+    // The classifier's two regimes, on the shapes the rounds can take: every round at the cap is the
+    // wake that never happens, two rounds at the cap is a wake lost now and then, and one slow round
+    // -- the hosted runner's 381 ms, or even a full cap -- is the host, not the wake.
+    constexpr auto cap = 500ms;
+    const auto     ms  = [](std::int64_t const v) {
+        return v * 1'000'000;
+    };
+    std::array<std::int64_t, kOffloadRounds> lates{};
+    lates.fill(120'000); // 120 us: a prompt resume
+    EXPECT_TRUE(offload_verdict(lates, cap).reason.empty());
+    lates[3] = ms(381);
+    EXPECT_TRUE(offload_verdict(lates, cap).reason.empty()) << "one stalled round is the host: " << offload_verdict(lates, cap).reason;
+    lates[3] = ms(480);
+    EXPECT_TRUE(offload_verdict(lates, cap).reason.empty()) << "one round at the cap is tolerated once: " << offload_verdict(lates, cap).reason;
+    lates[7] = ms(470);
+    EXPECT_NE(offload_verdict(lates, cap).reason.find("lost intermittently"), std::string::npos) << offload_verdict(lates, cap).reason;
+    lates.fill(ms(480));
+    EXPECT_NE(offload_verdict(lates, cap).reason.find("waited for the park cap"), std::string::npos) << offload_verdict(lates, cap).reason;
+    EXPECT_EQ(offload_verdict(lates, cap).median, std::chrono::nanoseconds{ms(480)});
+    EXPECT_EQ(offload_verdict(lates, cap).at_the_cap, kOffloadRounds);
+}
+
 TEST(CoreParkWake, AnOffloadReturningOnThePoolWakesACoreParkedInItsLoop) {
-    // Each resume must follow its call's return by half the 500 ms cap at most -- a wake that fell
-    // through to the cap is ~480 ms late on its own, while a tenth, 50 ms, is a stall a loaded runner
-    // reaches (Huly QB-975) -- and across the rounds the process (this core and a pool thread that
+    // The resumes must read as a working wake under `offload_verdict`: a median under half the
+    // 500 ms cap -- a wake that fell through to the cap is ~480 ms late on EVERY round, while a
+    // tenth, 50 ms, is a stall a loaded runner reaches (Huly QB-975) -- and at most one round at the
+    // cap. The single worst delay used to decide, and a hosted macOS runner that held this core's
+    // thread for 381 ms on one round, the pool thread running meanwhile, read as a lost wake
+    // (Huly QB-1141); freezing the whole process cannot even produce that shape, since the pool's
+    // stamp moves with it. And across the rounds the process (this core and a pool thread that
     // sleeps) must have charged well under the wall time, or the core polled while it waited
     // instead of parking.
     g_offload_rounds.store(0, std::memory_order_release);
-    g_offload_worst_ns.store(-1, std::memory_order_release);
+    for (auto &late : g_offload_late_ns)
+        late.store(-1, std::memory_order_release);
     constexpr auto kLatency = 500ms;
     qb::Main       main;
     main.core(0).setLatency(kLatency).setIdleSpin(0us);
@@ -458,10 +523,12 @@ TEST(CoreParkWake, AnOffloadReturningOnThePoolWakesACoreParkedInItsLoop) {
     const auto wall = Clock::now() - wall_before;
     const auto cpu  = process_cpu_time() - cpu_before;
     EXPECT_FALSE(main.hasError());
-    ASSERT_EQ(g_offload_rounds.load(std::memory_order_acquire), OffloadingActor::kRounds) << "an offload never resumed";
-    const auto worst = std::chrono::nanoseconds{g_offload_worst_ns.load(std::memory_order_acquire)};
-    EXPECT_LT(worst, kLatency / 2) << "an offload's resume waited for the park cap: "
-                                   << std::chrono::duration_cast<std::chrono::milliseconds>(worst).count() << " ms after its call returned";
+    ASSERT_EQ(g_offload_rounds.load(std::memory_order_acquire), kOffloadRounds) << "an offload never resumed";
+    std::array<std::int64_t, kOffloadRounds> lates{};
+    for (std::size_t i = 0; i < lates.size(); ++i)
+        lates[i] = g_offload_late_ns[i].load(std::memory_order_acquire);
+    const auto verdict = offload_verdict(lates, kLatency);
+    EXPECT_TRUE(verdict.reason.empty()) << verdict.reason << " (resumes after their call returned, ms: " << join_ms(lates) << ")";
     EXPECT_LT(cpu, wall / 2) << "the core polled while its offloads ran instead of parking: "
                              << std::chrono::duration_cast<std::chrono::microseconds>(cpu).count() << " us of CPU across "
                              << std::chrono::duration_cast<std::chrono::microseconds>(wall).count() << " us";
