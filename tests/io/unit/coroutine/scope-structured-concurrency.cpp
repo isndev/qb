@@ -856,8 +856,18 @@ TEST_F(ScopeStructuredConcurrency, MoveAssignedScopeOwnsTheTasks) {
 // best-effort destructor branch (and, in debug builds, emits the active-tasks warning to
 // stderr). The tasks keep running via the shared scope_impl; we join them through the scope's
 // own token afterwards to drain the loop cleanly. Drives ~coroutine_scope's join_all case.
+//
+// The warning is a synchronous write to stderr on the loop thread, and the coordinator emits it
+// on its first resume, before its own sleep and the worker's are armed. So the warning goes out
+// and both timers are armed in one unbudgeted pass (`run_for`'s initial `run_ready()` runs the
+// coordinator to its sleep, then the worker to its own), and only then does `pump_until` start
+// its clock. With that write inside the budget, a stderr consumer stalled for the budget's length
+// read as a worker that never ran: feature-gates on europa, 1 run in 10, `counter` still 0 after
+// 2.5 s of pumping (Huly QB-1150) -- reproduced on macOS by handing the test a full stderr pipe
+// drained 2.4 s later, and cleared by this ordering.
 TEST_F(ScopeStructuredConcurrency, JoiningScopeDestroyedWithActiveTasksIsBestEffort) {
     std::atomic<int>  counter{0};
+    std::atomic<bool> armed{false};
     std::atomic<bool> done{false};
 
     coro_scheduler().spawn([&]() -> task<void> {
@@ -871,13 +881,19 @@ TEST_F(ScopeStructuredConcurrency, JoiningScopeDestroyedWithActiveTasksIsBestEff
             // Intentionally do NOT co_await join_all() before the scope dies: exercise the
             // best-effort join_all destructor branch with an active task still in flight.
         }
+        armed.store(true); // the warning is out; the worker is queued and this sleep is armed next
         // The task keeps running via the shared scope_impl; let it finish.
         co_await sleep(60ms);
         done.store(true);
     });
 
+    // The pass that emits the warning and arms both sleeps, before the clock starts.
+    run_for(1ms);
+    ASSERT_TRUE(armed.load()) << "the coordinator must reach its sleep in run_for's initial drain";
+
     EXPECT_TRUE(pump_until([&] { return done.load() && counter.load() == 1; }))
-        << "best-effort joining_scope task never completed after early scope destruction";
+        << "best-effort joining_scope task never completed after early scope destruction (done=" << done.load()
+        << ", counter=" << counter.load() << ")";
     EXPECT_EQ(counter.load(), 1) << "the spawned task must still run after the join_all-policy scope is destroyed";
 }
 
