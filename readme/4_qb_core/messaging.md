@@ -1,6 +1,6 @@
 # Inter-actor messaging: the address is the route
 
-> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.2.1 (C++20 default, C++23 supported) — d519f005
+> **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.3.0 (C++20 default, C++23 supported) — d519f005
 
 An `ActorId` is a 64-bit generation/core/slot value. Its encoded core selects the transport; the receiving core compares the complete instance identity before dispatch. Logical service addresses are resolved to an instance before activation or routing. Buffer ownership then determines ordering, relocation and payload lifetime.
 

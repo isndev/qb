@@ -7,6 +7,10 @@ policy.
 
 ## [Unreleased]
 
+Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+
+## [3.3.0] - 2026-10-26
+
 ### Changed
 
 - **64-bit actor identities and incarnation-aware delivery (Huly QB-970, QB-971).**
@@ -4517,7 +4521,8 @@ is broad, so entries are grouped rather than exhaustive.
 - QUIC: connection-limit denial-of-service mitigation, fail-closed RNG, and flow-control hardening.
 - async/transport and crypto paths hardened to fail closed under malformed or hostile input.
 
-[Unreleased]: https://github.com/isndev/qb/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/isndev/qb/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/isndev/qb/compare/v3.2.1...v3.3.0
 [3.2.1]: https://github.com/isndev/qb/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/isndev/qb/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/isndev/qb/compare/v3.0.1...v3.1.0
