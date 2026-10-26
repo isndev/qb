@@ -7,7 +7,7 @@ qb-core is ONE translation unit (`core.cpp` #includes the six real `.cpp`), qb-i
 That amalgamation hides two-TU defects *inside* the library while leaving them fully live
 against qb's 217 test translation units and every consumer TU. The shape that matters:
 
-    VirtualCore.h  --  Actor.cpp:32 (and VirtualCore.cpp, Main.cpp)  -> into libqb-core.a
+    VirtualCore.h  --  Actor.cpp:30 (and VirtualCore.cpp, Main.cpp)  -> into libqb-core.a
                    \\-  the six headers that #include it: qb/actor.h,
                       qb/main.h, qb/patterns.h, qb/core/patterns.h,
                       core/patterns/{discovery,supervisor}.h         -> EVERY consumer TU

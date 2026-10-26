@@ -7,7 +7,27 @@ policy.
 
 ## [Unreleased]
 
-Nothing yet. Entries land here as they are merged, and move under a version heading when that version is tagged.
+### Changed
+
+- **The ask registry is constant-initialised and its warm path inlined again: on MSVC the request/reply
+  machinery costs 18.5 ns over a bare push/reply, below the 19.8 ns of 3.2.1 (Huly QB-1114).**
+  The per-slot table of QB-1104 carried a `std::map` and `unique_ptr` members, so its `thread_local` was
+  dynamically initialised: MSVC tested a TLS guard on each of the three registry trips an ask makes (take,
+  release, deliver), and the bodies of `take` and `release` had grown past its inlining budget, so each
+  became a call with a seven-register prologue; `ask_deliver` grew from 47 to 99 instructions. The table
+  now has only constant members (`constinit`), its directories are raw pointers allocated on the cold path,
+  the warm path -- the owner's FIFO on the current core, one compare, the band test, a page load, a pop or
+  a push -- is inline in `ask_take` and `ask_unregister`, and everything rare (another core, a slot's first
+  ask, a new page, a grown table, an exhausted generation) is out of line. Nothing of the contract moves:
+  entries stay with their actor slot across reuse, record the exact incarnation that last held them,
+  generations retire instead of wrapping, late responses are still consumed as obsolete, self-asks still
+  work. Measured on an i9-12900K (MSVC 19.51, `/arch:AVX2`, 3 physical copies a side, seeded order,
+  4 rounds, bootstrap 95 %) against the released 3.3.0: `qb-vs-others` probe `ask-ask` 47.0 -> 44.3 ns
+  (`ask-push` level at 25.8 ns), `Ask_RoundTrip_SameCore` -1.4 %, `Ask_Scatter<Any>/8` -4.4 %,
+  `Ask_Scatter<All>/8` -1.1 %, ping-pong latency and dispatch probes level. On g++ 14 (WSL2, both sides
+  built with `-falign-functions/-loops/-jumps=64`) every ask cell and probe is level: GCC inlined `take`
+  and `release` already and pays no TLS guard, so the 3.0 ns the 3.3.0 registry costs over 3.2.1 on that
+  compiler (12.9 -> 15.9 ns of ask machinery over a push/reply) stays and is the next thing to read.
 
 ## [3.3.0] - 2026-10-26
 

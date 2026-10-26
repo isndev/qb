@@ -405,7 +405,7 @@ The generations are what make the mechanism repeatable, and complete. Each signa
 if (event.signum == SIGINT || event.signum == SIGTERM)
     kill();
 ```
-<!-- src: qb/src/qb/core/Actor.cpp:656-657 -->
+<!-- src: qb/src/qb/core/Actor.cpp:731-732 -->
 
 A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:1009-1022`).
 

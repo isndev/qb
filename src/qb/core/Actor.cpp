@@ -26,8 +26,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#include <map>
-#include <memory>
 #include <type_traits>
 #include <unordered_set>
 #include <vector>
@@ -85,29 +83,33 @@ public:
     static constexpr std::uint64_t slot_mask = (std::uint64_t{1} << slot_bits) - 1;
     static constexpr std::uint32_t gen_max   = (std::uint32_t{1} << gen_bits) - 1;
 
-    ask_table()                             = default;
+    // Constant-initialised: every member has a constant default, so `tls_ask_slots` is `constinit` and a
+    // registry trip is a plain TLS load -- no `__tls_guard` test and no on-demand initialiser on the three trips
+    // an ask makes (take, release, deliver). A std::map member made the 3.3.0 table dynamically initialised and
+    // MSVC guarded every access (read on the /FAs listings, Huly QB-1114). The directories below are raw
+    // pointers allocated on the cold path for the same reason; the destructor frees them.
+    constexpr ask_table() noexcept          = default;
     ask_table(const ask_table &)            = delete;
     ask_table &operator=(const ask_table &) = delete;
-    ~ask_table() {
-        std::free(_tab);
-    }
+    ~ask_table();
 
     /// Take a free entry for an ask owned by `owner`, bound to the owner's
     /// `slot` (which may be null: such an entry resolves nothing); returns its correlation id.
     [[nodiscard]] std::uint64_t
     take(ActorId const owner, ask_slot *slot) {
         assert(!slot || slot->owner == owner);
-        auto         &queue = owner_queue(owner);
-        std::uint32_t i;
-        if (queue.head == none) [[unlikely]] {
-            if (_assigned == _cap)
-                grow();
-            i = _assigned++;
+        // The warm path is the owner's FIFO on the current core: one core compare, the band test, a page load,
+        // a pop. Another core, a slot's first ask or a page not yet created are admitted out of line, once.
+        free_queue *queue = queue_of(owner);
+        if (!queue) [[unlikely]]
+            queue = &admit(owner);
+        std::uint32_t i = queue->head;
+        if (i == none) [[unlikely]] {
+            i = take_unassigned();
         } else {
-            i          = queue.head;
-            queue.head = _tab[i].next;
-            if (queue.head == none)
-                queue.tail = none;
+            queue->head = _tab[i].next;
+            if (queue->head == none)
+                queue->tail = none;
         }
         entry &e = _tab[i];
         if (slot) {
@@ -164,12 +166,13 @@ public:
             return;
         }
         ++e->gen;
-        const auto i = static_cast<std::uint32_t>(id & slot_mask);
-        if (_current_core != owner.index()) [[unlikely]] {
+        const auto  i     = static_cast<std::uint32_t>(id & slot_mask);
+        free_queue *queue = queue_of(owner);
+        if (!queue) [[unlikely]] {
             release_other_core(owner, i);
             return;
         }
-        push_free(queue_in(*_current_owners, owner), i);
+        push_free(*queue, i);
     }
 
 private:
@@ -200,9 +203,16 @@ private:
     // One FIFO per actor slot of a core, in pages of 256 created on first use: ordinary slots (24 bits) in a
     // directory that grows with the highest slot that asked, service tags (16 bits) in a fixed one -- the
     // service band's encoded slots sit at the top of the 24-bit range and would otherwise size the first.
+    // A page never moves once created (the directory array may), so a queue address stays valid for the thread.
     struct owner_directory {
-        std::vector<std::unique_ptr<queue_page>>     ordinary;
-        std::array<std::unique_ptr<queue_page>, 256> services;
+        queue_page  **ordinary       = nullptr;
+        std::uint32_t ordinary_pages = 0; ///< the length of `ordinary`
+        queue_page   *services[256]  = {};
+    };
+    /// A core this thread has served, with its directory: a worker serves one, the codec tests several.
+    struct core_directory {
+        std::uint16_t    core;
+        owner_directory *dir;
     };
 
     [[nodiscard]] static ActorId
@@ -215,53 +225,103 @@ private:
         return owner.is_service() ? owner.service_tag() : owner.slot();
     }
 
-    [[nodiscard]] static std::unique_ptr<queue_page> &
-    page_in(owner_directory &dir, ActorId const owner) {
-        const std::size_t page = slot_of(owner) >> 8;
+    /// The FIFO of `owner`'s slot when it is already admitted on the current core; null when the cold path must
+    /// run (another core, or a page this slot has not yet needed).
+    // `QB_MSVC_FORCEINLINE`: MSVC left this twenty-instruction lookup out of line in `take` (a call on every ask,
+    // read on the listing) while inlining it in `release`; forced, both callers carry it inline. `inline` elsewhere.
+    [[nodiscard]] QB_MSVC_FORCEINLINE free_queue *
+    queue_of(ActorId const owner) const noexcept {
+        if (_current_core != owner.index()) [[unlikely]]
+            return nullptr;
+        const std::size_t slot = slot_of(owner);
+        const std::size_t page = slot >> 8;
+        queue_page       *p;
         if (owner.is_service()) [[unlikely]]
-            return dir.services[page];
-        if (page >= dir.ordinary.size()) [[unlikely]]
-            dir.ordinary.resize(page + 1);
-        return dir.ordinary[page];
+            p = _current_owners->services[page];
+        else
+            p = page < _current_owners->ordinary_pages ? _current_owners->ordinary[page] : nullptr;
+        return p ? &(*p)[slot & 255] : nullptr;
     }
 
-    /// The FIFO of `owner`'s slot. Its page exists: `owner_queue` created it before the entry was taken.
-    [[nodiscard]] static free_queue &
-    queue_in(owner_directory &dir, ActorId const owner) noexcept {
+    /// Admit `owner` on its core: select the core's directory (created on its first ask), create the slot's page
+    /// (growing the ordinary directory when the slot is past its end), and hand back the slot's FIFO.
+    QB_NOINLINE free_queue &
+    admit(ActorId const owner) {
+        if (_current_core != owner.index())
+            select_core(owner.index());
+        owner_directory  &dir  = *_current_owners;
         const std::size_t slot = slot_of(owner);
-        auto             &page = owner.is_service() ? dir.services[slot >> 8] : dir.ordinary[slot >> 8];
-        assert(page);
-        return (*page)[slot & 255];
+        const std::size_t page = slot >> 8;
+        queue_page      **where;
+        if (owner.is_service()) {
+            where = &dir.services[page];
+        } else {
+            if (page >= dir.ordinary_pages)
+                grow_directory(dir, page + 1);
+            where = &dir.ordinary[page];
+        }
+        if (!*where)
+            *where = new queue_page();
+        return (**where)[slot & 255];
     }
 
     QB_NOINLINE void
     select_core(std::uint16_t const core) {
-        _current_owners = &_owners.try_emplace(core).first->second;
+        for (std::uint32_t k = 0; k < _ncores; ++k) {
+            if (_cores[k].core == core) {
+                _current_owners = _cores[k].dir;
+                _current_core   = core;
+                return;
+            }
+        }
+        auto *const t = static_cast<core_directory *>(std::realloc(_cores, (_ncores + 1) * sizeof(core_directory)));
+        if (!t)
+            std::abort();
+        _cores          = t;
+        _cores[_ncores] = core_directory{core, new owner_directory()};
+        _current_owners = _cores[_ncores].dir;
         _current_core   = core;
+        ++_ncores;
     }
 
     QB_NOINLINE static void
-    create_page(std::unique_ptr<queue_page> &page) {
-        page = std::make_unique<queue_page>();
+    grow_directory(owner_directory &dir, std::size_t const need) {
+        std::size_t count = dir.ordinary_pages ? dir.ordinary_pages : 4;
+        while (count < need)
+            count *= 2;
+        auto *const t = static_cast<queue_page **>(std::realloc(dir.ordinary, count * sizeof(queue_page *)));
+        if (!t)
+            std::abort();
+        for (std::size_t k = dir.ordinary_pages; k < count; ++k)
+            t[k] = nullptr;
+        dir.ordinary       = t;
+        dir.ordinary_pages = static_cast<std::uint32_t>(count);
     }
 
-    free_queue &
-    owner_queue(ActorId const owner) {
-        // A worker uses one core. The cold directory also supports the calling
-        // thread hosting successive engines, and pure codec tests with other cores.
-        if (_current_core != owner.index()) [[unlikely]]
-            select_core(owner.index());
-        auto &page = page_in(*_current_owners, owner);
-        if (!page) [[unlikely]]
-            create_page(page);
-        return (*page)[slot_of(owner) & 255];
+    /// A slot's FIFO is empty: the next never-assigned entry (the table doubles when it runs out).
+    QB_NOINLINE std::uint32_t
+                take_unassigned() {
+        if (_assigned == _cap)
+            grow();
+        return _assigned++;
     }
 
+    /// A release on another thread's core (a codec test, successive engines): the entry's core has a directory
+    /// and its slot a page, both created when the entry was admitted.
     QB_NOINLINE void
     release_other_core(ActorId const owner, std::uint32_t const i) noexcept {
-        const auto found = _owners.find(owner.index());
-        assert(found != _owners.end());
-        push_free(queue_in(found->second, owner), i);
+        owner_directory *dir = nullptr;
+        for (std::uint32_t k = 0; k < _ncores; ++k) {
+            if (_cores[k].core == owner.index()) {
+                dir = _cores[k].dir;
+                break;
+            }
+        }
+        assert(dir);
+        const std::size_t slot = slot_of(owner);
+        queue_page *const page = owner.is_service() ? dir->services[slot >> 8] : dir->ordinary[slot >> 8];
+        assert(page);
+        push_free((*page)[slot & 255], i);
     }
 
     [[nodiscard]] entry *
@@ -302,15 +362,30 @@ private:
         }
     }
 
-    entry                                   *_tab      = nullptr;
-    std::uint32_t                            _cap      = 0;
-    std::uint32_t                            _assigned = 0;
-    std::map<std::uint16_t, owner_directory> _owners;
-    owner_directory                         *_current_owners = nullptr;
-    std::uint32_t                            _current_core   = none;
+    entry           *_tab            = nullptr;
+    std::uint32_t    _cap            = 0;
+    std::uint32_t    _assigned       = 0;
+    core_directory  *_cores          = nullptr;
+    std::uint32_t    _ncores         = 0;
+    owner_directory *_current_owners = nullptr;
+    std::uint32_t    _current_core   = none;
 };
 
-thread_local ask_table tls_ask_slots;
+ask_table::~ask_table() {
+    for (std::uint32_t k = 0; k < _ncores; ++k) {
+        owner_directory *const dir = _cores[k].dir;
+        for (std::uint32_t p = 0; p < dir->ordinary_pages; ++p)
+            delete dir->ordinary[p];
+        std::free(dir->ordinary);
+        for (queue_page *page : dir->services)
+            delete page;
+        delete dir;
+    }
+    std::free(_cores);
+    std::free(_tab);
+}
+
+constinit thread_local ask_table tls_ask_slots;
 // Set of event type-ids known to derive from AskEvent (i.e. carry `correlation_id`),
 // populated lazily by `qb::ask<E>`. Lets the activation gate recognise an ask reply
 // without RTTI and read `correlation_id` at the AskEvent base offset safely.
