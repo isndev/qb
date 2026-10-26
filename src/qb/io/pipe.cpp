@@ -28,13 +28,6 @@ namespace qb::allocator {
 
 template <>
 pipe<char> &
-pipe<char>::put<char>(const char &c) {
-    *allocate_back(1) = c;
-    return *this;
-}
-
-template <>
-pipe<char> &
 pipe<char>::put<unsigned char>(const unsigned char &c) {
     *allocate_back(1) = static_cast<const char &>(c);
     return *this;
@@ -43,7 +36,9 @@ pipe<char>::put<unsigned char>(const unsigned char &c) {
 // Every overload below whose source may be a view of this very pipe reads it through
 // allocate_back_from(): a growing or compacting allocate_back() moves the live bytes, and the
 // copy must read them where they are AFTER the allocation (Huly QB-277). A std::string,
-// qb::string, vector or array owns its storage and cannot alias the pipe.
+// qb::string, vector or array owns its storage and cannot alias the pipe. A char, a std::string
+// and a std::string_view are written by the inline overloads of the header: one store or one
+// memcpy where the serializer stands, no call (Huly QB-1151).
 
 template <>
 pipe<char> &
@@ -53,24 +48,6 @@ pipe<char>::put<const char *>(const char *const &c) {
         const char *source = c;
         char *const space  = allocate_back_from(len, source);
         std::memcpy(space, source, len);
-    }
-    return *this;
-}
-
-template <>
-pipe<char> &
-pipe<char>::put<std::string>(std::string const &str) {
-    memcpy(allocate_back(str.size()), str.c_str(), str.size());
-    return *this;
-}
-
-template <>
-pipe<char> &
-pipe<char>::put<std::string_view>(std::string_view const &str) {
-    if (const auto size = str.size()) {
-        const char *source = str.data();
-        char *const space  = allocate_back_from(size, source);
-        std::memcpy(space, source, size);
     }
     return *this;
 }

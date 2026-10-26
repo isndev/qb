@@ -15,8 +15,10 @@
 #ifndef QB_PIPE_H
 #define QB_PIPE_H
 #include <array>
+#include <charconv>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <new>
 #include <qb/string.h>
@@ -737,7 +739,49 @@ public:
     template <typename U>
     pipe &
     put(const U &rhs) {
-        return put(std::to_string(rhs));
+        if constexpr (std::is_same_v<U, char>) {
+            return put(static_cast<char>(rhs)); // a template-id call (`put<char>(c)`): the inline overload
+        } else if constexpr (std::is_convertible_v<const U &, std::string_view>) {
+            return put(std::string_view(rhs)); // likewise `put<std::string>(s)` / `put<std::string_view>(sv)`
+        } else if constexpr (std::is_integral_v<U> && !std::is_same_v<U, bool>) {
+            // Formatted in place: `std::to_string` builds a std::string (reserve, format, copy, destroy)
+            // for a number that fits a 21-byte buffer -- every length, count and status written to a pipe.
+            char buf[std::numeric_limits<U>::digits10 + 3];
+            const auto [end, ec] = std::to_chars(buf, buf + sizeof(buf), rhs);
+            (void) ec; // an integral value always fits digits10 + 1 digits and a sign
+            const auto size = static_cast<std::size_t>(end - buf);
+            std::memcpy(allocate_back(size), buf, size);
+            return *this;
+        } else {
+            return put(std::to_string(rhs));
+        }
+    }
+
+    /// One character, written in place: the fast path of `allocate_back` and a store, inlined where the
+    /// serializer writes it (a non-template overload: it wins over the generic `put` on an exact match).
+    pipe &
+    put(char const c) {
+        *allocate_back(1) = c;
+        return *this;
+    }
+
+    /// A view, which may be a view of this very pipe: read where it is after the allocation (Huly QB-277).
+    pipe &
+    put(std::string_view const sv) {
+        if (const auto size = sv.size()) {
+            const char *source = sv.data();
+            char *const space  = allocate_back_from(size, source);
+            std::memcpy(space, source, size);
+        }
+        return *this;
+    }
+
+    /// A string owns its storage and cannot alias the pipe: the plain fast path.
+    pipe &
+    put(std::string const &str) {
+        if (const auto size = str.size())
+            std::memcpy(allocate_back(size), str.data(), size);
+        return *this;
     }
 
     /**
@@ -893,21 +937,13 @@ public:
     std::string_view view() const noexcept;
 };
 
-// Explicit specialization declarations
-template <>
-pipe<char> &pipe<char>::put<char>(const char &c);
-
+// Explicit specialization declarations (a char, a std::string and a std::string_view are written by the
+// inline non-template overloads above, which win overload resolution on an exact match)
 template <>
 pipe<char> &pipe<char>::put<unsigned char>(const unsigned char &c);
 
 template <>
 pipe<char> &pipe<char>::put<const char *>(const char *const &c);
-
-template <>
-pipe<char> &pipe<char>::put<std::string>(std::string const &str);
-
-template <>
-pipe<char> &pipe<char>::put<std::string_view>(std::string_view const &str);
 
 template <>
 pipe<char> &pipe<char>::put<pipe<char>>(pipe<char> const &rhs);

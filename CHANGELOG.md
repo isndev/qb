@@ -48,6 +48,28 @@ policy.
   and `release` already and pays no TLS guard, so the 3.0 ns the 3.3.0 registry costs over 3.2.1 on that
   compiler (12.9 -> 15.9 ns of ask machinery over a push/reply) stays and is the next thing to read.
 
+- **The character pipe formats integers in place and writes a char, a string or a view inline: on MSVC
+  an HTTP/1 response serialises 13-15 % faster, a Redis argument list 7 %, a `put_in_pipe` 16 %; on g++ 14
+  a publish-style put is 26-66 % faster, and no measured cell is slower (Huly QB-1151).** `pipe<char>::put(const U &)` formatted every integral value through `std::to_string`
+  -- a temporary `std::string` built, formatted, copied and destroyed for each length, count and status
+  written -- and `put<char>`, `put<std::string>` and `put<std::string_view>` were explicit
+  specialisations defined out of line, one call per byte or per string from every serializer. The
+  generic `put` now formats an integral value with `std::to_chars` into a stack buffer (`bool` and
+  floating-point values keep `std::to_string`), the three specialisations are replaced by inline
+  non-template overloads (a template-id call such as `put<std::string>(s)` still compiles through the
+  generic `put`, which forwards a char and anything convertible to a view to them), and
+  `put<unsigned char>`, `put<const char *>` and `put<pipe<char>>` stay as they were. `allocate_back` is
+  untouched: the variant that moved its slow path out of line gained more on the serializers (RESP
+  -23 to -33 %) but cost 13-22 % to a bare `allocate_back` + `memcpy` loop over a local pipe, because a
+  slow path taking `this` keeps the pipe out of registers; that trade was refused. Measured against the
+  released 3.3.0 on an i9-12900K, 3 physical copies a side, seeded order, 4 rounds, bootstrap 95 %:
+  MSVC 19.51 `Http1Serialize_FixedLengthResponse` -13 to -15 %, `HeaderBlock` -12 to -15 %,
+  `ReplySerialize_PutInPipe` -16 %, `MultiBulk` -6 to -7 %, `JsonInteger` -5 to -9 %, `Pipe_PublishStylePut`
+  -8 to -17 %, every other cell level (0 slower of 27); g++ 14 (WSL2, both sides built with
+  `-falign-functions/-loops/-jumps=64`) `PublishStylePut` -26 to -66 %, `Http1Serialize` -3 to -9 %,
+  `JsonInteger` -3 to -8 %, `MultiBulk` and `PutInPipe` level, the bare pipe and framing loops level with
+  identical code. Instructions per 201-argument multi-bulk (callgrind): 57,710 -> 47,054.
+
 ## [3.3.0] - 2026-10-26
 
 ### Changed
