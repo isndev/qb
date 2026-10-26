@@ -7,6 +7,25 @@ policy.
 
 ## [Unreleased]
 
+### Added
+
+- **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
+  `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child
+  that yields once to the ready queue, so every step pays the root's task await (a transfer), the
+  child's yield and the child frame's destruction, the three places an awaiter or a promise of qb
+  tests the tracking gates -- with tracking off, with the root spawned under a name (the destructors'
+  gate alone), with tracking on, and with tracking on plus the public `dump()` every 64 steps. The
+  first child takes the in-flight view through that dump after its yield (the root awaiting a task
+  and itself on its yield with tracking on; the root alone, named or not, with it off), one dump per
+  batch in every mode; count, checksum, dump count and the tracking flag complete the oracle, outside
+  timing. Measured on an M4 Pro (Apple clang, the root `benchmarks` preset, three physical copies a
+  side, eight paired rounds, 48 processes, A/A floors 0.2-1.6 % with one slow process in the On
+  cell): 14.3 ns a step with everything off; a name on the thread costs 3.9 ns per child frame
+  destruction (+27 %); tracking on costs 34.4 ns a step, 17.2 ns per recorded suspension with its
+  erase (x3.4); 1024 dumps of one entry add 2.3 ns a step, about 150 ns a dump, inside the band of
+  the On cell. The cells sit in `dev/bench/instrument-cases.txt`, not in the gate; four mutants (the
+  tracking disarmed, the yield skipped, a dump skipped, a late disarm) are refused.
+
 ### Changed
 
 - **The ask registry is constant-initialised and its warm path inlined again: on MSVC the request/reply

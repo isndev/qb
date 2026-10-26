@@ -1,14 +1,15 @@
 # IO observability benchmark
 
-`qb-io-bench-observability-overhead` contains four cells in two pairs. Compare within a pair only.
+`qb-io-bench-observability-overhead` contains eight cells in three families. Compare within a family only.
 It adds one TU through `qbio_bench(async observability-overhead)`; no runtime option, source or test is changed.
 
 | Family | Cells | Work per batch | Observation contrast |
 |---|---|---|---|
 | Listener watcher dispatch | `BM_IODispatchTimingOff/On`, `dispatches:4096` | 4096 fed watcher callbacks and NOWAIT turns | `set_dispatch_timing(false/true)` |
 | Offload pool snapshot | `BM_IOOffloadStatsUnrequested/Requested`, `jobs:64` | 64 sequential real offloads and resumes | no timed getter / one `current_offload_stats()` consumed after every resume |
+| Coroutine suspension tracking | `BM_CoroTrackingOff/Named/On/Dumped`, `steps:65536` | a root task awaits a yielding child 65536 times: two qb awaiters and one frame destruction per step | tracking off / root spawned under a name / `set_suspension_tracking(true)` / tracking on plus the public `dump()` every 64 steps |
 
-Both pairs run both real configurations as untimed preflights, then check every measured batch after timing
+Every family runs each of its real configurations as an untimed preflight, then checks every measured batch after timing
 stops. The namespace is named for coroutine fixture linkage. All errors are explicit `SkipWithError`; an
 unsettled cleanup is also process exit 2. Inspect JSON errors and the roster, not only the process return code.
 
@@ -59,24 +60,48 @@ abandoned completion while its loop lives, then clear. On timeout/error, inabili
 budget is fatal to the producer and later cells are refused. No sync bridge or event-loop pump runs inside the
 coroutine or on the worker thread. The port's TLS teardown stops its watcher before listener destruction.
 
+## Tracking chain, in-flight view and names
+
+Every awaiter of qb calls `track_suspension()` or `track_then()` first thing in its `await_suspend`, and every task
+frame's destruction calls `track_frame_destroyed()` (`qb/src/qb/io/async/coroutine/tracking.h`): with nothing tracked
+or named anywhere, each is one load of a global and one branch. The chain pays all three on every step -- the root's
+task await (a transfer, `track_then`), the child's yield to the ready queue (`track_suspension`, kind "yield"), the
+child frame's destruction -- in four states of the same thread. Off is the shape every program pays. Named spawns the
+root under `spawn(name, task)`: tracking stays off, but the destructors' gate is open on this thread, so every child
+destruction takes the cold path (an erase miss in the names table). On records each suspension's kind and CPU stamp
+and erases it at destruction. Dumped is On plus the public `CoroutineScheduler::dump()` every 64 steps from the
+running root, which sees its own last suspension: one entry, allocated and sorted, 1024 dumps per batch.
+
+`run_ready()` drains the ready queue until it is empty, so the whole 65536-step chain runs inside ONE loop turn and
+no pump can observe it in flight. The first child takes that view after its yield, through the same public dump,
+while the root awaits it: with tracking on exactly two entries, the root (kind "task", a root) and itself (kind
+"yield", not a root); off, the root alone with nothing recorded, carrying `tracking-chain` as its name in Named and
+no name otherwise. That is one dump per batch in every mode alike, inside timing (one step in 65536). The chain's
+count and checksum (1+...+65536), the dump count and entries, and the scheduler's tracking flag read after the run
+and before the context turns it off, complete the oracle. Spawn and `set_suspension_tracking()` precede timing;
+the context reclaims the frames (which erases the records and the name, and releases the table) and turns tracking
+off outside timing, while the result is still alive. A thread that enters with tracking on is refused.
+
 ## Invariants, validation and scope
 
 Dispatch reports work_units=4096, watcher_callbacks=4096, loop_turns=4096, dispatcher_invocations=8192, recorded_spans
 0/8192 and enabled=0/1. Offload reports work_units=64, offloads_completed=64, pool_threads=1, requested_snapshots=0/64
-and oracle_snapshots=2. These scalars are emitted only after successful work; item rates use completed work.
+and oracle_snapshots=2. Tracking reports work_units=65536, steps=65536, recorded_suspensions=0/131072, named_roots=0/1,
+dumps=0/1024 and tracking=0/1. These scalars are emitted only after successful work; item rates use completed work.
 
 Build this target with Release, ASan+UBSan, TSan and coverage, explicitly enabling QB_BUILD_BENCHMARKS where needed.
-Run all four cells with `--benchmark_min_time=1x --benchmark_repetitions=1 --benchmark_out=<fresh>.json
---benchmark_out_format=json`; require exactly four nonempty cells and their invariant values, no errors/skips.
+Run all eight cells with `--benchmark_min_time=1x --benchmark_repetitions=1 --benchmark_out=<fresh>.json
+--benchmark_out_format=json`; require exactly eight nonempty cells and their invariant values, no errors/skips.
 Retain an external process watchdog: a library call that never returns cannot check an in-loop deadline.
 Owner regression targets are `qb-io-test-unit-listener-dispatch-timing`, `qb-io-test-unit-listener-io-cadence`,
-`qb-io-test-system-offload` and `qb-io-test-system-offload-pool`. These benchmarks add no ctest registration.
+`qb-io-test-system-offload`, `qb-io-test-system-offload-pool` and `qb-io-test-system-suspension-tracking`. These
+benchmarks add no ctest registration.
 
 Negative controls must be planted in private copies and compiled with real producer flags. Cover disabled
-timing, omitted callback, wrong returned value, dummy snapshot and a bypassed offload, plus late failures after
-healthy preflights. A compiler warning, empty selected cell or external timeout is not a valid caught witness.
+timing, omitted callback, wrong returned value, dummy snapshot, a bypassed offload, disabled tracking, a skipped
+yield and a skipped dump, plus late failures after healthy preflights (late timing, late snapshot, late disarm). A compiler warning, empty selected cell or external timeout is not a valid caught witness.
 The source manifest supplies exact anchors and expected diagnostics; markers for late controls are outside timing.
 
-Tracking/names/dump, HTTP client snapshots and Redis retry hooks remain outside this TU; adding it does not
-close the whole QB-248 roster. No time threshold, baseline, calibration or speed claim is included. Collection
+HTTP client and QUIC snapshot reads and the retry observers remain outside this TU (scoped on Huly QB-248:
+the retry observers have no hot path by contract); adding it does not close the whole QB-248 roster. No time threshold, baseline, calibration or speed claim is included. Collection
 follows the admitted-host A/A/copies/layout protocol only after correctness and lifecycle checks.
