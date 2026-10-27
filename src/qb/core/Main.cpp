@@ -590,18 +590,18 @@ cpu_list(std::span<unsigned const> const cpus) {
 }
 
 /// The CPUs core @p index is pinned to, on its own thread before its init (Huly QB-1081): `qb::detail::place_thread`
-/// over the mask this thread inherited -- on Linux the calling thread's of `start()`, which every core thread starts
-/// with, on Windows the process's. An explicit CPU outside that mask is left out and named in the log.
+/// over @p inherited, the mask `start()` read once for every core (Huly QB-1111) -- on Linux the calling thread's,
+/// which every core thread starts with, on Windows the process's. An explicit CPU outside that mask is left out and
+/// named in the log.
 std::vector<unsigned>
-place_core(CoreId const index, CoreIdSet const &affinity, bool const explicit_request) {
+place_core(CoreId const index, CoreIdSet const &affinity, bool const explicit_request, std::span<unsigned const> const inherited) {
     std::vector<unsigned> requested;
     if (explicit_request) {
         for (const auto cpu : affinity)
             if (cpu < static_cast<CoreId>(qb::MaxCores)) // `qb::NoAffinity` and every id past the set's range: no CPU
                 requested.push_back(cpu);
     }
-    const auto inherited = detail::inherited_cpus();
-    auto       placement = detail::place_thread(index, requested, explicit_request, inherited);
+    auto placement = detail::place_thread(index, requested, explicit_request, inherited);
     if (!placement.refused.empty())
         QB_LOG_WARN("VirtualCore(" << index << ") affinity: CPU " << cpu_list(placement.refused) << " left out, this process may run on "
                                    << cpu_list(inherited) << (placement.pin.empty() ? ": nothing is pinned" : ""));
@@ -612,16 +612,17 @@ place_core(CoreId const index, CoreIdSet const &affinity, bool const explicit_re
 /// the CPUs this process can run at once preempt one another, and every event between two of them waits for the
 /// receiver's next time slice -- measured 320 ns a hop with a CPU each, 0.89 ms with one CPU short (an eight-core
 /// chain, WSL2). Said on stderr as well as in the log: a logger nobody initialised drops a warning, and a message that
-/// disappears in an ordinary build is the failure being fixed. Read once, before any core exists; costs no pass anything.
+/// disappears in an ordinary build is the failure being fixed. Read once, before any core exists, over the mask
+/// `start()` read for its cores (@p inherited); costs no pass anything.
 void
-warn_spinning_beyond_usable_cpus(CoreInitializerMap const &initializers) {
+warn_spinning_beyond_usable_cpus(CoreInitializerMap const &initializers, std::span<unsigned const> const inherited) {
     std::size_t spinning = 0;
     for (const auto &initializer : initializers | std::views::values)
         if (initializer.getLatency() <= qb::duration::zero())
             ++spinning;
     if (spinning < 2)
         return; // a process can always run one
-    const unsigned usable = detail::usable_cpus();
+    const unsigned usable = detail::usable_cpus(inherited);
     if (spinning <= usable)
         return;
     std::ostringstream text;
@@ -695,7 +696,8 @@ Main::start_thread(CoreSpawnerParameter const &params) noexcept {
         // The pool the factories reserved their incarnations in becomes the core's: a dynamic actor draws from it
         // and can never take a factory's promise (QB-263, QB-970).
         core.__install_id_pool__(initializer._ids);
-        const auto cpus = place_core(initializer.getIndex(), initializer.getAffinity(), initializer._affinity_explicit); // Huly QB-1081
+        const auto cpus = place_core(initializer.getIndex(), initializer.getAffinity(), initializer._affinity_explicit,
+                                     params.inherited_cpus);                     // Huly QB-1081, QB-1111
         if (!core.__predicted_ids_hold__(initializer) || !core.__init__(cpus)) { // the first: Huly QB-1007
             QB_LOG_CRIT(core << " Init Failed");
             params.sync_start.store(VirtualCore::Error::BadInit, std::memory_order_release);
@@ -826,7 +828,10 @@ Main::start(bool async) noexcept {
         QB_LOG_CRIT("[Start Sequence] Failed: No Core registered");
         return;
     }
-    warn_spinning_beyond_usable_cpus(_core_initializers); // Huly QB-1082
+    // The calling thread's mask, read ONCE for every core (Huly QB-1111): what the cores are placed in and what the
+    // warning counts. A local, like `signal_mark` below: every core reads it before the start barrier.
+    const std::vector<unsigned> inherited = detail::inherited_cpus();
+    warn_spinning_beyond_usable_cpus(_core_initializers, inherited); // Huly QB-1082
 
     _is_running = true;
     // This engine's cores deliver the signals raised from here on, and none before (Huly QB-364). The counts are
@@ -857,7 +862,7 @@ Main::start(bool async) noexcept {
             // never throws (Huly QB-1083). It stayed on its core's CPU before, and every thread it started after
             // inherited that one CPU.
             const auto caller_affinity = detail::current_thread_affinity();
-            start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark});
+            start_thread({it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark, inherited});
             if (const int error = detail::restore_thread_affinity(caller_affinity); error != 0)
                 QB_LOG_WARN("[Main] the calling thread's affinity could not be put back: " << std::system_category().message(error));
         } else {
@@ -866,9 +871,10 @@ Main::start(bool async) noexcept {
             // of the token is tied to each thread — `Main::_stop_source` can
             // request_stop() asynchronously at any moment during `~Main()`
             // or `stop()` without fearing lifetime issues.
-            _cores[i] = qb::jthread([params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark}] {
-                start_thread(params);
-            });
+            _cores[i] = qb::jthread(
+                [params = CoreSpawnerParameter{it.first, it.second, *_shared_com, _sync_start, stop_token, signal_mark, inherited}] {
+                    start_thread(params);
+                });
         }
         ++i;
     }

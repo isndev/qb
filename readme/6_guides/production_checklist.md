@@ -239,11 +239,11 @@ Two related options affect diagnostics rather than the file logger: `QB_STDOUT_L
 
 `qb::Main::start()` installs handlers for **both** `SIGINT` and `SIGTERM` automatically (in both async and synchronous modes), before it launches its cores: a signal that arrives while the engine starts already shuts it down (Huly QB-1070). The handler is async-signal-safe: it bumps that signal's own generation and a global `_signal_generation` counter that each `VirtualCore` polls every loop iteration — one `SignalEvent` per signal raised, so a signal raised after a `SIGTERM` can never hide it — and the write is observed within the configured mailbox latency and the engine shuts down gracefully.
 
-<!-- src: qb/src/qb/core/Main.cpp:535-546 (onSignal), :989-999 (install_default_signals registers SIGINT + SIGTERM), :843 (start(): installed before any core is launched, both modes) -->
+<!-- src: qb/src/qb/core/Main.cpp:535-546 (onSignal), :995-1005 (install_default_signals registers SIGINT + SIGTERM), :848 (start(): installed before any core is launched, both modes) -->
 
 On POSIX the handler is installed with `sigaction` (no `SA_RESETHAND`, with `SA_RESTART`), so a *second* `SIGINT` still triggers the graceful path rather than the historical System-V behavior of resetting to default and terminating the process. On Windows, `std::signal` is used.
 
-<!-- src: qb/src/qb/core/Main.cpp:946-964 (install_signal incl. comment + sigaction body) -->
+<!-- src: qb/src/qb/core/Main.cpp:952-970 (install_signal incl. comment + sigaction body) -->
 
 `SIGINT` and `SIGTERM` need no explicit registration. To receive an additional
 platform signal such as `SIGHUP`, register it after constructing the engine and
@@ -273,13 +273,13 @@ int main() {
 
 The three signal entry points are static and `noexcept`: `registerSignal(signum)` routes the signal to the graceful-shutdown handler, `unregisterSignal(signum)` restores the OS default disposition (`SIG_DFL`), and `ignoreSignal(signum)` sets `SIG_IGN`.
 
-<!-- src: qb/src/qb/core/Main.cpp:1009-1022 (registerSignal / unregisterSignal / ignoreSignal) -->
+<!-- src: qb/src/qb/core/Main.cpp:1015-1028 (registerSignal / unregisterSignal / ignoreSignal) -->
 
 > **Both** `SIGINT` and `SIGTERM` are registered automatically by `start()`, so the signal most container runtimes and service managers send on shutdown already gets the graceful drain — you do not need to register it. `registerSignal()` is for the non-terminal signals (`SIGHUP`, `SIGUSR1`, …), which are delivered as a `qb::SignalEvent` but do **not** kill anything unless you override `on(qb::SignalEvent &)`.
 
 `qb::Main::stop()` is itself async-signal-safe and may be called from a signal handler; it raises SIGINT's generation the same way and leaves the heavier `std::stop_source` broadcast to `~Main()` / `join()` where normal thread synchronization is safe.
 
-<!-- src: qb/src/qb/core/Main.cpp:900-909 (stop) -->
+<!-- src: qb/src/qb/core/Main.cpp:906-915 (stop) -->
 
 **Checklist**
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:889-891 (LOG_CRIT/stderr on init failure), :895-898 (hasError), qb/src/qb/io/async/io.h:1356-1359,2930-2933 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1356-1359,2930-2933 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

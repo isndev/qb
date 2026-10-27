@@ -213,7 +213,8 @@ namespace detail {
 
 /**
  * @brief The CPUs a thread started by the calling thread inherits, ascending; empty where the platform has no mask.
- * @details What `Main` places its cores in (Huly QB-1081) and what `usable_cpus()` counts, read when called:
+ * @details What `Main` places its cores in (Huly QB-1081) and what `usable_cpus()` counts -- read once per `start()`
+ *          for every core, not once per core (Huly QB-1111) -- when called:
  *          - Linux: the calling thread's own affinity mask -- Linux has no process mask, every thread carries its own
  *            and a thread it creates starts with a copy. A `taskset`, a cgroup cpuset (`docker --cpuset-cpus`, a
  *            Kubernetes CPU manager) and a `sched_setaffinity` of the program's own all show here. Empty on a host
@@ -245,6 +246,13 @@ namespace detail {
  *          size their engines to (Huly QB-1080). A Windows job object's CPU rate cap is not read.
  */
 [[nodiscard]] unsigned usable_cpus();
+
+/**
+ * @brief `usable_cpus()` over a mask already read: what `Main::start()` asks with the `inherited_cpus()` it took once
+ *        for every core (Huly QB-1111). The no-argument form reads the mask and calls this.
+ * @param inherited `inherited_cpus()`: ascending, empty where the platform has no mask.
+ */
+[[nodiscard]] unsigned usable_cpus(std::span<unsigned const> inherited);
 
 /**
  * @brief Where a worker thread is pinned: `place_thread()`'s answer.

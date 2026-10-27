@@ -462,9 +462,13 @@ inherited_cpus() {
     cpu_set_t set;
     CPU_ZERO(&set);
     if (sched_getaffinity(0, sizeof(set), &set) == 0) {
-        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
-            if (CPU_ISSET(cpu, &set))
+        // The walk ends at the mask's last CPU, not at CPU_SETSIZE (Huly QB-1111): a thousand bit tests for a
+        // 24-CPU mask were most of what reading it cost, and every core paid them at every start.
+        for (int cpu = 0, left = CPU_COUNT(&set); left > 0 && cpu < CPU_SETSIZE; ++cpu)
+            if (CPU_ISSET(cpu, &set)) {
                 cpus.push_back(static_cast<unsigned>(cpu));
+                --left;
+            }
     }
 #elif defined(_WIN32) || defined(_WIN64)
     DWORD_PTR process = 0;
@@ -527,11 +531,16 @@ cgroup_cpu_limit(std::string const &self_cgroup, std::string const &cgroup_root)
 
 unsigned
 usable_cpus() {
+    return usable_cpus(inherited_cpus());
+}
+
+unsigned
+usable_cpus(std::span<unsigned const> const inherited) {
     unsigned usable = std::thread::hardware_concurrency();
     if (usable == 0u)
         usable = 1u;
-    if (const auto cpus = inherited_cpus(); !cpus.empty())
-        usable = std::min(usable, static_cast<unsigned>(cpus.size()));
+    if (!inherited.empty())
+        usable = std::min(usable, static_cast<unsigned>(inherited.size()));
 #if defined(__linux__)
     if (const auto limit = cgroup_cpu_limit("/proc/self/cgroup", "/sys/fs/cgroup"); limit != 0u)
         usable = std::min(usable, limit);
@@ -581,7 +590,11 @@ pin_current_thread(std::span<unsigned const> const cpus) noexcept {
     // macOS has no pthread_setaffinity_np. THREAD_AFFINITY_POLICY takes one tag, and threads sharing a tag are placed
     // to share an L2 cache: a hint, not a pin. The lowest CPU of the set is the tag. Apple Silicon does not implement
     // the policy and answers KERN_NOT_SUPPORTED to every call: taken as success, or every core of every run would warn
-    // about a pin this host cannot make -- CPU::ThreadPinningSupported() is the query that tells.
+    // about a pin this host cannot make -- CPU::ThreadPinningSupported() is the query that tells, and once it has
+    // said no, nothing is asked: the trap answered that way was paid by every core of every engine (Huly QB-1111)
+    // for the same 0 this returns.
+    if (!CPU::ThreadPinningSupported())
+        return 0;
     const unsigned first = *std::min_element(cpus.begin(), cpus.end());
     if (first >= std::thread::hardware_concurrency())
         return EINVAL;
@@ -616,13 +629,18 @@ current_thread_affinity() noexcept {
     cpu_set_t set;
     CPU_ZERO(&set);
     if (pthread_getaffinity_np(pthread_self(), sizeof(set), &set) == 0) {
-        for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
-            if (CPU_ISSET(cpu, &set))
+        for (int cpu = 0, left = CPU_COUNT(&set); left > 0 && cpu < CPU_SETSIZE; ++cpu) // to the last CPU set (QB-1111)
+            if (CPU_ISSET(cpu, &set)) {
                 affinity.cpus.set(static_cast<std::size_t>(cpu));
+                --left;
+            }
         affinity.known = true;
     }
 #elif defined(__APPLE__)
-    // The tag, or THREAD_AFFINITY_TAG_NULL for none; Apple Silicon answers KERN_NOT_SUPPORTED: nothing to keep.
+    // The tag, or THREAD_AFFINITY_TAG_NULL for none; Apple Silicon answers KERN_NOT_SUPPORTED: nothing to keep, and
+    // nothing to ask once CPU::ThreadPinningSupported() has said so (Huly QB-1111).
+    if (!CPU::ThreadPinningSupported())
+        return affinity;
     thread_affinity_policy_data_t policy      = {THREAD_AFFINITY_TAG_NULL};
     mach_msg_type_number_t        count       = THREAD_AFFINITY_POLICY_COUNT;
     boolean_t                     get_default = FALSE;
@@ -652,9 +670,11 @@ restore_thread_affinity(thread_affinity const &affinity) noexcept {
 #if defined(__linux__)
     cpu_set_t set;
     CPU_ZERO(&set);
-    for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu)
-        if (affinity.cpus.test(static_cast<std::size_t>(cpu)))
-            CPU_SET(cpu, &set);
+    for (std::size_t cpu = 0, left = affinity.cpus.count(); left > 0 && cpu < CPU_SETSIZE; ++cpu) // to the last CPU set (QB-1111)
+        if (affinity.cpus.test(cpu)) {
+            CPU_SET(static_cast<int>(cpu), &set);
+            --left;
+        }
     return pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
 #elif defined(__APPLE__)
     thread_affinity_policy_data_t policy = {static_cast<integer_t>(affinity.tag)};

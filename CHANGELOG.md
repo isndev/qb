@@ -70,6 +70,24 @@ policy.
   re-read on this shape by its author: the one inline function is what that listing asked for, and
   `QB_MSVC_FORCEINLINE` stays on it.
 
+- **The engine start reads the calling thread's affinity mask once, and asks a host that pins nothing for
+  nothing (Huly QB-1111).** `Main::start()` reads `qb::detail::inherited_cpus()` once for every core and hands
+  it to each core's thread through `CoreSpawnerParameter::inherited_cpus` (a span over a local that outlives the
+  start barrier); every core used to read the mask itself -- on Linux a `sched_getaffinity` and a walk of the
+  whole 1 024-bit `cpu_set_t`, per core, per start, for one answer -- and the start warning of QB-1082 read it
+  a second time (`qb::detail::usable_cpus(std::span<unsigned const>)` is the overload it uses now; the
+  no-argument form reads the mask and calls it). The three Linux walks of a `cpu_set_t` (the inherited mask,
+  the caller's capture and its restoration) end at the mask's last CPU (`CPU_COUNT`, `bitset::count()`).
+  On a host whose kernel implements no affinity policy -- Apple Silicon, where `CPU::ThreadPinningSupported()`
+  probed `KERN_NOT_SUPPORTED` once -- `qb::detail::pin_current_thread()` and `current_thread_affinity()`
+  return without a call: every core of every engine paid a `thread_policy_set` Mach trap answered that way,
+  and `start(false)` a `thread_policy_get` as well, for the same answer. The contract of QB-1081 / QB-1083
+  is unchanged (a default core takes the CPU of the mask at its position, an explicit CPU outside the mask
+  is refused and named, the calling thread of `start(false)` gets its affinity back); `core-affinity` passes
+  as before. Measured on the macOS M4 Pro, on the engine-start benches of `dev/bench` with the preset's binaries before the edit and the same preset rebuilt over it, three physical copies a side, 8 rounds in a seeded order, the host quiet measured: the per-engine cost -- the intercept of the N-slope of `BM_Coroutine_SpawnThroughput` (N = 100 / 1000 / 5000, one engine an iteration) -- 7.53 -> 5.54 us with the per-coroutine slope unchanged (39.3 -> 39.7 ns), the N = 100 cell 10.66 -> 9.07 us (-14.9 %, CI [-15.5 .. -14.4]), N = 1000 -4.3 %, N = 5000 level; `BM_Engine_Lifecycle` (a start and a join of ~280 us, 1 and 2 cores) level within its 4-6 % spread. Linux and MSVC are to be re-read by the
+  x86 session (the instruction count per engine start, `callgrind` / the N-slope of
+  `qb-core-bench-coroutine-spawn-latency`).
+
 - **The character pipe formats integers in place and writes a char, a string or a view inline: on MSVC
   an HTTP/1 response serialises 13-15 % faster, a Redis argument list 7 %, a `put_in_pipe` 16 %; on g++ 14
   a publish-style put is 26-66 % faster, and no measured cell is slower (Huly QB-1151).** `pipe<char>::put(const U &)` formatted every integral value through `std::to_string`

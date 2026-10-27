@@ -930,6 +930,14 @@ struct CoreSpawnerParameter {
      *          has taken it -- before it returns.
      */
     detail::signal_mark const &signal_mark;
+
+    /**
+     * @brief The CPUs the calling thread's mask holds, read ONCE by `Main::start()` for every core (Huly QB-1111).
+     * @details `qb::detail::inherited_cpus()`, a local of `start()` like `signal_mark`: the core places its thread
+     *          in it before the start barrier. Every core used to read the mask itself -- a `sched_getaffinity` and
+     *          a walk of the whole `cpu_set_t` per core, per start, for one answer.
+     */
+    std::span<unsigned const> inherited_cpus;
 };
 
 /*!

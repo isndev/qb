@@ -272,7 +272,7 @@ public:
 
 `qb/system/cpu.h` supplies the two things the primitives above need from the hardware, plus a host-query class.
 
-**`qb::spin_loop_pause()`** is the pause hint every wait loop on this page issues between reads: `_mm_pause` on x86, `yield` on AArch64 and 32-bit ARM, `__dmb` under MSVC on ARM64, and `std::this_thread::yield()` as a portable last resort (`src/qb/system/cpu.h:311-318` for x86, `:329-342` for ARM). It is `inline` and `noexcept` everywhere.
+**`qb::spin_loop_pause()`** is the pause hint every wait loop on this page issues between reads: `_mm_pause` on x86, `yield` on AArch64 and 32-bit ARM, `__dmb` under MSVC on ARM64, and `std::this_thread::yield()` as a portable last resort (`src/qb/system/cpu.h:319-326` for x86, `:337-350` for ARM). It is `inline` and `noexcept` everywhere.
 
 **`qb::CPU`** is a static-only, non-instantiable class of host queries — every special member is deleted (`src/qb/system/cpu.h:116-122`):
 
