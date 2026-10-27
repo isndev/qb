@@ -256,11 +256,11 @@ void process() {
     // timer fires the callback with the measured qb::duration on scope exit.
 }
 ```
-<!-- src: qb/src/qb/system/time.h:765-810 -->
+<!-- src: qb/src/qb/system/time.h:767-812 -->
 
-`ScopedTimer` measures monotonic elapsed time between construction and `stop()`/destruction and invokes the callback with the measured `qb::duration`. `stop()` is idempotent and returns the measurement, `restart()` re-arms it, and `elapsed()` reads it live while running. It is non-copyable **and** non-movable — all four special members are deleted (`qb/src/qb/system/time.h:800-803`) — because the callback is bound to the object's own lifetime.
+`ScopedTimer` measures monotonic elapsed time between construction and `stop()`/destruction and invokes the callback with the measured `qb::duration`. `stop()` is idempotent and returns the measurement, `restart()` re-arms it, and `elapsed()` reads it live while running. It is non-copyable **and** non-movable — all four special members are deleted (`qb/src/qb/system/time.h:802-805`) — because the callback is bound to the object's own lifetime.
 
-`LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction (`qb/src/qb/system/time.h:816-837`). Its two members are declared in an order that is load-bearing rather than stylistic: the timer's callback reads `_reason` when it fires on destruction, and members are destroyed in reverse declaration order, so `_timer` must be declared *last* to be destroyed *first*, while `_reason` is still alive (`qb/src/qb/system/time.h:831-836`).
+`LogTimer` is a thin wrapper that prints the elapsed microseconds of a scope to `stdout` on destruction (`qb/src/qb/system/time.h:818-839`). Its two members are declared in an order that is load-bearing rather than stylistic: the timer's callback reads `_reason` when it fires on destruction, and members are destroyed in reverse declaration order, so `_timer` must be declared *last* to be destroyed *first*, while `_reason` is still alive (`qb/src/qb/system/time.h:833-838`).
 
 `qb::tsc_ticks()` reads the raw CPU timestamp counter (`rdtsc`, `cntvct_el0`, or a `high_resolution_clock` fallback). It is **not a clock**: monotonic per core, very high resolution, uncalibrated, and not comparable to either `mono_time` or `wall_time`. Use it for single-thread micro-benchmark deltas and nothing else (`qb/src/qb/system/time.h:698-722`).
 
@@ -276,7 +276,7 @@ double   to_ev_seconds(duration d) noexcept;      // qb::duration -> ev_tstamp
 duration from_ev_seconds(double seconds) noexcept;  // ev_tstamp -> qb::duration
 }
 ```
-<!-- src: qb/src/qb/system/time.h:843-858 -->
+<!-- src: qb/src/qb/system/time.h:845-860 -->
 
 Application code never calls these. They are documented because knowing the seam exists is what tells you where to look when a timer's resolution surprises you: a `double` has 53 bits of mantissa, so a nanosecond-resolution span stops being exactly representable somewhere past a few months of magnitude. Timer *APIs* — `async::callback`, `ScopedTimeout`, `ctx.sleep` — are on the [async I/O system](../3_qb_io/async_system.md) page; this page owns only the vocabulary they speak.
 

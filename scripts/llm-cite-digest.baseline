@@ -44,15 +44,15 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	VirtualCore.cpp:1064-1066	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.api.md	VirtualCore.cpp:1391-1406	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
-llm/qb.llm.api.md	VirtualCore.cpp:1720-1722	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
-llm/qb.llm.api.md	VirtualCore.cpp:1806-1815	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
-llm/qb.llm.api.md	VirtualCore.cpp:1830-1834	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1838-1845	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
-llm/qb.llm.api.md	VirtualCore.cpp:1863-1869	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
-llm/qb.llm.api.md	VirtualCore.cpp:1889-1908	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1910-1920	5c14683bf048	void
+llm/qb.llm.api.md	VirtualCore.cpp:1086-1088	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.api.md	VirtualCore.cpp:1413-1428	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
+llm/qb.llm.api.md	VirtualCore.cpp:1742-1744	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
+llm/qb.llm.api.md	VirtualCore.cpp:1828-1837	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
+llm/qb.llm.api.md	VirtualCore.cpp:1852-1856	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1860-1867	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
+llm/qb.llm.api.md	VirtualCore.cpp:1885-1891	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
+llm/qb.llm.api.md	VirtualCore.cpp:1911-1930	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1932-1942	5c14683bf048	void
 llm/qb.llm.api.md	VirtualCore.cpp:674-718	4af0dfc264b3	// Snapshot identities, not pointers: a previous onInit may destroy a...
 llm/qb.llm.api.md	VirtualCore.cpp:878-899	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
 llm/qb.llm.api.md	VirtualCore.h:1209-1231	4f679e59b3c4	_ServiceActor *
@@ -109,8 +109,8 @@ llm/qb.llm.api.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint
 llm/qb.llm.api.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.api.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.api.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1954-1987	9effe2d193b3	void
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2311-2327	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1976-2009	9effe2d193b3	void
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2333-2349	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.api.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:222-255	9554d137f47e	drain_backend_packets() {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:346-360	e6a54fbc82e3	if (_credit_packets_pending && _backend) {
@@ -193,15 +193,15 @@ llm/qb.llm.md	Main.cpp:704-706	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:936-938	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Main.h:319-336	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
 llm/qb.llm.md	Pipe.h:148-163	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1064-1066	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.md	VirtualCore.cpp:1215-1238	7547315e7512	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1387-1406	e56ce31e4af5	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.md	VirtualCore.cpp:1473-1488	27e395b7dc18	VirtualCore::send(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1641-1648	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1830-1845	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1889-1919	a67fb186c7ff	void
-llm/qb.llm.md	VirtualCore.cpp:1955-1987	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:2180-2184	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1086-1088	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.md	VirtualCore.cpp:1237-1260	7547315e7512	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1409-1428	e56ce31e4af5	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.md	VirtualCore.cpp:1495-1510	27e395b7dc18	VirtualCore::send(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1663-1670	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1852-1867	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1911-1941	a67fb186c7ff	void
+llm/qb.llm.md	VirtualCore.cpp:1977-2009	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:2202-2206	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
 llm/qb.llm.md	VirtualCore.cpp:722-730	dda6174d86c3	// `task` starts suspended: resume once to reach the first `co_await`...
 llm/qb.llm.md	VirtualCore.cpp:887-899	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
 llm/qb.llm.md	VirtualCore.h:1020-1032	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
@@ -281,7 +281,7 @@ llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2311-2327	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2333-2349	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:398-406	a1c4380f4ec5	/// Per-peer RTT estimate; id zero names a client's connection or a s...
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
