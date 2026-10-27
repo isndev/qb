@@ -99,17 +99,19 @@ public:
     take(ActorId const owner, ask_slot *slot) {
         assert(!slot || slot->owner == owner);
         // The warm path is the owner's FIFO on the current core: one core compare, the band test, a page load,
-        // a pop. Another core, a slot's first ask or a page not yet created are admitted out of line, once.
-        free_queue *queue = queue_of(owner);
-        if (!queue) [[unlikely]]
-            queue = &admit(owner);
-        std::uint32_t i = queue->head;
+        // a pop -- resolved in ONE inline step (owner_queue); another core, a grown directory or a page not yet
+        // created are the out-of-line calls on its cold branches, each run once. A first cut of this registry
+        // split the resolution in two (a lookup returning null, then an out-of-line `admit`): on Apple clang 21
+        // / arm64 that shape cost +12-14 % per ask on the Savina bank-transaction cell at one core, with the
+        // same instruction count, the PMU samples landing on the asking coroutine's return site (Huly QB-1154).
+        free_queue   &queue = owner_queue(owner);
+        std::uint32_t i     = queue.head;
         if (i == none) [[unlikely]] {
             i = take_unassigned();
         } else {
-            queue->head = _tab[i].next;
-            if (queue->head == none)
-                queue->tail = none;
+            queue.head = _tab[i].next;
+            if (queue.head == none)
+                queue.tail = none;
         }
         entry &e = _tab[i];
         if (slot) {
@@ -166,13 +168,12 @@ public:
             return;
         }
         ++e->gen;
-        const auto  i     = static_cast<std::uint32_t>(id & slot_mask);
-        free_queue *queue = queue_of(owner);
-        if (!queue) [[unlikely]] {
+        const auto i = static_cast<std::uint32_t>(id & slot_mask);
+        if (_current_core != owner.index()) [[unlikely]] {
             release_other_core(owner, i);
             return;
         }
-        push_free(*queue, i);
+        push_free(owner_queue(owner), i);
     }
 
 private:
@@ -225,44 +226,36 @@ private:
         return owner.is_service() ? owner.service_tag() : owner.slot();
     }
 
-    /// The FIFO of `owner`'s slot when it is already admitted on the current core; null when the cold path must
-    /// run (another core, or a page this slot has not yet needed).
-    // `QB_MSVC_FORCEINLINE`: MSVC left this twenty-instruction lookup out of line in `take` (a call on every ask,
-    // read on the listing) while inlining it in `release`; forced, both callers carry it inline. `inline` elsewhere.
-    [[nodiscard]] QB_MSVC_FORCEINLINE free_queue *
-    queue_of(ActorId const owner) const noexcept {
+    /// The FIFO of `owner`'s slot on its core, resolved inline: the core's directory (selected on its first ask),
+    /// the slot's page (the ordinary directory grown when the slot is past its end, the page created on first
+    /// use) and the FIFO inside it. The three cold branches call out of line and run once per core or page.
+    // `QB_MSVC_FORCEINLINE`: MSVC left the lookup of the first cut out of line in `take` (a call on every ask,
+    // read on the listing) while inlining it in `release`; forced, both callers carry it inline. `inline`
+    // elsewhere -- and ONE function, not a null-returning lookup plus an out-of-line admission: the split shape
+    // cost +12-14 % per ask at one core on Apple clang / arm64 (Huly QB-1154, the A/B in the ticket).
+    [[nodiscard]] QB_MSVC_FORCEINLINE free_queue &
+    owner_queue(ActorId const owner) {
         if (_current_core != owner.index()) [[unlikely]]
-            return nullptr;
-        const std::size_t slot = slot_of(owner);
-        const std::size_t page = slot >> 8;
-        queue_page       *p;
-        if (owner.is_service()) [[unlikely]]
-            p = _current_owners->services[page];
-        else
-            p = page < _current_owners->ordinary_pages ? _current_owners->ordinary[page] : nullptr;
-        return p ? &(*p)[slot & 255] : nullptr;
-    }
-
-    /// Admit `owner` on its core: select the core's directory (created on its first ask), create the slot's page
-    /// (growing the ordinary directory when the slot is past its end), and hand back the slot's FIFO.
-    QB_NOINLINE free_queue &
-    admit(ActorId const owner) {
-        if (_current_core != owner.index())
             select_core(owner.index());
         owner_directory  &dir  = *_current_owners;
         const std::size_t slot = slot_of(owner);
         const std::size_t page = slot >> 8;
         queue_page      **where;
-        if (owner.is_service()) {
+        if (owner.is_service()) [[unlikely]] {
             where = &dir.services[page];
         } else {
-            if (page >= dir.ordinary_pages)
+            if (page >= dir.ordinary_pages) [[unlikely]]
                 grow_directory(dir, page + 1);
             where = &dir.ordinary[page];
         }
-        if (!*where)
-            *where = new queue_page();
+        if (!*where) [[unlikely]]
+            create_page(where);
         return (**where)[slot & 255];
+    }
+
+    QB_NOINLINE static void
+    create_page(queue_page **const where) {
+        *where = new queue_page();
     }
 
     QB_NOINLINE void

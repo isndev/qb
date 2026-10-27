@@ -158,9 +158,9 @@ llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine
 llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1100-1139	7001d24b2fe3	if (port_begin && port_begin < port_end) {
 llm/qb.llm.api.md	uri.h:518-518	ad1019a20273	has_query() const noexcept {
-llm/qb.llm.md	Actor.cpp:667-672	df9e20a73808	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:667-682	6e87f36f759e	Actor::Actor() noexcept
-llm/qb.llm.md	Actor.cpp:850-867	846f083df48d	Actor::reply(Event &event) const noexcept {
+llm/qb.llm.md	Actor.cpp:660-665	df9e20a73808	Actor::Actor() noexcept
+llm/qb.llm.md	Actor.cpp:660-675	6e87f36f759e	Actor::Actor() noexcept
+llm/qb.llm.md	Actor.cpp:843-860	846f083df48d	Actor::reply(Event &event) const noexcept {
 llm/qb.llm.md	Actor.h:1078-1083	411d83537697	* This is the primary and recommended method for sending events. Even...
 llm/qb.llm.md	Actor.h:1123-1129	785b2503a3c0	* @warning `noexcept`: an allocation failure while growing the pipe b...
 llm/qb.llm.md	Actor.h:1138-1142	31e37e853c4c	* Events sent using `send()` are not guaranteed to be received in the...

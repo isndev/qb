@@ -45,7 +45,7 @@ Actor::push(ActorId const &dest, _Args &&...args) const noexcept {
 ```
 <!-- src: qb/src/qb/core/VirtualCore.h:1475-1479 -->
 
-`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1481-1485`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1508-1512`). So are the non-template members: `getPipe` (`src/qb/core/Actor.h:1375-1382`, reading the thread's table of outbound pipes, `src/qb/core/Pipe.h:106`, bound with the core by `__bind_thread__`, `src/qb/core/VirtualCore.h:91-96`), `reply` and `forward` (`src/qb/core/Actor.cpp:850-867`), `time` (`src/qb/core/Actor.cpp:740-743`). No lock, no atomic, no fence appears anywhere on that path.
+`Actor::send` is the same one-line shape (`src/qb/core/VirtualCore.h:1481-1485`), and so is `Actor::broadcast` (`src/qb/core/VirtualCore.h:1508-1512`). So are the non-template members: `getPipe` (`src/qb/core/Actor.h:1375-1382`, reading the thread's table of outbound pipes, `src/qb/core/Pipe.h:106`, bound with the core by `__bind_thread__`, `src/qb/core/VirtualCore.h:91-96`), `reply` and `forward` (`src/qb/core/Actor.cpp:843-860`), `time` (`src/qb/core/Actor.cpp:733-736`). No lock, no atomic, no fence appears anywhere on that path.
 
 ### A `Pipe` is per destination **core**, not per destination actor
 
@@ -303,7 +303,7 @@ Three consequences:
 - **Both retain the eager, unordered `send` contract,** so a replied or forwarded event carries no ordering guarantee relative to your pushes to the same destination.
 - **Both copy the received event's bytes** into a pipe or the peer's mailbox, so the relocation rule applies to them unconditionally, same core or not.
 
-A broadcast event can be neither replied to nor forwarded: `Actor::reply` and `Actor::forward` test `event.dest.is_broadcast()`, log a warning and return without sending (`src/qb/core/Actor.cpp:850-856`, `:859-867`). After either call the event is consumed — do not read or modify it.
+A broadcast event can be neither replied to nor forwarded: `Actor::reply` and `Actor::forward` test `event.dest.is_broadcast()`, log a warning and return without sending (`src/qb/core/Actor.cpp:843-849`, `:852-860`). After either call the event is consumed — do not read or modify it.
 
 The heterogeneous router stores the full key, handler pointer and typed dispatch pointer in each dense
 slot. Only this private entry type uses `dispatch != nullptr` for occupancy: subscription always installs

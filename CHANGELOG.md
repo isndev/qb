@@ -48,6 +48,28 @@ policy.
   and `release` already and pays no TLS guard, so the 3.0 ns the 3.3.0 registry costs over 3.2.1 on that
   compiler (12.9 -> 15.9 ns of ask machinery over a push/reply) stays and is the next thing to read.
 
+- **The ask registry's warm path resolves the owner's FIFO in one inline step: on Apple clang 21 / arm64
+  the split shape of the entry above cost +12-14 % per ask on the Savina bank-transaction cell at one
+  core, and this shape reads level with the released 3.3.0 (Huly QB-1154).** The first cut resolved the
+  FIFO in two steps -- a lookup returning null when the core, the directory or the page was not the
+  current one, then an out-of-line `admit` -- and on the M4 Pro that cost 40-75 cycles per transfer with
+  an identical instruction count (1 345-1 358 per transfer on both), the PMU samples landing on the asking
+  coroutine's return site after `ask_awaiter::await_suspend`, in code that had not changed; neither
+  64-byte function alignment nor two code paddings nor the TLS initialisation shape moved it, and
+  `deadline_arm` was byte-identical. `owner_queue` now resolves the FIFO in one inline function (the
+  core selected, the directory grown and the page created on `[[unlikely]]` branches that call out of
+  line, each once), `take` pops from it and `release` pushes to it after the other-core test, exactly the
+  control shape of the 3.3.0 registry over the constant-initialised table and raw directories of
+  QB-1114. Measured by `qb-vs-others` on the M4 Pro (Apple clang 21, unpinned, three physical copies a
+  side in one seeded order, 12 launches of 3 + 1 per configuration, bootstrap 95 % of the ratio of
+  medians, `results/macbook-m4pro-macos-clang21/qb-branch-develop/bisect-1c-variants/final-census/`):
+  `savina/bank-transaction` per transfer against released 3.3.0, the split shape -> this commit:
+  1c-spin +12.1 % -> -0.7 %, 1c-park +13.2 % -> -0.4 % (both overlapping the release), 2c-spin +2.9 % ->
+  +1.4 %, 2c-park +2.7 % -> +1.2 % (overlapping); bitonicsort (541 869 pushes a repetition, no ask) +1.6 /
+  +1.4 % -> -0.2 / -0.1 %; a-star and fib level on both. The MSVC listing of the entry above is to be
+  re-read on this shape by its author: the one inline function is what that listing asked for, and
+  `QB_MSVC_FORCEINLINE` stays on it.
+
 - **The character pipe formats integers in place and writes a char, a string or a view inline: on MSVC
   an HTTP/1 response serialises 13-15 % faster, a Redis argument list 7 %, a `put_in_pipe` 16 %; on g++ 14
   a publish-style put is 26-66 % faster, and no measured cell is slower (Huly QB-1151).** `pipe<char>::put(const U &)` formatted every integral value through `std::to_string`
