@@ -62,11 +62,16 @@ jobs:
       - name: Generate Cobertura XML
         run: cmake --build build/coverage --target qb-coverage-xml --parallel "$(nproc)"
 
+      # The report is read within days of the push; the lane's verdict is the instrumented build
+      # and the two report targets above, so a refused upload (the organisation's artifact storage
+      # quota, once) is a warning on the run, not a red lane.
       - name: Upload coverage artifacts
+        continue-on-error: true
         uses: actions/upload-artifact@v6
         with:
           name: qb-coverage
           if-no-files-found: error
+          retention-days: 7
           path: |
             build/coverage/qb-coverage/
             build/coverage/qb-coverage.info
