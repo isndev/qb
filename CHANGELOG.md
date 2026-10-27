@@ -88,28 +88,6 @@ policy.
   x86 session (the instruction count per engine start, `callgrind` / the N-slope of
   `qb-core-bench-coroutine-spawn-latency`).
 
-- **The idle poll of a spinning core on Apple Silicon reads the counter unordered (Huly QB-181).** Since 3.3
-  a spinning core paces its idle poll of the peer rings with one ordered counter read a pass (QB-251: on x86-64
-  `lfence; rdtsc`, a read that waits for the earlier loads and issues the next poll late and once, which the
-  two-core spin cells measured as a gain). On arm64 what orders `mrs cntvct_el0` is an `isb`, a full
-  instruction-synchronisation barrier, and there the finding does not transfer: measured on the macOS M4 Pro
-  with the wait-primitives probe of qb-vs-others (two threads, one line each, two million round trips, the
-  thing between two loads of the peer's line varied), the ordered read made the round trip 84-88 ns where the
-  tight poll made it 71-72 (six passes of two binaries; `yield`, what `qb::spin_loop_pause()` is there, a
-  no-op); and on qb's own cells -- the same tree with and without the `isb`, three physical copies a side,
-  12 launches of 3 + 1 per configuration in one seeded order, bootstrap 95 % of the ratio of medians --
-  thread-ring 2c-spin -5.9 % [-7.4 .. -4.6] without it (2c-park -1.1 %, overlapping), ping-pong 2c-spin
-  -7.7 % [-8.3 .. -5.8] and 2c-park -8.1 % [-9.2 .. -6.0], big 2c level, every one-core cell level; the
-  committed shape's own census against the tip read ping-pong 2c -7.2 / -8.0 % again, big, fib and every
-  one-core cell level, and thread-ring 2c +0.6 % (overlapping) / +1.9 % [+1.2 .. +3.1] on a quiet host with 24
-  launches a copy -- three readings of that cell spanning -5.9 .. +1.9 % while the tip itself moved 58-64 ns a
-  hop between sessions: unresolved on this unpinned host, within its spread. So
-  `VirtualCore::__pace__` reads the plain counter (`qb::tsc_ticks`) on Apple Silicon and keeps the ordered read
-  everywhere else; Linux arm64 was not measured (its guest was off) and keeps it. `tsc_ticks_ordered` itself is
-  unchanged. The probe is `tools/probes/wait-primitives.cpp` in qb-vs-others, the documents
-  `results/macbook-m4pro-macos-clang21/qb-branch-develop/{idle-wait-m4,pacing-arm64}/`, the reading
-  `docs/TUNING.md` section 23.1.
-
 - **The character pipe formats integers in place and writes a char, a string or a view inline: on MSVC
   an HTTP/1 response serialises 13-15 % faster, a Redis argument list 7 %, a `put_in_pipe` 16 %; on g++ 14
   a publish-style put is 26-66 % faster, and no measured cell is slower (Huly QB-1151).** `pipe<char>::put(const U &)` formatted every integral value through `std::to_string`

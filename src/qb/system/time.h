@@ -728,10 +728,8 @@ namespace detail {
 /// `clock_gettime`, here on both compilers, where Windows' `QueryPerformanceCounter` is a call whose ordering is the
 /// kernel's choice), `isb; mrs cntvct_el0` on arm64, `tsc_ticks()` itself elsewhere (a nanosecond clock). Same ticks
 /// and rate as `tsc_ticks()`, so one calibration serves both. What a spinning `VirtualCore` paces its idle poll of the
-/// peer rings with on x86-64: the next poll's load cannot issue before this read, so polls are spaced by at least its
-/// cost and never speculated into the gap; `tsc_ticks()` alone orders nothing and would not pace. On Apple Silicon the
-/// core reads the plain counter instead -- the `isb` costs more than the late poll gains there (`VirtualCore::__pace__`,
-/// Huly QB-181). Not part of the public API.
+/// peer rings with: the next poll's load cannot issue before this read, so polls are spaced by at least its cost and
+/// never speculated into the gap; `tsc_ticks()` alone orders nothing and would not pace. Not part of the public API.
 [[nodiscard]] inline std::uint64_t
 tsc_ticks_ordered() noexcept {
 #if defined(_MSC_VER) && defined(_M_X64)

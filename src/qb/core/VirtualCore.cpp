@@ -944,39 +944,26 @@ VirtualCore::__pump_activations__() {
 // whatever the pass's content plus that clock came to: on Windows the clock is a call
 // (`QueryPerformanceCounter`, ordered as the kernel chooses), and a pass made lighter by an
 // unrelated change (one load less, Huly QB-65) moved the Windows 2c-spin cells +2.5-3 %
-// (Huly QB-251). The read is now the counter itself, ordered the same way on both compilers
-// (`qb::detail::tsc_ticks_ordered`), and the interval between two of them has an explicit floor,
+// (Huly QB-251). The read is now the counter itself, ordered the same way on both compilers and
+// on arm64 (`qb::detail::tsc_ticks_ordered`), and the interval between two of them has an explicit floor,
 // `_poll_floor_ticks` (`kIdlePollFloorNs` in the listener's calibration), held by re-reading the
 // counter: the cadence is a number this file states, not the sum of what the pass happens to do,
 // and a pass that gets lighter leaves it where it is. The park policy keeps its stamp in the same
 // unit, so an idle pass reads no clock at all until it parks.
 //
-// Not on Apple Silicon (Huly QB-181). What orders `mrs cntvct_el0` on arm64 is an `isb`, a full
-// instruction-synchronisation barrier, and there the x86 finding does not transfer: measured on the
-// M4 Pro with the wait-primitives probe of qb-vs-others (TUNING.md section 23.1), the ordered read
-// between two loads of the peer's line made a two-thread round trip 84-88 ns where the tight poll
-// made it 71-72, and on qb's own cells -- the same tree with and without the `isb`, three physical
-// copies a side, 12 launches of 3 + 1 in one seeded order -- thread-ring 2c-spin read -5.9 % without
-// it, ping-pong 2c-spin -7.7 % and 2c-park -8.1 %, big 2c level, the one-core cells level. The
-// committed shape's own census read ping-pong 2c -7.2 / -8.0 % again and thread-ring 2c level to
-// +1.9 % -- three readings of that cell spanning -5.9 .. +1.9 % while the tip itself moved 58-64 ns a
-// hop between sessions: unresolved on this unpinned host, within its spread. So the idle poll there
-// reads the plain counter (`qb::tsc_ticks`): one read a pass, its stamp as exact as the park policy
-// needs. Linux arm64 was not measured (its guest was off) and keeps the ordered read.
-[[nodiscard]] inline std::uint64_t
-idle_poll_ticks() noexcept {
-#if defined(__aarch64__) && defined(__APPLE__)
-    return qb::tsc_ticks();
-#else
-    return qb::detail::tsc_ticks_ordered();
-#endif
-}
-
+// On arm64 the ordering is an `isb`, and it was questioned (Huly QB-181, the M4 Pro, 2026-10-27):
+// against the same tree with the plain counter read instead, three physical copies a side, a
+// seeded launch order, the plain read won savina/ping-pong at two cores 7-8 % and LOST the
+// cross-core ask round trip of dev/bench 6-8 % and the routed one-core chain 4 %, the same-core
+// round trip level; a `dmb ishld` before the read -- the load-load barrier without the instruction
+// synchronisation -- was level on those two and lost the same-core round trip 2 %. A tight poll
+// wins a ping-pong and loses a streaming producer there too (qb-vs-others TUNING.md section
+// 16.2 on x86, 23.1 on arm64), so the ordered read stays on every architecture.
 std::uint64_t
 VirtualCore::__pace__() noexcept {
-    std::uint64_t t = idle_poll_ticks();
+    std::uint64_t t = qb::detail::tsc_ticks_ordered();
     while (t - _poll_mark < _poll_floor_ticks)
-        t = idle_poll_ticks();
+        t = qb::detail::tsc_ticks_ordered();
     _poll_mark = t;
     return t;
 }

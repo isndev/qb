@@ -157,7 +157,7 @@ Two rules keep an actor FSM correct:
   actor's coroutine scope; if you want a timer handle instead, hold a `scoped_callback` as a member so
   the actor's own destructor cancels it. See [Error handling — the two guards](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures)
   and [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:814-825, qb/src/qb/core/VirtualCore.cpp:2254-2259,1413-1428 -->
+  <!-- src: qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:814-825, qb/src/qb/core/VirtualCore.cpp:2241-2246,1400-1415 -->
 
 For a larger machine, a `std::map<State, std::map<Input, Handler>>` transition table makes the
 states and transitions explicit and keeps each handler small — see the full coffee-machine FSM in
@@ -738,7 +738,7 @@ context.
   cancels the watcher. See
   [Error handling](../6_guides/error_handling.md#fire-and-forget-callbacks-outlive-their-captures) and
   [Capture safety](../5_core_io_integration/async_in_actors.md#capture-safety-the-actor-may-be-gone).
-  <!-- src: qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:814-825, qb/src/qb/core/VirtualCore.cpp:2254-2259,1413-1428 -->
+  <!-- src: qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:814-825, qb/src/qb/core/VirtualCore.cpp:2241-2246,1400-1415 -->
 - **Passing a bare number as a delay.** `qb::io::async::callback(func, delay)` requires a
   `std::chrono::duration` (`std::chrono::seconds(2)`, `100ms` with `using namespace
   std::chrono_literals`), not a raw `double`.
