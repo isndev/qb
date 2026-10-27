@@ -110,6 +110,13 @@ policy.
   `JsonInteger` -3 to -8 %, `MultiBulk` and `PutInPipe` level, the bare pipe and framing loops level with
   identical code. Instructions per 201-argument multi-bulk (callgrind): 57,710 -> 47,054.
 
+### Documentation
+
+- **The digest members' Doxygen says what they return: raw bytes, not hex (Huly QB-1148).** `md5`, `sha1`,
+  `sha256` and `sha512`, in their string and stream forms, and `evp` said "as a hexadecimal string" while each
+  returns the digest's bytes in a `std::string` -- 32 for SHA-256, not 64 characters. `to_hex_string` encodes
+  them, uppercase by default. The qb-io book already said the comment was wrong; the comment now agrees with it.
+
 ## [3.3.0] - 2026-10-26
 
 ### Changed

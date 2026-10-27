@@ -434,7 +434,7 @@ public:
      *
      * @param stream The input stream containing the data to hash
      * @param md The OpenSSL message digest to use
-     * @return The calculated hash as a hexadecimal string
+     * @return The raw digest bytes, not hex: encode with to_hex_string()
      */
     static std::string evp(std::istream &stream, const EVP_MD *md) noexcept;
 
@@ -446,7 +446,7 @@ public:
      *
      * @param input The string to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The MD5 hash as a hexadecimal string
+     * @return The MD5 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string md5(const std::string &input, std::size_t iterations = 1) noexcept;
 
@@ -458,7 +458,7 @@ public:
      *
      * @param stream The input stream containing the data to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The MD5 hash as a hexadecimal string
+     * @return The MD5 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string md5(std::istream &stream, std::size_t iterations = 1) noexcept;
 
@@ -470,7 +470,7 @@ public:
      *
      * @param input The string to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-1 hash as a hexadecimal string
+     * @return The SHA-1 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha1(const std::string &input, std::size_t iterations = 1) noexcept;
 
@@ -482,7 +482,7 @@ public:
      *
      * @param stream The input stream containing the data to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-1 hash as a hexadecimal string
+     * @return The SHA-1 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha1(std::istream &stream, std::size_t iterations = 1) noexcept;
 
@@ -494,7 +494,7 @@ public:
      *
      * @param input The string to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-256 hash as a hexadecimal string
+     * @return The SHA-256 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha256(const std::string &input, std::size_t iterations = 1) noexcept;
 
@@ -506,7 +506,7 @@ public:
      *
      * @param stream The input stream containing the data to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-256 hash as a hexadecimal string
+     * @return The SHA-256 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha256(std::istream &stream, std::size_t iterations = 1) noexcept;
 
@@ -518,7 +518,7 @@ public:
      *
      * @param input The string to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-512 hash as a hexadecimal string
+     * @return The SHA-512 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha512(const std::string &input, std::size_t iterations = 1) noexcept;
 
@@ -530,7 +530,7 @@ public:
      *
      * @param stream The input stream containing the data to hash
      * @param iterations Number of times to apply the hash function (default: 1)
-     * @return The SHA-512 hash as a hexadecimal string
+     * @return The SHA-512 digest as raw bytes, not hex: encode with to_hex_string()
      */
     static std::string sha512(std::istream &stream, std::size_t iterations = 1) noexcept;
 
