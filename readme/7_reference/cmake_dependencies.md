@@ -41,30 +41,44 @@ The framework requires **CMake 3.24 or newer** (`qb/CMakeLists.txt:31`). 3.24 is
 
 **The two builds are the same source and different products, and they never share a path.** `qev` standalone is the full library — all fourteen watcher families, `libqev.a`, `<qev/ev.h>`, `find_package(qev)`. qb embeds a **reduced** profile of it: the six families qb-io never uses are compiled out (`QB_EV_WATCHERS_FULL=OFF`; `async` stays on since 3.2, because a core that owns io watchers parks inside its loop and a producer ends that park with `ev_async_send`), which is 13 fewer exported symbols and a `struct ev_loop` 96 bytes smaller — measured on Linux/x86-64, 61 `ev_*` against 74 and 496 bytes against 592 — so qb ships `libqb-ev.a` under `<qb/ev/ev.h>`, reached as `qb::ev`. Same-named files with different content is exactly the collision this fork exists to close, so the two install sets are disjoint by construction and a matrix cell (`shared-prefix-install`) proves it on every CI run.
 
-The C **API** is libev's, unchanged — `ev_run`, `ev_io_start`, `struct ev_loop`. Porting a libev program is one include-path edit. What is ours is everything that reaches a filesystem, so an installed qev never overwrites an installed libev.
+The C **API** is libev's, unchanged — `ev_run`, `ev_io_start`, `struct ev_loop`. Porting a libev program is one include-path edit. What is ours is everything that reaches a filesystem, so an installed qev never overwrites an installed libev. Embedded in qb, the link names are ours too: every function and variable the archive exports links as `qb_` + its libev name — `qb_ev_run` in `libqb-ev.a` — through one `#define` per name in the generated `ev_config.h`, which every translation unit reads before `ev.h` declares anything, so source still writes `ev_run`. A standalone qev keeps libev's own link names.
 
 That path is not cosmetic. Their headers used to be published by bare name, so an installed qb dropped `ev.h`, `ev++.h`, `event.h`, `event_compat.h`, `ev_config.h`, `uuid.h` and the directories `ev/`, `uuid/`, `nanolog/`, `ska_hash/` straight into the consumer's include root — 12 top-level names, every one of them able to shadow, or be shadowed by, a header the consumer already owned. Living under `qb/vendor/` makes that collision structurally impossible. Being physically inside the include root (`src/`) also means one include root serves the build tree and the installed tree, with no separate `BUILD_INTERFACE`/`INSTALL_INTERFACE` pair to drift apart.
 
-- **libev** — REQUIRED. `qbDependencies.cmake:105-117` checks that `src/qb/ev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:100`), producing the static `qev` target (`src/qb/ev/CMakeLists.txt:377`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:587-589`).
+- **libev** — REQUIRED. `qbDependencies.cmake:105-117` checks that `src/qb/ev` exists and sets `QB_HAS_LIBEV`; if it is missing, configuration fails with a fatal error. The tree is compiled by `add_subdirectory("${QB_VENDOR_DIR}/qev")` (`qb/CMakeLists.txt:100`), producing the static `qev` target (`src/qb/ev/CMakeLists.txt:425`). Resolving libev defines `QB_HAS_LIBEV=1` on every qb target (`qbDependencies.cmake:587-589`).
   The fork's generated configuration header is reached through `-DEV_CONFIG_H=<qb/ev/ev_config.h>`, a `PUBLIC` compile definition on the `qev` target, because `ev.h`'s own fallback lookup for `ev_config.h` is `__has_include`-guarded and would fail *silently* — flipping `EV_MULTIPLICITY` from 1 to 4 and desynchronising every `ev_*` prototype from the compiled library. `qb/io/async/event/base.h` and `qb/io/async/coroutine/scheduler.h` carry an `#error` guard on `EV_MULTIPLICITY` so that miss is a compile error rather than a runtime mystery.
 - **stduuid** — REQUIRED in practice. `qbDependencies.cmake:44-47` detects `src/qb/vendor/uuid` and sets `QB_HAS_UUID`. It is added by `add_subdirectory("${QB_VENDOR_DIR}/uuid")` (`qb/CMakeLists.txt:99`), which declares the header-only `stduuid` `INTERFACE` target (`src/qb/vendor/uuid/CMakeLists.txt:24`). The framework pins the fork's two options before adding it (`qb/CMakeLists.txt:84-85`): `UUID_SYSTEM_GENERATOR` and `UUID_TIME_GENERATOR` are forced **off**. The fork has no other switch: it always uses `std::span` -- its `gsl` fallback, whose directory the C++20 migration deleted and which made a standalone `cmake --install` of the fork fail, is gone -- and it carries no test suite (Huly QB-375, QB-378). Only when the vendored directory is absent does `qbDependencies.cmake:50-95` fall back to a system UUID (pkg-config `uuid`, then `find_path`/`find_library`); if neither is found, the build emits a warning and clears `QB_HAS_UUID` rather than failing.
 - **nanolog, ska_hash** — header-only, no CMake target at all. They are ordinary files under `src/qb/vendor/`, reached through qb's single include root like any other qb header. `src/qb/io/io.cpp` compiles `nanolog.cpp` by textual inclusion.
 
-Both compiled forks are part of the install export: `qev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:327-344`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:157-166`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/qev/` (`src/qb/ev/CMakeLists.txt:575-581`) or `lib/cmake/stduuid/` alongside its own package.
+Both compiled forks are part of the install export: `qev` and `stduuid` are added to the `qbTargets` export set so their names are rewritten under the `qb::` namespace in the transitive link list of `qb::io`/`qb::core` (`qb/CMakeLists.txt:327-344`). Their headers need no install rule of their own — qb's ordinary public-header rule (`qb/cmake/qbPackage.cmake:157-166`) already covers them, which is precisely why the two trees cannot diverge. When embedded, each fork's own standalone install/package-config block is skipped, so an installed qb ships no `lib/cmake/qev/` (`src/qb/ev/CMakeLists.txt:623-629`) or `lib/cmake/stduuid/` alongside its own package.
 
 #### Using qb alongside a system libev or libevent
 
-The `qev` fork keeps libev's `ev_*` symbol names **deliberately** — the C API is not reformed,
-only namespaced by path — and moves its headers under `qb/ev/`. One overlap with an upstream
-libev therefore remains on purpose; a second one used to exist and has been closed.
+The `qev` fork keeps libev's `ev_*` **spelling** deliberately — the C API is not reformed — and
+namespaces everything else: its headers under `qb/ev/`, its include guards and, embedded in qb, its
+link names. Three overlaps with an upstream libev used to exist; all three are closed.
+
+**Link names — no longer shared (Huly QB-1139).** qb's copy used to export libev's own names, so a
+program that also linked a real libev, or a library that bundles one, held two definitions of
+`ev_run`, `ev_loop_new` and every other exported name, and the link line chose between them.
+Measured on ld64 against a stand-in: the foreign archive first on the line made qb's loop call the
+foreign `ev_loop_new` ("libev event loop cannot be initialized"), behind a `duplicate symbol` warning
+and a linker exit of 0; GNU ld and MSVC refuse the second definition. A real libev's `struct ev_loop`
+is not qev's, so where such a link went through, the first `ev_run` corrupted memory. The embedded
+copy now links as `qb_` + libev's name (above), and the rule for a program that uses both follows:
+a translation unit that includes qb speaks qb's loop — there `ev_run` names `qb_ev_run` — and one that
+includes nothing of qb's reaches the other libev. `qb-io-test-unit-embedded-loop-prefix` links such a
+stand-in before qb and checks both sides; `qb-io-test-unit-embedded-loop-symbols` reads the built
+archive and fails on any exported `ev_*` left unrenamed.
 
 **Include guards — no longer collide.** Every header of the fork carries a guard named after the
 fork rather than after upstream: `QB_EV_H_` (`src/qb/ev/ev.h`), `QB_EVPP_H_` (`ev++.h`),
 `QB_EV_EVENT_H_` (`event.h`), `QB_EV_EVENT_COMPAT_H_` (`event_compat.h`), `QB_EV_WRAP_H`
 (`ev_wrap.h`), `QB_EV_WEPOLL_H_` (`wepoll.h`) and `QB_EV_GENERATED_CONFIG_H_` (the generated
-`ev_config.h`). A single
-translation unit may include both `<qb/ev/ev.h>` and a system `<ev.h>`, in either order,
-and get both sets of declarations.
+`ev_config.h`), so neither header's guard swallows the other's in a translation unit that includes
+both. Including both buys nothing since the link names were separated, though: the renaming
+`#define`s apply to everything that follows them, so in that unit every `ev_*` name is qb's. Drive
+the other libev from a translation unit that includes nothing of qb's.
 
 > Previously these guards kept upstream's spellings (`EV_H_`, `EVPP_H__`, `EVENT_H_`, …), so
 > whichever header came second in a translation unit was swallowed by the other's guard and its
@@ -72,7 +86,9 @@ and get both sets of declarations.
 > (`core/Actor.h` → `io/async/coroutine.h` → `coroutine/scheduler.h` → `ev++.h`), any consumer
 > that also used a real libev hit it — as a compile error (`ev_default_loop` undeclared with qb
 > first, errors inside qb's own `ev++.h` with libev first), never as silent misbehaviour. The
-> only workaround was to keep the two APIs in separate `.cpp` files. That is no longer necessary.
+> only workaround was to keep the two APIs in separate `.cpp` files. Separate files are again the
+> rule, and now they are also correct at run time: before the link names were separated, even two
+> separate files shared one `ev_run` at link time.
 
 **The 24 `event_*` symbols no longer ship.** They used to, and the collision was real: `libqev.a`
 carried libev's libevent-compatibility layer (`event_init`, `event_add`, `event_base_loop`,

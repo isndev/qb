@@ -1589,3 +1589,6 @@ set(QB_FUNCTIONS_LOADED TRUE CACHE INTERNAL "qb functions loaded")
 # enough for qb_add_test()/qb_add_benchmark() above, and appending keeps every line number
 # in this file -- which the docs cite by range -- exactly where it was.
 include(${CMAKE_CURRENT_LIST_DIR}/qbRuntimeDlls.cmake)
+
+# The census of an embedded copy's link names (Huly QB-1139), appended for the same reason.
+include(${CMAKE_CURRENT_LIST_DIR}/qbSymbolPrefix.cmake)

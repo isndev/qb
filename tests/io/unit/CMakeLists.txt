@@ -229,6 +229,20 @@ endif()
 add_test(NAME qb-io-test-unit-target-arch COMMAND "${CMAKE_COMMAND}" ${_qb_target_arch_args})
 set_tests_properties(qb-io-test-unit-target-arch PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 unset(_qb_target_arch_args)
+# embedded-loop-prefix (Huly QB-1139): qb's event loop and ANOTHER libev linked in one program each run their own
+# code. The embedded copy links as qb_ + libev's name; the stand-in below defines libev's own names and is linked
+# BEFORE qb. Without the renaming this target does not link (two ev_run), or links the stand-in's ev_loop_new into
+# qb's loop, depending on the linker. A static archive on purpose, with qb's flags so its runtime matches the test's.
+add_library(qb-io-test-unit-embedded-loop-prefix-foreign STATIC
+            build-contracts/embedded-loop-prefix/foreign-libev.cpp)
+_qb_apply_target_properties(qb-io-test-unit-embedded-loop-prefix-foreign)
+qb_add_test(MODULE qb-io TIER unit NAME embedded-loop-prefix
+            SOURCES build-contracts/embedded-loop-prefix/witness.cpp build-contracts/embedded-loop-prefix/caller.cpp
+            DEPENDS qb-io-test-unit-embedded-loop-prefix-foreign ${PROJECT_NAME})
+# embedded-loop-symbols (Huly QB-1139): the census behind that witness -- no symbol libqb-ev DEFINES and exports keeps
+# a libev or wepoll name (ev_*, epoll_*), and some carry qb_ev_ (cmake/qbSymbolPrefix.cmake picks nm or dumpbin).
+qb_add_symbol_prefix_test(NAME qb-io-test-unit-embedded-loop-symbols TARGET qev
+                          BANNED ev_ epoll_ REQUIRED qb_ev_ LABELS tier:unit module:qb-io)
 # reconnect contract (Huly QB-126): the vocabulary every connection-keeping client shares, and the
 # backoff arithmetic of qb::io::reconnect_policy that qbm-redis and qbm-http alias.
 qb_add_test(MODULE qb-io TIER unit NAME reconnect-contract SOURCES core/reconnect-contract.cpp DEPENDS ${PROJECT_NAME})

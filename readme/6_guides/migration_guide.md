@@ -620,6 +620,11 @@ standalone, and the headers sit under `qb/ev/`.
 > A `qev_*` symbol prefix was tried during 3.0 and **reverted**, so a program written against libev
 > compiles unchanged after one include-path edit. If you read a doc telling you to rename `ev_run` to
 > `qev_run`, it predates that decision.
+>
+> Since then the embedded copy's LINK names did change, and the spelling did not: every function and
+> variable `libqb-ev.a` exports links as `qb_` + its libev name (`qb_ev_run`), through one `#define`
+> per name in the generated `ev_config.h`, so source still writes `ev_run` (Huly QB-1139, see
+> [Using qb alongside a system libev](../7_reference/cmake_dependencies.md#using-qb-alongside-a-system-libev-or-libevent)).
 
 The 2.6.0 spelling of the header was `<ev/ev++.h>`, installed from qb's own `modules/ev/`. It is now
 `<qb/ev/ev++.h>`.

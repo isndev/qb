@@ -110,6 +110,27 @@ policy.
   `JsonInteger` -3 to -8 %, `MultiBulk` and `PutInPipe` level, the bare pipe and framing loops level with
   identical code. Instructions per 201-argument multi-bulk (callgrind): 57,710 -> 47,054.
 
+### Fixed
+
+- **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
+  embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program
+  that also linked a real libev -- or any library that bundles one -- held two definitions of each, and the link
+  line chose: measured on ld64, a foreign archive linked first made qb's loop call the foreign `ev_loop_new`
+  ("libev event loop cannot be initialized"), with a `duplicate symbol` warning and an exit of 0 from the
+  linker; GNU ld and MSVC refuse the second definition. A real libev's `struct ev_loop` is not qev's, so where
+  the link went through, the first `ev_run` was a memory corruption. The embedded copy now links every name it
+  exports as `qb_` + libev's name (`qb_ev_run`): its generated `ev_config.h`, which every translation unit that
+  includes `<qb/ev/ev.h>` reads first, carries a `#define` per name, the prefix-header form BoringSSL ships.
+  Source is unchanged -- code that includes qb still writes `ev_run`, and a libev program still ports with one
+  include-path edit -- and so is the standalone qev. A translation unit that includes qb speaks qb's loop; one
+  that does not reaches the other libev, and the two no longer share a link name. Two tests hold it:
+  `qb-io-test-unit-embedded-loop-prefix` links a stand-in libev BEFORE qb and checks both sides (it fails as
+  above without the renaming), and `qb-io-test-unit-embedded-loop-symbols` reads the built `libqb-ev` with the
+  toolchain's nm, or dumpbin under MSVC, and fails on any exported `ev_*` or wepoll `epoll_*` the list misses
+  (`cmake/check_symbol_prefix.cmake`, registered by `qb_add_symbol_prefix_test()`). Binary compatibility does
+  not move: a minor release already changes the link-time version symbol, so every object is rebuilt against
+  the qb it links (`VERSIONING.md`).
+
 ### Documentation
 
 - **The digest members' Doxygen says what they return: raw bytes, not hex (Huly QB-1148).** `md5`, `sha1`,

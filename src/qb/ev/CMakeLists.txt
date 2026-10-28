@@ -336,6 +336,54 @@ message(STATUS "[qev] watcher families: ${QB_EV_WATCHERS_FULL} (full=all fourtee
 set(QB_EV_CONFIG_INCLUDE "<${QB_EV_HEADER_DIR}/ev_config.h>")
 set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/ev_config.h")
 
+# Link names of the embedded copy (Huly QB-1139). Embedded, every function and variable this
+# library exports links as `qb_` + its libev name -- `ev_run` is `qb_ev_run` in libqb-ev.a -- so a
+# program can also link a real libev, or a library that bundles one. Before, the two copies shared
+# every name and the link line chose between them without a word: measured on ld64, a foreign
+# archive linked first made qb's loop call the foreign ev_loop_new; GNU ld and MSVC refuse the
+# second definition. Source does not change: a translation unit that includes ev.h still writes
+# `ev_run`, through the `#define`s the generated ev_config.h carries -- the prefix-header form
+# BoringSSL ships. The list is every name ev.h declares with EV_API_DECL / EV_API_DATA_DECL --
+# 88, the watcher families this build leaves out included, so enabling one needs nothing here --
+# but ev_rt_now: ev.h exports it only without EV_MULTIPLICITY, which the generated config pins to
+# 1, and under multiplicity ev.c defines it as the loop member it reads (renaming it breaks ev.c);
+# qb's qb-io-test-unit-embedded-loop-symbols reads the built archive on each toolchain and fails
+# on any exported ev_* this list misses. wepoll's five functions (ev_epoll.c includes wepoll.c on
+# Windows) are renamed inside the library only: nothing outside it calls them, and a consumer's
+# own epoll_* on Linux must keep its name. Standalone, the block is empty: qev's API is libev's.
+set(QB_EV_EXPORTED_NAMES
+    ev_active_count ev_active_count_addr ev_async_send ev_async_start ev_async_stop ev_backend
+    ev_break ev_check_start ev_check_stop ev_child_start ev_child_stop ev_cleanup_start
+    ev_cleanup_stop ev_clear_pending ev_clock_now ev_default_loop ev_default_loop_ptr ev_depth
+    ev_embed_start ev_embed_stop ev_embed_sweep ev_embeddable_backends ev_feed_event
+    ev_feed_fd_event ev_feed_signal ev_feed_signal_event ev_fork_start ev_fork_stop ev_idle_start
+    ev_idle_stop ev_invoke ev_invoke_pending ev_io_count ev_io_count_addr ev_io_fed_addr
+    ev_io_modify ev_io_start ev_io_stop ev_iteration ev_loop_destroy ev_loop_fork ev_loop_new
+    ev_now ev_now_set ev_now_update ev_once ev_pending_count ev_pending_count_addr
+    ev_periodic_again ev_periodic_count_addr ev_periodic_start ev_periodic_stop ev_prepare_start
+    ev_prepare_stop ev_recommended_backends ev_ref ev_resume ev_run ev_set_allocator
+    ev_set_invoke_pending_cb ev_set_io_collect_interval ev_set_loop_release_cb ev_set_syserr_cb
+    ev_set_timeout_collect_interval ev_set_userdata ev_signal_start ev_signal_stop ev_sleep
+    ev_stat_start ev_stat_stat ev_stat_stop ev_supported_backends ev_suspend ev_time
+    ev_timer_again ev_timer_count_addr ev_timer_next ev_timer_remaining ev_timer_start
+    ev_timer_stop ev_unref ev_userdata ev_verify ev_version_major ev_version_minor
+    ev_wake_pending_addr ev_walk ev_win32_socket_fd)
+set(QB_EV_WEPOLL_NAMES epoll_close epoll_create epoll_create1 epoll_ctl epoll_wait)
+if (QB_EV_EMBEDDED)
+    set(QB_EV_LINK_NAMES "")
+    foreach (_qb_ev_name IN LISTS QB_EV_EXPORTED_NAMES)
+        string(APPEND QB_EV_LINK_NAMES "#define ${_qb_ev_name} qb_${_qb_ev_name}\n")
+    endforeach ()
+    string(APPEND QB_EV_LINK_NAMES "#if defined(QB_EV_BUILDING_LIBRARY) && defined(_WIN32)\n")
+    foreach (_qb_ev_name IN LISTS QB_EV_WEPOLL_NAMES)
+        string(APPEND QB_EV_LINK_NAMES "#define ${_qb_ev_name} qb_ev_${_qb_ev_name}\n")
+    endforeach ()
+    string(APPEND QB_EV_LINK_NAMES "#endif")
+    unset(_qb_ev_name)
+else ()
+    set(QB_EV_LINK_NAMES "/* standalone: libev's own link names, no renaming */")
+endif ()
+
 configure_file(
         ${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmakein
         ${QB_EV_CONFIG_OUT}

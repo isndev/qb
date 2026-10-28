@@ -51,7 +51,7 @@ WHAT IT DELIBERATELY ALLOWS
     ([dcl.link]), so a C header included in one still declares `::time` -- and doing so is the
     standard idiom for a C header that lacks its own `extern "C"` guard. Seven such sites are
     live in this checkout (qb/src/qb/ev/event.h:41,42,47,48;
-    qbm/http .../vendor/llhttp.h:46,583; qbm/http/not-qb/llhttp/include/api.h:37), all correct.
+    qbm/http .../vendor/llhttp.h:184,721; qbm/http/not-qb/llhttp/include/api.h:37), all correct.
     An `extern "C"` block nested INSIDE a namespace is still reported -- the namespace frame is
     what matters, and the C declarations really would land in it.
   * An `#include` inside a class/struct/union body at global scope: the X-macro member-list

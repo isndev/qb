@@ -102,4 +102,15 @@
 #define EV_PACKAGE "@PROJECT_NAME@"
 #define EV_VERSION "@LIBEV_VERSION@"
 
+/* Link names (Huly QB-1139).
+ *
+ * Embedded in qb, every function and variable the library exports links as `qb_` + its libev
+ * name (`ev_run` is `qb_ev_run` in the archive), so a program may also link a real libev or a
+ * library that bundles one. Every translation unit that includes ev.h reads these `#define`s
+ * before ev.h declares anything, the library's own included, so source keeps writing `ev_run`.
+ * The names and the reasons are in CMakeLists.txt beside QB_EV_EXPORTED_NAMES. A standalone qev
+ * keeps libev's own names, and this block says so.
+ */
+@QB_EV_LINK_NAMES@
+
 #endif /* QB_EV_GENERATED_CONFIG_H_ */
