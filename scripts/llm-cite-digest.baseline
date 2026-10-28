@@ -44,11 +44,11 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	TestKit.h:203-237	ca981c92a86c	struct RunResult {
-llm/qb.llm.api.md	TestKit.h:251-367	23cb75108277	template <typename... Events>
-llm/qb.llm.api.md	TestKit.h:382-398	37b1a74c5b40	template <typename E>
-llm/qb.llm.api.md	TestKit.h:412-426	af92edf93dee	template <typename E>
-llm/qb.llm.api.md	TestKit.h:436-501	213450b8cf0f	class TestKit {
+llm/qb.llm.api.md	TestKit.h:227-261	ca981c92a86c	struct RunResult {
+llm/qb.llm.api.md	TestKit.h:278-441	699abbe0ce6f	template <typename... Events>
+llm/qb.llm.api.md	TestKit.h:456-474	c4fc30b573be	template <typename E>
+llm/qb.llm.api.md	TestKit.h:488-502	af92edf93dee	template <typename E>
+llm/qb.llm.api.md	TestKit.h:512-577	213450b8cf0f	class TestKit {
 llm/qb.llm.api.md	VirtualCore.cpp:1073-1075	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1400-1415	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
 llm/qb.llm.api.md	VirtualCore.cpp:1729-1731	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
@@ -110,11 +110,11 @@ llm/qb.llm.api.md	scheduler.h:637-637	8cd772062a6b	suspension_tracking() noexcep
 llm/qb.llm.api.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.api.md	scheduler.h:651-651	1acc0272cc17	void dump(std::ostream &os) const;
 llm/qb.llm.api.md	scheduler.h:826-829	1cdfb1dc422b	[[nodiscard]] bool
-llm/qb.llm.api.md	spawn.h:115-123	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
-llm/qb.llm.api.md	spawn.h:135-162	573d31d1f9d0	class Spawner : public qb::ServiceActor<Spawner> {
-llm/qb.llm.api.md	spawn.h:211-225	1cda4ba96eac	template <class A, class... Args>
-llm/qb.llm.api.md	spawn.h:45-51	0ee7d586d144	enum class spawn_status : std::uint8_t {
-llm/qb.llm.api.md	spawn.h:58-66	42b82c0b3a96	struct spawn_result {
+llm/qb.llm.api.md	spawn.h:118-126	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
+llm/qb.llm.api.md	spawn.h:138-173	253a72a055f9	class Spawner : public qb::ServiceActor<Spawner> {
+llm/qb.llm.api.md	spawn.h:223-239	6a3bde32f837	template <class A, class... Args>
+llm/qb.llm.api.md	spawn.h:47-54	5c3377928b52	enum class spawn_status : std::uint8_t {
+llm/qb.llm.api.md	spawn.h:61-69	42b82c0b3a96	struct spawn_result {
 llm/qb.llm.api.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.api.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.api.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t

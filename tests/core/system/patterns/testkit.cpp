@@ -94,6 +94,13 @@ public:
 
 using steady = std::chrono::steady_clock;
 
+/// The branch that wins a race against an expectation: it ends after `d`, with nothing.
+qb::io::async::task<int>
+pause(qb::ScopedCoroContext ctx, qb::duration d) {
+    co_await ctx.sleep(d);
+    co_return 0;
+}
+
 } // namespace testkit_test
 
 using namespace testkit_test;
@@ -149,7 +156,46 @@ TEST(TestKit, ATimeoutYieldsNothingNoEarlierThanItsDeadline) {
         const auto took   = steady::now() - start;
         EXPECT_FALSE(filled.has_value());
         EXPECT_GE(took, 100ms) << "the probe answers at its deadline, never earlier";
+        // An absence is told apart from a probe that never answers (false): this true is the probe's own answer.
+        const auto quiet_from = steady::now();
+        EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 100ms));
+        EXPECT_GE(steady::now() - quiet_from, 100ms);
     });
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
+    // The losing branch of a when_any leaves its waiter on the probe; the event that reaches it is lent, never
+    // acknowledged, and comes back after detail::lend_hold for the next expectation -- it was lost before.
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(0);
+    const auto        desk  = kit.add<Desk>(0, probe);
+    const auto        run   = kit.run(
+        [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto race = co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, 5s), pause(ctx, 50ms));
+            EXPECT_EQ(race.index, 1u) << "the pause wins: the expectation is abandoned, its waiter still on the probe";
+            ctx.push_to<Order>(desk, 7); // answered to the abandoned waiter, lent
+            const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 10s);
+            EXPECT_TRUE(filled.has_value()) << "an event lent to an abandoned expectation is never lost";
+            if (filled)
+                EXPECT_EQ(filled->qty, 7);
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AnAcknowledgedEventDoesNotComeBack) {
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(0);
+    const auto        desk  = kit.add<Desk>(0, probe);
+    const auto        run   = kit.run(
+        [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            ctx.push_to<Order>(desk, 3);
+            EXPECT_TRUE((co_await qb::test::expect<Filled>(ctx, probe, 5s)).has_value());
+            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, qb::test::detail::lend_hold + 500ms))
+                << "the expectation acknowledged its event: the loan is over";
+        },
+        30s);
     EXPECT_TRUE(run) << run.describe();
 }
 

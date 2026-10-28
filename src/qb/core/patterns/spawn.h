@@ -25,6 +25,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <tuple>
 #include <type_traits>
@@ -32,6 +33,7 @@
 #include <qb/core/Actor.h>
 #include <qb/core/VirtualCore.h> // addRefActor / registerEvent / spawn bodies (the tail of VirtualCore.h)
 #include <qb/core/patterns/request.h>
+#include <qb/io.h> // QB_LOG_WARN
 #include <qb/io/async/coroutine.h>
 #include <qb/system/time.h>
 
@@ -45,7 +47,8 @@ namespace qb {
 enum class spawn_status : std::uint8_t {
     spawned,    ///< Created on the target core and active: its `onInit()` returned true
     refused,    ///< The target core admitted nothing: no slot left, a service of that tag already there, tearing down,
-                ///< or an `onInit()` that failed before its first suspension (the core rolls that admission back)
+                ///< a constructor that threw, or an `onInit()` that failed before its first suspension (the core rolls
+                ///< that admission back)
     not_ready,  ///< Created, but not active within the timeout: its async init failed, threw, or still runs (the id is valid)
     unreachable ///< No answer within the timeout: no `qb::Spawner` on that core, or the core stopped
 };
@@ -144,8 +147,16 @@ public:
     on(SpawnRequest &e) {
         if (resolve_ask(e))
             return;
-        auto              factory = std::move(e.factory);
-        const qb::ActorId created = factory ? factory->create(*this) : qb::ActorId{};
+        auto        factory = std::move(e.factory);
+        qb::ActorId created{};
+        try {
+            if (factory)
+                created = factory->create(*this);
+        } catch (std::exception const &ex) { // a constructor that throws: refused, never a dead core
+            QB_LOG_WARN("qb::Spawner: the actor's constructor threw: " << ex.what());
+        } catch (...) {
+            QB_LOG_WARN("qb::Spawner: the actor's constructor threw a non-std exception");
+        }
         if (!created.is_valid()) {
             e.response = spawn_result{{}, spawn_status::refused};
             reply(e);
@@ -168,7 +179,8 @@ public:
  * @tparam Args Constructor arguments, taken BY VALUE: they are moved to the target core.
  * @param ctx The caller's context; its actor registers `qb::SpawnRequest` (see `SpawnRequest`).
  * @param core The target core: it runs a `qb::Spawner`. The caller's own core works too.
- * @param timeout The bound on the whole spawn, the new actor's `onInit()` included.
+ * @param timeout The bound on the whole spawn, the new actor's `onInit()` included. Zero or less waits without a
+ *        deadline, as `qb::ask` does: a core without a `Spawner` then never answers.
  * @param args The constructor arguments.
  * @return `spawned` with the id once the actor is active; `refused` when the core admitted nothing (an
  *         `onInit()` that fails before it first suspends included); `not_ready` (the id valid) when its init
@@ -213,11 +225,13 @@ template <class A, class... Args>
 spawn_on(qb::ScopedCoroContext ctx, qb::CoreId core, qb::duration timeout, Args... args) {
     static_assert(std::is_base_of_v<qb::Actor, A>, "qb::spawn_on: A is a qb::Actor");
     static_assert(std::is_constructible_v<A, Args &&...>, "qb::spawn_on: A is constructible from the moved arguments");
-    const auto wait    = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
+    // A timeout of zero or less waits without a deadline, as qb::ask does: for the activation and for the answer.
+    const bool bounded = timeout > qb::duration::zero();
+    const auto wait    = bounded ? timeout : qb::duration::zero();
     auto       factory = std::make_shared<detail::spawn_factory<A, Args...>>(std::move(args)...);
     try {
         auto answer = co_await qb::ask(ctx, qb::Actor::getServiceId<Spawner>(core), SpawnRequest{std::move(factory), wait},
-                                       wait + detail::spawn_reply_grace);
+                                       bounded ? wait + detail::spawn_reply_grace : qb::duration::zero());
         co_return answer.response;
     } catch (qb::io::async::timeout_error const &) {
         co_return spawn_result{};

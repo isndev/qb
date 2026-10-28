@@ -15,37 +15,44 @@ policy.
   qb::spawn_on<A>(ctx, core, timeout, args...)` asks the `qb::Spawner` service of `core` -- added to each core that
   accepts run-time creation -- to run `addRefActor<A>(args...)` there: the core's own admission, constructor and
   `onInit()`, on its own thread. It answers a `qb::spawn_result` once the actor is active: `spawned` with its id,
-  `refused` when the core admitted nothing (no slot, a service of that tag already there, teardown, or an `onInit()`
-  failing before its first suspension, whose admission the core rolls back), `not_ready` with the id when an async
-  init failed or outlasted the timeout, `unreachable` when no answer came (no spawner there, a core the engine does
-  not run). The arguments are taken by value and travel in a type-erased factory behind a `shared_ptr`: only its
-  pointer crosses the mailbox, so any movable argument works, a `std::string` included. No actor pointer crosses a
-  core. The caller registers `qb::SpawnRequest`, as for any `qb::ask` exchange; the spawner owns nothing it
-  creates. Proven by `qb-core-test-system-spawn-on` (8 cases, driven by the test kit: another core and the caller's
-  own, the actor running and reachable there, the arguments moved, an async init waited for, a failure before and
-  after suspending, a service already there, a core without spawner and one that does not exist, eight spawns in
-  flight, a caller without the registration), green under ASan+UBSan, TSan and C++23, 10 repeats, and by eight
-  mutants of the pattern, all caught.
+  `refused` when the core admitted nothing (no slot, a service of that tag already there, teardown, a constructor that
+  threw -- the spawner contains it, the core keeps running -- or an `onInit()` failing before its first suspension,
+  whose admission the core rolls back), `not_ready` with the id when an async init failed or outlasted the timeout,
+  `unreachable` when no answer came (no spawner there, a core the engine does not run); a timeout of zero or less
+  waits without a deadline, as `qb::ask` does. The arguments are taken by value and travel in a type-erased factory
+  behind a `shared_ptr`: only its pointer crosses the mailbox, so any movable argument works, a `std::string`
+  included. No actor pointer crosses a core. The caller registers `qb::SpawnRequest`, as for any `qb::ask` exchange;
+  the spawner owns nothing it creates. Proven by `qb-core-test-system-spawn-on` (10 cases, driven by the test kit:
+  another core and the caller's own, the actor running and reachable there, the arguments moved, an async init waited
+  for, a failure before and after suspending, a service already there, a core without spawner and one that does not
+  exist, eight spawns in flight, a caller without the registration, a throwing constructor, a zero timeout), green
+  under ASan+UBSan, TSan and C++23, 10 repeats, and by eight mutants of the pattern, all caught. An independent review
+  then found the throwing constructor stopping the target core and the zero timeout answering `unreachable` at the 250
+  ms grace with the actor's id lost; both fixed, each with its case and its mutant.
 
 - **An actor test kit: `<qb/testkit.h>`, namespace `qb::test` (Huly QB-57).** Every test of actor code had the same
   scaffolding -- an engine, a hand-written driver actor, `std::atomic` globals, a guard proving the driver ran, a
   stop, a join, a `hasError()` -- and qb's own suite rewrote it in each file. `qb::test::TestKit` owns a `qb::Main`
-  and runs ONE scenario, a `task<void>(qb::ScopedCoroContext)` coroutine, on a driver actor it adds itself; the
-  engine stops the moment the scenario returns or throws, a watchdog (10 s by default) stops it if it never ends,
-  and `run()` returns a `qb::test::RunResult` (`completed`, `timed_out`, `engine_error`, `error`, `describe()`).
+  and runs ONE scenario, a `task<void>(qb::ScopedCoroContext)` coroutine, on a driver actor it adds itself; the engine
+  stops the moment the scenario returns or throws, a watchdog (10 s by default) stops it if it never ends, and `run()`
+  returns a `qb::test::RunResult` (`completed`, `timed_out`, `engine_error`, `error`, `describe()`).
   `qb::test::TestProbe<Events...>` records a copy of every event of the announced types it receives, one FIFO per
-  type; its id is the destination handed to the actors under test. `co_await qb::test::expect<E>(ctx, probe,
-  timeout)` yields the next recorded `E` as a `std::optional<E>` -- at once when one waits, else the first to arrive
-  -- and `qb::test::expect_none<E>(ctx, probe, window)` is true when none arrived, consuming nothing. Both are a
-  `qb::ask` of the probe through one non-template exchange, so a probe may live on any core and one driver serves
-  every probe; the exchanges a scenario asks other actors with are named to `run<Asks...>()`. A timeout is a lower
-  bound (the probe answers at its deadline); nothing is dropped; an expectation of a type the probe does not record
-  throws `std::logic_error`. Header-only and additive; no test framework required (the kit's own tests use
-  GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (13 cases: the
-  FIFO and the sender, a timeout, a late arrival kept, `expect_none`, two waiters oldest first, a probe on another
-  core, the wrong probe, `run<Asks...>` and the timeout without it, a throwing scenario, the watchdog, a failed
-  start, one run per kit), green under ASan+UBSan, TSan and C++23, 30 repeats on a loaded host, and by eleven mutants
-  of the kit (ten caught; the eleventh -- a zero wait parked instead of answered at once -- is behaviour-equivalent).
+  type; its id is the destination handed to the actors under test. `co_await qb::test::expect<E>(ctx, probe, timeout)`
+  yields the next recorded `E` as a `std::optional<E>` -- at once when one waits, else the first to arrive -- and
+  `qb::test::expect_none<E>(ctx, probe, window)` is true when none arrived, consuming nothing. Both are a `qb::ask` of
+  the probe through one non-template exchange, so a probe may live on any core and one driver serves every probe; the
+  exchanges a scenario asks other actors with are named to `run<Asks...>()`. A timeout is a lower bound (the probe
+  answers at its deadline); nothing is dropped -- an event handed to an expectation is lent until the scenario
+  acknowledges it, and one whose expectation was abandoned (the losing branch of a `when_any`) returns to its queue
+  after two seconds; an expectation of a type the probe does not record throws `std::logic_error`. Header-only and
+  additive; no test framework required (the kit's own tests use GoogleTest). New guide
+  `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (15 cases: the FIFO and the sender, a
+  timeout, a late arrival kept, `expect_none`, two waiters oldest first, a probe on another core, the wrong probe,
+  `run<Asks...>` and the timeout without it, a throwing scenario, the watchdog, a failed start, one run per kit, an
+  abandoned expectation and an acknowledged one), green under ASan+UBSan, TSan and C++23, 30 repeats on a loaded host,
+  and by eleven mutants of the kit (ten caught; the eleventh -- a zero wait parked instead of answered at once -- is
+  behaviour-equivalent). An independent review then found an abandoned expectation swallowing the next event; the loan
+  fixes it, and three mutants of it are caught.
 
 - **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
   `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child

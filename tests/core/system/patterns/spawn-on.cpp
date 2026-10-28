@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstdint>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -98,6 +99,17 @@ public:
     onInit() override {
         co_await context().sleep(std::chrono::milliseconds(1));
         co_return false; // after a suspension: the actor exists, Activating, then fails
+    }
+};
+
+class Throwing : public qb::Actor {
+public:
+    Throwing() {
+        throw std::runtime_error("a constructor that refuses its configuration");
+    }
+    qb::io::async::task<bool>
+    onInit() override {
+        co_return true;
     }
 };
 
@@ -192,10 +204,39 @@ TEST(SpawnOn, AnInitThatFailsIsRefusedOrNotReadyByWhenItFails) {
             EXPECT_TRUE(slow.id.is_valid());
         },
         30s);
-    // The slow actor is still Activating when the run ends: the engine's stop ends it, and a failed init is
-    // reported by hasError() -- what the kit's engine_error says. The scenario itself completed.
-    EXPECT_TRUE(run.completed) << run.describe();
-    EXPECT_FALSE(run.timed_out);
+    // The slow actor is still Activating when the run ends: the engine's stop ends it. A failed init is logged and
+    // its actor removed; it stops no core, so the run is clean.
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(SpawnOn, AConstructorThatThrowsIsRefusedAndTheCoreKeepsServing) {
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Hello>(0);
+    (void) kit.add<qb::Spawner>(1);
+    const auto run = kit.run<qb::SpawnRequest>(
+        [probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto thrown = co_await qb::spawn_on<Throwing>(ctx, 1, 2s);
+            EXPECT_EQ(thrown.status, qb::spawn_status::refused) << "the throw stopped core 1 before";
+            EXPECT_FALSE(thrown.id.is_valid());
+            const auto after = co_await qb::spawn_on<Worker>(ctx, 1, 5s, std::string("after"), std::vector<int>{}, probe);
+            EXPECT_EQ(after.status, qb::spawn_status::spawned) << "the core and its spawner still serve";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe() << " (an engine error means the throw stopped a core)";
+}
+
+TEST(SpawnOn, ATimeoutOfZeroWaitsWithoutADeadline) {
+    qb::test::TestKit kit;
+    (void) kit.add<qb::Spawner>(1);
+    const auto run = kit.run<qb::SpawnRequest>(
+        [](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto start = steady::now();
+            const auto w     = co_await qb::spawn_on<SlowInit>(ctx, 1, qb::duration::zero(), qb::duration{std::chrono::milliseconds(400)});
+            EXPECT_EQ(w.status, qb::spawn_status::spawned) << "not unreachable at the 250 ms grace";
+            EXPECT_GE(steady::now() - start, 400ms);
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
 }
 
 TEST(SpawnOn, AServiceAlreadyOnTheCoreIsRefused) {
