@@ -19,7 +19,10 @@
  * next; `expect_none` over a quiet window, broken by an arrival, consuming nothing; two waiters, oldest first;
  * a probe on another core; a type the probe does not record; the exchanges a scenario asks other actors
  * with, registered by `run<Asks...>` (and the timeout without them, the reason the parameter exists); a
- * scenario that throws; the watchdog; an engine that refuses to start; one run per kit.
+ * scenario that throws; the watchdog; an engine that refuses to start; one run per kit; the loan of an answered
+ * event -- abandoned expectations withdrawn, loans given back at their rank, a late acknowledgement -- and the
+ * probe's watch of its askers -- a killed asker's waiters and loans let go of, on its core and across cores, its
+ * loans in arrival order -- with a probe of `qb::DownEvent` still recording the ones it is sent.
  */
 
 #include <gtest/gtest.h>
@@ -129,6 +132,60 @@ public:
             (void) co_await qb::ask(ctx, probe, qb::test::detail::Expectation{qb::type_id<Filled>(), 30s, false, 0}, 30s);
         });
         co_return true;
+    }
+    void
+    on(qb::test::detail::Expectation &e) {
+        (void) resolve_ask(e);
+    }
+};
+
+/// A death report about `who` -- what a supervisor sends -- for the actor under test below.
+struct Report : qb::Event {
+    qb::ActorId who;
+
+    explicit Report(qb::ActorId w)
+        : who(w) {}
+};
+
+/// An actor under test that sends the probe a `qb::DownEvent` about the actor a `Report` names.
+class Reporter : public qb::Actor {
+    qb::ActorId _probe;
+
+public:
+    explicit Reporter(qb::ActorId probe)
+        : _probe(probe) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Report>(*this);
+        co_return true;
+    }
+    void
+    on(Report const &r) {
+        push<qb::DownEvent>(_probe, r.who, qb::DownReason::killed);
+    }
+};
+
+/// Asks the hoarder for one more raw expectation of `Filled`.
+struct AskNow : qb::Event {};
+
+/// A `Hoarder` that asks on command: each `AskNow` is one more answer taken and never acknowledged.
+class HoarderOnCommand : public qb::Actor {
+    qb::ActorId _probe;
+
+public:
+    explicit HoarderOnCommand(qb::ActorId probe)
+        : _probe(probe) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::detail::Expectation>(*this);
+        registerEvent<AskNow>(*this);
+        co_return true;
+    }
+    void
+    on(AskNow const &) {
+        spawn([probe = _probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            (void) co_await qb::ask(ctx, probe, qb::test::detail::Expectation{qb::type_id<Filled>(), 30s, false, 0}, 30s);
+        });
     }
     void
     on(qb::test::detail::Expectation &e) {
@@ -509,6 +566,108 @@ TEST(TestKit, LoansGivenBackTogetherComeBackInArrivalOrder) {
                 const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
                 EXPECT_EQ(filled ? filled->qty : -1, qty) << "arrival order, the loans given back included";
             }
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AProbeThatRecordsDownEventRecordsTheOnesItIsSent) {
+    // A probe of qb::DownEvent -- the destination of a supervisor's reports -- recorded none: the watch of its
+    // askers took every DownEvent, and one naming a live asker dropped its waiters (the fourth review). Only the
+    // core's answer to the probe's own watch is the probe's.
+    qb::test::TestKit kit;
+    const auto        probe    = kit.probe<qb::DownEvent>(0);
+    const auto        reporter = kit.add<Reporter>(0, probe);
+    const auto        run      = kit.run([probe, reporter](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        ctx.push_to<Report>(reporter, ctx.id()); // a report about the driver, an asker of the probe
+        const auto about_the_driver = co_await qb::test::expect<qb::DownEvent>(ctx, probe, 1s);
+        EXPECT_EQ(about_the_driver ? about_the_driver->watched : qb::ActorId{}, ctx.id());
+        ctx.push_to<Report>(reporter, reporter); // about itself: its source is the actor it names
+        const auto about_itself = co_await qb::test::expect<qb::DownEvent>(ctx, probe, 1s);
+        EXPECT_EQ(about_itself ? about_itself->watched : qb::ActorId{}, reporter);
+    });
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, ADownEventSentToTheProbeLetsGoOfNoLiveAsker) {
+    qb::test::TestKit kit;
+    const auto        probe    = kit.probe<Filled, qb::DownEvent>(0);
+    const auto        desk     = kit.add<Desk>(0, probe);
+    const auto        reporter = kit.add<Reporter>(0, probe);
+    const auto        run      = kit.run([probe, desk, reporter](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        auto report_then_fill = [](qb::ScopedCoroContext c, qb::ActorId reporter, qb::ActorId desk) -> qb::io::async::task<void> {
+            co_await c.sleep(50ms);              // the driver's expectation waits on the probe
+            c.push_to<Report>(reporter, c.id()); // "the driver is gone": wrong, and not the probe's watch
+            co_await c.sleep(50ms);
+            c.push_to<Order>(desk, 7);
+        };
+        auto [filled, done] = co_await qb::io::async::when_all(qb::test::expect<Filled>(ctx, probe, 1s), report_then_fill(ctx, reporter, desk));
+        (void) done;
+        EXPECT_EQ(filled ? filled->qty : -1, 7) << "the live driver's waiter was dropped by a DownEvent it was sent";
+        EXPECT_TRUE(co_await qb::test::expect<qb::DownEvent>(ctx, probe, 0s)) << "the report is recorded";
+    });
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, AKilledAskerOnAnotherCoreIsLetGoOfAtOnce) {
+    // The death watch across cores: the probe on core 1, the killed asker on core 2, the driver on core 0.
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(1);
+    const auto        desk  = kit.add<Desk>(1, probe);
+    const auto        asker = kit.add<Abandoner>(2, probe);
+    const auto        run   = kit.run(
+        [desk, probe, asker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(100ms); // both its expectations wait on the probe
+            ctx.push_to<qb::KillEvent>(asker);
+            co_await ctx.sleep(100ms); // its DownEvent has reached the probe
+            for (int qty : {1, 2, 3})
+                ctx.push_to<Order>(desk, qty);
+            const auto start = steady::now();
+            for (int qty : {1, 2, 3}) {
+                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
+                EXPECT_EQ(filled ? filled->qty : -1, qty);
+            }
+            EXPECT_LT(steady::now() - start, 1s) << "not after a loan to the dead asker's waiters";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, ADeadAskersLoansReachAParkedWaiterInArrivalOrder) {
+    // The hoarder holds 2, then 1 (given back by a withdrawal and lent to it again) when it dies, and the driver
+    // waits on the probe: the loans went back in the order they were lent, 2 first (the fourth review).
+    qb::test::TestKit kit;
+    const auto        probe   = kit.probe<Filled>(0);
+    const auto        desk    = kit.add<Desk>(0, probe);
+    const auto        hoarder = kit.add<HoarderOnCommand>(0, probe);
+    const auto        run     = kit.run(
+        [desk, probe, hoarder](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto first_waiter = [](qb::ScopedCoroContext c, qb::ActorId probe) -> qb::io::async::task<void> {
+                (void) co_await qb::ask(c, probe, qb::test::detail::Expectation{qb::type_id<Filled>(), 5s, false, 777}, 5s);
+            };
+            auto choreography = [](qb::ScopedCoroContext c, qb::ActorId probe, qb::ActorId desk,
+                                   qb::ActorId hoarder) -> qb::io::async::task<void> {
+                co_await c.sleep(20ms); // the driver's raw expectation (token 777) waits
+                c.push_to<AskNow>(hoarder);
+                co_await c.sleep(20ms);    // and the hoarder's first
+                c.push_to<Order>(desk, 1); // 1 lent to the driver's
+                c.push_to<Order>(desk, 2); // 2 lent to the hoarder's
+                co_await c.sleep(20ms);
+                c.push_to<AskNow>(hoarder); // the hoarder's second waits
+                co_await c.sleep(20ms);
+                c.push_to<qb::test::detail::ExpectationWithdrawn>(probe, 777); // 1 back, lent to it: it holds 2, then 1
+                co_await c.sleep(20ms);
+                auto kill_later = [](qb::ScopedCoroContext k, qb::ActorId hoarder) -> qb::io::async::task<void> {
+                    co_await k.sleep(30ms); // the expectation below waits on the probe first
+                    k.push_to<qb::KillEvent>(hoarder);
+                };
+                auto [parked, killed] = co_await qb::io::async::when_all(qb::test::expect<Filled>(c, probe, 1s), kill_later(c, hoarder));
+                (void) killed;
+                EXPECT_EQ(parked ? parked->qty : -1, 1) << "the parked waiter got a later event first";
+                const auto next = co_await qb::test::expect<Filled>(c, probe, 200ms);
+                EXPECT_EQ(next ? next->qty : -1, 2);
+            };
+            co_await qb::io::async::when_all(first_waiter(ctx, probe), choreography(ctx, probe, desk, hoarder));
         },
         30s);
     EXPECT_TRUE(run) << run.describe();

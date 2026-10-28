@@ -162,12 +162,13 @@ struct LendExpired : qb::Event {
 inline constexpr qb::duration reply_grace = std::chrono::milliseconds(250);
 
 /// How long a probe keeps an event it answered with, unacknowledged, before it records it again: the asker
-/// acknowledges at once, and an expectation it abandons is withdrawn at once (`ExpectationWithdrawn`), so only a
-/// killed asker, or one whose core stalls past it, reaches it.
+/// acknowledges at once, an expectation it abandons is withdrawn at once (`ExpectationWithdrawn`), and a dead
+/// asker's loans come back at its `qb::DownEvent`, so only an asker whose core stalls past it reaches it.
 inline constexpr qb::duration lend_hold = std::chrono::seconds(2);
 
-/// The names of the expectations of the process: unique, so a probe tells two of one asker apart. One object
-/// across the images of a program, as the core's other process-wide counters.
+/// The names of the expectations of the process: unique, so a probe tells two of one asker apart. Anchored as the
+/// core's other process-wide counters (`QB_ABI_ANCHOR`): one object across the shared images of a program on ELF
+/// and Mach-O; on Windows qb has no export macro yet, and each DLL counts its own.
 QB_ABI_ANCHOR inline std::atomic<std::uint64_t> expectation_tokens{0};
 
 /// `a + b`, `qb::duration::max()` past it: a timeout of `max()` means "no deadline", never an overflow.
@@ -320,9 +321,11 @@ struct RunResult {
  *          abandons -- the losing branch of a `when_any`, an ask that timed out first -- is withdrawn as its frame
  *          ends: its waiter is forgotten, and an event lent to it returns at once to its place in the queue, in
  *          arrival order, for the next expectation. The probe watches every actor that asks it (`watch()`): when
- *          one is gone, its waiters are dropped and what it was lent returns the same way. A loan nobody
- *          acknowledges otherwise -- an asker whose core stalls -- returns after `detail::lend_hold` (2 s).
- *          The queues are unbounded -- a probe is for tests, not for traffic.
+ *          one is gone, its waiters are dropped and what it was lent returns the same way, oldest event first. A
+ *          loan nobody acknowledges otherwise -- an asker whose core stalls -- returns after `detail::lend_hold`
+ *          (2 s). A probe may record `qb::DownEvent` too: it records every one sent to it, and keeps those of its
+ *          own watches -- the core's answer about an asker -- to itself. The queues are unbounded -- a probe is for
+ *          tests, not for traffic.
  */
 template <typename... Events>
 class TestProbe final : public qb::Actor {
@@ -366,6 +369,7 @@ class TestProbe final : public qb::Actor {
     std::array<queue, sizeof...(Events)> _queues{queue{qb::type_id<Events>(), {}, {}}...};
     std::vector<loan>                    _lent;
     std::deque<expired_loan>             _expired;
+    std::vector<qb::ActorId>             _askers; ///< Watched: their DownEvent lets go of what waits for them
     std::uint64_t                        _next_ticket = 0;
     std::uint64_t                        _next_lend   = 0;
     std::uint64_t                        _next_seq    = 0;
@@ -448,7 +452,8 @@ public:
         registerEvent<detail::ExpectationTaken>(*this);
         registerEvent<detail::ExpectationWithdrawn>(*this);
         registerEvent<detail::LendExpired>(*this);
-        registerEvent<qb::DownEvent>(*this);
+        if constexpr (!(std::is_same_v<qb::DownEvent, Events> || ...))
+            registerEvent<qb::DownEvent>(*this); // the watch of the askers; a recorded DownEvent is registered above
         co_return true;
     }
 
@@ -463,7 +468,10 @@ public:
     on(detail::Expectation &e) {
         if (resolve_ask(e))
             return;
-        watch(e.getSource()); // a no-op while watched: a dead asker's waiters and loans are let go of (DownEvent)
+        if (std::find(_askers.begin(), _askers.end(), e.getSource()) == _askers.end()) {
+            _askers.push_back(e.getSource()); // watched once: at its DownEvent its waiters and loans are let go of
+            watch(e.getSource());
+        }
         queue *q = find(e.event_type);
         if (!q) {
             e.recorded = false;
@@ -526,15 +534,32 @@ public:
             give_back(it); // lent to it: back at once, at its rank
     }
 
-    /// An asker is gone: what waits for it, or was lent to it, is no one's -- dropped, given back at its rank.
+    /// The answer of the probe's own watch -- the core delivers it with the watched asker as its source -- lets go
+    /// of a dead asker: what waits for it is dropped, and what it was lent goes back oldest event first, so a waiter
+    /// parked meanwhile takes the events in arrival order. Any other DownEvent, one an actor sends, touches no asker:
+    /// it is recorded when the probe records the type.
     void
     on(qb::DownEvent const &e) {
-        const auto asker = e.watched;
+        const auto watched = std::find(_askers.begin(), _askers.end(), e.watched);
+        if (watched == _askers.end() || e.getSource() != e.watched) {
+            if constexpr ((std::is_same_v<qb::DownEvent, Events> || ...))
+                record(_queues[index_of<qb::DownEvent>()], entry{++_next_seq, std::make_shared<qb::DownEvent const>(e)});
+            return;
+        }
+        _askers.erase(watched);
+        const auto asker    = e.watched;
+        const auto of_asker = [&](loan const &l) {
+            return l.asker == asker;
+        };
         for (auto &q : _queues)
             std::erase_if(q.waiting, [&](waiter const &w) { return w.asker == asker; });
-        for (auto it = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker; }); it != _lent.end();
-             it      = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker; }))
+        for (auto it = std::find_if(_lent.begin(), _lent.end(), of_asker); it != _lent.end();
+             it      = std::find_if(_lent.begin(), _lent.end(), of_asker)) {
+            for (auto other = std::next(it); other != _lent.end(); ++other)
+                if (of_asker(*other) && other->item.seq < it->item.seq)
+                    it = other;
             give_back(it);
+        }
     }
 
     void
