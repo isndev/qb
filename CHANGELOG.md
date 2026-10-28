@@ -77,6 +77,12 @@ policy.
   shape is all the probe reads: a DownEvent an asker sends about itself is taken as its death, which the docs now say,
   and the watch's answer is pinned out of the queue (the fifth review).
 
+- **`channel<T>::waiter_census()` and `liveness()` (Huly QB-273)** -- the parked parties of a channel right
+  now, as a `channel_waiter_census {receivers, senders, selects}`: the live population of its three rings,
+  which the bound above makes a census rather than a history (three ring sizes, the cost of `size()`); and
+  the channel's liveness token, `true` while it exists, which a `select()` copies before registering so it
+  can tell a channel it may retract from, from one it must not touch.
+
 - **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
   `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child
   that yields once to the ready queue, so every step pays the root's task await (a transfer), the
@@ -95,6 +101,13 @@ policy.
   tracking disarmed, the yield skipped, a dump skipped, a late disarm) are refused.
 
 ### Changed
+
+- **`channel<T>::register_select_waiter(channel_select_state &, size_t)` takes the state by reference and
+  returns nothing (Huly QB-273)**; it took a `std::shared_ptr<channel_select_state>`. The state is now the
+  registering awaiter's own, and the entry points at it; `unregister_select_waiter(state)` is the new
+  counterpart a caller owes before its state goes away. A caller of the old signature stops compiling;
+  the select protocol's registration was never meant to be called outside the select awaiters, and the
+  test that did (`channel-sync-ops`) is converted.
 
 - **The ask registry is constant-initialised and its warm path inlined again: on MSVC the request/reply
   machinery costs 18.5 ns over a bare push/reply, below the 19.8 ns of 3.2.1 (Huly QB-1114).**
@@ -179,6 +192,28 @@ policy.
   identical code. Instructions per 201-argument multi-bulk (callgrind): 57,710 -> 47,054.
 
 ### Fixed
+
+- **A timed wait or a `select()` leaves nothing behind on a channel, and its watchdog dies with it
+  (Huly QB-273).** A `recv_for()` that timed out, a `send_for()` that timed out, a `select()` another
+  channel won and a wait reclaimed while parked all left their entry in the channel's waiter ring until a
+  later send met and skipped it: a live, quiet channel accumulated one dead entry per timeout -- each
+  holding a shared state or guard alive -- and every `send_for()` scanned that history to decide its fast
+  path. The detached timer coroutine that guarded a timed wait lived to its deadline even when the wait was
+  won at once, its `ev_timer` armed: at a 30 s timeout and ten thousand waits a second, three hundred
+  thousand frames and timers in flight. The awaiter now owns its select state and its watchdog inside its
+  own frame (an `ev_timer` on `listener::current`'s loop, stopped when the wait ends: the rule of
+  `timer_awaiter`), retracts its entry when the watchdog fires and in its destructor while the channel
+  lives, and the rings hold plain pointers to those states: no `shared_ptr` per entry, no spawned
+  coroutine, no allocation on `recv_for`, `send_for` and the variadic `select` (the vector `select` keeps
+  one, its token list) -- nothing beyond the coroutine frame of the `recv_for` or `send_for` task itself. A
+  zero or negative timeout is one cooperative turn, as `sleep(0)` is. Nothing of the contract moves: the FIFO order, the
+  hand-off priority (a receiver, then a select or timed receiver, then the buffer), the value a reclaimed
+  receiver hands back, what `close()` answers to each parked party, the documented drop of a
+  resolved-then-abandoned `select`. Witnessed by the census of a channel after 260 timeouts of each kind
+  and 80 lost selects (0 entries, against one per event before), by `listener::current.has_work()` after
+  128 waits won early against a 30 s deadline (false, against 128 armed timers before), and by the two
+  cells `BM_Channel_TimedOpsWonEarly` and `BM_Channel_SendForAfterRecvForHistory` of
+  `qb-io-bench-coroutine-pipeline` (numbers in the lot's receipt).
 
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program

@@ -33,6 +33,7 @@
 #include <qb/system/time.h>          // qb::duration
 #include <qb/utility/branch_hints.h> // QB_NOINLINE: the parked-sender hand-off stays out of the receivers' bodies
 #include <any>                       // std::any / std::any_cast — the type-erased slot in every waiter
+#include <array>                     // the select awaiter's liveness tokens, one per channel (Huly QB-273)
 #include <chrono>
 #include <exception>
 #include <memory>
@@ -63,8 +64,10 @@ public:
  * All participating channels hold a pointer to the same select_state.
  * The first channel to deliver a value calls resolve() which wakes the
  * awaiting coroutine. Subsequent channels find the state already resolved
- * and skip. Lazy cleanup of stale select_waiter_entry items happens inside
- * send_awaiter: resolved entries are discarded when encountered.
+ * and skip. The state is owned, by value, by the awaiter that registered it, and that
+ * awaiter removes its entries on timeout and in its destructor (Huly QB-273): a channel
+ * never holds a resolved entry past the turn it was resolved in, so the skip of a resolved
+ * entry in the hand-off paths is a safety net, not the cleanup.
  *
  * Single-thread cooperative: no mutex needed.
  */
@@ -86,6 +89,16 @@ struct channel_select_state {
                 schedule_via_current(std::exchange(outer, {}));
         }
     }
+};
+
+/**
+ * @brief The parties parked on a `channel<T>`, as `channel<T>::waiter_census()` reports them (Huly QB-273).
+ * @ingroup Coroutine
+ */
+struct channel_waiter_census {
+    std::size_t receivers{0}; ///< parked `recv()`
+    std::size_t senders{0};   ///< parked `send()` and `send_for()`
+    std::size_t selects{0};   ///< parked `select()` and `recv_for()` registrations
 };
 
 /**
@@ -151,6 +164,36 @@ public:
     channel &operator=(channel &&)      = delete;
 
     /**
+     * @brief A parked sender's node in the channel's list of senders (Huly QB-273): a `send()` or `send_for()`
+     *        awaiter embeds one, so parking allocates nothing and leaving -- a hand-off, a timeout, a close, a
+     *        reclaim -- unlinks it in O(1) wherever it sits. A node must not move while `linked`.
+     */
+    struct send_waiter_entry {
+        std::coroutine_handle<> handle{};
+        bool                   *guard{nullptr};     // send_for only: the awaiter's own flag, set by the wake, the watchdog, close()
+        T                      *value{nullptr};     // the parked sender's value, handed over by wake_one_sender()
+        bool                   *delivered{nullptr}; // set by wake_one_sender() once `value` is handed over
+        send_waiter_entry      *prev{nullptr};
+        send_waiter_entry      *next{nullptr};
+        bool                    linked{false};
+    };
+
+    /**
+     * @brief A `select()` / `recv_for()` registration's node in the channel's list of select waiters (Huly QB-273):
+     *        non-owning, the state lives in the awaiter that registered it, and that awaiter unlinks the node on
+     *        timeout and in its destructor while the channel lives -- so a node in the list is always a live
+     *        waiter's, and a destroyed channel has no list left to hold one. A node must not move while `linked`.
+     */
+    struct select_waiter_entry {
+        channel_select_state *state{nullptr};
+        size_t                index{0};
+        select_waiter_entry  *prev{nullptr};
+        select_waiter_entry  *next{nullptr};
+        bool                  linked{false};
+    };
+    using select_entry = select_waiter_entry; ///< the public name, for a caller of `register_select_waiter`
+
+    /**
      * @brief Awaiter for send operation
      *
      * Fast path: await_ready() returns true when send can complete without
@@ -159,11 +202,11 @@ public:
     struct send_awaiter {
         static constexpr char const *qb_suspension_kind = "channel send"; ///< suspension tracking (coroutine/tracking.h)
 
-        channel                &ch;
-        T                       value;
-        bool                    _completed = false;
-        std::coroutine_handle<> _parked{}; ///< set when queued in _send_waiters
-        std::shared_ptr<bool>   _ch_alive; ///< channel liveness; skip ch access when false
+        channel              &ch;
+        T                     value;
+        bool                  _completed = false;
+        send_waiter_entry     _entry{};  ///< our node in ch's list of senders while parked (Huly QB-273)
+        std::shared_ptr<bool> _ch_alive; ///< channel liveness; skip ch access when false
 
         // Explicit constructor: the deleted copy below (a user-declared constructor) makes this
         // a non-aggregate, so send() needs a constructor for brace-init.
@@ -173,7 +216,7 @@ public:
             , _ch_alive(c._alive) {}
 
         // If this sender is still parked when its coroutine frame is destroyed,
-        // remove its entry from _send_waiters so a later wake_one_sender()/close()
+        // unlink its node from the channel's list of senders so a later wake_one_sender()/close()
         // cannot schedule_via_current() a dangling handle (use-after-free).
         // Neither copyable nor movable (Huly QB-1000): it queues its own handle with pointers to its value and
         // completion flag, and its destructor retracts that entry, so a copy destroyed first retracted the live send
@@ -185,15 +228,8 @@ public:
         send_awaiter &operator=(send_awaiter &&)      = delete;
 
         ~send_awaiter() {
-            if (!_parked || !*_ch_alive) // channel already freed: nothing to de-register
-                return;
-            auto &w = ch._send_waiters;
-            for (auto it = w.begin(); it != w.end(); ++it) {
-                if (it->handle == _parked) {
-                    w.erase(it);
-                    break;
-                }
-            }
+            if (_entry.linked && *_ch_alive) // still parked on a live channel: retract (a freed channel has no list)
+                ch.unlink_sender(_entry);
         }
 
         // No lock: single-thread cooperative — state is stable between
@@ -220,8 +256,10 @@ public:
         void
         await_suspend(std::coroutine_handle<> h) {
             ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-            _parked = h;
-            ch._send_waiters.push_back({h, nullptr, &value, &_completed});
+            _entry.handle    = h;
+            _entry.value     = &value;
+            _entry.delivered = &_completed;
+            ch.link_sender(_entry);
         }
 
         void
@@ -420,18 +458,19 @@ public:
             schedule_via_current(h);
         }
         _recv_waiters.clear();
-        for (auto &entry : _send_waiters) {
-            if (entry.guard && *entry.guard)
+        while (auto *entry = _send_head) {
+            unlink_sender(*entry); // its awaiter's destructor finds nothing to retract
+            if (entry->guard && *entry->guard)
                 continue;
-            if (entry.guard)
-                *entry.guard = true;
-            schedule_via_current(entry.handle);
+            if (entry->guard)
+                *entry->guard = true;
+            schedule_via_current(entry->handle);
         }
-        _send_waiters.clear();
         // Notify select waiters with "closed" signal
-        for (auto &entry : _select_waiters)
-            entry.state->resolve(entry.index, std::any{}, /*closed=*/true);
-        _select_waiters.clear();
+        while (auto *entry = _select_head) {
+            unlink_select(*entry);
+            entry->state->resolve(entry->index, std::any{}, /*closed=*/true);
+        }
     }
 
     bool
@@ -451,6 +490,31 @@ public:
         return _buffer.empty();
     }
 
+    /**
+     * @brief The parties parked on this channel right now: the sizes of its three waiter rings (Huly QB-273).
+     * @details `receivers` are the parked `recv()`, `senders` the parked `send()` and `send_for()`, `selects`
+     *          the `select()` and `recv_for()` registrations. An entry never outlives its waiter -- a timed wait
+     *          that expired, a `select()` another channel won, a frame reclaimed while parked leave nothing
+     *          here -- so these are the live population, not a history: the census a resource test reads. One
+     *          transient is counted: between a multi-channel `select()`'s resolution and its resume, the
+     *          channels that did not win still hold its entry. Three ring sizes: the cost of `size()`.
+     */
+    [[nodiscard]] channel_waiter_census
+    waiter_census() const noexcept {
+        return {_recv_waiters.size(), _send_count, _select_count};
+    }
+
+    /**
+     * @brief This channel's liveness token: `true` while the channel exists, `false` once its destructor ran
+     *        (Huly QB-273). A `select()` awaiter copies it BEFORE registering on the channel, so that whatever
+     *        ends its wait -- a resume, a reclaim, an exception thrown by the registration's own wake -- it can
+     *        tell a live channel it may retract from, from a dead one it must not touch.
+     */
+    [[nodiscard]] std::shared_ptr<bool> const &
+    liveness() const noexcept {
+        return _alive;
+    }
+
     // -----------------------------------------------------------------------
     // select() support
     // -----------------------------------------------------------------------
@@ -459,24 +523,37 @@ public:
      * @brief Register a select operation as a potential receiver on this channel.
      *
      * Called by channel_select_awaiter before suspending. When a value becomes
-     * available (via send or close), this channel will call state->resolve() if
+     * available (via send or close), this channel will call state.resolve() if
      * the select is not yet resolved.
+     *
+     * The node and the state are the caller's (Huly QB-273): `entry` is linked into this channel's list and
+     * points at `state`, so neither may move or die while the node is linked. The caller's side of the
+     * contract: copy `liveness()` BEFORE calling this (the wake below may throw, and the caller must still
+     * know whether it may retract), call `unregister_select_waiter(entry)` before the state goes away while
+     * this channel is alive -- on its timeout and in its destructor -- and never touch this channel once the
+     * token reads false (the channel's destructor closed it, which resolved the state and unlinked the node).
+     * A state already resolved (an earlier channel of the same select delivered during this registration) is
+     * not queued.
      */
     void
-    register_select_waiter(std::shared_ptr<channel_select_state> state, size_t idx) {
+    register_select_waiter(select_waiter_entry &entry, channel_select_state &state, size_t idx) {
+        if (state.resolved)
+            return;
         // Fast path: value already in buffer
         if (!_buffer.empty()) {
             T val = std::move(_buffer.front());
             _buffer.pop_front();
             wake_one_sender_if_any();
-            state->resolve(idx, std::any(std::move(val)));
+            state.resolve(idx, std::any(std::move(val)));
             return;
         }
         if (_closed) {
-            state->resolve(idx, std::any{}, true);
+            state.resolve(idx, std::any{}, true);
             return;
         }
-        _select_waiters.push_back({std::move(state), idx});
+        entry.state = &state;
+        entry.index = idx;
+        link_select(entry);
         // Rendezvous (capacity==0) sender-first: if a sender is already parked with a value, wake one
         // -- the wake hands its value to this select/recv_for waiter. Without this, select() and
         // recv_for() never observe a pending rendezvous value that recv()/try_recv() would (a parked
@@ -485,19 +562,32 @@ public:
     }
 
     /**
+     * @brief Unlink the caller's node, if this channel still holds it. O(1), idempotent.
+     * @details The waiter's side of the contract above: called on its timeout and from its destructor, so the
+     *          list never holds the node of a waiter that is gone -- the bound of Huly QB-273. Nothing happens
+     *          when the node was already handed a value (unlinked by the delivery) or dropped by `close()`.
+     */
+    void
+    unregister_select_waiter(select_waiter_entry &entry) noexcept {
+        if (entry.linked)
+            unlink_select(entry);
+    }
+
+    /**
      * @brief True iff a `select()` / `recv_for()` waiter is currently parked and
      *        unresolved — i.e. `send()`'s fast path can hand it a value right now.
      * @details `send_for()` must consult this (not just `_recv_waiters` / buffer
-     *          space): a `recv_for()` parks in `_select_waiters`, not
+     *          space): a `recv_for()` parks in the select waiters' list, not
      *          `_recv_waiters`, so a `send_for()` that ignored it would take the
      *          slow path and park with a timer while a ready rendezvous partner
-     *          waits — both then time out. Stale (resolved) entries are ignored so
-     *          a channel littered with them still routes through the timed path.
+     *          waits — both then time out. A resolved entry is skipped as a safety net;
+     *          since Huly QB-273 none sits here past its turn, so this is a scan of the
+     *          parked waiters, not of a history.
      */
     [[nodiscard]] bool
     has_live_select_waiter() const noexcept {
-        for (const auto &entry : _select_waiters)
-            if (entry.state && !entry.state->resolved)
+        for (auto const *entry = _select_head; entry; entry = entry->next)
+            if (!entry->state->resolved)
                 return true;
         return false;
     }
@@ -536,41 +626,51 @@ public:
         if (_closed)
             co_return std::nullopt;
 
-        auto state = std::make_shared<channel_select_state>();
-        // index 0 = data received, resolved via timer with winner=1 = timeout
+        // index 0 = data received; winner 1 = the watchdog fired. The awaiter owns its select state and its
+        // watchdog, both inside the recv_for frame (Huly QB-273): no shared state, no spawned timer coroutine, no
+        // allocation -- and nothing of this wait outlives it: the watchdog is stopped when the wait ends, the
+        // node unlinked from the channel's select list by the timeout or the destructor while the channel lives.
         struct timed_recv_awaiter {
-            channel<T>                           &ch;
-            std::shared_ptr<channel_select_state> state;
-            qb::duration                          timeout_ms;
-            bool                                  _resumed = false; ///< distinguishes resolved-then-reclaimed
-            std::shared_ptr<bool>                 _ch_alive;        ///< channel liveness; skip ch access when false
+            channel<T>           &ch;
+            channel_select_state  state{};
+            select_waiter_entry   entry{}; ///< our node in ch's list of select waiters while parked
+            qb::duration          timeout_ms;
+            ev_timer              watchdog{};
+            ev::loop_ref          loop;             ///< the loop the watchdog is armed on: `listener::current`'s (Huly QB-197)
+            bool                  _armed   = false; ///< the watchdog was started: stop it unconditionally (timer_awaiter's rule)
+            bool                  _resumed = false; ///< distinguishes resolved-then-reclaimed
+            std::shared_ptr<bool> _ch_alive;        ///< channel liveness; skip ch access when false
 
-            timed_recv_awaiter(channel<T> &c, std::shared_ptr<channel_select_state> s, qb::duration t)
+            timed_recv_awaiter(channel<T> &c, qb::duration t)
                 : ch(c)
-                , state(std::move(s))
                 , timeout_ms(t)
-                , _ch_alive(c._alive) {}
+                , loop(listener::current.loop())
+                , _ch_alive(c._alive) {
+                ev_timer_init(&watchdog, on_watchdog, qb::detail::to_ev_seconds(t), 0.0);
+                watchdog.data = this;
+            }
 
-            // Frame-destruction guard: this awaiter lives inside the recv_for
-            // coroutine frame. If that frame is destroyed while parked, mark the
-            // shared state resolved so neither channel_timer nor a later sender
-            // schedules the now-dangling handle.
+            // Frame-destruction guard: this awaiter lives inside the recv_for coroutine frame. If that frame is
+            // destroyed while parked, the watchdog is stopped and the entry retracted, so neither can reach the
+            // now-dangling handle, and the state is closed so a resume already queued finds nothing to do.
             //
             // Wake-token preservation (mirrors recv_awaiter): if a sender already RESOLVED us with a
-            // value (state->resolved, not a timeout/close) but we are reclaimed before consuming it,
+            // value (state.resolved, not a timeout/close) but we are reclaimed before consuming it,
             // re-buffer that value so the sender's message is not lost. Guarded by _ch_alive (the
             // channel may be torn down first) and !_resumed (await_resume already took the value).
-            // Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor resolves the shared state
-            // the live wait is parked on, or restores a value it was handed and never read.
+            // Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor retracts the entry the
+            // live wait is parked on, stops its watchdog, or restores a value it was handed and never read.
             timed_recv_awaiter(const timed_recv_awaiter &)            = delete;
             timed_recv_awaiter(timed_recv_awaiter &&)                 = delete;
             timed_recv_awaiter &operator=(const timed_recv_awaiter &) = delete;
             timed_recv_awaiter &operator=(timed_recv_awaiter &&)      = delete;
 
             ~timed_recv_awaiter() {
-                if (state && !state->resolved) {
-                    state->resolved = true;
-                    state->outer    = {};
+                disarm();
+                if (!state.resolved) {
+                    unregister();
+                    state.resolved = true;
+                    state.outer    = {};
                     return;
                 }
                 // `if constexpr`: `std::any_cast<T>` carries a hard `static_assert` that T be
@@ -578,50 +678,102 @@ public:
                 // unguarded made `channel<std::unique_ptr<...>>::recv_for()` fail to COMPILE on
                 // Linux/libstdc++ even though the branch can never run there. (libc++ accepts it,
                 // which is why macOS never saw this.) For a move-only T nothing can populate
-                // `state->value` in the first place — see the select-machinery note on
+                // `state.value` in the first place — see the select-machinery note on
                 // `offer_to_select_waiter` — so the branch is provably dead, not merely untaken.
                 if constexpr (std::is_copy_constructible_v<T>) {
-                    if (!_resumed && state && _ch_alive && *_ch_alive && state->winner != 1 && !state->closed && state->value.has_value())
-                        ch._buffer.push_back(std::any_cast<T>(std::move(state->value)));
+                    if (!_resumed && *_ch_alive && state.winner != 1 && !state.closed && state.value.has_value())
+                        ch._buffer.push_back(std::any_cast<T>(std::move(state.value)));
                 }
+            }
+
+            /// Stop the watchdog whenever it was armed -- never gated on `ev_is_active`: an expired one-shot is
+            /// inactive yet still pending with `data` pointing here (the rule written out in ~timer_awaiter).
+            void
+            disarm() noexcept {
+                if (_armed) {
+                    ev_timer_stop(loop, &watchdog);
+                    _armed = false;
+                }
+            }
+
+            /// Unlink our node from the channel's list, if it still hangs there and the channel lives.
+            void
+            unregister() noexcept {
+                if (entry.linked && *_ch_alive)
+                    ch.unregister_select_waiter(entry);
             }
 
             [[nodiscard]] bool
             await_ready() const noexcept {
-                return state->resolved;
+                return state.resolved;
             }
 
             void
             await_suspend(std::coroutine_handle<> h) {
                 ::qb::io::async::detail::track_suspension(h.address(), "channel recv");
-                if (state->resolved) {
+                if (state.resolved) {
                     schedule_via_current(h);
                     return;
                 }
-                state->outer = h;
-                ch._select_waiters.push_back({state, 0});
+                state.outer = h;
+                entry.state = &state;
+                entry.index = 0;
+                ch.link_select(entry);
                 // Rendezvous (capacity==0) sender-first: wake a parked sender -- the wake hands its value
                 // to this recv_for waiter. Mirrors register_select_waiter / recv_awaiter::await_suspend.
                 ch.wake_one_sender();
-                coro_scheduler().spawn(channel_timer(state, h, timeout_ms));
+                if (state.resolved)
+                    return; // the wake handed a value over (and scheduled us): no watchdog to arm
+                if (timeout_ms.count() <= 0) {
+                    // A zero or negative timeout is one cooperative turn, not a kernel timer (timer_awaiter's
+                    // rule): back of the ready queue; still unresolved when we resume = timed out.
+                    enqueue_for_later_via_current(h);
+                    return;
+                }
+                // A stale loop clock would compute the expiry in the past and fire at once: refresh it first,
+                // the fix timer_awaiter and async::callback carry (Finding 2.C.3).
+                ev_now_update(static_cast<struct ev_loop *>(loop));
+                ev_timer_start(loop, &watchdog);
+                _armed = true;
             }
 
             std::optional<T>
             await_resume() {
                 _resumed = true; // consumed normally → the dtor must not re-buffer the value
-                if (!state->resolved || state->winner == 1 || state->closed)
+                disarm();
+                if (!state.resolved) {
+                    // The cooperative turn of a zero timeout ended with nobody delivering: a timeout.
+                    state.resolved = true;
+                    state.winner   = 1;
+                    unregister();
+                    return std::nullopt;
+                }
+                if (state.winner == 1 || state.closed)
                     return std::nullopt;
                 // Same `if constexpr` rationale as the destructor above: `std::any_cast<T>` must
                 // not be INSTANTIATED for a move-only T (hard static_assert under libstdc++).
                 if constexpr (std::is_copy_constructible_v<T>) {
-                    if (!state->value.has_value())
+                    if (!state.value.has_value())
                         return std::nullopt;
-                    return std::any_cast<T>(std::move(state->value));
+                    return std::any_cast<T>(std::move(state.value));
                 } else {
                     // Move-only payload: the select machinery cannot carry it (documented on
-                    // `recv_for` below), so the slow path only ever resolves as a timeout.
+                    // `recv_for` above), so the slow path only ever resolves as a timeout.
                     return std::nullopt;
                 }
+            }
+
+            /// The watchdog: the deadline passed with the wait still open. One resume, deduplicated by the
+            /// scheduler against a same-turn delivery; the entry leaves the ring here, not at a later send.
+            static void
+            on_watchdog(struct ev_loop *, ev_timer *w, int) noexcept {
+                auto *self = static_cast<timed_recv_awaiter *>(w->data);
+                if (!self || self->state.resolved)
+                    return; // a value or close() got there first; the resume stops this watcher
+                self->state.resolved = true;
+                self->state.winner   = 1;
+                self->unregister();
+                schedule_via_current(std::exchange(self->state.outer, {}));
             }
         };
 
@@ -629,7 +781,7 @@ public:
         static_assert(!std::is_copy_constructible_v<timed_recv_awaiter> && !std::is_move_constructible_v<timed_recv_awaiter>);
         static_assert(!std::is_copy_assignable_v<timed_recv_awaiter> && !std::is_move_assignable_v<timed_recv_awaiter>);
 
-        co_return co_await timed_recv_awaiter{*this, state, timeout};
+        co_return co_await timed_recv_awaiter{*this, timeout};
     }
 
     /**
@@ -644,48 +796,74 @@ public:
             co_return false;
         // Fast path: a receiver, a live select()/recv_for() waiter, or buffer
         // space can take the value synchronously. send()'s await_ready performs
-        // the actual recv/select/buffer hand-off (and lazily drops stale select
-        // entries). The has_live_select_waiter() term is the fix for send_for
-        // parking with a timer while a ready recv_for/select partner waits — on a
-        // rendezvous channel both would otherwise time out despite a match.
+        // the actual recv/select/buffer hand-off. The has_live_select_waiter()
+        // term is the fix for send_for parking with a timer while a ready
+        // recv_for/select partner waits — on a rendezvous channel both would
+        // otherwise time out despite a match.
         if (_buffer.size() < _capacity || !_recv_waiters.empty() || has_live_select_waiter()) {
             co_await send(std::move(value));
             co_return true;
         }
 
-        // Slow path: wait for space or timeout.
-        // guard: shared flag — whichever wakes us first (the hand-off or the timer) sets it
-        // to true, preventing the other from double-scheduling the handle.
-        auto guard = std::make_shared<bool>(false);
-
+        // Slow path: wait for space or timeout. The awaiter owns its guard and its watchdog, inside the send_for
+        // frame (Huly QB-273): the guard is the flag whichever ends the wait first sets -- the hand-off
+        // (wake_one_sender), the watchdog, close(), the destructor -- so the others do nothing; the watchdog is
+        // stopped when the wait ends and the node unlinked from the channel's sender list by the timeout or the destructor
+        // while the channel lives. No shared flag, no spawned timer coroutine, no allocation.
         struct timed_send_awaiter {
-            channel<T>           &ch;
-            T                     val;
-            std::shared_ptr<bool> guard;
-            qb::duration          timeout_ms;
-            bool                  _delivered = false; ///< set by wake_one_sender() when it hands `val` over
-            bool                  _resumed   = false;
+            channel<T>             &ch;
+            T                       val;
+            qb::duration            timeout_ms;
+            ev_timer                watchdog{};
+            ev::loop_ref            loop; ///< the loop the watchdog is armed on: `listener::current`'s (Huly QB-197)
+            std::coroutine_handle<> _handle{};
+            send_waiter_entry       _entry{};           ///< our node in ch's list of senders while parked
+            bool                    _guard     = false; ///< set by whichever ends the wait; `send_waiter_entry::guard` points here
+            bool                    _delivered = false; ///< set by wake_one_sender() when it hands `val` over
+            bool                    _armed     = false; ///< the watchdog was started: stop it unconditionally (timer_awaiter's rule)
+            std::shared_ptr<bool>   _ch_alive;          ///< channel liveness; skip ch access when false
 
-            timed_send_awaiter(channel<T> &c, T v, std::shared_ptr<bool> g, qb::duration t)
+            timed_send_awaiter(channel<T> &c, T v, qb::duration t)
                 : ch(c)
                 , val(std::move(v))
-                , guard(std::move(g))
-                , timeout_ms(t) {}
+                , timeout_ms(t)
+                , loop(listener::current.loop())
+                , _ch_alive(c._alive) {
+                ev_timer_init(&watchdog, on_watchdog, qb::detail::to_ev_seconds(t), 0.0);
+                watchdog.data = this;
+            }
 
-            // Frame-destruction guard: if the send_for frame is destroyed while
-            // parked, set *guard so neither send_timer nor wake_one_sender()
-            // schedules the dangling handle or reads its value (the stale _send_waiters
-            // entry is lazily discarded by the guard check).
-            // Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor sets the shared guard
-            // that retracts the queued value, out from under the live send.
+            // Frame-destruction guard: if the send_for frame is destroyed while parked, the guard is set, the
+            // watchdog stopped and the entry retracted, so nothing can hand `val` over or resume the dangling
+            // handle. Neither copyable nor movable (Huly QB-1000): see send_awaiter; its destructor sets the guard
+            // and retracts the queued value, out from under the live send.
             timed_send_awaiter(const timed_send_awaiter &)            = delete;
             timed_send_awaiter(timed_send_awaiter &&)                 = delete;
             timed_send_awaiter &operator=(const timed_send_awaiter &) = delete;
             timed_send_awaiter &operator=(timed_send_awaiter &&)      = delete;
 
             ~timed_send_awaiter() {
-                if (!_resumed && guard && !*guard)
-                    *guard = true;
+                disarm();
+                if (!_guard) {
+                    _guard = true;
+                    unregister();
+                }
+            }
+
+            /// Stop the watchdog whenever it was armed (never gated on `ev_is_active`: see ~timer_awaiter).
+            void
+            disarm() noexcept {
+                if (_armed) {
+                    ev_timer_stop(loop, &watchdog);
+                    _armed = false;
+                }
+            }
+
+            /// Unlink our node from the channel's list, if it still hangs there and the channel lives.
+            void
+            unregister() noexcept {
+                if (_entry.linked && *_ch_alive)
+                    ch.unlink_sender(_entry);
             }
 
             [[nodiscard]] bool
@@ -696,18 +874,48 @@ public:
             void
             await_suspend(std::coroutine_handle<> h) {
                 ::qb::io::async::detail::track_suspension(h.address(), "channel send");
-                ch._send_waiters.push_back(send_waiter_entry{h, guard, &val, &_delivered});
-                coro_scheduler().spawn(send_timer(guard, h, timeout_ms));
+                _handle          = h;
+                _entry.handle    = h;
+                _entry.guard     = &_guard;
+                _entry.value     = &val;
+                _entry.delivered = &_delivered;
+                ch.link_sender(_entry);
+                if (timeout_ms.count() <= 0) {
+                    // One cooperative turn, not a kernel timer (timer_awaiter's rule): a wake in that turn still
+                    // hands `val` over; still parked when we resume = timed out.
+                    enqueue_for_later_via_current(h);
+                    return;
+                }
+                ev_now_update(static_cast<struct ev_loop *>(loop)); // see timed_recv_awaiter: never arm on a stale loop clock
+                ev_timer_start(loop, &watchdog);
+                _armed = true;
             }
 
             // True when the wake that resumed us handed the value over (Huly QB-272: the hand-off happens at the wake,
             // with the same priority as a direct send -- a waiting receiver, then a select/recv_for waiter, then the
-            // buffer). Resumed without it: the timer fired, close() woke us, or the channel was destroyed -- false,
+            // buffer). Resumed without it: the watchdog fired, close() woke us, or the channel was destroyed -- false,
             // and nothing of the channel is touched (it may already be gone).
             bool
             await_resume() noexcept {
-                _resumed = true; // normal resume path: destructor must not re-arm guard
+                disarm();
+                if (!_guard) {
+                    // The cooperative turn of a zero timeout ended without a hand-off: a timeout.
+                    _guard = true;
+                    unregister();
+                }
                 return _delivered;
+            }
+
+            /// The watchdog: the deadline passed with the value still queued. One resume, deduplicated by the
+            /// scheduler against a same-turn wake; the entry leaves the ring here, not at a later wake.
+            static void
+            on_watchdog(struct ev_loop *, ev_timer *w, int) noexcept {
+                auto *self = static_cast<timed_send_awaiter *>(w->data);
+                if (!self || self->_guard)
+                    return; // a wake or close() got there first; the resume stops this watcher
+                self->_guard = true;
+                self->unregister();
+                schedule_via_current(self->_handle);
             }
         };
 
@@ -715,7 +923,7 @@ public:
         static_assert(!std::is_copy_constructible_v<timed_send_awaiter> && !std::is_move_constructible_v<timed_send_awaiter>);
         static_assert(!std::is_copy_assignable_v<timed_send_awaiter> && !std::is_move_assignable_v<timed_send_awaiter>);
 
-        co_return co_await timed_send_awaiter{*this, std::move(value), guard, timeout};
+        co_return co_await timed_send_awaiter{*this, std::move(value), timeout};
     }
 
 private:
@@ -734,19 +942,18 @@ private:
      * a move-only channel while `co_await send(...)` / `send_for(...)` did not compile. Keeping
      * exactly one guarded copy is what stops that from drifting apart again.
      *
-     * Stale (already-resolved) entries are consumed as they are encountered — the lazy cleanup
-     * the select protocol relies on. Popping BEFORE resolving keeps the deque untouched across
-     * the call.
+     * A resolved node cannot sit here since Huly QB-273 (its waiter unlinks it on timeout and in its
+     * destructor); the test stays as the safety net it always was. Unlinking BEFORE resolving keeps the
+     * list untouched across the call.
      */
     template <typename U>
     bool
     offer_to_select_waiter(U &&value) {
         if constexpr (std::is_copy_constructible_v<T>) {
-            while (!_select_waiters.empty()) {
-                auto entry = _select_waiters.front();
-                _select_waiters.pop_front();
-                if (!entry.state->resolved) {
-                    entry.state->resolve(entry.index, std::any(std::forward<U>(value)));
+            while (auto *entry = _select_head) {
+                unlink_select(*entry); // before resolving: the resume must find nothing left to retract
+                if (!entry->state->resolved) {
+                    entry->state->resolve(entry->index, std::any(std::forward<U>(value)));
                     return true;
                 }
             }
@@ -756,41 +963,44 @@ private:
         return false;
     }
 
-    // Free functions: parameters stored by value in the coroutine frame.
-    static task<void>
-    channel_timer(std::shared_ptr<channel_select_state> state, std::coroutine_handle<> h, qb::duration delay) {
-        co_await sleep(delay);
-        // winner=1 signals timeout; schedule_via_current deduplicates
-        if (!state->resolved) {
-            state->resolved = true;
-            state->winner   = 1;
-            schedule_via_current(h);
-        }
+    // The two intrusive lists (Huly QB-273): FIFO, the nodes owned by the parked awaiters, every operation O(1).
+    void
+    link_sender(send_waiter_entry &e) noexcept {
+        e.prev                                       = _send_tail;
+        e.next                                       = nullptr;
+        (_send_tail ? _send_tail->next : _send_head) = &e;
+        _send_tail                                   = &e;
+        e.linked                                     = true;
+        ++_send_count;
     }
-
-    static task<void>
-    send_timer(std::shared_ptr<bool> guard, std::coroutine_handle<> h, qb::duration delay) {
-        co_await sleep(delay);
-        if (!*guard) {
-            *guard = true;
-            schedule_via_current(h);
-        }
+    void
+    unlink_sender(send_waiter_entry &e) noexcept {
+        (e.prev ? e.prev->next : _send_head) = e.next;
+        (e.next ? e.next->prev : _send_tail) = e.prev;
+        e.prev = e.next = nullptr;
+        e.linked        = false;
+        --_send_count;
+    }
+    void
+    link_select(select_waiter_entry &e) noexcept {
+        e.prev                                             = _select_tail;
+        e.next                                             = nullptr;
+        (_select_tail ? _select_tail->next : _select_head) = &e;
+        _select_tail                                       = &e;
+        e.linked                                           = true;
+        ++_select_count;
+    }
+    void
+    unlink_select(select_waiter_entry &e) noexcept {
+        (e.prev ? e.prev->next : _select_head) = e.next;
+        (e.next ? e.next->prev : _select_tail) = e.prev;
+        e.prev = e.next = nullptr;
+        e.linked        = false;
+        --_select_count;
     }
 
     size_t _capacity;
     using recv_waiter_entry = std::pair<std::coroutine_handle<>, std::optional<T> *>;
-
-    struct send_waiter_entry {
-        std::coroutine_handle<> handle;
-        std::shared_ptr<bool>   guard;     // send_for only: set to true on wake (prevents timer double-schedule)
-        T                      *value;     // the parked sender's value, handed over by wake_one_sender()
-        bool                   *delivered; // set by wake_one_sender() once `value` is handed over
-    };
-
-    struct select_waiter_entry {
-        std::shared_ptr<channel_select_state> state;
-        size_t                                index;
-    };
 
     /**
      * @brief Hand `value` to whoever can take it NOW: the first waiting receiver, else the first live `select()` /
@@ -841,19 +1051,18 @@ private:
      */
     QB_NOINLINE void
     wake_one_sender() {
-        while (!_send_waiters.empty()) {
-            auto &entry = _send_waiters.front();
-            if (entry.guard && *entry.guard) {
-                _send_waiters.pop_front(); // a send_for whose timer fired or whose frame is gone: its value is not ours
+        while (auto *entry = _send_head) {
+            if (entry->guard && *entry->guard) {
+                unlink_sender(*entry); // guard already set: a safety net since Huly QB-273 (a timed-out or reclaimed send_for unlinks itself)
                 continue;
             }
-            if (!deliver(std::move(*entry.value)))
+            if (!deliver(std::move(*entry->value)))
                 return; // no room after all: it stays parked, first in line
-            *entry.delivered = true;
-            if (entry.guard)
-                *entry.guard = true; // its timer must not resume it a second time
-            const auto h = entry.handle;
-            _send_waiters.pop_front();
+            *entry->delivered = true;
+            if (entry->guard)
+                *entry->guard = true; // its watchdog must not resume it a second time
+            const auto h = entry->handle;
+            unlink_sender(*entry);
             schedule_via_current(h);
             return;
         }
@@ -865,21 +1074,25 @@ private:
 #if defined(_MSC_VER) && !defined(__clang__)
         wake_one_sender();
 #else
-        if (!_send_waiters.empty()) [[unlikely]]
+        if (_send_head) [[unlikely]]
             wake_one_sender();
 #endif
     }
 
-    qb::growable_ring<T>                   _buffer;
-    qb::growable_ring<send_waiter_entry>   _send_waiters;
-    qb::growable_ring<recv_waiter_entry>   _recv_waiters;
-    qb::growable_ring<select_waiter_entry> _select_waiters;
-    bool                                   _closed = false;
+    qb::growable_ring<T>                 _buffer;
+    qb::growable_ring<recv_waiter_entry> _recv_waiters;
+    send_waiter_entry                   *_send_head    = nullptr; ///< parked senders, FIFO (Huly QB-273: an intrusive list)
+    send_waiter_entry                   *_send_tail    = nullptr;
+    select_waiter_entry                 *_select_head  = nullptr; ///< select() / recv_for() registrations, FIFO
+    select_waiter_entry                 *_select_tail  = nullptr;
+    std::size_t                          _send_count   = 0;
+    std::size_t                          _select_count = 0;
+    bool                                 _closed       = false;
     // Liveness token, set false by ~channel. close() resumes parked waiters via the
     // scheduler (deferred), and if the channel owner frees the channel before that
     // resume runs — e.g. a coroutine suspended on `co_await consumer.receive()` while
     // the consumer is destroyed — the resumed await_resume() and the awaiter destructor
-    // would touch freed channel state (_buffer / _recv_waiters / _send_waiters). Each
+    // would touch freed channel state (_buffer, the receivers' ring, the senders' list). Each
     // awaiter captures this token by value and no-ops its channel access when it is
     // false, so the deferred resume completes (recv → nullopt, send → channel_closed)
     // without a use-after-free.
@@ -1136,16 +1349,18 @@ struct select_result {
  * @tparam Ts  Value types of the participated channels
  *
  * Registers with every channel as a select waiter. The first channel to
- * deliver a value (or close) resolves the shared state and wakes the caller.
- * Stale entries in other channels' select queues are cleaned up lazily.
+ * deliver a value (or close) resolves the state and wakes the caller.
+ * The entries left in the other channels are retracted as the awaiter ends (Huly QB-273).
  */
 template <typename... Ts>
 class channel_select_awaiter {
     static constexpr char const *qb_suspension_kind = "channel select"; ///< suspension tracking (coroutine/tracking.h)
 
     using state_t = channel_select_state;
-    std::shared_ptr<state_t>     _state;
-    std::tuple<channel<Ts> *...> _channels;
+    state_t                                           _state{}; ///< owned here, by value: the channels' nodes point at it (Huly QB-273)
+    std::tuple<channel<Ts> *...>                      _channels;
+    std::tuple<typename channel<Ts>::select_entry...> _entries{}; ///< one node per channel, linked into its list while parked
+    std::array<std::shared_ptr<bool>, sizeof...(Ts)>  _alive{};   ///< each channel's liveness token, held from its registration
 
     // Pass 1: prefer any channel that has buffered data.
     template <size_t I>
@@ -1154,7 +1369,7 @@ class channel_select_awaiter {
         auto *ch = std::get<I>(_channels);
         if (!ch->empty()) {
             if (auto val = ch->try_recv()) {
-                _state->resolve(I, std::any(std::move(*val)));
+                _state.resolve(I, std::any(std::move(*val)));
                 return true;
             }
         }
@@ -1169,7 +1384,7 @@ class channel_select_awaiter {
     try_closed() {
         auto *ch = std::get<I>(_channels);
         if (ch->is_closed() && ch->empty()) {
-            _state->resolve(I, std::any{}, true);
+            _state.resolve(I, std::any{}, true);
             return true;
         }
         if constexpr (I + 1 < sizeof...(Ts))
@@ -1182,16 +1397,34 @@ class channel_select_awaiter {
         return try_data<0>() || try_closed<0>();
     }
 
+    // The token first, the registration second: should the registration's wake throw, the destructor still knows
+    // this channel is alive and retracts the entry it may have queued (Huly QB-273).
     template <size_t... Is>
     void
     register_all(std::index_sequence<Is...>) {
-        (std::get<Is>(_channels)->register_select_waiter(_state, Is), ...);
+        ((_alive[Is] = std::get<Is>(_channels)->liveness(),
+          std::get<Is>(_channels)->register_select_waiter(std::get<Is>(_entries), _state, Is)),
+         ...);
+    }
+
+    // The channels that did not win still hold an entry pointing at `_state`: take it back from each one still
+    // alive (a destroyed channel closed first, which resolved the state and dropped its entries).
+    template <size_t I>
+    void
+    unregister_one() noexcept {
+        if (_alive[I] && *_alive[I])
+            std::get<I>(_channels)->unregister_select_waiter(std::get<I>(_entries));
+    }
+
+    template <size_t... Is>
+    void
+    unregister_all(std::index_sequence<Is...>) noexcept {
+        (unregister_one<Is>(), ...);
     }
 
 public:
     explicit channel_select_awaiter(channel<Ts> &...chs)
-        : _state(std::make_shared<state_t>())
-        , _channels(&chs...) {}
+        : _channels(&chs...) {}
 
     // Neither copyable nor movable (Huly QB-302): the destructor resolves the shared state, so a copy -- and a
     // "move", which was one (the user-declared destructor suppresses the implicit move) -- destroyed first made
@@ -1202,12 +1435,11 @@ public:
     channel_select_awaiter &operator=(const channel_select_awaiter &) = delete;
     channel_select_awaiter &operator=(channel_select_awaiter &&)      = delete;
 
-    // If this select is destroyed while still parked (cancelled before any channel
-    // resolved it), mark the shared state resolved and drop the outer handle so a later
-    // sender that finds the stale _select_waiters entry skips it (resolve() is a no-op
-    // once resolved) instead of scheduling our now-destroyed coroutine handle — a
-    // use-after-free. Only the refcounted _state is touched, never the channels (which
-    // may already be freed).
+    // Whether this select is destroyed while still parked (cancelled before any channel resolved it) or after it
+    // resumed: the entries still pointing at our state -- in the channels that did not win -- are retracted from
+    // every channel still alive, then the state is closed so a later sender could not schedule a destroyed
+    // coroutine handle even if an entry survived (it cannot, since Huly QB-273; before, the entries stayed until a
+    // sender met and skipped them). Only the channels still alive are touched.
     //
     // NOTE (intentional, documented edge): unlike recv()/recv_for() — which re-buffer a value handed
     // to a receiver that is then reclaimed — a multi-way select() that is RESOLVED with a value but
@@ -1218,10 +1450,9 @@ public:
     // across the variadic and vector select forms. Single-channel receives preserve the value; select
     // does not. If this ever matters, route the receive through recv()/recv_for() on one channel.
     ~channel_select_awaiter() {
-        if (_state) {
-            _state->resolved = true;
-            _state->outer    = {};
-        }
+        unregister_all(std::make_index_sequence<sizeof...(Ts)>{});
+        _state.resolved = true;
+        _state.outer    = {};
     }
 
     [[nodiscard]] bool
@@ -1232,17 +1463,17 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        if (_state->resolved) {
+        if (_state.resolved) {
             schedule_via_current(h);
             return;
         }
-        _state->outer = h;
+        _state.outer = h;
         register_all(std::make_index_sequence<sizeof...(Ts)>{});
     }
 
     select_result
     await_resume() {
-        return {_state->winner, _state->closed, std::move(_state->value)};
+        return {_state.winner, _state.closed, std::move(_state.value)};
     }
 };
 
@@ -1276,13 +1507,19 @@ class channel_select_vector_awaiter {
     static constexpr char const *qb_suspension_kind = "channel select"; ///< suspension tracking (coroutine/tracking.h)
 
     using state_t = channel_select_state;
-    std::shared_ptr<state_t>  _state;
+    /// A channel's node and liveness token, side by side: ONE vector, reserved before any registration, so the
+    /// nodes never move while linked.
+    struct slot {
+        typename channel<T>::select_entry entry{};
+        std::shared_ptr<bool>             alive{};
+    };
+    state_t                   _state{}; ///< owned here, by value: the channels' nodes point at it (Huly QB-273)
     std::vector<channel<T> *> _channels;
+    std::vector<slot>         _slots; ///< filled at the park: the one allocation this form keeps
 
 public:
     explicit channel_select_vector_awaiter(std::vector<channel<T> *> chs)
-        : _state(std::make_shared<state_t>())
-        , _channels(std::move(chs)) {}
+        : _channels(std::move(chs)) {}
 
     // Neither copyable nor movable: see channel_select_awaiter (Huly QB-302).
     channel_select_vector_awaiter(const channel_select_vector_awaiter &)            = delete;
@@ -1290,14 +1527,14 @@ public:
     channel_select_vector_awaiter &operator=(const channel_select_vector_awaiter &) = delete;
     channel_select_vector_awaiter &operator=(channel_select_vector_awaiter &&)      = delete;
 
-    // See channel_select_awaiter::~channel_select_awaiter: prevent a stale select
-    // waiter from scheduling a destroyed coroutine handle (use-after-free) when this
-    // awaiter is cancelled while parked. Touches only the refcounted shared state.
+    // See channel_select_awaiter::~channel_select_awaiter: the entries still pointing at our state are retracted
+    // from every channel still alive, then the state is closed.
     ~channel_select_vector_awaiter() {
-        if (_state) {
-            _state->resolved = true;
-            _state->outer    = {};
-        }
+        for (size_t i = 0; i < _slots.size(); ++i)
+            if (_slots[i].alive && *_slots[i].alive)
+                _channels[i]->unregister_select_waiter(_slots[i].entry);
+        _state.resolved = true;
+        _state.outer    = {};
     }
 
     [[nodiscard]] bool
@@ -1308,7 +1545,7 @@ public:
             if (!ch->empty()) {
                 auto val = ch->try_recv();
                 if (val) {
-                    _state->resolve(i, std::any(std::move(*val)));
+                    _state.resolve(i, std::any(std::move(*val)));
                     return true;
                 }
             }
@@ -1317,7 +1554,7 @@ public:
         for (size_t i = 0; i < _channels.size(); ++i) {
             auto *ch = _channels[i];
             if (ch->is_closed() && ch->empty()) {
-                _state->resolve(i, std::any{}, true);
+                _state.resolve(i, std::any{}, true);
                 return true;
             }
         }
@@ -1327,18 +1564,22 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        if (_state->resolved) {
+        if (_state.resolved) {
             schedule_via_current(h);
             return;
         }
-        _state->outer = h;
-        for (size_t i = 0; i < _channels.size(); ++i)
-            _channels[i]->register_select_waiter(_state, i);
+        _state.outer = h;
+        _slots.reserve(_channels.size()); // the one allocation: before any registration, so a throw here registers nothing
+        for (size_t i = 0; i < _channels.size(); ++i) {
+            auto *ch                    = _channels[i];
+            _slots.emplace_back().alive = ch->liveness(); // the token first (Huly QB-273): a throwing wake below still finds it
+            ch->register_select_waiter(_slots.back().entry, _state, i);
+        }
     }
 
     select_result
     await_resume() {
-        return {_state->winner, _state->closed, std::move(_state->value)};
+        return {_state.winner, _state.closed, std::move(_state.value)};
     }
 };
 

@@ -176,8 +176,8 @@ TEST_F(ChannelAsync, TrySendCopyThenMoveWakesParkedReceiverInOrder) {
 }
 
 // Regression: on a rendezvous (cap-0) channel, send_for() must deliver to a
-// recv_for()/select() waiter that is ALREADY parked. recv_for parks in
-// _select_waiters (not _recv_waiters); send_for's fast path used to consult only
+// recv_for()/select() waiter that is ALREADY parked. recv_for parks in the
+// channel's select list (not _recv_waiters); send_for's fast path used to consult only
 // _recv_waiters/buffer, so it took the timed slow path and BOTH sides stayed
 // parked until their timeouts elapsed instead of matching immediately. The op
 // timeouts (10s) far exceed pump_until's window (2s), so with the bug neither
@@ -190,7 +190,7 @@ TEST_F(ChannelAsync, SendForMatchesAlreadyParkedRecvForOnRendezvous) {
     std::atomic<bool> send_ok{false};
     std::atomic<int>  received{-1};
 
-    // Receiver parks FIRST (recv_for registers in _select_waiters).
+    // Receiver parks FIRST (recv_for registers in the channel's select list).
     coro_scheduler().spawn([&]() -> task<void> {
         auto v = co_await ch.recv_for(10s);
         if (v)
@@ -647,7 +647,7 @@ TEST_F(ChannelAsync, SelectResolvesClosedChannelAsClosed) {
     EXPECT_TRUE(result.closed);
 }
 
-TEST_F(ChannelAsync, SelectStaleWaiterIsSkippedByLaterSend) {
+TEST_F(ChannelAsync, SelectResolvedOnOneChannelRetractsItsEntryFromTheOther) {
     channel<int>       ch_a(0), ch_b(0);
     select_result      result;
     std::atomic<bool>  select_done{false};
@@ -655,9 +655,10 @@ TEST_F(ChannelAsync, SelectStaleWaiterIsSkippedByLaterSend) {
     std::atomic<bool>  receiver_done{false};
     std::optional<int> received;
 
-    // A select() parks on both channels; ch_b's send resolves it. ch_a keeps a now-stale
-    // select waiter entry, which a LATER ch_a.send must skip (resolve() is a no-op once
-    // resolved) and instead hand its value to a real receiver.
+    // A select() parks on both channels; ch_b's send resolves it. Since Huly QB-273 the resumed select
+    // retracts its entry from ch_a at once (before, a stale entry stayed there for a LATER ch_a.send to
+    // skip): either way that later send must park and hand its value to a real receiver, never to the
+    // select that is gone.
     coro_scheduler().spawn([&]() -> task<void> {
         result = co_await select(ch_a, ch_b);
         select_done.store(true);
@@ -668,8 +669,9 @@ TEST_F(ChannelAsync, SelectStaleWaiterIsSkippedByLaterSend) {
     EXPECT_TRUE(pump_until([&] { return select_done.load(); })) << "select never resolved on ch_b";
     EXPECT_EQ(result.index, 1u);
     EXPECT_EQ(result.get<int>(), 99);
+    EXPECT_EQ(ch_a.waiter_census().selects, 0u) << "the losing channel must not keep the resolved select's entry (Huly QB-273)";
 
-    // This sender must NOT be satisfied by the stale ch_a select entry — it parks.
+    // This sender has no select to be satisfied by — it parks.
     coro_scheduler().spawn([&]() -> task<void> {
         co_await ch_a.send(77);
         stale_sender_done.store(true);
@@ -968,7 +970,7 @@ TEST_F(ChannelAsync, SendForResumesWhenBackpressureReleased) {
     EXPECT_EQ(*second, 2);
 }
 
-TEST_F(ChannelAsync, SendForTimeoutLeavesStaleWaiterThatLaterSendSkips) {
+TEST_F(ChannelAsync, SendForTimeoutRetractsItsEntryAndALaterSendTakesTheSlot) {
     channel<int> ch(1);
     ASSERT_TRUE(ch.try_send(1));
 
@@ -983,19 +985,20 @@ TEST_F(ChannelAsync, SendForTimeoutLeavesStaleWaiterThatLaterSendSkips) {
 
     EXPECT_TRUE(pump_until([&] { return timed_sender_done.load(); })) << "timed send never resolved";
     EXPECT_FALSE(timed_sender_sent.load()) << "send_for must time out while the buffer stays full";
+    EXPECT_EQ(ch.waiter_census().senders, 0u) << "a timed-out send_for retracts its entry as its watchdog fires (Huly QB-273)";
 
     auto first = ch.try_recv();
     ASSERT_TRUE(first.has_value());
     EXPECT_EQ(*first, 1);
 
-    // A fresh send must be served by the freed slot, NOT by the timed-out sender's stale
-    // waiter entry (which is lazily discarded via its guard).
+    // A fresh send must be served by the freed slot. Since Huly QB-273 the timed-out sender took its
+    // entry with it (before, the entry stayed, its guard set, for a later wake to discard).
     coro_scheduler().spawn([&]() -> task<void> { second_sender_done.store(co_await ch.send_for(3, 1000ms)); });
     EXPECT_TRUE(pump_until([&] { return second_sender_done.load(); })) << "second send never resolved";
 
     auto second = ch.try_recv();
     ASSERT_TRUE(second.has_value());
-    EXPECT_EQ(*second, 3) << "the stale waiter must be skipped; only the live sender's value remains";
+    EXPECT_EQ(*second, 3) << "only the live sender's value remains";
 }
 
 // ---------------------------------------------------------------------------
@@ -1211,8 +1214,8 @@ TEST_F(ChannelAsync, RecvForWokenThenReclaimedDoesNotLoseValue) {
 }
 
 // recv_for() parked and reclaimed while UNRESOLVED (no sender, no timeout yet): the timed_recv_awaiter
-// dtor must mark the shared select-state resolved + drop the outer handle, so the still-parked
-// channel_timer's later fire is a no-op and nothing schedules the freed frame. Complements the
+// dtor must stop its watchdog and retract its registration (Huly QB-273; it used to mark a shared state
+// resolved and leave a detached timer to no-op), so nothing schedules the freed frame. Complements the
 // resolved-then-reclaimed test above (which drives the re-buffer branch); this drives the not-resolved
 // teardown branch.
 TEST_F(ChannelAsync, RecvForReclaimedWhileParkedUnresolved) {
@@ -1228,7 +1231,8 @@ TEST_F(ChannelAsync, RecvForReclaimedWhileParkedUnresolved) {
         };
         auto r = co_await when_any(park(ch), reclaim_fast_winner());
         EXPECT_EQ(r.index, 1u);
-        co_await sleep(20ms); // the recv_for frame was reclaimed unresolved; its channel_timer must no-op
+        co_await sleep(20ms); // the recv_for frame was reclaimed unresolved; its watchdog went with it
+        EXPECT_EQ(ch->waiter_census().selects, 0u) << "the reclaimed recv_for must retract its registration (Huly QB-273)";
     });
 }
 
@@ -1260,4 +1264,277 @@ TEST_F(ChannelAsync, SendWokenBuffersValueWhenSpaceFreed) {
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "send-woken-buffers coordinator never finished";
     EXPECT_EQ(combined.load(), 10 * 100 + 20) << "a woken sender must buffer its value (await_resume buffer hand-off)";
+}
+
+// ---------------------------------------------------------------------------
+// Huly QB-273: an entry never outlives its waiter, a watchdog never outlives its wait.
+//
+// Before: a timed-out recv_for / send_for, a select another channel won and a wait reclaimed while
+// parked left their entry in the channel's ring until a later send met and skipped it -- an unbounded
+// history on a live, quiet channel, scanned by every send_for's fast-path decision -- and the detached
+// timer coroutine of a wait won early lived to its deadline with its ev_timer armed. Now the awaiter owns
+// its state and its watchdog, retracts its entry on timeout and in its destructor, and stops the watchdog
+// when the wait ends. Two observables: `waiter_census()` (the live population of a channel's rings) and
+// `listener::current.has_work()` (a watcher the loop would still deliver).
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelAsync, RecvForTimeoutsLeaveNoRegistrationBehind) {
+    channel<int>      ch(0); // rendezvous, nobody sends: every recv_for times out
+    std::atomic<bool> done{false};
+    std::atomic<int>  values{0};
+    std::atomic<int>  worst_selects{0};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        int worst = 0;
+        for (int i = 0; i < 256; ++i) {
+            auto v = co_await ch.recv_for(0ms); // one cooperative turn each
+            if (v)
+                ++values;
+            worst = std::max(worst, static_cast<int>(ch.waiter_census().selects));
+        }
+        for (int i = 0; i < 4; ++i) {
+            auto v = co_await ch.recv_for(1ms); // the watchdog path
+            if (v)
+                ++values;
+            worst = std::max(worst, static_cast<int>(ch.waiter_census().selects));
+        }
+        worst_selects.store(worst);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the timed receiver never finished";
+    EXPECT_EQ(values.load(), 0) << "nothing was ever sent";
+    EXPECT_EQ(worst_selects.load(), 0) << "a timed-out recv_for must take its registration with it (pre-QB-273: one per timeout)";
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(ch.waiter_census().receivers, 0u);
+}
+
+TEST_F(ChannelAsync, SendForTimeoutsLeaveNoEntryBehind) {
+    channel<int> ch(1);
+    ASSERT_TRUE(ch.try_send(1)); // full: every send_for parks, then times out
+    std::atomic<bool> done{false};
+    std::atomic<int>  sent{0};
+    std::atomic<int>  worst_senders{0};
+    std::atomic<int>  late_ok{-1};
+    std::atomic<int>  late_value{-1};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        int worst = 0;
+        for (int i = 0; i < 256; ++i) {
+            if (co_await ch.send_for(2, 0ms)) // one cooperative turn each
+                ++sent;
+            worst = std::max(worst, static_cast<int>(ch.waiter_census().senders));
+        }
+        for (int i = 0; i < 4; ++i) {
+            if (co_await ch.send_for(2, 1ms)) // the watchdog path
+                ++sent;
+            worst = std::max(worst, static_cast<int>(ch.waiter_census().senders));
+        }
+        worst_senders.store(worst);
+        // The ring is clean AND functional: free the slot, a later send_for takes it, nothing else does.
+        auto first = ch.try_recv();
+        late_ok.store(co_await ch.send_for(3, 100ms) ? 1 : 0);
+        late_value.store((first.value_or(-1) == 1) ? ch.try_recv().value_or(-1) : -2);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the timed sender never finished";
+    EXPECT_EQ(sent.load(), 0) << "the buffer stayed full";
+    EXPECT_EQ(worst_senders.load(), 0) << "a timed-out send_for must take its entry with it (pre-QB-273: one per timeout, its guard set)";
+    EXPECT_EQ(late_ok.load(), 1) << "the freed slot must serve a later send_for";
+    EXPECT_EQ(late_value.load(), 3);
+    EXPECT_EQ(ch.waiter_census().senders, 0u);
+}
+
+TEST_F(ChannelAsync, SelectWonElsewhereLeavesNoEntryInTheLosingChannel) {
+    channel<int>      ch_a(0), ch_b(0);
+    std::atomic<bool> done{false};
+    std::atomic<int>  bad{0};
+    std::atomic<int>  sum{0};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        for (int i = 0; i < 64; ++i) {
+            // ch_b's sender runs once the select is parked on both channels, and resolves it.
+            coro_scheduler().spawn([&ch_b, i]() -> task<void> {
+                co_await sleep(0ms);
+                co_await ch_b.send(i);
+            });
+            auto r = co_await select(ch_a, ch_b);
+            if (r.index != 1u || r.closed)
+                ++bad;
+            else
+                sum += r.get<int>();
+            if (ch_a.waiter_census().selects != 0) // pre-QB-273: i + 1 resolved entries sat here
+                ++bad;
+        }
+        // The vector form of select, the same way.
+        for (int i = 0; i < 16; ++i) {
+            coro_scheduler().spawn([&ch_b, i]() -> task<void> {
+                co_await sleep(0ms);
+                co_await ch_b.send(1000 + i);
+            });
+            auto r = co_await select(std::vector<channel<int> *>{&ch_a, &ch_b});
+            if (r.index != 1u || r.closed)
+                ++bad;
+            else
+                sum += r.get<int>();
+            if (ch_a.waiter_census().selects != 0)
+                ++bad;
+        }
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the selects never finished";
+    EXPECT_EQ(bad.load(), 0) << "a select resolved by ch_b must retract its entry from ch_a as it resumes";
+    EXPECT_EQ(sum.load(), 63 * 64 / 2 + 16 * 1000 + 15 * 16 / 2);
+    EXPECT_EQ(ch_a.waiter_census().selects, 0u);
+    EXPECT_EQ(ch_b.waiter_census().selects, 0u);
+}
+
+TEST_F(ChannelAsync, EarlyWonTimedWaitsLeaveNoWatchdogArmed) {
+    channel<int>      ch(0);
+    std::atomic<bool> done{false};
+    std::atomic<int>  received{0};
+    std::atomic<int>  delivered{0};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        // 64 recv_for with a far deadline, each won at once by a sender.
+        for (int i = 0; i < 64; ++i) {
+            coro_scheduler().spawn([&ch, i]() -> task<void> {
+                co_await sleep(0ms);
+                co_await ch.send(i);
+            });
+            auto v = co_await ch.recv_for(30s);
+            if (v && *v == i)
+                ++received;
+        }
+        done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the timed receivers never finished";
+    EXPECT_EQ(received.load(), 64);
+
+    // 64 send_for with a far deadline on a full buffer, each served by a receive that frees the slot.
+    channel<int> full(1);
+    ASSERT_TRUE(full.try_send(-1));
+    done.store(false);
+    coro_scheduler().spawn([&]() -> task<void> {
+        for (int i = 0; i < 64; ++i) {
+            coro_scheduler().spawn([&full]() -> task<void> {
+                co_await sleep(0ms);
+                (void) co_await full.recv(); // frees the slot: the parked send_for is served by the wake
+            });
+            if (co_await full.send_for(i, 30s))
+                ++delivered;
+        }
+        done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the timed senders never finished";
+    EXPECT_EQ(delivered.load(), 64);
+
+    qb::io::async::run_for(5ms); // let the last frames end
+    EXPECT_FALSE(qb::io::async::listener::current.has_work())
+        << "a watchdog outlived the wait it guarded (pre-QB-273: 128 timers armed for 30 s)";
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(full.waiter_census().senders, 0u);
+}
+
+TEST_F(ChannelAsync, ZeroTimeoutIsOneCooperativeTurn) {
+    channel<int>       ch(0);
+    std::atomic<bool>  done{false};
+    std::optional<int> alone, served;
+    bool               alone_sent = true, full_sent = true;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        alone = co_await ch.recv_for(0ms); // nobody: one cooperative turn, then timed out, nothing left registered
+        coro_scheduler().spawn([&ch]() -> task<void> { co_await ch.send(7); });
+        co_await sleep(0ms);                       // let the sender park on the rendezvous
+        served     = co_await ch.recv_for(0ms);    // the wake hands 7 over at registration (a resume, no watchdog)
+        alone_sent = co_await ch.send_for(8, 0ms); // nobody receives: one turn, then false
+        channel<int> full(1);
+        (void) full.try_send(1);
+        full_sent = co_await full.send_for(2, 0ms); // the buffer stays full: one turn, then false
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the zero-timeout coordinator never finished";
+    EXPECT_FALSE(alone.has_value());
+    EXPECT_EQ(served.value_or(-1), 7);
+    EXPECT_FALSE(alone_sent);
+    EXPECT_FALSE(full_sent);
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(ch.waiter_census().senders, 0u);
+}
+
+TEST_F(ChannelAsync, TimedRecvRacingASameTurnDeliveryResumesOnceAndLosesNothing) {
+    channel<int>       ch(1);
+    std::atomic<bool>  done{false};
+    std::optional<int> first, second;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        // A delivery due at the same instant as the watchdog: whichever the loop dispatches first, the
+        // value is either handed to the wait or buffered for the next one -- never dropped, and the
+        // wait resumes exactly once (a double resume is UB the scheduler's dedup forbids).
+        qb::io::async::callback([&ch] { (void) ch.try_send(5); }, 1ms);
+        first = co_await ch.recv_for(1ms);
+        if (!first)
+            second = co_await ch.recv_for(200ms);
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the racing receiver never finished";
+    EXPECT_TRUE(first.value_or(-1) == 5 || second.value_or(-1) == 5) << "the value was lost";
+    EXPECT_FALSE(first.has_value() && second.has_value()) << "one value, delivered once";
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+}
+
+TEST_F(ChannelAsync, SendForReclaimedWhileParkedRetractsItsEntry) {
+    std::size_t senders_after = 99;
+    bool        later_ok      = false;
+    int         later_value   = -1;
+    run_reclaim_driver([&senders_after, &later_ok, &later_value]() -> task<void> {
+        auto ch = std::make_shared<channel<int>>(1);
+        EXPECT_TRUE(ch->try_send(1)); // full: send_for must park
+        auto park = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0]  = 7;
+            bool ok = co_await c->send_for(2, 1000ms); // parks; reclaimed first
+            big[1]  = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return ok ? 1 : 0;
+        };
+        auto r = co_await when_any(park(ch), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        senders_after = ch->waiter_census().senders; // pre-QB-273: 1, the guard set and the entry left for a later wake
+        auto first    = ch->try_recv();              // frees the slot
+        EXPECT_EQ(first.value_or(-1), 1);
+        later_ok    = co_await ch->send_for(3, 100ms); // the freed slot serves a live sender
+        later_value = ch->try_recv().value_or(-1);
+    });
+    EXPECT_EQ(senders_after, 0u) << "a send_for reclaimed while parked must retract its entry";
+    EXPECT_TRUE(later_ok);
+    EXPECT_EQ(later_value, 3);
+}
+
+TEST_F(ChannelAsync, SelectReclaimedWhileParkedRetractsEveryEntry) {
+    std::size_t a_after = 99, b_after = 99;
+    run_reclaim_driver([&a_after, &b_after]() -> task<void> {
+        auto ch_a = std::make_shared<channel<int>>(0);
+        auto ch_b = std::make_shared<channel<int>>(0);
+        auto park = [](std::shared_ptr<channel<int>> a, std::shared_ptr<channel<int>> b) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto r = co_await select(*a, *b); // parks on both; reclaimed first
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return static_cast<int>(r.index);
+        };
+        auto r = co_await when_any(park(ch_a, ch_b), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        a_after = ch_a->waiter_census().selects; // pre-QB-273: 1 each, resolved by the dtor, left for a later send
+        b_after = ch_b->waiter_census().selects;
+        EXPECT_FALSE(ch_a->try_send(1)) << "no live select may take the value";
+        co_return;
+    });
+    EXPECT_EQ(a_after, 0u) << "a select reclaimed while parked must retract its entries";
+    EXPECT_EQ(b_after, 0u);
 }

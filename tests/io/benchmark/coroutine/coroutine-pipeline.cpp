@@ -8,7 +8,9 @@
  *     msgs/sec;
  *   - `range_stream().filter().map().reduce()` / `.collect()` — the functional
  *     async-stream transform chain — items/sec;
- *   - `map_to_vector` / `filter_to_vector` over an `async_generator` — items/sec.
+ *   - `map_to_vector` / `filter_to_vector` over an `async_generator` — items/sec;
+ *   - `recv_for`/`send_for`: the timed slow path won early, a fan-in `select` retracting its
+ *     entries, and a `send_for` after a history of `recv_for` timeouts (Huly QB-273) — msgs/sec.
  *
  * All single-thread cooperative; throughput here is the per-message / per-item
  * scheduling + transform cost. Frameworks under
@@ -35,6 +37,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -315,6 +318,204 @@ BM_Generator_MapFilter(benchmark::State &state) {
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count) * 2);
 }
 
+// ---------------------------------------------------------------------------
+// Huly QB-273: the timed slow path, a channel's history, and the retraction of a fan-in select.
+//
+// BM_Channel_TimedOpsWonEarly: `count` recv_for(1s) on a rendezvous channel against a plain producer. About
+// half the receives park and are won by the next send (registration, watchdog armed then stopped, resume);
+// the other half find the producer already parked and are resolved at registration, no watchdog armed. Before
+// QB-273 every one of them allocated a shared select state and spawned a timer coroutine whose ev_timer stayed
+// armed to the deadline; since, the awaiter owns both inside its frame (nothing allocated beyond the recv_for
+// frame itself) and stops the watchdog as the wait ends.
+//
+// BM_Channel_SelectFanIn: `k` selects parked at once on one shared channel (each with a channel of its own as
+// the other operand), resolved one by one through their own channel -- the fan-in shape (N workers each
+// selecting on a broadcast channel and a private one). Each resolved select retracts its entry from the shared
+// channel: before QB-273 that entry stayed for a later send to skip in O(1); since, the retraction scans the
+// shared ring from the newest entry and shifts what follows the one removed. This cell measures that cost.
+//
+// BM_Channel_SendForAfterRecvForHistory: a rendezvous channel that saw `history` recv_for timeouts
+// (set up outside the timing), then 64 send_for that must park and are taken by a recv. The
+// send_for's fast-path decision asks `has_live_select_waiter()`, which scanned the whole history
+// before QB-273 (one resolved entry per timeout, kept until a later send met it); since, a timed-out
+// recv_for retracts its entry and the history is 0 by construction, so the cell is flat in `history`.
+// ---------------------------------------------------------------------------
+
+// Consumer: `count` timed receives with a far deadline, each won by the producer.
+task<void>
+timed_consumer(channel<std::uint64_t> *ch, std::size_t count, std::atomic<std::uint64_t> *sink, std::atomic<bool> *done) {
+    std::uint64_t acc = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        auto v = co_await ch->recv_for(1s);
+        if (!v)
+            break;
+        acc += *v;
+    }
+    sink->store(acc, std::memory_order_relaxed);
+    done->store(true, std::memory_order_relaxed);
+    co_return;
+}
+
+// Producer: `count` plain sends, no close (the consumer counts, not the close).
+task<void>
+plain_producer(channel<std::uint64_t> *ch, std::size_t count) {
+    for (std::uint64_t i = 0; i < count; ++i)
+        co_await ch->send(i);
+    co_return;
+}
+
+void
+BM_Channel_TimedOpsWonEarly(benchmark::State &state) {
+    const auto count = static_cast<std::size_t>(state.range(0));
+
+    std::uint64_t last = 0;
+    for (auto _ : state) {
+        state.PauseTiming();
+        reset_async_context();
+        channel<std::uint64_t>     ch(0); // rendezvous: every recv_for takes the slow path
+        std::atomic<std::uint64_t> sink{0};
+        std::atomic<bool>          done{false};
+        state.ResumeTiming();
+
+        coro_scheduler().spawn(timed_consumer(&ch, count, &sink, &done));
+        coro_scheduler().spawn(plain_producer(&ch, count));
+        drain_until([&done] { return done.load(std::memory_order_relaxed); });
+
+        last = sink.load(std::memory_order_relaxed);
+        benchmark::DoNotOptimize(last);
+
+        state.PauseTiming();
+        reset_async_context();
+        state.ResumeTiming();
+    }
+
+    const std::uint64_t expected = (count == 0) ? 0u : (count - 1u) * count / 2u;
+    if (last != expected)
+        state.SkipWithError("channel timed ops produced an unexpected sum");
+
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
+}
+
+// One worker of the fan-in: selects on the shared channel and its own, resumes when its own delivers.
+task<void>
+fan_in_worker(channel<std::uint64_t> *shared, channel<std::uint64_t> *own, std::atomic<std::uint64_t> *sink, std::atomic<std::size_t> *done) {
+    auto r = co_await select(*shared, *own);
+    if (!r.closed && r.index == 1u)
+        sink->fetch_add(r.get<std::uint64_t>(), std::memory_order_relaxed);
+    done->fetch_add(1, std::memory_order_relaxed);
+    co_return;
+}
+
+void
+BM_Channel_SelectFanIn(benchmark::State &state) {
+    const auto k = static_cast<std::size_t>(state.range(0));
+
+    std::uint64_t last = 0;
+    for (auto _ : state) {
+        state.PauseTiming();
+        reset_async_context();
+        channel<std::uint64_t>                               shared(0);
+        std::vector<std::unique_ptr<channel<std::uint64_t>>> own;
+        own.reserve(k);
+        std::atomic<std::uint64_t> sink{0};
+        std::atomic<std::size_t>   done{0};
+        for (std::size_t i = 0; i < k; ++i) {
+            own.push_back(std::make_unique<channel<std::uint64_t>>(0));
+            coro_scheduler().spawn(fan_in_worker(&shared, own.back().get(), &sink, &done));
+        }
+        drain_until([&shared, k] { return shared.waiter_census().selects == k; }); // every worker parked
+        state.ResumeTiming();
+
+        // Resolve them one by one through their own channel: each resume retracts one entry from `shared`.
+        for (std::size_t i = 0; i < k; ++i)
+            (void) own[i]->try_send(static_cast<std::uint64_t>(i + 1));
+        drain_until([&done, k] { return done.load(std::memory_order_relaxed) == k; });
+
+        last = sink.load(std::memory_order_relaxed);
+        benchmark::DoNotOptimize(last);
+
+        state.PauseTiming();
+        reset_async_context();
+        state.ResumeTiming();
+    }
+
+    const std::uint64_t expected = k * (k + 1u) / 2u;
+    if (last != expected)
+        state.SkipWithError("channel select fan-in produced an unexpected sum");
+
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(k));
+}
+
+// The history: `history` timed receives on an empty rendezvous channel, one cooperative turn each,
+// every one a timeout. Outside the timing.
+task<void>
+recv_for_history(channel<std::uint64_t> *ch, std::size_t history, std::atomic<bool> *done) {
+    for (std::size_t i = 0; i < history; ++i)
+        (void) co_await ch->recv_for(0ms);
+    done->store(true, std::memory_order_relaxed);
+    co_return;
+}
+
+// One timed send that must park: no receiver yet, no buffer (rendezvous).
+task<void>
+send_for_one(channel<std::uint64_t> *ch, std::uint64_t v) {
+    (void) co_await ch->send_for(v, 1s);
+    co_return;
+}
+
+// 64 rounds: a send_for parks (its fast-path decision scans the select registrations first), then a recv takes
+// its value through the wake. The yield lets the sender run before the receiver parks, or the receiver's
+// own entry would satisfy the sender's fast path before the scan.
+task<void>
+timed_senders_taken_by_recv(channel<std::uint64_t> *ch, std::size_t count, std::atomic<std::uint64_t> *sink, std::atomic<bool> *done) {
+    std::uint64_t acc = 0;
+    for (std::uint64_t i = 0; i < count; ++i) {
+        coro_scheduler().spawn(send_for_one(ch, i));
+        co_await sleep(0ms);
+        auto v = co_await ch->recv();
+        if (v)
+            acc += *v;
+    }
+    sink->store(acc, std::memory_order_relaxed);
+    done->store(true, std::memory_order_relaxed);
+    co_return;
+}
+
+void
+BM_Channel_SendForAfterRecvForHistory(benchmark::State &state) {
+    const auto            history = static_cast<std::size_t>(state.range(0));
+    constexpr std::size_t count   = 64;
+
+    std::uint64_t last = 0;
+    for (auto _ : state) {
+        state.PauseTiming();
+        reset_async_context();
+        channel<std::uint64_t>     ch(0);
+        std::atomic<std::uint64_t> sink{0};
+        std::atomic<bool>          history_done{false};
+        std::atomic<bool>          done{false};
+        coro_scheduler().spawn(recv_for_history(&ch, history, &history_done));
+        drain_until([&history_done] { return history_done.load(std::memory_order_relaxed); });
+        state.ResumeTiming();
+
+        coro_scheduler().spawn(timed_senders_taken_by_recv(&ch, count, &sink, &done));
+        drain_until([&done] { return done.load(std::memory_order_relaxed); });
+
+        last = sink.load(std::memory_order_relaxed);
+        benchmark::DoNotOptimize(last);
+
+        state.PauseTiming();
+        reset_async_context();
+        state.ResumeTiming();
+    }
+
+    const std::uint64_t expected = (count - 1u) * count / 2u;
+    if (last != expected)
+        state.SkipWithError("channel send_for after history produced an unexpected sum");
+
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
+}
+
 } // namespace
 
 BENCHMARK(BM_Channel_TrySendTryRecv)->Arg(64)->Arg(1024)->Arg(8192)->ArgName("messages")->Unit(benchmark::kNanosecond);
@@ -322,5 +523,14 @@ BENCHMARK(BM_Channel_SendRecv)->Arg(64)->Arg(512)->Arg(2048)->ArgName("messages"
 BENCHMARK(BM_Stream_FilterMapReduce)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_Stream_MapCollect)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_Generator_MapFilter)->Arg(64)->Arg(512)->Arg(4096)->ArgName("items")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Channel_TimedOpsWonEarly)->Arg(64)->Arg(512)->Arg(2048)->ArgName("messages")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Channel_SelectFanIn)->Arg(64)->Arg(256)->Arg(1024)->ArgName("selects")->Unit(benchmark::kMicrosecond)->UseRealTime();
+BENCHMARK(BM_Channel_SendForAfterRecvForHistory)
+    ->Arg(0)
+    ->Arg(1024)
+    ->Arg(8192)
+    ->ArgName("history")
+    ->Unit(benchmark::kMicrosecond)
+    ->UseRealTime();
 
 BENCHMARK_MAIN();

@@ -207,31 +207,33 @@ TEST_F(ChannelSyncOps, MakeChannelFactoryProducesUsableChannel) {
 // ---------------------------------------------------------------------------
 
 TEST_F(ChannelSyncOps, RegisterSelectWaiterResolvesBufferedChannelImmediately) {
-    channel<int> buffered(2);
-    auto         state = std::make_shared<channel_select_state>();
+    channel_select_state       state; // Huly QB-273: the caller's, by value, declared before the channel
+    channel<int>::select_entry node;  // and the caller's node, linked into the channel's list while parked
+    channel<int>               buffered(2);
 
     ASSERT_TRUE(buffered.try_send(42));
-    buffered.register_select_waiter(state, /*idx=*/3);
+    buffered.register_select_waiter(node, state, /*idx=*/3);
 
-    EXPECT_TRUE(state->resolved);
-    EXPECT_FALSE(state->closed);
-    EXPECT_EQ(state->winner, 3u);
-    ASSERT_TRUE(state->value.has_value());
-    EXPECT_EQ(std::any_cast<int>(state->value), 42);
+    EXPECT_TRUE(state.resolved);
+    EXPECT_FALSE(state.closed);
+    EXPECT_EQ(state.winner, 3u);
+    ASSERT_TRUE(state.value.has_value());
+    EXPECT_EQ(std::any_cast<int>(state.value), 42);
     EXPECT_TRUE(buffered.empty()) << "the buffered value must be consumed into the select state";
 }
 
 TEST_F(ChannelSyncOps, RegisterSelectWaiterResolvesClosedChannelAsClosed) {
-    channel<int> closed(1);
-    auto         state = std::make_shared<channel_select_state>();
+    channel_select_state       state; // Huly QB-273: the caller's, by value, declared before the channel
+    channel<int>::select_entry node;  // and the caller's node, linked into the channel's list while parked
+    channel<int>               closed(1);
 
     closed.close();
-    closed.register_select_waiter(state, /*idx=*/1);
+    closed.register_select_waiter(node, state, /*idx=*/1);
 
-    EXPECT_TRUE(state->resolved);
-    EXPECT_TRUE(state->closed);
-    EXPECT_EQ(state->winner, 1u);
-    EXPECT_FALSE(state->value.has_value());
+    EXPECT_TRUE(state.resolved);
+    EXPECT_TRUE(state.closed);
+    EXPECT_EQ(state.winner, 1u);
+    EXPECT_FALSE(state.value.has_value());
 }
 
 // The select awaiters are neither copyable nor movable (Huly QB-302): the destructor resolves the state a copy
@@ -264,35 +266,94 @@ TEST_F(ChannelSyncOps, SendAndRecvAwaitersAreNeitherCopyableNorMovable) {
 // with a parked select()/recv_for() waiter and no usable buffer (cap 0) it returned false and the
 // rendezvous deadlocked, even though a partner was ready.
 TEST_F(ChannelSyncOps, TrySendSatisfiesParkedSelectWaiterOnRendezvousChannel) {
-    channel<int> ch(0); // cap-0 rendezvous: no buffer — a sender must hand off directly
-    auto         state = std::make_shared<channel_select_state>();
+    channel_select_state       state; // Huly QB-273: the caller's, by value, declared before the channel
+    channel<int>::select_entry node;  // and the caller's node, linked into the channel's list while parked
+    channel<int>               ch(0); // cap-0 rendezvous: no buffer — a sender must hand off directly
 
-    ch.register_select_waiter(state, /*idx=*/7); // empty channel, no recv waiter -> parks
-    ASSERT_FALSE(state->resolved) << "select waiter must park on an empty rendezvous channel";
+    ch.register_select_waiter(node, state, /*idx=*/7); // empty channel, no recv waiter -> parks
+    ASSERT_FALSE(state.resolved) << "select waiter must park on an empty rendezvous channel";
 
     EXPECT_TRUE(ch.try_send(99)) << "try_send must satisfy a parked select waiter on a cap-0 channel (pre-fix returned false)";
-    EXPECT_TRUE(state->resolved);
-    EXPECT_FALSE(state->closed);
-    EXPECT_EQ(state->winner, 7u);
-    ASSERT_TRUE(state->value.has_value());
-    EXPECT_EQ(std::any_cast<int>(state->value), 99);
+    EXPECT_TRUE(state.resolved);
+    EXPECT_FALSE(state.closed);
+    EXPECT_EQ(state.winner, 7u);
+    ASSERT_TRUE(state.value.has_value());
+    EXPECT_EQ(std::any_cast<int>(state.value), 99);
     EXPECT_TRUE(ch.empty()) << "the value went to the select waiter, not the buffer";
 }
 
 // The move overload of try_send must satisfy a parked select waiter too.
 TEST_F(ChannelSyncOps, TrySendMoveSatisfiesParkedSelectWaiter) {
-    channel<std::string> ch(0);
-    auto                 state = std::make_shared<channel_select_state>();
+    channel_select_state               state; // Huly QB-273: the caller's, by value, declared before the channel
+    channel<std::string>::select_entry node;  // and the caller's node, linked into the channel's list while parked
+    channel<std::string>               ch(0);
 
-    ch.register_select_waiter(state, /*idx=*/2);
-    ASSERT_FALSE(state->resolved);
+    ch.register_select_waiter(node, state, /*idx=*/2);
+    ASSERT_FALSE(state.resolved);
 
     std::string v = "handoff";
     EXPECT_TRUE(ch.try_send(std::move(v)));
-    EXPECT_TRUE(state->resolved);
-    EXPECT_EQ(state->winner, 2u);
-    ASSERT_TRUE(state->value.has_value());
-    EXPECT_EQ(std::any_cast<std::string>(state->value), "handoff");
+    EXPECT_TRUE(state.resolved);
+    EXPECT_EQ(state.winner, 2u);
+    ASSERT_TRUE(state.value.has_value());
+    EXPECT_EQ(std::any_cast<std::string>(state.value), "handoff");
+}
+
+// ---------------------------------------------------------------------------
+// Huly QB-273: a registration points at the caller's state, the caller retracts it, and the census
+// reads the live population of the rings -- never a history.
+// ---------------------------------------------------------------------------
+
+TEST_F(ChannelSyncOps, WaiterCensusCountsAParkedRegistrationUntilItIsRetracted) {
+    channel_select_state       state; // declared first: outlives the channel it registers on
+    channel<int>::select_entry node;  // the caller's node, linked into the channel's list while parked
+    channel<int>               ch(0);
+
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(ch.waiter_census().senders, 0u);
+    EXPECT_EQ(ch.waiter_census().receivers, 0u);
+
+    EXPECT_TRUE(*ch.liveness()) << "the liveness token of a live channel reads true";
+    ch.register_select_waiter(node, state, 0); // empty rendezvous channel: parks
+    EXPECT_FALSE(state.resolved);
+    EXPECT_TRUE(node.linked);
+    EXPECT_EQ(ch.waiter_census().selects, 1u);
+
+    ch.unregister_select_waiter(node);
+    EXPECT_FALSE(node.linked);
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    ch.unregister_select_waiter(node); // idempotent: nothing left to unlink
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+
+    EXPECT_FALSE(ch.try_send(1)) << "no receiver, no buffer: the retracted registration must not take the value";
+    EXPECT_FALSE(state.resolved);
+}
+
+TEST_F(ChannelSyncOps, RegisterSelectWaiterSkipsAStateAlreadyResolved) {
+    channel_select_state       state;
+    channel<int>::select_entry node;
+    channel<int>               ch(0);
+
+    state.resolve(4, std::any(1)); // an earlier channel of the same select delivered during the registration
+    ch.register_select_waiter(node, state, 0);
+    EXPECT_FALSE(node.linked) << "a node for a resolved state is dead on arrival: not linked";
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(state.winner, 4u);
+}
+
+TEST_F(ChannelSyncOps, CloseDropsEveryRegistrationAndResolvesItClosed) {
+    channel_select_state       state;
+    channel<int>::select_entry node;
+    channel<int>               ch(0);
+
+    ch.register_select_waiter(node, state, 2);
+    ASSERT_EQ(ch.waiter_census().selects, 1u);
+    ch.close();
+    EXPECT_FALSE(node.linked) << "close() unlinks every node, so no destructor has anything left to retract";
+    EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_TRUE(state.resolved);
+    EXPECT_TRUE(state.closed);
+    EXPECT_EQ(state.winner, 2u);
 }
 
 // ===========================================================================
@@ -480,7 +541,7 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
     EXPECT_FALSE(done.load()) << "select must park while both channels are empty and open";
 
     // Deliver on the second channel via co_await send(): the send awaiter is the
-    // path that satisfies a registered _select_waiters entry (try_send only ever
+    // path that satisfies a registered select node (try_send only ever
     // wakes _recv_waiters / buffers, never a parked select). This resolves the
     // select with ch_b as the winner.
     const qb::io::test::coroutine_scope_cleanup cleanup6;
@@ -542,7 +603,7 @@ TEST_F(ChannelLoopOps, ParkedRecvDeregistersWhenFrameDestroyedAsWhenAnyLoser) {
 // ---------------------------------------------------------------------------
 // send_awaiter de-registration on frame destruction (~send_awaiter): a
 // parked sender (buffer full) whose frame is torn down must erase its
-// _send_waiters entry. Driven as a `when_any` loser: the send branch parks on a
+// node in the channel's sender list. Driven as a `when_any` loser: the send branch parks on a
 // full buffer, the cancellation branch wins, and the teardown destroys the
 // parked send frame -> dtor de-registers.
 // ---------------------------------------------------------------------------
