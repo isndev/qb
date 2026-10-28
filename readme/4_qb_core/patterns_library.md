@@ -3,8 +3,9 @@
 > **Audience:** Adopter · **Status:** stable · **Verified-against:** qb 3.3.0 (C++20 default, C++23 supported)
 
 After reading this you can use the qb-core interaction patterns — request/reply, scatter-gather,
-discovery, saga, pub/sub, supervision, resilience, streaming, routing, idempotency and aggregation —
-to compose actor conversations without hand-writing correlation, timeout or cancellation logic.
+discovery, saga, pub/sub, supervision, resilience, streaming, routing, idempotency, aggregation and
+run-time creation on another core — to compose actor conversations without hand-writing correlation,
+timeout or cancellation logic.
 
 This page is the **catalogue** of the three pattern pages: what qb already ships, entry by entry. [Actor patterns](./patterns.md) is the **reference** — the shapes the engine supports and why they work — and [the patterns cookbook](../6_guides/patterns_cookbook.md) is the **recipes**.
 
@@ -17,7 +18,7 @@ This page is the **catalogue** of the three pattern pages: what qb already ships
 The patterns library is a header-only set of free functions and helper types layered over the public
 `qb::Actor` / `qb::ScopedCoroContext` kernel. The kernel holds no pattern logic of its own; every
 pattern composes only public primitives
-(`qb/src/qb/core/patterns.h:13-14`, `qb/src/qb/core/patterns/request.h:6-8`).
+(`qb/src/qb/core/patterns.h:14-15`, `qb/src/qb/core/patterns/request.h:6-8`).
 
 Include the whole library through one umbrella header:
 
@@ -37,8 +38,8 @@ using namespace qb::time_literals;   // needed for the 500ms / 2s / 10s literals
 `qb/patterns.h` is self-sufficient: it includes `core/Actor.h`, `core/VirtualCore.h` (which has
 carried the Actor template implementation since 3.0 — it was `core/Actor.tpp` through 2.6.0) and
 `core/patterns.h` (`qb/src/qb/patterns.h:18-21`). The narrower
-`#include <qb/core/patterns.h>` pulls the eleven module headers but assumes the Actor template
-implementation is already visible (`qb/src/qb/core/patterns.h:27-38`); the test suite includes
+`#include <qb/core/patterns.h>` pulls the twelve module headers but assumes the Actor template
+implementation is already visible (`qb/src/qb/core/patterns.h:28-39`); the test suite includes
 `<qb/core/patterns.h>` alongside `<qb/actor.h>`
 (`qb/tests/core/shared/ProbeResponders.h:29-30`).
 
@@ -834,6 +835,63 @@ public:
 
 ---
 
+## Run-time creation on another core (`spawn.h`)
+
+**Solves:** create an actor on a chosen core **while the engine runs** — an elastic pool, a shard
+placed on a core with room — without a hand-written factory actor per core. `Main::addActor` works
+before `start()` only, and `Actor::addRefActor` creates on the caller's own core (since 3.4, Huly QB-54).
+
+### Public API
+
+| Symbol | Signature | Source |
+|---|---|---|
+| `qb::spawn_on` | `[T<A, Args...>] task<spawn_result> spawn_on(ScopedCoroContext ctx, CoreId core, qb::duration timeout, Args... args)` | `spawn.h:211-225` |
+| `qb::Spawner` | `class : ServiceActor<Spawner>` — add one to every core that accepts run-time creation: `engine.addActor<qb::Spawner>(core)` | `spawn.h:135-162` |
+| `qb::spawn_result` | `struct { ActorId id; spawn_status status; explicit operator bool() const noexcept; }` — `true` for `spawned` only | `spawn.h:58-66` |
+| `qb::spawn_status` | `enum class { spawned, refused, not_ready, unreachable }` | `spawn.h:45-51` |
+| `qb::SpawnRequest` | `struct : Request<spawn_result>` — the exchange; the CALLING actor registers it and resolves it, as any `ask` exchange | `spawn.h:115-123` |
+
+`spawn_on` asks the target core's `Spawner`, which runs `addRefActor<A>(args...)` **on its own
+core** — the core's admission, the constructor and `onInit()` all run there — and answers once the
+new actor is active. Only its id crosses back; no actor pointer crosses a core. The arguments are
+taken by value, moved into a type-erased factory on the calling core and into the constructor on
+the target core: any movable argument works (a `std::string`, a `std::vector`), none may refer to
+the caller's state. The outcome:
+
+- `spawned` — active: its `onInit()` returned true. `id.index()` is the target core.
+- `refused` — the core admitted nothing: no slot left, a service of that tag already there, the core
+  tearing down, or an `onInit()` that failed **before its first suspension** (the core rolls that
+  admission back). `id` is invalid.
+- `not_ready` — created, but not active within `timeout`: an async init that failed after
+  suspending, threw, or still runs. `id` is valid; the actor manages its own lifecycle.
+- `unreachable` — no answer within `timeout` plus 250 ms: no `Spawner` on that core, a core the
+  engine does not run, or a caller that does not register `qb::SpawnRequest` (its answer is then a
+  dead letter). The actor may exist all the same.
+
+<!-- src: qb/src/qb/core/patterns/spawn.h:45-225; qb/tests/core/system/patterns/spawn-on.cpp:125-271 -->
+
+### Example
+
+```cpp
+class Pool : public qb::Actor {
+public:
+    qb::io::async::task<bool> onInit() override {
+        registerEvent<qb::SpawnRequest>(*this);      // so spawn_on's answer resolves here
+        spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            auto w = co_await qb::spawn_on<Worker>(ctx, 2, 1s, std::string("shard-7"));
+            if (w)
+                ctx.push_to<Job>(w.id);              // active on core 2
+        });
+        co_return true;
+    }
+    void on(qb::SpawnRequest &e) { resolve_ask(e); }
+};
+// main: engine.addActor<qb::Spawner>(2); before start()
+```
+<!-- src: qb/tests/core/system/patterns/spawn-on.cpp:125-148 -->
+
+---
+
 ## Using patterns inside `onInit()`
 
 The awaitable patterns work during actor activation: obtain the context with `Actor::context()` and
@@ -876,6 +934,7 @@ qb::io::async::task<bool> onInit() override {
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
 | Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:197,65`) |
 | Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:66`) |
+| Create an actor on another core while the engine runs | run-time creation | `qb::spawn_on` + `qb::Spawner` (`spawn.h:213,135`) |
 
 ---
 
@@ -897,13 +956,17 @@ qb::io::async::task<bool> onInit() override {
   `notify_supervisor_down()`); a child that dies silently is not auto-restarted
   (`supervisor.h:136-146`) — unless the supervisor runs in `qb::supervision::watch` mode, which
   restarts a child gone for any reason.
+- **`spawn_on` needs a `Spawner` there, and an asker that registers `qb::SpawnRequest`.** Without either the
+  answer never resolves and the result is `unreachable` after the timeout — while the actor may have been
+  created all the same. A cancelled `spawn_on` likewise leaves a created actor to its own lifecycle
+  (`spawn.h:177-179`).
 - **A bounded `ask_stream` buffer fails loudly.** If the responder outruns `capacity`, `next()`
   throws `stream_overflow_error` rather than silently dropping chunks (`streaming.h:88-93`,
   `streaming.h:124-135`).
 
 ## See also
 
-- `examples/04-patterns/` — nine runnable programs that between them exercise all eleven headers on this page: `01-pubsub` (`pubsub.h`), `02-supervisor` (`supervisor.h`), `03-worker-pool` (`routing.h`), `04-scatter-gather` (`request.h`, `scatter.h`), `05-resilience` (`resilience.h`), `06-streaming` (`streaming.h`), `07-saga` (`saga.h`), `08-batching-and-idempotency` (`aggregate.h`, `idempotency.h`) and `09-discovery` (`discovery.h`). The `### Example` snippets on this page are illustrative; those programs are compiled and run.
+- `examples/04-patterns/` — ten runnable programs that between them exercise all twelve headers on this page: `01-pubsub` (`pubsub.h`), `02-supervisor` (`supervisor.h`), `03-worker-pool` (`routing.h`), `04-scatter-gather` (`request.h`, `scatter.h`), `05-resilience` (`resilience.h`), `06-streaming` (`streaming.h`), `07-saga` (`saga.h`), `08-batching-and-idempotency` (`aggregate.h`, `idempotency.h`), `09-discovery` (`discovery.h`) and `10-spawn-on` (`spawn.h`). The `### Example` snippets on this page are illustrative; those programs are compiled and run.
 - [Actor patterns](./patterns.md) — the hand-rolled designs (FSM, registry, request/response, supervision) this library packages as ready-made primitives.
 - [qb-io coroutines](../3_qb_io/coroutines.md) — `task`, awaiters, and the cancellation model the awaitable patterns build on.
 - [Writing actors with `qb::Actor`](./actor.md) · [Event messaging](./messaging.md) — the `Actor`/event primitives every pattern composes.

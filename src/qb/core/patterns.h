@@ -8,7 +8,8 @@
  * (`batcher`), streaming (`ask_stream`, `StreamRequest`), scatter-gather (`ask_all`, `ask_any`,
  * `ask_quorum`), saga (`run_saga`, `SagaScope`), resilience (`ask_retry`, `ask_guarded`,
  * `CircuitBreaker`, `rate_limiter`, `bulkhead`, `retry_policy`), routing (`WorkerPool`), pub/sub
- * (`PubSub`) and supervision (`Supervisor`, `SupervisedActor`, `restart_strategy`).
+ * (`PubSub`), supervision (`Supervisor`, `SupervisedActor`, `restart_strategy`) and run-time creation on
+ * another core (`spawn_on`, `Spawner`).
  *
  * These are free functions and helper types layered over the public `Actor` / `ScopedCoroContext`
  * primitives — the kernel (`qb/core/Actor.h`) holds no pattern logic of its own.
@@ -48,5 +49,6 @@
 #include "patterns/routing.h"
 #include "patterns/pubsub.h"
 #include "patterns/supervisor.h"
+#include "patterns/spawn.h"
 
 #endif // QB_CORE_PATTERNS_H

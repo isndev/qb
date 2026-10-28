@@ -604,8 +604,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   (`ask_stream` + `StreamRequest`/`yield_answer`/`end_stream`; chunks via `resolve_ask`),
   scatter-gather (`ask_all` incl. bounded sliding-window, `ask_any`, `ask_quorum`), resilience
   (`ask_retry`+`retry_policy.jitter`, `ask_guarded`+`CircuitBreaker`, `rate_limiter`, `bulkhead`),
-  saga (`run_saga`), routing (`WorkerPool`), pub/sub (`PubSub`), supervision (`Supervisor`). All
-  core-local; coroutine-side helpers are cancel-on-kill.
+  saga (`run_saga`), routing (`WorkerPool`), pub/sub (`PubSub`), supervision (`Supervisor`), run-time
+  creation on another core (`spawn_on<A>(ctx, core, timeout, args...)` + a `qb::Spawner` per target core;
+  the caller registers `qb::SpawnRequest`, 3.4). All core-local; coroutine-side helpers are cancel-on-kill.
 - **Testing actor code (3.4)** — `#include <qb/testkit.h>`: `qb::test::TestKit kit; auto probe =
   kit.probe<Filled>(0); auto desk = kit.add<Desk>(0, probe); auto run = kit.run([desk, probe](qb::ScopedCoroContext ctx)
   -> qb::io::async::task<void> { ctx.push_to<Order>(desk, 7); auto f = co_await qb::test::expect<Filled>(ctx, probe, 1s);

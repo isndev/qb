@@ -9,6 +9,24 @@ policy.
 
 ### Added
 
+- **Create an actor on another core while the engine runs: `qb::spawn_on` and `qb::Spawner` (Huly QB-54).**
+  `Main::addActor` works before `start()` only and `Actor::addRefActor` creates on the caller's own core, so an
+  elastic pool or a shard placed on a core with room needed a hand-written factory actor per core. `co_await
+  qb::spawn_on<A>(ctx, core, timeout, args...)` asks the `qb::Spawner` service of `core` -- added to each core that
+  accepts run-time creation -- to run `addRefActor<A>(args...)` there: the core's own admission, constructor and
+  `onInit()`, on its own thread. It answers a `qb::spawn_result` once the actor is active: `spawned` with its id,
+  `refused` when the core admitted nothing (no slot, a service of that tag already there, teardown, or an `onInit()`
+  failing before its first suspension, whose admission the core rolls back), `not_ready` with the id when an async
+  init failed or outlasted the timeout, `unreachable` when no answer came (no spawner there, a core the engine does
+  not run). The arguments are taken by value and travel in a type-erased factory behind a `shared_ptr`: only its
+  pointer crosses the mailbox, so any movable argument works, a `std::string` included. No actor pointer crosses a
+  core. The caller registers `qb::SpawnRequest`, as for any `qb::ask` exchange; the spawner owns nothing it
+  creates. Proven by `qb-core-test-system-spawn-on` (8 cases, driven by the test kit: another core and the caller's
+  own, the actor running and reachable there, the arguments moved, an async init waited for, a failure before and
+  after suspending, a service already there, a core without spawner and one that does not exist, eight spawns in
+  flight, a caller without the registration), green under ASan+UBSan, TSan and C++23, 10 repeats, and by eight
+  mutants of the pattern, all caught.
+
 - **An actor test kit: `<qb/testkit.h>`, namespace `qb::test` (Huly QB-57).** Every test of actor code had the same
   scaffolding -- an engine, a hand-written driver actor, `std::atomic` globals, a guard proving the driver ran, a
   stop, a join, a `hasError()` -- and qb's own suite rewrote it in each file. `qb::test::TestKit` owns a `qb::Main`

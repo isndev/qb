@@ -138,6 +138,8 @@ qb_add_test(MODULE qb-core TIER system NAME pubsub-fanout           SOURCES patt
 qb_add_test(MODULE qb-core TIER system NAME pubsub-dead-subscribers SOURCES patterns/pubsub-dead-subscribers.cpp DEPENDS ${PROJECT_NAME} LABELS patterns)
 # The shipped actor test kit, qb/testkit.h (Huly QB-57): one case runs its probe on core 1.
 qb_add_test(MODULE qb-core TIER system NAME testkit                 SOURCES patterns/testkit.cpp                 DEPENDS ${PROJECT_NAME} LABELS patterns coroutine requires-multicore)
+# qb::spawn_on / qb::Spawner (Huly QB-54): actors created on another core while the engine runs, driven by the kit.
+qb_add_test(MODULE qb-core TIER system NAME spawn-on                SOURCES patterns/spawn-on.cpp                DEPENDS ${PROJECT_NAME} LABELS patterns coroutine requires-multicore)
 
 # --- init (async onInit: state machine / stash / deadline / activation) ------
 qb_add_test(MODULE qb-core TIER system NAME init-lifecycle     SOURCES init/init-lifecycle.cpp     DEPENDS ${PROJECT_NAME} LABELS init coroutine)
