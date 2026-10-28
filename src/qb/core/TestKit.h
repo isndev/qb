@@ -166,18 +166,21 @@ inline constexpr qb::duration reply_grace = std::chrono::milliseconds(250);
 /// killed asker, or one whose core stalls past it, reaches it.
 inline constexpr qb::duration lend_hold = std::chrono::seconds(2);
 
-/// The names of the expectations of the process: unique, so a probe tells two of one asker apart.
-inline std::atomic<std::uint64_t> expectation_tokens{0};
+/// The names of the expectations of the process: unique, so a probe tells two of one asker apart. One object
+/// across the images of a program, as the core's other process-wide counters.
+QB_ABI_ANCHOR inline std::atomic<std::uint64_t> expectation_tokens{0};
 
 /// `a + b`, `qb::duration::max()` past it: a timeout of `max()` means "no deadline", never an overflow.
 [[nodiscard]] constexpr qb::duration
 add_saturating(qb::duration const a, qb::duration const b) noexcept {
     return a > qb::duration::max() - b ? qb::duration::max() : a + b;
 }
+static_assert(add_saturating(qb::duration::max(), reply_grace) == qb::duration::max());
 
 /// Withdraws the expectation `token` from `probe` when its frame ends without taking the answer -- unwound by a
 /// `when_any` that another branch won, destroyed, an ask that timed out -- so what the probe holds for it goes
-/// to the next expectation at once. A killed asker withdraws nothing: its loans come back after `lend_hold`.
+/// to the next expectation at once. A killed asker pushes nothing (its scope is cancelled before its frames
+/// end, and its core may be tearing down): the probe watches its askers and lets go of a dead one's itself.
 struct WithdrawOnExit {
     qb::ScopedCoroContext ctx;
     qb::ActorId           probe;
@@ -316,8 +319,9 @@ struct RunResult {
  *          handed to an expectation is only lent until its asker acknowledges it. An expectation its asker
  *          abandons -- the losing branch of a `when_any`, an ask that timed out first -- is withdrawn as its frame
  *          ends: its waiter is forgotten, and an event lent to it returns at once to its place in the queue, in
- *          arrival order, for the next expectation. Only a killed asker withdraws nothing: what it was lent
- *          returns after `detail::lend_hold` (2 s).
+ *          arrival order, for the next expectation. The probe watches every actor that asks it (`watch()`): when
+ *          one is gone, its waiters are dropped and what it was lent returns the same way. A loan nobody
+ *          acknowledges otherwise -- an asker whose core stalls -- returns after `detail::lend_hold` (2 s).
  *          The queues are unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
@@ -444,6 +448,7 @@ public:
         registerEvent<detail::ExpectationTaken>(*this);
         registerEvent<detail::ExpectationWithdrawn>(*this);
         registerEvent<detail::LendExpired>(*this);
+        registerEvent<qb::DownEvent>(*this);
         co_return true;
     }
 
@@ -458,6 +463,7 @@ public:
     on(detail::Expectation &e) {
         if (resolve_ask(e))
             return;
+        watch(e.getSource()); // a no-op while watched: a dead asker's waiters and loans are let go of (DownEvent)
         queue *q = find(e.event_type);
         if (!q) {
             e.recorded = false;
@@ -518,6 +524,17 @@ public:
         const auto it = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker && l.token == e.token; });
         if (it != _lent.end())
             give_back(it); // lent to it: back at once, at its rank
+    }
+
+    /// An asker is gone: what waits for it, or was lent to it, is no one's -- dropped, given back at its rank.
+    void
+    on(qb::DownEvent const &e) {
+        const auto asker = e.watched;
+        for (auto &q : _queues)
+            std::erase_if(q.waiting, [&](waiter const &w) { return w.asker == asker; });
+        for (auto it = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker; }); it != _lent.end();
+             it      = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker; }))
+            give_back(it);
     }
 
     void

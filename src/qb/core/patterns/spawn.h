@@ -106,6 +106,13 @@ public:
 /// What the asker waits beyond the target's own activation deadline before it calls the core unreachable.
 inline constexpr qb::duration spawn_reply_grace = std::chrono::milliseconds(250);
 
+/// `a + b`, `qb::duration::max()` past it: a timeout of `max()` means "no deadline", never an overflow.
+[[nodiscard]] constexpr qb::duration
+add_saturating(qb::duration const a, qb::duration const b) noexcept {
+    return a > qb::duration::max() - b ? qb::duration::max() : a + b;
+}
+static_assert(add_saturating(qb::duration::max(), spawn_reply_grace) == qb::duration::max());
+
 } // namespace detail
 
 /**
@@ -180,8 +187,8 @@ public:
  * @param ctx The caller's context; its actor registers `qb::SpawnRequest` (see `SpawnRequest`).
  * @param core The target core: it runs a `qb::Spawner`. The caller's own core works too.
  * @param timeout The bound on the whole spawn, the new actor's `onInit()` included -- itself bounded by the target
- *        core's activation deadline (`qb::VirtualCore::activation_deadline_ns`, 5 s by default): an `onInit()` that
- *        outlasts it is answered `not_ready`, whatever @p timeout says. Zero or less sets no deadline of the
+ *        core's activation deadline (`qb::VirtualCore::activation_deadline_ns`, 5 s by default; 0 disables it): an
+ *        `onInit()` that outlasts it is answered `not_ready`, whatever @p timeout says. Zero or less sets no deadline of the
  *        `Spawner`'s or of the ask's, as `qb::ask` does: a core without a `Spawner` then never answers, and the
  *        caller waits until it is killed.
  * @param args The constructor arguments.
@@ -234,7 +241,7 @@ spawn_on(qb::ScopedCoroContext ctx, qb::CoreId core, qb::duration timeout, Args.
     const bool bounded = timeout > qb::duration::zero();
     const auto wait    = bounded ? timeout : qb::duration::zero();
     auto       factory = std::make_shared<detail::spawn_factory<A, Args...>>(std::move(args)...);
-    const auto grace   = wait > qb::duration::max() - detail::spawn_reply_grace ? qb::duration::max() : wait + detail::spawn_reply_grace;
+    const auto grace   = detail::add_saturating(wait, detail::spawn_reply_grace);
     try {
         auto answer = co_await qb::ask(ctx, qb::Actor::getServiceId<Spawner>(core), SpawnRequest{std::move(factory), wait},
                                        bounded ? grace : qb::duration::zero());

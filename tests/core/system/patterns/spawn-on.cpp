@@ -24,6 +24,8 @@
 #include <qb/core/patterns.h>
 #include <qb/string.h>
 #include <qb/testkit.h>
+
+#include "../../shared/InitFixtures.h"
 #include <chrono>
 #include <cstdint>
 #include <set>
@@ -325,14 +327,8 @@ TEST(SpawnOn, ATimeoutOfMaxIsNoDeadlineNotAnOverflow) {
 TEST(SpawnOn, TheCoresActivationDeadlineStillBoundsAZeroTimeout) {
     // A zero timeout sets no deadline of the Spawner's or of the ask's; the target core still fails an onInit() that
     // outlasts its activation deadline, and the answer is not_ready (the second review: the docs said "no deadline").
-    struct restore {
-        std::uint64_t saved = qb::VirtualCore::activation_deadline_ns;
-        ~restore() {
-            qb::VirtualCore::activation_deadline_ns = saved;
-        }
-    } guard;
-    qb::VirtualCore::activation_deadline_ns = 300u * 1000u * 1000u; // 300 ms, before start()
-    qb::test::TestKit kit;
+    qb::test::ScopedDeadline deadline{300u * 1000u * 1000u}; // 300 ms, before start(), restored after the run
+    qb::test::TestKit        kit;
     (void) kit.add<qb::Spawner>(1);
     const auto run = kit.run<qb::SpawnRequest>(
         [](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {

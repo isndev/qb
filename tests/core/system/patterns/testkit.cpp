@@ -115,6 +115,27 @@ public:
     }
 };
 
+/// An asker that takes the probe's answer and never acknowledges it -- a raw ask, as an asker killed between the two.
+class Hoarder : public qb::Actor {
+    qb::ActorId _probe;
+
+public:
+    explicit Hoarder(qb::ActorId probe)
+        : _probe(probe) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::detail::Expectation>(*this);
+        spawn([probe = _probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            (void) co_await qb::ask(ctx, probe, qb::test::detail::Expectation{qb::type_id<Filled>(), 30s, false, 0}, 30s);
+        });
+        co_return true;
+    }
+    void
+    on(qb::test::detail::Expectation &e) {
+        (void) resolve_ask(e);
+    }
+};
+
 /// The branch that wins a race against an expectation: it ends after `d`, with nothing.
 qb::io::async::task<int>
 pause(qb::ScopedCoroContext ctx, qb::duration d) {
@@ -193,7 +214,8 @@ TEST(TestKit, ATimeoutYieldsNothingNoEarlierThanItsDeadline) {
 
 TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
     // The losing branch of a when_any is destroyed: its expectation withdraws itself, so the next one gets the event
-    // (it was lost before the loan, and held for detail::lend_hold by the loan alone).
+    // (it was lost before the loan). The loan alone also passes this case, in lend_hold: the timing is pinned by
+    // AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce.
     qb::test::TestKit kit;
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
@@ -402,6 +424,7 @@ TEST(TestKit, AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce) {
                 EXPECT_EQ(race.index, 1u);
             }
             ctx.push_to<Order>(desk, 7);
+            co_await ctx.sleep(50ms); // the fill has reached the probe: before the withdrawals it sat lent to a dead waiter
             EXPECT_FALSE(co_await qb::test::expect_none<Filled>(ctx, probe, 300ms)) << "present, not hidden with a dead waiter";
             const auto start  = steady::now();
             const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
@@ -412,9 +435,10 @@ TEST(TestKit, AbandonedExpectationsAreWithdrawnSoTheNextGetsTheEventAtOnce) {
     EXPECT_TRUE(run) << run.describe();
 }
 
-TEST(TestKit, LoansOfAKilledAskerComeBackInArrivalOrder) {
-    // A killed asker withdraws nothing: its two waiters are lent the next two events, and both loans come back after
-    // lend_hold -- in reverse order before, ahead of the event that arrived after them (the second review).
+TEST(TestKit, AKilledAskersWaitersAreLetGoOfAtOnce) {
+    // A killed asker withdraws nothing (its scope is cancelled first): its two waiters stayed on the probe, each next
+    // event lent to them for lend_hold -- the starvation of abandoned expectations, on the kill path (the third
+    // review). The probe watches its askers: at the asker's death its waiters are dropped.
     qb::test::TestKit kit;
     const auto        probe = kit.probe<Filled>(0);
     const auto        desk  = kit.add<Desk>(0, probe);
@@ -423,15 +447,68 @@ TEST(TestKit, LoansOfAKilledAskerComeBackInArrivalOrder) {
         [desk, probe, asker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(100ms); // both its expectations wait on the probe
             ctx.push_to<qb::KillEvent>(asker);
-            co_await ctx.sleep(100ms);
+            co_await ctx.sleep(100ms); // its DownEvent has reached the probe
             for (int qty : {1, 2, 3})
-                ctx.push_to<Order>(desk, qty); // 1 and 2 lent to its waiters, 3 recorded
-            co_await ctx.sleep(qb::test::detail::lend_hold + 500ms);
+                ctx.push_to<Order>(desk, qty);
+            const auto start = steady::now();
             for (int qty : {1, 2, 3}) {
                 const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
-                EXPECT_EQ(filled ? filled->qty : -1, qty) << "arrival order, the loans that came back included";
+                EXPECT_EQ(filled ? filled->qty : -1, qty) << "in arrival order, none lent to the dead asker";
             }
+            EXPECT_LT(steady::now() - start, 1s) << "not after a loan to the dead asker's waiters";
             EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 100ms));
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, WhatADeadAskerWasLentComesBackAtOnce) {
+    // The asker took the answer and died before it acknowledged it: the event came back only after lend_hold (the
+    // third review). Its DownEvent gives the loan back at once, at its rank.
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(0);
+    const auto        desk  = kit.add<Desk>(0, probe);
+    const auto        asker = kit.add<Hoarder>(0, probe);
+    const auto        run   = kit.run(
+        [desk, probe, asker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            co_await ctx.sleep(100ms); // its expectation waits on the probe
+            ctx.push_to<Order>(desk, 1);
+            co_await ctx.sleep(100ms);
+            EXPECT_TRUE(co_await qb::test::expect_none<Filled>(ctx, probe, 100ms)) << "1 is lent to the asker";
+            ctx.push_to<Order>(desk, 2);
+            ctx.push_to<qb::KillEvent>(asker);
+            co_await ctx.sleep(100ms); // its DownEvent has reached the probe
+            const auto start = steady::now();
+            for (int qty : {1, 2}) {
+                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
+                EXPECT_EQ(filled ? filled->qty : -1, qty) << "the dead asker's loan back at its rank";
+            }
+            EXPECT_LT(steady::now() - start, 1s) << "not after lend_hold";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(TestKit, LoansGivenBackTogetherComeBackInArrivalOrder) {
+    // Two expectations answered (1 and 2 lent) then withdrawn together, 3 recorded behind them: each loan returned
+    // to the head of the queue put them back as [2, 1, 3] (the second review). Each goes back to its rank.
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled>(0);
+    const auto        desk  = kit.add<Desk>(0, probe);
+    const auto        run   = kit.run(
+        [desk, probe](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            for (int qty : {1, 2, 3})
+                ctx.push_to<Order>(desk, qty);
+            co_await ctx.sleep(50ms); // all three recorded
+            // Each branch's expectation reaches the probe before at_once wins (a branch nested in a when_all would not
+            // be started); the losers are withdrawn in branch order, the order of their loans.
+            const auto race =
+                co_await qb::io::async::when_any(qb::test::expect<Filled>(ctx, probe, 5s), qb::test::expect<Filled>(ctx, probe, 5s), at_once());
+            EXPECT_EQ(race.index, 2u);
+            for (int qty : {1, 2, 3}) {
+                const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 1s);
+                EXPECT_EQ(filled ? filled->qty : -1, qty) << "arrival order, the loans given back included";
+            }
         },
         30s);
     EXPECT_TRUE(run) << run.describe();
