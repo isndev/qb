@@ -97,9 +97,9 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib); `compression-zstd` / `compression-brotli` (`REQUIRES compression zstd` / `brotli`, 3.3) only with the opt-in codec, all three on the shared `codec_contract.h`.
 
-<!-- src: qb/tests/io/unit/CMakeLists.txt:75-115 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:76-116 -->
 
-Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:91-92`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:94-106`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
+Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:92-93`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:94-106`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
 
 ### Running under sanitizers
 

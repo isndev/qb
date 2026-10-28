@@ -45,6 +45,7 @@ qb_add_test(MODULE qb-io TIER unit NAME protocol-base-framing    SOURCES protoco
 qb_add_test(MODULE qb-io TIER unit NAME json-depth-guard         SOURCES protocol/json-depth-guard.cpp         DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME json-session-parse       SOURCES protocol/json-session-parse.cpp       DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-protocol-statemachine SOURCES protocol/quic-protocol-statemachine.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME varint-netstring-framing  SOURCES protocol/varint-netstring-framing.cpp  DEPENDS ${PROJECT_NAME}) # Huly QB-80
 
 # --- stream (templates over scripted transport / file-backed / limits) ---
 qb_add_test(MODULE qb-io TIER unit NAME stream-templates SOURCES stream/stream-templates.cpp DEPENDS ${PROJECT_NAME})

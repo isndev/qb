@@ -184,6 +184,34 @@ static _Size Header(std::size_t size); // throws std::runtime_error if size exce
 
 It requires an unsigned `Size` and returns the length in network byte order, ready to write before the payload.
 
+### Varint-prefixed and netstring messages
+
+Two more length-prefixed framings, with a variable-width length (Huly QB-80). Defined in `qb/io/protocol/varint.h` and `qb/io/protocol/netstring.h`; neither is pulled in by `qb/io/async.h`, include the header you use.
+
+| Type | Framing | `message` payload |
+|---|---|---|
+| `qb::protocol::varint_prefixed<IO_, Policy, LeadBytes, MaxPayload>` | `[LeadBytes fixed bytes][base-128 varint length][payload]` | base only (framing) |
+| `qb::protocol::varint_binary<IO_, Policy, LeadBytes, MaxPayload>` | the same | `{ size, data, frame, header_size }` |
+| `qb::protocol::netstring<IO_, StringTrait, MaxDigits, MaxPayload>` | `[decimal length]:[payload],` | `{ size, data, StringTrait text }` (`std::string`) |
+| `qb::protocol::netstring_view<IO_, MaxDigits, MaxPayload>` | the same | `std::string_view text` (zero-copy) |
+
+**The varint** is the base-128 integer protobuf and MQTT share: seven bits a byte, least significant group first, the high bit of a byte announcing another. The two wire formats bound it differently, and the `Policy` says which: `varint::protobuf_policy` (the default) reads up to ten bytes, any 64-bit value, and accepts an over-long encoding such as `80 00` for zero, as protobuf's parsers do; `varint::mqtt_policy` reads at most four bytes, at most 268 435 455, and refuses an encoding that is not the minimal one (MQTT 5.0 §1.5.5). `LeadBytes` fixed bytes before the varint belong to the frame -- `1` for an MQTT control packet, whose first byte is its type and flags -- and reach the handler as `message::frame[0]`. The codec itself is public: `varint::decode<Policy>(begin, end)` returns `{status, value, consumed}` with five statuses (`complete`, `incomplete`, `overlong`, `overflow`, `non_canonical`), `varint::encode(value, out)` writes the minimal encoding, `varint::encode_header<Policy>(value)` returns it ready to write.
+
+Both framers are **inspection only**, the rule of the three hooks above: `getMessageSize()` consumes nothing and reports the whole frame -- header and payload -- once the input holds it, caching the decoded header while the payload arrives; the framework flushes the frame after `onMessage()`. An empty payload is therefore a frame of its header alone and is delivered -- an empty protobuf message (one byte), MQTT's `PINGREQ` (`C0 00`, two), the empty netstring `0:,` (three) -- where `size_as_header` refuses a zero. The protocol is marked `not_ok()` on a prefix that is not one of its policy's (over-long, overflowing, non-minimal under MQTT), on a payload over `MaxPayload` (refused at the prefix, before its bytes are waited for), and for a netstring on a byte other than a digit before the colon, a leading zero (`0` alone is written with one), more than `MaxDigits` digits (9 by default, Bernstein's 999 999 999), a colon with no length, or a byte other than the comma where the comma belongs. The I/O component's `max_message_size()` still bounds the whole frame.
+
+```cpp
+// src: qb/src/qb/io/protocol/varint.h, qb/src/qb/io/protocol/netstring.h
+class Session : public qb::io::use<Session>::tcp::client<MyServer> {
+public:
+    using Protocol = qb::protocol::varint_binary<Session>; // or netstring<Session>, netstring_view<Session>
+    void on(Protocol::message &&msg) {                     // msg.data / msg.size: the payload; msg.frame[0]: a lead byte
+        *this << Protocol::Header(msg.size).view() << std::string_view(msg.data, msg.size); // echo, framed
+    }
+};
+```
+
+To **send**, write the prefix `Protocol::Header(payload.size()).view()` before the payload (and, for a netstring, `Protocol::end` -- the comma -- after it, or `Protocol::put(out, payload)` for the whole thing into a pipe). `Header` throws `std::length_error` past `MaxPayload` or the policy's maximum, as `size_as_header::Header` does past its width. An MQTT packet is framed as `varint_binary<IO_, varint::mqtt_policy, 1, varint::mqtt_policy::max_value>`: the module that speaks MQTT will build on it.
+
 ### JSON and MessagePack
 
 Defined in `qb/io/protocol/json.h`; each message is followed by a `'\0'` byte. `json` derives from `base::byte_terminated<IO_, '\0'>`: JSON text cannot hold a raw NUL, so the first one ends the message. `json_packed` cannot frame that way -- MessagePack writes zero bytes inside its values (the integer `0` is the byte `0x00`; so is a byte of most lengths, floats and binaries) -- so it derives from `AProtocol` and frames the value by its own lengths: every MessagePack header states the length of what follows, the protocol steps over each payload without reading it, and the byte right after the value must be the `'\0'`, any other byte being a protocol error. A sender writes `qb::json::to_msgpack(value)` then `'\0'` either way.

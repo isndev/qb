@@ -29,6 +29,8 @@
 
 #include <qb/io/protocol/base.h>
 #include <qb/io/protocol/json.h>
+#include <qb/io/protocol/netstring.h>
+#include <qb/io/protocol/varint.h>
 #include <qb/system/allocator/pipe.h>
 
 namespace {
@@ -184,6 +186,94 @@ BM_Protocol_SizeHeader(benchmark::State &state) {
     state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(frame.size()));
 }
 
+// --- Huly QB-80: the varint-prefixed and netstring framers, read against size_as_header and byte_terminated ---
+
+template <typename Policy, std::size_t LeadBytes>
+class BenchVarintPrefixed : public qb::protocol::varint_prefixed<ProtocolProbe, Policy, LeadBytes> {
+public:
+    explicit BenchVarintPrefixed(ProtocolProbe &probe) noexcept
+        : qb::protocol::varint_prefixed<ProtocolProbe, Policy, LeadBytes>(probe) {}
+
+    void
+    onMessage(std::size_t) noexcept final {}
+};
+
+class BenchNetstring : public qb::protocol::netstring<ProtocolProbe, const std::string_view> {
+public:
+    explicit BenchNetstring(ProtocolProbe &probe) noexcept
+        : qb::protocol::netstring<ProtocolProbe, const std::string_view>(probe) {}
+};
+
+template <typename Policy, std::size_t LeadBytes>
+std::string
+make_varint_frame(std::size_t payload_size) {
+    std::string frame(LeadBytes, static_cast<char>(0x30)); // the lead bytes, an MQTT PUBLISH's when there is one
+    frame += qb::protocol::varint::encode_header<Policy>(payload_size).view();
+    frame.append(payload_size, 'v');
+    return frame;
+}
+
+std::string
+make_netstring_frame(std::size_t payload_size) {
+    std::string frame(qb::protocol::netstring<ProtocolProbe>::Header(payload_size).view());
+    frame.append(payload_size, 'n');
+    frame.push_back(',');
+    return frame;
+}
+
+// One complete frame in the buffer, the framer asked once: the prefix decode plus the length test -- the cost
+// size_as_header pays with a fixed-width header, here with a one- to three-byte varint (QB-80).
+template <typename Policy, std::size_t LeadBytes>
+void
+BM_Protocol_VarintPrefixedScan(benchmark::State &state) {
+    const auto                             frame = make_varint_frame<Policy, LeadBytes>(static_cast<std::size_t>(state.range(0)));
+    ProtocolProbe                          probe;
+    BenchVarintPrefixed<Policy, LeadBytes> protocol(probe);
+
+    for (auto _ : state) {
+        probe.input.reset();
+        std::memcpy(probe.input.allocate_back(frame.size()), frame.data(), frame.size());
+        benchmark::DoNotOptimize(protocol.getMessageSize());
+    }
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(frame.size()));
+}
+
+// The same for a netstring: the decimal length, the colon, the trailing comma checked.
+void
+BM_Protocol_NetstringScan(benchmark::State &state) {
+    const auto     frame = make_netstring_frame(static_cast<std::size_t>(state.range(0)));
+    ProtocolProbe  probe;
+    BenchNetstring protocol(probe);
+
+    for (auto _ : state) {
+        probe.input.reset();
+        std::memcpy(probe.input.allocate_back(frame.size()), frame.data(), frame.size());
+        benchmark::DoNotOptimize(protocol.getMessageSize());
+    }
+
+    state.SetBytesProcessed(state.iterations() * static_cast<std::int64_t>(frame.size()));
+}
+
+// The slow sender's case: the prefix is whole, the payload is not. The framer must answer "not yet" from its
+// cached header without decoding the prefix again (one compare), the cost a trickling peer forces per arrival.
+template <typename Policy, std::size_t LeadBytes>
+void
+BM_Protocol_VarintPrefixedPartialPayload(benchmark::State &state) {
+    const auto                             frame = make_varint_frame<Policy, LeadBytes>(static_cast<std::size_t>(state.range(0)));
+    ProtocolProbe                          probe;
+    BenchVarintPrefixed<Policy, LeadBytes> protocol(probe);
+    // Everything but the last byte, once: getMessageSize() consumes nothing, so the buffer persists across iterations.
+    std::memcpy(probe.input.allocate_back(frame.size() - 1), frame.data(), frame.size() - 1);
+    benchmark::DoNotOptimize(protocol.getMessageSize()); // decodes and caches the header
+
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(protocol.getMessageSize()); // the cached path
+    }
+
+    state.SetItemsProcessed(state.iterations());
+}
+
 void
 BM_Protocol_JsonDepthGuard(benchmark::State &state) {
     const auto json = make_nested_json(static_cast<std::size_t>(state.range(0)));
@@ -336,6 +426,23 @@ BENCHMARK_TEMPLATE(BM_Protocol_SizeHeader, std::uint32_t)
     ->Args({1024 * 1024})
     ->ArgName("payload_bytes")
     ->Unit(benchmark::kNanosecond);
+BENCHMARK_TEMPLATE(BM_Protocol_VarintPrefixedScan, qb::protocol::varint::protobuf_policy, 0)
+    ->Args({32})
+    ->Args({1024})
+    ->Args({64 * 1024})
+    ->ArgName("payload_bytes")
+    ->Unit(benchmark::kNanosecond);
+BENCHMARK_TEMPLATE(BM_Protocol_VarintPrefixedScan, qb::protocol::varint::mqtt_policy, 1)
+    ->Args({32})
+    ->Args({1024})
+    ->Args({64 * 1024})
+    ->ArgName("payload_bytes")
+    ->Unit(benchmark::kNanosecond);
+BENCHMARK_TEMPLATE(BM_Protocol_VarintPrefixedPartialPayload, qb::protocol::varint::protobuf_policy, 0)
+    ->Args({1024})
+    ->ArgName("payload_bytes")
+    ->Unit(benchmark::kNanosecond);
+BENCHMARK(BM_Protocol_NetstringScan)->Args({32})->Args({1024})->Args({64 * 1024})->ArgName("payload_bytes")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_JsonDepthGuard)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_JsonDepthGuardOverDepth)->Args({600})->Args({4096})->ArgName("depth")->Unit(benchmark::kNanosecond);
 BENCHMARK(BM_Protocol_MsgpackDepthGuard)->Args({8})->Args({64})->Args({256})->ArgName("depth")->Unit(benchmark::kNanosecond);

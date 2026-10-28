@@ -85,6 +85,7 @@ qb_add_test(MODULE qb-io TIER system NAME tls-worker-deadline SOURCES tls/tls-wo
 qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME session-json          SOURCES session/session-json.cpp          DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES session/text-protocol-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME varint-netstring-roundtrip SOURCES session/varint-netstring-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network) # Huly QB-80
 
 # --- io (blocking + async file ops) / quic (native + loopback handshake) ---
 qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-blocking-io.cpp DEPENDS ${PROJECT_NAME})
