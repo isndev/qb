@@ -621,6 +621,14 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   (`ask_retry`+`retry_policy.jitter`, `ask_guarded`+`CircuitBreaker`, `rate_limiter`, `bulkhead`),
   saga (`run_saga`), routing (`WorkerPool`), pub/sub (`PubSub`), supervision (`Supervisor`). All
   core-local; coroutine-side helpers are cancel-on-kill.
+- **Testing actor code (3.4)** — `#include <qb/testkit.h>`: `qb::test::TestKit kit; auto probe =
+  kit.probe<Filled>(0); auto desk = kit.add<Desk>(0, probe); auto run = kit.run([desk, probe](qb::ScopedCoroContext ctx)
+  -> qb::io::async::task<void> { ctx.push_to<Order>(desk, 7); auto f = co_await qb::test::expect<Filled>(ctx, probe, 1s);
+  ... }); EXPECT_TRUE(run) << run.describe();`. The probe is the DESTINATION handed to the actors under test (an event
+  sent to the driver is not recorded); `expect` yields `std::optional<E>`, `expect_none` a bool, both bounded by a
+  deadline. In the scenario use `EXPECT_*`, never `ASSERT_*` (it `return`s; a coroutine cannot). A scenario that
+  `qb::ask`s another actor names the exchange: `kit.run<Quote>(...)`, else the reply is a dead letter and the ask
+  times out. One run per kit; `Main::stop()` is process-wide, so one kit at a time (Huly QB-57).
 - **Discovery** — `require<Target>()`; handle `qb::RequireEvent` and gate on `is<Target>(event)`.
   The default `on(qb::RequireEvent&)` already routes replies to a pending `co_await qb::ping`/
   `qb::require` through `resolve_require(e)`, so the coroutine form needs no boilerplate — but if
@@ -1419,6 +1427,14 @@ Coroutine replacement for the legacy `Actor::require<...>()` + `is<T>()` dance (
 *   `class SupervisedActor : Actor (alias supervised_actor)` — base for children; reports `ChildDown` to its supervisor on failure.
 *   `enum class supervision { cooperative, watch }` — `cooperative` (default): restart on `ChildDown` only; `watch`: the supervisor also watches every child (`Actor::watch`) and restarts one gone for any reason on its `DownEvent`, unwatching a child before replacing it _(`supervisor.h:51-60`)_.
 *   `class Supervisor : Actor (alias supervisor) { Supervisor(restart_strategy strategy, size_t child_count, unsigned max_restarts=0, qb::duration restart_window=0, supervision mode=supervision::cooperative); virtual ActorId spawn_child(size_t slot, uint64_t generation)=0; ActorId child(size_t slot) const; unsigned restarts() const; size_t restarts_in_window() const; size_t child_count() const; }` — restarts children per strategy; `max_restarts`+`restart_window` give sliding-window intensity, past which `on_escalate()` runs and the slot holds no child (`child(slot)` invalid); a `KillEvent` tears down children first (no orphans). `restarts()` is cumulative; `restarts_in_window()` (3.3) counts the restarts inside the trailing window, the number compared with `max_restarts`, so a caller can see how close the next failure is to escalating — 0 with no window, and 0 with no cap (an uncapped supervisor keeps no restart history).
+
+### Test kit (`<qb/testkit.h>` → `<qb/core/TestKit.h>`, namespace `qb::test`, 3.4, Huly QB-57)
+*   `class TestKit { TestKit(); qb::Main &engine() noexcept; [T<A, Args...>] ActorId add(CoreId core, Args&&... args); [T<Events...>] ActorId probe(CoreId core = 0); [T<Asks..., Scenario>] RunResult run(Scenario &&scenario, qb::duration watchdog = 10s, CoreId core = 0); }` — non-copyable. `run` adds a driver actor on `core` that `spawn`s `scenario` (a `task<void>(ScopedCoroContext)` callable, kept for the run: capture by value), starts the engine (`start(true)`), waits for the scenario's end or `watchdog`, calls `qb::Main::stop()` (process-wide, idempotent), joins and reads `hasError()`. The driver registers the kit's exchange and every `Asks` type (`kit.run<Quote>(...)`) so their `qb::ask` replies resolve. A second `run` throws `std::logic_error`; so does a driver that cannot be added _(`TestKit.h:436-501`)_.
+*   `struct RunResult { bool completed, timed_out, engine_error; std::exception_ptr error; explicit operator bool() const noexcept; std::string describe() const; }` — `true` = completed, not timed out, no engine error. On a watchdog the scenario is torn down with its core, never resumed: `completed` false, `error` empty _(`TestKit.h:203-237`)_.
+*   `[T<Events...>] class TestProbe final : Actor` — records a `shared_ptr` copy of every `Events` event it receives, one FIFO per type; each type derives from `qb::Event` and is copy-constructible (`static_assert`). Answers expectations: the oldest recorded event, else parks the asker until one arrives (oldest waiter first) or its deadline (a `spawn` + `ctx.sleep` self-reminder). Unbounded queues; nothing dropped _(`TestKit.h:251-367`)_.
+*   `[T<E>] [[nodiscard]] task<std::optional<E>> expect(ScopedCoroContext ctx, ActorId probe, qb::duration timeout)` — the next recorded `E` (a copy, its `getSource()` the sender) or empty at the deadline; `timeout <= 0` takes only an event already recorded. A `qb::ask` of the probe with `timeout + 250 ms`: empty when the probe never answers. Throws `std::logic_error` when the probe does not record `E`, `cancelled_error` when the asker is killed _(`TestKit.h:382-398`)_.
+*   `[T<E>] [[nodiscard]] task<bool> expect_none(ScopedCoroContext ctx, ActorId probe, qb::duration window)` — `false` at once when an `E` is recorded, `false` the moment one arrives, `true` at the end of `window`; consumes nothing; `false` when the probe never answers. Same throws _(`TestKit.h:412-426`)_.
+*   `namespace qb::test::detail { struct Expectation : Request<std::shared_ptr<void const>>; struct ExpectationDeadline : Event; template ScenarioDriver; }` — internals: the single non-template exchange (so one driver serves every probe type) and the probe's deadline reminder.
 
 ---
 

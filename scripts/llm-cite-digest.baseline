@@ -44,6 +44,11 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
+llm/qb.llm.api.md	TestKit.h:203-237	ca981c92a86c	struct RunResult {
+llm/qb.llm.api.md	TestKit.h:251-367	23cb75108277	template <typename... Events>
+llm/qb.llm.api.md	TestKit.h:382-398	37b1a74c5b40	template <typename E>
+llm/qb.llm.api.md	TestKit.h:412-426	af92edf93dee	template <typename E>
+llm/qb.llm.api.md	TestKit.h:436-501	213450b8cf0f	class TestKit {
 llm/qb.llm.api.md	VirtualCore.cpp:1073-1075	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1400-1415	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
 llm/qb.llm.api.md	VirtualCore.cpp:1729-1731	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...

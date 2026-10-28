@@ -273,6 +273,7 @@ The instrumentation flags (`-g -fprofile-arcs -ftest-coverage`, plus `--coverage
 
 ## See also
 
+- [Testing your actors](../6_guides/testing_actors.md) — the kit qb ships for testing YOUR actor code (`<qb/testkit.h>`): this page is about qb's own suite.
 - [Building qb](./building.md) — configure presets, build types, toolchains.
 - [CMake options](./cmake_options.md) — every `QB_*` flag, including `QB_BUILD_TESTS`, `QB_BUILD_COVERAGE`, `QB_USE_SYSTEM_GTEST`, and `QB_SANITIZE`.
 - [CMake and dependencies](./cmake_dependencies.md) — how GoogleTest and the other dependencies are resolved.

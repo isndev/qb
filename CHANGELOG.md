@@ -9,6 +9,26 @@ policy.
 
 ### Added
 
+- **An actor test kit: `<qb/testkit.h>`, namespace `qb::test` (Huly QB-57).** Every test of actor code had the same
+  scaffolding -- an engine, a hand-written driver actor, `std::atomic` globals, a guard proving the driver ran, a
+  stop, a join, a `hasError()` -- and qb's own suite rewrote it in each file. `qb::test::TestKit` owns a `qb::Main`
+  and runs ONE scenario, a `task<void>(qb::ScopedCoroContext)` coroutine, on a driver actor it adds itself; the
+  engine stops the moment the scenario returns or throws, a watchdog (10 s by default) stops it if it never ends,
+  and `run()` returns a `qb::test::RunResult` (`completed`, `timed_out`, `engine_error`, `error`, `describe()`).
+  `qb::test::TestProbe<Events...>` records a copy of every event of the announced types it receives, one FIFO per
+  type; its id is the destination handed to the actors under test. `co_await qb::test::expect<E>(ctx, probe,
+  timeout)` yields the next recorded `E` as a `std::optional<E>` -- at once when one waits, else the first to arrive
+  -- and `qb::test::expect_none<E>(ctx, probe, window)` is true when none arrived, consuming nothing. Both are a
+  `qb::ask` of the probe through one non-template exchange, so a probe may live on any core and one driver serves
+  every probe; the exchanges a scenario asks other actors with are named to `run<Asks...>()`. A timeout is a lower
+  bound (the probe answers at its deadline); nothing is dropped; an expectation of a type the probe does not record
+  throws `std::logic_error`. Header-only and additive; no test framework required (the kit's own tests use
+  GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (13 cases: the
+  FIFO and the sender, a timeout, a late arrival kept, `expect_none`, two waiters oldest first, a probe on another
+  core, the wrong probe, `run<Asks...>` and the timeout without it, a throwing scenario, the watchdog, a failed
+  start, one run per kit), green under ASan+UBSan, TSan and C++23, 30 repeats on a loaded host, and by eleven mutants
+  of the kit (ten caught; the eleventh -- a zero wait parked instead of answered at once -- is behaviour-equivalent).
+
 - **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
   `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child
   that yields once to the ready queue, so every step pays the root's task await (a transfer), the
