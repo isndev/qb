@@ -158,7 +158,7 @@ jobs:
             -DQB_USE_SYSTEM_GTEST=ON
             # The suite can otherwise pass with TLS tests silently unregistered when OpenSSL
             # is unavailable: QB_WITH_SSL defaults to ON but its historical fallback is OFF.
-            # QUIC stays AUTO, so an absent ngtcp2 OpenSSL helper does not fail this matrix.
+            # QUIC stays AUTO: an absent ngtcp2 OpenSSL helper does not fail this matrix (one on another major would).
             -DQB_WITH_SSL=ON
             -DQB_REQUIRE_FEATURES=ON
             # Not QB_USE_SYSTEM_BENCHMARK=ON: that switch is find_package(benchmark 1.9.5 REQUIRED),

@@ -560,8 +560,8 @@ endfunction()
 # inspect the artefact afterwards. QB_REQUIRE_FEATURES=ON turns every such downgrade into a
 # configure-time failure, which is what a package recipe wants.
 #
-# Only reachable when the feature was asked for: an AUTO/OFF resolution is not a degradation and
-# does not come through here.
+# Only reachable when the feature was asked for -- or found and refused, as a libngtcp2 linked to another
+# OpenSSL major than qb's (QB-1179, in AUTO too): an absent AUTO/OFF dependency does not come through here.
 option(QB_REQUIRE_FEATURES "Fail configure when a requested optional feature cannot be enabled (for distribution builds)" OFF)
 function(qb_feature_degraded)
     if(QB_REQUIRE_FEATURES)

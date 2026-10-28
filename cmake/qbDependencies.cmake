@@ -260,9 +260,10 @@ if(QB_WITH_BROTLI)
 endif()
 
 # QUIC transport (optional, via libngtcp2). Tri-state QB_WITH_QUIC:
-#   AUTO (default) - enable iff libngtcp2 is found; quiet (no warning) when absent
+#   AUTO (default) - enable iff libngtcp2 is found and usable; quiet when absent, a warning on another OpenSSL major
 #   ON  / TRUE / 1 - require libngtcp2; warn and disable if it (or SSL) is missing
 #   OFF / FALSE/ 0 - disabled outright
+set(_qb_quic_compared FALSE) # set by this block alone: tests/io/unit reads it, never a parent project's
 string(TOUPPER "${QB_WITH_QUIC}" _qb_quic_mode)
 if(_qb_quic_mode STREQUAL "OFF" OR _qb_quic_mode STREQUAL "FALSE" OR
    _qb_quic_mode STREQUAL "0" OR _qb_quic_mode STREQUAL "NO" OR _qb_quic_mode STREQUAL "N")
@@ -282,7 +283,61 @@ else()
         set(QB_HAS_QUIC FALSE)
     else()
         find_package(Ngtcp2 QUIET)
-        if(Ngtcp2_FOUND)
+        # libngtcp2_crypto_ossl calls the OpenSSL it was built against, qb the one it found. Two majors in one process
+        # crash at the first QUIC handshake (a Homebrew update moved libngtcp2 onto openssl@4 while qb found openssl@3:
+        # SSL_set0_rbio of libssl.4 on an SSL of libssl.3, Huly QB-1179), so they disable QUIC; two copies of one major
+        # -- a static libssl in qb, or two prefixes where Mach-O names them -- are reported and kept. qb's own libssl is
+        # read the same way (its headers' major when nothing reads it), unless a parent's FindNgtcp2 module won.
+        set(_qb_quic_conflict "")
+        if(Ngtcp2_FOUND AND COMMAND _ngtcp2_linked_openssl AND COMMAND _ngtcp2_openssl_conflict)
+            set(_qb_quic_compared TRUE)
+            _ngtcp2_linked_openssl("${OPENSSL_SSL_LIBRARY}" _qb_ssl_major _qb_ssl_path)
+            if("${_qb_ssl_major}" STREQUAL "")
+                string(REGEX MATCH "^[0-9]+" _qb_ssl_major "${OPENSSL_VERSION}")
+            endif()
+            set(_qb_ssl_static FALSE)
+            if(NOT WIN32 AND "${OPENSSL_SSL_LIBRARY}" MATCHES "\\.a$")
+                set(_qb_ssl_static TRUE)
+            endif()
+            _ngtcp2_openssl_conflict("${Ngtcp2_OPENSSL_MAJOR}" "${Ngtcp2_OPENSSL_LIBRARY}" "${_qb_ssl_major}" "${_qb_ssl_path}"
+                                     "${_qb_ssl_static}" _qb_quic_conflict)
+        endif()
+        if(_qb_quic_conflict)
+            set(_qb_quic_remedy "the OpenSSL libngtcp2 uses")
+            if("${Ngtcp2_OPENSSL_LIBRARY}" MATCHES "^(/.+)/lib/[^/]+$")
+                string(APPEND _qb_quic_remedy " (-DOPENSSL_ROOT_DIR=${CMAKE_MATCH_1})")
+            endif()
+            set(_qb_ngtcp2_ssl "OpenSSL ${Ngtcp2_OPENSSL_MAJOR}")
+            if(NOT "${Ngtcp2_OPENSSL_LIBRARY}" STREQUAL "")
+                string(APPEND _qb_ngtcp2_ssl " (${Ngtcp2_OPENSSL_LIBRARY})")
+            endif()
+            set(_qb_own_ssl "OpenSSL ${_qb_ssl_major}")
+            if(_qb_ssl_static)
+                string(APPEND _qb_own_ssl " statically")
+                string(APPEND _qb_quic_remedy ", shared (OPENSSL_USE_STATIC_LIBS off),")
+            endif()
+            string(CONCAT _qb_quic_pair
+                   "libngtcp2 (${NGTCP2_CRYPTO_OSSL_LIBRARY}) links ${_qb_ngtcp2_ssl} and qb links ${_qb_own_ssl} "
+                   "(${OPENSSL_SSL_LIBRARY}, headers ${OPENSSL_VERSION} in "
+                   "${OPENSSL_INCLUDE_DIR})")
+            string(CONCAT _qb_quic_fix
+                   "qb against ${_qb_quic_remedy} in a new build directory (an existing one keeps OPENSSL_INCLUDE_DIR, "
+                   "OPENSSL_SSL_LIBRARY and OPENSSL_CRYPTO_LIBRARY cached: remove them, or configure with --fresh)")
+        endif()
+        if(_qb_quic_conflict STREQUAL "COPIES")
+            string(CONCAT _qb_quic_copies
+                   "${_qb_quic_pair}: two copies of OpenSSL ${_qb_ssl_major} in one process. QUIC stays enabled -- one "
+                   "release in two copies was measured to work, on macOS -- but OpenSSL's ABI promise covers its "
+                   "public API, not an object one copy hands the other: to load one, build ${_qb_quic_fix}")
+            qb_warning_message("${_qb_quic_copies}")
+        endif()
+        if(_qb_quic_conflict STREQUAL "MAJORS")
+            string(CONCAT _qb_quic_majors
+                   "${_qb_quic_pair}: two OpenSSL majors in one process crash at the first QUIC handshake - QUIC "
+                   "support disabled. Build ${_qb_quic_fix}, or set QB_WITH_QUIC=OFF")
+            qb_feature_degraded("${_qb_quic_majors}")
+            set(QB_HAS_QUIC FALSE)
+        elseif(Ngtcp2_FOUND)
             qb_status_message("Found libngtcp2 QUIC transport stack")
             list(APPEND QB_EXTERNAL_LIBRARIES
                 Ngtcp2::ngtcp2

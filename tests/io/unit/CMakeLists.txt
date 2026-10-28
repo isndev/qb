@@ -243,6 +243,32 @@ qb_add_test(MODULE qb-io TIER unit NAME embedded-loop-prefix
 # a libev or wepoll name (ev_*, epoll_*), and some carry qb_ev_ (cmake/qbSymbolPrefix.cmake picks nm or dumpbin).
 qb_add_symbol_prefix_test(NAME qb-io-test-unit-embedded-loop-symbols TARGET qev
                           BANNED ev_ epoll_ REQUIRED qb_ev_ LABELS tier:unit module:qb-io)
+# ngtcp2-openssl-listing (Huly QB-1179): FindNgtcp2.cmake's reading of the OpenSSL libngtcp2_crypto_ossl links, on each
+# platform's listing and on the libraries this configure found -- what qbDependencies.cmake disables QUIC on. Where the
+# configure ran the comparison, what it read and the verdict it acted on are passed too, and the test re-derives both.
+# The target's APPLE and WIN32 travel under names of their own: script mode defines the host's, and keeps them.
+# qb's libssl is not passed on Windows: never read there, and MSVC's FindOpenSSL can make it an optimized/debug list.
+set(_qb_listing_live "")
+if(Ngtcp2_FOUND AND COMMAND _ngtcp2_linked_openssl) # qb's own module found the helper: its block must have compared
+    list(APPEND _qb_listing_live "-DQB_QUIC_FOUND_BY_QB=TRUE" "-DQB_QUIC_COMPARED=${_qb_quic_compared}")
+endif()
+if(_qb_quic_compared) # what the configure read, and the verdict it acted on
+    list(APPEND _qb_listing_live "-DQB_QUIC_VERDICT=${_qb_quic_conflict}"
+         "-DQB_QUIC_NGTCP2_MAJOR=${Ngtcp2_OPENSSL_MAJOR}" "-DQB_QUIC_NGTCP2_PATH=${Ngtcp2_OPENSSL_LIBRARY}"
+         "-DQB_QUIC_QB_MAJOR=${_qb_ssl_major}" "-DQB_QUIC_QB_PATH=${_qb_ssl_path}")
+endif()
+if(NOT WIN32)
+    list(APPEND _qb_listing_live "-DQB_SSL_LIBRARY=${OPENSSL_SSL_LIBRARY}")
+endif()
+add_test(NAME qb-io-test-unit-ngtcp2-openssl-listing
+         COMMAND "${CMAKE_COMMAND}" "-DFIND_MODULE=${QB_CMAKE_DIR}/FindNgtcp2.cmake" "-DLIBRARY=${NGTCP2_CRYPTO_OSSL_LIBRARY}"
+                 ${_qb_listing_live}
+                 "-DQB_OPENSSL_VERSION=${OPENSSL_VERSION}" "-DQB_HAS_QUIC=${QB_HAS_QUIC}"
+                 "-DQB_TARGET_APPLE=${APPLE}" "-DQB_TARGET_WIN32=${WIN32}"
+                 "-DCMAKE_READELF=${CMAKE_READELF}" "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-openssl-listing"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/ngtcp2-openssl-listing/check.cmake")
+set_tests_properties(qb-io-test-unit-ngtcp2-openssl-listing PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 # reconnect contract (Huly QB-126): the vocabulary every connection-keeping client shares, and the
 # backoff arithmetic of qb::io::reconnect_policy that qbm-redis and qbm-http alias.
 qb_add_test(MODULE qb-io TIER unit NAME reconnect-contract SOURCES core/reconnect-contract.cpp DEPENDS ${PROJECT_NAME})

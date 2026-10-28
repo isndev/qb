@@ -79,7 +79,7 @@ TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by 
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions — since 3.2 that definition is emitted after the OpenSSL probe, so it agrees with the banner (until then a host without OpenSSL compiled with `QB_WITH_SSL=1` while the banner said `SSL: OFF`).
 
-<!-- src: qb/cmake/qbDependencies.cmake:666-668 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:581-613 (configuration banner; the SSL line is :608) -->
+<!-- src: qb/cmake/qbDependencies.cmake:721-723 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:581-613 (configuration banner; the SSL line is :608) -->
 
 ### Client connections are secure by default
 

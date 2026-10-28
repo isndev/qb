@@ -199,6 +199,29 @@ policy.
   not move: a minor release already changes the link-time version symbol, so every object is rebuilt against
   the qb it links (`VERSIONING.md`).
 
+- **A libngtcp2 built against another OpenSSL major than qb's disables QUIC at configure time instead of crashing at
+  the first handshake (Huly QB-1179).** `FindNgtcp2.cmake` and `find_package(OpenSSL)` searched independently, and
+  nothing compared the OpenSSL that `libngtcp2_crypto_ossl` links with the one qb found. A Homebrew update moved
+  libngtcp2 onto `openssl@4` while qb kept finding `openssl@3`: the configure and the build were green, and every QUIC
+  binary loaded `libssl.3` and `libssl.4` and crashed in `SSL_set0_rbio` of `libssl.4` on an `SSL` of `libssl.3`
+  before its first test (measured on macOS, QB-1175). `FindNgtcp2.cmake` now reads the OpenSSL the helper links
+  (`Ngtcp2_OPENSSL_MAJOR`, and `Ngtcp2_OPENSSL_LIBRARY` where the listing gives a path) from its dependency list with
+  `otool -L` or `readelf -d` / `objdump -p` (static archives and Windows are not read: no answer, never a guess), and
+  `qbDependencies.cmake` reads qb's own `libssl` the same way. Two majors disable QUIC with a warning naming both
+  libraries, the `OPENSSL_ROOT_DIR` to pass where a path is known, and the cached OpenSSL entries an existing build
+  directory keeps (`--fresh`); `QB_REQUIRE_FEATURES=ON` makes it a configure error. Two copies of one major -- a
+  static `libssl` in qb beside the helper's shared one, or, on macOS, one major from two prefixes -- keep QUIC with a
+  warning: qb on `openssl@4`'s `libssl.a` beside libngtcp2's `libssl.4.dylib` was measured on macOS, its four QUIC
+  binaries green. `qb-io-test-unit-ngtcp2-openssl-listing` reads the parser on twenty listings, the verdict on
+  fourteen pairs of readings and the reader's tool fallbacks through stand-in tools, then qb's own `libssl` -- which
+  must read wherever it is a versioned libssl and a tool exists, so an ELF reader that reads nothing fails on every
+  Linux lane -- and, where the configure compared them, the helper: what the module reads now must be what the
+  configure read (a library removed since the configure, or replaced by one that reads otherwise, asks for a
+  reconfigure), the verdict the one it acted on, QUIC enabled unless they are two majors, and a helper the module read
+  nothing from must name no libssl in the tool's own listing. A build directory configured before a library upgrade
+  keeps its verdict until it is reconfigured. `INSTALL.md` (with the Homebrew header order, Huly QB-1180) and
+  `readme/3_qb_io/quic_transport.md` say so.
+
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the
   type checked used to be matched on its CN, and is now refused for its name. The flag
