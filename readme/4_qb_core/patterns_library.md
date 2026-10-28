@@ -845,7 +845,7 @@ before `start()` only, and `Actor::addRefActor` creates on the caller's own core
 
 | Symbol | Signature | Source |
 |---|---|---|
-| `qb::spawn_on` | `[T<A, Args...>] task<spawn_result> spawn_on(ScopedCoroContext ctx, CoreId core, qb::duration timeout, Args... args)` | `spawn.h:223-239` |
+| `qb::spawn_on` | `[T<A, Args...>] task<spawn_result> spawn_on(ScopedCoroContext ctx, CoreId core, qb::duration timeout, Args... args)` | `spawn.h:226-245` |
 | `qb::Spawner` | `class : ServiceActor<Spawner>` — add one to every core that accepts run-time creation: `engine.addActor<qb::Spawner>(core)` | `spawn.h:138-173` |
 | `qb::spawn_result` | `struct { ActorId id; spawn_status status; explicit operator bool() const noexcept; }` — `true` for `spawned` only | `spawn.h:61-69` |
 | `qb::spawn_status` | `enum class { spawned, refused, not_ready, unreachable }` | `spawn.h:47-54` |
@@ -867,11 +867,15 @@ the caller's state. The outcome:
   suspending, threw, or still runs. `id` is valid; the actor manages its own lifecycle.
 - `unreachable` — no answer within `timeout` plus 250 ms: no `Spawner` on that core, a core the
   engine does not run, or a caller that does not register `qb::SpawnRequest` (its answer is then a
-  dead letter). The actor may exist all the same. A `timeout` of zero or less waits without a
-  deadline, as `qb::ask` does — for the activation and for the answer — so it never yields
-  `unreachable`: a core without a `Spawner` then never answers.
+  dead letter). The actor may exist all the same. A `timeout` of zero or less sets no deadline of
+  the `Spawner`'s or of the ask's, as `qb::ask` does, so it never yields `unreachable`: a core
+  without a `Spawner` then never answers, and the caller waits until it is killed.
 
-<!-- src: qb/src/qb/core/patterns/spawn.h:47-239; qb/tests/core/system/patterns/spawn-on.cpp:137-312 -->
+Whatever `timeout` says, the target core bounds an `onInit()` that suspends by its activation
+deadline (`qb::VirtualCore::activation_deadline_ns`, 5 s by default, as for every actor): an init
+that outlasts it is failed by the core and answered `not_ready`.
+
+<!-- src: qb/src/qb/core/patterns/spawn.h:47-245; qb/tests/core/system/patterns/spawn-on.cpp:137-312 -->
 
 ### Example
 
@@ -937,7 +941,7 @@ qb::io::async::task<bool> onInit() override {
 | Distribute work across workers | routing | `qb::WorkerPool` (`routing.h:48`) |
 | Run a retried side effect at most once | idempotency | `qb::answer_idempotent` + `qb::dedup_map` (`idempotency.h:197,65`) |
 | Batch small items into one costly action | aggregation | `qb::batcher` (`aggregate.h:66`) |
-| Create an actor on another core while the engine runs | run-time creation | `qb::spawn_on` + `qb::Spawner` (`spawn.h:225,138`) |
+| Create an actor on another core while the engine runs | run-time creation | `qb::spawn_on` + `qb::Spawner` (`spawn.h:228,138`) |
 
 ---
 
@@ -962,7 +966,7 @@ qb::io::async::task<bool> onInit() override {
 - **`spawn_on` needs a `Spawner` there, and an asker that registers `qb::SpawnRequest`.** Without either the
   answer never resolves and the result is `unreachable` after the timeout — while the actor may have been
   created all the same. A cancelled `spawn_on` likewise leaves a created actor to its own lifecycle
-  (`spawn.h:189-191`).
+  (`spawn.h:192-194`).
 - **A bounded `ask_stream` buffer fails loudly.** If the responder outruns `capacity`, `next()`
   throws `stream_overflow_error` rather than silently dropping chunks (`streaming.h:88-93`,
   `streaming.h:124-135`).

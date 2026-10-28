@@ -76,6 +76,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -114,12 +115,14 @@ struct Expectation : qb::Request<std::shared_ptr<void const>> {
     bool          absence  = false; ///< `expect_none`: answer at the end of the window, consume nothing
     bool          recorded = true;  ///< Set by the probe: false when it does not record `event_type`
     std::uint64_t lend     = 0;     ///< Set by the probe with an event: the asker acknowledges it (`ExpectationTaken`)
+    std::uint64_t token    = 0;     ///< The asker's name for it: a withdrawal names it (`ExpectationWithdrawn`)
 
     Expectation() = default;
-    Expectation(qb::TypeId type, qb::duration window, bool none)
+    Expectation(qb::TypeId type, qb::duration window, bool none, std::uint64_t name)
         : event_type(type)
         , wait(window)
-        , absence(none) {}
+        , absence(none)
+        , token(name) {}
 };
 
 /// A probe's reminder to itself that the expectation `ticket` reached its deadline.
@@ -138,6 +141,15 @@ struct ExpectationTaken : qb::Event {
         : lend(l) {}
 };
 
+/// The asker's withdrawal of the expectation `token`: its frame ended without the answer -- the losing branch of a
+/// `when_any`, an ask that timed out first. The probe forgets its waiter, and an event it lent it comes back at once.
+struct ExpectationWithdrawn : qb::Event {
+    std::uint64_t token = 0;
+
+    explicit ExpectationWithdrawn(std::uint64_t t)
+        : token(t) {}
+};
+
 /// A probe's reminder to itself that the event lent as `lend` was never acknowledged.
 struct LendExpired : qb::Event {
     std::uint64_t lend = 0;
@@ -150,9 +162,40 @@ struct LendExpired : qb::Event {
 inline constexpr qb::duration reply_grace = std::chrono::milliseconds(250);
 
 /// How long a probe keeps an event it answered with, unacknowledged, before it records it again: the asker
-/// acknowledges at once, so only an expectation its asker abandoned -- a `when_any` that another branch won, an
-/// ask that timed out first -- reaches it.
+/// acknowledges at once, and an expectation it abandons is withdrawn at once (`ExpectationWithdrawn`), so only a
+/// killed asker, or one whose core stalls past it, reaches it.
 inline constexpr qb::duration lend_hold = std::chrono::seconds(2);
+
+/// The names of the expectations of the process: unique, so a probe tells two of one asker apart.
+inline std::atomic<std::uint64_t> expectation_tokens{0};
+
+/// `a + b`, `qb::duration::max()` past it: a timeout of `max()` means "no deadline", never an overflow.
+[[nodiscard]] constexpr qb::duration
+add_saturating(qb::duration const a, qb::duration const b) noexcept {
+    return a > qb::duration::max() - b ? qb::duration::max() : a + b;
+}
+
+/// Withdraws the expectation `token` from `probe` when its frame ends without taking the answer -- unwound by a
+/// `when_any` that another branch won, destroyed, an ask that timed out -- so what the probe holds for it goes
+/// to the next expectation at once. A killed asker withdraws nothing: its loans come back after `lend_hold`.
+struct WithdrawOnExit {
+    qb::ScopedCoroContext ctx;
+    qb::ActorId           probe;
+    std::uint64_t         token;
+    bool                  armed = true;
+
+    WithdrawOnExit(qb::ScopedCoroContext c, qb::ActorId p, std::uint64_t t)
+        : ctx(std::move(c))
+        , probe(p)
+        , token(t) {}
+    WithdrawOnExit(WithdrawOnExit const &)            = delete;
+    WithdrawOnExit &operator=(WithdrawOnExit const &) = delete;
+
+    ~WithdrawOnExit() {
+        if (armed && !ctx.cancelled())
+            ctx.push_to<ExpectationWithdrawn>(probe, token);
+    }
+};
 
 /// How a scenario ended, written on the driver's core and read on the test thread.
 struct ScenarioState {
@@ -270,9 +313,11 @@ struct RunResult {
  *          waiter is served first) or its deadline passes. `expect_none<E>` consumes nothing: it is
  *          answered "present" by an `E` already waiting or arriving within its window, "absent" at the
  *          end of it. Nothing is ever dropped: what no expectation consumed stays recorded for the next. An event
- *          handed to an expectation is only lent until its asker acknowledges it: one whose asker abandoned the
- *          expectation -- the losing branch of a `when_any`, an ask that timed out first -- returns to the head of
- *          its queue after `detail::lend_hold` (2 s), for the next expectation.
+ *          handed to an expectation is only lent until its asker acknowledges it. An expectation its asker
+ *          abandons -- the losing branch of a `when_any`, an ask that timed out first -- is withdrawn as its frame
+ *          ends: its waiter is forgotten, and an event lent to it returns at once to its place in the queue, in
+ *          arrival order, for the next expectation. Only a killed asker withdraws nothing: what it was lent
+ *          returns after `detail::lend_hold` (2 s).
  *          The queues are unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
@@ -286,23 +331,40 @@ class TestProbe final : public qb::Actor {
         std::uint64_t ticket;      ///< Matches the deadline reminder
         qb::ActorId   asker;       ///< Where the answer goes
         std::uint64_t correlation; ///< The asker's `correlation_id`
+        std::uint64_t token;       ///< The asker's name for it (a withdrawal)
         bool          absence;     ///< An `expect_none`
     };
-    struct queue {
-        qb::TypeId                              type;
-        std::deque<std::shared_ptr<void const>> received;
-        std::deque<waiter>                      waiting;
-    };
-    struct loan {
-        std::uint64_t               id;
-        queue                      *from;
+    /// A recorded event and its rank of arrival: what comes back from a loan goes back to its place.
+    struct entry {
+        std::uint64_t               seq = 0;
         std::shared_ptr<void const> event;
     };
+    struct queue {
+        qb::TypeId         type;
+        std::deque<entry>  received;
+        std::deque<waiter> waiting;
+    };
+    struct loan {
+        std::uint64_t id;
+        queue        *from;
+        entry         item;
+        qb::ActorId   asker;
+        std::uint64_t token;
+    };
+    /// A loan that expired: an acknowledgement arriving after it takes the event back out of its queue.
+    struct expired_loan {
+        std::uint64_t id;
+        queue        *from;
+        std::uint64_t seq;
+    };
+    static constexpr std::size_t expired_memory = 256;
 
     std::array<queue, sizeof...(Events)> _queues{queue{qb::type_id<Events>(), {}, {}}...};
     std::vector<loan>                    _lent;
+    std::deque<expired_loan>             _expired;
     std::uint64_t                        _next_ticket = 0;
     std::uint64_t                        _next_lend   = 0;
+    std::uint64_t                        _next_seq    = 0;
 
     template <typename E>
     static constexpr std::size_t
@@ -320,11 +382,11 @@ class TestProbe final : public qb::Actor {
         return nullptr;
     }
 
-    /// Lend `event` of `q` to an expectation: it comes back to `q` unless the asker acknowledges it in time.
+    /// Lend `item` of `q` to an expectation: it comes back to `q` unless the asker acknowledges it in time.
     std::uint64_t
-    lend(queue &q, std::shared_ptr<void const> event) {
+    lend(queue &q, entry item, qb::ActorId asker, std::uint64_t token) {
         const auto id = ++_next_lend;
-        _lent.push_back(loan{id, &q, std::move(event)});
+        _lent.push_back(loan{id, &q, std::move(item), asker, token});
         spawn([id](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(detail::lend_hold);
             ctx.push<detail::LendExpired>(id);
@@ -333,23 +395,23 @@ class TestProbe final : public qb::Actor {
     }
 
     void
-    answer(queue &q, waiter const &w, std::shared_ptr<void const> const &event) {
+    answer(queue &q, waiter const &w, entry const &item) {
         auto &reply          = push<detail::Expectation>(w.asker);
         reply.correlation_id = w.correlation;
         reply.absence        = w.absence;
-        reply.response       = event;
-        if (event && !w.absence)
-            reply.lend = lend(q, event);
+        reply.response       = item.event;
+        if (item.event && !w.absence)
+            reply.lend = lend(q, item, w.asker, w.token);
     }
 
-    /// `event` reaches `q`: it answers every absence waiter, and the oldest expectation, or it is recorded -- at
-    /// the back when it arrives, at the head when a loan of it expired (it was the oldest when it was lent).
+    /// `item` reaches `q`: it answers every absence waiter, and the oldest expectation, or it is recorded -- at
+    /// the back when it arrives, at its rank of arrival when a loan of it ends unacknowledged.
     void
-    record(queue &q, std::shared_ptr<void const> event, bool returned = false) {
+    record(queue &q, entry item, bool returned = false) {
         bool consumed = false;
         for (auto it = q.waiting.begin(); it != q.waiting.end();) {
             if (it->absence || !consumed) {
-                answer(q, *it, event);
+                answer(q, *it, item);
                 consumed = consumed || !it->absence;
                 it       = q.waiting.erase(it);
             } else
@@ -358,9 +420,19 @@ class TestProbe final : public qb::Actor {
         if (consumed)
             return;
         if (returned)
-            q.received.push_front(std::move(event));
+            q.received.insert(std::find_if(q.received.begin(), q.received.end(), [&item](entry const &e) { return e.seq > item.seq; }),
+                              std::move(item));
         else
-            q.received.push_back(std::move(event));
+            q.received.push_back(std::move(item));
+    }
+
+    /// The loan `it` ends unacknowledged: its event goes back to its queue.
+    void
+    give_back(typename std::vector<loan>::iterator it) {
+        auto from = it->from;
+        auto item = std::move(it->item);
+        _lent.erase(it);
+        record(*from, std::move(item), true);
     }
 
 public:
@@ -370,6 +442,7 @@ public:
         registerEvent<detail::Expectation>(*this);
         registerEvent<detail::ExpectationDeadline>(*this);
         registerEvent<detail::ExpectationTaken>(*this);
+        registerEvent<detail::ExpectationWithdrawn>(*this);
         registerEvent<detail::LendExpired>(*this);
         co_return true;
     }
@@ -378,7 +451,7 @@ public:
     requires(std::is_same_v<E, Events> || ...)
     void
     on(E const &e) {
-        record(_queues[index_of<E>()], std::make_shared<E const>(e));
+        record(_queues[index_of<E>()], entry{++_next_seq, std::make_shared<E const>(e)});
     }
 
     void
@@ -392,10 +465,11 @@ public:
             return;
         }
         if (!q->received.empty()) {
-            e.response = q->received.front();
+            e.response = q->received.front().event;
             if (!e.absence) {
+                auto item = std::move(q->received.front());
                 q->received.pop_front();
-                e.lend = lend(*q, e.response);
+                e.lend = lend(*q, std::move(item), e.getSource(), e.token);
             }
             reply(e);
             return;
@@ -405,7 +479,7 @@ public:
             return;
         }
         const auto ticket = ++_next_ticket;
-        q->waiting.push_back(waiter{ticket, e.getSource(), e.correlation_id, e.absence});
+        q->waiting.push_back(waiter{ticket, e.getSource(), e.correlation_id, e.token, e.absence});
         spawn([ticket, wait = e.wait](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             co_await ctx.sleep(wait);
             ctx.push<detail::ExpectationDeadline>(ticket);
@@ -417,7 +491,7 @@ public:
         for (auto &q : _queues)
             for (auto it = q.waiting.begin(); it != q.waiting.end(); ++it)
                 if (it->ticket == e.ticket) {
-                    answer(q, *it, nullptr); // answered already when an event came first: not found here
+                    answer(q, *it, entry{}); // answered already when an event came first: not found here
                     q.waiting.erase(it);
                     return;
                 }
@@ -425,18 +499,36 @@ public:
 
     void
     on(detail::ExpectationTaken const &e) {
-        std::erase_if(_lent, [&e](loan const &l) { return l.id == e.lend; });
+        if (std::erase_if(_lent, [&e](loan const &l) { return l.id == e.lend; }) != 0)
+            return;
+        // Acknowledged after its loan expired: the asker has it, so the copy given back must not be served again.
+        const auto late = std::find_if(_expired.begin(), _expired.end(), [&e](expired_loan const &x) { return x.id == e.lend; });
+        if (late == _expired.end())
+            return;
+        auto &received = late->from->received;
+        std::erase_if(received, [seq = late->seq](entry const &x) { return x.seq == seq; });
+        _expired.erase(late);
+    }
+
+    void
+    on(detail::ExpectationWithdrawn const &e) {
+        const auto asker = e.getSource();
+        for (auto &q : _queues)
+            std::erase_if(q.waiting, [&](waiter const &w) { return w.asker == asker && w.token == e.token; });
+        const auto it = std::find_if(_lent.begin(), _lent.end(), [&](loan const &l) { return l.asker == asker && l.token == e.token; });
+        if (it != _lent.end())
+            give_back(it); // lent to it: back at once, at its rank
     }
 
     void
     on(detail::LendExpired const &e) {
         const auto it = std::find_if(_lent.begin(), _lent.end(), [&e](loan const &l) { return l.id == e.lend; });
         if (it == _lent.end())
-            return; // acknowledged
-        auto from  = it->from;
-        auto event = std::move(it->event);
-        _lent.erase(it);
-        record(*from, std::move(event), true);
+            return; // acknowledged, or withdrawn
+        _expired.push_back(expired_loan{it->id, it->from, it->item.seq});
+        if (_expired.size() > expired_memory)
+            _expired.pop_front();
+        give_back(it);
     }
 };
 
@@ -457,15 +549,19 @@ template <typename E>
 [[nodiscard]] qb::io::async::task<std::optional<E>>
 expect(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration timeout) {
     static_assert(std::is_base_of_v<qb::Event, E> && std::is_copy_constructible_v<E>, "qb::test::expect: E is a copyable qb::Event");
-    const auto                         wait = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
+    const auto                         wait  = timeout > qb::duration::zero() ? timeout : qb::duration::zero();
+    const auto                         token = ++detail::expectation_tokens;
+    detail::WithdrawOnExit             withdraw{ctx, probe, token};
     std::optional<detail::Expectation> answer;
     try {
-        answer.emplace(co_await qb::ask(ctx, probe, detail::Expectation{qb::type_id<E>(), wait, false}, wait + detail::reply_grace));
+        answer.emplace(co_await qb::ask(ctx, probe, detail::Expectation{qb::type_id<E>(), wait, false, token},
+                                        detail::add_saturating(wait, detail::reply_grace)));
     } catch (qb::io::async::timeout_error const &) {
-        co_return std::nullopt;
+        co_return std::nullopt; // withdrawn on the way out: an answer still on its way comes back to the probe
     }
     if (!answer->recorded)
         throw std::logic_error("qb::test::expect: the probe does not record this event type");
+    withdraw.armed = false; // answered: the probe holds nothing more for it
     if (!answer->response)
         co_return std::nullopt;
     if (answer->lend != 0)
@@ -489,13 +585,17 @@ template <typename E>
 [[nodiscard]] qb::io::async::task<bool>
 expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
     static_assert(std::is_base_of_v<qb::Event, E>, "qb::test::expect_none: E is a qb::Event");
-    const auto                         wait = window > qb::duration::zero() ? window : qb::duration::zero();
+    const auto                         wait  = window > qb::duration::zero() ? window : qb::duration::zero();
+    const auto                         token = ++detail::expectation_tokens;
+    detail::WithdrawOnExit             withdraw{ctx, probe, token};
     std::optional<detail::Expectation> answer;
     try {
-        answer.emplace(co_await qb::ask(ctx, probe, detail::Expectation{qb::type_id<E>(), wait, true}, wait + detail::reply_grace));
+        answer.emplace(co_await qb::ask(ctx, probe, detail::Expectation{qb::type_id<E>(), wait, true, token},
+                                        detail::add_saturating(wait, detail::reply_grace)));
     } catch (qb::io::async::timeout_error const &) {
         co_return false;
     }
+    withdraw.armed = false;
     if (!answer->recorded)
         throw std::logic_error("qb::test::expect_none: the probe does not record this event type");
     co_return !answer->response;

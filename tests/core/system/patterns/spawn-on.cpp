@@ -310,3 +310,38 @@ TEST(SpawnOn, ACallerThatDoesNotRegisterSpawnRequestNeverSeesTheAnswer) {
         30s);
     EXPECT_TRUE(run) << run.describe();
 }
+
+TEST(SpawnOn, ATimeoutOfMaxIsNoDeadlineNotAnOverflow) {
+    // timeout + the 250 ms grace overflowed for qb::duration::max() (signed overflow; UBSan reports it).
+    qb::test::TestKit kit;
+    (void) kit.add<qb::Spawner>(1);
+    const auto run = kit.run<qb::SpawnRequest>([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        const auto w = co_await qb::spawn_on<SlowInit>(ctx, 1, qb::duration::max(), qb::duration{std::chrono::milliseconds(50)});
+        EXPECT_EQ(w.status, qb::spawn_status::spawned);
+    });
+    EXPECT_TRUE(run) << run.describe();
+}
+
+TEST(SpawnOn, TheCoresActivationDeadlineStillBoundsAZeroTimeout) {
+    // A zero timeout sets no deadline of the Spawner's or of the ask's; the target core still fails an onInit() that
+    // outlasts its activation deadline, and the answer is not_ready (the second review: the docs said "no deadline").
+    struct restore {
+        std::uint64_t saved = qb::VirtualCore::activation_deadline_ns;
+        ~restore() {
+            qb::VirtualCore::activation_deadline_ns = saved;
+        }
+    } guard;
+    qb::VirtualCore::activation_deadline_ns = 300u * 1000u * 1000u; // 300 ms, before start()
+    qb::test::TestKit kit;
+    (void) kit.add<qb::Spawner>(1);
+    const auto run = kit.run<qb::SpawnRequest>(
+        [](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto start = steady::now();
+            const auto w     = co_await qb::spawn_on<SlowInit>(ctx, 1, qb::duration::zero(), qb::duration{std::chrono::seconds(3)});
+            EXPECT_EQ(w.status, qb::spawn_status::not_ready);
+            EXPECT_TRUE(w.id.is_valid());
+            EXPECT_LT(steady::now() - start, 2500ms) << "ended by the core's activation deadline, not by the init";
+        },
+        30s);
+    EXPECT_TRUE(run) << run.describe();
+}

@@ -44,11 +44,11 @@ llm/qb.llm.api.md	DeathWatch.h:36-53	d88ed992e2b3	/*!
 llm/qb.llm.api.md	DeathWatch.h:79-96	4301514665c6	/*!
 llm/qb.llm.api.md	Event.h:940-941	e76bd16e4192	template <typename... _Args>
 llm/qb.llm.api.md	Event.h:949-950	46b3869d9c8b	template <typename... _Args>
-llm/qb.llm.api.md	TestKit.h:227-261	ca981c92a86c	struct RunResult {
-llm/qb.llm.api.md	TestKit.h:278-441	699abbe0ce6f	template <typename... Events>
-llm/qb.llm.api.md	TestKit.h:456-474	c4fc30b573be	template <typename E>
-llm/qb.llm.api.md	TestKit.h:488-502	af92edf93dee	template <typename E>
-llm/qb.llm.api.md	TestKit.h:512-577	213450b8cf0f	class TestKit {
+llm/qb.llm.api.md	TestKit.h:270-304	ca981c92a86c	struct RunResult {
+llm/qb.llm.api.md	TestKit.h:323-533	ef67010859d2	template <typename... Events>
+llm/qb.llm.api.md	TestKit.h:548-570	432a6fe8379d	template <typename E>
+llm/qb.llm.api.md	TestKit.h:584-602	e22db8bd4b3c	template <typename E>
+llm/qb.llm.api.md	TestKit.h:612-677	213450b8cf0f	class TestKit {
 llm/qb.llm.api.md	VirtualCore.cpp:1073-1075	7796660a5f5b	if (killed) [[unlikely]] {
 llm/qb.llm.api.md	VirtualCore.cpp:1400-1415	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
 llm/qb.llm.api.md	VirtualCore.cpp:1729-1731	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
@@ -112,7 +112,7 @@ llm/qb.llm.api.md	scheduler.h:651-651	1acc0272cc17	void dump(std::ostream &os) c
 llm/qb.llm.api.md	scheduler.h:826-829	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	spawn.h:118-126	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
 llm/qb.llm.api.md	spawn.h:138-173	253a72a055f9	class Spawner : public qb::ServiceActor<Spawner> {
-llm/qb.llm.api.md	spawn.h:223-239	6a3bde32f837	template <class A, class... Args>
+llm/qb.llm.api.md	spawn.h:226-245	1d8053ff4732	template <class A, class... Args>
 llm/qb.llm.api.md	spawn.h:47-54	5c3377928b52	enum class spawn_status : std::uint8_t {
 llm/qb.llm.api.md	spawn.h:61-69	42b82c0b3a96	struct spawn_result {
 llm/qb.llm.api.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {

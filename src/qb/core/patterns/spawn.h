@@ -131,9 +131,9 @@ struct SpawnRequest : qb::Request<spawn_result> {
  * @brief The per-core service `spawn_on` asks: add one to every core that accepts actors created at
  *        run time -- `engine.addActor<qb::Spawner>(core)` before `start()`.
  * @details On a `SpawnRequest` it runs `addRefActor` on its own core (the core's admission: a refused
- *          reservation, or an `onInit()` failing before it suspends, answers `refused` at once), then waits, in a coroutine of its own, for the
- * new actor to become active -- event-driven, `ActorHandle::ready_async` -- and answers `spawned`, or `not_ready` with the id. The new actor
- * manages its own lifecycle: the spawner does not own it, and a spawner killed meanwhile kills nothing but its wait.
+ *          reservation, a constructor that throws, or an `onInit()` failing before it suspends, answers `refused` at once), then waits, in a
+ * coroutine of its own, for the new actor to become active -- event-driven, `ActorHandle::ready_async` -- and answers `spawned`, or `not_ready`
+ * with the id. The new actor manages its own lifecycle: the spawner does not own it, and a spawner killed meanwhile kills nothing but its wait.
  */
 class Spawner : public qb::ServiceActor<Spawner> {
 public:
@@ -179,8 +179,11 @@ public:
  * @tparam Args Constructor arguments, taken BY VALUE: they are moved to the target core.
  * @param ctx The caller's context; its actor registers `qb::SpawnRequest` (see `SpawnRequest`).
  * @param core The target core: it runs a `qb::Spawner`. The caller's own core works too.
- * @param timeout The bound on the whole spawn, the new actor's `onInit()` included. Zero or less waits without a
- *        deadline, as `qb::ask` does: a core without a `Spawner` then never answers.
+ * @param timeout The bound on the whole spawn, the new actor's `onInit()` included -- itself bounded by the target
+ *        core's activation deadline (`qb::VirtualCore::activation_deadline_ns`, 5 s by default): an `onInit()` that
+ *        outlasts it is answered `not_ready`, whatever @p timeout says. Zero or less sets no deadline of the
+ *        `Spawner`'s or of the ask's, as `qb::ask` does: a core without a `Spawner` then never answers, and the
+ *        caller waits until it is killed.
  * @param args The constructor arguments.
  * @return `spawned` with the id once the actor is active; `refused` when the core admitted nothing (an
  *         `onInit()` that fails before it first suspends included); `not_ready` (the id valid) when its init
@@ -225,13 +228,16 @@ template <class A, class... Args>
 spawn_on(qb::ScopedCoroContext ctx, qb::CoreId core, qb::duration timeout, Args... args) {
     static_assert(std::is_base_of_v<qb::Actor, A>, "qb::spawn_on: A is a qb::Actor");
     static_assert(std::is_constructible_v<A, Args &&...>, "qb::spawn_on: A is constructible from the moved arguments");
-    // A timeout of zero or less waits without a deadline, as qb::ask does: for the activation and for the answer.
+    (qb::io::async::pin_frame_copy(args), ...); // QB-213: an over-aligned argument stays at its own alignment
+    // A timeout of zero or less sets no deadline of the Spawner's or of the ask's (the core's activation deadline
+    // still applies, as to every actor).
     const bool bounded = timeout > qb::duration::zero();
     const auto wait    = bounded ? timeout : qb::duration::zero();
     auto       factory = std::make_shared<detail::spawn_factory<A, Args...>>(std::move(args)...);
+    const auto grace   = wait > qb::duration::max() - detail::spawn_reply_grace ? qb::duration::max() : wait + detail::spawn_reply_grace;
     try {
         auto answer = co_await qb::ask(ctx, qb::Actor::getServiceId<Spawner>(core), SpawnRequest{std::move(factory), wait},
-                                       bounded ? wait + detail::spawn_reply_grace : qb::duration::zero());
+                                       bounded ? grace : qb::duration::zero());
         co_return answer.response;
     } catch (qb::io::async::timeout_error const &) {
         co_return spawn_result{};
