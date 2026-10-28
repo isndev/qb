@@ -674,6 +674,11 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
 A self-signed certificate is rejected by a default (verifying) client; pair it with
 `set_insecure()` on the client, or add the certificate to the client's trust store.
 
+The `subjectAltName` is required, not a courtesy: the hostname check matches the certificate's
+SAN, and from OpenSSL 4.1 the subject `commonName` is no longer consulted by default (RFC 9525;
+`X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT` brings it back, and qb does not set it). A certificate
+that names its host only in its CN verifies its chain and is then refused for its name.
+
 ## Pitfalls
 
 - **The slice vanishes without OpenSSL.** If OpenSSL is not found, `QB_WITH_SSL` is forced

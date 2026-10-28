@@ -50,6 +50,8 @@
 #include <qb/io/tcp/ssl/listener.h>
 #include <qb/io/tcp/ssl/socket.h>
 
+#include "x509_name_check.h" // name_check_error(): what a generated leaf's subjectAltName answers
+
 namespace qb::io::test {
 
 namespace tls_pump_detail {
@@ -68,10 +70,11 @@ write_bio(BIO *bio, const std::string &path) {
 } // namespace tls_pump_detail
 
 // An EC P-256 certificate whose subject is `CN=<cn>`, self-signed or issued by another identity, written as
-// PEM to two temporary files the object removes; `authority` makes it a CA (`basicConstraints CA:TRUE`). The
-// certificate and key stay readable (`x509()`, `pkey()`) for what a test signs with them -- an OCSP response.
-// PEM goes through a memory BIO and a std::ofstream: no FILE* crosses into OpenSSL (on Windows that needs
-// applink.c in the executable).
+// PEM to two temporary files the object removes; `authority` makes it a CA (`basicConstraints CA:TRUE`), and a
+// leaf names <cn> in its `subjectAltName` too: the name a client's hostname check reads (OpenSSL 4.1 no longer
+// falls back to the CN, RFC 9525). The certificate and key stay readable (`x509()`, `pkey()`) for what a test
+// signs with them -- an OCSP response. PEM goes through a memory BIO and a std::ofstream: no FILE* crosses into
+// OpenSSL (on Windows that needs applink.c in the executable).
 class generated_identity {
     std::string _cert;
     std::string _key;
@@ -109,6 +112,13 @@ public:
             BASIC_CONSTRAINTS *bc = BASIC_CONSTRAINTS_new();
             ok                    = bc && (bc->ca = 1, X509_add1_ext_i2d(_x509, NID_basic_constraints, bc, 1, 0) == 1);
             BASIC_CONSTRAINTS_free(bc);
+        }
+        if (ok && r == role::leaf) {
+            // Parsed from the text `openssl req -addext` takes: no ASN1_STRING is filled by hand, so nothing here
+            // needs ASN1_STRING_set(), which OpenSSL 4.1 deprecates for a setter OpenSSL 3 does not have.
+            X509_EXTENSION *san = X509V3_EXT_nconf_nid(nullptr, nullptr, NID_subject_alt_name, ("DNS:" + cn).c_str());
+            ok                  = san && X509_add_ext(_x509, san, -1) == 1;
+            X509_EXTENSION_free(san);
         }
         ok = ok && X509_sign(_x509, issuer ? issuer->_pkey : _pkey, EVP_sha256()) != 0;
         if (ok) {

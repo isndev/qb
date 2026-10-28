@@ -50,9 +50,9 @@
  *     candidate 1, and is the pair the qbm-http suite and the HTTPS/H2/H3 examples resolve
  *     from the source tree.
  *   - `qb/tests/io/system/resources/ssl/{cert,key}.pem` — candidate 3, and the ONLY committed
- *     pair with `CN=localhost`. `system/tcp/ssl-socket-loopback.cpp` addresses it directly
- *     through its own `localhost_fixture()` rather than through this search, precisely
- *     because which pair the search returns depends on the working directory.
+ *     pair that names localhost: `CN=localhost`, and the `subjectAltName` a hostname check reads (OpenSSL 4.1
+ *     no longer falls back to the CN). `system/tcp/ssl-socket-loopback.cpp` addresses it directly through its own
+ *     `localhost_fixture()` rather than through this search, because which pair it returns depends on the working directory.
  *
  * So: candidate 1 is the contract, candidate 3 is the source-tree safety net that makes
  * `require_ssl_files()` true even in a checkout that was never built.

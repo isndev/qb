@@ -81,6 +81,7 @@
 
 #include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
+#include "../../shared/x509_name_check.h"
 
 using namespace std::chrono_literals;
 
@@ -250,11 +251,12 @@ make_server_context() {
     return qb::io::ssl::create_server_context(TLS_server_method(), ssl_resource_path("cert.pem"), ssl_resource_path("key.pem"));
 }
 
-// The CN=localhost fixture, resolved from THIS file rather than through `ssl_resource_path()`.
+// The localhost fixture, resolved from THIS file rather than through `ssl_resource_path()`.
 // That helper probes several candidate directories, so which of the two shipped certificates it
-// finds depends on the working directory — and they are not interchangeable: this one is
-// CN=localhost, the other (qb/resources/ssl) carries no CN at all. Hostname verification can only
-// be exercised against the former, so it is addressed directly.
+// finds depends on the working directory — and they are not interchangeable: this one names
+// localhost (its CN, and the subjectAltName OpenSSL 4.1 reads alone), the other (qb/resources/ssl)
+// no host at all. Hostname verification can only be exercised against the former, so it is
+// addressed directly.
 std::filesystem::path
 localhost_fixture(const char *name) {
     return std::filesystem::path(__FILE__).parent_path().parent_path() / "resources" / "ssl" / name;
@@ -925,18 +927,11 @@ make_san_server_context(std::string &out_cert_path, std::string &out_key_path) {
     if (ok) {
         GENERAL_NAMES *gens = sk_GENERAL_NAME_new_null();
         if (gens) {
+            // The library fills the IA5String from the text: ASN1_STRING_set() is deprecated from OpenSSL 4.1,
+            // and the setter that replaces it does not exist before 4.1.
             auto add_dns = [&](const char *dns) {
-                GENERAL_NAME   *gen = GENERAL_NAME_new();
-                ASN1_IA5STRING *ia5 = ASN1_IA5STRING_new();
-                if (gen && ia5 && ASN1_STRING_set(ia5, dns, static_cast<int>(std::char_traits<char>::length(dns))) == 1) {
-                    GENERAL_NAME_set0_value(gen, GEN_DNS, ia5);
+                if (GENERAL_NAME *gen = a2i_GENERAL_NAME(nullptr, nullptr, nullptr, GEN_DNS, dns, 0))
                     sk_GENERAL_NAME_push(gens, gen);
-                } else {
-                    if (ia5)
-                        ASN1_IA5STRING_free(ia5);
-                    if (gen)
-                        GENERAL_NAME_free(gen);
-                }
             };
             auto add_ip = [&](const unsigned char *raw, int len) {
                 GENERAL_NAME      *gen = GENERAL_NAME_new();
@@ -1526,7 +1521,9 @@ TEST(SSLSocketLoopback, PostHandshakeAuthRequestSucceedsWhenServerEnablesIt) {
 // ===========================================================================
 // Literal-IP SNI target: connect_v4 with an IP host string drives the
 // inet_pton / IP-SAN verification branch of apply_client_peer_verification.
-// Because the shipped cert has no IP SAN, the verifying handshake must FAIL,
+// The verifying client trusts only the default store, which holds no test
+// certificate, so its handshake must FAIL whichever pair the server loaded --
+// even the committed localhost pair, which names IP:127.0.0.1 in its SAN --
 // while the IP-targeted insecure handshake succeeds (same server).
 // ===========================================================================
 
@@ -1562,13 +1559,13 @@ TEST(SSLSocketLoopback, LiteralIpVerificationBranchRejectsCertWithoutIpSan) {
     });
 
     // Verifying client targeting a LITERAL IP: hits the inet_pton IP branch and
-    // installs IP-SAN matching. The self-signed test cert has no IP SAN, so the
-    // chain-valid-but-IP-mismatch handshake MUST be rejected.
+    // installs IP-SAN matching. The self-signed test cert is in no store the
+    // client trusts, so the handshake MUST be rejected, IP SAN or not.
     {
         qb::io::tcp::ssl::socket verifying_client;
         ASSERT_TRUE(verifying_client.verify_peer());
         const int ret = verifying_client.connect_v4("127.0.0.1", port);
-        EXPECT_NE(ret, 0) << "verifying client accepted a cert lacking the target IP SAN";
+        EXPECT_NE(ret, 0) << "verifying client accepted a self-signed cert its trust store does not hold";
         EXPECT_FALSE(verifying_client.handshake_complete());
     }
 
@@ -2183,30 +2180,12 @@ TEST(SSLSocketLoopback, NonBlockingWriteToBackpressuredPeerYieldsWouldBlockAsZer
 TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHost) {
     ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
 
-    // Which fixture `ssl_resource_path()` resolves to depends on the working directory (it probes
-    // several candidates), and the two shipped certificates differ: one is CN=localhost, the other
-    // carries no CN at all. Read the subject of the certificate the server is ACTUALLY presenting
-    // instead of assuming — otherwise this case passes from the repo root and fails under ctest,
-    // for a reason that has nothing to do with what it is testing.
-    const std::string cert_cn = [] {
-        std::unique_ptr<BIO, decltype(&BIO_free)> bio{BIO_new_file(localhost_fixture("cert.pem").string().c_str(), "r"), &BIO_free};
-        if (!bio)
-            return std::string{};
-        std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
-        if (!cert)
-            return std::string{};
-        // The CN entry's bytes through the accessors: X509_NAME_get_text_by_NID() is deprecated from OpenSSL 4.0.
-        const X509_NAME   *subject = X509_get_subject_name(cert.get());
-        const int          index   = subject ? X509_NAME_get_index_by_NID(subject, NID_commonName, -1) : -1;
-        const ASN1_STRING *cn      = index >= 0 ? X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, index)) : nullptr;
-        return cn && ASN1_STRING_length(cn) > 0
-                   ? std::string(reinterpret_cast<const char *>(ASN1_STRING_get0_data(cn)), static_cast<std::size_t>(ASN1_STRING_length(cn)))
-                   : std::string{};
-    }();
-
-    if (cert_cn.empty()) {
-        GTEST_SKIP() << "the resolved fixture has no CN, so hostname verification cannot be exercised against it";
-    }
+    // The name the positive control asks for: the one the localhost fixture names in its subjectAltName,
+    // which is where the hostname check reads it (OpenSSL 4.1 no longer falls back to the CN). The server
+    // and the client both use `localhost_fixture()`, not `ssl_resource_path()`, whose answer depends on
+    // the working directory; SSLFixtures.TheLocalhostCertificateNamesItsHostInItsSubjectAltName pins the
+    // name, so a fixture that stops carrying it fails there, not as a skip here.
+    const std::string fixture_host = "localhost";
 
     qb::io::tcp::ssl::listener listener;
     // Serve the SAME certificate the client trusts, so the chain is guaranteed to verify and the
@@ -2247,9 +2226,9 @@ TEST(SSLSocketLoopback, HostnameVerificationRejectsAValidChainIssuedForAnotherHo
     //    caught both shipped certificates having silently expired.
     {
         qb::io::tcp::ssl::socket client(trusting_context());
-        const int                ret = client.connect(qb::io::endpoint().as_in("127.0.0.1", port), cert_cn);
-        EXPECT_EQ(ret, 0) << "the trusted-CA setup itself is broken: a certificate whose CN (" << cert_cn
-                          << ") matches the requested hostname was refused, so the rejections below would prove nothing";
+        const int                ret = client.connect(qb::io::endpoint().as_in("127.0.0.1", port), fixture_host);
+        EXPECT_EQ(ret, 0) << "the trusted-CA setup itself is broken: a certificate whose subjectAltName names the requested host ("
+                          << fixture_host << ") was refused, so the rejections below would prove nothing";
         EXPECT_TRUE(client.handshake_complete());
         client.disconnect();
     }
@@ -2299,11 +2278,11 @@ TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
         ssl_resource_path("cert.pem"),
         std::filesystem::path(__FILE__).parent_path().parent_path().parent_path().parent_path().parent_path().parent_path() / "resources"
             / "ssl" / "cert.pem", // qb/resources/ssl — QUIC + qbm-http use this one
-        // system/resources/ssl — the CN=localhost pair, and until this line the ONE committed
+        // system/resources/ssl — the localhost pair, and until this line the ONE committed
         // certificate nothing here checked. `ssl_resource_path()` reaches it only as its
         // third candidate, and the first (the test's own working directory) always exists in
         // a built tree, so the entry above resolved to the staged pair and this fixture went
-        // unexamined. It is `localhost_fixture()`'s pair — the only one carrying a CN, so the
+        // unexamined. It is `localhost_fixture()`'s pair — the only one naming a host, so the
         // only one hostname verification can be exercised against — and it is exactly the
         // file that was found expired once already.
         localhost_fixture("cert.pem"),
@@ -2341,4 +2320,35 @@ TEST(SSLFixtures, ShippedCertificatesAreValidAndNotAboutToExpire) {
     }
 
     EXPECT_TRUE(checked_any) << "no shipped certificate was found to check";
+}
+
+// The localhost fixture names its host where a hostname check reads it (Huly QB-1178). OpenSSL 4.1 matches the
+// subjectAltName alone and the fixture carried only a CN, so every positive hostname case failed there. Verified with
+// the subject never consulted: a fixture regenerated without a SAN fails on every OpenSSL, not only on 4.1. The fixture
+// is self-signed and CA:TRUE, so it is its own trust anchor: a refused name must be refused for the name (the chain
+// built), and the accepted ones prove the signature and the dates.
+TEST(SSLFixtures, TheLocalhostCertificateNamesItsHostInItsSubjectAltName) {
+    using qb::io::test::name_check_error;
+    using qb::io::test::name_check_text;
+    using qb::io::test::name_kind;
+    std::unique_ptr<BIO, decltype(&BIO_free)> bio{BIO_new_file(localhost_fixture("cert.pem").string().c_str(), "r"), &BIO_free};
+    ASSERT_NE(bio, nullptr) << "cannot open " << localhost_fixture("cert.pem");
+    std::unique_ptr<X509, decltype(&X509_free)> cert{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr), &X509_free};
+    ASSERT_NE(cert, nullptr) << "cannot parse " << localhost_fixture("cert.pem");
+
+    struct expectation {
+        const char *name;
+        name_kind   kind;
+        int         error;
+    };
+    for (const auto &[name, kind, error] : {
+             expectation{"localhost", name_kind::host, X509_V_OK},
+             expectation{"127.0.0.1", name_kind::ip, X509_V_OK},
+             expectation{"::1", name_kind::ip, X509_V_OK},
+             expectation{"wrong.example.com", name_kind::host, X509_V_ERR_HOSTNAME_MISMATCH},
+             expectation{"192.0.2.1", name_kind::ip, X509_V_ERR_IP_ADDRESS_MISMATCH},
+         }) {
+        const int verified = name_check_error(cert.get(), cert.get(), name, kind);
+        EXPECT_EQ(verified, error) << name << ": " << name_check_text(verified);
+    }
 }

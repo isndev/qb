@@ -267,3 +267,22 @@ TEST(TlsPeerVerification, AClientPresentsTheWholeChainItsCertificateFileHolds) {
     ASSERT_TRUE(open_tls_connection(server, server.local_endpoint().port(), pair));
     EXPECT_TRUE(complete_tls_handshake(pair)) << "the server could not reach the root through the client's chain";
 }
+
+// A generated leaf names its host in its subjectAltName (Huly QB-1178): OpenSSL 4.1 no longer falls back to the CN, so a
+// CN-only leaf failed both chain cases above there. Verified against its authority with the subject never consulted,
+// so an OpenSSL that still falls back gives the same answer; the refused name must be refused for the name (the
+// chain built), and the accepted one proves the signature and the dates.
+TEST(TlsPeerVerification, AGeneratedLeafNamesItsHostInItsSubjectAltName) {
+    using qb::io::test::name_check_error;
+    using qb::io::test::name_check_text;
+    using qb::io::test::name_kind;
+    const generated_identity authority{"qb-san-authority", nullptr, generated_identity::role::authority};
+    const generated_identity leaf{"localhost", &authority};
+    ASSERT_TRUE(authority.ok());
+    ASSERT_TRUE(leaf.ok());
+    const int named = name_check_error(leaf.x509(), authority.x509(), "localhost", name_kind::host);
+    EXPECT_EQ(named, X509_V_OK) << "localhost: " << name_check_text(named);
+    const int other = name_check_error(leaf.x509(), authority.x509(), "wrong.example.com", name_kind::host);
+    EXPECT_EQ(other, X509_V_ERR_HOSTNAME_MISMATCH) << "wrong.example.com: " << name_check_text(other);
+    EXPECT_EQ(X509_get_ext_by_NID(authority.x509(), NID_subject_alt_name, -1), -1) << "an authority names no host";
+}

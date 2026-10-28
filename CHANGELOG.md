@@ -199,6 +199,27 @@ policy.
   not move: a minor release already changes the link-time version symbol, so every object is rebuilt against
   the qb it links (`VERSIONING.md`).
 
+- **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
+  a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the
+  type checked used to be matched on its CN, and is now refused for its name. The flag
+  `X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT` makes the check read the CN again, and more widely than the old fallback did
+  -- whether or not the certificate carries a SAN -- and qb does not set it. qb's test certificates named their host
+  in the CN only: the committed `tests/io/system/resources/ssl` pair and every leaf `qb::io::test::generated_identity`
+  issues. On a host with OpenSSL 4.1 the positive hostname cases of `qb-io-test-system-ssl-socket-loopback`,
+  `-tls-peer-verification` and `-quic-handshake` failed -- their positive controls reported the trust setup broken, as
+  they should; nothing was accepted that should not be. The committed certificate is reissued from the same key with
+  `subjectAltName = DNS:localhost, IP:127.0.0.1, IP:::1`, valid from 2026-01-01 (a host whose clock runs behind does
+  not see it as not yet valid) to 2046-01-01; a generated leaf names its CN in a `subjectAltName` too; two cases pin
+  both through `X509_verify_cert()` with the subject never consulted, so a test certificate without a SAN fails on
+  every OpenSSL, not only on 4.1, and a refused name is refused for the name (the chain built), the accepted ones
+  proving the signature and the dates. OpenSSL 4.1 also deprecates `ASN1_STRING_length()` and `ASN1_STRING_set()`,
+  which `src/qb/io/tcp/ssl/socket.cpp` and one test file called, and `X509_check_host()` / `X509_check_ip_asc()`,
+  which the new cases avoid: `src/qb/io/tcp/ssl/socket.cpp` reads an `ASN1_STRING`'s length through
+  `ASN1_STRING_get_length()` from 4.1 on and through `ASN1_STRING_length()` before it, behaviour unchanged, and the
+  test reads them through the library's parsers, so qb and its suite build without a deprecation warning against the
+  4.1 headers. `readme/3_qb_io/ssl_transport.md` says the SAN is required. An application whose server certificate
+  names its host only in the CN is refused by OpenSSL 4.1 clients, whatever framework they use.
+
 ### Documentation
 
 - **The digest members' Doxygen says what they return: raw bytes, not hex (Huly QB-1148).** `md5`, `sha1`,

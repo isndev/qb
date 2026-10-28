@@ -2342,12 +2342,12 @@ INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadHalfRetransmissionTest,
 // =============================================================================
 // Hostname binding of a verify_peer client. The native client context trusts OpenSSL's default verify
 // paths and nothing else, so each client is built with SSL_CERT_FILE pointing at the committed
-// CN=localhost certificate the server presents: the chain then verifies, and the name the client binds
+// localhost certificate the server presents: the chain then verifies, and the name the client binds
 // is the only thing left to decide the handshake.
 // =============================================================================
 namespace quic_handshake_hostname_test {
 
-// The committed CN=localhost pair (system/resources/ssl), not ssl_resource_path(): which pair that search
+// The committed localhost pair (system/resources/ssl), not ssl_resource_path(): which pair that search
 // returns depends on the working directory, and only this one carries the name the positive case asks for.
 std::filesystem::path
 localhost_fixture(const char *name) {
@@ -2397,7 +2397,7 @@ private:
 };
 
 // Whether a verify_peer client asking for `server_name` completes its handshake with a server presenting
-// the CN=localhost certificate the client's trust store holds.
+// the localhost certificate the client's trust store holds.
 enum class handshake_outcome { connected, refused, undecided };
 
 std::ostream &
@@ -2448,7 +2448,7 @@ verified_client_handshake(std::string const &server_name) {
 
 /**
  * @test A verify_peer client binds its server name, and a name OpenSSL refuses to bind fails closed
- * @brief Against a trusted CN=localhost certificate: `localhost` connects (the trust setup works, so the
+ * @brief Against a trusted localhost certificate: `localhost` connects (the trust setup works, so the
  *        refusals are the name's), `wrong.example.com` does not (the name is checked, not only the chain),
  *        and neither does `x`. OpenSSL 4.0 validates a name before installing it as the target and refuses
  *        a single character; the client called `SSL_set1_host` and ignored its result, so under OpenSSL 4 it

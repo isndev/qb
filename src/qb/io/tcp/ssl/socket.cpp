@@ -60,7 +60,7 @@ asn1_time_to_time_t(const ASN1_TIME *time) {
         return 0;
     return utc_tm_to_time_t(&t);
 }
-
+static std::size_t asn1_string_length(const ASN1_STRING *s); // ASN1_STRING_length() is deprecated from OpenSSL 4.1: see the end of the file
 // Helper to convert ASN1_INTEGER to hex string
 static std::string
 asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
@@ -68,7 +68,7 @@ asn1_integer_to_hex_string(const ASN1_INTEGER *bs) {
         return "";
     std::ostringstream   oss;
     const unsigned char *data = ASN1_STRING_get0_data(bs); // ASN1_STRING is opaque from OpenSSL 4.0: accessors only
-    for (int i = 0, length = ASN1_STRING_length(bs); i < length; ++i)
+    for (std::size_t i = 0, length = asn1_string_length(bs); i < length; ++i)
         oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(data[i]);
     return oss.str();
 }
@@ -147,22 +147,22 @@ get_certificate(SSL *ssl) {
                 std::string   san_str;
                 if (san->type == GEN_DNS) {
                     const ASN1_IA5STRING *dns_name = san->d.dNSName; // ASN1_STRING is opaque from OpenSSL 4.0: accessors only
-                    const int             dns_len  = dns_name ? ASN1_STRING_length(dns_name) : 0;
+                    const std::size_t     dns_len  = dns_name ? asn1_string_length(dns_name) : 0;
                     if (const unsigned char *dns = dns_len > 0 ? ASN1_STRING_get0_data(dns_name) : nullptr) {
-                        san_str = "DNS:" + std::string(reinterpret_cast<const char *>(dns), static_cast<std::size_t>(dns_len));
+                        san_str = "DNS:" + std::string(reinterpret_cast<const char *>(dns), dns_len);
                     }
                 } else if (san->type == GEN_IPADD) {
                     const ASN1_OCTET_STRING *ip_addr = san->d.iPAddress;
                     if (const unsigned char *ip = ip_addr ? ASN1_STRING_get0_data(ip_addr) : nullptr) {
                         san_str = "IP:";
-                        if (const int ip_length = ASN1_STRING_length(ip_addr); ip_length == 4) { // IPv4
+                        if (const std::size_t ip_length = asn1_string_length(ip_addr); ip_length == 4) { // IPv4
                             std::ostringstream oss;
                             oss << static_cast<int>(ip[0]) << "." << static_cast<int>(ip[1]) << "." << static_cast<int>(ip[2]) << "."
                                 << static_cast<int>(ip[3]);
                             san_str += oss.str();
                         } else if (ip_length == 16) { // IPv6
                             std::ostringstream oss;
-                            for (int j = 0; j < ip_length; ++j) {
+                            for (std::size_t j = 0; j < ip_length; ++j) {
                                 oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip[j]);
                                 if (j % 2 == 1 && j < ip_length - 1)
                                     oss << ":";
@@ -1274,22 +1274,22 @@ socket::get_peer_certificate_chain() const noexcept {
                     if (san_entry->type == GEN_DNS) {
                         // ASN1_STRING is opaque from OpenSSL 4.0: read through the accessors, as get_certificate() does.
                         const ASN1_IA5STRING *dns_name = san_entry->d.dNSName;
-                        const int             dns_len  = dns_name ? ASN1_STRING_length(dns_name) : 0;
+                        const std::size_t     dns_len  = dns_name ? asn1_string_length(dns_name) : 0;
                         if (const unsigned char *dns = dns_len > 0 ? ASN1_STRING_get0_data(dns_name) : nullptr) {
-                            san_str_entry = "DNS:" + std::string(reinterpret_cast<const char *>(dns), static_cast<std::size_t>(dns_len));
+                            san_str_entry = "DNS:" + std::string(reinterpret_cast<const char *>(dns), dns_len);
                         }
                     } else if (san_entry->type == GEN_IPADD) {
                         const ASN1_OCTET_STRING *ip_addr = san_entry->d.iPAddress;
                         if (const unsigned char *ip = ip_addr ? ASN1_STRING_get0_data(ip_addr) : nullptr) {
                             san_str_entry = "IP:";
-                            if (const int ip_length = ASN1_STRING_length(ip_addr); ip_length == 4) { // IPv4
+                            if (const std::size_t ip_length = asn1_string_length(ip_addr); ip_length == 4) { // IPv4
                                 std::ostringstream oss_ip;
                                 oss_ip << static_cast<int>(ip[0]) << "." << static_cast<int>(ip[1]) << "." << static_cast<int>(ip[2]) << "."
                                        << static_cast<int>(ip[3]);
                                 san_str_entry += oss_ip.str();
                             } else if (ip_length == 16) { // IPv6
                                 std::ostringstream oss_ip;
-                                for (int k = 0; k < ip_length; ++k) {
+                                for (std::size_t k = 0; k < ip_length; ++k) {
                                     oss_ip << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(ip[k]);
                                     if (k % 2 == 1 && k < ip_length - 1)
                                         oss_ip << ":";
@@ -1433,3 +1433,15 @@ socket::insecure() noexcept {
 }
 
 } // namespace qb::io::tcp::ssl
+
+// The length of an ASN1_STRING. OpenSSL 4.1 deprecates ASN1_STRING_length() for ASN1_STRING_get_length(), which
+// returns the same length as a size_t and does not exist before 4.1. Declared at the top of the file and defined
+// here, after every other function, so that adding it moved none of the lines the documentation cites.
+static std::size_t
+asn1_string_length(const ASN1_STRING *s) {
+#if OPENSSL_VERSION_NUMBER >= 0x40100000L
+    return ASN1_STRING_get_length(s);
+#else
+    return static_cast<std::size_t>(ASN1_STRING_length(s));
+#endif
+}
