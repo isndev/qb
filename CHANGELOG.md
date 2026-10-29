@@ -180,6 +180,39 @@ policy.
 
 ### Fixed
 
+- **On macOS a `sleep` or an `async::callback` no longer ends before its delay measured on `qb::mono_now()` (Huly
+  QB-1181).** The event loop arms and fires every timer on its own clock, and on macOS that clock was `CLOCK_MONOTONIC`
+  -- there the wall clock less the boot time: it steps by the microsecond and runs fast or slow with every correction
+  the system's time daemon (`timed`) makes to the wall clock -- while `qb::mono_now()` (libc++'s `steady_clock`) reads
+  `CLOCK_MONOTONIC_RAW`, the hardware counter, never corrected. Measured on an M4: the two clocks 8.3 s apart, the
+  loop's running 16.6 ppm fast from the frequency `timed` set at one correction, and during a +27.65 ms correction the
+  suite's lower bounds missed by 4 to 27 µs (`FixedDelayChainHonoursElapsedLowerBound` 49 973 125 ns for 50 ms; the test
+  kit's timeouts and `spawn_on`'s too); during the 16.6 ppm one every 100 ms `async::callback` lasted 1.6-1.8 µs less on
+  `steady_clock` than on the loop's clock, and 19 ns at most with the fix. Load had nothing to do with it, nor a stale
+  cached time: every arm already refreshes the loop's clock. The loop (qev) now reads `EV_MONOTONIC_CLOCK`:
+  `CLOCK_MONOTONIC_RAW` on Apple -- the clock `steady_clock` reads, as `CLOCK_MONOTONIC` is on Linux and
+  `QueryPerformanceCounter` on Windows -- so such a wait of `d` never ends before `d` on `qb::mono_now()`. A build whose
+  `steady_clock` reads another clock (libstdc++ on macOS: `CLOCK_MONOTONIC`) defines it when it compiles the loop,
+  `-DCMAKE_C_FLAGS=-DEV_MONOTONIC_CLOCK=CLOCK_MONOTONIC`. Timers across a system sleep behave as before: both clocks
+  count it. Two deadlines stay on the wall clock: `with_timeout`'s time left once `updateTimeout()` recorded activity
+  (on `ev_now()`) and the TCP connector's (on `ev_time()`). `ev_now()` itself, the loop's wall-clock time, is re-read
+  from the wall clock every half second and runs on the loop's clock in between, so on macOS it now drifts from the wall
+  clock by the rate of a correction under way and moves back or forward by up to half a second times that rate at the
+  next read (8.3 µs at 16.6 ppm, 270 µs or more at the 540 ppm or more the +27.65 ms correction ran at), as it has on
+  Windows since qev 5.1.0 (qb 3.2). The pass got cheaper on macOS: control against candidate on an M4 (3 copies a side,
+  seeded order, quiet host), `qev-bench-pass` over 12 rounds (A/A at most 2.8 %): a pass holding a far timer 25.3 ->
+  23.7 ns, `ev_now_update` 20.25 -> 16.1 ns, an arm with its refresh 23.1 -> 19.3 ns, and the pass an embedder hands its
+  own reading (`ev_now_set`, qb's listener near a deadline) 24.8 -> 24.4 ns, no measurable difference -- that one was
+  1.5 ns SLOWER until `ev_now_set` took the later of its sample and the loop's time without a branch: with a clock whose
+  tick is about one pass long (41.7 ns against ~24), "is it later" was a coin toss the predictor lost.
+  `qb-io-bench-timer-dispatch` over 8 rounds (A/A at most 0.64 %): 1024 timers armed, then drained, 63.9 -> 55.9 µs; a
+  `with_timeout` re-armed 23.6 -> 19.2 ns; a 1 ns `callback` from its arm to its fire 1007 -> 80 ns, the old clock's 1
+  µs step a timer had to wait out. `ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime`
+  (`qb-io-test-unit-listener-timer-gate`) holds the fix: a reading of the loop's clock between two of `qb::mono_now()`
+  lies between them -- red before, the loop 8 307 983 µs ahead, and red again when the change is reverted, when only the
+  read is, when the guard never selects it, and when the clock is `CLOCK_UPTIME_RAW` (which leaves the system's sleep
+  out). `readme/0_foundations/time.md` says which clock the loop reads on each platform.
+
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program
   that also linked a real libev -- or any library that bundles one -- held two definitions of each, and the link

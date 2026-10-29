@@ -558,7 +558,8 @@ iouring_init(EV_P_ int flags) {
     iouring_cq_ring_mask = (unsigned *) (void *) ((char *) iouring_cq_ring + p.cq_off.ring_mask);
     iouring_cq_cqes      = p.cq_off.cqes;
 
-    iouring_tfd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
+    /* the clock get_clock reads (EV_MONOTONIC_CLOCK): the timerfd is armed ABSOLUTE on mn_now */
+    iouring_tfd = timerfd_create(EV_MONOTONIC_CLOCK, TFD_NONBLOCK | TFD_CLOEXEC);
     if (iouring_tfd < 0) {
         munmap(iouring_sq_ring, iouring_sq_ring_size);
         munmap(iouring_cq_ring, iouring_cq_ring_size);

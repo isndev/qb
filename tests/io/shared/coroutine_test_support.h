@@ -94,11 +94,13 @@
  *          `async::callback` delegates the same refresh to event::timer::start, which calls
  *          `ev_now_update` before arming, so both use a fresh deadline rather than cached time;
  *        - `timers_reify` in qb/src/qb/ev/ev.c fires only when mn_now is strictly past the deadline;
- *          get_clock selects the platform clock, with POSIX, Windows and wall-clock fallback paths.
- *      Tests measure with steady_clock/qb::mono_now(), not necessarily the loop's selected clock.
- *      The original Linux analysis used CLOCK_MONOTONIC for both; the macOS analysis compared
- *      libc++'s CLOCK_MONOTONIC_RAW with the loop clock and recorded a +7.5 ppm rate difference
- *      (about 0.4 us over 50 ms; a constant clock offset cancels when measuring a duration).
+ *          get_clock reads the clock steady_clock reads: EV_MONOTONIC_CLOCK, QueryPerformanceCounter
+ *          on Windows.
+ *      Tests measure with steady_clock/qb::mono_now(), the loop's own clock with the supported
+ *      toolchains (Huly QB-1181; macOS with libc++). On
+ *      macOS the loop read CLOCK_MONOTONIC until then -- the wall clock less the boot time, slewed
+ *      by timed -- against libc++'s CLOCK_MONOTONIC_RAW: an analysis recorded +7.5 ppm between
+ *      them, and a correction under way (+27.65 ms) made the 50 x 1 ms chain 27 us SHORT.
  *      Recorded worst headroom over 125 release runs per site: the tightest floor was the
  *      50 x 1 ms chain in core/system/timer/async-callback-ordering.cpp at +0.34 ms. Under load,
  *      that chain's worst case grew to +334 ms and the 2 x 20 ms retry floor's to +58 ms;

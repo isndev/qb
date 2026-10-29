@@ -532,6 +532,30 @@
 #endif
 #endif
 
+/* qev: the clock the timers run on, EV_MONOTONIC_CLOCK. On Apple, CLOCK_MONOTONIC is the wall clock
+ * less the boot time: it steps by the microsecond, and it runs fast or slow with every frequency or
+ * phase correction timed applies to the wall clock (+16.6 ppm, measured, after one).
+ * CLOCK_MONOTONIC_RAW is the hardware counter, read in nanoseconds (41.7 ns steps on Apple silicon)
+ * and never corrected: the clock libc++'s steady_clock reads there. A timer armed for d fires once
+ * the LOOP's clock has advanced d, so a program that measured its waits on steady_clock saw them end
+ * early while timed slewed the clock forward -- 27 us on 50 ms (Huly QB-1181). RAW is also the
+ * cheaper read (14.2 ns against 16.3 on an M4). A strict _POSIX_C_SOURCE without _DARWIN_C_SOURCE
+ * hides the name, not the clock: its id is 4 in <_time.h>. Elsewhere CLOCK_MONOTONIC is what
+ * steady_clock reads, and Windows reads QueryPerformanceCounter. A program whose steady_clock reads
+ * another clock -- libstdc++ on macOS reads CLOCK_MONOTONIC -- defines EV_MONOTONIC_CLOCK to it; on
+ * Linux the io_uring backend's deadline timerfd is created on it too. */
+#ifndef EV_MONOTONIC_CLOCK
+#if defined(__APPLE__)
+#ifdef CLOCK_MONOTONIC_RAW
+#define EV_MONOTONIC_CLOCK CLOCK_MONOTONIC_RAW
+#else
+#define EV_MONOTONIC_CLOCK ((clockid_t) 4) /* _CLOCK_MONOTONIC_RAW */
+#endif
+#else
+#define EV_MONOTONIC_CLOCK CLOCK_MONOTONIC
+#endif
+#endif
+
 #ifndef CLOCK_REALTIME
 #undef EV_USE_REALTIME
 #define EV_USE_REALTIME 0
@@ -2335,7 +2359,7 @@ static EV_ATOMIC_T have_realtime; /* did clock_gettime (CLOCK_REALTIME) work? */
 #endif
 
 #if EV_USE_MONOTONIC
-static EV_ATOMIC_T have_monotonic; /* did clock_gettime (CLOCK_MONOTONIC) work? */
+static EV_ATOMIC_T have_monotonic; /* did clock_gettime (EV_MONOTONIC_CLOCK) work? */
 #endif
 
 #ifdef _WIN32
@@ -2973,7 +2997,7 @@ get_clock(void) {
         return ev_win32_get_clock();
 #else
         struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
+        clock_gettime(EV_MONOTONIC_CLOCK, &ts);
         return EV_TS_GET(ts);
 #endif
     }
@@ -4046,7 +4070,7 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
 #else
             struct timespec ts;
 
-            if (!clock_gettime(CLOCK_MONOTONIC, &ts))
+            if (!clock_gettime(EV_MONOTONIC_CLOCK, &ts))
                 EV_WAKE_STORE_RLX(&have_monotonic, 1);
 #endif
         }
@@ -5154,8 +5178,10 @@ void
 ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
 #if EV_USE_MONOTONIC
     if (ecb_expect_true(EV_WAKE_LOAD(&have_monotonic))) {
-        if (ecb_expect_true(mono > mn_now))
-            mn_now = mono;
+        /* the later of the two, without a branch: a clock whose tick is about one pass long
+         * (41.7 ns on Apple silicon, against a ~24 ns pass) makes "is it later" a coin toss the
+         * predictor loses -- 1.5 ns a pass, measured (Huly QB-1181) */
+        mn_now = mono > mn_now ? mono : mn_now;
 
         if (ecb_expect_true(mn_now - now_floor < EV_TS_CONST(MIN_TIMEJUMP * .5)))
             ev_rt_now = rtmn_diff + mn_now;

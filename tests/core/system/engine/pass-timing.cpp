@@ -123,8 +123,8 @@ TEST(PassTiming, TheParkIsNotTimed) {
     engine.join();
     ASSERT_FALSE(engine.hasError());
 
-    // qev judges the timer on ev_clock_now(). On macOS steady_clock may use a different
-    // monotonic clock, so a strict floor on g_slept can fail while the timer is on time.
+    // qev judges the timer on ev_clock_now(), the clock steady_clock reads (on macOS with libc++,
+    // Huly QB-1181); the floor is read on the loop's clock, where the timer is judged.
     ASSERT_GE(g_park_end_s, g_park_start_s + qb::detail::to_ev_seconds(kPark));
     const auto &t = g_after_sleep.pass_time;
     EXPECT_GT(t.count, 0u);

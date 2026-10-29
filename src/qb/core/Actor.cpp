@@ -387,7 +387,7 @@ thread_local std::unordered_set<Event::id_type> tls_ask_types;
 /**
  * @brief The clocks behind a core's `deadline_list` (see `request_deadline`).
  * @details Two clocks. The PRECISE one is `qb::mono_now()` -- the vDSO `clock_gettime` on Linux,
- *          `QueryPerformanceCounter` on Windows, `mach_absolute_time` on macOS: the TSC, ~15-20 ns
+ *          `QueryPerformanceCounter` on Windows, `CLOCK_MONOTONIC_RAW` on macOS: the TSC, ~15-20 ns
  *          a read -- and it is what a deadline is set and fired against, so a timeout keeps the
  *          sub-microsecond precision the libev timer had. The COARSE one is the scheduler tick --
  *          `CLOCK_MONOTONIC_COARSE`, `GetTickCount64`, `CLOCK_MONOTONIC_RAW_APPROX`: a memory read
