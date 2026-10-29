@@ -89,7 +89,7 @@ set(IO_SOURCES
 # Collect dependencies. PUBLIC (see _qb_apply_dependencies): qb/json.h exposes nlohmann::json in
 # qb's own API, so every consumer of qb::io -- including qbm/pgsql's type_converter -- needs the
 # same nlohmann include path qb-io was compiled against.
-set(IO_DEPENDENCIES qev stduuid qb-nlohmann)
+set(IO_DEPENDENCIES qev stduuid) # qb-nlohmann is appended last, below
 
 # Collect definitions
 set(IO_DEFINITIONS)
@@ -134,7 +134,11 @@ if (QB_HAS_COMPRESSION)
 endif ()
 
 if (QB_HAS_SSL)
-    list(APPEND IO_DEPENDENCIES OpenSSL::SSL OpenSSL::Crypto)
+    # FIRST, so its include directory precedes every other dependency's: a prefix-wide one -- /opt/homebrew/include,
+    # which nlohmann_json, zstd or argon2 bring -- also holds the headers of the OpenSSL linked into that prefix, and
+    # listed earlier it made qb compile openssl@3's headers against the openssl@4 it links (Huly QB-1180). An
+    # installed qb's consumers inherit the order (INTERFACE_LINK_LIBRARIES keeps it).
+    list(PREPEND IO_DEPENDENCIES OpenSSL::SSL OpenSSL::Crypto)
     list(APPEND IO_DEFINITIONS QB_HAS_SSL=1)
     qb_debug_message("Building with OpenSSL SSL/TLS support")
 
@@ -153,6 +157,10 @@ if (QB_HAS_QUIC)
     list(APPEND IO_DEFINITIONS QB_HAS_QUIC=1)
     qb_debug_message("Building with libngtcp2 QUIC transport support")
 endif ()
+
+# qb-nlohmann LAST: it is header-only, and its include directory is often a whole prefix (/opt/homebrew/include) that
+# would shadow the specific directory of a dependency installed beside another copy of it (Huly QB-1180).
+list(APPEND IO_DEPENDENCIES qb-nlohmann)
 
 # -----------------------------------------------------------------------------
 # Create the IO library

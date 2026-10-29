@@ -182,6 +182,14 @@ function(_qb_parse_common_args prefix)
 endfunction()
 
 # Internal function to apply target dependencies
+# The OpenSSL qb found, linked to <target> before anything else, so that its include directory is the first
+# -isystem of the target's compile lines (Huly QB-1180). qb-io links it anyway wherever SSL is on.
+function(_qb_link_openssl_first target)
+    if(QB_HAS_SSL AND TARGET qb-found-openssl) # qbDependencies.cmake's: OpenSSL::SSL is not seen from a module
+        target_link_libraries(${target} PRIVATE qb-found-openssl)
+    endif()
+endfunction()
+
 function(_qb_apply_dependencies target dependencies)
     if(NOT dependencies)
         return()
@@ -597,6 +605,17 @@ function(qb_add_test)
     # Apply common properties
     _qb_apply_target_properties(${TEST_NAME})
     
+    # qb_add_test links gtest_main below; strip it from DEPENDS to avoid duplicate -lgtest_main (ld warning).
+    set(_test_depends_filtered ${TEST_DEPENDS})
+    if(_test_depends_filtered)
+        list(REMOVE_ITEM _test_depends_filtered gtest_main)
+    endif()
+
+    # The link order is the -isystem order (Huly QB-1180): the OpenSSL qb found first -- a prefix-wide include
+    # directory (/opt/homebrew/include: a system GTest's, nlohmann's) also holds another installation's headers --,
+    # then GoogleTest -- a FETCHED one (the sanitizer presets) must precede that prefix, where a system copy of
+    # another version sits --, then the target's dependencies.
+    _qb_link_openssl_first(${TEST_NAME})
     if(TARGET GTest::gtest_main)
         target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main)
     elseif(TARGET gtest_main)
@@ -605,13 +624,6 @@ function(qb_add_test)
         qb_error_message("qb_add_test: no GTest target (enable QB_BUILD_TESTS and FetchContent/system GTest)")
     endif()
 
-    # qb_add_test already links gtest_main; strip it from DEPENDS to avoid duplicate -lgtest_main (ld warning).
-    set(_test_depends_filtered ${TEST_DEPENDS})
-    if(_test_depends_filtered)
-        list(REMOVE_ITEM _test_depends_filtered gtest_main)
-    endif()
-
-    # Apply dependencies
     _qb_apply_dependencies(${TEST_NAME} "${_test_depends_filtered}")
     
     # Apply additional includes
@@ -815,6 +827,9 @@ function(qb_add_benchmark)
         $<$<COMPILE_LANG_AND_ID:CXX,Clang,AppleClang>:-Wno-c2y-extensions>
     )
     
+    # The OpenSSL qb found, then Google Benchmark, then the dependencies: the -isystem order (as for qb_add_test,
+    # Huly QB-1180)
+    _qb_link_openssl_first(${BENCH_NAME})
     if(TARGET benchmark::benchmark)
         target_link_libraries(${BENCH_NAME} PRIVATE benchmark::benchmark)
     elseif(TARGET benchmark)
@@ -822,8 +837,7 @@ function(qb_add_benchmark)
     else()
         qb_error_message("qb_add_benchmark: no benchmark target (enable QB_BUILD_BENCHMARKS and FetchContent/system benchmark)")
     endif()
-    
-    # Apply dependencies
+
     _qb_apply_dependencies(${BENCH_NAME} "${BENCH_DEPENDS}")
     
     # Apply additional includes

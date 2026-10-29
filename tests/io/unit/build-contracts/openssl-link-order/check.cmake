@@ -1,0 +1,45 @@
+# qb-io-test-unit-openssl-link-order (Huly QB-1180). The order of qb-io's link libraries is the -isystem order of every
+# translation unit that links it: the found OpenSSL must come first, and qb-nlohmann -- header-only, its include
+# directory often a whole prefix (/opt/homebrew/include) -- after every dependency with a directory of its own. A host
+# with one OpenSSL never shows a wrong order; this reads the order itself, on every lane.
+#
+#   cmake -DLINKS=<qb-io's LINK_LIBRARIES, '|'-separated> -DQB_HAS_SSL=<bool> -P check.cmake
+
+cmake_minimum_required(VERSION 3.24)
+string(REPLACE "|" ";" _links "${LINKS}")
+list(LENGTH _links _count)
+if(_count EQUAL 0)
+    message(FATAL_ERROR "openssl-link-order: no link library read for qb-io")
+endif()
+set(_failures "")
+if(QB_HAS_SSL) # nothing with an include directory before OpenSSL: Threads::Threads, which has none, may be
+    list(FIND _links OpenSSL::SSL _ssl)
+    list(FIND _links OpenSSL::Crypto _crypto)
+    if(_ssl EQUAL -1 OR _crypto EQUAL -1)
+        string(APPEND _failures "\n  qb-io links no OpenSSL::SSL / OpenSSL::Crypto")
+    else()
+        foreach(_index RANGE ${_count})
+            if(_index EQUAL _ssl OR _index EQUAL _count)
+                break()
+            endif()
+            list(GET _links ${_index} _before)
+            if(NOT "${_before}" STREQUAL "Threads::Threads" AND NOT "${_before}" STREQUAL "OpenSSL::Crypto")
+                string(APPEND _failures "\n  ${_before} comes before OpenSSL::SSL")
+            endif()
+        endforeach()
+    endif()
+endif()
+list(FIND _links qb-nlohmann _nlohmann)
+if(_nlohmann EQUAL -1)
+    string(APPEND _failures "\n  qb-nlohmann is not among qb-io's link libraries")
+endif()
+foreach(_dependency ZLIB::ZLIB Zstd::Zstd Brotli::Encoder Brotli::Decoder Argon2::Argon2 Ngtcp2::ngtcp2 Ngtcp2::crypto_ossl)
+    list(FIND _links ${_dependency} _at)
+    if(NOT _at EQUAL -1 AND _at GREATER _nlohmann)
+        string(APPEND _failures "\n  ${_dependency} comes after qb-nlohmann")
+    endif()
+endforeach()
+if(_failures)
+    message(FATAL_ERROR "openssl-link-order: ${LINKS}${_failures}")
+endif()
+message(STATUS "openssl-link-order: ${LINKS}")

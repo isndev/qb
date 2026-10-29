@@ -101,10 +101,14 @@ vcpkg install nlohmann-json:x64-windows openssl:x64-windows argon2:x64-windows z
 Install `libngtcp2` as well when you want QUIC/HTTP3 auto-detection to enable that transport. On
 Ubuntu CI this is `libngtcp2-dev` plus an OpenSSL crypto backend package when the image provides one;
 on macOS use `brew install libngtcp2`. Homebrew links libngtcp2 to its newest OpenSSL (`openssl@4` since
-October 2026): build qb against that one, `-DOPENSSL_ROOT_DIR=$(brew --prefix openssl@4)`, with its headers
-first, `-DCMAKE_CXX_FLAGS=-I$(brew --prefix openssl@4)/include` and the same `CMAKE_C_FLAGS` --
-`/opt/homebrew/include`, which a Homebrew nlohmann-json puts earlier on the compile line, holds `openssl@3`'s
-headers while that one is installed (Huly QB-1180). Against another OpenSSL major the configure disables QUIC
+October 2026): build qb against that one, `-DOPENSSL_ROOT_DIR=$(brew --prefix openssl@4)`. qb puts the found
+OpenSSL's include directory ahead of its other dependencies' -- `/opt/homebrew/include`, which a Homebrew
+nlohmann-json, GoogleTest or Google Benchmark brings, holds `openssl@3`'s headers while that one is installed
+(Huly QB-1180). A target of yours that compiles OpenSSL headers needs the same: link `qb::io` (or `qb::core`, or
+a qbm module) before a library whose include directory is the whole prefix, keep that prefix out of your own `-I`
+directories and `CPATH` (searched before every system directory, whatever the order), install qb into a prefix of
+its own rather than `$(brew --prefix)`, and find the OpenSSL qb was built with. Against another OpenSSL major the
+configure disables QUIC
 and names the `OPENSSL_ROOT_DIR` to pass; reconfigure in a new build directory or with `cmake --fresh`, since an
 existing one keeps the OpenSSL it found cached.
 

@@ -219,8 +219,32 @@ policy.
   configure read (a library removed since the configure, or replaced by one that reads otherwise, asks for a
   reconfigure), the verdict the one it acted on, QUIC enabled unless they are two majors, and a helper the module read
   nothing from must name no libssl in the tool's own listing. A build directory configured before a library upgrade
-  keeps its verdict until it is reconfigured. `INSTALL.md` (with the Homebrew header order, Huly QB-1180) and
-  `readme/3_qb_io/quic_transport.md` say so.
+  keeps its verdict until it is reconfigured. `INSTALL.md` and `readme/3_qb_io/quic_transport.md` say so.
+
+- **qb compiled the OpenSSL headers of another installation than the one it found and linked (Huly QB-1180).** On
+  Homebrew, `-DOPENSSL_ROOT_DIR=$(brew --prefix openssl@4)` set every cache entry and the link to openssl@4 4.1.0, but
+  `-isystem /opt/homebrew/include` -- nlohmann_json's include directory, and GoogleTest's and Google Benchmark's from
+  Homebrew -- came first on the compile lines, and `/opt/homebrew/include/openssl` is openssl@3's: all 121 qb
+  translation units that include an OpenSSL header compiled 3.5.9 against the 4.1.0 libraries (each preprocessed with
+  its own compile command), and OpenSSL 4.1's deprecations went unseen. The link order is the `-isystem` order, so:
+  qb-io lists `OpenSSL::SSL` and `OpenSSL::Crypto` first and the header-only `qb-nlohmann`, whose directory is often
+  the whole prefix, last; `qb_add_test()` and `qb_add_benchmark()` link the found OpenSSL (`qb-found-openssl`, an
+  interface target every directory sees -- `OpenSSL::SSL` is imported, so a qbm module's directory does not), then
+  GoogleTest or Google Benchmark -- a fetched one, as the sanitizer presets use, must precede the prefix, where
+  Homebrew's other version sits; an independent review caught a first version that linked it after the dependencies,
+  which made both sanitizer trees compile googletest 1.18's headers against the fetched 1.15.2 library and fail to
+  link -- then the target's dependencies. Measured the same way: 122 of 122 qb translation units that include OpenSSL
+  see 4.1.0, and so do all of the qbm-http, qbm-pgsql and qbm-redis superbuilds' (259, 172 and 173, qb's included) and
+  the benchmarks' (13). `qb-io-test-unit-openssl-headers` checks it where it can on every lane: the headers' version
+  is the configure's (major and minor, and the patch from 3.0), the library run is of their major and no older a
+  minor, and its first dependency is a decoy SYSTEM include directory whose `opensslv.h` is an `#error`, which a
+  helper that stops linking the found OpenSSL first reaches; `qb-io-test-unit-openssl-link-order` reads qb-io's link
+  order itself (nothing with an include directory before OpenSSL, `qb-nlohmann` after every dependency with a
+  directory of its own). Six mutants, each caught: a test's OpenSSL not linked first, qb-io appending OpenSSL,
+  `qb-nlohmann` not last, GoogleTest after the dependencies (the sanitizer link), a benchmark's OpenSSL not linked
+  first (11 benchmark units back on 3.5.9), and the helper keyed on the imported target (111 qbm-http units back on
+  3.5.9) -- the last two by the census alone. A consumer's own target needs the same order, and an `-I` directory or
+  `CPATH` holding the prefix outranks every system directory whatever the order: `INSTALL.md` says so.
 
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the

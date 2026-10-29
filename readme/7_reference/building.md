@@ -233,7 +233,7 @@ For an embedded consumer, qb also exports the **resolved** `QB_HAS_ZSTD` and
 `QB_HAS_BROTLI` flags to the parent (`CMakeLists.txt:526-530`). Thus a parent
 `qb_add_executable(... REQUIRES zstd)` or `REQUIRES brotli` is registered when
 the corresponding codec was built, and omitted when it was not
-(`cmake/qbFunctions.cmake:410-420`).
+(`cmake/qbFunctions.cmake:418-428`).
 The installed `qbConfig.cmake`, generated from the
 [feature template](../../cmake/qbConfig.cmake.in) (`CMakeLists.txt:403-407`),
 supplies the same feature answers to `find_package(qb)` consumers.

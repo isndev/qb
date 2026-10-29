@@ -128,6 +128,12 @@ if(QB_WITH_SSL)
         qb_status_message("Found OpenSSL: ${OPENSSL_VERSION}")
         list(APPEND QB_EXTERNAL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
         set(QB_HAS_SSL TRUE)
+        # The OpenSSL qb found under one name every directory of the build can link -- an imported target is seen in
+        # this directory and below only, not in a sibling qbm module's: tests and benchmarks link it first (QB-1180).
+        if(NOT TARGET qb-found-openssl)
+            add_library(qb-found-openssl INTERFACE)
+            target_link_libraries(qb-found-openssl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+        endif()
         
         # Find Argon2 for advanced cryptographic functions
         find_package(Argon2 QUIET)

@@ -32,13 +32,12 @@ was measured to work on macOS, but OpenSSL's ABI promise does not cover an objec
 The module reads the dependency lists of the helper and of qb's own `libssl` (`otool -L` on macOS, `readelf
 -d` / `objdump -p` on ELF; static archives and Windows are not read -- MSYS2 or an installer's DLLs beside
 vcpkg's go unchecked: no answer, never a guess). `QB_REQUIRE_FEATURES=ON` makes two majors a configure
-error, and an existing build directory keeps the OpenSSL it found cached: reconfigure it with `--fresh`. On
-Homebrew, put the OpenSSL's headers first as well (`INSTALL.md`, Huly QB-1180): the check compares the
-libraries -- the major of the headers in `OPENSSL_INCLUDE_DIR` when qb's libssl is static or cannot be read --,
-not the headers the compiler finds.
+error, and an existing build directory keeps the OpenSSL it found cached: reconfigure it with `--fresh`. The
+check compares libraries (the major of the headers in `OPENSSL_INCLUDE_DIR` when qb's libssl is static or cannot
+be read); that the headers compiled are the found OpenSSL's is `qb-io-test-unit-openssl-headers`' (Huly QB-1180).
 
 <!-- src: qb/cmake/qbConfig.cmake:168-169 -->
-<!-- src: qb/cmake/qbDependencies.cmake:262-355 -->
+<!-- src: qb/cmake/qbDependencies.cmake:268-361 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
@@ -58,7 +57,7 @@ if (!qb::io::quic::available()) {
 ```
 
 > **Note for CI — `ON` does not fail the build.** A runner without libngtcp2 configured with `QB_WITH_QUIC=AUTO` disables QUIC silently; with `=ON` it prints a `message(WARNING)`, sets `QB_HAS_QUIC` false and carries on. The knob that turns a missing dependency into a `FATAL_ERROR` is **`-DQB_REQUIRE_FEATURES=ON`**. This matters more than it looks: a test declared `qb_add_executable(REQUIRES quic)` is not merely skipped when the capability is off, it is never registered — so the only symptom of a QUIC-less runner is a `ctest` count that is quietly smaller. Configure CI with `-DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON`, and assert the registered-test count.
-<!-- src: qb/cmake/qbDependencies.cmake:347-349 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:400-404 (REQUIRES quic unregisters the target) -->
+<!-- src: qb/cmake/qbDependencies.cmake:353-355 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
 
 ## Concepts
 

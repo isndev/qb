@@ -77,6 +77,37 @@ qb_add_test(MODULE qb-io TIER unit NAME kdf-and-tokens    SOURCES crypto/kdf-and
 qb_add_test(MODULE qb-io TIER unit NAME asymmetric-keys   SOURCES crypto/asymmetric-keys.cpp   DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-jwt        SOURCES crypto/crypto-jwt.cpp        DEPENDS ${PROJECT_NAME} REQUIRES ssl)
 qb_add_test(MODULE qb-io TIER unit NAME crypto-reachable-edges SOURCES crypto/crypto-reachable-edges.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl)
+# openssl-headers (Huly QB-1180): the OpenSSL headers a qb test compiles are the configure's, and the library it runs
+# is of their major -- a prefix-wide include directory listed first had them be another installation's. Its first
+# dependency is a decoy SYSTEM include directory, where a system GoogleTest's prefix comes in: unless qb_add_test()
+# links the found OpenSSL before it, the decoy's opensslv.h (#error) stops the build, on every lane. A version CMake
+# could not read is 999, and fails.
+add_library(qb-io-test-openssl-decoy INTERFACE)
+target_include_directories(qb-io-test-openssl-decoy SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/openssl-decoy")
+qb_add_test(MODULE qb-io TIER unit NAME openssl-headers SOURCES crypto/openssl-headers.cpp
+            DEPENDS qb-io-test-openssl-decoy ${PROJECT_NAME} REQUIRES ssl)
+if (TARGET qb-io-test-unit-openssl-headers)
+    set(_qb_found_major 999)
+    set(_qb_found_minor 999)
+    set(_qb_found_patch 999)
+    if ("${OPENSSL_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)(\\.([0-9]+))?")
+        set(_qb_found_major ${CMAKE_MATCH_1})
+        set(_qb_found_minor ${CMAKE_MATCH_2})
+        set(_qb_found_patch 0)
+        if (NOT "${CMAKE_MATCH_4}" STREQUAL "")
+            math(EXPR _qb_found_patch "${CMAKE_MATCH_4}")
+        endif ()
+    endif ()
+    target_compile_definitions(qb-io-test-unit-openssl-headers PRIVATE "QB_TEST_OPENSSL_FOUND_VERSION=\"${OPENSSL_VERSION}\""
+                               QB_TEST_OPENSSL_FOUND_MAJOR=${_qb_found_major}UL QB_TEST_OPENSSL_FOUND_MINOR=${_qb_found_minor}UL
+                               QB_TEST_OPENSSL_FOUND_PATCH=${_qb_found_patch}UL)
+endif ()
+# openssl-link-order (Huly QB-1180): qb-io links the found OpenSSL first and qb-nlohmann after every dependency with
+# an include directory of its own -- read from the target, so a host with one OpenSSL checks it too.
+add_test(NAME qb-io-test-unit-openssl-link-order
+         COMMAND "${CMAKE_COMMAND}" "-DLINKS=$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},LINK_LIBRARIES>,|>"
+                 "-DQB_HAS_SSL=${QB_HAS_SSL}" -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/openssl-link-order/check.cmake")
+set_tests_properties(qb-io-test-unit-openssl-link-order PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 # Compile crypto.cpp privately with the test-owned secure_random_fill definition.
 # Linking qb-io here would bring its amalgamated sampler and entropy source too.
 qb_add_test(MODULE qb-io TIER unit NAME crypto-random-refill
