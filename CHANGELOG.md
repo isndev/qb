@@ -218,8 +218,9 @@ policy.
   Linux lane -- and, where the configure compared them, the helper: what the module reads now must be what the
   configure read (a library removed since the configure, or replaced by one that reads otherwise, asks for a
   reconfigure), the verdict the one it acted on, QUIC enabled unless they are two majors, and a helper the module read
-  nothing from must name no libssl in the tool's own listing. A build directory configured before a library upgrade
-  keeps its verdict until it is reconfigured. `INSTALL.md` and `readme/3_qb_io/quic_transport.md` say so.
+  nothing from must name no libssl in the tool's own listing. `INSTALL.md` and `readme/3_qb_io/quic_transport.md` say
+  so. (A build directory configured before a library upgrade kept that verdict until it was reconfigured, and only
+  libssl was compared: QB-1185, below.)
 
 - **qb compiled the OpenSSL headers of another installation than the one it found and linked (Huly QB-1180).** On
   Homebrew, `-DOPENSSL_ROOT_DIR=$(brew --prefix openssl@4)` set every cache entry and the link to openssl@4 4.1.0, but
@@ -245,6 +246,60 @@ policy.
   first (11 benchmark units back on 3.5.9), and the helper keyed on the imported target (111 qbm-http units back on
   3.5.9) -- the last two by the census alone. A consumer's own target needs the same order, and an `-I` directory or
   `CPATH` holding the prefix outranks every system directory whatever the order: `INSTALL.md` says so.
+
+- **The OpenSSL check behind QUIC re-runs when a library it read changes, compares libcrypto too, reads the library
+  dyld loads, and an installed qb repeats it for its consumer (Huly QB-1185, QB-1183).** Five holes the reviews of
+  QB-1179 left, each measured on its base (`a1ba1d5b`) with a planted Homebrew keg:
+  - A build directory configured before a libngtcp2 upgrade kept its verdict: once the `opt/` link moved onto a keg
+    linked to openssl@4, `cmake --build` printed "no work to do" with Ninja and with Unix Makefiles and QUIC stayed on.
+    The files read -- each library as found, the file it resolves to, on macOS its install name and that name's file,
+    and qb's `opensslv.h` -- are now inputs of the configure (`CMAKE_CONFIGURE_DEPENDS`): a rewrite, a moved link or a
+    removal re-runs it at the next build. qb's OpenSSL files are inputs with libngtcp2 or without it.
+  - Homebrew caches Cellar paths, and the cleanup after an upgrade removes them: the next build stopped on "missing and
+    no known rule to make it" (Ninja) or "No rule to make target" (Make), for good, for libngtcp2's keg as for
+    openssl@3's. A cached path the search itself had found (recorded then) whose file is gone is now searched again --
+    `FindNgtcp2.cmake`'s entries, and the `OPENSSL_*` ones of qb's `find_package(OpenSSL)`, now `_qb_find_openssl()`,
+    with pkg-config asked again (FindPkgConfig kept its answer, which named the removed directory) -- and, found nowhere
+    else, the configure stops and names it, with the remedies, and keeps stopping until a search finds it, its feature
+    is turned off (`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for OpenSSL) or the build directory starts
+    afresh: a build directory that had the library does not go on building without it. One set by hand or by a parent
+    project, as a superbuild names a library it builds, is kept as given, and said; only existing files become inputs,
+    so the build converges. A build directory configured before this change has recorded nothing: one `--fresh` starts
+    it. Other dependencies (Argon2, zlib, zstd, brotli) keep their cached paths as before (QB-1192).
+    Measured on real qb trees, both generators: the build re-runs the configure, finds the new keg, links and passes
+    the next build untouched.
+  - On macOS the check read the file the configure found, while a binary loads the install name it records: Homebrew's
+    search gives a Cellar path whose install name is the `opt/` link, so after an upgrade that keeps the old keg the
+    check read the old library and the programs loaded the new one. `_ngtcp2_loaded_file()` reads the file the install
+    name (`otool -D`) names when it exists.
+  - Only libssl was compared. A half-cleared cache (`cmake -U OPENSSL_SSL_LIBRARY -DOPENSSL_ROOT_DIR=openssl@4` over an
+    openssl@3 tree) kept libcrypto.3 beside libssl.4 and the 3.5.9 headers: the configure was green with QUIC on, and
+    `qb-io-test-system-ssl-socket-loopback` and `-tls-peer-verification` crashed (SIGSEGV), `-quic-handshake` too
+    (SIGBUS). Every libssl and libcrypto major read on both sides must now be one; the module reports the helper's
+    libcrypto as `Ngtcp2_OPENSSL_CRYPTO_MAJOR` and `Ngtcp2_OPENSSL_CRYPTO_LIBRARY`, and the warning names each library
+    and says when qb's own pair is split -- its TLS then loads both, QUIC or not, which no configure refuses yet
+    (QB-1190).
+  - `QB_REQUIRE_FEATURES=ON` on two majors, what qb's CI lanes configure with, was measured by hand only. The QUIC
+    decision moved from `qbDependencies.cmake` into `cmake/qbOpenSSL.cmake` (`_qb_decide_quic()`, a macro of the same
+    code, beside `_qb_find_openssl()`), and `qb-io-test-unit-quic-openssl-verdict` drives both on libraries planted in a
+    scratch root through a languageless fixture that runs qb's own `FindNgtcp2.cmake`: two majors fail the configure
+    under `QB_REQUIRE_FEATURES=ON` and warn without it, one major and two copies do not fail, the half-cleared cache is
+    two majors, and -- in a Homebrew-shaped planted root searched by qb's `FindNgtcp2.cmake` and CMake's `FindOpenSSL`,
+    with Ninja and Unix Makefiles where their tools are found -- `cmake --build` re-runs the configure on each change
+    above, finds an upgraded library where the upgrade put it (pkg-config's answer refreshed, for OpenSSL and
+    libngtcp2), stops on one found nowhere and goes on once it is back, keeps a path set by hand, and converges -- qb's
+    OpenSSL alone, with no libngtcp2, included.
+  - An installed qb built with QUIC re-ran `find_dependency(Ngtcp2)` at its consumer and compared nothing (QB-1183).
+    The generated `qbConfig.cmake` now gives the same verdict on the readings of the `FindNgtcp2.cmake` installed
+    beside it and the OpenSSL the consumer links -- not the one qb was built against, which the OpenSSL-major check
+    above it holds -- and warns, naming both majors: QUIC is compiled into qb, the consumer cannot turn it off.
+    `qb-io-test-unit-installed-quic-openssl` generates the file from its template and runs eleven consumers.
+  A number that is not the release's major (FreeBSD's base `libssl.so.30`) is compared as it reads; such hosts are
+  outside the supported platforms. A library replaced at the same path by a file older than the build directory is not
+  seen by the build tool; `qb-io-test-unit-ngtcp2-openssl-listing`, which now reads libcrypto, install names and the
+  configure's inputs too, reports it. Nine rounds of independent review, the last finding no defect; 39 mutants of the
+  fix, planted one at a time, each caught; on macOS arm64 (`cmake -S qb`, openssl@4): Release 255 registered / 255
+  executed / 0 skipped, ASan+UBSan 256 / 256 / 0, TSan 255 / 255 / 0, no compiler warning, no sanitizer report.
 
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the

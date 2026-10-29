@@ -130,6 +130,67 @@ if(@QB_HAS_QUIC@)
         endif()
     endif()
     find_dependency(Ngtcp2)
+    # libngtcp2_crypto_ossl calls the OpenSSL it was built against, qb::io the one this project found above: two majors
+    # in one process crash at the first QUIC handshake (Huly QB-1179), and a libngtcp2 updated after qb was installed
+    # brings them back (QB-1183). qb's configure refused that pair; here the same verdict compares the readings of the
+    # FindNgtcp2.cmake installed beside this file with the OpenSSL this project links -- not the one qb was built
+    # against: the OpenSSL-major check above holds that one. A WARNING, like it: QUIC is compiled into qb, a consumer
+    # cannot turn it off. A FindNgtcp2 module of the consumer's own that won the search reads nothing: nothing to say.
+    if(NOT "${Ngtcp2_OPENSSL_MAJOR}${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" STREQUAL ""
+       AND COMMAND _ngtcp2_linked_openssl AND COMMAND _ngtcp2_openssl_conflict)
+        _ngtcp2_linked_openssl("${OPENSSL_SSL_LIBRARY}" _qb_have_ssl _qb_have_ssl_path _qb_have_unused
+                               _qb_have_unused_path)
+        _ngtcp2_linked_openssl("${OPENSSL_CRYPTO_LIBRARY}" _qb_have_unused _qb_have_unused_path _qb_have_crypto
+                               _qb_have_crypto_path)
+        string(REGEX MATCH "^[0-9]+" _qb_have_headers "${OPENSSL_VERSION}")
+        if("${_qb_have_ssl}" STREQUAL "")
+            set(_qb_have_ssl "${_qb_have_headers}")
+        endif()
+        if("${_qb_have_crypto}" STREQUAL "")
+            set(_qb_have_crypto "${_qb_have_headers}")
+        endif()
+        _ngtcp2_openssl_conflict("${Ngtcp2_OPENSSL_MAJOR}" "${Ngtcp2_OPENSSL_LIBRARY}"
+                                 "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" "${Ngtcp2_OPENSSL_CRYPTO_LIBRARY}"
+                                 "${_qb_have_ssl}" "${_qb_have_ssl_path}" "${_qb_have_crypto}" "${_qb_have_crypto_path}"
+                                 FALSE _qb_have_conflict)
+        if(_qb_have_conflict STREQUAL "MAJORS")
+            set(_qb_have_ngtcp2 "OpenSSL ${Ngtcp2_OPENSSL_MAJOR}")
+            if("${Ngtcp2_OPENSSL_MAJOR}" STREQUAL "")
+                set(_qb_have_ngtcp2 "OpenSSL ${Ngtcp2_OPENSSL_CRYPTO_MAJOR}")
+            elseif(NOT "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" STREQUAL ""
+                   AND NOT "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" STREQUAL "${Ngtcp2_OPENSSL_MAJOR}")
+                string(CONCAT _qb_have_ngtcp2 "the libssl of OpenSSL ${Ngtcp2_OPENSSL_MAJOR} and the libcrypto of "
+                                              "OpenSSL ${Ngtcp2_OPENSSL_CRYPTO_MAJOR}")
+            endif()
+            set(_qb_have_ssl_shown "")
+            if(NOT "${OPENSSL_SSL_LIBRARY}" STREQUAL "")
+                set(_qb_have_ssl_shown " (${OPENSSL_SSL_LIBRARY})")
+            endif()
+            set(_qb_have_crypto_shown "")
+            if(NOT "${OPENSSL_CRYPTO_LIBRARY}" STREQUAL "")
+                set(_qb_have_crypto_shown " (${OPENSSL_CRYPTO_LIBRARY})")
+            endif()
+            message(WARNING
+                "[qb] libngtcp2 (${NGTCP2_CRYPTO_OSSL_LIBRARY}) links ${_qb_have_ngtcp2}, and this "
+                "project links the libssl of OpenSSL ${_qb_have_ssl}${_qb_have_ssl_shown} and the libcrypto of "
+                "OpenSSL ${_qb_have_crypto}${_qb_have_crypto_shown}: two OpenSSL majors in one process crash at "
+                "the first QUIC handshake. "
+                "QUIC is compiled into this qb (built against OpenSSL @OPENSSL_VERSION@) and cannot be turned off "
+                "here: point OPENSSL_ROOT_DIR at the OpenSSL libngtcp2 links, and rebuild qb against it if that is "
+                "another major than this qb's.")
+        endif()
+        unset(_qb_have_ssl)
+        unset(_qb_have_ssl_path)
+        unset(_qb_have_crypto)
+        unset(_qb_have_crypto_path)
+        unset(_qb_have_unused)
+        unset(_qb_have_unused_path)
+        unset(_qb_have_headers)
+        unset(_qb_have_conflict)
+        unset(_qb_have_ngtcp2)
+        unset(_qb_have_ssl_shown)
+        unset(_qb_have_crypto_shown)
+    endif()
 endif()
 
 # The zstd / brotli codecs (Huly QB-79): qb::io links Zstd::Zstd and Brotli::Encoder / Brotli::Decoder by name, which

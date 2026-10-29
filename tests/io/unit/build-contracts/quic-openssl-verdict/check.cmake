@@ -1,0 +1,652 @@
+# qb-io-test-unit-quic-openssl-verdict (Huly QB-1185). The OpenSSL and QUIC decisions qbDependencies.cmake takes
+# (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through the fixture beside this file:
+# - two OpenSSL majors disable QUIC with a warning, and QB_REQUIRE_FEATURES=ON makes that a configure error -- what the
+#   qb CI lanes configure with -- while one major enables QUIC silently, two copies of one major keep it with a warning
+#   and never fail, and an absent libngtcp2 fails only a required QUIC. Planted readings, on every platform.
+# - a libcrypto of another major than qb's libssl -- a half-cleared cache -- is two majors (POSIX: read through a stand-in
+#   tool that prints the planted listing, as the module reads otool or readelf).
+# - the files read are inputs of the configure: `cmake --build` re-runs it when a library is rewritten, when the link the
+#   search found is moved onto a file older than the build -- as a package manager restores an archive's times -- and
+#   the one it named removed (libngtcp2's, qb's libssl), when qb's opensslv.h changes, and when files vanish: a path the
+#   search found is then searched again -- found where an upgrade put it, pkg-config asked again; found nowhere, the
+#   configure stops and names it, never building on without it -- and the build converges, never re-running for ever,
+#   while a path set by hand or never there (a library a superbuild builds) is kept and said. qb's OpenSSL is an input
+#   with libngtcp2 or without it. In a Homebrew-shaped planted root searched by qb's FindNgtcp2.cmake and
+#   CMake's FindOpenSSL, with Ninja and with Unix Makefiles, each where its tool is found (POSIX). On macOS, an upgrade
+#   that keeps the old keg moves only the install name the found Cellar path carries: that re-runs it too, and the
+#   library read is the one the install name names.
+#
+#   cmake -DQB_CMAKE_MODULE_DIR=<qb>/cmake -DWORK_DIR=<scratch directory> -DGENERATOR=<this build's>
+#         [-DPLATFORM=..] [-DTOOLSET=..] [-DMAKE_PROGRAM=..] -P check.cmake
+
+cmake_minimum_required(VERSION 3.24)
+
+foreach(_required QB_CMAKE_MODULE_DIR WORK_DIR GENERATOR)
+    if(NOT ${_required})
+        message(FATAL_ERROR "quic-openssl-verdict: ${_required} is required")
+    endif()
+endforeach()
+set(_fixture "${CMAKE_CURRENT_LIST_DIR}/fixture")
+file(REMOVE_RECURSE "${WORK_DIR}")
+unset(ENV{OPENSSL_ROOT_DIR}) # FindOpenSSL would search there, and only there
+set(_env "") # an environment for the fixture's configures and builds: `cmake -E env` arguments
+
+file(MAKE_DIRECTORY "${WORK_DIR}")
+
+set(_posix FALSE)
+if(NOT WIN32 AND EXISTS /bin/sh)
+    set(_posix TRUE)
+endif()
+
+# A planted library is a file whose content is the listing the stand-in tool prints for it, in the host's format; its
+# install name, for `otool -D`, is the content of <file>.id when there is one.
+set(_tool "${WORK_DIR}/tool")
+if(_posix)
+    file(WRITE "${_tool}" "#!/bin/sh\necho \"$2:\"\nif [ \"$1\" = -D ]; then [ -f \"$2.id\" ] && cat \"$2.id\"; exit 0; fi\n"
+                          "cat \"$2\"\n")
+    file(CHMOD "${_tool}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+endif()
+function(plant file ssl_major crypto_major)
+    set(_listing "")
+    foreach(_name IN ITEMS ssl crypto)
+        set(_major "${${_name}_major}")
+        if("${_major}" STREQUAL "")
+            continue()
+        endif()
+        if(APPLE)
+            string(APPEND _listing "\t/opt/o${_major}/lib/lib${_name}.${_major}.dylib (compatibility version ${_major}.0.0)\n")
+        else()
+            string(APPEND _listing " 0x0000000000000001 (NEEDED)             Shared library: [lib${_name}.so.${_major}]\n")
+        endif()
+    endforeach()
+    get_filename_component(_dir "${file}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_dir}")
+    file(WRITE "${file}" "${_listing}")
+endfunction()
+function(escape text out_var) # <text> as a regex that matches it
+    string(REGEX REPLACE "([][+.*()^$?|\\\\{}])" "\\\\\\1" _escaped "${text}")
+    set(${out_var} "${_escaped}" PARENT_SCOPE)
+endfunction()
+
+# configure_fixture(<case> <build dir> OK|FAIL <-D...>... [MUST <regex>...] [NOT <regex>...] [HAS <line regex>...]):
+# configures the fixture, then checks its exit, its output (MUST hold each regex, NOT none) and verdict.txt (HAS a line
+# matching each). The output's lines are joined first: CMake wraps a warning's text.
+set(_cases 0)
+set(_failures "")
+function(configure_fixture name build expect)
+    set(_args -S "${_fixture}" -B "${build}" -G "${GENERATOR}" --no-warn-unused-cli
+              "-DQB_CMAKE_MODULE_DIR=${QB_CMAKE_MODULE_DIR}"
+              "-DRESULT_DIR=${WORK_DIR}/${name}" "-DPLANT_ROOT=${WORK_DIR}/${name}/root")
+    if(PLATFORM)
+        list(APPEND _args -A "${PLATFORM}")
+    endif()
+    if(TOOLSET)
+        list(APPEND _args -T "${TOOLSET}")
+    endif()
+    if(MAKE_PROGRAM)
+        list(APPEND _args "-DCMAKE_MAKE_PROGRAM=${MAKE_PROGRAM}")
+    endif()
+    if(APPLE)
+        list(APPEND _args "-DNGTCP2_OTOOL_EXECUTABLE=${_tool}")
+    elseif(_posix)
+        list(APPEND _args "-DCMAKE_READELF=${_tool}")
+    endif()
+    set(_kind DEFINE)
+    set(_checks "")
+    foreach(_arg IN LISTS ARGN)
+        if(_arg STREQUAL "MUST" OR _arg STREQUAL "NOT" OR _arg STREQUAL "HAS")
+            set(_kind "${_arg}")
+        elseif(_kind STREQUAL "DEFINE")
+            list(APPEND _args "${_arg}")
+        else()
+            list(APPEND _checks "${_kind}" "${_arg}")
+        endif()
+    endforeach()
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_env} "${CMAKE_COMMAND}" ${_args}
+                    RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
+    string(REGEX REPLACE "[ \t\r]*\n[ \t]*" " " _flat "${_out}")
+    set(_verdict "")
+    if(EXISTS "${WORK_DIR}/${name}/verdict.txt")
+        file(READ "${WORK_DIR}/${name}/verdict.txt" _verdict)
+    endif()
+    math(EXPR _n "${_cases} + 1")
+    set(_cases ${_n} PARENT_SCOPE)
+    set(_wrong "")
+    if(expect STREQUAL "OK" AND NOT _rc EQUAL 0)
+        string(APPEND _wrong "\n    the configure failed (${_rc})")
+    elseif(expect STREQUAL "FAIL" AND _rc EQUAL 0)
+        string(APPEND _wrong "\n    the configure succeeded")
+    endif()
+    list(LENGTH _checks _length)
+    set(_i 0)
+    while(_i LESS _length)
+        list(GET _checks ${_i} _kind)
+        math(EXPR _i "${_i} + 1")
+        list(GET _checks ${_i} _check)
+        math(EXPR _i "${_i} + 1")
+        if(_kind STREQUAL "MUST" AND NOT "${_flat}" MATCHES "${_check}")
+            string(APPEND _wrong "\n    no '${_check}' in its output")
+        elseif(_kind STREQUAL "NOT" AND "${_flat}" MATCHES "${_check}")
+            string(APPEND _wrong "\n    '${_check}' in its output")
+        elseif(_kind STREQUAL "HAS" AND NOT "\n${_verdict}" MATCHES "\n${_check}\n")
+            string(APPEND _wrong "\n    verdict.txt has no line '${_check}'")
+        endif()
+    endwhile()
+    if(_wrong)
+        set(_failures "${_failures}\n  ${name}:${_wrong}\n    verdict.txt: ${_verdict}\n    output: ${_flat}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+# A planted libngtcp2 under <case>/root -- its headers and its core library; the crypto helper is each case's -- as the
+# cache entries that make qb's FindNgtcp2.cmake find it, into <out_var>.
+function(plant_ngtcp2 name out_var)
+    set(_root "${WORK_DIR}/${name}/root")
+    file(MAKE_DIRECTORY "${_root}/include/ngtcp2" "${_root}/lib")
+    foreach(_header ngtcp2.h ngtcp2_crypto.h ngtcp2_crypto_ossl.h)
+        file(WRITE "${_root}/include/ngtcp2/${_header}" "")
+    endforeach()
+    file(WRITE "${_root}/lib/libngtcp2.planted" "")
+    set(${out_var} "-DNGTCP2_INCLUDE_DIR=${_root}/include" "-DNGTCP2_LIBRARY=${_root}/lib/libngtcp2.planted"
+        "-DNGTCP2_CRYPTO_INCLUDE_DIR=${_root}/include" "-DNGTCP2_CRYPTO_OSSL_INCLUDE_DIR=${_root}/include" PARENT_SCOPE)
+endfunction()
+
+set(_majors "two OpenSSL majors in one process crash at the first QUIC handshake - QUIC support disabled")
+set(_required "QB_REQUIRE_FEATURES=ON, so this downgrade is an error")
+set(_unread "-DOPENSSL_SSL_LIBRARY=/nonexistent/libssl.so" "-DOPENSSL_CRYPTO_LIBRARY=/nonexistent/libcrypto.so"
+            "-DOPENSSL_VERSION=3.5.9" "-DOPENSSL_INCLUDE_DIR=/nonexistent/include")
+
+# Planted readings, every platform: qb's libraries are not there to read, so its side is its headers' major.
+plant_ngtcp2(majors-required _ngtcp2)
+file(WRITE "${WORK_DIR}/majors-required/root/lib/helper" "")
+configure_fixture(majors-required "${WORK_DIR}/majors-required/build" FAIL ${_ngtcp2} ${_unread}
+                  "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${WORK_DIR}/majors-required/root/lib/helper"
+                  "-DPLANTED_NGTCP2=4|/opt/o4/lib/libssl.4.dylib|4|/opt/o4/lib/libcrypto.4.dylib"
+                  "-DQB_REQUIRE_FEATURES=ON"
+                  MUST "CMake Error" "${_required}" "${_majors}"
+                       "links OpenSSL 4 \\(/opt/o4/lib/libssl\\.4\\.dylib\\) and qb links OpenSSL 3 "
+                       "Build qb against the OpenSSL libngtcp2 uses \\(-DOPENSSL_ROOT_DIR=/opt/o4\\)")
+plant_ngtcp2(majors _ngtcp2)
+file(WRITE "${WORK_DIR}/majors/root/lib/helper" "")
+configure_fixture(majors "${WORK_DIR}/majors/build" OK ${_ngtcp2} ${_unread}
+                  "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${WORK_DIR}/majors/root/lib/helper"
+                  "-DPLANTED_NGTCP2=4|/opt/o4/lib/libssl.4.dylib|4|/opt/o4/lib/libcrypto.4.dylib"
+                  "-DQB_REQUIRE_FEATURES=OFF"
+                  MUST "CMake Warning" "${_majors}" NOT "${_required}" "its TLS loads both"
+                  HAS "QB_HAS_QUIC=FALSE" HAS "VERDICT=MAJORS" HAS "COMPARED=TRUE" HAS "LIBRARIES=")
+plant_ngtcp2(one-major _ngtcp2)
+file(WRITE "${WORK_DIR}/one-major/root/lib/helper" "")
+configure_fixture(one-major "${WORK_DIR}/one-major/build" OK ${_ngtcp2} ${_unread}
+                  "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${WORK_DIR}/one-major/root/lib/helper" "-DPLANTED_NGTCP2=3||3|"
+                  "-DQB_REQUIRE_FEATURES=ON"
+                  NOT "CMake Warning" "OpenSSL majors"
+                  HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=" HAS "LIBRARIES=Ngtcp2::ngtcp2.Ngtcp2::crypto_ossl")
+# No libngtcp2: a required QUIC is a downgrade, an AUTO one is not.
+file(MAKE_DIRECTORY "${WORK_DIR}/absent-required/root" "${WORK_DIR}/absent-auto/root")
+configure_fixture(absent-required "${WORK_DIR}/absent-required/build" FAIL ${_unread}
+                  "-DQB_WITH_QUIC=ON" "-DQB_REQUIRE_FEATURES=ON"
+                  MUST "libngtcp2 not found - QUIC support disabled" "${_required}")
+configure_fixture(absent-auto "${WORK_DIR}/absent-auto/build" OK ${_unread} "-DQB_WITH_QUIC=AUTO" "-DQB_REQUIRE_FEATURES=ON"
+                  MUST "libngtcp2 not found - QUIC transport auto-disabled" NOT "CMake Warning"
+                  HAS "QB_HAS_QUIC=FALSE" HAS "COMPARED=FALSE")
+# No OpenSSL from the start: the search finds nothing, nothing was had, nothing stops -- OpenSSL is not found.
+file(MAKE_DIRECTORY "${WORK_DIR}/openssl-absent/root")
+configure_fixture(openssl-absent "${WORK_DIR}/openssl-absent/build" OK "-DFIND_OPENSSL=ON"
+                  NOT "is gone" HAS "OPENSSL=FALSE")
+# Paths that never existed -- libraries a superbuild builds after this configure -- are kept, never searched again.
+plant_ngtcp2(not-yet-built _ngtcp2)
+set(_later "${WORK_DIR}/not-yet-built/later")
+escape("${_later}" _later_regex)
+configure_fixture(not-yet-built "${WORK_DIR}/not-yet-built/build" OK ${_ngtcp2} ${_unread}
+                  "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_later}/libngtcp2_crypto_ossl.so" "-DPLANTED_NGTCP2=3||3|"
+                  "-DOPENSSL_CRYPTO_LIBRARY=${_later}/libcrypto.so"
+                  HAS "NGTCP2=TRUE" HAS "NGTCP2_CRYPTO_OSSL_LIBRARY=${_later_regex}/libngtcp2_crypto_ossl\\.so"
+                  HAS "OPENSSL_CRYPTO_LIBRARY=${_later_regex}/libcrypto\\.so")
+
+if(_posix)
+    # Read through the stand-in tool. A half-cleared cache: qb's libssl re-found on OpenSSL 4, its libcrypto still the
+    # OpenSSL 3 one -- two majors, though libssl agrees with libngtcp2's.
+    plant_ngtcp2(half-cleared _ngtcp2)
+    set(_lib "${WORK_DIR}/half-cleared/root/lib")
+    plant("${_lib}/helper" 4 4)
+    plant("${_lib}/o4/libssl" 4 4)
+    plant("${_lib}/o3/libcrypto" "" 3)
+    escape("${_lib}" _lib_regex)
+    configure_fixture(half-cleared "${WORK_DIR}/half-cleared/build" FAIL ${_ngtcp2}
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/o4/libssl"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/o3/libcrypto" "-DOPENSSL_VERSION=3.5.9"
+                      "-DOPENSSL_INCLUDE_DIR=${_lib}/include" "-DQB_REQUIRE_FEATURES=ON"
+                      MUST "${_majors}" "${_required}" "its TLS loads both as well"
+                           "qb links the libssl of OpenSSL 4 \\(${_lib_regex}/o4/libssl\\) with the libcrypto of OpenSSL 3 \\(${_lib_regex}/o3/libcrypto\\)")
+    # Two copies of one major -- a static libssl in qb -- warn and keep QUIC, even under QB_REQUIRE_FEATURES=ON.
+    plant_ngtcp2(copies _ngtcp2)
+    set(_lib "${WORK_DIR}/copies/root/lib")
+    plant("${_lib}/helper" 3 3)
+    file(WRITE "${_lib}/libssl.a" "")
+    file(WRITE "${_lib}/libcrypto.a" "")
+    configure_fixture(copies "${WORK_DIR}/copies/build" OK ${_ngtcp2}
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl.a"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto.a" "-DOPENSSL_VERSION=3.5.9"
+                      "-DOPENSSL_INCLUDE_DIR=${_lib}/include" "-DQB_REQUIRE_FEATURES=ON"
+                      MUST "CMake Warning" "two copies of OpenSSL 3 in one process" "qb links OpenSSL 3 .* statically"
+                           "shared \\(OPENSSL_USE_STATIC_LIBS off\\)" NOT "${_required}"
+                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=COPIES")
+    # libngtcp2 read nothing, qb's own libssl and libcrypto two majors: refused all the same, with the remedy that fits.
+    plant_ngtcp2(split-qb _ngtcp2)
+    set(_lib "${WORK_DIR}/split-qb/root/lib")
+    file(WRITE "${_lib}/helper" "")
+    plant("${_lib}/libssl" 4 4)
+    plant("${_lib}/libcrypto" "" 3)
+    configure_fixture(split-qb "${WORK_DIR}/split-qb/build" OK ${_ngtcp2} "-DPLANTED_NGTCP2=|||"
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto" "-DOPENSSL_VERSION=4.1.0"
+                      MUST "${_majors}" "links an OpenSSL no tool could read" "its TLS loads both as well"
+                           "Build qb against one OpenSSL in a new build directory"
+                      HAS "VERDICT=MAJORS")
+endif()
+if(_failures)
+    message(FATAL_ERROR "quic-openssl-verdict: ${_cases} configures, wrong ones:${_failures}")
+endif()
+
+# `cmake --build` re-runs the configure when a library it read changes, with each generator whose tool is found.
+set(_builds 0)
+set(_generators "")
+if(_posix)
+    find_program(_ninja NAMES ninja ninja-build)
+    if("${GENERATOR}" STREQUAL "Ninja" AND MAKE_PROGRAM)
+        set(_ninja "${MAKE_PROGRAM}")
+    endif()
+    if(_ninja)
+        list(APPEND _generators "Ninja")
+    endif()
+    find_program(_make NAMES make gmake)
+    if(_make)
+        list(APPEND _generators "Unix Makefiles")
+    endif()
+    if(NOT _generators)
+        message(FATAL_ERROR "quic-openssl-verdict: neither ninja nor make found on a POSIX host")
+    endif()
+endif()
+# build_fixture(<case> <what changed> <configures wanted so far> <verdict wanted> [<line of verdict.txt wanted>...]
+#               [OUT <regex its output must hold>...] [NOTOUT <regex it must not>...]); <configures wanted> FAILS: the
+#               build must fail, on its output.
+function(build_fixture name label want_count want_verdict)
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_env} "${CMAKE_COMMAND}" --build "${WORK_DIR}/${name}/build"
+                    RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
+    string(REGEX REPLACE "[ \t\r]*\n[ \t]*" " " _flat "${_out}")
+    file(STRINGS "${WORK_DIR}/${name}/configures.txt" _lines)
+    list(LENGTH _lines _count)
+    file(READ "${WORK_DIR}/${name}/verdict.txt" _verdict)
+    math(EXPR _n "${_builds} + 1")
+    set(_builds ${_n} PARENT_SCOPE)
+    set(_wrong "")
+    set(_checks "VERDICT=${want_verdict}" ${ARGN})
+    if(want_count STREQUAL "FAILS")
+        set(_checks ${ARGN})
+        if(_rc EQUAL 0)
+            string(APPEND _wrong " the build succeeded;")
+        endif()
+    elseif(NOT _rc EQUAL 0)
+        string(APPEND _wrong " build exit ${_rc};")
+    elseif(NOT _count EQUAL want_count)
+        string(APPEND _wrong " ${_count} configures, want ${want_count};")
+    endif()
+    set(_kind LINE)
+    foreach(_check IN LISTS _checks)
+        if(_check STREQUAL "OUT" OR _check STREQUAL "NOTOUT")
+            set(_kind "${_check}")
+        elseif(_kind STREQUAL "OUT" AND NOT "${_flat}" MATCHES "${_check}")
+            string(APPEND _wrong " no '${_check}' in its output;")
+        elseif(_kind STREQUAL "NOTOUT" AND "${_flat}" MATCHES "${_check}")
+            string(APPEND _wrong " '${_check}' in its output;")
+        elseif(_kind STREQUAL "LINE" AND NOT "\n${_verdict}" MATCHES "\n${_check}\n")
+            string(APPEND _wrong " no line '${_check}';")
+        endif()
+    endforeach()
+    if(_wrong)
+        string(APPEND _failures "\n  ${name}, ${label}:${_wrong}\n    verdict.txt: ${_verdict}\n    output: ${_out}")
+        set(_failures "${_failures}" PARENT_SCOPE)
+    endif()
+endfunction()
+# Waits for the clock to leave the second the build system of <case> was last written in, so that a file written next
+# is newer on a file system that keeps whole seconds; no wait on one that keeps less.
+function(after_configure name)
+    set(_build "${WORK_DIR}/${name}/build")
+    set(_newest 0)
+    foreach(_file IN ITEMS build.ninja Makefile CMakeFiles/Makefile.cmake CMakeCache.txt)
+        if(EXISTS "${_build}/${_file}")
+            file(TIMESTAMP "${_build}/${_file}" _written "%s" UTC)
+            if(_written GREATER _newest)
+                set(_newest ${_written})
+            endif()
+        endif()
+    endforeach()
+    foreach(_attempt RANGE 30)
+        string(TIMESTAMP _now "%s" UTC)
+        if(_now GREATER _newest)
+            break()
+        endif()
+        execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 0.1)
+    endforeach()
+endfunction()
+# A Homebrew-shaped root the searches find their libraries in: libngtcp2 in versioned kegs behind an opt/ link, qb's
+# OpenSSL with its libssl and libcrypto behind links as distributions install them.
+set(_ext ".so")
+if(APPLE)
+    set(_ext ".dylib")
+endif()
+function(plant_keg keg major) # headers, libngtcp2 and its crypto helper on OpenSSL <major>
+    file(MAKE_DIRECTORY "${keg}/include/ngtcp2")
+    foreach(_header ngtcp2.h ngtcp2_crypto.h ngtcp2_crypto_ossl.h)
+        file(WRITE "${keg}/include/ngtcp2/${_header}" "")
+    endforeach()
+    file(WRITE "${keg}/lib/libngtcp2${_ext}" "")
+    plant("${keg}/lib/libngtcp2_crypto_ossl${_ext}" ${major} ${major})
+endfunction()
+function(plant_openssl prefix major file) # an OpenSSL <major> whose libssl and libcrypto are links to <file>s
+    file(WRITE "${prefix}/include/openssl/ssl.h" "")
+    file(WRITE "${prefix}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"${major}.0.0\"\n")
+    plant("${prefix}/lib/libssl.${file}" ${major} ${major})
+    point("${prefix}/lib/libssl${_ext}" "${prefix}/lib/libssl.${file}")
+    plant("${prefix}/lib/libcrypto.${file}" "" ${major})
+    point("${prefix}/lib/libcrypto${_ext}" "${prefix}/lib/libcrypto.${file}")
+endfunction()
+function(point link target) # (re)points the link <link> at <target>
+    file(REMOVE "${link}")
+    get_filename_component(_dir "${link}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_dir}")
+    file(CREATE_LINK "${target}" "${link}" SYMBOLIC)
+endfunction()
+function(backdate file) # as a package manager restores an archive's times
+    execute_process(COMMAND touch -t 200006150000 "${file}" RESULT_VARIABLE _rc)
+    file(TIMESTAMP "${file}" _year "%Y" UTC)
+    if(NOT _rc EQUAL 0 OR NOT _year EQUAL 2000)
+        message(FATAL_ERROR "quic-openssl-verdict: could not date ${file} back to 2000 (touch exit ${_rc}, year "
+                            "'${_year}'): the older-file cases would prove nothing")
+    endif()
+endfunction()
+function(entries out_var prefix) # the five lines of verdict.txt that name libngtcp2's cache entries under <prefix>
+    set(_lines "")
+    foreach(_entry IN ITEMS NGTCP2_INCLUDE_DIR NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIBRARY NGTCP2_CRYPTO_INCLUDE_DIR
+                            NGTCP2_CRYPTO_OSSL_INCLUDE_DIR)
+        list(APPEND _lines "${_entry}=${prefix}/.*")
+    endforeach()
+    set(${out_var} ${_lines} PARENT_SCOPE)
+endfunction()
+function(use_generator generator) # sets GENERATOR and MAKE_PROGRAM in the caller for <generator>
+    set(GENERATOR "${generator}" PARENT_SCOPE)
+    if(generator STREQUAL "Ninja")
+        set(MAKE_PROGRAM "${_ninja}" PARENT_SCOPE)
+    else()
+        set(MAKE_PROGRAM "" PARENT_SCOPE)
+    endif()
+endfunction()
+foreach(_generator IN LISTS _generators)
+    use_generator("${_generator}")
+    string(REPLACE " " "-" _name "rebuild-${_generator}")
+    set(_root "${WORK_DIR}/${_name}/root")
+    set(_opt "${_root}/opt/homebrew/opt/libngtcp2")
+    set(_ssl "${_root}/qb-openssl")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-1")
+    plant_openssl("${_ssl}" 3 a)
+    entries(_at_opt "${_root_regex}/opt/homebrew/opt/libngtcp2")
+    set(_crypto_found "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/qb-openssl/lib/libcrypto${_ext}")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      HAS "VERDICT=" "QB_HAS_QUIC=TRUE" ${_at_opt} "${_crypto_found}")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    plant("${_root}/Cellar/libngtcp2/keg-1/lib/libngtcp2_crypto_ossl${_ext}" 4 4)
+    build_fixture(${_name} "libngtcp2 rebuilt in place against OpenSSL 4" 2 MAJORS "QB_HAS_QUIC=FALSE")
+    build_fixture(${_name} "nothing changed since" 2 MAJORS)
+    # An upgrade onto a keg whose files keep older times, the old keg removed: only the file read, gone, can tell.
+    plant_keg("${_root}/Cellar/libngtcp2/keg-2" 3)
+    backdate("${_root}/Cellar/libngtcp2/keg-2/lib/libngtcp2_crypto_ossl${_ext}")
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-2")
+    file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-1")
+    build_fixture(${_name} "opt/ moved onto an older keg, the one read removed" 3 "" "QB_HAS_QUIC=TRUE" ${_at_opt})
+    build_fixture(${_name} "nothing changed since" 3 "")
+    # qb's libssl link moved onto an older file, the one it named removed: the same, on qb's side.
+    plant("${_ssl}/lib/libssl.b" 3 3)
+    backdate("${_ssl}/lib/libssl.b")
+    point("${_ssl}/lib/libssl${_ext}" "${_ssl}/lib/libssl.b")
+    file(REMOVE "${_ssl}/lib/libssl.a")
+    build_fixture(${_name} "qb's libssl link moved onto an older file, the one read removed" 4 "")
+    build_fixture(${_name} "nothing changed since" 4 "")
+    after_configure(${_name})
+    plant("${_ssl}/lib/libcrypto.a" "" 4)
+    build_fixture(${_name} "qb's libcrypto rewritten onto OpenSSL 4" 5 MAJORS)
+    build_fixture(${_name} "nothing changed since" 5 MAJORS)
+    after_configure(${_name})
+    file(WRITE "${_ssl}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"3.0.1\"\n")
+    build_fixture(${_name} "qb's opensslv.h rewritten" 6 MAJORS)
+    build_fixture(${_name} "nothing changed since" 6 MAJORS)
+    # qb's libcrypto removed: what its search found is searched again, found nowhere else: the configure stops and names
+    # it -- a build directory that had OpenSSL does not go on without it -- until it is back.
+    file(REMOVE "${_ssl}/lib/libcrypto${_ext}" "${_ssl}/lib/libcrypto.a")
+    build_fixture(${_name} "qb's libcrypto removed" FAILS ""
+                  OUT "OPENSSL_CRYPTO_LIBRARY \\(${_root_regex}/qb-openssl/lib/libcrypto[^)]*\\) no longer exists: searched again"
+                      "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_CRYPTO_LIBRARY")
+    build_fixture(${_name} "built again, nothing done" FAILS ""
+                  OUT "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_CRYPTO_LIBRARY")
+    plant_openssl("${_ssl}" 3 c)
+    build_fixture(${_name} "qb's libcrypto back" 7 "" "OPENSSL=TRUE" "${_crypto_found}")
+    build_fixture(${_name} "nothing changed since" 7 "")
+    # libngtcp2 removed: every entry its search found is searched again, found nowhere else: the configure stops.
+    file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-2")
+    file(REMOVE "${_opt}")
+    build_fixture(${_name} "libngtcp2 removed" FAILS ""
+                  OUT "NGTCP2_CRYPTO_OSSL_LIBRARY \\(${_root_regex}/opt/homebrew/opt/libngtcp2/lib/[^)]*\\) no longer exists: searched again"
+                      "the libngtcp2 this build directory found is gone and was found nowhere else -- NGTCP2_")
+    build_fixture(${_name} "built again, nothing done" FAILS ""
+                  OUT "the libngtcp2 this build directory found is gone and was found nowhere else -- NGTCP2_")
+    plant_keg("${_root}/Cellar/libngtcp2/keg-3" 3)
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-3")
+    build_fixture(${_name} "libngtcp2 back" 8 "" "NGTCP2=TRUE" ${_at_opt})
+    build_fixture(${_name} "nothing changed since" 8 "")
+endforeach()
+if(_generators)
+    list(GET _generators 0 _generator)
+    use_generator("${_generator}")
+    # The Cellar shape, as pkg-config gives it: the searches find a versioned keg's own files. An upgrade puts the new
+    # version elsewhere and removes the old keg: every entry is searched again and found there.
+    set(_name "found-elsewhere")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    plant_openssl("${_root}/usr/local" 3 a)
+    entries(_in_keg "${_root_regex}/Cellar/libngtcp2/keg-1")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DCMAKE_PREFIX_PATH=/Cellar/libngtcp2/keg-1"
+                      "-DFIND_OPENSSL=ON"
+                      HAS "VERDICT=" ${_in_keg} "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/libssl${_ext}")
+    build_fixture(${_name} "nothing changed" 1 "")
+    plant_keg("${_root}/Cellar/libngtcp2/keg-2" 3)
+    point("${_root}/opt/homebrew/opt/libngtcp2" "${_root}/Cellar/libngtcp2/keg-2")
+    plant_openssl("${_root}/usr" 3 b)
+    file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-1" "${_root}/usr/local")
+    entries(_at_opt "${_root_regex}/opt/homebrew/opt/libngtcp2")
+    build_fixture(${_name} "both upgraded elsewhere, the old ones removed" 2 "" "NGTCP2=TRUE" ${_at_opt}
+                  "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/lib/libssl${_ext}"
+                  "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/usr/lib/libcrypto${_ext}"
+                  "OPENSSL_INCLUDE_DIR=${_root_regex}/usr/include"
+                  OUT "OPENSSL_SSL_LIBRARY \\([^)]*\\) no longer exists: searched again")
+    build_fixture(${_name} "nothing changed since" 2 "")
+    # Removed again: the record followed the library to where the upgrade put it, and the stop names that path.
+    file(REMOVE_RECURSE "${_root}/usr")
+    build_fixture(${_name} "the upgraded OpenSSL removed in turn" FAILS ""
+                  OUT "found nowhere else -- OPENSSL_INCLUDE_DIR \\(${_root_regex}/usr/include\\), OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/lib/libssl")
+    plant_openssl("${_root}/usr/local" 3 c)
+    build_fixture(${_name} "an OpenSSL back elsewhere" 3 "" "OPENSSL=TRUE"
+                  "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/libssl${_ext}")
+    build_fixture(${_name} "nothing changed since" 3 "")
+    # Moved again, but the new place has no libssl: FindOpenSSL still finds OpenSSL (it requires libcrypto and the
+    # headers only), and the stop names libssl alone -- not the libcrypto and headers found again.
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    plant_openssl("${_root}/usr" 3 d)
+    file(REMOVE "${_root}/usr/lib/libssl${_ext}" "${_root}/usr/lib/libssl.d")
+    build_fixture(${_name} "moved where there is no libssl" FAILS ""
+                  OUT "found nowhere else -- OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/local/lib/libssl"
+                  NOTOUT "found nowhere else -- [^:]*OPENSSL_CRYPTO_LIBRARY \\(" "found nowhere else -- [^:]*OPENSSL_INCLUDE_DIR \\(")
+    plant_openssl("${_root}/usr" 3 e)
+    build_fixture(${_name} "its libssl back" 4 "" "OPENSSL=TRUE" "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/lib/libssl${_ext}")
+    build_fixture(${_name} "nothing changed since" 4 "")
+    # A search that finds libssl but no libcrypto finds no OpenSSL -- and still records the libssl it found: once
+    # libcrypto is there and libssl is removed, the stop names it.
+    set(_name "partial-first")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/usr" 3 a)
+    file(REMOVE "${_root}/usr/lib/libcrypto${_ext}" "${_root}/usr/lib/libcrypto.a")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON"
+                      HAS "OPENSSL=FALSE" "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/lib/libssl${_ext}")
+    plant_openssl("${_root}/usr" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" HAS "OPENSSL=TRUE")
+    file(REMOVE "${_root}/usr/lib/libssl${_ext}" "${_root}/usr/lib/libssl.a")
+    build_fixture(${_name} "the libssl found first removed" FAILS ""
+                  OUT "found nowhere else -- OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/lib/libssl")
+    # An upgrade that leaves libngtcp2 without its crypto helper: the entries found again are not named as gone.
+    set(_name "partial-upgrade")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    plant("${_root}/lib/libssl" 3 3)
+    plant("${_root}/lib/libcrypto" "" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DCMAKE_PREFIX_PATH=/Cellar/libngtcp2/keg-1"
+                      "-DOPENSSL_SSL_LIBRARY=${_root}/lib/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_root}/lib/libcrypto"
+                      "-DOPENSSL_VERSION=3.5.9" HAS "NGTCP2=TRUE")
+    build_fixture(${_name} "nothing changed" 1 "")
+    plant_keg("${_root}/Cellar/libngtcp2/keg-2" 3)
+    file(REMOVE "${_root}/Cellar/libngtcp2/keg-2/lib/libngtcp2_crypto_ossl${_ext}")
+    point("${_root}/opt/homebrew/opt/libngtcp2" "${_root}/Cellar/libngtcp2/keg-2")
+    file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-1")
+    build_fixture(${_name} "upgraded without its crypto helper, the old keg removed" FAILS ""
+                  OUT "found nowhere else -- NGTCP2_CRYPTO_OSSL_LIBRARY \\(${_root_regex}/Cellar/libngtcp2/keg-1/"
+                  NOTOUT "found nowhere else -- [^:]*NGTCP2_LIBRARY \\(" "found nowhere else -- [^:]*NGTCP2_INCLUDE_DIR \\(")
+    # A path set by hand -- as a superbuild names a library it builds, then removes with its own clean -- is never
+    # searched again: the configure re-runs, keeps it, says how to search again, and the next build re-runs nothing.
+    set(_name "set-by-hand")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    point("${_root}/opt/homebrew/opt/libngtcp2" "${_root}/Cellar/libngtcp2/keg-1")
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    plant("${_root}/hand/helper" 3 3)
+    plant("${_root}/hand/libssl" 3 3)
+    plant("${_root}/hand/libcrypto" "" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_root}/hand/helper" "-DOPENSSL_SSL_LIBRARY=${_root}/hand/libssl"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_root}/hand/libcrypto"
+                      HAS "VERDICT=")
+    file(REMOVE_RECURSE "${_root}/hand")
+    build_fixture(${_name} "the libraries set by hand removed" 2 "" "NGTCP2=TRUE"
+                  "NGTCP2_CRYPTO_OSSL_LIBRARY=${_root_regex}/hand/helper" "OPENSSL_SSL_LIBRARY=${_root_regex}/hand/libssl"
+                  "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/hand/libcrypto"
+                  OUT "OPENSSL_CRYPTO_LIBRARY \\(${_root_regex}/hand/libcrypto\\) does not exist; this build directory's search did not find it .*: kept as given"
+                      "OPENSSL_SSL_LIBRARY \\(${_root_regex}/hand/libssl\\) does not exist; this build directory's search did not find it .*: kept as given"
+                      "NGTCP2_CRYPTO_OSSL_LIBRARY \\(${_root_regex}/hand/helper\\) does not exist; this build directory's search did not find it .*: kept as given")
+    build_fixture(${_name} "nothing changed since" 2 "")
+    # qb's OpenSSL is an input of the configure with no libngtcp2 at all.
+    set(_name "openssl-only")
+    set(_root "${WORK_DIR}/${_name}/root")
+    set(_ssl "${_root}/qb-openssl")
+    plant_openssl("${_ssl}" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      HAS "NGTCP2=FALSE" "OPENSSL=TRUE" "COMPARED=FALSE")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    file(WRITE "${_ssl}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"3.0.1\"\n")
+    build_fixture(${_name} "opensslv.h rewritten" 2 "")
+    plant("${_ssl}/lib/libssl.b" 3 3)
+    backdate("${_ssl}/lib/libssl.b")
+    point("${_ssl}/lib/libssl${_ext}" "${_ssl}/lib/libssl.b")
+    file(REMOVE "${_ssl}/lib/libssl.a")
+    build_fixture(${_name} "the libssl link moved onto an older file, the one read removed" 3 "")
+    build_fixture(${_name} "nothing changed since" 3 "")
+    # An entry set to NOTFOUND by hand, its recorded file still there, and a search narrowed to nowhere: nothing this
+    # build directory had is gone, so nothing stops -- OpenSSL is not found.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK
+                      "-DOPENSSL_CRYPTO_LIBRARY=OPENSSL_CRYPTO_LIBRARY-NOTFOUND" "-DOPENSSL_ROOT_DIR=/nowhere"
+                      NOT "is gone" HAS "OPENSSL=FALSE")
+    # The searches take hints from pkg-config, whose answer FindPkgConfig keeps cached: a keg reachable through
+    # pkg-config alone is found again only if the search asks it again (planted .pc files, PKG_CONFIG_LIBDIR naming
+    # them alone) -- OpenSSL's and libngtcp2's.
+    find_program(_pkg_config NAMES pkg-config pkgconf)
+    if(_pkg_config)
+        set(_name "pkg-config")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        function(plant_pc name keg libs) # <name>.pc naming <keg>, as the search sees it under the root
+            file(WRITE "${_root}/pc/${name}.pc"
+                 "prefix=${keg}\nlibdir=\${prefix}/lib\nincludedir=\${prefix}/include\nName: ${name}\n"
+                 "Description: planted\nVersion: 3.0.0\nLibs: -L\${libdir} ${libs}\nCflags: -I\${includedir}\n")
+        endfunction()
+        function(plant_kegs suffix) # an OpenSSL and a libngtcp2 that pkg-config alone names
+            plant_keg("${_root}/kegs/ngtcp2-${suffix}" 3)
+            plant_openssl("${_root}/kegs/openssl-${suffix}" 3 ${suffix})
+            plant_pc(openssl /kegs/openssl-${suffix} "-lssl -lcrypto")
+            plant_pc(libngtcp2 /kegs/ngtcp2-${suffix} "-lngtcp2")
+            plant_pc(libngtcp2_crypto_ossl /kegs/ngtcp2-${suffix} "-lngtcp2_crypto_ossl")
+        endfunction()
+        plant_kegs(a)
+        set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR=")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DUSE_PKG_CONFIG=ON"
+                          "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
+                          HAS "OPENSSL=TRUE" "NGTCP2=TRUE"
+                              "OPENSSL_SSL_LIBRARY=${_root_regex}/kegs/openssl-a/lib/libssl${_ext}"
+                              "NGTCP2_CRYPTO_OSSL_LIBRARY=${_root_regex}/kegs/ngtcp2-a/lib/libngtcp2_crypto_ossl${_ext}")
+        build_fixture(${_name} "nothing changed" 1 "")
+        plant_kegs(b)
+        file(REMOVE_RECURSE "${_root}/kegs/openssl-a" "${_root}/kegs/ngtcp2-a")
+        entries(_at_b "${_root_regex}/kegs/ngtcp2-b")
+        build_fixture(${_name} "upgrades pkg-config alone names, the old kegs removed" 2 "" "OPENSSL=TRUE" "NGTCP2=TRUE"
+                      "OPENSSL_SSL_LIBRARY=${_root_regex}/kegs/openssl-b/lib/libssl${_ext}"
+                      "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/kegs/openssl-b/lib/libcrypto${_ext}" ${_at_b})
+        build_fixture(${_name} "nothing changed since" 2 "")
+        set(_env "")
+    else()
+        message(STATUS "quic-openssl-verdict: no pkg-config on this host: the pkg-config case is skipped")
+    endif()
+endif()
+if(APPLE AND _generators)
+    # The Cellar shape on macOS: the search finds the keg's own file, whose install name -- what a binary records and
+    # dyld loads -- is the opt/ link. An upgrade that keeps the old keg moves only that link.
+    list(GET _generators 0 _generator)
+    use_generator("${_generator}")
+    set(_name "install-name")
+    set(_root "${WORK_DIR}/${_name}/root")
+    set(_opt "${_root}/opt/homebrew/opt/libngtcp2")
+    foreach(_keg 1 2 3)
+        file(MAKE_DIRECTORY "${_root}/Cellar/libngtcp2/keg-${_keg}/lib")
+        file(WRITE "${_root}/Cellar/libngtcp2/keg-${_keg}/lib/libngtcp2_crypto_ossl${_ext}.id"
+             "${_opt}/lib/libngtcp2_crypto_ossl${_ext}\n")
+    endforeach()
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-1")
+    plant("${_root}/lib/libssl" 3 3)
+    plant("${_root}/lib/libcrypto" "" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DCMAKE_PREFIX_PATH=/Cellar/libngtcp2/keg-1"
+                      "-DOPENSSL_SSL_LIBRARY=${_root}/lib/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_root}/lib/libcrypto"
+                      "-DOPENSSL_VERSION=3.5.9"
+                      HAS "VERDICT=" "NGTCP2_CRYPTO_OSSL_LIBRARY=.*/Cellar/libngtcp2/keg-1/lib/.*")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    plant_keg("${_root}/Cellar/libngtcp2/keg-2" 4)
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-2")
+    build_fixture(${_name} "opt/ moved onto a new keg, the old one kept" 2 MAJORS)
+    build_fixture(${_name} "nothing changed since" 2 MAJORS)
+    plant_keg("${_root}/Cellar/libngtcp2/keg-3" 3)
+    backdate("${_root}/Cellar/libngtcp2/keg-3/lib/libngtcp2_crypto_ossl${_ext}")
+    point("${_opt}" "${_root}/Cellar/libngtcp2/keg-3")
+    file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-2")
+    build_fixture(${_name} "opt/ moved onto an older keg, the one it named removed" 3 "")
+    build_fixture(${_name} "nothing changed since" 3 "")
+endif()
+if(_failures)
+    message(FATAL_ERROR "quic-openssl-verdict: ${_builds} builds, wrong ones:${_failures}")
+endif()
+string(REPLACE ";" ", " _generators_shown "${_generators}")
+if(NOT _generators)
+    set(_generators_shown "none: nothing is read on this host")
+endif()
+message(STATUS "quic-openssl-verdict: ${_cases} configures and ${_builds} builds right (rebuilt with: "
+               "${_generators_shown})")
