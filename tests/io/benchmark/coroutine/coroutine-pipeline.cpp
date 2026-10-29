@@ -326,13 +326,16 @@ BM_Generator_MapFilter(benchmark::State &state) {
 // the other half find the producer already parked and are resolved at registration, no watchdog armed. Before
 // QB-273 every one of them allocated a shared select state and spawned a timer coroutine whose ev_timer stayed
 // armed to the deadline; since, the awaiter owns both inside its frame (nothing allocated beyond the recv_for
-// frame itself) and stops the watchdog as the wait ends.
+// frame itself), registers the frame in the scheduler's suspended set while the watchdog is armed, as a sleep
+// does, and stops the watchdog as the wait ends.
 //
 // BM_Channel_SelectFanIn: `k` selects parked at once on one shared channel (each with a channel of its own as
 // the other operand), resolved one by one through their own channel -- the fan-in shape (N workers each
 // selecting on a broadcast channel and a private one). Each resolved select retracts its entry from the shared
-// channel: before QB-273 that entry stayed for a later send to skip in O(1); since, the retraction scans the
-// shared ring from the newest entry and shifts what follows the one removed. This cell measures that cost.
+// channel: before QB-273 that entry stayed for a later send to skip, each registration holding a shared state
+// allocated for it; since, the select's node lives in its awaiter and the retraction is one O(1) unlink from the
+// shared channel's list, wherever the node sits -- constant per select, in k and in the order the selects resolve
+// (this cell resolves them in registration order, so it always unlinks the head). This cell measures that path.
 //
 // BM_Channel_SendForAfterRecvForHistory: a rendezvous channel that saw `history` recv_for timeouts
 // (set up outside the timing), then 64 send_for that must park and are taken by a recv. The

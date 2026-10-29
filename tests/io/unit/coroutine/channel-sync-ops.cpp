@@ -32,6 +32,7 @@
 
 #include <atomic>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -356,6 +357,101 @@ TEST_F(ChannelSyncOps, CloseDropsEveryRegistrationAndResolvesItClosed) {
     EXPECT_EQ(state.winner, 2u);
 }
 
+namespace channel_sync_ops_test {
+
+// A copyable payload whose copy throws while `armed`: try_send(const T&) copies it into the select waiter's std::any.
+struct copy_throws {
+    int                v     = 0;
+    static inline bool armed = false;
+
+    explicit copy_throws(int x)
+        : v(x) {}
+    copy_throws(copy_throws const &o)
+        : v(o.v) {
+        if (armed)
+            throw std::runtime_error("copy_throws: armed");
+    }
+    copy_throws(copy_throws &&) noexcept            = default;
+    copy_throws &operator=(copy_throws const &)     = default;
+    copy_throws &operator=(copy_throws &&) noexcept = default;
+};
+
+struct arm_guard {
+    arm_guard() {
+        copy_throws::armed = true;
+    }
+    ~arm_guard() {
+        copy_throws::armed = false;
+    }
+    arm_guard(arm_guard const &)            = delete;
+    arm_guard &operator=(arm_guard const &) = delete;
+};
+
+} // namespace channel_sync_ops_test
+
+// The select hand-off builds the waiter's std::any BEFORE it unlinks the node (Huly QB-273): a copy that throws
+// leaves the select parked and linked, and the exception to the sender. Unlinked first, the node was gone and its
+// state never resolved -- a single-channel select parked for good, for a send that had failed.
+TEST_F(ChannelSyncOps, ASelectHandOffWhoseCopyThrowsLeavesTheWaiterParkedAndLinked) {
+    using channel_sync_ops_test::copy_throws;
+    channel_select_state               state;
+    channel<copy_throws>::select_entry node;
+    channel<copy_throws>               ch(0);
+
+    ch.register_select_waiter(node, state, 3); // empty rendezvous channel: parks
+    ASSERT_TRUE(node.linked);
+    copy_throws const value{7};
+    {
+        channel_sync_ops_test::arm_guard armed;
+        EXPECT_THROW((void) ch.try_send(value), std::runtime_error) << "the sender sees its payload's exception";
+    }
+    EXPECT_TRUE(node.linked) << "a hand-off that threw must leave the waiter linked";
+    EXPECT_FALSE(state.resolved) << "and unresolved";
+    EXPECT_EQ(ch.waiter_census().selects, 1u);
+
+    EXPECT_TRUE(ch.try_send(value)) << "the waiter is still there for the next send";
+    EXPECT_TRUE(state.resolved);
+    EXPECT_EQ(state.winner, 3u);
+    ASSERT_TRUE(state.value.has_value());
+    EXPECT_EQ(std::any_cast<copy_throws>(state.value).v, 7);
+    EXPECT_FALSE(node.linked);
+}
+
+#ifndef NDEBUG
+// The select registration's caller errors are asserted in a debug build (Huly QB-273): a node registered while still
+// linked, or retracted from a channel it is not linked into, would rewrite that channel's list and counter in
+// silence. The child is re-executed ("threadsafe"); the patterns are substrings of the assertions' own text.
+TEST(ChannelSelectRegistrationDeathTest, RegisteringANodeStillLinkedIsRefused) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::io::async::init();
+            channel_select_state       state;
+            channel<int>::select_entry node;
+            channel<int>               a(0); // one declarator each: a comma would split the macro's argument
+            channel<int>               b(0);
+            a.register_select_waiter(node, state, 0);
+            b.register_select_waiter(node, state, 1);
+        },
+        "the node is already linked");
+}
+
+TEST(ChannelSelectRegistrationDeathTest, RetractingANodeFromAChannelThatDoesNotHoldItIsRefused) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            qb::io::async::init();
+            channel_select_state       state;
+            channel<int>::select_entry node;
+            channel<int>               a(0); // one declarator each: a comma would split the macro's argument
+            channel<int>               b(0);
+            a.register_select_waiter(node, state, 0);
+            b.unregister_select_waiter(node);
+        },
+        "the node is linked into another channel");
+}
+#endif
+
 // ===========================================================================
 // Event-loop-driven channel paths
 //
@@ -540,10 +636,10 @@ TEST_F(ChannelLoopOps, SelectSuspendsOnEmptyOpenChannelsThenResolvesOnSend) {
     EXPECT_TRUE(pump_until([&] { return parked.load(); }, 200ms)) << "select coroutine never started";
     EXPECT_FALSE(done.load()) << "select must park while both channels are empty and open";
 
-    // Deliver on the second channel via co_await send(): the send awaiter is the
-    // path that satisfies a registered select node (try_send only ever
-    // wakes _recv_waiters / buffers, never a parked select). This resolves the
-    // select with ch_b as the winner.
+    // Deliver on the second channel via co_await send(): its await_ready hands the
+    // value through deliver(), which serves a parked select node -- as try_send
+    // does (TrySendSatisfiesParkedSelectWaiterOnRendezvousChannel). This resolves
+    // the select with ch_b as the winner.
     const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([&]() -> task<void> { co_await ch_b.send(std::string{"picked"}); });
 

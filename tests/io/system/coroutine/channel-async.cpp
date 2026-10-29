@@ -42,6 +42,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -689,6 +690,77 @@ TEST_F(ChannelAsync, SelectResolvedOnOneChannelRetractsItsEntryFromTheOther) {
     EXPECT_EQ(*received, 77);
 }
 
+// A select resolved by one channel keeps its node on the other until its awaiter goes (Huly QB-273): a send on that
+// other channel before the select resumes must find no taker. The skip of a resolved node in the hand-off is what
+// refuses it -- without it the send "delivered" its value to the resolved state, where resolve() is a no-op, and
+// reported success: the value was dropped. A NAMED awaiter holds the node past the turn, as long as it lives.
+TEST_F(ChannelAsync, SelectResolvedByOneChannelRefusesASendOnTheOtherBeforeItsAwaiterEnds) {
+    channel<int>       ch_a(0), ch_b(0);
+    select_result      result;
+    std::atomic<bool>  select_done{false};
+    std::atomic<bool>  sends_done{false};
+    bool               b_took = false, a_took = true;
+    std::size_t        a_nodes_between = 99;
+    std::optional<int> received;
+    std::atomic<bool>  receiver_done{false};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        result = co_await select(ch_a, ch_b);
+        select_done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return ch_a.waiter_census().selects == 1 && ch_b.waiter_census().selects == 1; }))
+        << "the select never parked on both channels";
+
+    // One coroutine body, no yield between the two sends: the select is resolved and queued, not yet resumed.
+    coro_scheduler().spawn([&]() -> task<void> {
+        b_took          = ch_b.try_send(1); // resolves the select through ch_b
+        a_nodes_between = ch_a.waiter_census().selects;
+        a_took          = ch_a.try_send(2); // ch_a still holds the resolved node: it must not take the value
+        sends_done.store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return sends_done.load() && select_done.load(); })) << "the sends or the select never ran";
+    EXPECT_TRUE(b_took);
+    EXPECT_EQ(a_nodes_between, 1u) << "the transient the census documents: the losing channel holds the resolved node";
+    EXPECT_FALSE(a_took) << "a send on the losing channel was reported delivered to a select already resolved: dropped";
+    EXPECT_EQ(result.index, 1u);
+    EXPECT_EQ(result.get<int>(), 1);
+    EXPECT_EQ(ch_a.waiter_census().selects, 0u) << "the node goes with the awaiter";
+
+    // The value the refused send kept reaches a real receiver.
+    coro_scheduler().spawn([&]() -> task<void> {
+        received = co_await ch_a.recv();
+        receiver_done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return ch_a.waiter_census().receivers == 1; })) << "the receiver never parked";
+    EXPECT_TRUE(ch_a.try_send(2));
+    EXPECT_TRUE(pump_until([&] { return receiver_done.load(); })) << "the receiver never resumed";
+    EXPECT_EQ(received.value_or(-1), 2);
+
+    // A named awaiter: the resolved node stays on the losing channel while the awaiter lives, past its turn.
+    std::atomic<bool> named_resumed{false}, named_released{false};
+    std::size_t       a_nodes_after_resume = 99;
+    bool              a_took_after_resume  = true;
+    coro_scheduler().spawn([&]() -> task<void> {
+        {
+            auto s = select(ch_a, ch_b);
+            auto r = co_await s;
+            named_resumed.store(r.index == 1u && r.get<int>() == 3);
+            co_await sleep(5ms); // a later turn, the awaiter still alive
+            a_nodes_after_resume = ch_a.waiter_census().selects;
+            a_took_after_resume  = ch_a.try_send(4);
+        }
+        named_released.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return ch_b.waiter_census().selects == 1; })) << "the named select never parked";
+    EXPECT_TRUE(ch_b.try_send(3));
+    EXPECT_TRUE(pump_until([&] { return named_released.load(); })) << "the named select never ended";
+    EXPECT_TRUE(named_resumed.load());
+    EXPECT_EQ(a_nodes_after_resume, 1u) << "a named awaiter keeps its resolved node on the losing channel while it lives";
+    EXPECT_FALSE(a_took_after_resume) << "and that node must still refuse a send";
+    EXPECT_EQ(ch_a.waiter_census().selects, 0u) << "the awaiter's end retracts it";
+}
+
 TEST_F(ChannelAsync, VectorSelectPicksFirstReady) {
     channel<int>                ch0(1), ch1(1), ch2(1);
     std::vector<channel<int> *> channels = {&ch0, &ch1, &ch2};
@@ -1213,6 +1285,70 @@ TEST_F(ChannelAsync, RecvForWokenThenReclaimedDoesNotLoseValue) {
     EXPECT_EQ(recovered, 42);
 }
 
+// A value given back by a reclaimed receiver goes through the one hand-off (Huly QB-273): R1 is handed 42, R2 parks
+// behind it, R1's frame is reclaimed before it resumes -- R2 receives 42, and a capacity-0 channel's buffer stays
+// empty. Before, the destructor pushed the value straight into the buffer: R2 stayed parked (a lost wake) and a
+// rendezvous channel held a value. The recv() form, then the recv_for() form.
+TEST_F(ChannelAsync, ReclaimedRecvHandsItsValueToTheReceiverParkedBehindIt) {
+    std::optional<int> r2_got;
+    std::size_t        buffered = 99;
+    run_reclaim_driver([&r2_got, &buffered]() -> task<void> {
+        auto ch    = std::make_shared<channel<int>>(0);
+        auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto v = co_await c->recv(); // R1: first in line, handed 42, then reclaimed
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto winner = [&r2_got](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_await sleep(5ms);                                                                   // R1 parks first
+            coro_scheduler().spawn([c, &r2_got]() -> task<void> { r2_got = co_await c->recv(); }); // R2, behind R1
+            co_await sleep(0ms);                                                                   // R2 parks
+            (void) c->try_send(42);                                                                // hands 42 to R1 (FIFO), R2 stays parked
+            co_return 99; // -> when_any reclaims R1, which gives 42 back
+        };
+        auto r = co_await when_any(inner(ch), winner(ch));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        buffered = ch->size();
+        ch->close(); // ends R2 if it is still parked (the defect)
+    });
+    EXPECT_EQ(r2_got.value_or(-1), 42) << "the value a reclaimed receiver gave back skipped the receiver parked behind it";
+    EXPECT_EQ(buffered, 0u) << "a capacity-0 channel never buffers";
+}
+
+TEST_F(ChannelAsync, ReclaimedRecvForHandsItsValueToTheTimedReceiverParkedBehindIt) {
+    std::optional<int> r2_got;
+    std::size_t        buffered = 99;
+    run_reclaim_driver([&r2_got, &buffered]() -> task<void> {
+        auto ch    = std::make_shared<channel<int>>(0);
+        auto inner = [](std::shared_ptr<channel<int>> c) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto v = co_await c->recv_for(1000ms); // R1: first select registration, resolved with 42, then reclaimed
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return v ? *v : -1;
+        };
+        auto winner = [&r2_got](std::shared_ptr<channel<int>> c) -> task<int> {
+            co_await sleep(5ms);                                                                             // R1 parks first
+            coro_scheduler().spawn([c, &r2_got]() -> task<void> { r2_got = co_await c->recv_for(1000ms); }); // R2
+            co_await sleep(0ms);                                                                             // R2 registers behind R1
+            (void) c->try_send(42); // resolves R1 (FIFO), R2 stays parked
+            co_return 99;
+        };
+        auto r = co_await when_any(inner(ch), winner(ch));
+        EXPECT_EQ(r.index, 1u);
+        co_await sleep(20ms);
+        buffered = ch->size();
+        ch->close(); // ends R2 now rather than at its deadline if it is still parked (the defect)
+    });
+    EXPECT_EQ(r2_got.value_or(-1), 42) << "the value a reclaimed recv_for gave back skipped the recv_for parked behind it";
+    EXPECT_EQ(buffered, 0u) << "a capacity-0 channel never buffers";
+}
+
 // recv_for() parked and reclaimed while UNRESOLVED (no sender, no timeout yet): the timed_recv_awaiter
 // dtor must stop its watchdog and retract its registration (Huly QB-273; it used to mark a shared state
 // resolved and leave a detached timer to no-op), so nothing schedules the freed frame. Complements the
@@ -1234,6 +1370,9 @@ TEST_F(ChannelAsync, RecvForReclaimedWhileParkedUnresolved) {
         co_await sleep(20ms); // the recv_for frame was reclaimed unresolved; its watchdog went with it
         EXPECT_EQ(ch->waiter_census().selects, 0u) << "the reclaimed recv_for must retract its registration (Huly QB-273)";
     });
+    // The recv_for frame is a small pooled one: ASan cannot see a watchdog left in it, the loop can.
+    qb::io::async::run_for(5ms);
+    EXPECT_FALSE(qb::io::async::listener::current.has_work()) << "the reclaimed recv_for's 1000 ms watchdog outlived its frame";
 }
 
 // A sender parked on a FULL buffer, woken when a recv frees space with no other receiver/select
@@ -1438,6 +1577,43 @@ TEST_F(ChannelAsync, EarlyWonTimedWaitsLeaveNoWatchdogArmed) {
     EXPECT_EQ(full.waiter_census().senders, 0u);
 }
 
+// A parked timed wait is parked on a watcher, and the scheduler sees it as it sees a sleep (Huly QB-273): in its
+// suspended set while the watchdog is armed, so active_count() counts it and dump() lists it -- as they counted the
+// detached timer coroutine that guarded the wait before the watchdog moved into the awaiter -- and out of it once
+// the wait ends. Sync primitives keep their waiters to themselves; watcher-backed awaiters register.
+TEST_F(ChannelAsync, ParkedTimedWaitsAreInTheSchedulersSuspendedSet) {
+    (void) coro_scheduler().set_suspension_tracking(false); // the default: the scheduler's own set is what dump() reads
+    channel<int> ch(0);
+    channel<int> full(1);
+    ASSERT_TRUE(full.try_send(-1));
+    std::atomic<int>   ended{0};
+    std::optional<int> got;
+    bool               sent = true;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        got = co_await ch.recv_for(30s);
+        ++ended;
+    });
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent = co_await full.send_for(1, 30s);
+        ++ended;
+    });
+    EXPECT_TRUE(pump_until([&] { return ch.waiter_census().selects == 1 && full.waiter_census().senders == 1; })) << "the waits never parked";
+    EXPECT_EQ(coro_scheduler().active_count(), 2u) << "the two parked timed waits, each on its armed watchdog";
+    std::size_t watchers = 0;
+    for (auto const &p : coro_scheduler().dump())
+        if (p.kind != nullptr && std::string(p.kind) == "watcher")
+            ++watchers;
+    EXPECT_EQ(watchers, 2u) << "dump() with tracking off lists a parked timed wait as a watcher wait";
+
+    ch.close(); // the receiver resumes empty, the sender false
+    full.close();
+    EXPECT_TRUE(pump_until([&] { return ended.load() == 2; })) << "the closes never ended the waits";
+    EXPECT_FALSE(got.has_value());
+    EXPECT_FALSE(sent);
+    EXPECT_EQ(coro_scheduler().active_count(), 0u) << "an ended wait leaves the suspended set";
+}
+
 TEST_F(ChannelAsync, ZeroTimeoutIsOneCooperativeTurn) {
     channel<int>       ch(0);
     std::atomic<bool>  done{false};
@@ -1465,26 +1641,60 @@ TEST_F(ChannelAsync, ZeroTimeoutIsOneCooperativeTurn) {
     EXPECT_EQ(ch.waiter_census().senders, 0u);
 }
 
-TEST_F(ChannelAsync, TimedRecvRacingASameTurnDeliveryResumesOnceAndLosesNothing) {
-    channel<int>       ch(1);
-    std::atomic<bool>  done{false};
-    std::optional<int> first, second;
+// A delivery and the watchdog due in ONE loop iteration, in each order (Huly QB-273). The order is forced, not left to
+// chance: a coroutine queued behind the waiter keeps the thread out of the loop past both deadlines, so the next
+// iteration dispatches the two expired timers together -- libev invokes them in the order of their expiry, the earlier
+// deadline first -- and the delivery records whether the wait was still registered, so each case proves it ran the
+// order it names. Whichever comes first wins: the value is handed to the wait, or buffered for the next one; never
+// lost, never delivered twice, and the wait resumes once.
+namespace channel_async_test {
 
+struct same_turn_race {
+    std::optional<int> first, second;
+    int                registered_at_delivery = -1; ///< ch.waiter_census().selects as the delivery runs
+};
+
+inline same_turn_race
+race_a_delivery_against_the_watchdog(qb::duration delivery_after, qb::duration timeout) {
+    channel<int>      ch(1);
+    std::atomic<bool> done{false};
+    same_turn_race    out;
     coro_scheduler().spawn([&]() -> task<void> {
-        // A delivery due at the same instant as the watchdog: whichever the loop dispatches first, the
-        // value is either handed to the wait or buffered for the next one -- never dropped, and the
-        // wait resumes exactly once (a double resume is UB the scheduler's dedup forbids).
-        qb::io::async::callback([&ch] { (void) ch.try_send(5); }, 1ms);
-        first = co_await ch.recv_for(1ms);
-        if (!first)
-            second = co_await ch.recv_for(200ms);
+        coro_scheduler().spawn([]() -> task<void> {                      // runs right after the wait parks, in the same drain
+            std::this_thread::sleep_for(std::chrono::milliseconds(100)); // past both deadlines
+            co_return;
+        });
+        qb::io::async::callback(
+            [&] {
+                out.registered_at_delivery = static_cast<int>(ch.waiter_census().selects);
+                (void) ch.try_send(5);
+            },
+            delivery_after);
+        out.first = co_await ch.recv_for(timeout);
+        if (!out.first)
+            out.second = co_await ch.recv_for(200ms);
         done.store(true);
     });
-
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the racing receiver never finished";
-    EXPECT_TRUE(first.value_or(-1) == 5 || second.value_or(-1) == 5) << "the value was lost";
-    EXPECT_FALSE(first.has_value() && second.has_value()) << "one value, delivered once";
     EXPECT_EQ(ch.waiter_census().selects, 0u);
+    EXPECT_EQ(ch.size(), 0u) << "the value was delivered once, and nothing else is left";
+    return out;
+}
+
+} // namespace channel_async_test
+
+TEST_F(ChannelAsync, DeliveryDueBeforeTheWatchdogInOneTurnIsHandedToTheWait) {
+    auto const r = channel_async_test::race_a_delivery_against_the_watchdog(1ms, 50ms);
+    EXPECT_EQ(r.registered_at_delivery, 1) << "the order was not forced: the delivery must run first, the wait registered";
+    EXPECT_EQ(r.first.value_or(-1), 5) << "the delivery that runs first is handed to the wait";
+    EXPECT_FALSE(r.second.has_value());
+}
+
+TEST_F(ChannelAsync, WatchdogDueBeforeTheDeliveryInOneTurnLeavesTheValueForTheNextWait) {
+    auto const r = channel_async_test::race_a_delivery_against_the_watchdog(50ms, 1ms);
+    EXPECT_EQ(r.registered_at_delivery, 0) << "the order was not forced: the watchdog must run first and take the registration";
+    EXPECT_FALSE(r.first.has_value()) << "the watchdog that runs first times the wait out";
+    EXPECT_EQ(r.second.value_or(-1), 5) << "the delivery after it is buffered for the next wait, not lost";
 }
 
 TEST_F(ChannelAsync, SendForReclaimedWhileParkedRetractsItsEntry) {
@@ -1513,6 +1723,8 @@ TEST_F(ChannelAsync, SendForReclaimedWhileParkedRetractsItsEntry) {
     EXPECT_EQ(senders_after, 0u) << "a send_for reclaimed while parked must retract its entry";
     EXPECT_TRUE(later_ok);
     EXPECT_EQ(later_value, 3);
+    qb::io::async::run_for(5ms); // as RecvForReclaimedWhileParkedUnresolved: the loop sees what ASan cannot
+    EXPECT_FALSE(qb::io::async::listener::current.has_work()) << "the reclaimed send_for's 1000 ms watchdog outlived its frame";
 }
 
 TEST_F(ChannelAsync, SelectReclaimedWhileParkedRetractsEveryEntry) {
@@ -1537,4 +1749,32 @@ TEST_F(ChannelAsync, SelectReclaimedWhileParkedRetractsEveryEntry) {
     });
     EXPECT_EQ(a_after, 0u) << "a select reclaimed while parked must retract its entries";
     EXPECT_EQ(b_after, 0u);
+}
+
+// The vector form's destructor walks its own slots (Huly QB-273): reclaimed while parked, it retracts its node from
+// every channel, and no later send takes a value for the select that is gone.
+TEST_F(ChannelAsync, VectorSelectReclaimedWhileParkedRetractsEveryEntry) {
+    std::size_t a_after = 99, b_after = 99;
+    bool        a_took = true;
+    run_reclaim_driver([&a_after, &b_after, &a_took]() -> task<void> {
+        auto ch_a = std::make_shared<channel<int>>(0);
+        auto ch_b = std::make_shared<channel<int>>(0);
+        auto park = [](std::shared_ptr<channel<int>> a, std::shared_ptr<channel<int>> b) -> task<int> {
+            volatile char big[8192];
+            big[0] = 7;
+            auto r = co_await select(std::vector<channel<int> *>{a.get(), b.get()}); // parks on both; reclaimed first
+            big[1] = big[0];
+            qb::io::test::g_resumed_after_reclaim.store(true, std::memory_order_relaxed);
+            co_return static_cast<int>(r.index);
+        };
+        auto r = co_await when_any(park(ch_a, ch_b), reclaim_fast_winner());
+        EXPECT_EQ(r.index, 1u);
+        a_after = ch_a->waiter_census().selects;
+        b_after = ch_b->waiter_census().selects;
+        a_took  = ch_a->try_send(1);
+        co_return;
+    });
+    EXPECT_EQ(a_after, 0u) << "a vector select reclaimed while parked must retract its entries";
+    EXPECT_EQ(b_after, 0u);
+    EXPECT_FALSE(a_took) << "no live select may take the value";
 }

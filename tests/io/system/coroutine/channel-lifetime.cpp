@@ -38,6 +38,7 @@
 #include <atomic>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -143,6 +144,134 @@ TEST_F(ChannelLifetime, DestroyChannelWhileSendParkedThrowsChannelClosedNoUAF) {
 
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "deferred resume never ran after channel destruction";
     EXPECT_TRUE(threw_closed.load()) << "a send parked on a freed channel must throw channel_closed (no UAF)";
+}
+
+// Huly QB-273: the destructors the lot made channel-touching -- a timed receiver's (its watchdog and its node), a
+// select's (one node per channel, each gated on that channel's liveness token) -- against a channel destroyed while
+// they are parked, and a registration whose own wake throws.
+
+TEST_F(ChannelLifetime, DestroyChannelWhileRecvForParkedResolvesNulloptAndStopsItsWatchdogNoUAF) {
+    auto              ch = std::make_unique<channel<int>>(0);
+    std::atomic<bool> parked{false};
+    std::atomic<bool> done{false};
+    std::atomic<bool> got_value{true};
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        parked.store(true);
+        auto r = co_await ch->recv_for(30s); // parks: its watchdog armed for 30 s
+        got_value.store(r.has_value());
+        done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return parked.load() && ch->waiter_census().selects == 1; })) << "recv_for never parked";
+    EXPECT_TRUE(qb::io::async::listener::current.has_work()) << "the parked recv_for's watchdog is armed";
+
+    ch.reset(); // destroy the channel while the timed receiver is parked
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the destruction must resume the wait now, not at its 30 s deadline";
+    EXPECT_FALSE(got_value.load()) << "a recv_for parked on a freed channel resolves to nullopt (no UAF)";
+    qb::io::async::run_for(5ms);
+    EXPECT_FALSE(qb::io::async::listener::current.has_work()) << "the watchdog outlived the wait";
+}
+
+TEST_F(ChannelLifetime, DestroyOneChannelOfAParkedSelectResumesItClosedAndRetractsItFromTheOther) {
+    channel<int>      live(0);
+    auto              doomed = std::make_unique<channel<int>>(0);
+    std::atomic<bool> done{false};
+    select_result     result;
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        result = co_await select(*doomed, live); // parks on both
+        done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return live.waiter_census().selects == 1 && doomed->waiter_census().selects == 1; }))
+        << "the select never parked on both channels";
+
+    doomed.reset(); // its destructor closes it: the select is resolved closed, and must not touch it again
+
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the destroyed channel's close never resumed the select";
+    EXPECT_EQ(result.index, 0u);
+    EXPECT_TRUE(result.closed);
+    EXPECT_EQ(live.waiter_census().selects, 0u) << "the select's node on the live channel goes with its awaiter";
+    EXPECT_FALSE(live.try_send(1)) << "no select is left on the live channel to take a value";
+}
+
+namespace channel_lifetime_test {
+
+// A copyable payload whose move throws while `armed`: parked as a rendezvous sender, it makes the wake that a select's
+// registration runs throw out of await_suspend.
+struct move_throws {
+    int                v     = 0;
+    static inline bool armed = false;
+
+    explicit move_throws(int x)
+        : v(x) {}
+    move_throws(move_throws const &) = default;
+    move_throws(move_throws &&o)
+        : v(o.v) {
+        if (armed)
+            throw std::runtime_error("move_throws: armed");
+    }
+    move_throws &operator=(move_throws const &) = default;
+    move_throws &operator=(move_throws &&)      = default;
+};
+
+struct arm_guard {
+    arm_guard() {
+        move_throws::armed = true;
+    }
+    ~arm_guard() {
+        move_throws::armed = false;
+    }
+    arm_guard(arm_guard const &)            = delete;
+    arm_guard &operator=(arm_guard const &) = delete;
+};
+
+} // namespace channel_lifetime_test
+
+// A select copies the channel's liveness token BEFORE it registers (Huly QB-273): the registration's wake hands a
+// parked sender's value to the select's node, and when that hand-off throws -- here the payload's move -- the node
+// is still linked (the value goes into its std::any before anything is unlinked), the exception leaves the
+// select's co_await, and the awaiter's destructor must find the token to retract the node. A node left behind
+// would point into the select's freed frame (8 KiB: not pooled, ASan sees it) for the next send to dereference.
+TEST_F(ChannelLifetime, SelectWhoseRegistrationWakeThrowsRetractsItsNodeNoUAF) {
+    using channel_lifetime_test::move_throws;
+    channel<move_throws> ch(0);
+    std::atomic<bool>    selector_done{false};
+    std::atomic<bool>    threw{false};
+    std::atomic<int>     received{-1};
+
+    coro_scheduler().spawn([&]() -> task<void> { co_await ch.send(move_throws{5}); }); // parks: nobody receives
+    EXPECT_TRUE(pump_until([&] { return ch.waiter_census().senders == 1; })) << "the sender never parked";
+
+    {
+        channel_lifetime_test::arm_guard armed;
+        coro_scheduler().spawn([&]() -> task<void> {
+            volatile char big[8192];
+            big[0] = 7;
+            try {
+                (void) co_await select(ch); // register -> wake the sender -> its move throws
+            } catch (std::runtime_error const &) {
+                threw.store(true);
+            }
+            big[1] = big[0];
+            selector_done.store(true);
+        });
+        EXPECT_TRUE(pump_until([&] { return selector_done.load(); })) << "the selector never ended";
+    }
+    qb::io::async::run_for(5ms); // the selector's frame is gone
+    EXPECT_TRUE(threw.load()) << "the exception of the registration's wake must reach the select's caller";
+    EXPECT_EQ(ch.waiter_census().selects, 0u) << "the throwing registration's node must be retracted with its awaiter";
+    EXPECT_EQ(ch.waiter_census().senders, 1u) << "the sender whose hand-off threw is still parked, its value in place";
+    EXPECT_FALSE(ch.try_send(move_throws{9})) << "no receiver and no live select: a stale node here would be a UAF";
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto v = co_await ch.recv(); // its wake hands the parked sender's value over
+        received.store(v ? v->v : -2);
+    });
+    EXPECT_TRUE(pump_until([&] { return received.load() != -1; })) << "the parked sender never reached a receiver";
+    EXPECT_EQ(received.load(), 5);
+    EXPECT_EQ(ch.waiter_census().senders, 0u);
 }
 
 // ---------------------------------------------------------------------------

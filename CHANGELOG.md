@@ -78,10 +78,13 @@ policy.
   and the watch's answer is pinned out of the queue (the fifth review).
 
 - **`channel<T>::waiter_census()` and `liveness()` (Huly QB-273)** -- the parked parties of a channel right
-  now, as a `channel_waiter_census {receivers, senders, selects}`: the live population of its three rings,
-  which the bound above makes a census rather than a history (three ring sizes, the cost of `size()`); and
-  the channel's liveness token, `true` while it exists, which a `select()` copies before registering so it
-  can tell a channel it may retract from, from one it must not touch.
+  now, as a `channel_waiter_census {receivers, senders, selects}`: the size of its ring of receivers and the
+  counters of its two lists, senders and select registrations, at the cost of `size()`. Since the timed waits
+  and the selects retract their entries (Fixed, below) it is a census rather than a history; one transient is
+  counted, the resolved node a multi-channel `select()` keeps on the channels that did not win until its
+  awaiter is destroyed -- the rest of the turn, longer for a named awaiter. And the channel's liveness token,
+  a `std::shared_ptr<bool const>` returned by value, `true` while the channel exists, which a `select()`
+  copies before registering so it can tell a channel it may retract from, from one it must not touch.
 
 - **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
   `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child
@@ -102,12 +105,16 @@ policy.
 
 ### Changed
 
-- **`channel<T>::register_select_waiter(channel_select_state &, size_t)` takes the state by reference and
-  returns nothing (Huly QB-273)**; it took a `std::shared_ptr<channel_select_state>`. The state is now the
-  registering awaiter's own, and the entry points at it; `unregister_select_waiter(state)` is the new
-  counterpart a caller owes before its state goes away. A caller of the old signature stops compiling;
-  the select protocol's registration was never meant to be called outside the select awaiters, and the
-  test that did (`channel-sync-ops`) is converted.
+- **The select registration takes a node the caller owns: `channel<T>::register_select_waiter(select_entry
+  &entry, channel_select_state &state, size_t idx)`, with `unregister_select_waiter(select_entry &entry)
+  noexcept` as its counterpart (Huly QB-273).** The registration took a `std::shared_ptr<channel_select_state>`
+  and had none. The node (`channel<T>::select_entry`) and the state are the caller's, and neither may move or
+  die while the node is linked into the channel's list: retract it with `unregister_select_waiter` -- or let
+  `close()` drop it -- before either goes, copy `liveness()` before registering, and never touch the channel
+  once the token reads false. A state already resolved is not linked. Registering a node still linked, or
+  retracting one from a channel that does not hold it, is asserted in a debug build. A caller of the old
+  signature stops compiling; the registration was never meant to be called outside the select awaiters, and
+  the test that did (`channel-sync-ops`) is converted.
 
 - **The ask registry is constant-initialised and its warm path inlined again: on MSVC the request/reply
   machinery costs 18.5 ns over a bare push/reply, below the 19.8 ns of 3.2.1 (Huly QB-1114).**
@@ -203,17 +210,38 @@ policy.
   thousand frames and timers in flight. The awaiter now owns its select state and its watchdog inside its
   own frame (an `ev_timer` on `listener::current`'s loop, stopped when the wait ends: the rule of
   `timer_awaiter`), retracts its entry when the watchdog fires and in its destructor while the channel
-  lives, and the rings hold plain pointers to those states: no `shared_ptr` per entry, no spawned
-  coroutine, no allocation on `recv_for`, `send_for` and the variadic `select` (the vector `select` keeps
-  one, its token list) -- nothing beyond the coroutine frame of the `recv_for` or `send_for` task itself. A
-  zero or negative timeout is one cooperative turn, as `sleep(0)` is. Nothing of the contract moves: the FIFO order, the
-  hand-off priority (a receiver, then a select or timed receiver, then the buffer), the value a reclaimed
-  receiver hands back, what `close()` answers to each parked party, the documented drop of a
-  resolved-then-abandoned `select`. Witnessed by the census of a channel after 260 timeouts of each kind
-  and 80 lost selects (0 entries, against one per event before), by `listener::current.has_work()` after
-  128 waits won early against a 30 s deadline (false, against 128 armed timers before), and by the two
-  cells `BM_Channel_TimedOpsWonEarly` and `BM_Channel_SendForAfterRecvForHistory` of
-  `qb-io-bench-coroutine-pipeline` (numbers in the lot's receipt).
+  lives, and the parked senders and select registrations are intrusive lists whose nodes live in the
+  awaiters: no `shared_ptr` per entry, no spawned coroutine, no allocation of their own on `recv_for`,
+  `send_for` and the variadic `select` (the vector `select` keeps one, its token list) -- nothing beyond the
+  coroutine frame of the `recv_for` or `send_for` task itself -- and leaving is one O(1) unlink wherever the
+  node sits. While its watchdog is armed a parked timed wait is registered in the scheduler's suspended set,
+  as a `sleep()` is, so `active_count()`, `dump()`, the abandoned-frame report and `destroy_all_suspended()`
+  see it as they saw the detached timer coroutine; like a `sleep()`, it must not be destroyed after its
+  thread's listener. A zero or negative timeout is one cooperative turn, as `sleep(0)` is. Nothing of the
+  contract moves: the FIFO order, the hand-off priority (a receiver, then a select or timed receiver, then
+  the buffer), what `close()` answers to each parked party, the documented drop of a resolved-then-abandoned
+  `select`. Witnessed by the census of a channel after 260 timeouts of each kind and 80 lost selects (0
+  entries, against one per event before), by `listener::current.has_work()` after 128 waits won early
+  against a 30 s deadline (false, against 128 armed timers before) and after a timed wait reclaimed while
+  parked, and by the three cells `BM_Channel_TimedOpsWonEarly`, `BM_Channel_SelectFanIn` and
+  `BM_Channel_SendForAfterRecvForHistory` of `qb-io-bench-coroutine-pipeline` (numbers in the lot's receipt).
+
+- **`send_for()` on a move-only channel keeps its deadline beside a parked `recv_for()` (Huly QB-273).** A
+  parked `recv_for()` registers as a select waiter for any `T`, and no send can hand a move-only value to one;
+  `send_for()`'s fast path counted it as a taker all the same, and the plain `send()` it took parked with no
+  watchdog: a `send_for(v, 100ms)` beside a `recv_for(10s)` blocked until a `recv()` came, its timeout
+  ignored. It now counts a select waiter only for a copyable `T`, parks timed, and times out.
+
+- **A value handed to a receiver reclaimed before it reads it goes to a receiver parked since, not past it
+  into the buffer (Huly QB-273).** The destructors of `recv()`'s and `recv_for()`'s awaiters pushed the value
+  straight into the buffer: a receiver parked behind the reclaimed one stayed parked -- a lost wake -- and a
+  capacity-0 channel held a value. It now goes through the one hand-off first (a waiting receiver, then a
+  select or timed receiver) and into the buffer only when nobody can take it.
+
+- **A select hand-off whose copy or move throws leaves the select parked (Huly QB-273).** The select
+  waiter's node was unlinked before its `std::any` was built, so a payload whose copy or move threw left a
+  single-channel `select()` parked for good, for a send that had failed. The value goes into its `std::any`
+  first; the sender sees the exception and the waiter stays linked for the next send.
 
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program

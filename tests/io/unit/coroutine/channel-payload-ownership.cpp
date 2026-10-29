@@ -213,8 +213,8 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyPayloadGoesThroughEverySendPath) {
     EXPECT_EQ(received, (std::vector<int>{1, 2, 3})) << "every send path must deliver its move-only payload intact";
 }
 
-// A move-only recv_for() with an EMPTY buffer takes the slow path: it parks on the shared select()
-// state, which type-erases through std::any — and std::any requires CopyConstructible. Two things
+// A move-only recv_for() with an EMPTY buffer takes the slow path: it parks as a select() registration,
+// whose state type-erases through std::any — and std::any requires CopyConstructible. Two things
 // follow, and both are pinned here because neither is obvious from the call site:
 //
 //   1. It must COMPILE. `std::any_cast<T>` carries a hard static_assert that libstdc++ fires at
@@ -234,7 +234,7 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue)
 
     const qb::io::test::coroutine_scope_cleanup cleanup6;
     coro_scheduler().spawn([&]() -> task<void> {
-        // Buffer is empty -> recv_for takes the slow path and parks on the select state.
+        // Buffer is empty -> recv_for takes the slow path and parks as a select registration.
         auto a          = co_await messages.recv_for(20ms);
         timed_out_empty = !a.has_value();
 
@@ -251,6 +251,39 @@ TEST_F(ChannelPayloadOwnership, MoveOnlyRecvForSlowPathTimesOutButKeepsTheValue)
     EXPECT_TRUE(pump_until([&] { return done.load(); })) << "move-only recv_for slow-path coroutine never completed";
     EXPECT_TRUE(timed_out_empty) << "documented contract: a move-only recv_for slow path resolves as a timeout";
     EXPECT_EQ(recovered, 42) << "the timeout must not consume or destroy a value sent while the receiver was parked";
+}
+
+// The send side of the same constraint (Huly QB-273): a parked move-only recv_for is a select waiter no send can serve,
+// so it is not a taker for send_for's fast path. It was -- has_live_select_waiter() is true on a move-only channel,
+// as the case above asserts -- and the fast path's plain send() then parked with no watchdog: a send_for(v, 100ms)
+// beside a recv_for(10s) blocked until a recv() came, its deadline ignored. Now it parks timed, and times out.
+TEST_F(ChannelPayloadOwnership, MoveOnlySendForBesideAParkedRecvForKeepsItsDeadline) {
+    channel<std::unique_ptr<int>> ch{0};
+    std::atomic<bool>             receiver_done{false};
+    std::atomic<bool>             sender_done{false};
+    bool                          received_any = true;
+    bool                          sent         = true;
+
+    const qb::io::test::coroutine_scope_cleanup cleanup;
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto v       = co_await ch.recv_for(10s); // parks as a select registration no send can serve
+        received_any = v.has_value();
+        receiver_done.store(true);
+    });
+    coro_scheduler().run_ready();
+    ASSERT_TRUE(ch.has_live_select_waiter()) << "the receiver must be parked before the send";
+
+    coro_scheduler().spawn([&]() -> task<void> {
+        sent = co_await ch.send_for(std::make_unique<int>(1), 100ms);
+        sender_done.store(true);
+    });
+    EXPECT_TRUE(pump_until([&] { return sender_done.load(); })) << "send_for ignored its 100 ms deadline (parked with no watchdog)";
+    EXPECT_FALSE(sent) << "nobody can take a move-only value here: a timeout";
+    EXPECT_EQ(ch.waiter_census().senders, 0u) << "the timed-out sender leaves nothing behind";
+
+    ch.close(); // ends the receiver now rather than at its 10 s deadline
+    EXPECT_TRUE(pump_until([&] { return receiver_done.load(); }));
+    EXPECT_FALSE(received_any);
 }
 
 // A move-only payload makes the send and receive awaiters non-copyable on its own; they stay neither copyable nor

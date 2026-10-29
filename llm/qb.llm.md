@@ -369,7 +369,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   (`tcp::connect`, `connect_with_socket`, `starttls_connect`), `select`'s and `when_all` / `when_any`'s are
   neither copyable nor movable: each destructor deactivates, or reclaims through, a state a copy shared, so the
   copy destroyed first left the live awaiter never resuming (Huly QB-302). Await the prvalue, or name it once
-  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:974; combinators.h:191; channel.h:1433)_
+  (`auto op = tcp::connect(u); co_await op;`). _(tcp/connector.h:974; combinators.h:191; channel.h:1526)_
 - **A pending TLS handshake is watched in ONE direction (3.3).** The connectors arm what
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
@@ -405,7 +405,7 @@ sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
   handle, an `on_cancel` id or a timer for its coroutine, and undoes it in its destructor, deletes its copy, move and
   both assignments -- as `channel<T>::send_awaiter` does -- or a copy destroyed first undoes it for the live one (a wait
   that never resumes, a grant returned twice). `co_await` what the factory returns, or name it once and `co_await` the
-  name. `scripts/check-awaiter-copy.py` holds every awaiter of qb and of the modules to it. _(channel.h:225)_
+  name. `scripts/check-awaiter-copy.py` holds every awaiter of qb and of the modules to it. _(channel.h:229)_
 - A `parked_coroutine` gives `frame`, `name`, `kind` (`"sleep"`, `"io"`, `"ask"`, `"mutex"`, `"task"`, … —
   `"watcher"` for a coroutine parked on a loop watcher with no record), `age`, `waits_on` (the awaited
   coroutine, for `"task"` and `"generator next"`) and `root`. Call `dump()` on the scheduler's thread; it allocates. _(scheduler.h:309)_
