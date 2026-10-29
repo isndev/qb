@@ -221,40 +221,78 @@ struct ScenarioState {
     }
 };
 
-/**
- * @brief The actor a `TestKit` adds to run its scenario: it registers the exchanges the scenario asks
- *        (`Expectation` and the `Asks` named to `run<Asks...>()`), so their replies resolve.
- */
-template <typename Scenario, typename... Asks>
-class ScenarioDriver final : public qb::Actor {
-    Scenario                       _scenario;
-    std::shared_ptr<ScenarioState> _state;
+/// The scenario behind an interface of its own type. A scenario is usually a lambda written in a test body: a type
+/// with no linkage. The coroutine the driver spawns is a frame defined in a header (qb::Actor::spawn's), and a field
+/// of such a type there is g++'s -Wsubobject-linkage -- an error under QB_TESTS_WERROR -- in every test that runs a
+/// scenario, qb's and a user's. Behind this interface the frame holds a `std::shared_ptr<ScenarioRunner>` only.
+struct ScenarioRunner {
+    virtual ~ScenarioRunner() = default;
+    /// The scenario's task. Not a coroutine itself: the frame is the scenario's own, of the caller's file.
+    virtual qb::io::async::task<void> run(qb::ScopedCoroContext ctx) = 0;
+};
 
-public:
-    ScenarioDriver(Scenario scenario, std::shared_ptr<ScenarioState> state)
-        : _scenario(std::move(scenario))
+template <typename Scenario>
+struct ScenarioRunnerOf final : ScenarioRunner {
+    Scenario scenario;
+
+    explicit ScenarioRunnerOf(Scenario s)
+        : scenario(std::move(s)) {}
+
+    qb::io::async::task<void>
+    run(qb::ScopedCoroContext ctx) override {
+        return scenario(ctx); // the closure lives here, the runner in the spawned frame: as long as the scenario runs
+    }
+};
+
+/// What every driver does, in code that depends on no scenario type: the spawned coroutine is this class's own.
+class ScenarioDriverBase : public qb::Actor {
+    std::shared_ptr<ScenarioRunner> _runner;
+    std::shared_ptr<ScenarioState>  _state;
+
+protected:
+    ScenarioDriverBase(std::shared_ptr<ScenarioRunner> runner, std::shared_ptr<ScenarioState> state)
+        : _runner(std::move(runner))
         , _state(std::move(state)) {}
 
-    qb::io::async::task<bool>
-    onInit() override {
-        registerEvent<Expectation>(*this);
-        (registerEvent<Asks>(*this), ...);
-        spawn([scenario = std::move(_scenario), state = _state](qb::ScopedCoroContext ctx) mutable -> qb::io::async::task<void> {
+    void
+    start_scenario() {
+        spawn([runner = std::move(_runner), state = _state](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             try {
-                co_await scenario(ctx);
+                co_await runner->run(ctx);
                 state->finish(true, nullptr);
             } catch (...) {
                 state->finish(false, std::current_exception());
             }
             qb::Main::stop();
         });
-        co_return true;
     }
 
+public:
     void
     on(Expectation &e) {
         (void) resolve_ask(e); // a reply to the scenario's expect; anything else is dropped
     }
+};
+
+/**
+ * @brief The actor a `TestKit` adds to run its scenario: it registers the exchanges the scenario asks
+ *        (`Expectation` and the `Asks` named to `run<Asks...>()`), so their replies resolve.
+ */
+template <typename Scenario, typename... Asks>
+class ScenarioDriver final : public ScenarioDriverBase {
+public:
+    ScenarioDriver(Scenario scenario, std::shared_ptr<ScenarioState> state)
+        : ScenarioDriverBase(std::make_shared<ScenarioRunnerOf<Scenario>>(std::move(scenario)), std::move(state)) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Expectation>(*this);
+        (registerEvent<Asks>(*this), ...);
+        start_scenario();
+        co_return true;
+    }
+
+    using ScenarioDriverBase::on;
 
     template <typename A>
     requires(std::is_same_v<A, Asks> || ...)

@@ -283,8 +283,9 @@ TEST(TestKit, AnEventLentToAnAbandonedExpectationReturnsForTheNext) {
             ctx.push_to<Order>(desk, 7); // answered to the abandoned waiter, lent
             const auto filled = co_await qb::test::expect<Filled>(ctx, probe, 10s);
             EXPECT_TRUE(filled.has_value()) << "an event lent to an abandoned expectation is never lost";
-            if (filled)
+            if (filled) {
                 EXPECT_EQ(filled->qty, 7);
+            }
         },
         30s);
     EXPECT_TRUE(run) << run.describe();

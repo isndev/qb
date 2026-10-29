@@ -16,7 +16,7 @@ A test of actor code has the same shape every time: an engine, the actors under 
 
 The engine runs for real, on its own threads: a test asserts on what arrives within a deadline, never on an interleaving. The kit depends on no test framework.
 
-<!-- src: qb/src/qb/core/TestKit.h:656-721 (TestKit); qb/src/qb/core/TestKit.h:331-577 (TestProbe); qb/src/qb/core/TestKit.h:592-614 (expect); qb/src/qb/core/TestKit.h:628-646 (expect_none); qb/src/qb/core/TestKit.h:274-308 (RunResult) -->
+<!-- src: qb/src/qb/core/TestKit.h:694-759 (TestKit); qb/src/qb/core/TestKit.h:369-615 (TestProbe); qb/src/qb/core/TestKit.h:630-652 (expect); qb/src/qb/core/TestKit.h:666-684 (expect_none); qb/src/qb/core/TestKit.h:312-346 (RunResult) -->
 
 ## A first test
 
@@ -88,7 +88,7 @@ Check with `EXPECT_*` inside the scenario. `ASSERT_*` does not compile there: it
 - **The wrong probe fails loudly.** `expect<E>` on a probe that does not record `E` throws `std::logic_error`.
 - **Any core.** `expect` is a `qb::ask` of the probe, so the probe may live on another core than the scenario (`kit.probe<Filled>(1)`). When the probe does not answer at all — its core stopped — `expect` returns empty after the timeout plus a grace (250 ms), and `expect_none` returns `false`.
 
-<!-- src: qb/src/qb/core/TestKit.h:419-576 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement, withdrawal and expiry, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:230-377; qb/tests/core/system/patterns/testkit.cpp:470-709; qb/tests/core/system/patterns/testkit.cpp:724-743 -->
+<!-- src: qb/src/qb/core/TestKit.h:457-614 (record, on(Expectation), on(ExpectationDeadline), the loan's acknowledgement, withdrawal and expiry, on(DownEvent)); qb/tests/core/system/patterns/testkit.cpp:230-378; qb/tests/core/system/patterns/testkit.cpp:471-710; qb/tests/core/system/patterns/testkit.cpp:725-744 -->
 
 ## When the scenario asks other actors
 
@@ -103,7 +103,7 @@ const auto run = kit.run<Quote>([quoter](qb::ScopedCoroContext ctx) -> qb::io::a
 
 Without `<Quote>` the reply reaches a driver that does not handle it — a dead letter — and the `ask` times out.
 
-<!-- src: qb/tests/core/system/patterns/testkit.cpp:401-426 -->
+<!-- src: qb/tests/core/system/patterns/testkit.cpp:402-427 -->
 
 ## The engine and the run
 
@@ -114,7 +114,7 @@ Without `<Quote>` the reply reaches a driver that does not handle it — a dead 
 - **The watchdog.** A scenario that never ends is stopped when `watchdog` passes: `RunResult::timed_out` is set, `completed` is not, and `error` stays empty — the scenario's coroutine is torn down with its core without being resumed. A run whose engine refuses to start (a registered core with no actor) waits out the watchdog too, and reports `engine_error`. The stop is cooperative: `run()` then joins the engine, so a core held in a handler that never returns keeps it waiting — CTest's own timeout is the bound there.
 - **Capture by value.** The scenario is stored in the driver for the run, as any `spawn` body: capture ids and values, never references to the test's locals.
 
-<!-- src: qb/src/qb/core/TestKit.h:683-720 (run); qb/tests/core/system/patterns/testkit.cpp:428-462 -->
+<!-- src: qb/src/qb/core/TestKit.h:721-758 (run); qb/tests/core/system/patterns/testkit.cpp:429-463 -->
 
 ## Pitfalls
 
