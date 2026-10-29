@@ -30,6 +30,7 @@
 #define QB_IO_URI_H_
 
 #include <charconv>
+#include <cstdint>
 #include <iterator>
 #include <system_error>
 #include <qb/io/config.h>
@@ -196,11 +197,17 @@ class uri {
     //    address */ bool parse_v4() noexcept;                               /**< Parse
     //    an IPv4 address */
 
+    /// How parse() reads the source: as a URI reference (the constructors), or as one of the HTTP request-target
+    /// forms that are not URIs (origin_form(), authority_form()). An enumeration, not a bool: a string literal
+    /// converts to a bool, and the public `parse("...")` would resolve to this private member.
+    enum class reading : std::uint8_t { reference, origin_form, authority_form };
+
     /**
      * @brief Parse the source URI and fill the object fields
+     * @param how The reading: a reference, or the form origin_form() or authority_form() reads
      * @return true if parsing succeeded, false otherwise
      */
-    bool parse() noexcept;
+    bool parse(reading how = reading::reference) noexcept;
 
     /**
      * @brief Initialize the URI from a string
@@ -379,6 +386,32 @@ public:
      * @return A parsed URI instance
      */
     static uri parse(std::string const &str, int af = AF_INET) noexcept;
+
+    /**
+     * @brief Reads an HTTP request target in origin-form (RFC 9112 §3.2.1): an absolute path and an optional query,
+     *        with no scheme and no authority.
+     * @param target The target as it was received, e.g. `/a/b?x=1`.
+     * @return The target as `uri(target)` reads it, except that nothing in it is an authority: `//a/b` is the path
+     *         `//a/b` with an empty host(), where a URI reference (RFC 3986 §4.2) names the host `a` and the path
+     *         `/b`. is_valid() is false when @p target does not begin with '/' or holds a byte a path may not hold.
+     *         The query and a fragment are read as the constructor reads them: no request target holds a fragment,
+     *         and a server refuses one itself.
+     * @note A server builds the URI of an origin-form request with this function and takes the authority from the
+     *       `Host` field (RFC 9112 §3.3). An absolute-form target (`http://host/path`) is a URI: `uri(target)`.
+     */
+    [[nodiscard]] static uri origin_form(std::string target) noexcept;
+
+    /**
+     * @brief Reads an HTTP request target in authority-form (RFC 9112 §3.2.3): the host and the port of a CONNECT
+     *        request, `uri-host ":" port`, and nothing else.
+     * @param target The target as it was received, e.g. `example.com:443` or `[2001:db8::1]:443`.
+     * @return The host() and the port() the text names, no scheme, the path `/`. is_valid() is false when the text
+     *         is not a host and a port: an empty host, no port, a userinfo, a second colon in a reg-name, a path, a
+     *         query or a fragment. The host's characters and the port's digits are judged as in a reference's
+     *         authority -- an IP literal is not checked to be an IPv6 address, a port is any number of digits --
+     *         which a server checks itself. A URI reference reads `example.com:443` as the scheme `example.com`.
+     */
+    [[nodiscard]] static uri authority_form(std::string target) noexcept;
 
     /**
      * @brief Copy assignment operator

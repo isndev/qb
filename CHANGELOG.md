@@ -94,6 +94,24 @@ policy.
   the On cell. The cells sit in `dev/bench/instrument-cases.txt`, not in the gate; four mutants (the
   tracking disarmed, the yield skipped, a dump skipped, a late disarm) are refused.
 
+- **The HTTP request targets that are not URIs: `qb::io::uri::origin_form(target)` and
+  `qb::io::uri::authority_form(target)` (Huly QB-1177).** `qb::io::uri` reads a URI reference (RFC 3986 §4.1), where
+  a text that begins with `//` is a network-path reference -- `//evil.test/x` names the host `evil.test` and the path
+  `/x` -- and `example.com:443` is the scheme `example.com` and the path `443`. An HTTP/1.1 request target in
+  origin-form is an absolute path whose first segment may be empty (RFC 9112 §3.2.1), and the request's authority is
+  its `Host` field; the target of a CONNECT request is in authority-form, a host and a port (§3.2.3). qbm-http's
+  HTTP/1.1 server read its targets as references, so a client chose the host its handlers saw and the route they
+  served. `origin_form()` reads the target as the constructor does with nothing in it read as an authority: the path
+  keeps every byte (`///x` is `///x`, where the reference reading kept one slash of three), and the query map is the
+  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte the reference parse
+  refuses (the query and a fragment are read as the constructor reads them). `authority_form()` reads the host and the
+  port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
+  userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
+  digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
+  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. A copy or a move carries either reading, as for every uri (QB-351). The reference parse is unchanged; the
+  private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string literal
+  still names the public factory.
+
 ### Changed
 
 - **The ask registry is constant-initialised and its warm path inlined again: on MSVC the request/reply

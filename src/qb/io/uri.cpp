@@ -851,7 +851,7 @@ uri::uri(std::string &&str, int af) noexcept
 
 // Enhanced parsing implementation
 bool
-uri::parse() noexcept {
+uri::parse(reading const how) noexcept {
     _valid       = true;
     _scheme      = {};
     _user_info   = {};
@@ -861,6 +861,13 @@ uri::parse() noexcept {
     _raw_queries = {};
     _fragment    = {};
     _queries.clear();
+
+    // An origin-form target is an absolute path: it begins with '/'. An authority-form one is a host and a port.
+    // Neither has a scheme: only a reference is read for one.
+    if ((how == reading::origin_form && (_source.empty() || _source.front() != '/')) || (how == reading::authority_form && _source.empty())) {
+        _valid = false;
+        return false;
+    }
 
     if (_source.empty()) {
         _path = "/";
@@ -893,7 +900,7 @@ uri::parse() noexcept {
     // Scheme must start with a letter
     // Cast to unsigned char: passing a negative `char` (a non-ASCII byte) to
     // isalpha() is UB per the C standard.
-    if (isalpha(static_cast<unsigned char>(*p2))) {
+    if (how == reading::reference && isalpha(static_cast<unsigned char>(*p2))) {
         // Check for valid scheme characters (a-z, A-Z, 0-9, +, -, .)
         const char *potential_scheme_end = p2 + 1;
         while (potential_scheme_end < p_end && is_scheme_character(*potential_scheme_end)) {
@@ -908,13 +915,16 @@ uri::parse() noexcept {
         }
     }
 
-    // Check for authority (//...)
+    // Check for authority (//...). An origin-form target has none: its `//` begins a path whose first segment is
+    // empty (RFC 9112 §3.2.1 absolute-path), which a reference reads as a network-path (RFC 3986 §4.2). An
+    // authority-form target is one, without the `//`.
     const char *authority_begin = nullptr;
     const char *authority_end   = nullptr;
+    const bool  authority_form  = how == reading::authority_form;
 
-    if (p + 1 < p_end && p[0] == '/' && p[1] == '/') {
-        // Skip "//"
-        p += 2;
+    if (authority_form || (how == reading::reference && p + 1 < p_end && p[0] == '/' && p[1] == '/')) {
+        if (!authority_form)
+            p += 2; // Skip "//"
         authority_begin = p;
 
         // Authority continues until '/', '?', '#', or end of string
@@ -1023,6 +1033,19 @@ uri::parse() noexcept {
                     host_end = authority_end;
                 }
             }
+        }
+    }
+
+    // An authority-form target is `uri-host ":" port` and nothing else (RFC 9112 §3.2.3): no userinfo, a host
+    // (an IP literal holds more than its brackets, a reg-name or an IPv4 address no ':'), a port, and no path,
+    // query or fragment after them.
+    if (authority_form) {
+        const bool bracketed  = host_begin && host_begin < host_end && *host_begin == '[';
+        const bool no_host    = !host_begin || host_end - host_begin <= (bracketed ? 2 : 0);
+        const bool bare_colon = !no_host && !bracketed && std::find(host_begin, host_end, ':') != host_end;
+        if (p != p_end || uinfo_begin || no_host || bare_colon || !port_begin || port_begin == port_end) {
+            _valid = false;
+            return false;
         }
     }
 
@@ -1307,6 +1330,22 @@ uri::encode(const char *input, std::size_t size) noexcept {
 uri
 uri::parse(std::string const &str, int af) noexcept {
     return {str, af};
+}
+
+uri
+uri::origin_form(std::string target) noexcept {
+    uri result;
+    result._source = std::move(target);
+    result.parse(reading::origin_form);
+    return result;
+}
+
+uri
+uri::authority_form(std::string target) noexcept {
+    uri result;
+    result._source = std::move(target);
+    result.parse(reading::authority_form);
+    return result;
 }
 
 // Assignment operators
