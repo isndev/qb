@@ -33,9 +33,11 @@
  */
 
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -976,4 +978,148 @@ TEST(UriParse, QueryPresenceFollowsDelimiterNotMapOrFragment) {
     EXPECT_TRUE(value.has_query());
     value = uri{};
     EXPECT_FALSE(value.has_query());
+}
+
+// =============================================================================
+// ORIGIN-FORM REQUEST TARGETS (Huly QB-1177)
+// =============================================================================
+
+/**
+ * @test origin_form() keeps the path a request target names: a leading `//` is an empty first segment, never an
+ *       authority (RFC 9112 §3.2.1).
+ * @brief The same text read as a reference (RFC 3986 §4.2) names the host `evil.test` and the path `/transfer`: an
+ *        HTTP/1.1 server that read its targets that way served `/transfer` and reported the host the sender chose.
+ */
+TEST(UriParse, OriginFormReadsNoAuthority) {
+    struct Case {
+        std::string_view target, path, query;
+    };
+    for (auto const &c :
+         {Case{"//evil.test/transfer?a=1", "//evil.test/transfer", "a=1"}, Case{"///x", "///x", ""}, Case{"//u@h:8/p", "//u@h:8/p", ""},
+          Case{"//", "//", ""}, Case{"/", "/", ""}, Case{"/a/b", "/a/b", ""}, Case{"/a?b=//c", "/a", "b=//c"}}) {
+        const auto u = uri::origin_form(std::string{c.target});
+        EXPECT_TRUE(u.is_valid()) << c.target;
+        EXPECT_EQ(u.source(), c.target);
+        EXPECT_TRUE(u.scheme().empty()) << c.target;
+        EXPECT_TRUE(u.user_info().empty()) << c.target;
+        EXPECT_TRUE(u.host().empty()) << c.target;
+        EXPECT_TRUE(u.port().empty()) << c.target;
+        EXPECT_EQ(u.path(), c.path) << c.target;
+        EXPECT_EQ(u.encoded_queries(), c.query) << c.target;
+        EXPECT_EQ(u.has_query(), !c.query.empty()) << c.target;
+    }
+    EXPECT_EQ(uri::origin_form("//evil.test/transfer?a=1&b=%7Bx%7D").query("b"), "{x}") << "the query map is the reference's";
+
+    const uri reference{std::string{"//evil.test/transfer?a=1"}};
+    EXPECT_EQ(reference.host(), "evil.test") << "the reading origin_form() exists to avoid";
+    EXPECT_EQ(reference.path(), "/transfer");
+}
+
+/**
+ * @test origin_form() refuses a text that is not an absolute path, and a path byte the reference parse refuses.
+ * @brief An asterisk-form, an absolute-form and an authority-form target are not origin-form: is_valid() is false and
+ *        nothing is read from them -- no scheme, no host. The reference parse still reads the first three.
+ */
+TEST(UriParse, OriginFormRefusesWhatIsNotAnAbsolutePath) {
+    for (std::string_view const target : {"", "*", "a/b", "?q", "http://h/p", "h:80", "/a|b", "/a b", "/a[b]"}) {
+        const auto u = uri::origin_form(std::string{target});
+        EXPECT_FALSE(u.is_valid()) << '"' << target << '"';
+        EXPECT_TRUE(u.scheme().empty()) << target;
+        EXPECT_TRUE(u.host().empty()) << target;
+        EXPECT_TRUE(u.path().empty()) << target;
+    }
+    EXPECT_TRUE(uri{std::string{"*"}}.is_valid());
+    EXPECT_TRUE(uri{std::string{"http://h/p"}}.is_valid());
+    EXPECT_EQ(uri{std::string{"http://h/p"}}.host(), "h");
+}
+
+/**
+ * @test A copy and a move carry the origin-form reading: they take the parsed components, never re-parse the text.
+ * @brief `//a/b` fits std::string's own buffer, which a move copies: the views must follow the text, and the copy
+ *        must not read the text again as a reference.
+ */
+TEST(UriParse, OriginFormSurvivesCopyAndMove) {
+    const auto original = uri::origin_form("//a/b?k=v");
+    uri        copied{original};
+    uri        assigned;
+    assigned            = original;
+    auto source_of_move = uri::origin_form("//a/b?k=v");
+    uri  moved{std::move(source_of_move)}; // a named object: the move constructor runs, no elision
+    auto source_of_move_assignment = uri::origin_form("//a/b?k=v");
+    uri  move_assigned;
+    move_assigned = std::move(source_of_move_assignment);
+    for (uri const *u : {&copied, &assigned, &moved, &move_assigned}) {
+        EXPECT_TRUE(u->is_valid());
+        EXPECT_TRUE(u->host().empty());
+        EXPECT_EQ(u->path(), "//a/b");
+        EXPECT_EQ(u->query("k"), "v");
+        EXPECT_EQ(u->path().data(), u->source().data()) << "the path views this uri's own text";
+    }
+}
+
+/**
+ * @test authority_form() reads the host and the port of a CONNECT request, which a reference reads as a scheme.
+ * @brief `example.com:443` as a reference is the scheme `example.com` and the path `443`; in authority-form (RFC 9112
+ *        §3.2.3) it is the host `example.com` and the port `443`, with no scheme and the path `/`. An IP literal keeps
+ *        its brackets out of host(), as in a reference's authority.
+ */
+TEST(UriParse, AuthorityFormReadsAHostAndAPort) {
+    struct Case {
+        std::string_view target, host, port;
+    };
+    for (auto const &c :
+         {Case{"example.com:443", "example.com", "443"}, Case{"10.0.0.1:8080", "10.0.0.1", "8080"},
+          Case{"[2001:db8::1]:443", "2001:db8::1", "443"}, Case{"EXAMPLE.com:1", "EXAMPLE.com", "1"}}) {
+        const auto u = uri::authority_form(std::string{c.target});
+        EXPECT_TRUE(u.is_valid()) << c.target;
+        EXPECT_EQ(u.source(), c.target);
+        EXPECT_TRUE(u.scheme().empty()) << c.target;
+        EXPECT_TRUE(u.user_info().empty()) << c.target;
+        EXPECT_EQ(u.host(), c.host) << c.target;
+        EXPECT_EQ(u.port(), c.port) << c.target;
+        EXPECT_EQ(u.path(), "/") << c.target;
+        EXPECT_FALSE(u.has_query()) << c.target;
+    }
+    const uri reference{std::string{"example.com:443"}};
+    EXPECT_EQ(reference.scheme(), "example.com") << "the reading authority_form() exists to avoid";
+    EXPECT_EQ(reference.path(), "443");
+}
+
+/**
+ * @test authority_form() refuses a text that is not a host and a port, and reads nothing from it.
+ */
+TEST(UriParse, AuthorityFormRefusesWhatIsNotAHostAndAPort) {
+    for (std::string_view const target :
+         {"", "example.com", "example.com:", "example.com:x", ":443", "[]:443", "[::1]", "a:b:443", "u@example.com:443", "example.com:443/p",
+          "example.com:443?q", "example.com:443#f", "//example.com:443", "http://example.com:443", "exa mple.com:443"}) {
+        const auto u = uri::authority_form(std::string{target});
+        EXPECT_FALSE(u.is_valid()) << '"' << target << '"';
+        EXPECT_TRUE(u.scheme().empty()) << target;
+        EXPECT_TRUE(u.host().empty()) << target;
+        EXPECT_TRUE(u.port().empty()) << target;
+    }
+}
+
+namespace uri_parse_test {
+
+// At namespace scope, not in a member function: there a qualified call considers the private members as candidates,
+// and a private `parse(bool)` -- a `const char *` converts to `bool` by a standard conversion, to `std::string const &`
+// only by a user-defined one -- would win and make the call ill-formed (Huly QB-1177, its first review). clang lets
+// the same call compile inside a gtest body, a member function of another class: the test must be made here.
+static_assert(requires { qb::io::uri::parse("http://h/p"); }, "uri::parse(\"...\") must name the public factory");
+
+[[nodiscard]] qb::io::uri
+parse_a_literal() {
+    return qb::io::uri::parse("http://h/p");
+}
+
+} // namespace uri_parse_test
+
+/**
+ * @test The static factory takes a string literal: a private parse overload must never capture the call.
+ * @brief The static_assert and the namespace-scope call above are the regression test; this one runs the result.
+ */
+TEST(UriParse, ParseFactoryTakesAStringLiteral) {
+    EXPECT_EQ(uri_parse_test::parse_a_literal().host(), "h");
+    EXPECT_EQ(uri::parse("http://h/p", AF_INET).path(), "/p");
 }
