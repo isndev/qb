@@ -35,7 +35,6 @@
 #include <limits>
 #include <stdexcept>
 #include <string_view>
-#include <type_traits>
 #include <qb/system/allocator/pipe.h>
 #include "../config.h"
 #include "../async/protocol.h"
@@ -64,7 +63,9 @@ struct protobuf_policy {
  * @ingroup Protocol
  * @brief MQTT's Variable Byte Integer: at most four bytes and at most 268 435 455 (MQTT 3.1.1 §2.2.3, 5.0
  *        §1.5.5), and the minimal encoding required (MQTT 5.0 §1.5.5, [MQTT-1.5.5-1]) -- a multi-byte encoding
- *        whose last group is zero is a protocol error.
+ *        whose last group is zero is a protocol error. MQTT 3.1.1 states no such rule normatively: a 3.1.1 peer
+ *        that pads its length is refused here, and a policy `{4, 268'435'455, false}` (`max_bytes`, `max_value`,
+ *        `canonical`) is the lenient form.
  */
 struct mqtt_policy {
     static constexpr std::size_t   max_bytes = 4;
@@ -72,13 +73,17 @@ struct mqtt_policy {
     static constexpr bool          canonical = true;
 };
 
-/// The default payload bound of a framer under `Policy`: the io's message cap, or the policy's maximum when that
-/// is smaller (an MQTT framer never defaults past 268 435 455, whatever `QB_MAX_MESSAGE_SIZE` a build chose).
-template <typename Policy>
+/// The default payload bound of a framer with `LeadBytes` lead bytes under `Policy`: the largest payload whose whole
+/// frame -- the lead bytes, the longest varint the policy allows, the payload -- stays within the io's default message
+/// cap `QB_MAX_MESSAGE_SIZE`, or the policy's maximum when that is smaller (an MQTT framer never defaults past
+/// 268 435 455, whatever cap a build chose). A frame the framer accepts is then one the io accepts too (Huly QB-80).
+template <typename Policy, std::size_t LeadBytes = 0>
 [[nodiscard]] constexpr std::size_t
 default_max_payload() noexcept {
-    constexpr std::uint64_t cap = static_cast<std::uint64_t>(QB_MAX_MESSAGE_SIZE);
-    return static_cast<std::size_t>(cap < Policy::max_value ? cap : Policy::max_value);
+    constexpr std::size_t cap  = QB_MAX_MESSAGE_SIZE;
+    constexpr std::size_t room = (cap > LeadBytes && cap - LeadBytes > Policy::max_bytes) ? cap - LeadBytes - Policy::max_bytes : 0u;
+    return static_cast<std::size_t>(static_cast<std::uint64_t>(room) < Policy::max_value ? static_cast<std::uint64_t>(room)
+                                                                                         : Policy::max_value);
 }
 
 /// What `decode` found.
@@ -96,14 +101,31 @@ struct decode_result {
     std::size_t   consumed; ///< the bytes of the varint when complete; the bytes examined otherwise
 };
 
+/// The bytes `encode(value)` writes.
+[[nodiscard]] constexpr std::size_t
+encoded_size(std::uint64_t value) noexcept {
+    std::size_t n = 1;
+    while (value >= 0x80u) {
+        value >>= 7;
+        ++n;
+    }
+    return n;
+}
+
 /**
  * @brief Decode one base-128 varint from `[begin, end)` under `Policy`. Reads at most `Policy::max_bytes`
  *        bytes, never past `end`, allocates nothing, never throws.
+ * @details The tenth byte of a ten-byte policy has two verdicts: a group over 1 -- a value past 64 bits -- is an
+ *          `overflow` at once, whether or not the byte announces another; a group of 0 or 1 that announces another
+ *          is `overlong`, the eleventh byte never read. Both refuse; only `decode_result::status` tells them apart
+ *          (Go's `binary.Uvarint` calls every continuing tenth byte an overflow).
  */
 template <typename Policy = protobuf_policy>
 [[nodiscard]] constexpr decode_result
 decode(const char *begin, const char *end) noexcept {
     static_assert(Policy::max_bytes >= 1 && Policy::max_bytes <= max_encoded_bytes, "a varint takes 1 to 10 bytes");
+    // A policy whose maximum its byte count cannot spell would refuse, as over-long, what encode_header() writes.
+    static_assert(encoded_size(Policy::max_value) <= Policy::max_bytes, "the policy's maximum must fit its byte count");
     std::uint64_t value = 0;
     std::size_t   i     = 0;
     for (; i < Policy::max_bytes; ++i) {
@@ -125,17 +147,6 @@ decode(const char *begin, const char *end) noexcept {
         }
     }
     return {decode_status::overlong, 0, i};
-}
-
-/// The bytes `encode(value)` writes.
-[[nodiscard]] constexpr std::size_t
-encoded_size(std::uint64_t value) noexcept {
-    std::size_t n = 1;
-    while (value >= 0x80u) {
-        value >>= 7;
-        ++n;
-    }
-    return n;
 }
 
 /**
@@ -180,6 +191,7 @@ struct header {
 template <typename Policy = protobuf_policy>
 [[nodiscard]] constexpr header
 encode_header(std::uint64_t value) {
+    static_assert(encoded_size(Policy::max_value) <= Policy::max_bytes, "the policy's maximum must fit its byte count");
     if (value > Policy::max_value)
         throw std::length_error("qb::protocol::varint: value exceeds the policy's maximum");
     header h;
@@ -202,17 +214,21 @@ namespace qb::protocol {
  * holds it, so an empty payload is a frame of at least one byte and is delivered (MQTT's `PINGREQ`, an empty
  * protobuf message), where `size_as_header` refuses a zero. The decoded prefix is cached while the payload
  * arrives, so a payload that comes byte by byte costs one decode. The protocol is marked `not_ok()` on an
- * over-long, overflowing or (under a canonical policy) non-minimal varint, and on a payload over `_MaxPayload`:
- * the stream is not this protocol's. The I/O component's own `max_message_size()` still bounds the frame.
+ * over-long, overflowing or (under a canonical policy) non-minimal varint -- the stream is not this protocol's --
+ * and, as soon as the prefix is whole and before a byte of the payload is waited for, on a payload over
+ * `_MaxPayload` and on a frame over the I/O component's `max_message_size()` (the cap it runs with: the
+ * `QB_MAX_MESSAGE_SIZE` default or what `set_max_message_size()` set), when the component has one. The io itself
+ * refuses an oversized frame only once all of it is buffered.
  *
- * @tparam _IO_        The I/O component (needs `in()`).
+ * @tparam _IO_        The I/O component (needs `in()`; its `max_message_size()` is read when it has one).
  * @tparam _Policy     `varint::protobuf_policy` (the default) or `varint::mqtt_policy`.
  * @tparam _LeadBytes  Fixed bytes before the varint, part of the frame (1 for MQTT: the packet type and flags).
  * @tparam _MaxPayload The largest payload accepted; a longer one is a protocol error, refused before its bytes
- *                     are waited for. Keep it under the io's `max_message_size()` minus the header's bytes.
+ *                     are waited for. The default, `varint::default_max_payload<_Policy, _LeadBytes>()`, leaves the
+ *                     header room under `QB_MAX_MESSAGE_SIZE`.
  */
 template <typename _IO_, typename _Policy = varint::protobuf_policy, std::size_t _LeadBytes = 0,
-          std::size_t _MaxPayload = varint::default_max_payload<_Policy>()>
+          std::size_t _MaxPayload = varint::default_max_payload<_Policy, _LeadBytes>()>
 class varint_prefixed : public io::async::AProtocol<_IO_> {
     std::size_t _header       = 0u; /**< lead + varint bytes of the frame being assembled, once decoded; 0 before */
     std::size_t _payload      = 0u; /**< its payload length, once decoded */
@@ -224,8 +240,10 @@ public:
     static constexpr std::size_t max_payload = _MaxPayload;
     static_assert(_MaxPayload <= _Policy::max_value, "the payload bound exceeds what the policy's varint can say");
     // The frame size is header + payload in a size_t: a bound near SIZE_MAX would let a peer wrap it to a small
-    // number, pass the io's cap, and hand the handler a payload of SIZE_MAX bytes. Refused at compile time.
-    static_assert(_MaxPayload <= std::numeric_limits<std::size_t>::max() - _LeadBytes - varint::max_encoded_bytes,
+    // number, pass the io's cap, and hand the handler a payload of SIZE_MAX bytes. Refused at compile time, in an
+    // order that cannot wrap itself (an absurd _LeadBytes first).
+    static_assert(_LeadBytes <= std::numeric_limits<std::size_t>::max() - varint::max_encoded_bytes
+                      && _MaxPayload <= std::numeric_limits<std::size_t>::max() - varint::max_encoded_bytes - _LeadBytes,
                   "the payload bound leaves no room for the frame's header in a size_t");
 
     varint_prefixed()          = delete;
@@ -276,8 +294,18 @@ public:
                 this->not_ok();
                 return 0;
             }
-            _header  = _LeadBytes + r.consumed;
-            _payload = static_cast<std::size_t>(r.value);
+            const std::size_t header  = _LeadBytes + r.consumed;
+            const std::size_t payload = static_cast<std::size_t>(r.value);
+            // The io refuses a frame over its cap once the frame is REPORTED, all of it buffered: refuse it here, at
+            // the prefix, against the cap the component runs with (no wrap: both terms are bounded above).
+            if constexpr (requires(_IO_ const &io) { io.max_message_size(); }) {
+                if (header + payload > this->_io.max_message_size()) {
+                    this->not_ok();
+                    return 0;
+                }
+            }
+            _header  = header;
+            _payload = payload;
         }
         if (size >= _header + _payload) {
             _frame_header    = _header;
@@ -318,7 +346,7 @@ public:
  * into the input buffer and is valid for the duration of the `on(...)` call.
  */
 template <typename _IO_, typename _Policy = varint::protobuf_policy, std::size_t _LeadBytes = 0,
-          std::size_t _MaxPayload = varint::default_max_payload<_Policy>()>
+          std::size_t _MaxPayload = varint::default_max_payload<_Policy, _LeadBytes>()>
 class varint_binary : public varint_prefixed<_IO_, _Policy, _LeadBytes, _MaxPayload> {
 public:
     using varint_prefixed<_IO_, _Policy, _LeadBytes, _MaxPayload>::varint_prefixed;

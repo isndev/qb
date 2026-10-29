@@ -382,7 +382,9 @@ Every socket and transport exposes a `constexpr static bool is_secure()`. See
   so the component closes the connection.
 - **Built-in protocols** (`qb/io/protocol/`): in `qb::protocol::text` — `command` (newline-terminated),
   `string` (NUL-terminated), `command_view`/`string_view`, and `binary8`/`binary16`/`binary32`
-  (size-prefixed); in `qb::protocol` — `json` and `json_packed`. In `qb::io::protocol`, `accept` hands an
+  (size-prefixed); in `qb::protocol` — `json` and `json_packed`, `varint_prefixed`/`varint_binary` (a base-128
+  varint length: protobuf's streams, MQTT's control packets) on the `qb::protocol::varint` codec, and
+  `netstring`/`netstring_view` (`5:hello,`). In `qb::io::protocol`, `accept` hands an
   accepted socket to the I/O component and `handshake` drives a TLS or transport handshake to completion.
 
 See [Protocols](../3_qb_io/protocols.md).

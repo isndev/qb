@@ -266,9 +266,14 @@ BM_Protocol_VarintPrefixedPartialPayload(benchmark::State &state) {
     // Everything but the last byte, once: getMessageSize() consumes nothing, so the buffer persists across iterations.
     std::memcpy(probe.input.allocate_back(frame.size() - 1), frame.data(), frame.size() - 1);
     benchmark::DoNotOptimize(protocol.getMessageSize()); // decodes and caches the header
-
+    // The neighbours write the buffer every iteration; this cell writes nothing, so g++ hoisted the loop-invariant
+    // call out of the loop and timed an empty one (0.16 ns, Huly QB-80). The framer and its probe escape once, and
+    // every iteration clobbers memory: the cached header and the buffer's size are read again each time.
+    benchmark::DoNotOptimize(protocol);
+    benchmark::DoNotOptimize(probe);
     for (auto _ : state) {
         benchmark::DoNotOptimize(protocol.getMessageSize()); // the cached path
+        benchmark::ClobberMemory();
     }
 
     state.SetItemsProcessed(state.iterations());

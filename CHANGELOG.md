@@ -88,12 +88,22 @@ policy.
   and the zero-copy `netstring_view`. Both are inspection-only framers (the rule the protocols guide sets for a
   new protocol): they consume nothing and report the whole frame, so an empty payload -- an empty protobuf
   message, MQTT's `PINGREQ`, `0:,` -- is a frame of its header alone and is delivered, where `size_as_header`
-  refuses a zero; a payload over the bound is refused at the prefix, before its bytes are waited for; the decoded
-  header is cached while the payload arrives; the bounds are checked at compile time against `size_t`, so no
-  peer can wrap a frame size. `Header(n)` on both is the inverse of the decoder, for the sending side.
-  Witnessed by a unit suite on the framing probe (the codec at every group boundary and every split, both
-  policies' refusals, byte-by-byte framing, the MQTT lead byte, every netstring refusal) and a loopback echo of
-  each protocol; benchmarked beside `size_as_header` and `byte_terminated` in `qb-io-bench-framing-scanners`.
+  refuses a zero. Two bounds hold at the prefix, before a byte of the payload is waited for: the payload bound,
+  by default the largest payload whose whole frame fits `QB_MAX_MESSAGE_SIZE` (`varint::default_max_payload<Policy,
+  LeadBytes>()`; for a netstring the cap minus the digits, the colon and the comma), and the I/O component's own
+  `max_message_size()` -- the cap it runs with, `set_max_message_size()` included -- which the io itself applies
+  only once the whole frame is buffered. A netstring's length is refused at the digit that shows it is wrong, the
+  colon not waited for, and its bound is also capped by what `MaxDigits` digits write. The decoded header is cached
+  while the payload arrives; the bounds are checked at compile time against `size_t`, and a length one digit past
+  what a `size_t` holds is refused before it can wrap, so no peer can wrap a frame size. `Header(n)` on both is
+  the inverse of the decoder, for the sending side; it throws `std::length_error` past the bound. An MQTT control
+  packet is framed by `varint_binary<IO, varint::mqtt_policy, 1>`; what an MQTT module still needs from the I/O
+  component -- a `DISCONNECT` queued before a protocol-error close -- is stated in the protocols guide.
+  Witnessed by a unit suite on the framing probe (the codec at every group boundary and at every split of a
+  three-, four- and ten-byte varint, both policies' refusals at two to four bytes, byte-by-byte framing across one-
+  and multi-byte prefixes, both sides of the payload bound, a component's runtime cap, the MQTT lead byte, every
+  netstring refusal before and at the colon) and a loopback echo of each protocol; benchmarked beside
+  `size_as_header` and `byte_terminated` in `qb-io-bench-framing-scanners`.
 
 - **`channel<T>::waiter_census()` and `liveness()` (Huly QB-273)** -- the parked parties of a channel right
   now, as a `channel_waiter_census {receivers, senders, selects}`: the size of its ring of receivers and the

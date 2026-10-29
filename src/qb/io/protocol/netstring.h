@@ -38,6 +38,17 @@
 
 namespace qb::protocol {
 
+namespace detail {
+/// 10^n, for the n <= digits10 a netstring's length may have: it fits a size_t (a constexpr function, inline).
+[[nodiscard]] constexpr std::size_t
+netstring_pow10(std::size_t n) noexcept {
+    std::size_t p = 1u;
+    while (n-- > 0u)
+        p *= 10u;
+    return p;
+}
+} // namespace detail
+
 /**
  * @class netstring
  * @ingroup Protocol
@@ -47,18 +58,23 @@ namespace qb::protocol {
  * reports the whole netstring -- digits, colon, payload, comma -- once the input holds it; the parsed header is
  * cached while the payload arrives. `0:,` is a frame of three bytes and is delivered empty. The protocol is marked
  * `not_ok()` on anything that is not a netstring: a byte other than a digit before the colon, a leading zero,
- * more than `_MaxDigits` digits, a colon with no digit before it, a length over `_MaxPayload`, or a byte other
- * than the comma where the comma belongs (checked when the whole frame is there). The I/O component's own
- * `max_message_size()` still bounds the frame.
+ * more than `_MaxDigits` digits, a colon with no digit before it, a length over `max_payload` -- each at the byte
+ * that shows it, the colon not waited for -- a frame over the I/O component's `max_message_size()` (when it has
+ * one; at the colon, before a byte of the payload is waited for), or a byte other than the comma where the comma
+ * belongs (checked when the whole frame is there). The io itself refuses an oversized frame only once all of it
+ * is buffered.
  *
- * @tparam _IO_         The I/O component (needs `in()`).
+ * @tparam _IO_         The I/O component (needs `in()`; its `max_message_size()` is read when it has one).
  * @tparam _StringTrait `std::string` (a copy) or `const std::string_view` (a view into the input buffer, valid
  *                      for the duration of the `on(...)` call), as `text::basic_text` offers.
- * @tparam _MaxDigits   The most digits a length may have (9: Bernstein's 999 999 999); at most 19.
- * @tparam _MaxPayload  The largest payload accepted; a longer one is a protocol error, refused before its bytes
- *                      are waited for.
+ * @tparam _MaxDigits   The most digits a length may have (9: Bernstein's 999 999 999); at most
+ *                      `std::numeric_limits<std::size_t>::digits10` (19 on a 64-bit `size_t`, 9 on a 32-bit one).
+ * @tparam _MaxPayload  The largest payload accepted, which `_MaxDigits` caps further: `max_payload` is the smaller
+ *                      of the two, the bound the decoder and `Header()` share. The default leaves the header and the
+ *                      comma room under `QB_MAX_MESSAGE_SIZE`.
  */
-template <typename _IO_, typename _StringTrait = std::string, std::size_t _MaxDigits = 9, std::size_t _MaxPayload = QB_MAX_MESSAGE_SIZE>
+template <typename _IO_, typename _StringTrait = std::string, std::size_t _MaxDigits = 9,
+          std::size_t _MaxPayload = (QB_MAX_MESSAGE_SIZE > _MaxDigits + 2u ? QB_MAX_MESSAGE_SIZE - _MaxDigits - 2u : 0u)>
 class netstring : public io::async::AProtocol<_IO_> {
     // The length is accumulated in a size_t: more digits than it holds without wrapping (9 on 32-bit, 19 on
     // 64-bit) would let a peer wrap the frame size; so would a payload bound with no room for the header and
@@ -72,10 +88,13 @@ class netstring : public io::async::AProtocol<_IO_> {
     std::size_t _frame_header = 0u; /**< the header bytes of the frame last reported, for `onMessage()` */
 
 public:
-    static constexpr char        end         = ',';         /**< The byte that ends every netstring */
-    static constexpr char        colon       = ':';         /**< The byte that ends the length */
-    static constexpr std::size_t max_digits  = _MaxDigits;  /**< Digits a length may have */
-    static constexpr std::size_t max_payload = _MaxPayload; /**< Payload bytes a frame may carry */
+    static constexpr char        end        = ',';        /**< The byte that ends every netstring */
+    static constexpr char        colon      = ':';        /**< The byte that ends the length */
+    static constexpr std::size_t max_digits = _MaxDigits; /**< Digits a length may have */
+    /// Payload bytes a frame may carry: `_MaxPayload`, or the largest length `_MaxDigits` digits write when that is
+    /// smaller -- the one bound the decoder and `Header()` share, so `Header(n)` writes only what the decoder takes.
+    static constexpr std::size_t max_payload =
+        _MaxPayload < detail::netstring_pow10(_MaxDigits) - 1u ? _MaxPayload : detail::netstring_pow10(_MaxDigits) - 1u;
 
     /**
      * @struct message
@@ -98,6 +117,10 @@ public:
         [[nodiscard]] std::string_view
         view() const noexcept {
             return {bytes.data(), size};
+        }
+        [[nodiscard]] const char *
+        data() const noexcept {
+            return bytes.data();
         }
     };
 
@@ -147,11 +170,17 @@ public:
                     this->not_ok();
                     return 0;
                 }
-                if (digits == _MaxDigits) { // a length longer than the format allows
+                // A length longer than the format allows. Tested BEFORE the digit is added: at _MaxDigits ==
+                // digits10 one more digit could wrap `len` past SIZE_MAX back under the bound.
+                if (digits == _MaxDigits) {
                     this->not_ok();
                     return 0;
                 }
                 len = len * 10u + static_cast<std::size_t>(c - '0');
+                if (len > max_payload) { // `len` only grows: refused at this digit, the colon not waited for
+                    this->not_ok();
+                    return 0;
+                }
             }
             if (digits == size)
                 return 0;       // the colon is not here yet
@@ -159,9 +188,13 @@ public:
                 this->not_ok();
                 return 0;
             }
-            if (len > _MaxPayload) {
-                this->not_ok();
-                return 0;
+            // The io refuses a frame over its cap once the frame is REPORTED, all of it buffered: refuse it here,
+            // at the colon, against the cap the component runs with (no wrap: the static assertions bound it).
+            if constexpr (requires(_IO_ const &io) { io.max_message_size(); }) {
+                if (digits + 1u + len + 1u > this->_io.max_message_size()) {
+                    this->not_ok();
+                    return 0;
+                }
             }
             _header  = digits + 1u;
             _payload = len;
@@ -199,11 +232,11 @@ public:
 
     /**
      * @brief The prefix of an outgoing payload of `payload` bytes: `*io << Header(n).view() << bytes << end`.
-     * @throws std::length_error when `payload` exceeds `_MaxPayload`.
+     * @throws std::length_error when `payload` exceeds `max_payload` -- the decoder's own bound, `_MaxDigits` included.
      */
     [[nodiscard]] static header
     Header(std::size_t payload) {
-        if (payload > _MaxPayload)
+        if (payload > max_payload)
             throw std::length_error("qb::protocol::netstring: payload size exceeds the protocol's bound");
         header h;
         const auto [ptr, ec] = std::to_chars(h.bytes.data(), h.bytes.data() + h.bytes.size() - 1u, payload);
@@ -227,7 +260,8 @@ public:
  * @ingroup Protocol
  * @brief Netstrings whose `message::text` is a zero-copy `std::string_view` into the input buffer.
  */
-template <typename _IO_, std::size_t _MaxDigits = 9, std::size_t _MaxPayload = QB_MAX_MESSAGE_SIZE>
+template <typename _IO_, std::size_t _MaxDigits = 9,
+          std::size_t _MaxPayload = (QB_MAX_MESSAGE_SIZE > _MaxDigits + 2u ? QB_MAX_MESSAGE_SIZE - _MaxDigits - 2u : 0u)>
 using netstring_view = netstring<_IO_, const std::string_view, _MaxDigits, _MaxPayload>;
 
 } // namespace qb::protocol
