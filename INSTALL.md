@@ -110,10 +110,14 @@ directories and `CPATH` (searched before every system directory, whatever the or
 its own rather than `$(brew --prefix)`, and find the OpenSSL qb was built with. Against another OpenSSL major the
 configure disables QUIC
 and names the `OPENSSL_ROOT_DIR` to pass; reconfigure in a new build directory or with `cmake --fresh`, since an
-existing one keeps the OpenSSL it found cached.
+existing one keeps the OpenSSL it found cached. A later `brew upgrade` that moves libngtcp2 or qb's OpenSSL re-runs
+the configure at the next `cmake --build`, and a path its search found that the upgrade's cleanup removed is searched
+again; a library found nowhere else then stops the configure, naming it, until one is found, its feature is turned off
+(`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for OpenSSL) or the build directory starts afresh.
 
 If OpenSSL is not found, `QB_WITH_SSL` is forced off and the SSL/QUIC features are disabled rather than
-failing the build.
+failing the build -- unless this build directory had found it: an OpenSSL (off Windows) or a libngtcp2 it found that
+has since gone stops the configure instead, naming it.
 
 ## Integrate into your project
 
@@ -165,7 +169,11 @@ bundled `FindArgon2` / `FindNgtcp2` modules **when, and only when, the correspon
 actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`, `FindNgtcp2.cmake` if
 `QB_HAS_QUIC` (`CMakeLists.txt:292-297`). They travel with the package because `qbConfig.cmake`
 calls `find_dependency(Argon2)` / `find_dependency(Ngtcp2)` by name and a consumer has no way to
-invent them; a build with those features off needs neither.
+invent them; a build with those features off needs neither. With QUIC, the generated `qbConfig.cmake`
+also compares the OpenSSL the consumer's libngtcp2 links with the one the consumer links, as qb's own
+configure did, and warns on two majors -- they crash at the first QUIC handshake, and QUIC is compiled
+into the installed qb, so the consumer cannot turn it off: point `OPENSSL_ROOT_DIR` at libngtcp2's
+OpenSSL, and rebuild qb against it if that is another major (Huly QB-1183).
 
 ### What was this prefix built with?
 
@@ -269,7 +277,8 @@ with no arguments on a machine that has no qb checkout.
 - **`libev … not found`** — the event loop lives directly under `qb/src/qb/ev` (committed files, not a
   submodule), so a normal clone always ships it. If it is missing, restore it from the repo
   (`git checkout -- src/qb/ev`) or re-clone; a `git submodule update` will not bring it back.
-- **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled.
+- **SSL features missing** — install OpenSSL development headers; without them `QB_WITH_SSL` is auto-disabled (an
+  OpenSSL this build directory had found and lost stops the configure instead, naming it).
 - **Host CPU binary fails on another machine** — check whether `QB_ENABLE_NATIVE_ARCH` was turned on.
   It is **`OFF` by default** (`cmake/qbConfig.cmake:140`) and every preset except `release-native` /
   `benchmarks` keeps it off, so a default build is already portable; if the cache says `ON`, rebuild

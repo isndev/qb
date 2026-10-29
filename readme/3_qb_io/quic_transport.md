@@ -19,25 +19,45 @@ QUIC is controlled by the tri-state CMake cache variable `QB_WITH_QUIC`, which d
 
 | Value           | Behavior                                                                       |
 | --------------- | ------------------------------------------------------------------------------ |
-| `AUTO` (default)| Enable QUIC if and only if libngtcp2 is found; stay quiet when it is absent.    |
-| `ON`            | Require libngtcp2; warn and disable QUIC if it (or SSL) is missing.            |
+| `AUTO` (default)| Enable QUIC if and only if libngtcp2 is found; stay quiet when it is absent (one this build directory found and lost stops the configure, below). |
+| `ON`            | Require libngtcp2; warn and disable QUIC if it (or SSL) is missing (one this build directory found and lost stops the configure, below). |
 | `OFF`           | Disable QUIC outright.                                                          |
 
 In `AUTO` and `ON` alike, a libngtcp2 whose OpenSSL crypto helper links another OpenSSL major than qb
-disables QUIC with a warning that names both libraries and, where the helper's listing gives a path, the
-`OPENSSL_ROOT_DIR` to pass: two OpenSSL majors in one process crash at the first QUIC handshake. Two copies
-of one major -- a static `libssl` in qb beside the shared one the helper loads, or, on macOS where the
+disables QUIC with a warning that names the libraries and, where the helper's listing gives a path, the
+`OPENSSL_ROOT_DIR` to pass: two OpenSSL majors in one process crash at the first QUIC handshake. Every `libssl`
+and `libcrypto` read, the helper's and qb's, must be one major: a cache that kept qb's `libcrypto` on another
+major than the `libssl` it found again is two majors too (Huly QB-1185; qb's own TLS on such a cache is QB-1190).
+Two copies of one major -- a static `libssl` in qb beside the shared one the helper loads, or, on macOS where the
 listing names paths, one major from two prefixes -- keep QUIC and print a warning: one release in two copies
 was measured to work on macOS, but OpenSSL's ABI promise does not cover an object one copy hands the other.
-The module reads the dependency lists of the helper and of qb's own `libssl` (`otool -L` on macOS, `readelf
--d` / `objdump -p` on ELF; static archives and Windows are not read -- MSYS2 or an installer's DLLs beside
-vcpkg's go unchecked: no answer, never a guess). `QB_REQUIRE_FEATURES=ON` makes two majors a configure
-error, and an existing build directory keeps the OpenSSL it found cached: reconfigure it with `--fresh`. The
-check compares libraries (the major of the headers in `OPENSSL_INCLUDE_DIR` when qb's libssl is static or cannot
-be read); that the headers compiled are the found OpenSSL's is `qb-io-test-unit-openssl-headers`' (Huly QB-1180).
+The module reads the dependency lists of the helper and of qb's own `libssl` and `libcrypto` (`otool -L` on macOS,
+of the file the install name names -- `otool -D`, what a binary records and dyld loads, which after a Homebrew
+upgrade that kept the old keg is the new library, not the one found; `readelf -d` / `objdump -p` on ELF; static
+archives and Windows are not read -- MSYS2 or an installer's DLLs beside vcpkg's go unchecked: no answer, never a
+guess). A number that is not the release's major -- FreeBSD names OpenSSL 3's `libssl.so.30` -- is compared as it
+reads, which is two majors beside a major taken from headers: such hosts are outside the platforms qb supports.
+`QB_REQUIRE_FEATURES=ON` makes two majors a configure error.
+
+The files read -- the libraries, the files they resolve to and their install names, and qb's `opensslv.h` -- are
+inputs of the configure, QUIC or not: a package update that rewrites one, moves the link that names one or removes
+it re-runs the check at the next `cmake --build` (Ninja, Makefiles). A path the search had found whose file is gone
+is searched again, pkg-config asked again; found nowhere else, the configure stops and names it -- even in `AUTO` --
+until a search finds it, its feature is turned off (`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for
+OpenSSL) or the build directory starts afresh. A path set by hand or by a parent project (a superbuild names a library
+it builds), or found by a parent's own search before qb's, is kept as given; a build directory configured before qb
+recorded its searches needs one `--fresh` to start. A library replaced
+at the same path by a file older than the build directory, which a build tool cannot tell from no change, is
+reported by `qb-io-test-unit-ngtcp2-openssl-listing` ("reconfigure"); one dated in the future by a skewed clock
+re-runs the configure at every build. Pointing `OPENSSL_ROOT_DIR` elsewhere re-runs nothing: an existing build
+directory keeps the OpenSSL it found cached, so reconfigure it with `--fresh`. The check compares libraries (the
+major of the headers in `OPENSSL_INCLUDE_DIR` when qb's libssl is static or cannot be read); that the headers
+compiled are the found OpenSSL's is `qb-io-test-unit-openssl-headers`' (Huly QB-1180). An installed qb built with
+QUIC compares again at `find_package(qb)` -- the libngtcp2 the consumer finds against the OpenSSL the consumer links
+-- and warns: QUIC is compiled in, the consumer cannot turn it off (Huly QB-1183).
 
 <!-- src: qb/cmake/qbConfig.cmake:168-169 -->
-<!-- src: qb/cmake/qbDependencies.cmake:268-361 -->
+<!-- src: qb/cmake/qbDependencies.cmake:270-297, qb/cmake/qbOpenSSL.cmake:78-121, qb/cmake/qbOpenSSL.cmake:169-277 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
@@ -57,7 +77,7 @@ if (!qb::io::quic::available()) {
 ```
 
 > **Note for CI — `ON` does not fail the build.** A runner without libngtcp2 configured with `QB_WITH_QUIC=AUTO` disables QUIC silently; with `=ON` it prints a `message(WARNING)`, sets `QB_HAS_QUIC` false and carries on. The knob that turns a missing dependency into a `FATAL_ERROR` is **`-DQB_REQUIRE_FEATURES=ON`**. This matters more than it looks: a test declared `qb_add_executable(REQUIRES quic)` is not merely skipped when the capability is off, it is never registered — so the only symptom of a QUIC-less runner is a `ctest` count that is quietly smaller. Configure CI with `-DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON`, and assert the registered-test count.
-<!-- src: qb/cmake/qbDependencies.cmake:353-355 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:270-272 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
 
 ## Concepts
 
