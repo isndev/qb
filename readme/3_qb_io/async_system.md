@@ -329,7 +329,7 @@ The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *de
 |---|---|---|---|
 | `disconnected` | Connection closed or I/O error | — | `int reason`, `std::error_code error_code`, `std::string message` |
 | `input_drained` *(alias `eof`)* | Input buffer fully consumed — **not** an end-of-stream signal | — | — |
-| `eos` | Output buffer fully flushed | — | — |
+| `eos` | Output buffer fully flushed — also the answer to an empty arm (`ready_to_write()` with nothing queued), on every transport | — | — |
 | `file` | Watched file/directory attributes changed | `ev::stat` | `ev_statdata attr`, `ev_statdata prev` |
 | `handshake` | Transport handshake complete | — | — |
 | `io` | Raw fd readiness | `ev::io` | `_revents` carries `EV_READ`/`EV_WRITE` |
@@ -340,7 +340,7 @@ The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *de
 | `extracted` | Connection extracted from an I/O handler | — | — |
 | `dispose` | Component is about to be destroyed | — | — |
 
-<!-- src: qb/src/qb/io/async/event/disconnected.h:87, eof.h:57, eof.h:68, eos.h:65, file.h:70, handshake.h:49, io.h:52, pending_read.h:60, pending_write.h:66, signal.h:82, timer.h:64, timer.h:108, extracted.h:49, dispose.h:86 -->
+<!-- src: qb/src/qb/io/async/event/disconnected.h:87, eof.h:57, eof.h:68, eos.h:69, file.h:70, handshake.h:49, io.h:52, pending_read.h:60, pending_write.h:66, signal.h:82, timer.h:64, timer.h:108, extracted.h:49, dispose.h:86 -->
 
 ### Disconnect reason codes
 

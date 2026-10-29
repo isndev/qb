@@ -452,7 +452,7 @@ peer's memory footprint (`src/qb/io/config.h:174-175`, `:250-251`, `:264-265`):
 | `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
 
 Setting a cap to `SIZE_MAX` disables that limit
-(`src/qb/io/stream.h:124-125`, `:481-482`); it is discouraged for any network-facing
+(`src/qb/io/stream.h:124-125`, `:494-495`); it is discouraged for any network-facing
 component.
 
 ---

@@ -204,10 +204,10 @@ Every `qb-io` stream holds two `pipe<char>`s — `input_buffer_type` and `output
 | a read is about to happen | `allocate_back(read_size)` reserves the landing zone (`src/qb/io/stream.h:167`) |
 | the read returned fewer bytes than reserved | `free_back(unused)` retracts the tail (`src/qb/io/stream.h:169`) |
 | the protocol consumed one framed message | `free_front(size)` retires it (`src/qb/io/stream.h:184`) |
-| a write drained part of the output buffer | `free_front(written)` advances past it (`src/qb/io/stream.h:326`) |
-| a write drained all of it | `reset()` — both cursors to zero (`src/qb/io/stream.h:328`) |
+| a write drained part of the output buffer | `free_front(written)` advances past it (`src/qb/io/stream.h:335`) |
+| a write drained all of it | `reset()` — both cursors to zero (`src/qb/io/stream.h:337`) |
 
-The partial-write case is where the cursor model pays for itself, and the alternative was measured rather than reasoned about. `free_front` is O(1), and `begin()`/`size()` stay correct at the new offset, so the next `write()` resumes exactly where the socket stopped. Compacting on every partial write instead would `memmove` every byte still pending on **every** turn, making one large payload quadratic: a 64 MB body flushed 64 KiB at a time moves 32 GB and burns 728 ms of loop time — all of it stolen from the actors sharing that core (`src/qb/io/stream.h:315-323`).
+The partial-write case is where the cursor model pays for itself, and the alternative was measured rather than reasoned about. `free_front` is O(1), and `begin()`/`size()` stay correct at the new offset, so the next `write()` resumes exactly where the socket stopped. Compacting on every partial write instead would `memmove` every byte still pending on **every** turn, making one large payload quadratic: a 64 MB body flushed 64 KiB at a time moves 32 GB and burns 728 ms of loop time — all of it stolen from the actors sharing that core (`src/qb/io/stream.h:324-332`).
 
 What the retired prefix costs is bounded and self-correcting, which is the other half of the same comment: the next `publish()` calls `allocate_back`, which compacts once `_begin` has passed half the capacity and grows otherwise — and it only grows when the *live* bytes already fill half the block. A stream that is continuously published into while it drains settles at about 4× the bytes in flight, and settles there; it does not creep.
 

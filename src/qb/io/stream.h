@@ -301,7 +301,8 @@ public:
      */
     /**
      * @brief Write data from the output buffer to the stream
-     * @return Number of bytes written, or negative value on error
+     * @return Number of bytes written, or negative value on error; 0, without calling the transport, when
+     *         nothing is pending
      *
      * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      */
@@ -309,6 +310,14 @@ public:
     write() noexcept
     requires qb::has_write_r<_IO_, int, const char *, std::size_t>
     {
+        // Nothing pending: the transport is not called (Huly QB-1176). An empty write is how a component
+        // asks to be told that its output drained -- `ready_to_write()`, or `publish()` with no operand,
+        // then `event::eos` -- and a transport may refuse a zero-length write: a 0-byte `send()` answers
+        // 0, but a 0-byte `SSL_write()` fails, and the io layer read that failure through a stale errno,
+        // retrying the write for ever or disposing a healthy connection. 0 here is the TCP outcome on
+        // every transport, and the TLS socket is never handed an empty write.
+        if (!_out_buffer.size()) [[unlikely]]
+            return 0;
         const auto ret = _out.write(_out_buffer.begin(), _out_buffer.size());
 
         if (ret > 0) {
@@ -443,7 +452,8 @@ public:
      */
     /**
      * @brief Write data from the output buffer to the transport (bidirectional version)
-     * @return Number of bytes written on success, error code on failure
+     * @return Number of bytes written on success, error code on failure; 0, without calling the
+     *         transport, when nothing is pending
      *
      * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      * This method is enabled only if the IO type has a compatible write method.
@@ -454,6 +464,9 @@ public:
     write() noexcept
     requires qb::has_write_r<_IO_, int, const char *, std::size_t>
     {
+        // Nothing pending: the transport is not called -- see `ostream::write()` (Huly QB-1176).
+        if (!_out_buffer.size()) [[unlikely]]
+            return 0;
         const auto ret = this->_in.write(_out_buffer.begin(), _out_buffer.size());
         if (ret > 0) {
             // Advance the cursor, never relocate the tail — see the identical comment on

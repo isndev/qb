@@ -1087,11 +1087,11 @@ socket::write(const void *data, std::size_t size) noexcept {
         ERR_clear_error(); // empty the thread error queue so SSL_get_error is reliable (see handCheck)
         ret = SSL_write(ssl_handle(), data, static_cast<int>(size));
         // Consult SSL_get_error for ret <= 0, not just ret < 0. The io layer
-        // only writes when size > 0, where SSL_write() returns 0 to signal a
-        // failed write (connection closed / SSL_ERROR_ZERO_RETURN /
-        // SSL_ERROR_SYSCALL). The previous `ret < 0` let a 0 fall through and
-        // be reported as "0 bytes written", leaving the io write loop to spin
-        // on EV_WRITE until the next call finally returned < 0.
+        // writes only when size > 0 -- stream::write() returns before handing
+        // it an empty buffer (Huly QB-1176) -- where SSL_write() returns 0 to
+        // signal a failed write (connection closed / SSL_ERROR_ZERO_RETURN /
+        // SSL_ERROR_SYSCALL). The previous `ret < 0` let a 0 fall through as
+        // "0 bytes written", leaving the io write loop to spin on EV_WRITE.
         if (ret <= 0) {
             auto err = SSL_get_error(ssl_handle(), ret);
             switch (err) {

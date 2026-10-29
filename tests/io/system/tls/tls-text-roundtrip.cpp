@@ -164,3 +164,154 @@ TEST(TlsTextRoundtrip, SecureSessionEchoesEveryFramedMessage) {
 
     async::listener::current.clear();
 }
+
+// =============================================================================
+// An empty write arm is answered by eos, over TLS as over TCP (Huly QB-1176)
+// =============================================================================
+//
+// `ready_to_write()` with nothing queued is how a session asks to be told that its output has drained:
+// the write path runs, finds nothing to send and reports `event::eos`. Over TCP that held because a
+// 0-byte send() answers 0. Over TLS it did not: the write path handed SSL_write() 0 bytes, which fails,
+// and the io layer read the failure through whatever errno the thread held last -- a would-block left
+// by an earlier read re-armed the write on every turn (the session never heard eos and the loop spun),
+// anything else disposed a healthy connection. The server session below arms an empty write when the
+// client sends `arm`, must then hear eos exactly once while still connected, and must answer the
+// client's next line, `ping`, on the same connection. The TCP case is the control: the same harness
+// and the same expectations, met before the fix too.
+
+namespace {
+
+struct EmptyArmProbe {
+    std::atomic<int> empty_arms{0};       // arms made with nothing queued
+    std::atomic<int> eos_after_arm{0};    // eos heard after the arm and before `ping`
+    std::atomic<int> lost_before_ping{0}; // disconnections before `ping`
+    std::atomic<int> pinged{0};           // `ping` received on the session that armed
+    std::atomic<int> ponged{0};           // the answer, received by the client
+
+    void
+    reset() noexcept {
+        empty_arms       = 0;
+        eos_after_arm    = 0;
+        lost_before_ping = 0;
+        pinged           = 0;
+        ponged           = 0;
+    }
+};
+
+EmptyArmProbe g_empty_arm;
+
+template <typename Transport, typename Accept>
+class EmptyArmServer;
+
+template <typename Transport, typename Accept>
+class EmptyArmSession : public async::tcp::client<EmptyArmSession<Transport, Accept>, Transport, EmptyArmServer<Transport, Accept>> {
+    using base_t = async::tcp::client<EmptyArmSession<Transport, Accept>, Transport, EmptyArmServer<Transport, Accept>>;
+    bool _armed  = false;
+
+public:
+    using Protocol = qb::protocol::text::command<EmptyArmSession>;
+
+    explicit EmptyArmSession(EmptyArmServer<Transport, Accept> &server)
+        : base_t(server) {}
+
+    void
+    on(typename Protocol::message &&msg) {
+        if (msg.text == "arm") {
+            EXPECT_EQ(this->out().size(), 0u) << "the arm must find nothing queued";
+            _armed = true;
+            ++g_empty_arm.empty_arms;
+            this->ready_to_write();
+        } else if (msg.text == "ping") {
+            ++g_empty_arm.pinged;
+            *this << "pong" << Protocol::end;
+        }
+    }
+
+    void
+    on(async::event::eos &&) {
+        if (_armed && g_empty_arm.pinged.load() == 0)
+            ++g_empty_arm.eos_after_arm;
+    }
+
+    void
+    on(async::event::disconnected const &) {
+        if (g_empty_arm.pinged.load() == 0)
+            ++g_empty_arm.lost_before_ping;
+    }
+};
+
+template <typename Transport, typename Accept>
+class EmptyArmServer : public async::tcp::server<EmptyArmServer<Transport, Accept>, EmptyArmSession<Transport, Accept>, Accept> {};
+
+template <typename Transport>
+class EmptyArmClient : public async::tcp::client<EmptyArmClient<Transport>, Transport> {
+public:
+    using Protocol = qb::protocol::text::command<EmptyArmClient>;
+
+    void
+    on(typename Protocol::message &&msg) {
+        if (msg.text == "pong")
+            ++g_empty_arm.ponged;
+    }
+};
+
+template <typename Transport, typename Accept>
+void
+expect_empty_arm_answered_by_eos() {
+    g_empty_arm.reset();
+    async::init();
+
+    EmptyArmServer<Transport, Accept> server;
+    if constexpr (Accept::is_secure())
+        server.transport().init(ssl::Context::server(ssl_resource_path("cert.pem"), ssl_resource_path("key.pem")));
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), 0);
+    const auto port = server.transport().local_endpoint().port();
+    ASSERT_NE(port, 0);
+    server.start();
+
+    // The client on its own thread and loop: a TLS connect_v4() is a blocking handshake the server,
+    // on THIS loop, must answer (see SecureSessionEchoesEveryFramedMessage).
+    std::atomic<bool> client_done{false};
+    std::thread       worker([&] {
+        async::init();
+        EmptyArmClient<Transport> client;
+        if constexpr (Transport::is_secure())
+            client.transport().set_insecure(); // self-signed local cert
+        const bool connected = client.transport().connect_v4("127.0.0.1", port) == SocketStatus::Done;
+        EXPECT_TRUE(connected);
+        if (connected) {
+            client.start();
+            client << "arm" << '\n';
+            const bool answered =
+                pump_until([] { return g_empty_arm.eos_after_arm.load() > 0 || g_empty_arm.lost_before_ping.load() > 0; }, 5s);
+            EXPECT_TRUE(answered) << "the empty arm was answered neither by eos nor by a disconnection within 5 s";
+            if (answered && g_empty_arm.lost_before_ping.load() == 0) {
+                client << "ping" << '\n';
+                EXPECT_TRUE(pump_until([] { return g_empty_arm.ponged.load() > 0; }, 5s)) << "the session did not answer after its eos";
+            }
+        }
+        client_done.store(true);
+    });
+
+    EXPECT_TRUE(pump_until([&] { return client_done.load(); }, 15s)) << "the client thread never finished";
+    worker.join();
+
+    EXPECT_EQ(g_empty_arm.empty_arms.load(), 1);
+    EXPECT_EQ(g_empty_arm.eos_after_arm.load(), 1) << "an empty arm must be answered by exactly one eos";
+    EXPECT_EQ(g_empty_arm.lost_before_ping.load(), 0) << "an empty arm must not end the connection";
+    EXPECT_EQ(g_empty_arm.pinged.load(), 1) << "the session that armed must still read the next line";
+    EXPECT_EQ(g_empty_arm.ponged.load(), 1) << "the session that armed must still answer it";
+
+    async::listener::current.clear();
+}
+
+} // namespace
+
+TEST(TlsTextRoundtrip, EmptyWriteArmIsAnsweredByEosOverTls) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+    expect_empty_arm_answered_by_eos<transport::stcp, transport::saccept>();
+}
+
+TEST(TlsTextRoundtrip, EmptyWriteArmIsAnsweredByEosOverTcp) {
+    expect_empty_arm_answered_by_eos<transport::tcp, transport::accept>();
+}

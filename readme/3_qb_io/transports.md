@@ -198,12 +198,12 @@ The cap is enforced at two different layers, and they behave differently, so it 
 | Layer | Call | On overflow |
 |---|---|---|
 | stream | `istream::read()` | returns `qb::io::ErrBufferLimitExceeded` (`-2`) without reading (`src/qb/io/stream.h:160-162`) |
-| stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:505-510`) |
+| stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:518-523`) |
 | CRTP | `io<Derived>::publish(args...)`, i.e. `*this << x` | **disconnects the session** with `disconnect_reason::buffer_overflow` (`src/qb/io/async/io.h:2794-2797`) |
 
 The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2801-2813`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:3126-3129`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
 
-<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :487 (set_max_write_buffer_size) -->
+<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :500 (set_max_write_buffer_size) -->
 
 ### TCP socket: `qb::io::tcp::socket`
 

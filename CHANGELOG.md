@@ -271,6 +271,23 @@ policy.
   single-channel `select()` parked for good, for a send that had failed. The value goes into its `std::any`
   first; the sender sees the exception and the waiter stays linked for the next send.
 
+- **An empty write arm is answered by `eos` over TLS as over TCP: the stream hands no transport an empty write
+  (Huly QB-1176).** `ready_to_write()`, or `publish()` with no operand, while nothing is queued is how a component
+  asks to be told that its output has drained -- qbm-http's HTTP/1.1 and HTTP/2 servers close an idle connection
+  that way when they drain, its WebSocket close path delivers a queued Close that way. `stream::write()` and
+  `ostream::write()` handed the transport the empty buffer: a 0-byte `send()` answers 0 and the write path reported
+  `eos`, but a 0-byte `SSL_write()` fails, the TLS socket returned -1, and the io layer read the failure through
+  whatever errno the thread held last -- a would-block re-armed the write on every turn and `eos` never came, any
+  other value disposed a healthy connection. Both now return 0 without calling the transport when nothing is
+  pending, the TCP outcome on every transport (the UDP transport already did), so the TLS socket is never handed an
+  empty write, the invariant its own comment stated. Nothing relied on the call: an empty `send()` or file write
+  does nothing but report a connection already dead, which the read path reports as well, and an empty TLS write
+  could at most step a handshake still in progress, which a session's reads drive (a client's, its connector or
+  its blocking connect), never an empty write. `qb-io-test-system-tls-text-roundtrip`
+  holds it: a TLS session that arms an empty write must hear `eos` once, stay connected and answer the next line,
+  and the TCP twin is the control. On the previous source the TLS case was disconnected (no `eos`) on g++ 14
+  (release, ASan+UBSan, TSan) and MSVC 19.51; the TCP case passed on both.
+
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program
   that also linked a real libev -- or any library that bundles one -- held two definitions of each, and the link

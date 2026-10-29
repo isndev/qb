@@ -37,6 +37,10 @@ namespace qb::io::async::event {
  * It signifies that all data previously queued for sending via `publish()` or `operator<<`
  * has been flushed to the underlying transport.
  *
+ * It also answers an empty arm: `ready_to_write()`, or `publish()` with no operand, while nothing is
+ * queued makes the next write pass find nothing to send and report `eos` -- on every transport, TLS
+ * included, since the stream hands no transport an empty write (3.4, Huly QB-1176).
+ *
  * This is often used to signal completion of a data transfer or to manage flow control
  * (e.g., stop listening for write readiness on the socket until more data is available).
  *
