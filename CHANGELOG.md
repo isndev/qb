@@ -346,7 +346,11 @@ policy.
   the benchmarks' (13). `qb-io-test-unit-openssl-headers` checks it where it can on every lane: the headers' version
   is the configure's (major and minor, and the patch from 3.0), the library run is of their major and no older a
   minor, and its first dependency is a decoy SYSTEM include directory whose `opensslv.h` is an `#error`, which a
-  helper that stops linking the found OpenSSL first reaches; `qb-io-test-unit-openssl-link-order` reads qb-io's link
+  helper that stops linking the found OpenSSL first reaches -- except where the found OpenSSL lives in a directory
+  the compiler searches by itself (a distribution's `/usr/include`): CMake writes no flag for it and the compiler
+  reads it after every `-isystem` directory, so no order puts it first, the decoy is not linked (its first version
+  failed to build on every Linux host with a system OpenSSL, found by the integration's WSL gate) and the version
+  check is the contract; `qb-io-test-unit-openssl-link-order` reads qb-io's link
   order itself (nothing with an include directory before OpenSSL, `qb-nlohmann` after every dependency with a
   directory of its own). Six mutants, each caught: a test's OpenSSL not linked first, qb-io appending OpenSSL,
   `qb-nlohmann` not last, GoogleTest after the dependencies (the sanitizer link), a benchmark's OpenSSL not linked

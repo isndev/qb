@@ -81,12 +81,29 @@ qb_add_test(MODULE qb-io TIER unit NAME crypto-reachable-edges SOURCES crypto/cr
 # openssl-headers (Huly QB-1180): the OpenSSL headers a qb test compiles are the configure's, and the library it runs
 # is of their major -- a prefix-wide include directory listed first had them be another installation's. Its first
 # dependency is a decoy SYSTEM include directory, where a system GoogleTest's prefix comes in: unless qb_add_test()
-# links the found OpenSSL before it, the decoy's opensslv.h (#error) stops the build, on every lane. A version CMake
-# could not read is 999, and fails.
+# links the found OpenSSL before it, the decoy's opensslv.h (#error) stops the build. A version CMake could not read
+# is 999, and fails. The decoy needs the found OpenSSL to have an include flag of its own: one in a directory the
+# compiler searches by itself (a distribution's /usr/include) gets none -- CMake drops an implicit include directory
+# -- and is read after every -isystem one, so no link order puts it first and the decoy would only prove the
+# compiler's search order. There the version check is the contract: a prefix holding another installation's
+# headers fails it.
+set(_qb_openssl_decoy qb-io-test-openssl-decoy)
+foreach (_qb_dir IN LISTS OPENSSL_INCLUDE_DIR)
+    file(REAL_PATH "${_qb_dir}" _qb_dir)
+    foreach (_qb_implicit IN LISTS CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES)
+        file(REAL_PATH "${_qb_implicit}" _qb_implicit)
+        if (_qb_dir STREQUAL _qb_implicit)
+            set(_qb_openssl_decoy "")
+        endif ()
+    endforeach ()
+endforeach ()
+if (QB_HAS_SSL AND NOT _qb_openssl_decoy)
+    qb_status_message("qb-io-test-unit-openssl-headers: OpenSSL's ${OPENSSL_INCLUDE_DIR} is a compiler default, no decoy")
+endif ()
 add_library(qb-io-test-openssl-decoy INTERFACE)
 target_include_directories(qb-io-test-openssl-decoy SYSTEM INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/openssl-decoy")
 qb_add_test(MODULE qb-io TIER unit NAME openssl-headers SOURCES crypto/openssl-headers.cpp
-            DEPENDS qb-io-test-openssl-decoy ${PROJECT_NAME} REQUIRES ssl)
+            DEPENDS ${_qb_openssl_decoy} ${PROJECT_NAME} REQUIRES ssl)
 if (TARGET qb-io-test-unit-openssl-headers)
     set(_qb_found_major 999)
     set(_qb_found_minor 999)

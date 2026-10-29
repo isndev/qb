@@ -10,7 +10,10 @@
  * headers against the openssl@4 4.1.0 libraries it linked, with every cache entry saying 4, and OpenSSL 4.1's
  * deprecations went unseen. This TU is built like every qb test, so it sees what they see; it also links a decoy
  * include directory the way such a prefix comes in (build-contracts/openssl-decoy, whose opensslv.h is an #error),
- * so a test helper that stops putting the found OpenSSL first fails to build on every lane, one OpenSSL or several.
+ * so a test helper that stops putting the found OpenSSL first fails to build on every lane whose OpenSSL has an
+ * include flag of its own (Homebrew, vcpkg, a prefix of its own), one OpenSSL or several. A distribution's
+ * /usr/include gets no flag -- the compiler searches it by itself, after every -isystem directory -- so no link
+ * order can put it first: tests/io/unit/CMakeLists.txt links no decoy there, and the checks below are the contract.
  *
  * The contracts proven:
  *   - the headers' version is the configure's (`OPENSSL_VERSION`, passed by tests/io/unit/CMakeLists.txt): major and
