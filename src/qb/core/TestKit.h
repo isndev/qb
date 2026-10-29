@@ -323,9 +323,10 @@ struct RunResult {
  *          arrival order, for the next expectation. The probe watches every actor that asks it (`watch()`): when
  *          one is gone, its waiters are dropped and what it was lent returns the same way, oldest event first. A
  *          loan nobody acknowledges otherwise -- an asker whose core stalls -- returns after `detail::lend_hold`
- *          (2 s). A probe may record `qb::DownEvent` too: it records every one sent to it, and keeps those of its
- *          own watches -- the core's answer about an asker -- to itself. The queues are unbounded -- a probe is for
- *          tests, not for traffic.
+ *          (2 s). A probe may record `qb::DownEvent` too: it records the ones it is sent, and keeps the answers of
+ *          its own watches -- a DownEvent about an asker it watches whose source is that asker -- to itself. A
+ *          DownEvent of that shape it cannot tell from one: an asker that sends one about itself (a `forward()`
+ *          keeps the source) is taken as gone. The queues are unbounded -- a probe is for tests, not for traffic.
  */
 template <typename... Events>
 class TestProbe final : public qb::Actor {
@@ -536,8 +537,9 @@ public:
 
     /// The answer of the probe's own watch -- the core delivers it with the watched asker as its source -- lets go
     /// of a dead asker: what waits for it is dropped, and what it was lent goes back oldest event first, so a waiter
-    /// parked meanwhile takes the events in arrival order. Any other DownEvent, one an actor sends, touches no asker:
-    /// it is recorded when the probe records the type.
+    /// parked meanwhile takes the events in arrival order. Any other DownEvent touches no asker: it is recorded when
+    /// the probe records the type. The shape is all the probe can read: a DownEvent an asker sends about itself,
+    /// or forwards (the source kept), is taken as the core's.
     void
     on(qb::DownEvent const &e) {
         const auto watched = std::find(_askers.begin(), _askers.end(), e.watched);

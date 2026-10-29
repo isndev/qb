@@ -589,6 +589,21 @@ TEST(TestKit, AProbeThatRecordsDownEventRecordsTheOnesItIsSent) {
     EXPECT_TRUE(run) << run.describe();
 }
 
+TEST(TestKit, TheAnswerToTheProbesOwnWatchIsNotRecorded) {
+    // A probe that records qb::DownEvent kept the core's answer to its own watch of a killed asker out of the queue
+    // only by accident of its branch: nothing pinned it (the fifth review).
+    qb::test::TestKit kit;
+    const auto        probe = kit.probe<Filled, qb::DownEvent>(0);
+    const auto        asker = kit.add<Abandoner>(0, probe);
+    const auto        run   = kit.run([probe, asker](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+        co_await ctx.sleep(100ms); // its expectations wait on the probe: the probe watches it
+        ctx.push_to<qb::KillEvent>(asker);
+        co_await ctx.sleep(100ms); // the core's answer has reached the probe
+        EXPECT_TRUE(co_await qb::test::expect_none<qb::DownEvent>(ctx, probe, 100ms)) << "the watch's answer was recorded";
+    });
+    EXPECT_TRUE(run) << run.describe();
+}
+
 TEST(TestKit, ADownEventSentToTheProbeLetsGoOfNoLiveAsker) {
     qb::test::TestKit kit;
     const auto        probe    = kit.probe<Filled, qb::DownEvent>(0);

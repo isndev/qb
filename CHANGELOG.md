@@ -51,29 +51,31 @@ policy.
   first) is withdrawn as its frame ends, what it was lent going back to its place in the queue at once, and the probe
   watches every asker, so a killed one's waiters and loans are let go of the same way; an expectation of a type the
   probe does not record throws `std::logic_error`. Header-only and additive; no test framework required (the kit's own
-  tests use GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (26
+  tests use GoogleTest). New guide `readme/6_guides/testing_actors.md`. Proven by `qb-core-test-system-testkit` (27
   cases: the FIFO and the sender, a timeout, a late arrival kept, `expect_none`, two waiters oldest first, a probe on
   another core, the wrong probe, `run<Asks...>` and the timeout without it, a throwing scenario, the watchdog, a
   failed start, one run per kit, an abandoned expectation and an acknowledged one, the withdrawals, a killed asker's
   waiters and its loan, on its core and across cores, the arrival order of loans given back together and of a dead
-  asker's, a probe of `qb::DownEvent`, a late acknowledgement, a timeout of `max()`), green under ASan+UBSan, TSan and
-  C++23, 20 repeats, and by eleven mutants of the kit (ten caught; the eleventh -- a zero wait parked instead of
-  answered at once -- is behaviour-equivalent). An independent review then found an abandoned expectation swallowing
-  the next event; the loan fixes it, and three mutants of it are caught. A second review found three gaps of the loan,
-  fixed too: loans that expired together came back in reverse order, breaking the per-type FIFO; an abandoned waiter
-  still queued was lent each event in turn for two seconds, so a live expectation behind N of them waited up to 2 s ×
-  N -- and an `expect_none` could see "absent" while the event sat with a dead waiter; and an acknowledgement arriving
-  after its loan expired left the event served twice. Each recorded event now keeps its rank of arrival, an abandoned
-  expectation withdraws itself (`detail::ExpectationWithdrawn`), and a late acknowledgement takes the copy given back
-  out again while it is still recorded. A third review found a killed asker's waiters still parked (its scope is
-  cancelled first, it withdraws nothing), each next event lent to them for two seconds: the probe now watches every
-  asker (`watch()`) and, on its `DownEvent`, drops its waiters and gives its loans back at their rank; five mutants of
-  it -- no watch, no waiter dropped, no loan given back, a loan given back at the head or at the tail of its queue --
-  are caught. A fourth review found that fix taking every `qb::DownEvent`: a probe asked to record the type recorded
-  none, and one an actor under test sent about a live asker dropped its waiters. Only the core's answer to the probe's
-  own watch -- an asker it watches, as the source -- is the probe's now; any other is recorded when the type is, and a
-  dead asker's loans go back oldest event first, so a waiter parked meanwhile takes them in arrival order; six mutants
-  of it are caught.
+  asker's, a probe of `qb::DownEvent` and the watch's answer it keeps out, a late acknowledgement, a timeout of
+  `max()`), green under ASan+UBSan, TSan and C++23, 20 repeats, and by eleven mutants of the kit (ten caught; the
+  eleventh -- a zero wait parked instead of answered at once -- is behaviour-equivalent). An independent review then
+  found an abandoned expectation swallowing the next event; the loan fixes it, and three mutants of it are caught. A
+  second review found three gaps of the loan, fixed too: loans that expired together came back in reverse order,
+  breaking the per-type FIFO; an abandoned waiter still queued was lent each event in turn for two seconds, so a live
+  expectation behind N of them waited up to 2 s × N -- and an `expect_none` could see "absent" while the event sat
+  with a dead waiter; and an acknowledgement arriving after its loan expired left the event served twice. Each
+  recorded event now keeps its rank of arrival, an abandoned expectation withdraws itself
+  (`detail::ExpectationWithdrawn`), and a late acknowledgement takes the copy given back out again while it is still
+  recorded. A third review found a killed asker's waiters still parked (its scope is cancelled first, it withdraws
+  nothing), each next event lent to them for two seconds: the probe now watches every asker (`watch()`) and, on its
+  `DownEvent`, drops its waiters and gives its loans back at their rank; five mutants of it -- no watch, no waiter
+  dropped, no loan given back, a loan given back at the head or at the tail of its queue -- are caught. A fourth
+  review found that fix taking every `qb::DownEvent`: a probe asked to record the type recorded none, and one an actor
+  under test sent about a live asker dropped its waiters. Only the core's answer to the probe's own watch -- an asker
+  it watches, as the source -- is the probe's now; any other is recorded when the type is, and a dead asker's loans go
+  back oldest event first, so a waiter parked meanwhile takes them in arrival order; six mutants of it are caught. The
+  shape is all the probe reads: a DownEvent an asker sends about itself is taken as its death, which the docs now say,
+  and the watch's answer is pinned out of the queue (the fifth review).
 
 - **Coroutine suspension tracking cost instrument (Huly QB-248).** Four cells in
   `qb-io-bench-observability-overhead` run the same 65536-step chain -- a root task awaits a child
