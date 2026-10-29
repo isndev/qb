@@ -241,6 +241,25 @@ TEST_F(ListenerTimerGate, ThePassBeforeTheDeadlineHandsItsReadingToTheLoop) {
     EXPECT_LT(moved, 0.5);
 }
 
+TEST_F(ListenerTimerGate, TheLoopsClockIsTheClockOfMonoTime) {
+    // Every timer qb arms -- a `sleep`, an `async::callback`, a test-kit deadline -- runs on the
+    // loop's clock, so "never before its delay" holds on THAT clock, and qb states it on
+    // qb::mono_time's (steady_clock), the clock every caller measures a wait with. The two must be
+    // one clock (Huly QB-1181): on macOS the loop read CLOCK_MONOTONIC, the wall clock less the boot
+    // time, 8.3 s away from libc++'s CLOCK_MONOTONIC_RAW and slewed with every correction. Same
+    // clock: a reading of the loop's taken between two readings of mono_now() lies between them.
+    using seconds_d    = std::chrono::duration<double>;
+    constexpr double e = 1e-7;  // one clock brackets itself exactly: this covers the conversion to double
+    ASSERT_NE(loop(), nullptr); // the loop exists: before the first one, `ev_clock_now` reads the realtime clock
+    for (int i = 0; i < 1000; ++i) {
+        const double s0 = seconds_d(qb::mono_now().time_since_epoch()).count();
+        const double l  = ev_clock_now();
+        const double s1 = seconds_d(qb::mono_now().time_since_epoch()).count();
+        ASSERT_GE(l, s0 - e) << "the loop's clock reads behind qb::mono_now() by " << (s0 - l) * 1e6 << " us";
+        ASSERT_LE(l, s1 + e) << "the loop's clock reads ahead of qb::mono_now() by " << (l - s1) * 1e6 << " us";
+    }
+}
+
 TEST_F(ListenerTimerGate, TheLoopRunsForAPendingEvent) {
     RawTimer far_off(3600.); // not `far`: a Windows macro
     EXPECT_EQ(loop_runs_over(10), 0u);

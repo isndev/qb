@@ -126,10 +126,12 @@ TEST(AsyncCallbackOrdering, ChainedCallbacksFireInOrderExactlyOnce) {
 //     `ev_now_update` before arming, so each link uses a fresh deadline rather than cached time;
 //     losing that refresh is a regression this elapsed-floor check is intended to expose;
 //   - `timers_reify` in qb/src/qb/ev/ev.c fires only once its clock is strictly past the deadline
-//     (`ANHE_at(timers[HEAP0]) < mn_now`); get_clock selects the configured platform clock,
-//     including POSIX monotonic and Windows paths, with a wall-clock fallback.
-// `qb::mono_now()` below reads steady_clock, which need not be the loop clock on every platform.
-// Thus conversion and cross-clock differences prevent a universal proof of this elapsed floor.
+//     (`ANHE_at(timers[HEAP0]) < mn_now`); get_clock reads the clock steady_clock reads:
+//     EV_MONOTONIC_CLOCK (CLOCK_MONOTONIC_RAW on macOS with libc++, Huly QB-1181), and
+//     QueryPerformanceCounter on Windows.
+// `qb::mono_now()` below reads steady_clock, so this floor is judged on the loop's own clock; only
+// the conversion to double stands between it and a proof. Before QB-1181 the macOS loop read the
+// wall-clock-derived CLOCK_MONOTONIC, and a correction under way made this chain 27 us short.
 // We deliberately avoid Actor::time(), which is cached per VirtualCore loop turn. Recorded
 // headroom: +0.34ms worst over 125 release runs (0.7% of the 50ms nominal), increasing to +334ms
 // under 40ms SIGSTOP stalls. These historical measurements do not establish every host's bound.
