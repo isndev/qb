@@ -233,3 +233,13 @@ qb_add_test(MODULE qb-io TIER system NAME standalone-dispose-ends-transport SOUR
 # millisecond under the 50 us sleep on Linux and a hot spin under run_for). Serial: medians and wake
 # counts are read on a quiet process.
 qb_add_test(MODULE qb-io TIER system NAME loop-drivers-park SOURCES async/loop-drivers-park.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine serial REQUIRES network)
+
+# The async connector's deadline is on the monotonic clock (Huly QB-1194): the time of day is injected into the
+# connector this file instantiates (its ev_time() reads), never changed on the system; a step forward does not cut
+# the deadline short, a step back does not extend it, a timeout past the clock's end is none.
+qb_add_test(MODULE qb-io TIER system NAME connector-clock SOURCES tcp/connector-clock.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+
+# with_timeout's time left is measured on the loop's clock (Huly QB-1194): both times of day it could read -- the
+# loop's (through qev's ev_now_set) and the system's (the ev_time() this file compiles) -- are injected, never changed
+# on the system; a step back does not lengthen an idle timeout, a step forward does not shorten it.
+qb_add_test(MODULE qb-io TIER system NAME timeout-clock SOURCES async/timeout-clock.cpp DEPENDS ${PROJECT_NAME})

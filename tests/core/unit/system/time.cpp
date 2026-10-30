@@ -647,4 +647,43 @@ TEST(TscRate, TheCalibrationAgreesWithATenMillisecondMeasurement) {
     EXPECT_NEAR(calibrated, reference, reference * 0.02);
 }
 
+// The async connector's deadline (Huly QB-1194): a span on the monotonic clock, `mono_time::max()` for none.
+TEST(EvSeam, MonoDeadlineAfterIsTheSpanFromNowOnTheMonotonicClock) {
+    const qb::mono_time now{std::chrono::hours{24}};
+    EXPECT_EQ(qb::detail::mono_deadline_after(1.5, now), now + 1500ms);
+    EXPECT_EQ(qb::detail::mono_deadline_after(1e-9, now), now + 1ns);
+    EXPECT_EQ(qb::detail::mono_deadline_after(1e9, now), now + std::chrono::seconds{1'000'000'000});
+    // A `qb::duration` (under 2^51 ns) through `to_ev_seconds` comes back exact: rounded, where truncating loses 1 ns of 1001 ms.
+    for (const qb::duration d : {qb::duration{1001ms}, qb::duration{4999ms}, qb::duration{86'400'123'456'789ns}})
+        EXPECT_EQ(qb::detail::mono_deadline_after(qb::detail::to_ev_seconds(d), now), now + d) << d.count() << " ns";
+    const qb::mono_time before = qb::mono_now();
+    const qb::mono_time read   = qb::detail::mono_deadline_after(2.); // reads the clock itself
+    EXPECT_GE(read, before + 2s);
+    EXPECT_LE(read, qb::mono_now() + 2s);
+}
+
+TEST(EvSeam, MonoDeadlineAfterANonPositiveSpanIsNone) {
+    const qb::mono_time now{std::chrono::hours{24}};
+    EXPECT_EQ(qb::detail::mono_deadline_after(0., now), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(-1., now), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(std::numeric_limits<double>::quiet_NaN(), now), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(0.), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(-1.), qb::mono_time::max());
+}
+
+TEST(EvSeam, MonoDeadlineAfterASpanPastTheClocksEndIsNone) {
+    // Past the clock's end from `now` -- not only past `qb::duration`'s range -- is none: the sum would overflow.
+    const qb::mono_time now{std::chrono::hours{24}};
+    const double        to_end = qb::detail::to_ev_seconds(qb::mono_time::max() - now);
+    EXPECT_EQ(qb::detail::mono_deadline_after(qb::detail::to_ev_seconds(qb::duration::max()), now), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(std::numeric_limits<double>::infinity(), now), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(to_end + 1., now), qb::mono_time::max()); // within `qb::duration`, past the end
+    EXPECT_GT(qb::detail::mono_deadline_after(to_end - 3600., now), qb::mono_time::max() - std::chrono::hours{2}); // an hour short of the end
+    EXPECT_LT(qb::detail::mono_deadline_after(to_end - 3600., now), qb::mono_time::max());
+    // A clock near its end: a day is past it.
+    const qb::mono_time late = qb::mono_time::max() - std::chrono::hours{1};
+    EXPECT_EQ(qb::detail::mono_deadline_after(86400., late), qb::mono_time::max());
+    EXPECT_EQ(qb::detail::mono_deadline_after(60., late), late + 60s);
+}
+
 } // namespace

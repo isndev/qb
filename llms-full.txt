@@ -870,9 +870,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   bare integers at compile time**. `qb::mono_time` (steady) is for deadlines/timers/latency, `qb::wall_time`
   (system) for dates/expiry/wire; subtracting one from the other does not compile. The event loop's timers
   run on the clock `steady_clock` reads (macOS with libc++: `CLOCK_MONOTONIC_RAW`, the `EV_MONOTONIC_CLOCK` of
-  `src/qb/ev/ev.c`), so a `sleep` or `callback` of `d` never ends before `d` on `qb::mono_now()`; `with_timeout`'s
-  remainder after `updateTimeout()` (on `ev_now`) and the TCP connector's deadline (on `ev_time()`) are on the
-  wall clock. The retired tokens
+  `src/qb/ev/ev.c`), so a `sleep` or `callback` of `d` never ends before `d` on `qb::mono_now()`; nor do qb-io's own
+  deadlines -- `with_timeout`'s time left after `updateTimeout()` (`ev_clock_now()`) and the TCP connector's
+  (`qb::mono_now()`, since Huly QB-1194): a step of the time of day moves none of them. `ev_now()` is the loop's
+  time of day: never measure a span on it. The retired tokens
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
   never emit them. _(time.h:8-25, aliases :93, :96, :99)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range
@@ -1841,7 +1842,8 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `[T] class base<_Derived, _EV_EVENT>` — CRTP base registering one libev watcher with `listener::current` (stops+unregisters on destruction).
 *   `[T] class with_timeout<_Derived> : public base<..., event::timer>` — inactivity-timeout mixin; calls `_Derived::on(event::timer&)` when it elapses.
     *   `explicit with_timeout(qb::duration timeout = std::chrono::seconds(3))` — `<= 0` disables.
-    *   `void setTimeout(qb::duration) noexcept`, `void updateTimeout() noexcept` (reset countdown on activity), `qb::duration getTimeout() const noexcept`.
+    *   `void setTimeout(qb::duration) noexcept`, `void updateTimeout() noexcept` (reset countdown on activity: one read of the loop's clock, `ev_clock_now()`, the watcher untouched), `qb::duration getTimeout() const noexcept`.
+    *   The time left after an activity is measured on the loop's clock, never on its time of day (`ev_now()`): a step of the wall clock neither shortens nor lengthens it (since 3.4, Huly QB-1194). With no activity recorded, a fire is the timeout -- the timer was armed for it, by the constructor or by hand -- and reads no clock.
 *   `[T] class Timeout<_Func> : public with_timeout<...>` — self-deleting one-shot timer (`delete this` after firing); owns its callable (`_Func` is a value type — a reference is a compile error).
 *   `[T] class ScopedTimeout<_Func> : public with_timeout<...>` — caller-owned (RAII) one-shot timer: `fired()`, `cancel()`; owns its callable, like `Timeout`.
 *   Callbacks / scheduling — three primitives, pick by intent:
@@ -1866,6 +1868,7 @@ Handle by declaring `void on(qb::io::async::quic::event::X const&)` on your `Der
 *   `[T] class client<_Derived, _Transport, _Server = void> : public io<_Derived>, _Transport` — TCP client/session. Server-associated form: `client() = delete`, `explicit client(_Server& server)`. `using transport_io_type = typename _Transport::transport_io_type;`, `using IOServer = _Server;`, `constexpr static bool has_server = true`. Methods: `_Server& server()` / `const _Server& server() const`, `const uuid& id() const noexcept`, `auto shared()`, `std::string ip() const`, `auto port() const`. `ip()` uses the socket's cached `peer_ip()` when compatible, otherwise the custom transport's existing `peer_endpoint().ip()`; `port()` remains uncached (`src/qb/io/async/tcp/client.h:151-165`).
 *   `template <_Derived,_Transport> class client<_Derived,_Transport,void>` — standalone client. `client() noexcept`; `has_server = false`.
 *   `[T] class connector<Socket_, Func_>` — drives a non-blocking connect, self-held until one completion. Since 3.3 it falls back through the addresses (Huly QB-164): a host name resolves to every address of the URI's family; one whose TCP connect is refused, fails (`SO_ERROR`) or does not answer within its share of the deadline (`tcp::connect_attempt_budget`) is closed and the next tried; the deadline stays the whole connect's. A TLS or STARTTLS failure past the TCP connect is final. A socket handed over already open gets the first address only. A `Socket_` without `n_connect(endpoint)` keeps its single `n_connect(uri)` attempt.
+    *   The deadline is `qb::mono_now()` plus the timeout, taken when the connector is built (since 3.4, Huly QB-1194; it was the wall clock, `ev_time()`, which a step of the time of day moved); a timeout the clock cannot reach (`qb::duration::max()`) is no deadline.
     *   If connector startup throws, `run()` removes its I/O watcher, invalidates pending attempts, disconnects the socket it still owns and releases self-retention before rethrowing, without generating another completion. A socket already moved into an inline completion remains with its recipient. Already-created weak deadline timers can remain; this does not promise an empty event loop. _(src/qb/io/async/tcp/connector.h:530-561)_
 *   Free `connect` overloads:
     *   `[T<Socket_,Func_>] void connect(const uri& remote, Func_&& func, qb::duration timeout = qb::duration::zero(), bool verify_peer = true)` — async connect; `func` called once with the socket (empty on failure/timeout).
