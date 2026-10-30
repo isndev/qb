@@ -540,7 +540,7 @@ Nothing changes in your source. `qb::json` is still `nlohmann::json` — qb re-e
   `QB_NLOHMANN_GIT_TAG` (`qb/cmake/qbConfig.cmake:119`, default `v3.12.0`).
 - **An installable build needs a *real* system nlohmann.** A fetched target belongs to no export set,
   so `QB_INSTALL=ON` without one is a deliberate configure-time error
-  (`qb/cmake/qbDependencies.cmake:499-507`) that names every way out:
+  (`qb/cmake/qbDependencies.cmake:501-509`) that names every way out:
 
   ```
   CMake Error at cmake/qbConfig.cmake:550 (message):

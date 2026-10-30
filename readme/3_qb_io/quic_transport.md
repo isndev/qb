@@ -27,7 +27,8 @@ In `AUTO` and `ON` alike, a libngtcp2 whose OpenSSL crypto helper links another 
 disables QUIC with a warning that names the libraries and, where the helper's listing gives a path, the
 `OPENSSL_ROOT_DIR` to pass: two OpenSSL majors in one process crash at the first QUIC handshake. Every `libssl`
 and `libcrypto` read, the helper's and qb's, must be one major: a cache that kept qb's `libcrypto` on another
-major than the `libssl` it found again is two majors too (Huly QB-1185; qb's own TLS on such a cache is QB-1190).
+major than the `libssl` it found again is two majors too (Huly QB-1185; on Linux and macOS qb's own OpenSSL check
+stops the configure on such a cache before QUIC is considered, QB-1190).
 Two copies of one major -- a static `libssl` in qb beside the shared one the helper loads, or, on macOS where the
 listing names paths, one major from two prefixes -- keep QUIC and print a warning: one release in two copies
 was measured to work on macOS, but OpenSSL's ABI promise does not cover an object one copy hands the other.
@@ -57,7 +58,7 @@ QUIC compares again at `find_package(qb)` -- the libngtcp2 the consumer finds ag
 -- and warns: QUIC is compiled in, the consumer cannot turn it off (Huly QB-1183).
 
 <!-- src: qb/cmake/qbConfig.cmake:168-169 -->
-<!-- src: qb/cmake/qbDependencies.cmake:270-297, qb/cmake/qbOpenSSL.cmake:78-121, qb/cmake/qbOpenSSL.cmake:169-277 -->
+<!-- src: qb/cmake/qbDependencies.cmake:272-299, qb/cmake/qbOpenSSL.cmake:85-128, qb/cmake/qbOpenSSL.cmake:304-406 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
@@ -77,7 +78,7 @@ if (!qb::io::quic::available()) {
 ```
 
 > **Note for CI — `ON` does not fail the build.** A runner without libngtcp2 configured with `QB_WITH_QUIC=AUTO` disables QUIC silently; with `=ON` it prints a `message(WARNING)`, sets `QB_HAS_QUIC` false and carries on. The knob that turns a missing dependency into a `FATAL_ERROR` is **`-DQB_REQUIRE_FEATURES=ON`**. This matters more than it looks: a test declared `qb_add_executable(REQUIRES quic)` is not merely skipped when the capability is off, it is never registered — so the only symptom of a QUIC-less runner is a `ctest` count that is quietly smaller. Configure CI with `-DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON`, and assert the registered-test count.
-<!-- src: qb/cmake/qbOpenSSL.cmake:270-272 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:399-401 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
 
 ## Concepts
 

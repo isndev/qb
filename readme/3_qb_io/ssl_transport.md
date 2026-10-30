@@ -57,7 +57,14 @@ but OpenSSL is found by `find_package(OpenSSL QUIET)` and is **never** fetched. 
 is not present, `QB_WITH_SSL` is forced `OFF`, the resolved capability `QB_HAS_SSL` becomes
 false, and the entire SSL/TLS slice is absent.
 
-<!-- src: qb/cmake/qbConfig.cmake:160, qb/cmake/qbDependencies.cmake:126-155 -->
+<!-- src: qb/cmake/qbConfig.cmake:160, qb/cmake/qbDependencies.cmake:126-157 -->
+
+An OpenSSL whose headers, `libssl` and `libcrypto` are not one major stops the configure instead, QUIC or not, on
+Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part -- one entry removed while
+`OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
+entries and their majors; remove all three from the cache, or configure with `--fresh`.
+
+<!-- src: qb/cmake/qbOpenSSL.cmake:170-254 -->
 
 | Symbol | Meaning |
 | --- | --- |

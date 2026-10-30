@@ -18,13 +18,20 @@
 # -----------------------------------------------------------------------------
 # qb Framework - qb's OpenSSL, and whether libngtcp2's can join it
 #
-# _qb_find_openssl() finds the OpenSSL qb links, searching again a path its own search found that is gone, and
+# _qb_find_openssl() finds the OpenSSL qb links, searching again a path its own search found that is gone,
+# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major, and
 # _qb_decide_quic(), once find_package(Ngtcp2) has run, decides whether the OpenSSL libngtcp2_crypto_ossl links and
-# qb's can share one process, and so whether QUIC is enabled. A file of its own so that a fixture drives both with
-# planted libraries (qb-io-test-unit-quic-openssl-verdict, Huly QB-1185); macros so that what they find and read stays
-# in the caller's scope -- qbDependencies.cmake's, where tests/io/unit/CMakeLists.txt hands it to
+# qb's can share one process, and so whether QUIC is enabled. A file of its own so that a fixture drives them with
+# planted libraries (qb-io-test-unit-quic-openssl-verdict, Huly QB-1185, QB-1190); macros so that what they find and
+# read stays in the caller's scope -- qbDependencies.cmake's, where tests/io/unit/CMakeLists.txt hands it to
 # qb-io-test-unit-ngtcp2-openssl-listing.
 # -----------------------------------------------------------------------------
+
+# FindNgtcp2.cmake's library reader, QUIC or not: _qb_check_openssl() reads qb's libssl and libcrypto with it. Its
+# functions only (NGTCP2_FIND_FUNCTIONS_ONLY): find_package(Ngtcp2) searches later, when QUIC is wanted.
+set(NGTCP2_FIND_FUNCTIONS_ONLY ON)
+include("${CMAKE_CURRENT_LIST_DIR}/FindNgtcp2.cmake")
+unset(NGTCP2_FIND_FUNCTIONS_ONLY)
 
 # _qb_forget_vanished(<out_var> <cache entry>...) before a search, _qb_record_found(<cache entry>...) after it. A path
 # the search itself found -- recorded then -- whose file is gone now (an update removed the version this build directory
@@ -120,6 +127,132 @@ macro(_qb_find_openssl)
     endif()
 endmacro()
 
+# One of qb's OpenSSL libraries, for _qb_check_openssl()'s message, into <out_var>: its cache entry, its path and the
+# major it was taken as -- read from its file, or its headers' when it was not.
+function(_qb_openssl_library_said entry name read out_var)
+    set(_said "${entry} (${${entry}}) ")
+    set(_as "")
+    if(NOT "${_qb_openssl_headers_major}" STREQUAL "")
+        set(_as ", taken as major ${_qb_openssl_headers_major} like its headers")
+    endif()
+    if(NOT "${read}" STREQUAL "")
+        string(APPEND _said "is a lib${name} of major ${read}")
+    elseif("${${entry}}" MATCHES "\\.a$")
+        string(APPEND _said "is a static lib${name}${_as}")
+    else()
+        string(APPEND _said "was not read${_as}")
+    endif()
+    set(${out_var} "${_said}" PARENT_SCOPE)
+endfunction()
+
+# _qb_check_openssl() -- after _qb_find_openssl() found OpenSSL: its headers, OPENSSL_SSL_LIBRARY and
+# OPENSSL_CRYPTO_LIBRARY must be one major, or the configure stops with the remedy (Huly QB-1190). FindOpenSSL caches
+# the three apart, so a cache cleared in part re-finds one and keeps the others. Measured on macOS with QUIC off: the
+# headers of 3.5.9 with the libssl of 4.1 and the libcrypto of 3.5.9 configured and built green, and both TLS test
+# programs crashed (SIGSEGV); the libssl of 3.5.9 with the libcrypto of 4.1 crashed them too (SIGBUS); the headers of
+# 4.1 over the libraries of 3.5.9 failed to link. Not a missing dependency but a cache that contradicts itself, which
+# one command repairs: an error, not a build without TLS that nobody asked for.
+#
+# The major compared is the number a library's file name carries (libssl.so.3, libssl.4.dylib, libssl.so.1.1): each
+# library's is read as _qb_decide_quic() reads it -- FindNgtcp2.cmake's reader: the dependency list of the file the
+# loader opens, its own install name or SONAME first -- and the headers' is the one they name their libraries with,
+# OPENSSL_SHLIB_VERSION (3.0 on) or SHLIB_VERSION_NUMBER (1.1), whose first number a build may set apart from the
+# release's (quictls names 3.1's libssl.so.81.3); the release's major only when neither is there. A static archive and a
+# library no tool reads take their headers' major: no answer, never a guess. Compared on Linux and macOS, where a
+# library's file name carries that number; not elsewhere, where a base system may name it otherwise (FreeBSD's
+# libssl.so.30 holds OpenSSL 3, with headers that say 3), not on Windows (MSVC's FindOpenSSL can hand optimized/debug
+# lists, and nothing is read there), and not for LibreSSL, which numbers its libssl and libcrypto apart. The files read
+# -- on macOS the install name each library records and its file -- become inputs of the configure beside those
+# _qb_find_openssl() made ones: `cmake --build` checks again when an update moves one. Leaves in the caller's scope
+# _qb_openssl_compared, _qb_openssl_headers_major, _qb_openssl_ssl_read and _qb_openssl_crypto_read (the majors read,
+# empty when nothing was) and _qb_openssl_check_inputs, which tests/io/unit/CMakeLists.txt hands to
+# qb-io-test-unit-ngtcp2-openssl-listing.
+macro(_qb_check_openssl)
+    string(REGEX MATCH "^[0-9]+" _qb_openssl_headers_major "${OPENSSL_VERSION}")
+    set(_qb_openssl_ssl_read "")
+    set(_qb_openssl_crypto_read "")
+    set(_qb_openssl_check_inputs "")
+    set(_qb_openssl_compared FALSE)
+    set(_qb_openssl_libressl FALSE)
+    set(_qb_openssl_shlib "")
+    if(EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
+        file(STRINGS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h" _qb_openssl_defines REGEX
+             "^[ \t]*#[ \t]*define[ \t]+(LIBRESSL_VERSION_NUMBER|OPENSSL_SHLIB_VERSION|SHLIB_VERSION_NUMBER)[ \t]")
+        foreach(_qb_openssl_define IN LISTS _qb_openssl_defines)
+            if(_qb_openssl_define MATCHES "LIBRESSL_VERSION_NUMBER")
+                set(_qb_openssl_libressl TRUE)
+            elseif(_qb_openssl_define MATCHES "OPENSSL_SHLIB_VERSION[ \t]+\"?([0-9]+)")
+                set(_qb_openssl_shlib "${CMAKE_MATCH_1}")
+            elseif(_qb_openssl_define MATCHES "SHLIB_VERSION_NUMBER[ \t]+\"([0-9]+)")
+                if("${_qb_openssl_shlib}" STREQUAL "") # 1.1's; OPENSSL_SHLIB_VERSION wins when both are there
+                    set(_qb_openssl_shlib "${CMAKE_MATCH_1}")
+                endif()
+            endif()
+        endforeach()
+    endif()
+    if(NOT "${_qb_openssl_shlib}" STREQUAL "")
+        set(_qb_openssl_headers_major "${_qb_openssl_shlib}")
+    endif()
+    if(WIN32)
+        # nothing is read on Windows
+    elseif(NOT CMAKE_SYSTEM_NAME MATCHES "^(Darwin|Linux)$")
+        string(CONCAT _qb_openssl_not_compared
+               "OpenSSL majors not compared on ${CMAKE_SYSTEM_NAME}: a library's file name need not carry its "
+               "release's major there")
+        qb_status_message("${_qb_openssl_not_compared}")
+    elseif(_qb_openssl_libressl)
+        qb_status_message("OpenSSL majors not compared: LibreSSL numbers its libssl and libcrypto apart")
+    else()
+        set(_qb_openssl_compared TRUE)
+        _ngtcp2_linked_openssl("${OPENSSL_SSL_LIBRARY}" _qb_openssl_ssl_read _qb_openssl_unused _qb_openssl_unused
+                               _qb_openssl_unused)
+        _ngtcp2_linked_openssl("${OPENSSL_CRYPTO_LIBRARY}" _qb_openssl_unused _qb_openssl_unused _qb_openssl_crypto_read
+                               _qb_openssl_unused)
+        foreach(_qb_openssl_library IN ITEMS "${OPENSSL_SSL_LIBRARY}" "${OPENSSL_CRYPTO_LIBRARY}")
+            if(IS_ABSOLUTE "${_qb_openssl_library}" AND EXISTS "${_qb_openssl_library}")
+                _ngtcp2_loaded_file("${_qb_openssl_library}" _qb_openssl_loaded)
+                file(REAL_PATH "${_qb_openssl_loaded}" _qb_openssl_loaded_real)
+                list(APPEND _qb_openssl_check_inputs "${_qb_openssl_loaded}" "${_qb_openssl_loaded_real}")
+            endif()
+        endforeach()
+        if(_qb_openssl_check_inputs)
+            list(REMOVE_DUPLICATES _qb_openssl_check_inputs)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_qb_openssl_check_inputs})
+        endif()
+    endif()
+    set(_qb_openssl_majors "")
+    foreach(_qb_openssl_major IN ITEMS "${_qb_openssl_headers_major}" "${_qb_openssl_ssl_read}"
+                                       "${_qb_openssl_crypto_read}")
+        if(NOT "${_qb_openssl_major}" STREQUAL "")
+            list(APPEND _qb_openssl_majors "${_qb_openssl_major}")
+        endif()
+    endforeach()
+    if(_qb_openssl_majors)
+        list(REMOVE_DUPLICATES _qb_openssl_majors)
+    endif()
+    list(LENGTH _qb_openssl_majors _qb_openssl_count)
+    if(_qb_openssl_count GREATER 1)
+        set(_qb_openssl_headers_said "the headers of OpenSSL ${OPENSSL_VERSION}")
+        if("${OPENSSL_VERSION}" STREQUAL "")
+            set(_qb_openssl_headers_said "OpenSSL headers whose version FindOpenSSL could not read")
+        endif()
+        if(NOT "${_qb_openssl_headers_major}" STREQUAL "")
+            string(APPEND _qb_openssl_headers_said ", for libraries of major ${_qb_openssl_headers_major}")
+        endif()
+        _qb_openssl_library_said(OPENSSL_SSL_LIBRARY ssl "${_qb_openssl_ssl_read}" _qb_openssl_ssl_said)
+        _qb_openssl_library_said(OPENSSL_CRYPTO_LIBRARY crypto "${_qb_openssl_crypto_read}" _qb_openssl_crypto_said)
+        string(CONCAT _qb_openssl_split
+               "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) holds "
+               "${_qb_openssl_headers_said}; ${_qb_openssl_ssl_said}; and ${_qb_openssl_crypto_said}. A program built "
+               "on them loads two OpenSSL majors -- measured, qb's TLS crashed on that -- or fails to link (Huly "
+               "QB-1190). FindOpenSSL caches the three apart: one removed from the cache, with OPENSSL_ROOT_DIR "
+               "pointed at another OpenSSL, is found there while the other two are kept. Remove all three -- cmake "
+               "-U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY [-DOPENSSL_ROOT_DIR=<one "
+               "OpenSSL>] <build directory> -- or configure with --fresh")
+        qb_error_message("${_qb_openssl_split}")
+    endif()
+endmacro()
+
 # One side's OpenSSL, for a message, into <out_var>: "OpenSSL <major> (<path>)" when its libssl and libcrypto are one
 # major, else the libssl and the libcrypto each with its own.
 function(_qb_quic_openssl_side ssl_major ssl_path crypto_major crypto_path out_var)
@@ -157,9 +290,11 @@ endfunction()
 # libngtcp2_crypto_ossl calls the OpenSSL it was built against, qb the one it found. Two majors in one process crash at
 # the first QUIC handshake (a Homebrew update moved libngtcp2 onto openssl@4 while qb found openssl@3: SSL_set0_rbio of
 # libssl.4 on an SSL of libssl.3, Huly QB-1179), so they disable QUIC -- a libcrypto of another major than its libssl
-# included, as a half-cleared cache leaves qb's (QB-1185); two copies of one major -- a static libssl in qb, or two
-# prefixes where Mach-O names them -- are reported and kept. qb's own libssl and libcrypto are read the same way (their
-# headers' major when nothing reads them), unless a parent's FindNgtcp2 module won.
+# included (QB-1185: a cache cleared in part leaves qb's so, which _qb_check_openssl() has refused already where it
+# compares); two copies of one major -- a static libssl in qb, or two prefixes where Mach-O names them -- are reported
+# and kept. qb's own libssl and libcrypto are read the same way (their headers' major when nothing reads them), unless
+# a parent's FindNgtcp2 module won the search: only qb's module defines its readings (Ngtcp2_OPENSSL_MAJOR, empty when
+# it read nothing), and nothing is compared without them.
 #
 # The files read become inputs of the configure (CMAKE_CONFIGURE_DEPENDS): `cmake --build` re-runs it when a package
 # update rewrites one, removes one, or moves the link that names one (QB-1185), instead of keeping a verdict about
@@ -169,14 +304,13 @@ endfunction()
 macro(_qb_decide_quic)
     set(_qb_quic_conflict "")
     set(_qb_quic_inputs "")
-    if(Ngtcp2_FOUND AND COMMAND _ngtcp2_linked_openssl AND COMMAND _ngtcp2_openssl_conflict
-       AND COMMAND _ngtcp2_loaded_file)
+    if(Ngtcp2_FOUND AND DEFINED Ngtcp2_OPENSSL_MAJOR)
         set(_qb_quic_compared TRUE)
         _ngtcp2_linked_openssl("${OPENSSL_SSL_LIBRARY}" _qb_ssl_major _qb_ssl_path _qb_ssl_crypto_major
                                _qb_ssl_crypto_path)
         _ngtcp2_linked_openssl("${OPENSSL_CRYPTO_LIBRARY}" _qb_crypto_ssl_major _qb_crypto_ssl_path _qb_crypto_major
                                _qb_crypto_path)
-        string(REGEX MATCH "^[0-9]+" _qb_headers_major "${OPENSSL_VERSION}")
+        set(_qb_headers_major "${_qb_openssl_headers_major}") # the check's: the number they name libraries with
         if("${_qb_ssl_major}" STREQUAL "")
             set(_qb_ssl_major "${_qb_headers_major}")
         endif()
@@ -246,12 +380,7 @@ macro(_qb_decide_quic)
     if(_qb_quic_conflict STREQUAL "MAJORS")
         string(CONCAT _qb_quic_majors
                "${_qb_quic_pair}: two OpenSSL majors in one process crash at the first QUIC handshake - QUIC "
-               "support disabled.")
-        if(NOT "${_qb_ssl_major}" STREQUAL "${_qb_crypto_major}")
-            string(APPEND _qb_quic_majors " qb's own libssl and libcrypto are two majors: its TLS loads both as well, "
-                                          "QUIC or not (Huly QB-1190).")
-        endif()
-        string(APPEND _qb_quic_majors " Build ${_qb_quic_fix}, or set QB_WITH_QUIC=OFF")
+               "support disabled. Build ${_qb_quic_fix}, or set QB_WITH_QUIC=OFF")
         qb_feature_degraded("${_qb_quic_majors}")
         set(QB_HAS_QUIC FALSE)
     elseif(Ngtcp2_FOUND)

@@ -110,7 +110,11 @@ directories and `CPATH` (searched before every system directory, whatever the or
 its own rather than `$(brew --prefix)`, and find the OpenSSL qb was built with. Against another OpenSSL major the
 configure disables QUIC
 and names the `OPENSSL_ROOT_DIR` to pass; reconfigure in a new build directory or with `cmake --fresh`, since an
-existing one keeps the OpenSSL it found cached. A later `brew upgrade` that moves libngtcp2 or qb's OpenSSL re-runs
+existing one keeps the OpenSSL it found cached -- as three entries, `OPENSSL_INCLUDE_DIR`, `OPENSSL_SSL_LIBRARY` and
+`OPENSSL_CRYPTO_LIBRARY`: one removed while `OPENSSL_ROOT_DIR` names another OpenSSL mixes two installations, and on
+Linux and macOS the configure then stops, naming the three majors (Huly QB-1190) -- remove all three
+(`cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<one OpenSSL>
+<build directory>`) or configure with `--fresh`. A later `brew upgrade` that moves libngtcp2 or qb's OpenSSL re-runs
 the configure at the next `cmake --build`, and a path its search found that the upgrade's cleanup removed is searched
 again; a library found nowhere else then stops the configure, naming it, until one is found, its feature is turned off
 (`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for OpenSSL) or the build directory starts afresh.

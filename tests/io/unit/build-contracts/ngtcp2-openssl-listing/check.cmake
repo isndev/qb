@@ -1,21 +1,25 @@
-# qb-io-test-unit-ngtcp2-openssl-listing (Huly QB-1179, QB-1185). FindNgtcp2.cmake reads which OpenSSL
+# qb-io-test-unit-ngtcp2-openssl-listing (Huly QB-1179, QB-1185, QB-1190). FindNgtcp2.cmake reads which OpenSSL
 # libngtcp2_crypto_ossl links, so that qbDependencies.cmake disables QUIC when qb links another major: two OpenSSL majors
 # in one process crash at the first QUIC handshake (two copies of one major are reported, not refused). This runs the
 # module's parser on the listings each platform's tool prints, for libssl and for libcrypto, its verdict on the readings
 # of both sides and its tool fallbacks and Mach-O install names (stand-in tools, off Windows), then the real libraries:
-# qb's own libssl and libcrypto must read wherever their files are versioned and a tool exists, and -- when the
-# configure compared them -- what the module reads now must be what the configure read, the verdict the one it acted on,
-# QUIC enabled unless they are two majors, and every file read an input of the configure.
+# qb's own libssl and libcrypto must read wherever their files are versioned and a tool exists; qb's OpenSSL check must
+# have compared them on Linux and macOS (LibreSSL apart), read what the module reads now, and made each file it read an
+# input of the configure; and -- when the configure compared libngtcp2's with them -- what the module reads now must be
+# what the configure read, the verdict the one it acted on, QUIC enabled unless they are two majors, and every file read
+# an input of the configure.
 #
 #   cmake -DFIND_MODULE=<FindNgtcp2.cmake> [-DLIBRARY=<libngtcp2_crypto_ossl>] [-DQB_SSL_LIBRARY=<qb's libssl>]
 #         [-DQB_CRYPTO_LIBRARY=<qb's libcrypto>] [-DQB_OPENSSL_INCLUDE_DIR=<its headers>] [-DQB_OPENSSL_VERSION=<x.y.z>]
+#         [-DQB_HAS_SSL=<bool>] [-DQB_OPENSSL_COMPARED=<bool> -DQB_OPENSSL_HEADERS_MAJOR=..
+#          -DQB_OPENSSL_SSL_READ=.. -DQB_OPENSSL_CRYPTO_READ=.. -DQB_OPENSSL_CHECK_INPUTS=<its inputs, '|'-separated>]
 #         [-DQB_QUIC_VERDICT=<the configure's>]
 #         [-DWORK_DIR=<scratch directory>]
 #         [-DQB_QUIC_NGTCP2_MAJOR=.. -DQB_QUIC_NGTCP2_PATH=.. -DQB_QUIC_QB_MAJOR=.. -DQB_QUIC_QB_PATH=..]
 #         [-DQB_QUIC_NGTCP2_CRYPTO_MAJOR=.. -DQB_QUIC_NGTCP2_CRYPTO_PATH=.. -DQB_QUIC_QB_CRYPTO_MAJOR=..
 #          -DQB_QUIC_QB_CRYPTO_PATH=..] [-DQB_QUIC_INPUTS=<the configure's inputs, '|'-separated>]
 #         [-DQB_QUIC_FOUND_BY_QB=TRUE -DQB_QUIC_COMPARED=<bool>]
-#         [-DQB_HAS_QUIC=<bool>] [-DQB_TARGET_APPLE=<bool>] [-DQB_TARGET_WIN32=<bool>]
+#         [-DQB_HAS_QUIC=<bool>] [-DQB_TARGET_APPLE=<bool>] [-DQB_TARGET_WIN32=<bool>] [-DQB_TARGET_SYSTEM=<name>]
 #         [-DCMAKE_READELF=<tool>] [-DCMAKE_OBJDUMP=<tool>] -P check.cmake
 
 cmake_minimum_required(VERSION 3.24) # script mode sets no policy otherwise: CMP0054 and the others as qb configures
@@ -331,6 +335,71 @@ if("${_qb_read}" STREQUAL "")
     set(_qb_read " nothing")
 endif()
 
+# qb's OpenSSL check (Huly QB-1190), whenever the configure found OpenSSL: it ran; it compared the majors on Linux and
+# macOS unless the headers are LibreSSL's; it took the headers' major from the number they name their libraries with;
+# it read each library as the module reads it now -- a check that reads nothing passes on every host whose OpenSSL is
+# one, and only its readings show it -- and it made each file it read an input.
+if(QB_HAS_SSL AND NOT WIN32 AND NOT DEFINED QB_OPENSSL_COMPARED)
+    message(FATAL_ERROR "ngtcp2-openssl-listing: the configure found OpenSSL, yet qb's OpenSSL check never ran")
+endif()
+if(DEFINED QB_OPENSSL_COMPARED)
+    set(_libressl FALSE)
+    set(_headers_major "")
+    if(EXISTS "${QB_OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
+        file(READ "${QB_OPENSSL_INCLUDE_DIR}/openssl/opensslv.h" _opensslv)
+        if("${_opensslv}" MATCHES "(^|\n)[ \t]*#[ \t]*define[ \t]+LIBRESSL_VERSION_NUMBER[ \t]")
+            set(_libressl TRUE)
+        endif()
+        if("${_opensslv}" MATCHES "(^|\n)[ \t]*#[ \t]*define[ \t]+OPENSSL_SHLIB_VERSION[ \t]+\"?([0-9]+)")
+            set(_headers_major "${CMAKE_MATCH_2}")
+        elseif("${_opensslv}" MATCHES "(^|\n)[ \t]*#[ \t]*define[ \t]+SHLIB_VERSION_NUMBER[ \t]+\"([0-9]+)")
+            set(_headers_major "${CMAKE_MATCH_2}")
+        endif()
+    endif()
+    if("${_headers_major}" STREQUAL "" AND "${QB_OPENSSL_VERSION}" MATCHES "^([0-9]+)")
+        set(_headers_major "${CMAKE_MATCH_1}")
+    endif()
+    if(NOT "${QB_OPENSSL_HEADERS_MAJOR}" STREQUAL "${_headers_major}")
+        message(FATAL_ERROR "ngtcp2-openssl-listing: qb's OpenSSL check took its headers as major "
+                            "'${QB_OPENSSL_HEADERS_MAJOR}', their opensslv.h and version say '${_headers_major}'")
+    endif()
+    set(_should_compare FALSE)
+    if(NOT WIN32 AND (QB_TARGET_SYSTEM STREQUAL "Linux" OR QB_TARGET_SYSTEM STREQUAL "Darwin") AND NOT _libressl)
+        set(_should_compare TRUE)
+    endif()
+    if((QB_OPENSSL_COMPARED AND NOT _should_compare) OR (_should_compare AND NOT QB_OPENSSL_COMPARED))
+        message(FATAL_ERROR "ngtcp2-openssl-listing: qb's OpenSSL check compared '${QB_OPENSSL_COMPARED}' on "
+                            "'${QB_TARGET_SYSTEM}' (LibreSSL headers: '${_libressl}'), expected '${_should_compare}'")
+    endif()
+    if(QB_OPENSSL_COMPARED)
+        _ngtcp2_linked_openssl("${QB_SSL_LIBRARY}" _check_ssl _unused _unused _unused)
+        _ngtcp2_linked_openssl("${QB_CRYPTO_LIBRARY}" _unused _unused _check_crypto _unused)
+        if(NOT "${QB_OPENSSL_SSL_READ}" STREQUAL "${_check_ssl}"
+           OR NOT "${QB_OPENSSL_CRYPTO_READ}" STREQUAL "${_check_crypto}")
+            message(FATAL_ERROR "ngtcp2-openssl-listing: qb's OpenSSL check read libssl '${QB_OPENSSL_SSL_READ}' and "
+                                "libcrypto '${QB_OPENSSL_CRYPTO_READ}', the module reads '${_check_ssl}' and "
+                                "'${_check_crypto}' now: a library changed since the configure (reconfigure), or the "
+                                "check's reading is broken")
+        endif()
+        string(REPLACE "|" ";" _check_inputs "${QB_OPENSSL_CHECK_INPUTS}")
+        foreach(_library IN ITEMS "${QB_SSL_LIBRARY}" "${QB_CRYPTO_LIBRARY}")
+            if(IS_ABSOLUTE "${_library}" AND EXISTS "${_library}")
+                _ngtcp2_loaded_file("${_library}" _loaded)
+                file(REAL_PATH "${_loaded}" _loaded_real)
+                foreach(_file IN ITEMS "${_loaded}" "${_loaded_real}")
+                    if(NOT "${_file}" IN_LIST _check_inputs)
+                        message(FATAL_ERROR "ngtcp2-openssl-listing: qb's OpenSSL check read ${_file} but does not "
+                                            "re-run when it changes: its inputs are ${QB_OPENSSL_CHECK_INPUTS}")
+                    endif()
+                endforeach()
+            endif()
+        endforeach()
+    endif()
+    string(APPEND _qb_read "; qb's OpenSSL check compared ${QB_OPENSSL_COMPARED} (libssl '${QB_OPENSSL_SSL_READ}', "
+                           "libcrypto '${QB_OPENSSL_CRYPTO_READ}', headers ${QB_OPENSSL_VERSION} of major "
+                           "'${QB_OPENSSL_HEADERS_MAJOR}')")
+endif()
+
 # qb's own module found the helper: its block compared the two, or a mutation made it skip them.
 if(QB_QUIC_FOUND_BY_QB AND NOT QB_QUIC_COMPARED)
     message(FATAL_ERROR "ngtcp2-openssl-listing: qb's FindNgtcp2 found libngtcp2, yet the configure compared no "
@@ -346,7 +415,10 @@ if(LIBRARY AND EXISTS "${LIBRARY}")
     _ngtcp2_linked_openssl("${QB_SSL_LIBRARY}" _qb_major _qb_path _qb_ssl_crypto_major _qb_ssl_crypto_path)
     _ngtcp2_linked_openssl("${QB_CRYPTO_LIBRARY}" _qb_crypto_ssl_major _qb_crypto_ssl_path _qb_crypto_major
                            _qb_crypto_path)
-    string(REGEX MATCH "^[0-9]+" _qb_headers_major "${QB_OPENSSL_VERSION}")
+    set(_qb_headers_major "${QB_OPENSSL_HEADERS_MAJOR}") # the check's, re-derived above where it compared
+    if(NOT DEFINED QB_OPENSSL_HEADERS_MAJOR)
+        string(REGEX MATCH "^[0-9]+" _qb_headers_major "${QB_OPENSSL_VERSION}")
+    endif()
     if("${_qb_major}" STREQUAL "")
         set(_qb_major "${_qb_headers_major}")
     endif()
@@ -444,7 +516,8 @@ if(LIBRARY AND EXISTS "${LIBRARY}")
         message(FATAL_ERROR "ngtcp2-openssl-listing: QUIC is enabled, yet ${_readings}")
     endif()
     message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions and ${_tools} tool readings "
-                   "right; ${_readings}, verdict '${_live_conflict}', QUIC ${QB_HAS_QUIC}${_live_note}")
+                   "right; ${_readings}, verdict '${_live_conflict}', QUIC ${QB_HAS_QUIC}${_live_note}; qb's own "
+                   "OpenSSL read:${_qb_read}")
 else()
     message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions and ${_tools} tool readings "
                    "right; qb's own OpenSSL read:${_qb_read}; no libngtcp2 in this configure")

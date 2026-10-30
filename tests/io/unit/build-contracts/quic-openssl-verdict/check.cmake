@@ -1,10 +1,13 @@
-# qb-io-test-unit-quic-openssl-verdict (Huly QB-1185). The OpenSSL and QUIC decisions qbDependencies.cmake takes
-# (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through the fixture beside this file:
+# qb-io-test-unit-quic-openssl-verdict (Huly QB-1185, QB-1190). The OpenSSL and QUIC decisions qbDependencies.cmake
+# takes (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through the fixture beside this file:
 # - two OpenSSL majors disable QUIC with a warning, and QB_REQUIRE_FEATURES=ON makes that a configure error -- what the
 #   qb CI lanes configure with -- while one major enables QUIC silently, two copies of one major keep it with a warning
-#   and never fail, and an absent libngtcp2 fails only a required QUIC. Planted readings, on every platform.
-# - a libcrypto of another major than qb's libssl -- a half-cleared cache -- is two majors (POSIX: read through a stand-in
-#   tool that prints the planted listing, as the module reads otool or readelf).
+#   and never fail, and an absent libngtcp2 fails only a required QUIC; a parent's FindNgtcp2 module that won the search
+#   is not compared. Planted readings, on every platform.
+# - qb's own headers, libssl and libcrypto not one major -- a half-cleared cache -- stop the configure, QUIC or not, with
+#   the three majors and the remedy, which then works (POSIX: read through a stand-in tool that prints the planted
+#   listing, as the module reads otool or readelf); a static or unread library takes its headers' major; LibreSSL, and
+#   a system whose file names need not carry the release's major, are not compared.
 # - the files read are inputs of the configure: `cmake --build` re-runs it when a library is rewritten, when the link the
 #   search found is moved onto a file older than the build -- as a package manager restores an archive's times -- and
 #   the one it named removed (libngtcp2's, qb's libssl), when qb's opensslv.h changes, and when files vanish: a path the
@@ -13,8 +16,11 @@
 #   while a path set by hand or never there (a library a superbuild builds) is kept and said. qb's OpenSSL is an input
 #   with libngtcp2 or without it. In a Homebrew-shaped planted root searched by qb's FindNgtcp2.cmake and
 #   CMake's FindOpenSSL, with Ninja and with Unix Makefiles, each where its tool is found (POSIX). On macOS, an upgrade
-#   that keeps the old keg moves only the install name the found Cellar path carries: that re-runs it too, and the
-#   library read is the one the install name names.
+#   that keeps the old keg moves only the install name the found Cellar path carries: that re-runs it too when the new
+#   keg's files are newer than the build directory (Homebrew relocates a bottle's dylibs as it pours them, so their
+#   time is the upgrade's), and when the keg the link named is removed; the library read is the one the install name
+#   names -- libngtcp2's, and qb's libssl for its own check. A file older than the build directory at a path read before,
+#   that path still there, is not seen by the build tool: qb-io-test-unit-ngtcp2-openssl-listing reports it.
 #
 #   cmake -DQB_CMAKE_MODULE_DIR=<qb>/cmake -DWORK_DIR=<scratch directory> -DGENERATOR=<this build's>
 #         [-DPLATFORM=..] [-DTOOLSET=..] [-DMAKE_PROGRAM=..] -P check.cmake
@@ -47,13 +53,20 @@ if(_posix)
     file(CHMOD "${_tool}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
 endif()
 function(plant file ssl_major crypto_major)
+    set(_format ELF)
+    if(APPLE)
+        set(_format MACHO)
+    endif()
+    plant_as(${_format} "${file}" "${ssl_major}" "${crypto_major}")
+endfunction()
+function(plant_as format file ssl_major crypto_major) # plant(), in <format>: MACHO or ELF, whatever the host's
     set(_listing "")
     foreach(_name IN ITEMS ssl crypto)
         set(_major "${${_name}_major}")
         if("${_major}" STREQUAL "")
             continue()
         endif()
-        if(APPLE)
+        if(format STREQUAL "MACHO")
             string(APPEND _listing "\t/opt/o${_major}/lib/lib${_name}.${_major}.dylib (compatibility version ${_major}.0.0)\n")
         else()
             string(APPEND _listing " 0x0000000000000001 (NEEDED)             Shared library: [lib${_name}.so.${_major}]\n")
@@ -201,23 +214,155 @@ configure_fixture(not-yet-built "${WORK_DIR}/not-yet-built/build" OK ${_ngtcp2} 
                   "-DOPENSSL_CRYPTO_LIBRARY=${_later}/libcrypto.so"
                   HAS "NGTCP2=TRUE" HAS "NGTCP2_CRYPTO_OSSL_LIBRARY=${_later_regex}/libngtcp2_crypto_ossl\\.so"
                   HAS "OPENSSL_CRYPTO_LIBRARY=${_later_regex}/libcrypto\\.so")
+# A parent project's FindNgtcp2 module won the search: it defines none of the readings qb's own does, so nothing is
+# compared -- not qb's side alone against nothing -- and QUIC is enabled as found.
+plant_ngtcp2(parent-module _ngtcp2)
+file(WRITE "${WORK_DIR}/parent-module/modules/FindNgtcp2.cmake" "set(Ngtcp2_FOUND TRUE)\n")
+configure_fixture(parent-module "${WORK_DIR}/parent-module/build" OK ${_unread}
+                  "-DPARENT_MODULE_DIR=${WORK_DIR}/parent-module/modules"
+                  NOT "CMake Warning"
+                  HAS "NGTCP2=TRUE" HAS "COMPARED=FALSE" HAS "QB_HAS_QUIC=TRUE")
 
 if(_posix)
-    # Read through the stand-in tool. A half-cleared cache: qb's libssl re-found on OpenSSL 4, its libcrypto still the
-    # OpenSSL 3 one -- two majors, though libssl agrees with libngtcp2's.
-    plant_ngtcp2(half-cleared _ngtcp2)
-    set(_lib "${WORK_DIR}/half-cleared/root/lib")
-    plant("${_lib}/helper" 4 4)
-    plant("${_lib}/o4/libssl" 4 4)
-    plant("${_lib}/o3/libcrypto" "" 3)
-    escape("${_lib}" _lib_regex)
-    configure_fixture(half-cleared "${WORK_DIR}/half-cleared/build" FAIL ${_ngtcp2}
-                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/o4/libssl"
-                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/o3/libcrypto" "-DOPENSSL_VERSION=3.5.9"
+    # Read through the stand-in tool. qb's own OpenSSL not one major (Huly QB-1190) stops the configure, naming the three
+    # entries, their majors and the remedy -- before any QUIC decision, whatever QB_REQUIRE_FEATURES says: a cache that
+    # contradicts itself, not a missing feature. A half-cleared cache: qb's libssl re-found on OpenSSL 4, its headers and
+    # libcrypto still OpenSSL 3's -- beside a libngtcp2 on 4 that agrees with that libssl, without libngtcp2, QUIC off.
+    escape("Remove all three -- cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY [-DOPENSSL_ROOT_DIR=<one OpenSSL>] <build directory> -- or configure with --fresh"
+           _split_remedy)
+    set(_split "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR \\(")
+    foreach(_case half-cleared half-cleared-no-quic half-cleared-quic-off)
+        set(_lib "${WORK_DIR}/${_case}/root/lib")
+        set(_quic "-DQB_WITH_QUIC=OFF")
+        if(_case STREQUAL "half-cleared")
+            plant_ngtcp2(${_case} _quic)
+            plant("${_lib}/helper" 4 4)
+            list(APPEND _quic "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DQB_REQUIRE_FEATURES=ON")
+        elseif(_case STREQUAL "half-cleared-no-quic")
+            set(_quic "-DQB_WITH_QUIC=AUTO")
+        endif()
+        plant("${_lib}/o4/libssl" 4 4)
+        plant("${_lib}/o3/libcrypto" "" 3)
+        escape("${_lib}" _lib_regex)
+        configure_fixture(${_case} "${WORK_DIR}/${_case}/build" FAIL ${_quic}
+                          "-DOPENSSL_SSL_LIBRARY=${_lib}/o4/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/o3/libcrypto"
+                          "-DOPENSSL_VERSION=3.5.9" "-DOPENSSL_INCLUDE_DIR=${_lib}/o3/include"
+                          MUST "CMake Error" "${_split}${_lib_regex}/o3/include\\) holds the headers of OpenSSL 3\\.5\\.9, for libraries of major 3; OPENSSL_SSL_LIBRARY \\(${_lib_regex}/o4/libssl\\) is a libssl of major 4; and OPENSSL_CRYPTO_LIBRARY \\(${_lib_regex}/o3/libcrypto\\) is a libcrypto of major 3\\."
+                               "${_split_remedy}" "Huly QB-1190"
+                          NOT "${_required}" "QUIC support disabled" "libngtcp2")
+    endforeach()
+    # The other shapes measured: a libcrypto ahead of its libssl and headers; headers ahead of both libraries; a static
+    # libssl, and one no tool reads, taken as their headers' major beside a libcrypto of another.
+    function(split_case name ssl_file ssl_major crypto_major version expected)
+        set(_lib "${WORK_DIR}/${name}/root/lib")
+        if(ssl_file MATCHES "\\.a$")
+            file(MAKE_DIRECTORY "${_lib}")
+            file(WRITE "${_lib}/${ssl_file}" "")
+        else()
+            plant("${_lib}/${ssl_file}" "${ssl_major}" "${ssl_major}")
+        endif()
+        plant("${_lib}/libcrypto" "" "${crypto_major}")
+        configure_fixture(${name} "${WORK_DIR}/${name}/build" FAIL "-DQB_WITH_QUIC=OFF"
+                          "-DOPENSSL_SSL_LIBRARY=${_lib}/${ssl_file}" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                          "-DOPENSSL_VERSION=${version}" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                          MUST "${_split}[^)]*\\) ${expected}" "${_split_remedy}")
+        set(_cases ${_cases} PARENT_SCOPE)
+        set(_failures "${_failures}" PARENT_SCOPE)
+    endfunction()
+    split_case(crypto-ahead libssl 3 4 3.5.9 "holds the headers of OpenSSL 3\\.5\\.9, for libraries of major 3; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 4\\.")
+    split_case(headers-ahead libssl 3 3 4.1.0 "holds the headers of OpenSSL 4\\.1\\.0, for libraries of major 4; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 3\\.")
+    split_case(static-split libssl.a "" 4 3.5.9 "holds the headers of OpenSSL 3\\.5\\.9, for libraries of major 3; OPENSSL_SSL_LIBRARY \\([^)]*/libssl\\.a\\) is a static libssl, taken as major 3 like its headers; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 4\\.")
+    split_case(unread-split libssl "" 4 3.5.9 "holds the headers of OpenSSL 3\\.5\\.9, for libraries of major 3; OPENSSL_SSL_LIBRARY \\([^)]*/libssl\\) was not read, taken as major 3 like its headers; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 4\\.")
+    # The major the headers name their libraries with is OPENSSL_SHLIB_VERSION's first number (SHLIB_VERSION_NUMBER's
+    # on 1.1), which a build may set apart from the release's: quictls names 3.1's libraries libssl.so.81.3. One OpenSSL
+    # so numbered is not refused; its libcrypto beside another OpenSSL's is, by that number. OPENSSL_SHLIB_VERSION wins
+    # over SHLIB_VERSION_NUMBER, wherever each stands in the file; an unreadable version still compares the libraries.
+    function(numbered_case name expect version defines ssl crypto)
+        set(_lib "${WORK_DIR}/${name}/root/lib")
+        plant("${_lib}/libssl" "${ssl}" "${ssl}")
+        plant("${_lib}/libcrypto" "" "${crypto}")
+        file(WRITE "${_lib}/include/openssl/opensslv.h" "${defines}")
+        configure_fixture(${name} "${WORK_DIR}/${name}/build" ${expect} "-DQB_WITH_QUIC=OFF"
+                          "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                          "-DOPENSSL_VERSION=${version}" "-DOPENSSL_INCLUDE_DIR=${_lib}/include" ${ARGN})
+        set(_cases ${_cases} PARENT_SCOPE)
+        set(_failures "${_failures}" PARENT_SCOPE)
+    endfunction()
+    numbered_case(quictls OK 3.1.7 "# define OPENSSL_VERSION_MAJOR 3\n# define OPENSSL_SHLIB_VERSION 81.3\n" 81 81
+                  NOT "not one major" HAS "OPENSSL_COMPARED=TRUE" HAS "OPENSSL_READ=81\\|81")
+    numbered_case(quictls-split FAIL 3.1.7 "# define OPENSSL_SHLIB_VERSION 81.3\n" 81 3
+                  MUST "${_split}[^)]*\\) holds the headers of OpenSSL 3\\.1\\.7, for libraries of major 81; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 81; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 3\\.")
+    numbered_case(openssl-1.1 OK 1.1.1w "# define SHLIB_VERSION_NUMBER \"1.1\"\n" 1 1
+                  NOT "not one major" HAS "OPENSSL_READ=1\\|1")
+    numbered_case(shlib-first OK 3.1.7 "# define OPENSSL_SHLIB_VERSION 81.3\n# define SHLIB_VERSION_NUMBER \"1.1\"\n" 81 81
+                  NOT "not one major")
+    numbered_case(shlib-last OK 3.1.7 "# define SHLIB_VERSION_NUMBER \"1.1\"\n# define OPENSSL_SHLIB_VERSION 81.3\n" 81 81
+                  NOT "not one major")
+    numbered_case(version-unread FAIL "" "" 3 4
+                  MUST "${_split}[^)]*\\) holds OpenSSL headers whose version FindOpenSSL could not read; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 4\\.")
+    # One major, read: the readings are the libraries', not the headers' stood in.
+    set(_lib "${WORK_DIR}/one-openssl/root/lib")
+    plant("${_lib}/libssl" 3 3)
+    plant("${_lib}/libcrypto" "" 3)
+    configure_fixture(one-openssl "${WORK_DIR}/one-openssl/build" OK "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                      "-DOPENSSL_VERSION=3.5.9" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                      NOT "CMake Warning" "not one major"
+                      HAS "OPENSSL_COMPARED=TRUE" HAS "OPENSSL_READ=3\\|3")
+    # LibreSSL numbers its libssl and libcrypto apart: never compared, said.
+    set(_lib "${WORK_DIR}/libressl/root/lib")
+    plant("${_lib}/libssl" 55 52)
+    plant("${_lib}/libcrypto" "" 52)
+    file(WRITE "${_lib}/include/openssl/opensslv.h" "#define LIBRESSL_VERSION_NUMBER\t0x3080200fL\n")
+    configure_fixture(libressl "${WORK_DIR}/libressl/build" OK "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                      "-DOPENSSL_VERSION=2.0.0" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                      MUST "OpenSSL majors not compared: LibreSSL numbers its libssl and libcrypto apart"
+                      NOT "not one major"
+                      HAS "OPENSSL_COMPARED=FALSE" HAS "OPENSSL_READ=\\|")
+    # A system whose base OpenSSL need not carry the release's major in its file names (FreeBSD's libssl.so.30 holds
+    # OpenSSL 3): never compared, said. Read through the stand-in as readelf, whatever the host.
+    set(_lib "${WORK_DIR}/elsewhere/root/lib")
+    plant_as(ELF "${_lib}/libssl" 30 30)
+    plant_as(ELF "${_lib}/libcrypto" "" 30)
+    configure_fixture(elsewhere "${WORK_DIR}/elsewhere/build" OK "-DQB_WITH_QUIC=OFF" "-DCMAKE_SYSTEM_NAME=FreeBSD"
+                      "-DCMAKE_READELF=${_tool}"
+                      "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                      "-DOPENSSL_VERSION=3.0.12" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                      MUST "OpenSSL majors not compared on FreeBSD: a library's file name need not carry its release's major there"
+                      NOT "not one major"
+                      HAS "OPENSSL_COMPARED=FALSE")
+    # There, the QUIC decision still reads qb's libssl and libcrypto, and two majors refuse QUIC with the remedy that
+    # fits when libngtcp2 read nothing.
+    plant_ngtcp2(split-qb _ngtcp2)
+    set(_lib "${WORK_DIR}/split-qb/root/lib")
+    file(WRITE "${_lib}/helper" "")
+    plant_as(ELF "${_lib}/libssl" 4 4)
+    plant_as(ELF "${_lib}/libcrypto" "" 3)
+    configure_fixture(split-qb "${WORK_DIR}/split-qb/build" OK ${_ngtcp2} "-DPLANTED_NGTCP2=|||"
+                      "-DCMAKE_SYSTEM_NAME=FreeBSD" "-DCMAKE_READELF=${_tool}"
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto" "-DOPENSSL_VERSION=4.1.0"
+                      MUST "${_majors}" "links an OpenSSL no tool could read"
+                           "qb links the libssl of OpenSSL 4 \\([^)]*\\) with the libcrypto of OpenSSL 3"
+                           "Build qb against one OpenSSL in a new build directory"
+                      HAS "VERDICT=MAJORS" HAS "OPENSSL_COMPARED=FALSE")
+    # The same with headers that number their libraries 81 (quictls), beside a helper on libssl.so.81: two copies of
+    # one, not two majors -- QUIC's comparison takes qb's static side as the check took its headers.
+    plant_ngtcp2(copies-numbered _ngtcp2)
+    set(_lib "${WORK_DIR}/copies-numbered/root/lib")
+    plant("${_lib}/helper" 81 81)
+    file(WRITE "${_lib}/libssl.a" "")
+    file(WRITE "${_lib}/libcrypto.a" "")
+    file(WRITE "${_lib}/include/openssl/opensslv.h" "# define OPENSSL_SHLIB_VERSION 81.3\n")
+    configure_fixture(copies-numbered "${WORK_DIR}/copies-numbered/build" OK ${_ngtcp2}
+                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl.a"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto.a" "-DOPENSSL_VERSION=3.1.7"
                       "-DOPENSSL_INCLUDE_DIR=${_lib}/include" "-DQB_REQUIRE_FEATURES=ON"
-                      MUST "${_majors}" "${_required}" "its TLS loads both as well"
-                           "qb links the libssl of OpenSSL 4 \\(${_lib_regex}/o4/libssl\\) with the libcrypto of OpenSSL 3 \\(${_lib_regex}/o3/libcrypto\\)")
-    # Two copies of one major -- a static libssl in qb -- warn and keep QUIC, even under QB_REQUIRE_FEATURES=ON.
+                      MUST "two copies of OpenSSL 81 in one process" NOT "${_required}" "not one major"
+                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=COPIES")
+    # Two copies of one major -- a static libssl in qb -- warn and keep QUIC, even under QB_REQUIRE_FEATURES=ON; the
+    # static archives read nothing and take their headers' major.
     plant_ngtcp2(copies _ngtcp2)
     set(_lib "${WORK_DIR}/copies/root/lib")
     plant("${_lib}/helper" 3 3)
@@ -228,20 +373,8 @@ if(_posix)
                       "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto.a" "-DOPENSSL_VERSION=3.5.9"
                       "-DOPENSSL_INCLUDE_DIR=${_lib}/include" "-DQB_REQUIRE_FEATURES=ON"
                       MUST "CMake Warning" "two copies of OpenSSL 3 in one process" "qb links OpenSSL 3 .* statically"
-                           "shared \\(OPENSSL_USE_STATIC_LIBS off\\)" NOT "${_required}"
-                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=COPIES")
-    # libngtcp2 read nothing, qb's own libssl and libcrypto two majors: refused all the same, with the remedy that fits.
-    plant_ngtcp2(split-qb _ngtcp2)
-    set(_lib "${WORK_DIR}/split-qb/root/lib")
-    file(WRITE "${_lib}/helper" "")
-    plant("${_lib}/libssl" 4 4)
-    plant("${_lib}/libcrypto" "" 3)
-    configure_fixture(split-qb "${WORK_DIR}/split-qb/build" OK ${_ngtcp2} "-DPLANTED_NGTCP2=|||"
-                      "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}/helper" "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl"
-                      "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto" "-DOPENSSL_VERSION=4.1.0"
-                      MUST "${_majors}" "links an OpenSSL no tool could read" "its TLS loads both as well"
-                           "Build qb against one OpenSSL in a new build directory"
-                      HAS "VERDICT=MAJORS")
+                           "shared \\(OPENSSL_USE_STATIC_LIBS off\\)" NOT "${_required}" "not one major"
+                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=COPIES" HAS "OPENSSL_COMPARED=TRUE" HAS "OPENSSL_READ=\\|")
 endif()
 if(_failures)
     message(FATAL_ERROR "quic-openssl-verdict: ${_cases} configures, wrong ones:${_failures}")
@@ -380,6 +513,32 @@ function(use_generator generator) # sets GENERATOR and MAKE_PROGRAM in the calle
         set(MAKE_PROGRAM "" PARENT_SCOPE)
     endif()
 endfunction()
+# The remedy qb's OpenSSL check names works (Huly QB-1190): a search cleared in part -- one entry removed, OPENSSL_ROOT_DIR
+# moved -- stops the configure; all three entries removed, or --fresh, find one OpenSSL where OPENSSL_ROOT_DIR points.
+if(_posix)
+    foreach(_remedy unset fresh)
+        set(_name "remedy-${_remedy}")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        plant_openssl("${_root}/o3" 3 a)
+        plant_openssl("${_root}/o4" 4 a)
+        set(_build "${WORK_DIR}/${_name}/build")
+        configure_fixture(${_name} "${_build}" OK "-DQB_WITH_QUIC=OFF" "-DOPENSSL_ROOT_DIR=/o3"
+                          HAS "OPENSSL=TRUE" "OPENSSL_READ=3\\|3")
+        configure_fixture(${_name} "${_build}" FAIL "-U" "OPENSSL_SSL_LIBRARY" "-DOPENSSL_ROOT_DIR=/o4"
+                          MUST "${_split}${_root_regex}/o3/include\\) holds the headers of OpenSSL 3\\.0\\.0, for libraries of major 3; OPENSSL_SSL_LIBRARY \\(${_root_regex}/o4/lib/libssl${_ext}\\) is a libssl of major 4; and OPENSSL_CRYPTO_LIBRARY \\(${_root_regex}/o3/lib/libcrypto${_ext}\\) is a libcrypto of major 3\\.")
+        if(_remedy STREQUAL "unset")
+            set(_args "-U" "OPENSSL_INCLUDE_DIR" "-U" "OPENSSL_SSL_LIBRARY" "-U" "OPENSSL_CRYPTO_LIBRARY")
+        else()
+            set(_args "--fresh" "-DQB_WITH_QUIC=OFF")
+        endif()
+        configure_fixture(${_name} "${_build}" OK ${_args} "-DOPENSSL_ROOT_DIR=/o4"
+                          NOT "not one major"
+                          HAS "OPENSSL=TRUE" "OPENSSL_READ=4\\|4" "OPENSSL_INCLUDE_DIR=${_root_regex}/o4/include"
+                              "OPENSSL_SSL_LIBRARY=${_root_regex}/o4/lib/libssl${_ext}"
+                              "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/o4/lib/libcrypto${_ext}")
+    endforeach()
+endif()
 foreach(_generator IN LISTS _generators)
     use_generator("${_generator}")
     string(REPLACE " " "-" _name "rebuild-${_generator}")
@@ -413,14 +572,23 @@ foreach(_generator IN LISTS _generators)
     file(REMOVE "${_ssl}/lib/libssl.a")
     build_fixture(${_name} "qb's libssl link moved onto an older file, the one read removed" 4 "")
     build_fixture(${_name} "nothing changed since" 4 "")
+    # qb's own OpenSSL rewritten onto another major, its libcrypto then its headers: qb's check stops the configure
+    # (Huly QB-1190), and keeps stopping until the file is back.
     after_configure(${_name})
     plant("${_ssl}/lib/libcrypto.a" "" 4)
-    build_fixture(${_name} "qb's libcrypto rewritten onto OpenSSL 4" 5 MAJORS)
-    build_fixture(${_name} "nothing changed since" 5 MAJORS)
+    build_fixture(${_name} "qb's libcrypto rewritten onto OpenSSL 4" FAILS ""
+                  OUT "qb's OpenSSL is not one major: .* is a libcrypto of major 4\\.")
+    build_fixture(${_name} "built again, nothing done" FAILS "" OUT "qb's OpenSSL is not one major")
+    plant("${_ssl}/lib/libcrypto.a" "" 3)
+    build_fixture(${_name} "qb's libcrypto back on OpenSSL 3" 5 "")
+    build_fixture(${_name} "nothing changed since" 5 "")
     after_configure(${_name})
+    file(WRITE "${_ssl}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"4.0.1\"\n")
+    build_fixture(${_name} "qb's opensslv.h rewritten onto OpenSSL 4" FAILS ""
+                  OUT "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR \\([^)]*\\) holds the headers of OpenSSL 4\\.0\\.1")
     file(WRITE "${_ssl}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"3.0.1\"\n")
-    build_fixture(${_name} "qb's opensslv.h rewritten" 6 MAJORS)
-    build_fixture(${_name} "nothing changed since" 6 MAJORS)
+    build_fixture(${_name} "qb's opensslv.h back on OpenSSL 3" 6 "")
+    build_fixture(${_name} "nothing changed since" 6 "")
     # qb's libcrypto removed: what its search found is searched again, found nowhere else: the configure stops and names
     # it -- a build directory that had OpenSSL does not go on without it -- until it is back.
     file(REMOVE "${_ssl}/lib/libcrypto${_ext}" "${_ssl}/lib/libcrypto.a")
@@ -639,6 +807,40 @@ if(APPLE AND _generators)
     point("${_opt}" "${_root}/Cellar/libngtcp2/keg-3")
     file(REMOVE_RECURSE "${_root}/Cellar/libngtcp2/keg-2")
     build_fixture(${_name} "opt/ moved onto an older keg, the one it named removed" 3 "")
+    build_fixture(${_name} "nothing changed since" 3 "")
+    # qb's own libssl in that shape, no libngtcp2: its check reads the install name the Cellar file records, and that
+    # link moved onto a keg of another major re-runs the configure through the check's own inputs, which stops it.
+    set(_name "install-name-openssl")
+    set(_root "${WORK_DIR}/${_name}/root")
+    set(_opt "${_root}/opt/openssl")
+    foreach(_keg 1 2 3 4)
+        file(MAKE_DIRECTORY "${_root}/Cellar/openssl/keg-${_keg}/lib")
+        file(WRITE "${_root}/Cellar/openssl/keg-${_keg}/lib/libssl.dylib.id" "${_opt}/lib/libssl.dylib\n")
+    endforeach()
+    plant("${_root}/Cellar/openssl/keg-1/lib/libssl.dylib" 3 3)
+    point("${_opt}" "${_root}/Cellar/openssl/keg-1")
+    plant("${_root}/lib/libcrypto" "" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_SSL_LIBRARY=${_root}/Cellar/openssl/keg-1/lib/libssl.dylib"
+                      "-DOPENSSL_CRYPTO_LIBRARY=${_root}/lib/libcrypto" "-DOPENSSL_VERSION=3.5.9"
+                      "-DOPENSSL_INCLUDE_DIR=${_root}/include"
+                      HAS "OPENSSL_COMPARED=TRUE" "OPENSSL_READ=3\\|3")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    plant("${_root}/Cellar/openssl/keg-2/lib/libssl.dylib" 4 4)
+    point("${_opt}" "${_root}/Cellar/openssl/keg-2")
+    build_fixture(${_name} "opt/ moved onto a keg of OpenSSL 4, the old one kept" FAILS ""
+                  OUT "OPENSSL_SSL_LIBRARY \\([^)]*/keg-1/lib/libssl\\.dylib\\) is a libssl of major 4")
+    plant("${_root}/Cellar/openssl/keg-3/lib/libssl.dylib" 3 3)
+    point("${_opt}" "${_root}/Cellar/openssl/keg-3")
+    build_fixture(${_name} "opt/ moved onto a keg of OpenSSL 3" 2 "" "OPENSSL_READ=3\\|3")
+    build_fixture(${_name} "nothing changed since" 2 "")
+    # Onto a keg whose files keep older times, the one the link named removed: only the file read, gone, can tell.
+    plant("${_root}/Cellar/openssl/keg-4/lib/libssl.dylib" 3 3)
+    backdate("${_root}/Cellar/openssl/keg-4/lib/libssl.dylib")
+    point("${_opt}" "${_root}/Cellar/openssl/keg-4")
+    file(REMOVE_RECURSE "${_root}/Cellar/openssl/keg-3")
+    build_fixture(${_name} "opt/ moved onto an older keg, the one it named removed" 3 "" "OPENSSL_READ=3\\|3")
     build_fixture(${_name} "nothing changed since" 3 "")
 endif()
 if(_failures)
