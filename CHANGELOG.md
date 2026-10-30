@@ -340,8 +340,15 @@ policy.
   seeded order, quiet host), `qev-bench-pass` over 12 rounds (A/A at most 2.8 %): a pass holding a far timer 25.3 ->
   23.7 ns, `ev_now_update` 20.25 -> 16.1 ns, an arm with its refresh 23.1 -> 19.3 ns, and the pass an embedder hands its
   own reading (`ev_now_set`, qb's listener near a deadline) 24.8 -> 24.4 ns, no measurable difference -- that one was
-  1.5 ns SLOWER until `ev_now_set` took the later of its sample and the loop's time without a branch: with a clock whose
-  tick is about one pass long (41.7 ns against ~24), "is it later" was a coin toss the predictor lost.
+  1.5 ns SLOWER until `ev_now_set` stopped losing a coin toss: with a clock whose tick is about one pass long (41.7 ns
+  against ~24) the same reading comes back several passes in a row, and "is it later" (`>`) was a branch the predictor
+  lost. The form measured on the M4 took the later of the two without a branch, which on x86 -- where the branch was never
+  missed -- put a load and a 4-cycle `maxsd` on the dependency chain of the pass: `qev-bench-pass` `timer+set` 21.3 ->
+  22.4 ns and `timer+set0` 8.9 -> 10.4 on an i9-12900K under g++ 14 (3 copies a side, 8 rounds, seeded order, A/A at
+  most 1.9 %). The loop compares with `>=` instead: an equal reading goes the way a later one goes, the branch is taken
+  on every pass unless the clock steps back, on every architecture, and the clock still never steps back; on x86 the
+  two shapes read what they read before the change (21.3 -> 21.3 ns and 9.0 -> 9.0, ratios 1.000 with CIs [0.988, 1.007]
+  and [0.973, 1.023], every other shape level; the same host, 4 sides, 96 launches); the M4 is to read it.
   `qb-io-bench-timer-dispatch` over 8 rounds (A/A at most 0.64 %): 1024 timers armed, then drained, 63.9 -> 55.9 µs; a
   `with_timeout` re-armed 23.6 -> 19.2 ns; a 1 ns `callback` from its arm to its fire 1007 -> 80 ns, the old clock's 1
   µs step a timer had to wait out. `ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime`
