@@ -62,9 +62,12 @@ false, and the entire SSL/TLS slice is absent.
 An OpenSSL whose headers, `libssl` and `libcrypto` are not one major stops the configure instead, QUIC or not, on
 Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part -- one entry removed while
 `OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
-entries and their majors; remove all three from the cache, or configure with `--fresh`.
+entries and their majors; remove all three from the cache, or configure with `--fresh`. qb needs OpenSSL 3.0 or later
+(`crypto.h` uses its `EVP_MAC` API): headers older than that whose majors disagree are refused for being too old, and
+the message names that minimum -- a release that old may number its libraries apart from itself, as RHEL 7 names
+1.0.2k's `libssl.so.10`. An older OpenSSL whose majors agree is not refused at configure time; its compile fails.
 
-<!-- src: qb/cmake/qbOpenSSL.cmake:189-273 -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:197-292 -->
 
 | Symbol | Meaning |
 | --- | --- |

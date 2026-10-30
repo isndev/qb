@@ -186,6 +186,14 @@ endfunction()
 # rebuild moves one. Leaves in the caller's scope _qb_openssl_compared, _qb_openssl_headers_major, _qb_openssl_ssl_read
 # and _qb_openssl_crypto_read (the majors read, empty when nothing was) and _qb_openssl_check_inputs, which
 # tests/io/unit/CMakeLists.txt hands to qb-io-test-unit-ngtcp2-openssl-listing.
+#
+# qb needs OpenSSL 3.0 or later (_QB_OPENSSL_MINIMUM): src/qb/io/crypto.h declares deleters for EVP_MAC and EVP_MAC_CTX
+# and crypto.cpp calls EVP_MAC_fetch() with OSSL_PARAMs, 3.0's API, unguarded. find_package(OpenSSL) asks no version,
+# so an older OpenSSL whose readings agree is not refused here -- its compile fails, as before; one whose readings do
+# not agree is refused for being older than qb supports, not as a cache cleared in part: a release that old may number
+# its libraries apart from itself -- RHEL 7 and Amazon Linux 2 name 1.0.2k's libssl.so.10, beside headers whose
+# SHLIB_VERSION_NUMBER starts with 1 -- and the remedy is another OpenSSL, not the three entries cleared.
+set(_QB_OPENSSL_MINIMUM 3.0)
 macro(_qb_check_openssl)
     string(REGEX MATCH "^[0-9]+" _qb_openssl_headers_major "${OPENSSL_VERSION}")
     set(_qb_openssl_ssl_read "")
@@ -260,14 +268,25 @@ macro(_qb_check_openssl)
         endif()
         _qb_openssl_library_said(OPENSSL_SSL_LIBRARY ssl "${_qb_openssl_ssl_read}" _qb_openssl_ssl_said)
         _qb_openssl_library_said(OPENSSL_CRYPTO_LIBRARY crypto "${_qb_openssl_crypto_read}" _qb_openssl_crypto_said)
-        string(CONCAT _qb_openssl_split
-               "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) holds "
-               "${_qb_openssl_headers_said}; ${_qb_openssl_ssl_said}; and ${_qb_openssl_crypto_said}. A program built "
-               "on them loads two OpenSSL majors -- measured, qb's TLS crashed on that -- or fails to link (Huly "
-               "QB-1190). FindOpenSSL caches the three apart: one removed from the cache, with OPENSSL_ROOT_DIR "
-               "pointed at another OpenSSL, is found there while the other two are kept. Remove all three -- cmake "
-               "-U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY [-DOPENSSL_ROOT_DIR=<one "
-               "OpenSSL>] <build directory> -- or configure with --fresh")
+        if(NOT "${OPENSSL_VERSION}" STREQUAL "" AND OPENSSL_VERSION VERSION_LESS _QB_OPENSSL_MINIMUM)
+            string(CONCAT _qb_openssl_split
+                   "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) "
+                   "holds ${_qb_openssl_headers_said}; ${_qb_openssl_ssl_said}; and ${_qb_openssl_crypto_said}. A "
+                   "release that old may number its libraries apart from itself (RHEL 7 names 1.0.2k's libssl.so.10), "
+                   "so these majors are no sign of a cache cleared in part. Point OPENSSL_ROOT_DIR at an OpenSSL "
+                   "${_QB_OPENSSL_MINIMUM} or later with this one's three entries removed -- cmake -U "
+                   "OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<it> "
+                   "<build directory>, or --fresh -- or configure without TLS (-DQB_WITH_SSL=OFF)")
+        else()
+            string(CONCAT _qb_openssl_split
+                   "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) holds "
+                   "${_qb_openssl_headers_said}; ${_qb_openssl_ssl_said}; and ${_qb_openssl_crypto_said}. A program "
+                   "built on them loads two OpenSSL majors -- measured, qb's TLS crashed on that -- or fails to link "
+                   "(Huly QB-1190). FindOpenSSL caches the three apart: one removed from the cache, with "
+                   "OPENSSL_ROOT_DIR pointed at another OpenSSL, is found there while the other two are kept. Remove "
+                   "all three -- cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY "
+                   "[-DOPENSSL_ROOT_DIR=<one OpenSSL>] <build directory> -- or configure with --fresh")
+        endif()
         qb_error_message("${_qb_openssl_split}")
     endif()
 endmacro()

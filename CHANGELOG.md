@@ -609,15 +609,21 @@ policy.
   feature, and a build without TLS is not what was asked for. A static archive, or a library no tool reads, takes its
   headers' major. Compared on Linux and macOS, where a library's file name carries that number; not on other systems
   (FreeBSD names OpenSSL 3's `libssl.so.30`) nor for LibreSSL (its libssl and libcrypto are numbered apart), which the
-  configure says, and not on Windows, where nothing is read. `_qb_decide_quic()` takes qb's unread libraries as the
+  configure says, and not on Windows, where nothing is read. Headers older than qb's minimum, OpenSSL 3.0 (`crypto.h`
+  declares `EVP_MAC`'s deleters, `crypto.cpp` calls `EVP_MAC_fetch()`), whose majors disagree are refused for that
+  instead, the message naming the minimum and another OpenSSL as the remedy: a release that old may number its
+  libraries apart from itself -- RHEL 7 and Amazon Linux 2 name 1.0.2k's `libssl.so.10` -- and the cache cleared would
+  not have helped; one whose majors agree is not refused at configure time, as before (its compile fails).
+  `_qb_decide_quic()` takes qb's unread libraries as the
   check took the headers. The files read are inputs of the configure, the install names on macOS included, so a package
   update is checked again at the next build. `_qb_decide_quic()` compares only when qb's own `FindNgtcp2.cmake` ran the
   search -- a parent project's module defines none of its readings, and the reader's functions are now defined QUIC or
   not -- and its warning no longer mentions qb's own pair, refused before it. `qb-io-test-unit-quic-openssl-verdict`
   drives the check on planted libraries: each shape measured, beside a libngtcp2, without one and with QUIC off; a
   static and an unread library; the remedy, by `-U` and by `--fresh`; LibreSSL, another system and a parent's module not
-  compared; and with Ninja and Unix Makefiles, a libcrypto or `opensslv.h` rewritten onto another major stops the next
-  build until it is back, and on macOS so does an `opt/` link moved under qb's libssl.
+  compared; a 1.0.2k numbered as RHEL 7's and 1.1 headers beside OpenSSL 3's libssl refused for their age; and with
+  Ninja and Unix Makefiles, a libcrypto or `opensslv.h` rewritten onto another major stops the next build until it is
+  back, and on macOS so does an `opt/` link moved under qb's libssl.
   `qb-io-test-unit-ngtcp2-openssl-listing` re-reads the check's readings and inputs on the host. Two rounds of
   independent review, the second finding no code or test defect; 20 mutants of the check, planted one at a time beside a
   green control, each caught. On macOS arm64, `cmake -S qb` with openssl@4 4.1.0 and QUIC on, at the tip of this lot

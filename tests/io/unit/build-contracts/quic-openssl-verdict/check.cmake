@@ -7,7 +7,8 @@
 # - qb's own headers, libssl and libcrypto not one major -- a half-cleared cache -- stop the configure, QUIC or not, with
 #   the three majors and the remedy, which then works (POSIX: read through a stand-in tool that prints the planted
 #   listing, as the module reads otool or readelf); a static or unread library takes its headers' major; LibreSSL, and
-#   a system whose file names need not carry the release's major, are not compared.
+#   a system whose file names need not carry the release's major, are not compared; headers older than qb's minimum,
+#   OpenSSL 3.0, are refused for that when their readings disagree.
 # - the files read are inputs of the configure: `cmake --build` re-runs it when a library is rewritten, when the link the
 #   search found is moved onto a file older than the build -- as a package manager restores an archive's times -- and
 #   the one it named removed (libngtcp2's, qb's libssl), when qb's opensslv.h changes, and when files vanish: a path the
@@ -317,6 +318,21 @@ if(_posix)
                   NOT "not one major")
     numbered_case(version-unread FAIL "" "" 3 4
                   MUST "${_split}[^)]*\\) holds OpenSSL headers whose version FindOpenSSL could not read; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 4\\.")
+    # Headers older than qb's minimum, OpenSSL 3.0, whose readings disagree, are refused for that and the remedy names
+    # it: RHEL 7 numbers 1.0.2k's libraries libssl.so.10 beside headers whose SHLIB_VERSION_NUMBER starts with 1 (its
+    # own "1.0.2k" or upstream's "1.0.0", one reading), no cache cleared in part; nor is a 1.1 one beside OpenSSL 3's
+    # libssl. One whose readings agree is not refused here (openssl-1.1 above): its compile is.
+    set(_minimum "qb needs OpenSSL 3\\.0 or later: OPENSSL_INCLUDE_DIR \\([^)]*\\) holds the headers of OpenSSL ")
+    escape("-DOPENSSL_ROOT_DIR=<it> <build directory>, or --fresh -- or configure without TLS (-DQB_WITH_SSL=OFF)"
+           _minimum_remedy)
+    numbered_case(old-release FAIL 1.0.2k "# define SHLIB_VERSION_NUMBER \"1.0.2k\"\n" 10 10
+                  MUST "${_minimum}1\\.0\\.2k, for libraries of major 1; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 10; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 10\\."
+                       "${_minimum_remedy}"
+                  NOT "not one major")
+    numbered_case(old-split FAIL 1.1.1w "# define SHLIB_VERSION_NUMBER \"1.1\"\n" 3 1
+                  MUST "${_minimum}1\\.1\\.1w, for libraries of major 1; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 1\\."
+                       "${_minimum_remedy}"
+                  NOT "not one major")
     # One major, read: the readings are the libraries', not the headers' stood in.
     set(_lib "${WORK_DIR}/one-openssl/root/lib")
     plant("${_lib}/libssl" 3 3)
