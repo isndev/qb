@@ -30,8 +30,12 @@ endforeach()
 set(_fixture "${CMAKE_CURRENT_LIST_DIR}/fixture")
 file(REMOVE_RECURSE "${WORK_DIR}")
 file(MAKE_DIRECTORY "${WORK_DIR}")
-foreach(_root_env ARGON2_ROOT ZLIB_ROOT)
-    unset(ENV{${_root_env}}) # the modules would search there too
+# Nothing of the environment the suite runs in may steer the fixture's searches: the root hints of the modules it runs
+# -- ARGON2_ROOT and ZLIB_ROOT, searched too; OPENSSL_ROOT_DIR, where FindOpenSSL then searches alone (3.28 and 3.31
+# read), never finding the OpenSSL planted under /usr/local -- and a toolchain file, which CMake applies to every fresh
+# build tree from 3.21 on (a cross one turns each fixture configure into a cross build).
+foreach(_env ARGON2_ROOT ZLIB_ROOT OPENSSL_ROOT_DIR CMAKE_TOOLCHAIN_FILE)
+    unset(ENV{${_env}})
 endforeach()
 set(_env "") # an environment for the fixture's configures and builds: `cmake -E env` arguments
 

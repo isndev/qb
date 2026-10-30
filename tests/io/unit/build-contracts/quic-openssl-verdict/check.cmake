@@ -35,6 +35,7 @@ endforeach()
 set(_fixture "${CMAKE_CURRENT_LIST_DIR}/fixture")
 file(REMOVE_RECURSE "${WORK_DIR}")
 unset(ENV{OPENSSL_ROOT_DIR}) # FindOpenSSL would search there, and only there
+unset(ENV{CMAKE_TOOLCHAIN_FILE}) # every fresh build tree takes it (3.21 on): a cross one makes each a cross build
 set(_env "") # an environment for the fixture's configures and builds: `cmake -E env` arguments
 
 file(MAKE_DIRECTORY "${WORK_DIR}")

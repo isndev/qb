@@ -704,7 +704,9 @@ policy.
   CMake whose FindOpenSSL searches no zlib (3.22's, dropped into qb's module directory; 3.24.4's), the cases that need
   it are skipped and said so; one that calls pkg-config found or not (before 3.31) runs the rest, the fixture answering
   that call as the verdict test's does; with CMAKE_SYSTEM_NAME Linux, FindOpenSSL's Threads search no longer stops the
-  languageless fixture. Suites as for QB-1190 above.
+  languageless fixture; an `OPENSSL_ROOT_DIR` exported where the suite runs (FindOpenSSL then searched there alone and
+  missed the planted OpenSSL: three cases failed) or a `CMAKE_TOOLCHAIN_FILE` (applied to every fixture build tree: a
+  cross one failed both tests) no longer reaches either fixture. Suites as for QB-1190 above.
 
 - **qb's test certificates are made by the openssl command of the OpenSSL qb found, not by whichever is first on PATH
   (Huly QB-1175).** The generator took `find_program(openssl)`: on the Mac where QB-1175 was found, qb built against
