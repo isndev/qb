@@ -128,7 +128,7 @@ concept StarttlsNegotiator = requires(N n, qb::io::tcp::socket &s, int revents) 
  * @brief Handles asynchronous TCP connection establishment
  *
  * Manages non-blocking `n_connect`, completion on `EV_WRITE`, and an optional
- * wall-clock deadline via `async::callback`. The instance is kept alive with
+ * monotonic deadline (`qb::mono_now()`) via `async::callback`. The instance is kept alive with
  * `std::shared_ptr` and `self_hold_` until exactly one completion is delivered to
  * the user callback (so the object is not destroyed while libev still references
  * it) -- by its io watcher's hold while one is armed, by the deferred callback's
@@ -156,8 +156,8 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     Func_   func_;   /**< Callback function to call when connection completes */
     Socket_ socket_; /**< Socket for the connection */
     uri     remote_; /**< URI of the remote endpoint */
-    /** Absolute libev time `ev_time() + timeout` when `timeout > 0`; else `0` (no deadline). */
-    const double deadline_;
+    /** `qb::mono_now() + timeout` (`qb::detail::mono_deadline_after`); `qb::mono_time::max()`: none (not positive, or past the end). */
+    const qb::mono_time deadline_;
     /** When false, disable TLS peer verification on a secure socket (opt-out). */
     bool verify_peer_{true};
 
@@ -289,17 +289,17 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
 
     void
     arm_deadline() {
-        if (deadline_ <= 0. || deadline_armed_)
+        if (deadline_ == qb::mono_time::max() || deadline_armed_)
             return;
         deadline_armed_                 = true;
-        const double             remain = deadline_ - ev_time();
+        const qb::duration       remain = deadline_ - qb::mono_now();
         std::weak_ptr<connector> w      = this->shared_from_this();
         qb::io::async::callback(
             [w]() {
                 if (auto self = w.lock())
                     self->on_deadline();
             },
-            qb::detail::from_ev_seconds(remain > 0. ? remain : 0.));
+            remain > qb::duration::zero() ? remain : qb::duration::zero());
     }
 
     [[nodiscard]] finalize_result
@@ -358,12 +358,12 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     /// Arm the running attempt's share of the deadline, when an address is left after it.
     void
     arm_attempt_deadline() {
-        if (deadline_ <= 0. || endpoints_.empty() || !own_fd_)
+        if (deadline_ == qb::mono_time::max() || endpoints_.empty() || !own_fd_)
             return;
         const std::size_t left = endpoints_.size() - next_ + 1; // this attempt and the ones after it
         if (left <= 1)
             return;
-        const qb::duration remaining = qb::detail::from_ev_seconds(deadline_ - ev_time());
+        const qb::duration remaining = deadline_ - qb::mono_now();
         const qb::duration budget    = qb::io::tcp::connect_attempt_budget(remaining, left);
         if (budget >= remaining)
             return; // the whole deadline is this attempt's anyway
@@ -459,13 +459,13 @@ public:
      * @brief Constructs a connector and stores parameters (does not connect yet).
      * @param func Callback invoked exactly once with the connected socket or an empty socket
      * @param remote Remote URI
-     * @param timeout_sec Connection deadline in seconds from construction (`ev_time()`);
-     *                    `0` means no deadline timer (wait indefinitely for writability).
+     * @param timeout_sec Connection deadline in seconds from construction, on the monotonic clock (`qb::mono_now()`);
+     *                    `0` -- or less, or past the clock's end -- means no deadline timer (wait indefinitely for writability).
      */
     connector(Func_ &&func, uri remote, double timeout_sec, bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(qb::detail::mono_deadline_after(timeout_sec))
         , verify_peer_(verify_peer)
         , host_(remote_.host()) {}
 
@@ -481,7 +481,7 @@ public:
         : func_(std::forward<Func_>(func))
         , socket_(std::move(existing))
         , remote_(std::move(remote))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(qb::detail::mono_deadline_after(timeout_sec))
         , verify_peer_(verify_peer)
         , host_(remote_.host()) {}
 
@@ -495,7 +495,7 @@ public:
      */
     connector(Func_ &&func, std::vector<qb::io::endpoint> endpoints, std::string host, double timeout_sec, bool verify_peer = true)
         : func_(std::forward<Func_>(func))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(qb::detail::mono_deadline_after(timeout_sec))
         , verify_peer_(verify_peer)
         , endpoints_(std::move(endpoints))
         , host_(std::move(host))
@@ -513,7 +513,7 @@ public:
               bool verify_peer = true)
         : func_(std::forward<Func_>(func))
         , socket_(std::move(existing))
-        , deadline_(timeout_sec > 0. ? ev_time() + timeout_sec : 0.)
+        , deadline_(qb::detail::mono_deadline_after(timeout_sec))
         , verify_peer_(verify_peer)
         , endpoints_(std::move(endpoints))
         , host_(std::move(host))

@@ -216,7 +216,7 @@ Lifecycle and addressing:
 | `init(int af = AF_INET)` | `int` (0 on success) | Open the socket with `SOCK_STREAM` for the given address family. |
 | `bind(endpoint const&)` / `bind(uri const&)` | `int` | Bind to a local endpoint or URI. |
 | `connect(endpoint const&)` | `int` | Blocking connect to a remote endpoint. |
-| `connect(endpoint const&, qb::duration wtimeout)` | `int` | Connect with a wall-clock bound on the TCP handshake. |
+| `connect(endpoint const&, qb::duration wtimeout)` | `int` | Connect with a time bound on the TCP handshake, measured on the monotonic clock. |
 | `connect(std::vector<endpoint> const&)` / `connect(std::vector<endpoint> const&, qb::duration)` | `int` | Since 3.3: connect to the first address of the list that answers; a refused or unrouted one is closed and the next is tried, the timed form giving each attempt `tcp::connect_attempt_budget(time left, addresses left)`. `-1` for an empty list. |
 | `connect(uri const&)` / `connect(uri const&, qb::duration)` | `int` | Connect (optionally timed) to a URI; a host name is tried at every address of the URI's family, in order (3.3). |
 | `connect_v4(host, port)` / `connect_v6(host, port)` / `connect_un(std::filesystem::path const&)` | `int` | Blocking connect to a v4/v6/Unix target; `connect_v4` / `connect_v6` try every address of the host, in order (3.3). |

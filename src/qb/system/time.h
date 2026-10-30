@@ -995,6 +995,33 @@ ev_deadline_passed(double const deadline, double const now) noexcept {
     return deadline < now;
 }
 
+// ---------------------------------------------------------------------------
+// A deadline from an event-loop span (Huly QB-1194)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief The instant `seconds` -- a span in the event loop's `ev_tstamp` unit -- after `now` (a reading of the clock,
+ *        never before its epoch), on the monotonic clock (`steady_clock`, the clock the loop's timers run on in every
+ *        supported build), which no step of the time of day moves: the async TCP connector's deadline. The span is
+ *        rounded to the nanosecond, so a `qb::duration` under about 26 days (2^51 ns) that went through `to_ev_seconds`
+ *        comes back exact, where truncating can lose one (1001 ms). `mono_time::max()`, an instant never reached, stands
+ *        for "none": for a span that is not positive (NaN included), and for one past what the clock can hold after
+ *        `now` -- `qb::duration::max()`'s, for one: the sum would overflow.
+ */
+[[nodiscard]] inline mono_time
+mono_deadline_after(double const seconds, mono_time const now) noexcept {
+    if (!(seconds > 0.) || !(seconds < to_ev_seconds(duration::max())))
+        return mono_time::max();
+    const auto span = std::chrono::round<duration>(std::chrono::duration<double>(seconds)); // in range: the test above
+    return span < mono_time::max() - now ? now + span : mono_time::max();
+}
+
+/// `mono_deadline_after(seconds, mono_now())`, reading the clock only for a span that may make a deadline.
+[[nodiscard]] inline mono_time
+mono_deadline_after(double const seconds) noexcept {
+    return seconds > 0. ? mono_deadline_after(seconds, mono_now()) : mono_time::max();
+}
+
 } // namespace detail
 
 } // namespace qb

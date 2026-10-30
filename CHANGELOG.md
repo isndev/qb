@@ -362,8 +362,8 @@ policy.
   `QueryPerformanceCounter` on Windows -- so such a wait of `d` never ends before `d` on `qb::mono_now()`. A build whose
   `steady_clock` reads another clock (libstdc++ on macOS: `CLOCK_MONOTONIC`) defines it when it compiles the loop,
   `-DCMAKE_C_FLAGS=-DEV_MONOTONIC_CLOCK=CLOCK_MONOTONIC`. Timers across a system sleep behave as before: both clocks
-  count it. Two deadlines stay on the wall clock: `with_timeout`'s time left once `updateTimeout()` recorded activity
-  (on `ev_now()`) and the TCP connector's (on `ev_time()`). `ev_now()` itself, the loop's wall-clock time, is re-read
+  count it. Two deadlines stayed on the wall clock, `with_timeout`'s time left once `updateTimeout()` recorded activity
+  and the TCP connector's: Huly QB-1194 (below) moved them. `ev_now()` itself, the loop's wall-clock time, is re-read
   from the wall clock every half second and runs on the loop's clock in between, so on macOS it now drifts from the wall
   clock by the rate of a correction under way and moves back or forward by up to half a second times that rate at the
   next read (8.3 µs at 16.6 ppm, 270 µs or more at the 540 ppm or more the +27.65 ms correction ran at), as it has on
@@ -387,6 +387,38 @@ policy.
   lies between them -- red before, the loop 8 307 983 µs ahead, and red again when the change is reverted, when only the
   read is, when the guard never selects it, and when the clock is `CLOCK_UPTIME_RAW` (which leaves the system's sleep
   out). `readme/0_foundations/time.md` says which clock the loop reads on each platform.
+
+- **A step of the time of day no longer cuts `with_timeout`'s idle timeout or the TCP connector's deadline short, or
+  stretches them (Huly QB-1194).** `with_timeout` dated an activity by the loop's time of day (`ev_now()`) and the
+  async TCP connector its deadline by the system's (`ev_time()`): both the wall clock, so a step of it -- an NTP or
+  `timed` `settimeofday` (+58.2 ms on a Mac on 2026-10-29), a manual change -- between an activity and the timer's
+  fire shortened an idle timeout by the step, or lengthened it, and moved a connect deadline, and each address's share
+  of it, the same way across the name resolution `run()` makes first or between two addresses. Both now read the clock
+  the loop's timers run on: `updateTimeout()` and `setTimeout()` record a reading of `ev_clock_now()` -- one clock read
+  where `updateTimeout()` made two calls, a refresh of the loop's clock and a read of its time of day -- and the time
+  left is measured against the next one; the connector's deadline is `qb::mono_now()` plus the timeout
+  (`qb::detail::mono_deadline_after`, which rounds the loop's seconds to the nanosecond: a timeout under about 26 days
+  comes back exact, where truncating can lose one, 1001 ms). On Linux the loop's clock (`CLOCK_MONOTONIC`) leaves a
+  system suspend out, so these two deadlines now leave it out, as every loop timer does: a session idle before a
+  suspend times out once its timeout has passed in running time, where the wall clock timed it out at the timer's first
+  fire after the resume (on macOS the loop's clock counts a sleep). A fire with no activity recorded is the timeout and reads no clock: every
+  `async::callback`'s, every `ScopedTimeout`'s, and one the derived class re-armed by hand, whatever span the timer
+  was configured for. A connect timeout past the monotonic clock's end -- `qb::duration::max()` -- is no deadline and
+  arms no timer, where the wall clock armed one for the 292 years left. The tests move the time of day the code read,
+  never the system's: `qb-io-test-system-timeout-clock` injects the loop's (through qev's `ev_now_set`) and the
+  system's too (the `ev_time()` the file compiles, which `with_timeout` never read: one that did would read the
+  injected one) -- red before, a 30 s step back left a 300 ms idle timeout unfired
+  after 3 s, a 0.6 s step forward fired a 1.2 s one 0.80 s after the activity, and a timer configured for 4 x 10^9 s
+  and re-armed by hand for 10 ms with no activity recorded had not fired when the 2 s pump ran out -- and `qb-io-test-system-connector-clock` the
+  connector's `ev_time()` -- red before, a 0.4 s step forward ended a 0.6 s connect at 0.200 s through each of the
+  four constructors, a 30 s step back left it running after 3 s, over two silent addresses a 2 s step forward made the
+  first give way after 2.00 s instead of its 3 s share, and the longest timeout armed its deadline (over two addresses,
+  the first one's share too); the `EvSeam` cases of
+  `qb-core-test-unit-time` pin the seam. No deadline of qb's library reads `ev_now()` any more (the loop's libevent
+  compatibility layer, off by default, keeps its own reads); the loop (`qb/src/qb/ev/`) is unchanged. Measured on an
+  M4 against the base (3 copies a side, seeded order, 8 rounds, quiet host, three sessions, one with functions and loops
+  aligned to 64 bytes): `updateTimeout()` (`qb-io-bench-timer-dispatch` `BM_WithTimeout_Rearm`) 19.2 -> 15.5 ns every
+  time (A/A at most 1.3 %); a callback from its arm to its fire 79.1 -> 78.9 ns and 1024 timers drained, level.
 
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program

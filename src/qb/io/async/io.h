@@ -136,7 +136,7 @@ protected:
 template <typename _Derived>
 class with_timeout : public base<with_timeout<_Derived>, event::timer> {
     ev_tstamp _timeout;       /**< Timeout value in seconds. If 0, timeout is disabled. */
-    ev_tstamp _last_activity; /**< Timestamp of the last recorded activity, used to check against timeout. */
+    ev_tstamp _last_activity; /**< The loop's clock (`ev_clock_now()`), not its time of day, at the last activity; `0`: none. */
 
 public:
     /**
@@ -152,31 +152,31 @@ public:
     }
 
     /**
-     * @brief Updates the last activity timestamp to the current event loop time.
+     * @brief Records an activity: a reading of the loop's clock, against which the timer's fire measures the time left.
      * @details This method should be called by the derived class whenever an activity occurs
      *          that should reset the timeout countdown (e.g., receiving data, user input).
-     *          It sets `_last_activity` to `this->_async_event.loop.now()`.
+     *          It sets `_last_activity` to `ev_clock_now()`, the clock the loop's timers run on: one read, the watcher untouched.
      */
     void
     updateTimeout() noexcept {
-        ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
-        _last_activity = this->_async_event.loop.now();
+        // Never the loop's time of day (`ev_now()`): a step of the wall clock moves it, and the timeout with it (Huly QB-1194).
+        _last_activity = ev_clock_now();
     }
 
     /**
      * @brief Sets a new timeout value and restarts the timer.
      * @param timeout New timeout duration. If zero or negative, the timer is stopped (disabled).
      *                Otherwise, the timer is configured with the new timeout and started.
-     *                The `_last_activity` timestamp is also updated to the current event loop time.
+     *                The activity is recorded too, as `updateTimeout()` records it (a reading of the loop's clock).
      */
     void
     setTimeout(qb::duration timeout) noexcept {
         _timeout = qb::detail::to_ev_seconds(timeout);
         if (_timeout > 0.) { // Check against 0, not just if(_timeout)
-            ev_now_update(static_cast<struct ev_loop *>(listener::current.loop()));
-            _last_activity = this->_async_event.loop.now();
-            this->_async_event.set(_timeout);
-            this->_async_event.start();
+            _last_activity = ev_clock_now();
+            // Re-armed by `start`, which reads the loop's clock first: `set` would restart an armed watcher as of the last pass.
+            this->_async_event.stop();
+            this->_async_event.start(_timeout);
         } else
             this->_async_event.stop();
     }
@@ -196,14 +196,14 @@ private:
     /**
      * @brief Internal timer event handler, called by the listener when the `event::timer` expires.
      * @param event The `event::timer` that was triggered.
-     * @details This method checks if the actual timeout duration (`_timeout`) has passed since
-     *          `_last_activity`. If it has, it calls the `on(event::timer&)` method of the `_Derived`
-     *          class. Otherwise (if activity occurred more recently than `_timeout` ago), it reschedules
-     *          the timer for the remaining duration.
+     * @details With no activity recorded the fire IS the timeout -- the timer was armed for it, by the constructor or by
+     *          hand -- and no clock is read (every `async::callback`). Otherwise, if `_timeout` has passed since `_last_activity`
+     *          on the loop's clock, it calls the `on(event::timer&)` method of the `_Derived` class; if not, it reschedules the
+     *          timer for the time left, on that clock: a step of the time of day moves neither (Huly QB-1194).
      */
     void
     on(event::timer &event) noexcept {
-        const ev_tstamp after = _last_activity - event.loop.now() + _timeout;
+        const ev_tstamp after = _last_activity == 0. ? 0. : _last_activity - ev_clock_now() + _timeout;
 
         if (after <= 0.)
             Derived.on(event);

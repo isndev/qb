@@ -855,9 +855,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   bare integers at compile time**. `qb::mono_time` (steady) is for deadlines/timers/latency, `qb::wall_time`
   (system) for dates/expiry/wire; subtracting one from the other does not compile. The event loop's timers
   run on the clock `steady_clock` reads (macOS with libc++: `CLOCK_MONOTONIC_RAW`, the `EV_MONOTONIC_CLOCK` of
-  `src/qb/ev/ev.c`), so a `sleep` or `callback` of `d` never ends before `d` on `qb::mono_now()`; `with_timeout`'s
-  remainder after `updateTimeout()` (on `ev_now`) and the TCP connector's deadline (on `ev_time()`) are on the
-  wall clock. The retired tokens
+  `src/qb/ev/ev.c`), so a `sleep` or `callback` of `d` never ends before `d` on `qb::mono_now()`; nor do qb-io's own
+  deadlines -- `with_timeout`'s time left after `updateTimeout()` (`ev_clock_now()`) and the TCP connector's
+  (`qb::mono_now()`, since Huly QB-1194): a step of the time of day moves none of them. `ev_now()` is the loop's
+  time of day: never measure a span on it. The retired tokens
   `qb::Timestamp`, `qb::Duration`, `qb::TimePoint`, `to_timestamp(`, `to_time_point(` no longer exist —
   never emit them. _(time.h:8-25, aliases :93, :96, :99)_
 - **`qb::string<N>` silently truncates** anything past capacity `N` (only `at()` / out-of-range

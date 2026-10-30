@@ -113,7 +113,7 @@ When a read or write fails, or `disconnect()` is requested, the component calls 
 
 - **Construct.** `with_timeout(qb::duration timeout = std::chrono::seconds(3))` sets and starts the initial timer. A timeout of `0` or less leaves it disabled.
 - **Handle.** Implement `on(qb::io::async::event::timer const&)`; the base calls it when the deadline elapses with no intervening activity.
-- **Reset.** `updateTimeout()` records the current loop time as the last activity, deferring the deadline.
+- **Reset.** `updateTimeout()` records a reading of the loop's clock (`ev_clock_now()`) as the last activity, deferring the deadline.
 - **Reconfigure.** `setTimeout(qb::duration)` changes the interval and restarts the timer; pass `qb::duration::zero()` to disable it.
 - **Inspect.** `getTimeout()` returns the configured interval as a `qb::duration`.
 
