@@ -45,6 +45,16 @@ inline std::vector<qb::mono_time> attempt_starts;
 /// How often the loop reported a silent descriptor ready: never, or the fake did not hold a connect in progress.
 inline int readiness_events = 0;
 
+/// How much less than its span a deadline measured here may read: the conversions to the loop's double seconds,
+/// nothing else. A test reads `qb::mono_now()` before the connector does (its deadline: that reading plus the timeout,
+/// to the nanosecond); the connector arms each deadline for what is left of it on `qb::mono_now()`, through
+/// `async::callback`, whose `event::timer::start` refreshes the loop's clock after that reading; the loop fires it on a
+/// fresh reading at least the arm plus the span; the completion reads `qb::mono_now()` after it. One clock
+/// (ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime, to 0.1 us), read in that order: a deadline ends no earlier
+/// than its span on any host, a load only delays it. A slack of a sixteenth let an early fire through -- a deadline
+/// armed against the loop's cached clock, as stale as the passes the core skipped (Huly QB-190), up to 187.5 ms here.
+inline constexpr qb::duration kClockRounding = std::chrono::microseconds{1};
+
 /// The system's wall clock, as the loop library reads it, plus the injected step.
 [[nodiscard]] inline double
 stepped_time_of_day() noexcept {
@@ -273,7 +283,8 @@ TEST_F(ConnectorClock, ATimeOfDayStepForwardDoesNotCutTheDeadlineShort) {
         EXPECT_EQ(r.timers, 1) << "the connector armed no deadline, or more than its one";
         ASSERT_TRUE(r.ended) << "the connect never ended";
         EXPECT_FALSE(r.open);
-        EXPECT_GE(r.after, kTimeout * 15 / 16) << "the deadline fired early: the step forward was counted as time spent";
+        EXPECT_GE(r.after, kTimeout - kClockRounding)
+            << "the deadline fired early, by " << (kTimeout - r.after).count() << " ns: the step forward was counted as time spent";
     }
 }
 
@@ -289,7 +300,7 @@ TEST_F(ConnectorClock, ATimeOfDayStepBackDoesNotExtendTheDeadline) {
         EXPECT_EQ(r.timers, 1) << "the connector armed no deadline, or more than its one";
         ASSERT_TRUE(r.ended) << "the deadline waited for the time of day to catch up with the step";
         EXPECT_FALSE(r.open);
-        EXPECT_GE(r.after, kTimeout * 15 / 16);
+        EXPECT_GE(r.after, kTimeout - kClockRounding) << "the deadline fired early, by " << (kTimeout - r.after).count() << " ns";
     }
 }
 
@@ -320,7 +331,8 @@ TEST_F(ConnectorClock, ATimeOfDayStepForwardDoesNotCutAnAttemptsShareShort) {
             connect_across_a_step(f, kTimeout, 2., 6000ms, 2, [](completion const &c) { return c.ended || attempt_starts.size() >= 2; });
         ASSERT_EQ(r.readiness, 0) << "a silent descriptor turned ready: the connect was not held in progress";
         ASSERT_GE(r.attempts, 2u) << "the first address never gave way";
-        EXPECT_GE(r.second_at, 3000ms * 15 / 16) << "the first address gave way early: the step forward was counted against its share";
+        EXPECT_GE(r.second_at, 3000ms - kClockRounding) << "the first address gave way early, by " << (3000ms - r.second_at).count()
+                                                        << " ns: the step forward was counted against its share";
         EXPECT_FALSE(r.ended) << "the connect ended before its second attempt";
     }
 }

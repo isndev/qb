@@ -38,6 +38,15 @@ namespace timeout_clock_test {
 /// The step of the system's time of day a test injects, in seconds; the system's clock is never changed.
 inline double time_of_day_step = 0.;
 
+/// How much less than the timeout an idle time measured here may read: the conversions to the loop's double seconds,
+/// nothing else. A test reads `qb::mono_now()` BEFORE the activity reads the loop's clock (`updateTimeout()`);
+/// `with_timeout` lets a fire through only on a fresh reading of that clock at least the activity plus the timeout;
+/// the handler reads `qb::mono_now()` after it. One clock (ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime, to
+/// 0.1 us), read in that order: the idle time is at least the timeout on any host, a load only delays a fire. A slack
+/// of a sixteenth let an early fire through -- an activity dated by the loop's cached clock, as stale as the passes
+/// the core skipped (Huly QB-190), up to 75 ms on these timeouts.
+inline constexpr qb::duration kClockRounding = std::chrono::microseconds{1};
+
 /// The system's wall clock, as the loop library reads it, plus the injected step.
 [[nodiscard]] inline double
 stepped_time_of_day() noexcept {
@@ -164,7 +173,7 @@ TEST_F(TimeoutClock, ATimeOfDayStepBackDoesNotLengthenTheIdleTimeout) {
     ASSERT_GT(loop_lagged, kStep / 2) << "the injection did not move the loop's time of day";
     ASSERT_GT(system_lagged, kStep / 2) << "the injection did not move the system's time of day";
     ASSERT_EQ(fires, 1) << "the idle timeout waited for the time of day to catch up with the step";
-    EXPECT_GE(idle, kTimeout * 15 / 16);
+    EXPECT_GE(idle, kTimeout - kClockRounding) << "the idle timeout fired early, by " << (kTimeout - idle).count() << " ns";
 }
 
 TEST_F(TimeoutClock, ATimeOfDayStepForwardDoesNotShortenTheIdleTimeout) {
@@ -200,7 +209,8 @@ TEST_F(TimeoutClock, ATimeOfDayStepForwardDoesNotShortenTheIdleTimeout) {
         conclusive = true;
         EXPECT_LT(lag_at_fire, kStep / 2) << "the loop's time of day never stepped forward";
         ASSERT_EQ(fires, 1) << "the idle timeout never fired";
-        EXPECT_GE(idle, kTimeout * 15 / 16) << "the idle timeout fired early: the step forward was counted as idleness";
+        EXPECT_GE(idle, kTimeout - kClockRounding)
+            << "the idle timeout fired early, by " << (kTimeout - idle).count() << " ns: the step forward was counted as idleness";
     }
     EXPECT_TRUE(conclusive) << "no attempt recorded its activity before the loop refreshed its time of day";
 }
