@@ -545,7 +545,7 @@ policy.
     afresh: a build directory that had the library does not go on building without it. One set by hand or by a parent
     project, as a superbuild names a library it builds, is kept as given, and said; only existing files become inputs,
     so the build converges. A build directory configured before this change has recorded nothing: one `--fresh` starts
-    it. Other dependencies (Argon2, zlib, zstd, brotli) keep their cached paths as before (QB-1192).
+    it. Argon2, zlib, zstd and brotli are searched again the same way since QB-1192, below.
     Measured on real qb trees, both generators: the build re-runs the configure, finds the new keg, links and passes
     the next build untouched.
   - On macOS the check read the file the configure found, while a binary loads the install name it records: Homebrew's
@@ -613,6 +613,91 @@ policy.
   (QB-1190, QB-1192, QB-1175): Release 257 / 257 / 0, ASan+UBSan 258 / 258 / 0, TSan 257 / 257 / 0 (registered /
   executed / skipped), no compiler warning, no sanitizer report; the superproject's OpenSSL, QUIC and build-contract
   tests 10 / 10.
+
+- **A build directory whose Argon2, zlib, zstd or brotli an update removed searches it again instead of failing for
+  good; found nowhere else, the configure stops and names it (Huly QB-1192).** QB-1185 did this for OpenSSL and
+  libngtcp2 only. Homebrew's searches cache versioned Cellar paths -- pkg-config gives
+  `/opt/homebrew/Cellar/argon2/20190702_1/lib/libargon2.dylib`, and likewise brotli's -- and the cleanup after an
+  upgrade removes them. Measured on the base with copied kegs (no brew run): after the upgrade, `cmake --build` stopped
+  on "'.../Cellar/zlib/1.3.2/lib/libz.dylib', needed by ..., missing and no known rule to make it", every time; an
+  explicit reconfigure kept the cached paths (a `find_*` call never searches a cached value again) and failed at
+  generate ("Imported target ZLIB::ZLIB includes non-existent path"). `cmake/qbFoundLibraries.cmake` now holds QB-1185's
+  `_qb_forget_vanished()` and `_qb_record_found()`, moved from `cmake/qbOpenSSL.cmake`, and `_qb_find_again()`, which
+  qbDependencies.cmake's `_qb_find_argon2()`, `_qb_find_zlib()`, `_qb_find_zstd()` and `_qb_find_brotli()` call instead
+  of a bare `find_package()`: a path the search itself found is recorded; when its file is gone the entry is searched
+  again with pkg-config asked again, and when the package this build directory had found is not found any more, the
+  configure stops, naming each entry still missing and the way out (`QB_WITH_ZSTD=OFF`, `QB_WITH_BROTLI=OFF`;
+  `QB_DEPS_FETCH_FALLBACK=ON` with `QB_INSTALL=OFF`, or `QB_WITH_COMPRESSION=OFF`, for zlib; for Argon2, which has no
+  switch, `-DCMAKE_DISABLE_FIND_PACKAGE_Argon2=ON`), and keeps stopping until it is found: a build directory that had
+  the library does not lose it silently (`QB_HAS_ARGON2` is a public compile definition). A package it never had (a
+  stray header without its library) stops nothing, nor does one found again however -- FindZLIB's own `ZLIB_LIBRARY`
+  override, a debug zlib gone beside the release one -- nor a zlib qb builds from source (`QB_DEPS_FETCH_FALLBACK`, in a
+  build that installs nothing) or a parent project provides (its `ZLIB::ZLIB` is then the one qb links, as it was while
+  the lost path stayed cached), nor a package turned off (`CMAKE_DISABLE_FIND_PACKAGE_<Package>`: find_package()
+  searches nothing, so nothing is searched again or said, and the configure goes on as for a package never found -- a qb
+  CI lane configures without OpenSSL so). Every file the search produced -- each library, and each include directory's
+  header -- is an input of the configure, so the removal re-runs it at the next build; a path set by hand or by a parent
+  project is no input (a superbuild's own library would re-run the configure at each of its rebuilds) and is kept as
+  given, as before, the configure now saying how to search for it again. An include directory counts as gone when the
+  header its search looked for is, though the directory stays (a shared prefix from which a package's removal took its
+  headers): `<entry>/<file>`, applied to OpenSSL's `OPENSSL_INCLUDE_DIR` too, whose stop now waits, like the others, for
+  an OpenSSL this build directory had found -- stray headers, or libraries it never found headers for, never stop it,
+  however many configures saw them; a build directory QB-1185's code configured counts as had when what FindOpenSSL
+  needs to find one, the headers and libcrypto, was each recorded or set by hand. Where the search found the headers in
+  an Apple framework (`openssl.framework`), the header is checked under its `Headers`, as QB-1185's code recorded the
+  framework. A static OpenSSL whose libraries name zlib (`-lz` in its pkg-config) has FindOpenSSL search zlib itself
+  (CMake 3.26 and later), before qb's zlib search, and link it: what that search finds is recorded, from the first
+  configure on -- told after it by the `ZLIB::ZLIB` OpenSSL's targets link -- and its files are inputs even with
+  compression off; zlib's entries are searched again around qb's OpenSSL search -- quietly, said once a search looked:
+  FindOpenSSL's, or qb's own with compression on -- and with compression off a zlib it linked, lost and found nowhere
+  else, stops the configure, naming it and the ways out (another zlib, `QB_WITH_SSL=OFF`, or another OpenSSL with its
+  three entries removed from the cache: `OPENSSL_ROOT_DIR` alone keeps them), where the generate would fail on that
+  `ZLIB::ZLIB` naming neither; zlib's own stop adds `QB_WITH_SSL=OFF` to `QB_WITH_COMPRESSION=OFF` there, and counts a
+  zlib OpenSSL's search found as had. A path set by hand that both searches look at is said once. libngtcp2's own search
+  (`FindNgtcp2.cmake`, which an installed qb ships) follows the same two rules: its include entries are gone when their
+  headers are, and a libngtcp2 this build directory never found -- its headers and core library without the crypto
+  helper -- stops nothing once removed (a build directory QB-1185's module configured had one when its five entries were
+  each recorded or set); a libngtcp2 lost stops the configure only where this build's QUIC linked it (`_QB_HAD_QUIC`),
+  or in a build directory QB-1185's code configured, which recorded nothing of it -- one QUIC was off for, two OpenSSL
+  majors, is no loss -- and its core library and headers are inputs of the configure off Windows, like its crypto
+  helper. `qb-io-test-unit-found-libraries` drives the four searches on planted libraries through a languageless fixture
+  -- each found, an input, its include directory not; with Ninja and Unix Makefiles, each moved elsewhere and found
+  there, each removed and stopped on until it is back, one of brotli's three libraries named alone among those found
+  again, a path set by hand kept and no input, a package never had stopping nothing, Argon2 and zlib turned off by
+  `CMAKE_DISABLE_FIND_PACKAGE_<Package>` after a loss, zlib's debug library, its `ZLIB_LIBRARY` override, the fetch
+  fallback (not in an installable build) and a parent's `ZLIB::ZLIB`, which qb then links; and, where pkg-config is
+  found, Homebrew-shaped kegs found again only through pkg-config and a static OpenSSL's zlib lost, turned off at once,
+  and with compression off an input and, lost, stopped on; one static by itself (no `OPENSSL_USE_STATIC_LIBS`) whose
+  zlib is recorded and an input from the first configure, its debug library alone lost stopping nothing, the remedy
+  named working, a configure that found no OpenSSL then one that finds it again stopping on the zlib still lost, a
+  parent's `ZLIB::ZLIB` then stopping nothing, compression turned on by the configure that sees that zlib lost stopping
+  on it, and that loss seen as the OpenSSL starts linking zlib stopping, or as it stops, saying nothing (each skipped,
+  and said, where this CMake's FindOpenSSL searches no zlib); zlib around a shared OpenSSL with compression off
+  forgotten quietly, a path set there by hand not recorded, and OpenSSL and zlib lost at once, compression on, only
+  OpenSSL said -- or Argon2, whose stop comes before zlib's search (skipped where FindOpenSSL needs pkg-config, before
+  CMake 3.31); a hand-set path said once -- and re-derives what the configure that registered it did: each package
+  searched (its feature on, its search not turned off) went through its wrapper, each path its search produced recorded,
+  each file found an input. `qb-io-test-unit-quic-openssl-verdict` adds OpenSSL's headers removed from a shared prefix,
+  of an OpenSSL had and of one never had, an OpenSSL and a libngtcp2 never found however many configures saw their
+  libraries, OpenSSL turned off after a loss, libngtcp2's headers removed from a shared prefix and its core library
+  removed alone (each re-running the configure at the next build), libngtcp2's `ngtcp2.h` alone removed, a libngtcp2
+  library set by hand rebuilt (no input), a libngtcp2 QUIC was off for removed (FindNgtcp2's own `Ngtcp2_VANISHED` still
+  naming it, as a consumer of an installed qb reads it, and naming nothing of one never had), a parent project's
+  FindNgtcp2 that defines the readings, the module run twice as an installed qb's config runs it (an include directory
+  kept as given said once), build directories QB-1185's code configured (simulated: the record of what was had removed),
+  one with an include directory set by hand, and, on macOS, an OpenSSL framework. On a real qb tree over copied kegs
+  (argon2, brotli, zlib in Cellar paths, zstd through `opt/`), the upgrade re-ran the configure at `cmake --build`,
+  which found the new kegs (zlib, named by a removed `CMAKE_PREFIX_PATH`, in the SDK), linked, and the test binary
+  passed; the next build had no configure to run. Limits: a build directory configured before this change has recorded
+  nothing, and keeps its paths until one `--fresh`; a consumer of an installed qb runs the Find modules qb ships
+  (`FindArgon2.cmake`, `FindZstd.cmake`, `FindBrotli.cmake`) and CMake's `FindZLIB` without any of this, as before.
+  Seventeen rounds of independent review, the last finding no code defect; 77 mutants of the change, planted one at a
+  time beside a green control, each caught (the lot's battery: 120 of 120). On a real qb tree over copied kegs (argon2,
+  brotli and zlib in Cellar paths, zstd through `opt/`), an upgrade with the old kegs removed re-ran the configure at
+  `cmake --build`, which found the new kegs, linked, and the test passed; the next build had no configure to run. On a
+  CMake whose FindOpenSSL searches no zlib or needs pkg-config (3.22's, dropped into qb's module directory), the cases
+  that need it are skipped and said so; with CMAKE_SYSTEM_NAME Linux, FindOpenSSL's Threads search no longer stops the
+  languageless fixture. Suites as for QB-1190 above.
 
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the

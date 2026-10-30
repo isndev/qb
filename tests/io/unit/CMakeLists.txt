@@ -354,6 +354,60 @@ add_test(NAME qb-io-test-unit-quic-openssl-verdict
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/quic-openssl-verdict/check.cmake")
 set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
 unset(_qb_quic_verdict_args)
+# found-libraries (Huly QB-1192): the searches qbDependencies.cmake runs for Argon2, zlib, zstd and brotli
+# (cmake/qbFoundLibraries.cmake) on libraries planted in a scratch root, through a languageless fixture: a library found
+# is an input of the configure, and `cmake --build` re-runs it when an update removes the version found -- searched
+# again, found where the update put it (pkg-config asked again where its tool is found), or found nowhere else and the
+# configure stops, naming it -- with Ninja and Unix Makefiles where their tools are found; a path set by hand is kept.
+# What this configure's own searches did is passed too, and re-derived: each package qbDependencies.cmake searched went
+# through its wrapper (the value each entry had before it), a path the search produced is recorded, and each file
+# found is an input of the configure.
+set(_qb_found_libraries_args
+    "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake" "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/found-libraries"
+    "-DGENERATOR=${CMAKE_GENERATOR}" "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}" "-DTOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+    "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+set(_qb_found_searched "") # each package qbDependencies.cmake searched: its feature on, its search not turned off
+if(QB_HAS_SSL AND NOT CMAKE_DISABLE_FIND_PACKAGE_Argon2)
+    list(APPEND _qb_found_searched argon2)
+endif()
+if(QB_HAS_COMPRESSION AND NOT CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+    list(APPEND _qb_found_searched zlib)
+endif()
+if(QB_HAS_ZSTD)
+    list(APPEND _qb_found_searched zstd)
+endif()
+if(QB_HAS_BROTLI)
+    list(APPEND _qb_found_searched brotli)
+endif()
+list(JOIN _qb_found_searched "|" _qb_found_searched)
+get_property(_qb_found_inputs DIRECTORY "${QB_ROOT_DIR}" PROPERTY CMAKE_CONFIGURE_DEPENDS)
+list(JOIN _qb_found_inputs "|" _qb_found_inputs)
+list(APPEND _qb_found_libraries_args "-DLIVE_SEARCHED=${_qb_found_searched}" "-DLIVE_INPUTS=${_qb_found_inputs}")
+foreach(_qb_found_entry IN ITEMS ARGON2_INCLUDE_DIR ARGON2_LIBRARY ZLIB_INCLUDE_DIR ZLIB_LIBRARY_RELEASE ZSTD_INCLUDE_DIR
+                                 ZSTD_LIBRARY BROTLI_INCLUDE_DIR BROTLI_ENCODER_LIBRARY BROTLI_DECODER_LIBRARY
+                                 BROTLI_COMMON_LIBRARY)
+    string(REGEX REPLACE "_.*" "" _qb_found_package "${_qb_found_entry}") # ARGON2, ZLIB, ZSTD, BROTLI
+    set(_qb_found_wrapper "${_qb_found_package}")
+    if(_qb_found_package STREQUAL "ARGON2")
+        set(_qb_found_wrapper Argon2)
+    elseif(_qb_found_package STREQUAL "ZSTD")
+        set(_qb_found_wrapper Zstd)
+    elseif(_qb_found_package STREQUAL "BROTLI")
+        set(_qb_found_wrapper Brotli)
+    endif()
+    if(_qb_searched_${_qb_found_wrapper}) # its wrapper ran: the value now, before the search, and the record
+        list(APPEND _qb_found_libraries_args "-DLIVE_${_qb_found_entry}=$CACHE{${_qb_found_entry}}|${_qb_before_${_qb_found_entry}}|$CACHE{_QB_FOUND_${_qb_found_entry}}")
+    endif()
+endforeach()
+unset(_qb_found_searched)
+unset(_qb_found_package)
+unset(_qb_found_wrapper)
+unset(_qb_found_inputs)
+add_test(NAME qb-io-test-unit-found-libraries
+         COMMAND "${CMAKE_COMMAND}" ${_qb_found_libraries_args}
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/found-libraries/check.cmake")
+set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
+unset(_qb_found_libraries_args)
 # installed-quic-openssl (Huly QB-1183): qbConfig.cmake, generated from cmake/qbConfig.cmake.in as an install does with a
 # QUIC build's values, warns a consumer whose libngtcp2 links another OpenSSL major than the one it links -- and says
 # nothing when they agree, or when the consumer's own FindNgtcp2 module won the search.

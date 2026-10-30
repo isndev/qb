@@ -222,6 +222,16 @@ configure_fixture(parent-module "${WORK_DIR}/parent-module/build" OK ${_unread}
                   "-DPARENT_MODULE_DIR=${WORK_DIR}/parent-module/modules"
                   NOT "CMake Warning"
                   HAS "NGTCP2=TRUE" HAS "COMPARED=FALSE" HAS "QB_HAS_QUIC=TRUE")
+# ... and one that defines them -- an installed qb's FindNgtcp2 of an earlier version on the module path: compared, and
+# nothing that only qb's own module defines is called (its functions-only include stops before _ngtcp2_held_file()).
+plant_ngtcp2(parent-module-readings _ngtcp2)
+file(WRITE "${WORK_DIR}/parent-module-readings/modules/FindNgtcp2.cmake"
+     "set(Ngtcp2_FOUND TRUE)\nset(Ngtcp2_OPENSSL_MAJOR 3)\nset(Ngtcp2_OPENSSL_LIBRARY \"\")\n"
+     "set(Ngtcp2_OPENSSL_CRYPTO_MAJOR 3)\nset(Ngtcp2_OPENSSL_CRYPTO_LIBRARY \"\")\n")
+configure_fixture(parent-module-readings "${WORK_DIR}/parent-module-readings/build" OK ${_ngtcp2} ${_unread}
+                  "-DPARENT_MODULE_DIR=${WORK_DIR}/parent-module-readings/modules"
+                  NOT "CMake Warning"
+                  HAS "NGTCP2=TRUE" HAS "COMPARED=TRUE" HAS "QB_HAS_QUIC=TRUE")
 
 if(_posix)
     # Read through the stand-in tool. qb's own OpenSSL not one major (Huly QB-1190) stops the configure, naming the three
@@ -672,6 +682,244 @@ if(_generators)
     file(REMOVE "${_root}/usr/lib/libssl${_ext}" "${_root}/usr/lib/libssl.a")
     build_fixture(${_name} "the libssl found first removed" FAILS ""
                   OUT "found nowhere else -- OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/lib/libssl")
+    # A package removal that takes OpenSSL's headers from an include directory that stays -- a shared prefix -- leaves
+    # OPENSSL_INCLUDE_DIR naming a directory without openssl/ssl.h: searched again too, and found where OpenSSL now is.
+    set(_name "shared-include")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/usr/local" 3 a)
+    file(WRITE "${_root}/usr/local/include/other.h" "")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL=TRUE" "OPENSSL_INCLUDE_DIR=${_root_regex}/usr/local/include")
+    file(REMOVE_RECURSE "${_root}/usr/local/include/openssl")
+    file(REMOVE "${_root}/usr/local/lib/libssl${_ext}" "${_root}/usr/local/lib/libssl.a"
+         "${_root}/usr/local/lib/libcrypto${_ext}" "${_root}/usr/local/lib/libcrypto.a")
+    plant_openssl("${_root}/usr" 3 b)
+    build_fixture(${_name} "OpenSSL removed from the shared prefix, installed elsewhere" 2 "" "OPENSSL=TRUE"
+                  "OPENSSL_INCLUDE_DIR=${_root_regex}/usr/include"
+                  "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/lib/libssl${_ext}"
+                  OUT "OPENSSL_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\) no longer holds openssl/ssl\\.h: searched again")
+    build_fixture(${_name} "nothing changed since" 2 "")
+    # Headers of an OpenSSL this build directory never had a library for -- strays in a shared prefix -- are searched
+    # again once removed, and stop nothing (Huly QB-1192).
+    set(_name "never-had")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    file(WRITE "${_root}/usr/local/include/openssl/ssl.h" "")
+    file(WRITE "${_root}/usr/local/include/openssl/opensslv.h" "# define OPENSSL_VERSION_STR \"3.0.0\"\n")
+    file(WRITE "${_root}/usr/local/include/other.h" "")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL=FALSE" "OPENSSL_INCLUDE_DIR=${_root_regex}/usr/local/include")
+    file(REMOVE_RECURSE "${_root}/usr/local/include/openssl")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      MUST "OPENSSL_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\) no longer holds openssl/ssl\\.h: searched again"
+                      NOT "is gone" HAS "OPENSSL=FALSE")
+    # An OpenSSL whose headers are an Apple framework: find_path() gives the framework, whose headers are under
+    # Headers -- recorded and searched again like any other.
+    if(APPLE)
+        set(_name "framework-include")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        set(_framework "${_root_regex}/Library/Frameworks/openssl\\.framework")
+        plant_openssl("${_root}/usr/local" 3 a)
+        file(MAKE_DIRECTORY "${_root}/Library/Frameworks/openssl.framework")
+        file(RENAME "${_root}/usr/local/include/openssl" "${_root}/Library/Frameworks/openssl.framework/Headers")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                          HAS "OPENSSL=TRUE" "OPENSSL_INCLUDE_DIR=${_framework}")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" NOT "kept as given"
+                          HAS "OPENSSL=TRUE")
+        file(REMOVE_RECURSE "${_root}/Library/Frameworks/openssl.framework")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                          MUST "OPENSSL_INCLUDE_DIR \\(${_framework}\\) no longer exists: searched again"
+                               "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_")
+        # The same for libngtcp2's headers as a framework.
+        set(_name "framework-include-ngtcp2")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        set(_framework "${_root_regex}/Library/Frameworks/ngtcp2\\.framework")
+        plant_keg("${_root}/usr/local" 3)
+        plant_openssl("${_root}/qb-openssl" 3 a)
+        file(MAKE_DIRECTORY "${_root}/Library/Frameworks/ngtcp2.framework")
+        file(RENAME "${_root}/usr/local/include/ngtcp2" "${_root}/Library/Frameworks/ngtcp2.framework/Headers")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                          HAS "NGTCP2=TRUE" "NGTCP2_INCLUDE_DIR=${_framework}")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK NOT "kept as given" HAS "NGTCP2=TRUE")
+        file(REMOVE_RECURSE "${_root}/Library/Frameworks/ngtcp2.framework")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL
+                          MUST "NGTCP2_INCLUDE_DIR \\(${_framework}\\) no longer exists: searched again"
+                               "the libngtcp2 this build directory found is gone and was found nowhere else -- NGTCP2_")
+    endif()
+    # A build directory QB-1185's code configured recorded the libraries its search found, not that it had OpenSSL: its
+    # records stand in for that, and its OpenSSL lost still stops the configure.
+    set(_name "recorded-before")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF" HAS "OPENSSL=TRUE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON" "-U" "_QB_HAD_OpenSSL"
+                      MUST "the OpenSSL this build directory found is gone and was found nowhere else")
+    # Libraries of an OpenSSL this build directory never found -- no headers beside them -- are recorded too, and their
+    # removal stops nothing, however many configures saw them; nor does an OpenSSL it had once its search is turned off.
+    set(_name "openssl-never-found")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/usr/local" 3 a)
+    file(REMOVE_RECURSE "${_root}/usr/local/include")
+    foreach(_time 1 2)
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                          HAS "OPENSSL=FALSE" "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/libssl${_ext}")
+    endforeach()
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      MUST "OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/local/lib/libssl[^)]*\\) no longer exists: searched again"
+                      NOT "is gone" HAS "OPENSSL=FALSE")
+    plant_openssl("${_root}/usr/local" 3 b)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF" HAS "OPENSSL=TRUE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      MUST "the OpenSSL this build directory found is gone")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      "-DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON" NOT "is gone" HAS "OPENSSL=") # nothing searched
+    # Turned off by the configure that sees the loss: nothing is searched again, nor said.
+    plant_openssl("${_root}/usr/local" 3 c)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/at-once" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL=TRUE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/at-once" OK "-DCMAKE_DISABLE_FIND_PACKAGE_OpenSSL=ON"
+                      NOT "is gone" "searched again" HAS "OPENSSL=")
+    # The same for libngtcp2 (Huly QB-1192): its headers and core library without its crypto helper are no libngtcp2,
+    # and their removal stops nothing; a build directory its earlier search configured had it when every entry finding
+    # it needs was recorded or set.
+    set(_name "ngtcp2-never-found")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/usr/local" 3)
+    file(REMOVE "${_root}/usr/local/lib/libngtcp2_crypto_ossl${_ext}")
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    foreach(_time 1 2)
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                          HAS "NGTCP2=FALSE" "NGTCP2_LIBRARY=${_root_regex}/usr/local/lib/libngtcp2${_ext}")
+    endforeach()
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      MUST "NGTCP2_LIBRARY \\(${_root_regex}/usr/local/lib/libngtcp2[^)]*\\) no longer exists: searched again"
+                      NOT "is gone" HAS "NGTCP2=FALSE" "NGTCP2_VANISHED=")
+    plant_keg("${_root}/usr/local" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" HAS "NGTCP2=TRUE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DOPENSSL_ROOT_DIR=/qb-openssl" "-U" "_NGTCP2_HAD"
+                      "-U" "_QB_HAD_QUIC"
+                      MUST "the libngtcp2 this build directory found is gone and was found nowhere else -- NGTCP2_")
+    # A build directory the earlier searches configured recorded what they found, not that they found a package: it
+    # had an OpenSSL when its headers and libcrypto were each recorded or set, a libngtcp2 when its five entries were --
+    # libraries without the rest never counted (_QB_HAD_OpenSSL and _NGTCP2_HAD removed stand for such a directory).
+    set(_name "partial-recorded-before")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 3 a)
+    file(REMOVE_RECURSE "${_root}/usr/local/include")
+    plant_keg("${_root}/usr/local" 3)
+    file(REMOVE "${_root}/usr/local/lib/libngtcp2_crypto_ossl${_ext}")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" HAS "OPENSSL=FALSE" "NGTCP2=FALSE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON"
+                      "-U" "_QB_HAD_OpenSSL" "-U" "_NGTCP2_HAD"
+                      MUST "OPENSSL_SSL_LIBRARY \\([^)]*\\) no longer exists: searched again"
+                           "NGTCP2_LIBRARY \\([^)]*\\) no longer exists: searched again"
+                      NOT "is gone" HAS "OPENSSL=FALSE" "NGTCP2=FALSE" "NGTCP2_VANISHED=")
+    # ... headers and libssl without libcrypto never were an OpenSSL either (FindOpenSSL requires libcrypto):
+    set(_name "no-libcrypto-recorded-before")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 3 a)
+    file(REMOVE "${_root}/usr/local/lib/libcrypto${_ext}" "${_root}/usr/local/lib/libcrypto.a")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL=FALSE" "OPENSSL_SSL_LIBRARY=.*/usr/local/lib/libssl.*")
+    file(REMOVE "${_root}/usr/local/lib/libssl${_ext}" "${_root}/usr/local/lib/libssl.a")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-U" "_QB_HAD_OpenSSL"
+                      MUST "OPENSSL_SSL_LIBRARY \\([^)]*\\) no longer exists: searched again" NOT "is gone"
+                      HAS "OPENSSL=FALSE")
+    # ... and an include directory set by hand, never recorded, counts as there: the libraries the search found, lost,
+    # still stop such a directory.
+    set(_name "hand-include-recorded-before")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/openssl" OK "-DFIND_OPENSSL=ON" "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_INCLUDE_DIR=${_root}/usr/local/include" HAS "OPENSSL=TRUE")
+    plant_keg("${_root}/Cellar/libngtcp2/keg-1" 3)
+    plant_openssl("${_root}/qb-openssl" 3 b)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/ngtcp2" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DCMAKE_PREFIX_PATH=/Cellar/libngtcp2/keg-1"
+                      "-DNGTCP2_INCLUDE_DIR=${_root}/Cellar/libngtcp2/keg-1/include" HAS "NGTCP2=TRUE")
+    file(REMOVE "${_root}/usr/local/lib/libssl${_ext}" "${_root}/usr/local/lib/libssl.a"
+         "${_root}/usr/local/lib/libcrypto${_ext}" "${_root}/usr/local/lib/libcrypto.a"
+         "${_root}/Cellar/libngtcp2/keg-1/lib/libngtcp2${_ext}"
+         "${_root}/Cellar/libngtcp2/keg-1/lib/libngtcp2_crypto_ossl${_ext}")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/openssl" FAIL "-DFIND_OPENSSL=ON" "-U" "_QB_HAD_OpenSSL"
+                      MUST "the OpenSSL this build directory found is gone and was found nowhere else")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/ngtcp2" FAIL "-U" "_NGTCP2_HAD"
+                      MUST "the libngtcp2 this build directory found is gone and was found nowhere else -- NGTCP2_")
+    # An include directory set by hand without its header is kept as given, and said once though the module runs twice.
+    set(_name "ngtcp2-hand-include-twice")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_keg("${_root}/usr/local" 3)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    file(MAKE_DIRECTORY "${_root}/hand")
+    set(_said "NGTCP2_CRYPTO_INCLUDE_DIR \\([^)]*/hand\\) does not hold ngtcp2/ngtcp2_crypto\\.h")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DFIND_NGTCP2_TWICE=ON"
+                      "-DNGTCP2_CRYPTO_INCLUDE_DIR=${_root}/hand" MUST "${_said}" NOT "${_said}.*${_said}")
+    # libngtcp2's core library is an input of the configure as well: removed alone, the next build re-runs it.
+    set(_name "ngtcp2-core-removed")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/usr/local" 3)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" HAS "NGTCP2=TRUE")
+    build_fixture(${_name} "nothing changed" 1 "")
+    file(REMOVE "${_root}/usr/local/lib/libngtcp2${_ext}")
+    build_fixture(${_name} "libngtcp2's core library removed" FAILS ""
+                  OUT "NGTCP2_LIBRARY \\(${_root_regex}/usr/local/lib/libngtcp2[^)]*\\) no longer exists: searched again")
+    # ... and not when set by hand: a library a parent project or a user names is kept as given, and its rebuilds re-run
+    # nothing.
+    set(_name "ngtcp2-hand-library")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_keg("${_root}/usr/local" 3)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    file(WRITE "${_root}/hand/libngtcp2${_ext}" "")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DNGTCP2_LIBRARY=${_root}/hand/libngtcp2${_ext}" HAS "NGTCP2=TRUE")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    file(WRITE "${_root}/hand/libngtcp2${_ext}" "rebuilt")
+    build_fixture(${_name} "the library set by hand rebuilt" 1 "")
+    # A libngtcp2 QUIC was off for -- it links another OpenSSL major than qb's -- is no loss once removed: the build
+    # never linked it. FindNgtcp2 still reports it lost (its own record), as a consumer of an installed qb reads it.
+    set(_name "majors-then-gone")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_keg("${_root}/usr/local" 4)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      HAS "VERDICT=MAJORS" "QB_HAS_QUIC=FALSE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK NOT "is gone"
+                      HAS "NGTCP2=FALSE" "QB_HAS_QUIC=FALSE" "NGTCP2_VANISHED=NGTCP2_[^\n]+")
+    # A package removal that takes libngtcp2's header from an include directory that stays -- a shared prefix -- leaves
+    # its include entry naming a directory without it: searched again, and found nowhere else, the libngtcp2 this build
+    # directory had is gone, until it is found elsewhere. ngtcp2.h alone: each include entry's header is an input.
+    set(_name "ngtcp2-shared-include")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_keg("${_root}/usr/local" 3)
+    file(WRITE "${_root}/usr/local/include/other.h" "")
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      HAS "NGTCP2=TRUE" "NGTCP2_INCLUDE_DIR=${_root_regex}/usr/local/include")
+    file(REMOVE "${_root}/usr/local/include/ngtcp2/ngtcp2.h")
+    # The header is an input of the configure: the next build re-runs it, which searches the header's directory again.
+    build_fixture(${_name} "libngtcp2's headers removed from the shared prefix" FAILS ""
+                  OUT "NGTCP2_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\) no longer holds ngtcp2/ngtcp2\\.h: searched again"
+                      "found nowhere else -- NGTCP2_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\)")
+    plant_keg("${_root}/usr" 3)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      HAS "NGTCP2=TRUE" "NGTCP2_INCLUDE_DIR=${_root_regex}/usr/include")
     # An upgrade that leaves libngtcp2 without its crypto helper: the entries found again are not named as gone.
     set(_name "partial-upgrade")
     set(_root "${WORK_DIR}/${_name}/root")

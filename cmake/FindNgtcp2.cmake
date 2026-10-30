@@ -11,15 +11,17 @@
 #   Ngtcp2_OPENSSL_CRYPTO_MAJOR, Ngtcp2_OPENSSL_CRYPTO_LIBRARY
 #                           the same two for the libcrypto it links (Huly QB-1185)
 #   Ngtcp2_VANISHED         when libngtcp2 is not found: "<entry> (<path>)" per path an earlier search of this build
-#                           directory found that is gone -- a library it had, not one never installed
+#                           directory found that is gone -- once that build directory has found libngtcp2: a stray
+#                           header or library it never found libngtcp2 with is no loss (Huly QB-1192)
 #
 # Imported targets:
 #   Ngtcp2::ngtcp2
 #   Ngtcp2::crypto_ossl
 #
 # A path the search found, which existed then and is gone now -- a package manager removed the version this build
-# directory found, as a Homebrew cleanup removes the old keg -- is searched again (Huly QB-1185); a path set by hand or
-# by a parent project is kept. Both are said, QUIET or not: they change what the cache holds, or keep a stale path.
+# directory found, as a Homebrew cleanup removes the old keg -- is searched again (Huly QB-1185), an include directory
+# being gone when the header its search looked for is (a shared prefix, Huly QB-1192); a path set by hand or by a
+# parent project is kept. Both are said, QUIET or not: they change what the cache holds, or keep a stale path.
 #
 # With NGTCP2_FIND_FUNCTIONS_ONLY set, including this file defines its functions and finds nothing: the dependency-list
 # reader's test (qb-io-test-unit-ngtcp2-openssl-listing) reads it that way.
@@ -189,27 +191,69 @@ endif()
 # before this module recorded its searches -- is never recorded, so kept, as before.
 set(_ngtcp2_cache_entries NGTCP2_INCLUDE_DIR NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIBRARY NGTCP2_CRYPTO_INCLUDE_DIR
                           NGTCP2_CRYPTO_OSSL_INCLUDE_DIR)
+set(_ngtcp2_probe_NGTCP2_INCLUDE_DIR "/ngtcp2/ngtcp2.h") # an include directory holds what its search looked for
+set(_ngtcp2_probe_NGTCP2_CRYPTO_INCLUDE_DIR "/ngtcp2/ngtcp2_crypto.h")
+set(_ngtcp2_probe_NGTCP2_CRYPTO_OSSL_INCLUDE_DIR "/ngtcp2/ngtcp2_crypto_ossl.h")
+# The file an include entry is checked by: <dir><probe>, or, <dir> being the framework find_path() returns for a header
+# it holds (ngtcp2.framework, any case), <dir>/Headers/<file>.
+function(_ngtcp2_held_file path probe out_var)
+    set(_file "${path}${probe}")
+    get_filename_component(_last "${path}" NAME)
+    string(TOLOWER "${_last}" _last)
+    if(NOT "${probe}" STREQUAL "" AND _last STREQUAL "ngtcp2.framework")
+        string(REGEX REPLACE "^/ngtcp2/" "/Headers/" _file "${probe}")
+        set(_file "${path}${_file}")
+    endif()
+    set(${out_var} "${_file}" PARENT_SCOPE)
+endfunction()
+# This module recorded each entry its search found, not whether it found libngtcp2, before it recorded that too: a
+# build directory such a search configured had libngtcp2 when every entry finding it needs was there, each recorded or
+# set (by hand, by a parent project), one at least recorded -- read before this search records its own.
+set(_ngtcp2_recorded FALSE)
+set(_ngtcp2_complete TRUE)
+foreach(_ngtcp2_cached IN LISTS _ngtcp2_cache_entries)
+    if(DEFINED CACHE{_NGTCP2_FOUND_${_ngtcp2_cached}})
+        set(_ngtcp2_recorded TRUE)
+    elseif(NOT IS_ABSOLUTE "$CACHE{${_ngtcp2_cached}}")
+        set(_ngtcp2_complete FALSE)
+    endif()
+endforeach()
+if(NOT _ngtcp2_complete)
+    set(_ngtcp2_recorded FALSE)
+endif()
 set(Ngtcp2_VANISHED "")
 foreach(_ngtcp2_cached IN LISTS _ngtcp2_cache_entries)
     set(_ngtcp2_path "$CACHE{${_ngtcp2_cached}}")
     set(_ngtcp2_found "$CACHE{_NGTCP2_FOUND_${_ngtcp2_cached}}")
+    set(_ngtcp2_probe "${_ngtcp2_probe_${_ngtcp2_cached}}")
+    _ngtcp2_held_file("${_ngtcp2_found}" "${_ngtcp2_probe}" _ngtcp2_found_file)
+    _ngtcp2_held_file("${_ngtcp2_path}" "${_ngtcp2_probe}" _ngtcp2_path_file)
     if(("${_ngtcp2_path}" STREQUAL "" OR "${_ngtcp2_path}" MATCHES "(^|-)NOTFOUND$") AND IS_ABSOLUTE "${_ngtcp2_found}"
-       AND NOT EXISTS "${_ngtcp2_found}")
+       AND NOT EXISTS "${_ngtcp2_found_file}")
         # searched again by an earlier configure, which found nothing: still gone, until a search finds it
         list(APPEND Ngtcp2_VANISHED "${_ngtcp2_cached} (${_ngtcp2_found})")
         unset(__pkg_config_checked_PC_NGTCP2 CACHE)
         unset(__pkg_config_checked_PC_NGTCP2_CRYPTO_OSSL CACHE)
-    elseif(IS_ABSOLUTE "${_ngtcp2_path}" AND NOT EXISTS "${_ngtcp2_path}")
+    elseif(IS_ABSOLUTE "${_ngtcp2_path}" AND NOT EXISTS "${_ngtcp2_path_file}")
+        set(_ngtcp2_lost "no longer exists")
+        set(_ngtcp2_kept "does not exist")
+        if(NOT "${_ngtcp2_probe}" STREQUAL "" AND EXISTS "${_ngtcp2_path}")
+            string(SUBSTRING "${_ngtcp2_probe}" 1 -1 _ngtcp2_lost)
+            set(_ngtcp2_kept "does not hold ${_ngtcp2_lost}")
+            set(_ngtcp2_lost "no longer holds ${_ngtcp2_lost}")
+        endif()
         if("${_ngtcp2_path}" STREQUAL "${_ngtcp2_found}")
-            message(STATUS "${_ngtcp2_cached} (${_ngtcp2_path}) no longer exists: searched again")
+            message(STATUS "${_ngtcp2_cached} (${_ngtcp2_path}) ${_ngtcp2_lost}: searched again")
             list(APPEND Ngtcp2_VANISHED "${_ngtcp2_cached} (${_ngtcp2_path})")
             unset(${_ngtcp2_cached} CACHE)
             unset(__pkg_config_checked_PC_NGTCP2 CACHE)
             unset(__pkg_config_checked_PC_NGTCP2_CRYPTO_OSSL CACHE)
-        else()
-            message(STATUS "${_ngtcp2_cached} (${_ngtcp2_path}) does not exist; this build directory's search did not "
+        elseif(NOT "${_ngtcp2_kept_said_${_ngtcp2_cached}}" STREQUAL "${_ngtcp2_path}") # once: an installed qb's
+            # qbConfig.cmake runs this module twice
+            message(STATUS "${_ngtcp2_cached} (${_ngtcp2_path}) ${_ngtcp2_kept}; this build directory's search did not "
                            "find it (set by hand, by a parent project, or before this module recorded its searches): "
                            "kept as given")
+            set(_ngtcp2_kept_said_${_ngtcp2_cached} "${_ngtcp2_path}")
         endif()
     endif()
     set(_ngtcp2_before_${_ngtcp2_cached} "$CACHE{${_ngtcp2_cached}}")
@@ -284,12 +328,20 @@ find_package_handle_standard_args(Ngtcp2
     VERSION_VAR Ngtcp2_VERSION
 )
 
-# What was searched again and found -- an upgrade, not a removal -- is no longer reported, even beside another miss.
+# What was searched again and found -- an upgrade, not a removal -- is no longer reported, even beside another miss;
+# nothing is, before this build directory has found libngtcp2.
+if(Ngtcp2_FOUND)
+    set(_NGTCP2_HAD TRUE CACHE INTERNAL "")
+elseif(NOT DEFINED CACHE{_NGTCP2_HAD})
+    set(_NGTCP2_HAD ${_ngtcp2_recorded} CACHE INTERNAL "")
+endif()
 set(_ngtcp2_vanished "${Ngtcp2_VANISHED}")
 set(Ngtcp2_VANISHED "")
 foreach(_ngtcp2_entry IN LISTS _ngtcp2_vanished)
     string(REGEX MATCH "^[A-Z0-9_]+" _ngtcp2_name "${_ngtcp2_entry}")
-    if(NOT Ngtcp2_FOUND AND NOT (IS_ABSOLUTE "$CACHE{${_ngtcp2_name}}" AND EXISTS "$CACHE{${_ngtcp2_name}}"))
+    _ngtcp2_held_file("$CACHE{${_ngtcp2_name}}" "${_ngtcp2_probe_${_ngtcp2_name}}" _ngtcp2_path_file)
+    if(NOT Ngtcp2_FOUND AND "$CACHE{_NGTCP2_HAD}" AND NOT (IS_ABSOLUTE "$CACHE{${_ngtcp2_name}}"
+       AND EXISTS "${_ngtcp2_path_file}"))
         list(APPEND Ngtcp2_VANISHED "${_ngtcp2_entry}")
     endif()
 endforeach()
@@ -331,13 +383,22 @@ mark_as_advanced(
 # What the search itself found, while it exists: the next search re-runs it only for those.
 foreach(_ngtcp2_cached IN LISTS _ngtcp2_cache_entries)
     set(_ngtcp2_path "$CACHE{${_ngtcp2_cached}}")
+    _ngtcp2_held_file("${_ngtcp2_path}" "${_ngtcp2_probe_${_ngtcp2_cached}}" _ngtcp2_path_file)
     if(NOT "${_ngtcp2_path}" STREQUAL "${_ngtcp2_before_${_ngtcp2_cached}}" AND IS_ABSOLUTE "${_ngtcp2_path}"
-       AND EXISTS "${_ngtcp2_path}")
+       AND EXISTS "${_ngtcp2_path_file}")
         set(_NGTCP2_FOUND_${_ngtcp2_cached} "${_ngtcp2_path}" CACHE INTERNAL "")
     endif()
     unset(_ngtcp2_before_${_ngtcp2_cached})
+    unset(_ngtcp2_probe_${_ngtcp2_cached})
 endforeach()
 unset(_ngtcp2_cache_entries)
 unset(_ngtcp2_cached)
 unset(_ngtcp2_path)
 unset(_ngtcp2_found)
+unset(_ngtcp2_probe)
+unset(_ngtcp2_lost)
+unset(_ngtcp2_kept)
+unset(_ngtcp2_recorded)
+unset(_ngtcp2_complete)
+unset(_ngtcp2_found_file)
+unset(_ngtcp2_path_file)

@@ -116,12 +116,21 @@ Linux and macOS the configure then stops, naming the three majors (Huly QB-1190)
 (`cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<one OpenSSL>
 <build directory>`) or configure with `--fresh`. A later `brew upgrade` that moves libngtcp2 or qb's OpenSSL re-runs
 the configure at the next `cmake --build`, and a path its search found that the upgrade's cleanup removed is searched
-again; a library found nowhere else then stops the configure, naming it, until one is found, its feature is turned off
-(`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for OpenSSL) or the build directory starts afresh.
+again -- Argon2's, zlib's, zstd's and brotli's too (Huly QB-1192: Homebrew caches versioned Cellar paths, and the build
+used to stop for good on "missing and no known rule to make it"); a library found nowhere else then stops the
+configure, naming it, until one is found, its feature is turned off (`QB_WITH_QUIC=OFF` for libngtcp2,
+`QB_WITH_SSL=OFF` for OpenSSL, `QB_WITH_ZSTD=OFF`, `QB_WITH_BROTLI=OFF`, `QB_WITH_COMPRESSION=OFF` with those two, and
+`QB_WITH_SSL=OFF` where the OpenSSL found links zlib; Argon2 has no switch: `-DCMAKE_DISABLE_FIND_PACKAGE_Argon2=ON`)
+or the build directory starts afresh. With compression on, a zlib lost is built from source instead where
+`QB_DEPS_FETCH_FALLBACK` is on and `QB_INSTALL` off, or taken from a parent project's `ZLIB::ZLIB`. Only paths a
+search recorded are searched again: a build directory configured before QB-1185 (OpenSSL, libngtcp2) or QB-1192 (the
+others) keeps its paths until one `--fresh`.
 
-If OpenSSL is not found, `QB_WITH_SSL` is forced off and the SSL/QUIC features are disabled rather than
-failing the build -- unless this build directory had found it: an OpenSSL (off Windows) or a libngtcp2 it found that
-has since gone stops the configure instead, naming it.
+If OpenSSL is not found, `QB_WITH_SSL` is forced off and the SSL/QUIC features are disabled rather than failing the
+build -- unless this build directory had found it: an OpenSSL (off Windows), a libngtcp2 its QUIC linked (or that a
+build directory QB-1185's code configured had), an Argon2 or a zlib it found that has since gone stops the configure
+instead, naming it, unless its search is turned off (`CMAKE_DISABLE_FIND_PACKAGE_<Package>`) or, for zlib, qb builds one
+or a parent provides it.
 
 ## Integrate into your project
 
