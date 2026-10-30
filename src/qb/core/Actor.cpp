@@ -114,7 +114,10 @@ public:
                 queue.tail = none;
         }
         entry &e = _tab[i];
-        if (slot) {
+        if (slot) [[likely]] {
+            // The FIFO resolved above goes into the slot, for the release (Huly QB-1171): a page never moves,
+            // so the address stays valid for the thread, whichever core it serves when the ask ends.
+            slot->queue = &queue;
             e.data.slot = slot;
             e.next      = busy;
         } else {
@@ -157,7 +160,10 @@ public:
         entry *const e = live(id);
         if (!e)
             return;
-        const ActorId owner = entry_owner(*e);
+        // A bound entry goes back into the FIFO `take` recorded in its slot, read beside the owner (Huly QB-1171):
+        // no core compare and no directory walk on the path every ask ends on (20 instructions an ask under g++ 14).
+        ask_slot const *const slot  = e->next == busy ? e->data.slot : nullptr;
+        const ActorId         owner = slot ? slot->owner : ActorId::from_raw(e->data.owner);
         if ((id >> 48) != owner.index())
             return;
         // Capture before ending the pointer member's lifetime; the awaiter may be
@@ -169,11 +175,11 @@ public:
         }
         ++e->gen;
         const auto i = static_cast<std::uint32_t>(id & slot_mask);
-        if (_current_core != owner.index()) [[unlikely]] {
-            release_other_core(owner, i);
+        if (!slot) [[unlikely]] {
+            release_unbound(owner, i);
             return;
         }
-        push_free(owner_queue(owner), i);
+        push_free(*static_cast<free_queue *>(slot->queue), i);
     }
 
 private:
@@ -195,6 +201,8 @@ private:
     };
     static_assert(std::is_trivially_copyable_v<entry>);
     static_assert(sizeof(entry) == sizeof(entry::payload) + 2 * sizeof(std::uint32_t));
+    // The owner's FIFO is recorded in the slot, not here (Huly QB-1171): the table the id indexes keeps its width.
+    static_assert(sizeof(entry) == 16);
 
     struct free_queue {
         std::uint32_t head = none;
@@ -230,9 +238,10 @@ private:
     /// the slot's page (the ordinary directory grown when the slot is past its end, the page created on first
     /// use) and the FIFO inside it. The three cold branches call out of line and run once per core or page.
     // `QB_MSVC_FORCEINLINE`: MSVC left the lookup of the first cut out of line in `take` (a call on every ask,
-    // read on the listing) while inlining it in `release`; forced, both callers carry it inline. `inline`
-    // elsewhere -- and ONE function, not a null-returning lookup plus an out-of-line admission: the split shape
-    // cost +12-14 % per ask at one core on Apple clang / arm64 (Huly QB-1154, the A/B in the ticket).
+    // read on the listing); forced, `take` carries it inline -- `release` no longer resolves it, the slot recorded
+    // the FIFO (Huly QB-1171). `inline` elsewhere -- and ONE function, not a null-returning lookup plus an
+    // out-of-line admission: the split shape cost +12-14 % per ask at one core on Apple clang / arm64 (Huly QB-1154,
+    // the A/B in the ticket).
     [[nodiscard]] QB_MSVC_FORCEINLINE free_queue &
     owner_queue(ActorId const owner) {
         if (_current_core != owner.index()) [[unlikely]]
@@ -299,10 +308,10 @@ private:
         return _assigned++;
     }
 
-    /// A release on another thread's core (a codec test, successive engines): the entry's core has a directory
-    /// and its slot a page, both created when the entry was admitted.
+    /// The release of an unbound entry (no slot recorded its FIFO: the codec tests), on whichever core this thread
+    /// serves now: the owner's core has a directory and its slot a page, both created when the entry was taken.
     QB_NOINLINE void
-    release_other_core(ActorId const owner, std::uint32_t const i) noexcept {
+    release_unbound(ActorId const owner, std::uint32_t const i) noexcept {
         owner_directory *dir = nullptr;
         for (std::uint32_t k = 0; k < _ncores; ++k) {
             if (_cores[k].core == owner.index()) {

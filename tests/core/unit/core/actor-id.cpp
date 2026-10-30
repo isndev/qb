@@ -676,6 +676,151 @@ TEST(ActorId, AskOwnerFreeQueuePreservesItsRemainingEntries) {
     qb::detail::ask_unregister(third);
 }
 
+// A bound entry goes back into the FIFO `ask_take` recorded in its slot (Huly QB-1171), not into one the release
+// resolves: released while the thread serves ANOTHER core (a codec test, successive engines on one thread), it
+// reaches its owner's FIFO -- the owner's next ask reuses it, the same slot on the core served now never does.
+TEST(ActorId, AskBoundEntryReturnsToItsOwnersQueueFromAnotherCore) {
+    constexpr std::uint64_t mask = (std::uint64_t{1} << 22) - 1;
+    const NormalId          owner(259, 217), same_slot_other_core(259, 218);
+    probe_slot              mine{owner}, theirs{same_slot_other_core};
+    qb::Event               response{};
+    const auto              id    = qb::detail::ask_take(owner, &mine.slot);
+    const auto              other = qb::detail::ask_take(same_slot_other_core, &theirs.slot); // the thread serves 218
+    qb::detail::ask_unregister(id);
+
+    const auto next_other = qb::detail::ask_take(same_slot_other_core, &theirs.slot);
+    EXPECT_NE(next_other & mask, id & mask);
+    const auto reused = qb::detail::ask_take(owner, &mine.slot);
+    EXPECT_EQ(reused & mask, id & mask);
+    EXPECT_EQ(reused >> 22, (id >> 22) + 1); // the same core, the next generation
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_EQ(mine.delivered, 0);
+    EXPECT_TRUE(qb::detail::ask_deliver(reused, owner, response));
+    EXPECT_EQ(mine.delivered, 1);
+    EXPECT_EQ(theirs.delivered, 0);
+    for (auto t : {other, next_other, reused})
+        qb::detail::ask_unregister(t);
+}
+
+// The same contract for an UNBOUND entry (no slot recorded its FIFO): its release walks the directories this thread
+// keeps and finds its owner's core, not the core served now.
+TEST(ActorId, AskUnboundEntryReturnsToItsOwnersQueueFromAnotherCore) {
+    constexpr std::uint64_t mask = (std::uint64_t{1} << 22) - 1;
+    const NormalId          owner(259, 222), same_slot_other_core(259, 223);
+    const auto              id    = qb::detail::ask_take(owner, nullptr);
+    const auto              other = qb::detail::ask_take(same_slot_other_core, nullptr); // the thread serves 223
+    qb::detail::ask_unregister(id);
+
+    const auto next_other = qb::detail::ask_take(same_slot_other_core, nullptr);
+    EXPECT_NE(next_other & mask, id & mask);
+    const auto reused = qb::detail::ask_take(owner, nullptr);
+    EXPECT_EQ(reused & mask, id & mask);
+    EXPECT_EQ(reused >> 22, (id >> 22) + 1);
+    for (auto t : {other, next_other, reused})
+        qb::detail::ask_unregister(t);
+}
+
+// A service instance's FIFO lives in its core's tag directory, not the ordinary one: a bound entry of a service goes
+// back to its tag's FIFO, released from another core too -- never to the ordinary slot the tag's number would name.
+TEST(ActorId, AskBoundServiceEntryReturnsToItsTagsQueue) {
+    constexpr std::uint64_t mask    = (std::uint64_t{1} << 22) - 1;
+    const ActorId           service = ActorId::service_instance(9, 224, 1);
+    const NormalId          same_number(9, 224), elsewhere(9, 225);
+    ASSERT_TRUE(service.is_service_instance());
+    probe_slot mine{service}, ordinary{same_number}, away{elsewhere};
+    qb::Event  response{};
+    const auto id    = qb::detail::ask_take(service, &mine.slot);
+    const auto other = qb::detail::ask_take(elsewhere, &away.slot); // the thread serves 225
+    qb::detail::ask_unregister(id);
+
+    const auto next_ordinary = qb::detail::ask_take(same_number, &ordinary.slot);
+    EXPECT_NE(next_ordinary & mask, id & mask);
+    const auto reused = qb::detail::ask_take(service, &mine.slot);
+    EXPECT_EQ(reused & mask, id & mask);
+    EXPECT_EQ(reused >> 22, (id >> 22) + 1);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, service, response));
+    EXPECT_TRUE(qb::detail::ask_deliver(reused, service, response));
+    EXPECT_EQ(mine.delivered, 1);
+    EXPECT_EQ(ordinary.delivered, 0);
+    for (auto t : {other, next_ordinary, reused})
+        qb::detail::ask_unregister(t);
+}
+
+// The FIFO address `ask_take` records in a slot (Huly QB-1171) stays valid while the registry grows under the live
+// entry: the owner core's page directory reallocated by a far slot (4 page pointers -> 8192), the entry table grown
+// by 4096 entries, another core added to the thread. A page never moves once created; the release pushes into it
+// with no lookup, so this is what it relies on (a moved page reads as a use after free under ASan, and as a lost
+// entry here).
+TEST(ActorId, AskRecordedQueueOutlivesTheRegistryGrowing) {
+    constexpr std::uint64_t    mask = (std::uint64_t{1} << 22) - 1;
+    const NormalId             owner(260, 219), far_slot(0x100000, 219), neighbour(261, 219), elsewhere(260, 220);
+    probe_slot                 mine{owner}, far{far_slot}, next_door{neighbour}, away{elsewhere};
+    qb::Event                  response{};
+    const auto                 id = qb::detail::ask_take(owner, &mine.slot);
+    std::vector<std::uint64_t> live;
+    live.push_back(qb::detail::ask_take(far_slot, &far.slot)); // core 219's directory: 4 pages -> 8192
+    for (int k = 0; k < 4096; ++k)                             // the entry table grows (doubles at least once)
+        live.push_back(qb::detail::ask_take(neighbour, &next_door.slot));
+    live.push_back(qb::detail::ask_take(elsewhere, &away.slot)); // a core this thread had not served
+    qb::detail::ask_unregister(id);
+
+    const auto reused = qb::detail::ask_take(owner, &mine.slot);
+    EXPECT_EQ(reused & mask, id & mask);
+    EXPECT_EQ(reused >> 22, (id >> 22) + 1);
+    EXPECT_TRUE(qb::detail::ask_deliver(reused, owner, response));
+    EXPECT_EQ(mine.delivered, 1);
+    for (auto t : live)
+        qb::detail::ask_unregister(t);
+    qb::detail::ask_unregister(reused);
+}
+
+// An entry's generation never wraps -- past its 26 bits it would spill into the id's core field: the release of the
+// LAST generation retires the entry for good, and that final id stays recognisable as an obsolete reply of its owner.
+// Driven through a bound slot, the path whose release Huly QB-1171 moved: 2^26 - 1 asks on one entry -- under a
+// second in an optimized build, 80 s at -O0 under ASan (measured on an M4 Pro), past the unit tier's 60 s for the
+// whole binary: the Release suites drive it, a Debug build says it does not.
+#ifdef NDEBUG
+TEST(ActorId, AskEntryRetiresAtItsLastGeneration) {
+    constexpr std::uint64_t mask    = (std::uint64_t{1} << 22) - 1;
+    constexpr std::uint64_t gen_max = (std::uint64_t{1} << 26) - 1;
+    const NormalId          owner(262, 221);
+    probe_slot              probe{owner};
+    qb::Event               response{};
+    auto                    id    = qb::detail::ask_take(owner, &probe.slot);
+    const auto              entry = id & mask;
+    const std::uint64_t     first = (id >> 22) & gen_max; // 1 on a first run; a repeat run reuses the entry it left
+    // Each generation released, then reissued by the owner's FIFO; bounded, so a release that does not advance the
+    // generation fails here instead of looping until the suite's timeout.
+    std::uint64_t releases = 0;
+    while (releases < gen_max && ((id >> 22) & gen_max) != gen_max && (id & mask) == entry) {
+        qb::detail::ask_unregister(id);
+        id = qb::detail::ask_take(owner, &probe.slot);
+        ++releases;
+    }
+    ASSERT_EQ(id & mask, entry) << "the owner's FIFO handed out another entry before the last generation";
+    ASSERT_EQ((id >> 22) & gen_max, gen_max) << "the last generation was never issued";
+    ASSERT_EQ(releases, gen_max - first) << "a release did not advance the generation by exactly one";
+    ASSERT_EQ(id >> 48, 221u);
+    qb::detail::ask_unregister(id); // the last generation: retired, never reissued
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_EQ(probe.delivered, 0);
+
+    const auto next = qb::detail::ask_take(owner, &probe.slot);
+    EXPECT_NE(next & mask, entry);
+    EXPECT_EQ((next >> 22) & gen_max, 1u); // a fresh entry, not a wrapped one
+    EXPECT_EQ(next >> 48, 221u);
+    EXPECT_TRUE(qb::detail::ask_deliver(id, owner, response));
+    EXPECT_TRUE(qb::detail::ask_deliver(next, owner, response));
+    EXPECT_EQ(probe.delivered, 1);
+    qb::detail::ask_unregister(next);
+}
+#else
+TEST(ActorId, AskEntryRetirementIsDrivenInOptimizedBuildsOnly) {
+    GTEST_SKIP() << "AskEntryRetiresAtItsLastGeneration runs 2^26 - 1 asks on one entry: an optimized (NDEBUG) build "
+                    "drives it in under a second; this -O0 build would spend the unit tier's whole budget on it.";
+}
+#endif
+
 // --- CoreIdBitSet ------------------------------------------------------------
 
 TEST(CoreIdBitSet, DefaultEmpty) {
