@@ -156,7 +156,8 @@ policy.
   cell reads 265 / 329 / 272 ns -- the previous release, the train, the train with this reader (ratios 1.238 and
   1.026 [1.022, 1.033]); the fragmented parse of the same request is level with the previous release again (314 ->
   313 ns) and the byte-at-a-time parses keep the train's gain (0.86 and 0.70). A copy or a move carries either reading,
-  as for every uri (QB-351). The reference parse is unchanged; the
+  as for every uri (QB-351). The six readings are `noexcept`, as every parse of a uri is: a failure to allocate -- the copy
+  of the text, the query map -- terminates. The reference parse is unchanged; the
   private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string literal
   still names the public factory.
 

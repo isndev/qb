@@ -414,6 +414,8 @@ public:
      *         them: no request target holds a fragment, and a server refuses one itself.
      * @note A server builds the URI of an origin-form request with this function and takes the authority from the
      *       `Host` field (RFC 9112 §3.3), and that of an absolute-form one with absolute_form().
+     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
+     *       rule for a noexcept function that allocates).
      */
     [[nodiscard]] static uri origin_form(std::string target) noexcept;
 
@@ -428,6 +430,8 @@ public:
      *         hold. The authority is read as a reference's -- a userinfo, an empty host are accepted -- and the query
      *         and a fragment too: a server checks what HTTP requires of them itself.
      * @note A URI a client builds is a reference, `uri(text)`, which refuses `[`, `]` and `|` in a path.
+     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
+     *       rule for a noexcept function that allocates).
      */
     [[nodiscard]] static uri absolute_form(std::string target) noexcept;
 
@@ -440,6 +444,8 @@ public:
      *         query or a fragment. The host's characters and the port's digits are judged as in a reference's
      *         authority -- an IP literal is not checked to be an IPv6 address, a port is any number of digits --
      *         which a server checks itself. A URI reference reads `example.com:443` as the scheme `example.com`.
+     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
+     *       rule for a noexcept function that allocates).
      */
     [[nodiscard]] static uri authority_form(std::string target) noexcept;
 
@@ -452,6 +458,8 @@ public:
      * @note The reader of a server that parses request after request into one message: a uri built apart and moved
      *       into the request costs two moves of its strings and its query map, this costs one assignment of the text
      *       (Huly QB-1177: the moves were 830 instructions a request on g++ 14, 54 ns of a 263 ns parse).
+     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
+     *       terminates the process (qb's rule for a noexcept function that allocates).
      */
     bool read_origin_form(std::string_view target) noexcept;
 
@@ -462,6 +470,8 @@ public:
      * @param target The target as it was received, e.g. `http://example.com/a|b?x=1`.
      * @return is_valid(): false when @p target does not begin with a scheme and `://`, or its path holds a byte a
      *         request path may not hold, as for absolute_form().
+     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
+     *       terminates the process (qb's rule for a noexcept function that allocates).
      */
     bool read_absolute_form(std::string_view target) noexcept;
 
@@ -470,6 +480,8 @@ public:
      *        reads it into a new one: the text replaces source(), the components are parsed in place.
      * @param target The target as it was received, e.g. `example.com:443`.
      * @return is_valid(): false when the text is not a host and a port, as for authority_form().
+     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
+     *       terminates the process (qb's rule for a noexcept function that allocates).
      */
     bool read_authority_form(std::string_view target) noexcept;
 
