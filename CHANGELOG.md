@@ -348,7 +348,12 @@ policy.
   most 1.9 %). The loop compares with `>=` instead: an equal reading goes the way a later one goes, the branch is taken
   on every pass unless the clock steps back, on every architecture, and the clock still never steps back; on x86 the
   two shapes read what they read before the change (21.3 -> 21.3 ns and 9.0 -> 9.0, ratios 1.000 with CIs [0.988, 1.007]
-  and [0.973, 1.023], every other shape level; the same host, 4 sides, 96 launches); the M4 is to read it.
+  and [0.973, 1.023], every other shape level; the same host, 4 sides, 96 launches). On the M4 (Apple clang 21, 10
+  rounds, A/A at most 3.0 %) `>=` holds once the comparison carries no `ecb_expect`: with the hint, Apple clang's
+  cold-code splitting moved the whole path into an outlined call, `timer+set0` 9.90 -> 11.00 ns (+11 %, CI [1.095,
+  1.131]) against the branchless form; without it `timer+set` reads 25.00 -> 24.55 ns (-1.8 %) and `timer+set0` 9.90
+  -> 9.95 (level), `qb-io-bench-timer-dispatch` level in every case, `>` at the same clock 26.80 (+7.2 %, the coin
+  toss, in the same session). MSVC compiles the same code either way (`ecb_expect` is empty there).
   `qb-io-bench-timer-dispatch` over 8 rounds (A/A at most 0.64 %): 1024 timers armed, then drained, 63.9 -> 55.9 µs; a
   `with_timeout` re-armed 23.6 -> 19.2 ns; a 1 ns `callback` from its arm to its fire 1007 -> 80 ns, the old clock's 1
   µs step a timer had to wait out. `ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime`

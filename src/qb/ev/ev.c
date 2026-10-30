@@ -5181,11 +5181,11 @@ ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
         /* the later of the two, ">=": a reading equal to the loop's time -- a clock whose tick is about
          * one pass long, 41.7 ns on Apple silicon against a ~24 ns pass, hands the same value several
          * passes in a row -- goes the way a later one goes, so the branch is taken on every pass unless
-         * the clock steps back, predicted on every architecture, and what follows starts from the
-         * argument. With ">" it was a coin toss on Apple, 1.5 ns a pass; the branchless max that replaced
-         * it put a load and a 4-cycle maxsd on the chain on x86, where the branch was never missed,
-         * +1.1 ns a pass (Huly QB-1181) */
-        if (ecb_expect_true(mono >= mn_now))
+         * the clock steps back, predicted everywhere, and what follows starts from the argument. ">" was
+         * a coin toss on Apple, 1.5 ns a pass; a branchless max put a 4-cycle maxsd on x86's chain, 1.1 ns.
+         * No ecb_expect: Apple clang's cold-code splitting reads the hint and outlines this whole path into
+         * a call, +1.05 ns a pass on the M4; a branch that always goes one way needs none (Huly QB-1181) */
+        if (mono >= mn_now)
             mn_now = mono;
 
         if (ecb_expect_true(mn_now - now_floor < EV_TS_CONST(MIN_TIMEJUMP * .5)))
