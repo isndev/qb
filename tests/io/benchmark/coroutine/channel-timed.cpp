@@ -110,11 +110,16 @@ plain_producer(channel<std::uint64_t> *ch, std::size_t count) {
     co_return;
 }
 
+// Each cell checks the result of EVERY iteration, not of the last one alone: a drain that ran out its 5 s left a
+// short sum that was measured and never flagged. The check runs where the timer is paused already, so the timed
+// region gains no work.
 void
 BM_Channel_TimedOpsWonEarly(benchmark::State &state) {
-    const auto count = static_cast<std::size_t>(state.range(0));
+    const auto          count    = static_cast<std::size_t>(state.range(0));
+    const std::uint64_t expected = (count == 0) ? 0u : (count - 1u) * count / 2u;
 
-    std::uint64_t last = 0;
+    std::uint64_t last  = 0;
+    std::int64_t  wrong = 0;
     for (auto _ : state) {
         state.PauseTiming();
         reset_async_context();
@@ -131,13 +136,13 @@ BM_Channel_TimedOpsWonEarly(benchmark::State &state) {
         benchmark::DoNotOptimize(last);
 
         state.PauseTiming();
+        wrong += last != expected;
         reset_async_context();
         state.ResumeTiming();
     }
 
-    const std::uint64_t expected = (count == 0) ? 0u : (count - 1u) * count / 2u;
-    if (last != expected)
-        state.SkipWithError("channel timed ops produced an unexpected sum");
+    if (wrong != 0)
+        state.SkipWithError("channel timed ops produced an unexpected sum on at least one iteration");
 
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
 }
@@ -154,9 +159,11 @@ fan_in_worker(channel<std::uint64_t> *shared, channel<std::uint64_t> *own, std::
 
 void
 BM_Channel_SelectFanIn(benchmark::State &state) {
-    const auto k = static_cast<std::size_t>(state.range(0));
+    const auto          k        = static_cast<std::size_t>(state.range(0));
+    const std::uint64_t expected = k * (k + 1u) / 2u; // a worker not parked when the sends come loses its value
 
-    std::uint64_t last = 0;
+    std::uint64_t last  = 0;
+    std::int64_t  wrong = 0;
     for (auto _ : state) {
         state.PauseTiming();
         reset_async_context();
@@ -181,13 +188,13 @@ BM_Channel_SelectFanIn(benchmark::State &state) {
         benchmark::DoNotOptimize(last);
 
         state.PauseTiming();
+        wrong += last != expected;
         reset_async_context();
         state.ResumeTiming();
     }
 
-    const std::uint64_t expected = k * (k + 1u) / 2u;
-    if (last != expected)
-        state.SkipWithError("channel select fan-in produced an unexpected sum");
+    if (wrong != 0)
+        state.SkipWithError("channel select fan-in produced an unexpected sum on at least one iteration");
 
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(k));
 }
@@ -229,10 +236,12 @@ timed_senders_taken_by_recv(channel<std::uint64_t> *ch, std::size_t count, std::
 
 void
 BM_Channel_SendForAfterRecvForHistory(benchmark::State &state) {
-    const auto            history = static_cast<std::size_t>(state.range(0));
-    constexpr std::size_t count   = 64;
+    const auto            history  = static_cast<std::size_t>(state.range(0));
+    constexpr std::size_t count    = 64;
+    const std::uint64_t   expected = (count - 1u) * count / 2u;
 
-    std::uint64_t last = 0;
+    std::uint64_t last  = 0;
+    std::int64_t  wrong = 0;
     for (auto _ : state) {
         state.PauseTiming();
         reset_async_context();
@@ -242,6 +251,7 @@ BM_Channel_SendForAfterRecvForHistory(benchmark::State &state) {
         std::atomic<bool>          done{false};
         coro_scheduler().spawn(recv_for_history(&ch, history, &history_done));
         drain_until([&history_done] { return history_done.load(std::memory_order_relaxed); });
+        wrong += !history_done.load(std::memory_order_relaxed); // a history still running would be timed too
         state.ResumeTiming();
 
         coro_scheduler().spawn(timed_senders_taken_by_recv(&ch, count, &sink, &done));
@@ -251,13 +261,14 @@ BM_Channel_SendForAfterRecvForHistory(benchmark::State &state) {
         benchmark::DoNotOptimize(last);
 
         state.PauseTiming();
+        wrong += last != expected;
         reset_async_context();
         state.ResumeTiming();
     }
 
-    const std::uint64_t expected = (count - 1u) * count / 2u;
-    if (last != expected)
-        state.SkipWithError("channel send_for after history produced an unexpected sum");
+    if (wrong != 0)
+        state.SkipWithError("channel send_for after history produced an unexpected sum, or its history never ended, on at "
+                            "least one iteration");
 
     state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
 }
