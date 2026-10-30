@@ -373,7 +373,7 @@ framework offers, cited to its source ([docs/FEATURES.md](https://github.com/isn
 the right of reply, under which a correct, idiomatic, faster implementation replaces ours and the
 tables are regenerated even when that makes qb lose ([docs/CHALLENGE.md](https://github.com/isndev/qb-vs-others/blob/main/docs/CHALLENGE.md));
 and each host's session, controls and censuses under `results/<host>/`. qb's own micro-benchmarks,
-45 Google Benchmark binaries under `QB_BUILD_BENCHMARKS` (62 with the three modules'), are described in
+49 Google Benchmark binaries under `QB_BUILD_BENCHMARKS` (73 with the three modules'), are described in
 [benchmarks.md](./readme/7_reference/benchmarks.md).
 
 ## Install
