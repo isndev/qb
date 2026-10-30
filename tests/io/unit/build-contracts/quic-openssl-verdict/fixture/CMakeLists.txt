@@ -33,7 +33,12 @@ set(CMAKE_FIND_ROOT_PATH "${PLANT_ROOT}")
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-if(NOT USE_PKG_CONFIG) # else PKG_CONFIG_LIBDIR names the planted .pc files only
+if(USE_PKG_CONFIG)
+    # PKG_CONFIG_LIBDIR names the planted .pc files only, and FindPkgConfig adds nothing ahead of it: by default it
+    # searches the lib/pkgconfig of every CMAKE_PREFIX_PATH entry first, the environment's too, and the GitHub macOS
+    # runner exports one naming Homebrew's OpenSSL and libngtcp2 -- answers the confined searches find nowhere.
+    set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH OFF)
+else()
     set(CMAKE_DISABLE_FIND_PACKAGE_PkgConfig TRUE)
 endif()
 list(PREPEND CMAKE_MODULE_PATH "${QB_CMAKE_MODULE_DIR}")

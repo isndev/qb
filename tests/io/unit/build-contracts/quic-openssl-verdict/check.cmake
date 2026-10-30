@@ -588,7 +588,16 @@ if(_generators)
             plant_pc(libngtcp2_crypto_ossl /kegs/ngtcp2-${suffix} "-lngtcp2_crypto_ossl")
         endfunction()
         plant_kegs(a)
-        set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR=")
+        # A prefix the environment names, as the GitHub macOS runner's CMAKE_PREFIX_PATH names Homebrew's OpenSSL and
+        # libngtcp2: its pkg-config files name kegs outside the root, so a search that heeded them would find nothing.
+        set(_decoy "${WORK_DIR}/${_name}/decoy")
+        foreach(_pc IN ITEMS openssl libngtcp2 libngtcp2_crypto_ossl)
+            file(WRITE "${_decoy}/lib/pkgconfig/${_pc}.pc"
+                 "prefix=/decoy\nlibdir=\${prefix}/lib\nincludedir=\${prefix}/include\nName: ${_pc}\n"
+                 "Description: decoy\nVersion: 3.0.0\nLibs: -L\${libdir}\nCflags: -I\${includedir}\n")
+        endforeach()
+        set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR="
+                 "CMAKE_PREFIX_PATH=${_decoy}")
         configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" "-DUSE_PKG_CONFIG=ON"
                           "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
                           HAS "OPENSSL=TRUE" "NGTCP2=TRUE"
