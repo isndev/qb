@@ -35,8 +35,9 @@ worth freezing, and freezing it whole costs no more than freezing six files.
 
 WHAT IT FORBIDS  (at NAMESPACE scope, in a scanned header)
 ----------------------------------------------------------
-  FUNC-DEF   a function definition that is not a template, not `inline`, not `constexpr`/
-             `consteval`, not `static`, and not in an anonymous namespace.
+  FUNC-DEF   a function definition that is not a template, not `inline` (nor `QB_MSVC_FORCEINLINE`,
+             which is `inline` or MSVC's `__forceinline`), not `constexpr`/`consteval`, not `static`,
+             and not in an anonymous namespace.
              Includes an explicit *specialization* -- `template <> void f<int>() {}` is NOT
              implicitly inline and duplicates exactly like a plain function.
   VAR-DEF    a variable definition with external linkage: not `inline`, not `const`/
@@ -152,7 +153,11 @@ ANON_NS = re.compile(r"\bnamespace\s*$")
 TEMPLATE_ANGLE = re.compile(r"^template\s*<")
 EMPTY_TEMPLATE = re.compile(r"^template\s*<\s*>")
 EXPL_INST = re.compile(r"^template\s+(?!<)")
-SAFE_FUNC = re.compile(r"\b(inline|constexpr|consteval|static|friend)\b")
+# `QB_MSVC_FORCEINLINE` (qb/utility/branch_hints.h) is an inline specifier on every compiler: `inline` on g++
+# and clang, `__forceinline` on MSVC and clang-cl, which gives the function inline linkage as `inline` does
+# (qbm-http's origin.h defines one at namespace scope, Huly QB-1186). The whole word only: `QB_NOINLINE`, the
+# opposite, spells no inline and leaves a strong symbol.
+SAFE_FUNC = re.compile(r"\b(inline|constexpr|consteval|static|friend|QB_MSVC_FORCEINLINE)\b")
 SAFE_VAR = re.compile(r"\b(inline|constexpr|const|static|extern|typedef|using|concept)\b")
 NOT_A_DECL = re.compile(r"^(namespace|asm|__asm|static_assert)\b")
 # `operator=` must not read as the `=` of an initialiser, or every out-of-line assignment
