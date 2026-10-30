@@ -101,7 +101,24 @@ endif ()
 if (QB_HAS_SSL)
     set(SSL_CERT_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/cert.pem")
     set(SSL_KEY_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/key.pem")
-    find_program(OPENSSL_EXECUTABLE openssl)
+    # The openssl command of the OpenSSL qb found, before one on PATH (cmake/qbOpenSSL.cmake, Huly QB-1175); what it was
+    # chosen from goes to qb-io-test-unit-openssl-command, which makes the choice again.
+    set(_qb_openssl_defined FALSE) # OPENSSL_EXECUTABLE as the choice finds it: a variable or the cache entry, and the
+    if(DEFINED OPENSSL_EXECUTABLE) # entry with its help string
+        set(_qb_openssl_defined TRUE)
+    endif()
+    set(_qb_openssl_named "${OPENSSL_EXECUTABLE}")
+    set(_qb_openssl_cached_defined FALSE)
+    if(DEFINED CACHE{OPENSSL_EXECUTABLE})
+        set(_qb_openssl_cached_defined TRUE)
+    endif()
+    set(_qb_openssl_cached "$CACHE{OPENSSL_EXECUTABLE}")
+    get_property(_qb_openssl_help CACHE OPENSSL_EXECUTABLE PROPERTY HELPSTRING)
+    set(_qb_openssl_chosen "<none>") # what qb last wrote there
+    if(DEFINED CACHE{_QB_OPENSSL_COMMAND_CHOSEN})
+        set(_qb_openssl_chosen "$CACHE{_QB_OPENSSL_COMMAND_CHOSEN}")
+    endif()
+    _qb_openssl_command(OPENSSL_EXECUTABLE _qb_openssl_by_hand)
     if (OPENSSL_EXECUTABLE)
         execute_process(COMMAND ${OPENSSL_EXECUTABLE} version -v
                 OUTPUT_VARIABLE OPENSSL_VERSION_OUTPUT ERROR_VARIABLE OPENSSL_VERSION_ERROR
@@ -148,10 +165,52 @@ if (QB_HAS_SSL)
                 add_dependencies(${_ssl_dep} generate_ssl_certs)
             endif ()
         endforeach ()
-        qb_status_message("SSL certificate generation enabled (OpenSSL ${OPENSSL_VERSION_OUTPUT})")
+        qb_status_message("SSL certificate generation enabled (${OPENSSL_VERSION_OUTPUT}, ${OPENSSL_EXECUTABLE})")
     else ()
-        qb_status_message("OpenSSL executable not found, skipping certificate generation")
+        if(_qb_openssl_by_hand)
+            qb_status_message("OPENSSL_EXECUTABLE is set to '${OPENSSL_EXECUTABLE}': skipping certificate generation")
+        else()
+            qb_status_message("No openssl command that makes a certificate here: skipping certificate generation")
+        endif()
     endif ()
+    # The command used is the one already set, else the first that makes a certificate of the found OpenSSL's, the
+    # default search's and PATH's -- none, generation skipped (Huly QB-1175): the test, registered either way, is handed
+    # what the choice was made from -- OPENSSL_EXECUTABLE and its cache entry as they were, qb's own help string and
+    # last choice, this configure's own two searches -- not its verdict, and the command the generator runs.
+    set(_qb_openssl_generator "")
+    if(OPENSSL_CERT_COMMAND)
+        list(GET OPENSSL_CERT_COMMAND 0 _qb_openssl_generator)
+    endif()
+    set(_qb_openssl_where "")
+    if(CMAKE_CROSSCOMPILING)
+        set(_qb_openssl_where NO_CMAKE_FIND_ROOT_PATH)
+    endif()
+    find_program(_qb_openssl_default openssl ${_qb_openssl_where} NO_CACHE)
+    find_program(_qb_openssl_path openssl NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH NO_CMAKE_SYSTEM_PATH
+                 NO_CMAKE_FIND_ROOT_PATH NO_CACHE)
+    add_test(NAME qb-io-test-unit-openssl-command
+             COMMAND "${CMAKE_COMMAND}" "-DUSED=${OPENSSL_EXECUTABLE}" "-DBY_HAND=${_qb_openssl_by_hand}"
+                     "-DOPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}" "-DVARIABLE=${_qb_openssl_named}"
+                     "-DVARIABLE_DEFINED=${_qb_openssl_defined}" "-DCACHED=${_qb_openssl_cached}"
+                     "-DCACHED_DEFINED=${_qb_openssl_cached_defined}" "-DCACHED_HELP=${_qb_openssl_help}"
+                     "-DOWN_HELP=${_QB_OPENSSL_COMMAND_HELP}" "-DCHOSEN=${_qb_openssl_chosen}"
+                     "-DGENERATOR=${_qb_openssl_generator}"
+                     "-DDEFAULT=${_qb_openssl_default}" "-DPATH_ONLY=${_qb_openssl_path}"
+                     "-DCROSSCOMPILING=${CMAKE_CROSSCOMPILING}"
+                     "-DPROBE_DIR=${CMAKE_CURRENT_BINARY_DIR}/openssl-command-probe"
+                     -P "${QB_ROOT_DIR}/tests/io/unit/build-contracts/openssl-command.cmake")
+    set_tests_properties(qb-io-test-unit-openssl-command PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 240)
+    unset(_qb_openssl_where)
+    unset(_qb_openssl_default)
+    unset(_qb_openssl_path)
+    unset(_qb_openssl_by_hand)
+    unset(_qb_openssl_named)
+    unset(_qb_openssl_generator)
+    unset(_qb_openssl_defined)
+    unset(_qb_openssl_cached_defined)
+    unset(_qb_openssl_cached)
+    unset(_qb_openssl_help)
+    unset(_qb_openssl_chosen)
 endif ()
 
 # -----------------------------------------------------------------------------

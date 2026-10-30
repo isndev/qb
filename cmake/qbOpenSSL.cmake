@@ -19,7 +19,8 @@
 # qb Framework - qb's OpenSSL, and whether libngtcp2's can join it
 #
 # _qb_find_openssl() finds the OpenSSL qb links, searching again a path its own search found that is gone,
-# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major, and
+# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major,
+# _qb_openssl_command() finds that OpenSSL's openssl command for the test certificates (a function), and
 # _qb_decide_quic(), once find_package(Ngtcp2) has run, decides whether the OpenSSL libngtcp2_crypto_ossl links and
 # qb's can share one process, and so whether QUIC is enabled. A file of its own so that a fixture drives them with
 # planted libraries (qb-io-test-unit-quic-openssl-verdict, Huly QB-1185, QB-1190); macros so that what they find and
@@ -266,6 +267,103 @@ macro(_qb_check_openssl)
         qb_error_message("${_qb_openssl_split}")
     endif()
 endmacro()
+
+# _qb_openssl_makes_certificate(<command> <out_var>) -- TRUE in <out_var> when <command> makes a self-signed
+# certificate here: an RSA key and a `req -x509`, the core of the test certificates' generator (which adds a
+# subjectAltName where the command's version allows one). Answering `version` proves less: an OpenSSL without its
+# openssl.cnf answers it, then fails `req`, and a target's binary does not run here at all.
+function(_qb_openssl_makes_certificate command out_var)
+    set(_dir "${CMAKE_BINARY_DIR}/CMakeFiles/qb-openssl-command")
+    file(REMOVE_RECURSE "${_dir}")
+    file(MAKE_DIRECTORY "${_dir}")
+    execute_process(COMMAND "${command}" req -x509 -newkey rsa:2048 -keyout "${_dir}/key.pem" -out "${_dir}/cert.pem"
+                            -days 1 -nodes -subj "/CN=localhost"
+                    RESULT_VARIABLE _rc OUTPUT_QUIET ERROR_QUIET TIMEOUT 60)
+    file(REMOVE_RECURSE "${_dir}")
+    set(_makes FALSE)
+    if("${_rc}" STREQUAL "0")
+        set(_makes TRUE)
+    endif()
+    set(${out_var} ${_makes} PARENT_SCOPE)
+endfunction()
+
+# _qb_openssl_command(<out_var> <named_var>) -- the openssl command that makes qb's test certificates, into <out_var>.
+# An OPENSSL_EXECUTABLE already set is taken as given, as find_program(OPENSSL_EXECUTABLE) takes it, <named_var> then
+# TRUE: named by hand (-DOPENSSL_EXECUTABLE=..., as qb's CI lanes pass it), by a parent project's or a toolchain's
+# variable, or found by someone's find_program() -- who set a cache entry cannot be told, since find_program() gives the
+# one it keeps its own help string, whoever named it; an empty value makes no certificates, and NOTFOUND or
+# <name>-NOTFOUND is no value, as for find_program(). An entry with find_program()'s help string is said once: one an
+# older qb configure left holds that configure's search (CMAKE_PREFIX_PATH's and CMAKE_PROGRAM_PATH's before PATH's).
+# Else the first of these that makes a certificate here: the one in the bin directory beside the found OpenSSL's include
+# directory -- not when cross-compiling, where that one is the target's -- the default search's (not re-rooted into the
+# target's root when cross-compiling, whatever CMAKE_FIND_ROOT_PATH_MODE_PROGRAM says), then PATH's. The default search
+# takes CMAKE_PREFIX_PATH's, CMAKE_PROGRAM_PATH's, then PATH's, and one given that directory as a hint still puts those
+# two before it, which can hold another installation's (Homebrew links openssl@3's while qb builds against openssl@4;
+# macOS's /usr/bin/openssl is LibreSSL) or, cross-compiling, the target's, which is taken only if it makes a certificate
+# here (Huly QB-1175). Searched at every configure, so that it follows qb onto another OpenSSL; empty when none makes a
+# certificate. qb's choice is kept as the cache entry, under _QB_OPENSSL_COMMAND_HELP, where there is none or qb's own:
+# a find_program(OPENSSL_EXECUTABLE) run after qb in the same build takes it, as it took the entry qb's own
+# find_program() left -- an empty one too, which find_program() keeps, where a removed or NOTFOUND one would have it
+# search -- and the next configure chooses again. The entry is qb's own while it holds the value qb wrote
+# (_QB_OPENSSL_COMMAND_CHOSEN): edited in place (ccmake, cmake-gui and an edited CMakeCache.txt keep the help string),
+# it is a command named.
+set(_QB_OPENSSL_COMMAND_HELP "The openssl command qb chose for its test certificates; set it to name one")
+function(_qb_openssl_command out_var named_var)
+    set(${named_var} FALSE PARENT_SCOPE)
+    set(_mine FALSE) # the cache entry is qb's own last choice, as qb wrote it
+    set(_help "")
+    if(DEFINED CACHE{OPENSSL_EXECUTABLE})
+        get_property(_help CACHE OPENSSL_EXECUTABLE PROPERTY HELPSTRING)
+        if(_help STREQUAL _QB_OPENSSL_COMMAND_HELP AND DEFINED CACHE{_QB_OPENSSL_COMMAND_CHOSEN}
+           AND "$CACHE{OPENSSL_EXECUTABLE}" STREQUAL "$CACHE{_QB_OPENSSL_COMMAND_CHOSEN}")
+            set(_mine TRUE)
+        endif()
+    endif()
+    if(DEFINED OPENSSL_EXECUTABLE AND NOT "${OPENSSL_EXECUTABLE}" MATCHES "(^|-)NOTFOUND$"
+       AND NOT ("${OPENSSL_EXECUTABLE}" STREQUAL "$CACHE{OPENSSL_EXECUTABLE}" AND _mine))
+        if("${OPENSSL_EXECUTABLE}" STREQUAL "$CACHE{OPENSSL_EXECUTABLE}" AND _help STREQUAL "Path to a program."
+           AND NOT "${OPENSSL_EXECUTABLE}" STREQUAL "$CACHE{_QB_OPENSSL_SEARCH_SAID}")
+            string(CONCAT _said "OPENSSL_EXECUTABLE (${OPENSSL_EXECUTABLE}) is a find_program() entry -- a parent "
+                                "project's search, or an older qb configure's -- taken as given, as find_program() "
+                                "takes it; one an older qb left, -U OPENSSL_EXECUTABLE lets qb take the found "
+                                "OpenSSL's command (Huly QB-1175)")
+            qb_status_message("${_said}") # one argument: several come back joined by ";"
+            set(_QB_OPENSSL_SEARCH_SAID "${OPENSSL_EXECUTABLE}" CACHE INTERNAL "")
+        endif()
+        set(${out_var} "${OPENSSL_EXECUTABLE}" PARENT_SCOPE)
+        set(${named_var} TRUE PARENT_SCOPE)
+        return()
+    endif()
+    set(_candidates "")
+    if(IS_ABSOLUTE "${OPENSSL_INCLUDE_DIR}" AND NOT CMAKE_CROSSCOMPILING)
+        get_filename_component(_bin "${OPENSSL_INCLUDE_DIR}/../bin" ABSOLUTE)
+        find_program(_qb_openssl_beside openssl HINTS "${_bin}" NO_DEFAULT_PATH NO_CACHE)
+        list(APPEND _candidates "${_qb_openssl_beside}")
+    endif()
+    set(_where "")
+    if(CMAKE_CROSSCOMPILING)
+        set(_where NO_CMAKE_FIND_ROOT_PATH) # not re-rooted into the target's root
+    endif()
+    find_program(_qb_openssl_default openssl ${_where} NO_CACHE)
+    find_program(_qb_openssl_path openssl NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH NO_CMAKE_SYSTEM_PATH
+                 NO_CMAKE_FIND_ROOT_PATH NO_CACHE) # PATH's alone, of this host
+    list(APPEND _candidates "${_qb_openssl_default}" "${_qb_openssl_path}")
+    set(_command "")
+    foreach(_candidate IN LISTS _candidates)
+        if(IS_ABSOLUTE "${_candidate}")
+            _qb_openssl_makes_certificate("${_candidate}" _makes)
+            if(_makes)
+                set(_command "${_candidate}")
+                break()
+            endif()
+        endif()
+    endforeach()
+    if(NOT DEFINED CACHE{OPENSSL_EXECUTABLE} OR _mine) # never over another's entry, a NOTFOUND one included
+        set(OPENSSL_EXECUTABLE "${_command}" CACHE FILEPATH "${_QB_OPENSSL_COMMAND_HELP}" FORCE)
+        set(_QB_OPENSSL_COMMAND_CHOSEN "${_command}" CACHE INTERNAL "")
+    endif()
+    set(${out_var} "${_command}" PARENT_SCOPE)
+endfunction()
 
 # One side's OpenSSL, for a message, into <out_var>: "OpenSSL <major> (<path>)" when its libssl and libcrypto are one
 # major, else the libssl and the libcrypto each with its own.

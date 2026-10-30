@@ -64,7 +64,7 @@ Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part
 `OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
 entries and their majors; remove all three from the cache, or configure with `--fresh`.
 
-<!-- src: qb/cmake/qbOpenSSL.cmake:184-268 -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:185-269 -->
 
 | Symbol | Meaning |
 | --- | --- |
@@ -671,7 +671,7 @@ command (RSA-2048, `CN=localhost`, 365-day validity, with a `subjectAltName` so 
 verification can pass for `localhost`) is:
 
 ```bash
-# src: qb/tests/io/system/CMakeLists.txt:112-114
+# src: qb/tests/io/system/CMakeLists.txt:129-131
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
     -days 365 -nodes \
     -subj "/CN=localhost/O=QB Tests/C=US" \
