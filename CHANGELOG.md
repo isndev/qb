@@ -270,7 +270,7 @@ policy.
   entries, against one per event before), by `listener::current.has_work()` after 128 waits won early
   against a 30 s deadline (false, against 128 armed timers before) and after a timed wait reclaimed while
   parked, and by the three cells `BM_Channel_TimedOpsWonEarly`, `BM_Channel_SelectFanIn` and
-  `BM_Channel_SendForAfterRecvForHistory` of `qb-io-bench-coroutine-pipeline` (numbers in the lot's receipt).
+  `BM_Channel_SendForAfterRecvForHistory` of `qb-io-bench-channel-timed` (numbers in the lot's receipt).
 
 - **`send_for()` on a move-only channel keeps its deadline beside a parked `recv_for()` (Huly QB-273).** A
   parked `recv_for()` registers as a select waiter for any `T`, and no send can hand a move-only value to one;

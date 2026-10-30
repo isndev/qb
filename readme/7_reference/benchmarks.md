@@ -189,6 +189,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `coroutine/coroutine-scheduler-throughput.cpp` | `coroutine-scheduler-throughput` | The coroutine scheduler, frame, `co_await`, and timer workloads. |
 | `coroutine/coroutine-scope.cpp` | `coroutine-scope` | Structured-concurrency fan-out primitives (scopes). |
 | `coroutine/coroutine-pipeline.cpp` | `coroutine-pipeline` | Coroutine pipelines — channels, streams, generators. |
+| `coroutine/channel-timed.cpp` | `channel-timed` | The channel's timed slow path, its history, a fan-in `select`'s retraction (QB-273). |
 | `crypto/crypto-primitives.cpp` | `crypto-primitives` | OpenSSL-backed crypto helpers (hashing, HMAC, AEAD). Built only when `QB_HAS_SSL` (`REQUIRES ssl`). |
 | `crypto/crypto-extras.cpp` | `crypto-extras` | Crypto KDFs, asymmetric signatures, and JWT. Built only when `QB_HAS_SSL` (`REQUIRES ssl`). |
 | `compression/compress-codecs.cpp` | `compress-codecs` | Compression providers and pipe adapters; the `Codec` cases run every codec the build registers (zstd and brotli too, 3.3) on JSON and HTML text, a provider per stream as a server makes one per response, and report each one's speed and `compress_ratio` (Huly QB-93). Built only when `QB_HAS_COMPRESSION` (`REQUIRES compression`). |
@@ -203,7 +204,7 @@ Targets that report rates expose Google Benchmark counters. For example, `messag
 | `coroutine/sync-primitives.cpp` | `sync-primitives` | The qb-io coroutine synchronization primitives (`semaphore`, `async_mutex`, `async_rw_lock`, `async_latch`). |
 | `coroutine/offload-roundtrip.cpp` | `offload-roundtrip` | What a `co_await offload(...)` costs: one round trip loop → pool thread → loop, on a polling and on a parked loop, and a burst through the pool (3.3). |
 
-<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-55 -->
+<!-- src: qb/tests/io/benchmark/CMakeLists.txt:36-56 -->
 
 Build and run them the same way as the core benchmarks — each is a standard Google Benchmark binary that accepts the usual flags:
 
