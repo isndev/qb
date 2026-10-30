@@ -33,83 +33,97 @@ set(NGTCP2_FIND_FUNCTIONS_ONLY ON)
 include("${CMAKE_CURRENT_LIST_DIR}/FindNgtcp2.cmake")
 unset(NGTCP2_FIND_FUNCTIONS_ONLY)
 
-# _qb_forget_vanished(<out_var> <cache entry>...) before a search, _qb_record_found(<cache entry>...) after it. A path
-# the search itself found -- recorded then -- whose file is gone now (an update removed the version this build directory
-# found, as a Homebrew cleanup removes the old keg) is searched again: kept, the build would link a file that no longer
-# exists, and the configure its removal re-runs would read nothing. <out_var> gets "<entry> (<path>)" per path searched
-# again, for the caller to stop the configure when that search finds nothing: a library this build directory had is
-# gone, which a build must not answer by silently building without it. The stop holds: the failed configure leaves the
-# entry NOTFOUND beside its record, which counts as gone again, until a search finds it, the feature is turned off or
-# the build directory starts afresh. A path the search did not produce -- set by hand or by a parent project (a
-# superbuild names a library it builds later), or cached before this build directory recorded its searches -- is kept
-# as given.
-function(_qb_forget_vanished out_var)
-    set(_forgotten "")
-    foreach(_entry IN LISTS ARGN)
-        set(_path "$CACHE{${_entry}}")
-        set(_found "$CACHE{_QB_FOUND_${_entry}}")
-        if(("${_path}" STREQUAL "" OR "${_path}" MATCHES "(^|-)NOTFOUND$") AND IS_ABSOLUTE "${_found}"
-           AND NOT EXISTS "${_found}")
-            list(APPEND _forgotten "${_entry} (${_found})") # searched again by a configure that stopped: still gone
-        elseif(IS_ABSOLUTE "${_path}" AND NOT EXISTS "${_path}")
-            if("${_path}" STREQUAL "${_found}")
-                qb_status_message("${_entry} (${_path}) no longer exists: searched again")
-                unset(${_entry} CACHE)
-                list(APPEND _forgotten "${_entry} (${_path})")
-            else()
-                string(CONCAT _kept "${_entry} (${_path}) does not exist; this build directory's search did not find it "
-                                    "(set by hand, by a parent project, or before qb recorded its searches): kept as given")
-                qb_status_message("${_kept}")
-            endif()
-        endif()
-        set(_qb_before_${_entry} "$CACHE{${_entry}}" PARENT_SCOPE)
-    endforeach()
-    set(${out_var} "${_forgotten}" PARENT_SCOPE)
-endfunction()
-function(_qb_record_found)
-    foreach(_entry IN LISTS ARGN)
-        set(_path "$CACHE{${_entry}}")
-        if(NOT "${_path}" STREQUAL "${_qb_before_${_entry}}" AND IS_ABSOLUTE "${_path}" AND EXISTS "${_path}")
-            set(_QB_FOUND_${_entry} "${_path}" CACHE INTERNAL "")
-        endif()
-    endforeach()
-endfunction()
+# _qb_forget_vanished(), _qb_record_found() and _qb_stop_if_gone(): a path the search itself found that is gone is
+# searched again, and found nowhere else stops the configure (Huly QB-1185, QB-1192).
+include("${CMAKE_CURRENT_LIST_DIR}/qbFoundLibraries.cmake")
 
 # _qb_find_openssl() -- qbDependencies.cmake's find_package(OpenSSL), with the three entries it caches searched again
-# when its own search found them and they are gone (above), and stopping when that search finds nothing. FindOpenSSL
-# takes its hints from pkg-config, whose answer FindPkgConfig keeps cached until __pkg_config_checked__OPENSSL is gone:
-# it is cleared with them, or the hints would still name the removed directory. The files found -- libssl and libcrypto
-# as found and as resolved, and opensslv.h, whose version the configure reads -- become inputs of the configure, so
-# that `cmake --build` re-runs it after an OpenSSL update, QUIC or not. Not on Windows: MSVC's FindOpenSSL caches its
-# libraries under other names, and nothing is read there.
+# when its own search found them and they are gone (qbFoundLibraries.cmake), and stopping when that search finds
+# nothing. FindOpenSSL takes its hints from pkg-config, whose answer FindPkgConfig keeps cached until
+# __pkg_config_checked__OPENSSL is gone: it is cleared with them, or the hints would still name the removed directory.
+# The files found -- libssl and libcrypto as found and as resolved, and opensslv.h, whose version the configure
+# reads -- become inputs of the configure, so that `cmake --build` re-runs it after an OpenSSL update, QUIC or not.
+# Not on Windows: MSVC's FindOpenSSL caches its libraries under other names, and nothing is read there.
 macro(_qb_find_openssl)
-    set(_qb_openssl_entries OPENSSL_INCLUDE_DIR OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
+    set(_qb_openssl_entries OPENSSL_INCLUDE_DIR/openssl/ssl.h OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
     set(_qb_openssl_forgot "")
-    if(NOT WIN32)
+    # QB-1185's code recorded each entry its search found, and not whether it found OpenSSL: a build directory it
+    # configured had an OpenSSL when what FindOpenSSL needs to find one -- the headers and libcrypto -- was there, each
+    # recorded or set (by hand, by a parent project), one at least recorded -- read before this configure records its
+    # own.
+    set(_qb_openssl_recorded FALSE)
+    if((DEFINED CACHE{_QB_FOUND_OPENSSL_INCLUDE_DIR} OR IS_ABSOLUTE "$CACHE{OPENSSL_INCLUDE_DIR}")
+       AND (DEFINED CACHE{_QB_FOUND_OPENSSL_CRYPTO_LIBRARY} OR IS_ABSOLUTE "$CACHE{OPENSSL_CRYPTO_LIBRARY}")
+       AND (DEFINED CACHE{_QB_FOUND_OPENSSL_INCLUDE_DIR} OR DEFINED CACHE{_QB_FOUND_OPENSSL_CRYPTO_LIBRARY}))
+        set(_qb_openssl_recorded TRUE)
+    endif()
+    set(_qb_openssl_searched TRUE) # off Windows, and unless the search is turned off: nothing searched, nothing said
+    if(WIN32 OR CMAKE_DISABLE_FIND_PACKAGE_OpenSSL)
+        set(_qb_openssl_searched FALSE)
+    endif()
+    # FindOpenSSL searches zlib itself for an OpenSSL whose libraries name it (a static one, -lz in its pkg-config),
+    # before qbDependencies.cmake's own zlib search, which would then take what it found unsearched, and links it
+    # (ZLIB::ZLIB in its targets' interface). Unless zlib's search is turned off, its entries are searched again around
+    # it, quietly -- whether FindOpenSSL searches zlib is known only after -- and said once a search looks: here where
+    # FindOpenSSL's did (it linked zlib), else by _qb_find_zlib() as qb's own begins (compression on); nothing else
+    # searches zlib, so nothing else is said. What FindOpenSSL's search finds is recorded, and its files are inputs.
+    set(_qb_openssl_zlib "")
+    set(_qb_openssl_zlib_forgot "")
+    if(_qb_openssl_searched AND NOT CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+        set(_qb_openssl_zlib ZLIB_INCLUDE_DIR/zlib.h ZLIB_LIBRARY_RELEASE ZLIB_LIBRARY_DEBUG)
+    endif()
+    if(_qb_openssl_searched)
         _qb_forget_vanished(_qb_openssl_forgot ${_qb_openssl_entries})
         if(_qb_openssl_forgot)
             unset(__pkg_config_checked__OPENSSL CACHE)
         endif()
+        set(_qb_forget_quiet TRUE) # said below (_qb_forget_tell), once known whether a search looked
+        _qb_forget_vanished(_qb_openssl_zlib_forgot ${_qb_openssl_zlib})
+        unset(_qb_forget_quiet)
     endif()
     find_package(OpenSSL QUIET)
-    if(NOT WIN32)
-        _qb_record_found(${_qb_openssl_entries}) # each entry found, OpenSSL found or not: a partial search counts
-    endif()
-    # What was searched again and is not found now -- not one found again beside another missing -- stops the configure,
-    # whatever OpenSSL_FOUND says: FindOpenSSL requires libcrypto and the headers only, and finds OpenSSL without libssl.
-    set(_qb_openssl_gone "")
-    foreach(_qb_openssl_entry IN LISTS _qb_openssl_forgot)
-        string(REGEX MATCH "^[A-Z0-9_]+" _qb_openssl_name "${_qb_openssl_entry}")
-        if(NOT (IS_ABSOLUTE "$CACHE{${_qb_openssl_name}}" AND EXISTS "$CACHE{${_qb_openssl_name}}"))
-            list(APPEND _qb_openssl_gone "${_qb_openssl_entry}")
+    if(_qb_openssl_searched)
+        # each entry found, OpenSSL found or not: a partial search counts
+        _qb_record_found(${_qb_openssl_entries} ${_qb_openssl_zlib})
+        set(_qb_openssl_links_zlib FALSE) # read by _qb_find_zlib() too
+        foreach(_qb_openssl_target IN ITEMS OpenSSL::Crypto OpenSSL::SSL)
+            if(TARGET ${_qb_openssl_target})
+                get_target_property(_qb_openssl_link ${_qb_openssl_target} INTERFACE_LINK_LIBRARIES)
+                if("ZLIB::ZLIB" IN_LIST _qb_openssl_link)
+                    set(_qb_openssl_links_zlib TRUE)
+                endif()
+            endif()
+        endforeach()
+        if(_qb_openssl_links_zlib)
+            _qb_forget_tell(_qb_openssl_zlib_forgot) # FindOpenSSL's search looked
+            if(ZLIB_FOUND) # this build directory has a zlib: qb's own search, compression turned on, stops on its loss
+                set(_QB_HAD_ZLIB TRUE CACHE INTERNAL "")
+            endif()
+            _qb_found_inputs(${_qb_openssl_zlib}) # qbDependencies.cmake's own search may not run (compression off)
+            # Lost, and with compression off no search of qb's own follows to stop on it: the generate would fail on
+            # the ZLIB::ZLIB OpenSSL links, naming neither.
+            if(NOT QB_WITH_COMPRESSION AND NOT TARGET ZLIB::ZLIB)
+                string(CONCAT _qb_openssl_zlib_remedy
+                       "the OpenSSL found links it: install one, point CMAKE_PREFIX_PATH (or ZLIB_ROOT) at one, "
+                       "configure with -DQB_WITH_SSL=OFF, or remove OpenSSL's three entries for one that does not "
+                       "link zlib (cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY "
+                       "-DOPENSSL_ROOT_DIR=<it> <build directory>)")
+                _qb_stop_if_gone("${_qb_openssl_zlib_forgot}" zlib "${_qb_openssl_zlib_remedy}")
+            endif()
         endif()
-    endforeach()
-    if(_qb_openssl_gone)
-        string(REPLACE ";" ", " _qb_openssl_gone "${_qb_openssl_gone}")
-        string(CONCAT _qb_openssl_gone
-               "the OpenSSL this build directory found is gone and was found nowhere else -- ${_qb_openssl_gone}: "
-               "install one, point OPENSSL_ROOT_DIR at one, or configure with -DQB_WITH_SSL=OFF")
-        qb_error_message("${_qb_openssl_gone}")
+    endif()
+    # What was searched again and is not found now stops the configure, whatever OpenSSL_FOUND says (FindOpenSSL
+    # requires libcrypto and the headers only, and finds OpenSSL without libssl) -- once this build directory has found
+    # an OpenSSL: what it never found one with (stray headers in a shared prefix, libraries without headers) stops
+    # nothing, nor does an OpenSSL turned off (CMAKE_DISABLE_FIND_PACKAGE_OpenSSL, as a qb CI lane configures).
+    if(NOT WIN32 AND OpenSSL_FOUND)
+        set(_QB_HAD_OpenSSL TRUE CACHE INTERNAL "")
+    elseif(NOT DEFINED CACHE{_QB_HAD_OpenSSL})
+        set(_QB_HAD_OpenSSL ${_qb_openssl_recorded} CACHE INTERNAL "")
+    endif()
+    if("$CACHE{_QB_HAD_OpenSSL}") # turned off, nothing was searched again: _qb_openssl_forgot is empty
+        _qb_stop_if_gone("${_qb_openssl_forgot}" OpenSSL
+                         "install one, point OPENSSL_ROOT_DIR at one, or configure with -DQB_WITH_SSL=OFF")
     endif()
     set(_qb_openssl_inputs "")
     if(NOT WIN32 AND OpenSSL_FOUND)
@@ -341,6 +355,22 @@ macro(_qb_decide_quic)
                 file(REAL_PATH "${_qb_quic_read}" _qb_quic_read_real)
                 list(APPEND _qb_quic_inputs "${_qb_quic_read}" "${_qb_quic_read_real}")
             endif()
+            # libngtcp2's core library and headers, where its search produced them: their removal re-runs the
+            # configure too, which searches them again (Huly QB-1192). qb's own _qb_held_file(): a parent's FindNgtcp2
+            # may have won the search, and FindNgtcp2.cmake's functions-only include defines no _ngtcp2_held_file().
+            foreach(_qb_quic_spec IN ITEMS "NGTCP2_LIBRARY|" "NGTCP2_INCLUDE_DIR|/ngtcp2/ngtcp2.h"
+                                           "NGTCP2_CRYPTO_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto.h"
+                                           "NGTCP2_CRYPTO_OSSL_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto_ossl.h")
+                string(REPLACE "|" ";" _qb_quic_spec "${_qb_quic_spec}")
+                list(GET _qb_quic_spec 0 _qb_quic_entry)
+                list(GET _qb_quic_spec 1 _qb_quic_probe)
+                _qb_held_file("$CACHE{${_qb_quic_entry}}" "${_qb_quic_probe}" _qb_quic_read)
+                if("$CACHE{${_qb_quic_entry}}" STREQUAL "$CACHE{_NGTCP2_FOUND_${_qb_quic_entry}}"
+                   AND IS_ABSOLUTE "${_qb_quic_read}" AND EXISTS "${_qb_quic_read}"
+                   AND NOT IS_DIRECTORY "${_qb_quic_read}")
+                    list(APPEND _qb_quic_inputs "${_qb_quic_read}")
+                endif()
+            endforeach()
             if(_qb_quic_inputs)
                 list(REMOVE_DUPLICATES _qb_quic_inputs)
                 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_qb_quic_inputs})
@@ -383,6 +413,7 @@ macro(_qb_decide_quic)
                "support disabled. Build ${_qb_quic_fix}, or set QB_WITH_QUIC=OFF")
         qb_feature_degraded("${_qb_quic_majors}")
         set(QB_HAS_QUIC FALSE)
+        set(_QB_HAD_QUIC FALSE CACHE INTERNAL "")
     elseif(Ngtcp2_FOUND)
         qb_status_message("Found libngtcp2 QUIC transport stack")
         list(APPEND QB_EXTERNAL_LIBRARIES
@@ -390,7 +421,10 @@ macro(_qb_decide_quic)
             Ngtcp2::crypto_ossl
         )
         set(QB_HAS_QUIC TRUE)
-    elseif(Ngtcp2_VANISHED)
+        set(_QB_HAD_QUIC TRUE CACHE INTERNAL "")
+    elseif(Ngtcp2_VANISHED AND (NOT DEFINED CACHE{_QB_HAD_QUIC} OR "$CACHE{_QB_HAD_QUIC}"))
+        # Gone from a build whose QUIC linked it (Huly QB-1192): one QUIC was off for -- two OpenSSL majors -- loses
+        # nothing, and stops nothing. A build directory QB-1185's code configured recorded no _QB_HAD_QUIC: it stops.
         string(REPLACE ";" ", " _qb_quic_gone "${Ngtcp2_VANISHED}")
         string(CONCAT _qb_quic_gone
                "the libngtcp2 this build directory found is gone and was found nowhere else -- ${_qb_quic_gone}: "
@@ -399,8 +433,10 @@ macro(_qb_decide_quic)
     elseif(_qb_quic_required)
         qb_feature_degraded("libngtcp2 not found - QUIC support disabled")
         set(QB_HAS_QUIC FALSE)
+        set(_QB_HAD_QUIC FALSE CACHE INTERNAL "")
     else()
         qb_status_message("libngtcp2 not found - QUIC transport auto-disabled")
         set(QB_HAS_QUIC FALSE)
+        set(_QB_HAD_QUIC FALSE CACHE INTERNAL "")
     endif()
 endmacro()

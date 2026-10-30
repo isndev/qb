@@ -120,6 +120,10 @@ endif()
 # Optional Dependencies
 # -----------------------------------------------------------------------------
 qb_status_message("Searching for optional dependencies...")
+# A library this build directory found and an update removed is searched again, and found nowhere else stops the
+# configure: OpenSSL in qbOpenSSL.cmake, Argon2, zlib, zstd and brotli in qbFoundLibraries.cmake (Huly QB-1185,
+# QB-1192).
+include("${CMAKE_CURRENT_LIST_DIR}/qbFoundLibraries.cmake") # _qb_find_argon2(), _qb_find_zlib(), _qb_find_zstd(), ...
 include("${CMAKE_CURRENT_LIST_DIR}/qbOpenSSL.cmake") # _qb_find_openssl(), _qb_check_openssl(), _qb_decide_quic()
 set(QB_HAS_ARGON2 FALSE) # defined on every path, SSL or not: qbConfig.cmake.in tests it unconditionally (QB-1138)
 # OpenSSL (optional, for SSL/TLS support)
@@ -139,8 +143,8 @@ if(QB_WITH_SSL)
             target_link_libraries(qb-found-openssl INTERFACE OpenSSL::SSL OpenSSL::Crypto)
         endif()
         
-        # Find Argon2 for advanced cryptographic functions
-        find_package(Argon2 QUIET)
+        # Find Argon2 for advanced cryptographic functions (find_package, searched again when gone: Huly QB-1192)
+        _qb_find_argon2()
         if(Argon2_FOUND)
             qb_status_message("Found Argon2: ${ARGON2_VERSION_STRING}")
             # Use the imported target so include dirs are propagated automatically.
@@ -163,7 +167,7 @@ endif()
 # ZLIB (optional, for compression support). Zlib is CMake-buildable, so it supports
 # the system-first / git-fallback policy (QB_DEPS_FETCH_FALLBACK).
 if(QB_WITH_COMPRESSION)
-    find_package(ZLIB QUIET)
+    _qb_find_zlib() # find_package(ZLIB QUIET), searched again when gone (Huly QB-1192)
     if(ZLIB_FOUND)
         qb_status_message("Found ZLIB: ${ZLIB_VERSION_STRING}")
     elseif(QB_DEPS_FETCH_FALLBACK)
@@ -245,7 +249,7 @@ if((QB_WITH_ZSTD OR QB_WITH_BROTLI) AND NOT QB_HAS_COMPRESSION)
     qb_error_message("${_qb_codec_msg}")
 endif()
 if(QB_WITH_ZSTD)
-    find_package(Zstd)
+    _qb_find_zstd() # find_package(Zstd), searched again when gone (Huly QB-1192)
     if(Zstd_FOUND)
         qb_status_message("Found zstd: ${Zstd_VERSION}")
         list(APPEND QB_EXTERNAL_LIBRARIES Zstd::Zstd)
@@ -257,7 +261,7 @@ if(QB_WITH_ZSTD)
     endif()
 endif()
 if(QB_WITH_BROTLI)
-    find_package(Brotli)
+    _qb_find_brotli() # find_package(Brotli), searched again when gone (Huly QB-1192)
     if(Brotli_FOUND)
         qb_status_message("Found brotli: ${Brotli_VERSION}")
         list(APPEND QB_EXTERNAL_LIBRARIES Brotli::Encoder Brotli::Decoder)

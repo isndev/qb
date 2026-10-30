@@ -51,6 +51,9 @@ if(OpenSSL_FOUND OR NOT (DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)) # as qbDepen
 endif()
 
 find_package(Ngtcp2 QUIET)
+if(FIND_NGTCP2_TWICE) # as an installed qb's qbConfig.cmake runs it: find_package(), then find_dependency()
+    find_package(Ngtcp2 QUIET)
+endif()
 if(DEFINED PLANTED_NGTCP2)
     string(REPLACE "|" ";" _planted "${PLANTED_NGTCP2}")
     list(GET _planted 0 Ngtcp2_OPENSSL_MAJOR)
@@ -74,7 +77,7 @@ else()
 endif()
 
 file(APPEND "${RESULT_DIR}/configures.txt" "configured\n")
-set(_entries "")
+set(_entries "NGTCP2_VANISHED=${Ngtcp2_VANISHED}\n") # FindNgtcp2's own answer, which a consumer of an installed qb reads
 foreach(_entry IN ITEMS NGTCP2_INCLUDE_DIR NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIBRARY NGTCP2_CRYPTO_INCLUDE_DIR
                         NGTCP2_CRYPTO_OSSL_INCLUDE_DIR OPENSSL_INCLUDE_DIR OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
     string(APPEND _entries "${_entry}=$CACHE{${_entry}}\n")
