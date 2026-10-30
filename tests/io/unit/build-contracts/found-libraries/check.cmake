@@ -40,8 +40,8 @@ if(NOT WIN32 AND EXISTS /bin/sh)
     set(_posix TRUE)
 endif()
 # The FindOpenSSL the fixture runs -- qb's module directory first, then this CMake's: whether it searches zlib itself
-# for a static OpenSSL (CMake 3.26 on), and whether it asks pkg-config only once found (3.31 on; before, a fixture
-# that turns pkg-config off cannot run it).
+# for a static OpenSSL (CMake 3.26 on). Its pkg-config call before 3.31, made whether pkg-config was found or not, the
+# fixture answers with a command that does nothing when pkg-config is off.
 set(_find_openssl "${QB_CMAKE_MODULE_DIR}/FindOpenSSL.cmake")
 if(NOT EXISTS "${_find_openssl}")
     set(_find_openssl "${CMAKE_ROOT}/Modules/FindOpenSSL.cmake")
@@ -50,10 +50,6 @@ file(READ "${_find_openssl}" _find_openssl)
 set(_openssl_finds_zlib FALSE)
 if(_find_openssl MATCHES "find_package\\(ZLIB\\)")
     set(_openssl_finds_zlib TRUE)
-endif()
-set(_openssl_asks_found_pkg_config FALSE)
-if(_find_openssl MATCHES "if\\((PkgConfig_FOUND|PKG_CONFIG_FOUND)\\)[ \t\r\n]*pkg_check_modules")
-    set(_openssl_asks_found_pkg_config TRUE)
 endif()
 # A library's file name as find_library() looks for it on this host.
 function(library_file name out_var)
@@ -458,10 +454,7 @@ if(_generators)
     configure_fixture(parent-zlib-fresh OK "-DFIND=zlib" "-DPARENT_ZLIB_TARGET=ON" NOT "is gone" HAS "ZLIB=FALSE")
     # zlib around a shared OpenSSL, compression off: nothing searches zlib, so nothing is said, its lost entries
     # forgotten quietly; and a path set by hand that two searches look at is said once.
-    if(_posix AND NOT _openssl_asks_found_pkg_config)
-        message(STATUS "found-libraries: this CMake's FindOpenSSL needs pkg-config: openssl-zlib-quiet, "
-                       "openssl-zlib-both-lost and openssl-argon2-zlib-lost are skipped")
-    elseif(_posix)
+    if(_posix)
         set(_name "openssl-zlib-quiet")
         set(_root "${WORK_DIR}/${_name}/root")
         escape("${_root}" _root_regex)

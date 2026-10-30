@@ -571,7 +571,11 @@ policy.
     with Ninja and Unix Makefiles where their tools are found -- `cmake --build` re-runs the configure on each change
     above, finds an upgraded library where the upgrade put it (pkg-config's answer refreshed, for OpenSSL and
     libngtcp2), stops on one found nowhere and goes on once it is back, keeps a path set by hand, and converges -- qb's
-    OpenSSL alone, with no libngtcp2, included.
+    OpenSSL alone, with no libngtcp2, included. It runs on every CMake from the 3.24 floor: FindOpenSSL before 3.31
+    calls `pkg_check_modules()` whether pkg-config was found or not, and the fixture, which turns pkg-config off to keep
+    the searches in the planted root, failed there on the unknown command (3.24.4, Ubuntu 24.04's 3.28.3); it now
+    answers that call with a command that does nothing, as 3.31 asks only once pkg-config is found, and the superproject's
+    `cmake-floor` lane runs the build contracts on 3.24.4 and 3.28.3.
   - An installed qb built with QUIC re-ran `find_dependency(Ngtcp2)` at its consumer and compared nothing (QB-1183).
     The generated `qbConfig.cmake` now gives the same verdict on the readings of the `FindNgtcp2.cmake` installed
     beside it and the OpenSSL the consumer links -- not the one qb was built against, which the OpenSSL-major check
@@ -677,8 +681,7 @@ policy.
   on it, and that loss seen as the OpenSSL starts linking zlib stopping, or as it stops, saying nothing (each skipped,
   and said, where this CMake's FindOpenSSL searches no zlib); zlib around a shared OpenSSL with compression off
   forgotten quietly, a path set there by hand not recorded, and OpenSSL and zlib lost at once, compression on, only
-  OpenSSL said -- or Argon2, whose stop comes before zlib's search (skipped where FindOpenSSL needs pkg-config, before
-  CMake 3.31); a hand-set path said once -- and re-derives what the configure that registered it did: each package
+  OpenSSL said -- or Argon2, whose stop comes before zlib's search; a hand-set path said once -- and re-derives what the configure that registered it did: each package
   searched (its feature on, its search not turned off) went through its wrapper, each path its search produced recorded,
   each file found an input. `qb-io-test-unit-quic-openssl-verdict` adds OpenSSL's headers removed from a shared prefix,
   of an OpenSSL had and of one never had, an OpenSSL and a libngtcp2 never found however many configures saw their
@@ -698,8 +701,9 @@ policy.
   time beside a green control, each caught (the lot's battery: 120 of 120). On a real qb tree over copied kegs (argon2,
   brotli and zlib in Cellar paths, zstd through `opt/`), an upgrade with the old kegs removed re-ran the configure at
   `cmake --build`, which found the new kegs, linked, and the test passed; the next build had no configure to run. On a
-  CMake whose FindOpenSSL searches no zlib or needs pkg-config (3.22's, dropped into qb's module directory), the cases
-  that need it are skipped and said so; with CMAKE_SYSTEM_NAME Linux, FindOpenSSL's Threads search no longer stops the
+  CMake whose FindOpenSSL searches no zlib (3.22's, dropped into qb's module directory; 3.24.4's), the cases that need
+  it are skipped and said so; one that calls pkg-config found or not (before 3.31) runs the rest, the fixture answering
+  that call as the verdict test's does; with CMAKE_SYSTEM_NAME Linux, FindOpenSSL's Threads search no longer stops the
   languageless fixture. Suites as for QB-1190 above.
 
 - **qb's test certificates are made by the openssl command of the OpenSSL qb found, not by whichever is first on PATH

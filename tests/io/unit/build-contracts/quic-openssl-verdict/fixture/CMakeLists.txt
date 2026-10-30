@@ -48,6 +48,14 @@ if(USE_PKG_CONFIG)
     set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH OFF)
 else()
     set(CMAKE_DISABLE_FIND_PACKAGE_PkgConfig TRUE)
+    # FindOpenSSL calls pkg_check_modules() whether find_package(PkgConfig) found pkg-config or not before CMake 3.31,
+    # which asks only once it is found: turned off, FindPkgConfig is never read and defines no such command, and its
+    # search would stop on it, from the 3.24 floor to 3.30. A command that does nothing is the pkg-config that is off,
+    # as 3.31 has it; every other search here asks only once found.
+    if(NOT COMMAND pkg_check_modules)
+        function(pkg_check_modules)
+        endfunction()
+    endif()
 endif()
 list(PREPEND CMAKE_MODULE_PATH "${QB_CMAKE_MODULE_DIR}")
 if(PARENT_MODULE_DIR) # a parent project's FindNgtcp2 module, first on the path: it wins the search
