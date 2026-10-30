@@ -1233,8 +1233,8 @@ TEST(UriParse, AuthorityFormReadsAHostAndAPort) {
 /**
  * @test read_origin_form() and read_authority_form() read a target into an existing uri exactly as origin_form() and
  *       authority_form() read it into a new one, and nothing of the previous reading survives.
- * @brief The readers of a server that parses request after request into one message (Huly QB-1177): a uri built apart
- *        and moved in cost two moves of its strings and its query map a request. Here a uri that held a reference with a
+ * @brief The readers a server reads a target with into the uri its message holds (Huly QB-1177): a uri built apart and
+ *        moved in cost two moves of its strings and its query map a request. Here a uri that held a reference with a
  *        userinfo, a port, two queries and a fragment, then a `unix://` text (the family must follow the text, QB-350),
  *        is read into, and compared component by component with the fresh reading.
  */

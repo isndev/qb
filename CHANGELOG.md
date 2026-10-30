@@ -146,10 +146,12 @@ policy.
   userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
   digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
   checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)`,
-  `read_absolute_form(target)` and `read_authority_form(target)` give the same readings INTO an existing uri -- the text replaces `source()`, the
-  components are parsed in place, the query map's storage is kept -- and return `is_valid()`: the readers of a server
-  that parses request after request into one message. qbm-http's HTTP/1.1 parser first read every target into a uri
-  built apart and moved into the request: two moves of its strings and its query map, 830 instructions a request on
+  `read_absolute_form(target)` and `read_authority_form(target)` give the same readings INTO an existing uri -- the
+  text replaces `source()` and the components are parsed in place, no other uri being built -- and return
+  `is_valid()`: what they save a server is a uri built apart and moved into its message, measured below; they reuse
+  only the storage the uri already holds, none in qbm-http's HTTP/1.1 parser, which rebuilds its message for every
+  request. qbm-http's HTTP/1.1 parser first read every target into a uri built apart and moved into the request: two
+  moves of its strings and its query map, 830 instructions a request on
   g++ 14, 54 ns of a 263 ns parse of a two-line GET (`qbm-http-bench-http1-parser`, `BM_Http1Parse_WholeBuffer/corpus:0`,
   3 physical copies a side in a seeded order, +20 % with a 1.2 % A/A band); read in place, the same parse executes 767
   fewer instructions a request (5 126 -> 4 359 against 4 076 before the train, the rest QB-1186's Host check) and the
