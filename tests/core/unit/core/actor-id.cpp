@@ -776,10 +776,11 @@ TEST(ActorId, AskRecordedQueueOutlivesTheRegistryGrowing) {
 
 // An entry's generation never wraps -- past its 26 bits it would spill into the id's core field: the release of the
 // LAST generation retires the entry for good, and that final id stays recognisable as an obsolete reply of its owner.
-// Driven through a bound slot, the path whose release Huly QB-1171 moved: 2^26 - 1 asks on one entry -- under a
-// second in an optimized build, 80 s at -O0 under ASan (measured on an M4 Pro), past the unit tier's 60 s for the
-// whole binary: the Release suites drive it, a Debug build says it does not.
-#ifdef NDEBUG
+// Driven through a bound slot, the path whose release Huly QB-1171 moved: 2^26 - 1 asks on one entry, a release and
+// a take each -- the registry's own calls, which no test can make cheaper. Every build drives it, the Debug ones the
+// sanitizers run included: on x86-64 g++ 14, 1.8 s at -O0, 10.9 s under ASan+UBSan, 14.1 s under TSan, 16.0 s under
+// coverage; an M4 Pro took 80 s at -O0 under ASan, past the unit tier's 60 s, so this binary's ctest entry has a
+// budget of its own (tests/core/unit/CMakeLists.txt).
 TEST(ActorId, AskEntryRetiresAtItsLastGeneration) {
     constexpr std::uint64_t mask    = (std::uint64_t{1} << 22) - 1;
     constexpr std::uint64_t gen_max = (std::uint64_t{1} << 26) - 1;
@@ -814,12 +815,6 @@ TEST(ActorId, AskEntryRetiresAtItsLastGeneration) {
     EXPECT_EQ(probe.delivered, 1);
     qb::detail::ask_unregister(next);
 }
-#else
-TEST(ActorId, AskEntryRetirementIsDrivenInOptimizedBuildsOnly) {
-    GTEST_SKIP() << "AskEntryRetiresAtItsLastGeneration runs 2^26 - 1 asks on one entry: an optimized (NDEBUG) build "
-                    "drives it in under a second; this -O0 build would spend the unit tier's whole budget on it.";
-}
-#endif
 
 // --- CoreIdBitSet ------------------------------------------------------------
 
