@@ -43,7 +43,11 @@ include("${CMAKE_CURRENT_LIST_DIR}/qbFoundLibraries.cmake")
 # nothing. FindOpenSSL takes its hints from pkg-config, whose answer FindPkgConfig keeps cached until
 # __pkg_config_checked__OPENSSL is gone: it is cleared with them, or the hints would still name the removed directory.
 # The files found -- libssl and libcrypto as found and as resolved, and opensslv.h, whose version the configure
-# reads -- become inputs of the configure, so that `cmake --build` re-runs it after an OpenSSL update, QUIC or not.
+# reads -- become inputs of the configure, so that `cmake --build` re-runs it after an OpenSSL update, QUIC or not --
+# found or set by hand or by a parent project alike: unlike a path a search only looks for (qbFoundLibraries.cmake),
+# these are what the configure reads -- the majors _qb_check_openssl() and _qb_decide_quic() compare, the version
+# FindOpenSSL takes from opensslv.h -- and a library a superbuild rebuilds onto another major must be read again, or one
+# process loads two OpenSSL majors (Huly QB-1179, QB-1190): a configure re-run per such rebuild is that read's price.
 # Not on Windows: MSVC's FindOpenSSL caches its libraries under other names, and nothing is read there.
 macro(_qb_find_openssl)
     set(_qb_openssl_entries OPENSSL_INCLUDE_DIR/openssl/ssl.h OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
@@ -178,10 +182,10 @@ endfunction()
 # libssl.so.30 holds OpenSSL 3, with headers that say 3), not on Windows (MSVC's FindOpenSSL can hand optimized/debug
 # lists, and nothing is read there), and not for LibreSSL, which numbers its libssl and libcrypto apart. The files read
 # -- on macOS the install name each library records and its file -- become inputs of the configure beside those
-# _qb_find_openssl() made ones: `cmake --build` checks again when an update moves one. Leaves in the caller's scope
-# _qb_openssl_compared, _qb_openssl_headers_major, _qb_openssl_ssl_read and _qb_openssl_crypto_read (the majors read,
-# empty when nothing was) and _qb_openssl_check_inputs, which tests/io/unit/CMakeLists.txt hands to
-# qb-io-test-unit-ngtcp2-openssl-listing.
+# _qb_find_openssl() made ones, whoever set the library: `cmake --build` checks again when an update or a superbuild's
+# rebuild moves one. Leaves in the caller's scope _qb_openssl_compared, _qb_openssl_headers_major, _qb_openssl_ssl_read
+# and _qb_openssl_crypto_read (the majors read, empty when nothing was) and _qb_openssl_check_inputs, which
+# tests/io/unit/CMakeLists.txt hands to qb-io-test-unit-ngtcp2-openssl-listing.
 macro(_qb_check_openssl)
     string(REGEX MATCH "^[0-9]+" _qb_openssl_headers_major "${OPENSSL_VERSION}")
     set(_qb_openssl_ssl_read "")
@@ -411,8 +415,9 @@ endfunction()
 # The files read become inputs of the configure (CMAKE_CONFIGURE_DEPENDS): `cmake --build` re-runs it when a package
 # update rewrites one, removes one, or moves the link that names one (QB-1185), instead of keeping a verdict about
 # libraries that are no longer the ones a binary loads -- each library as found, the file it resolves to, on Mach-O the
-# install name dyld loads and its file, and qb's opensslv.h, whose major stands in for a library nothing reads. Only
-# files that exist: a missing input re-runs every build.
+# install name dyld loads and its file, and qb's opensslv.h, whose major stands in for a library nothing reads --
+# whoever set them, as _qb_find_openssl() says; libngtcp2's core library and headers, only searched for, where its
+# search produced them. Only files that exist: a missing input re-runs every build.
 macro(_qb_decide_quic)
     set(_qb_quic_conflict "")
     set(_qb_quic_inputs "")

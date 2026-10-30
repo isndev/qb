@@ -64,7 +64,7 @@ Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part
 `OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
 entries and their majors; remove all three from the cache, or configure with `--fresh`.
 
-<!-- src: qb/cmake/qbOpenSSL.cmake:185-269 -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:189-273 -->
 
 | Symbol | Meaning |
 | --- | --- |

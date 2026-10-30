@@ -181,8 +181,11 @@ endfunction()
 # directory -- becomes an input of the configure (CMAKE_CONFIGURE_DEPENDS), so that `cmake --build` re-runs it when an
 # update removes one; not a path set by hand or by a parent project, which is never searched again (a superbuild's own
 # library would re-run the configure at each of its rebuilds), only existing files, and never a directory (its time
-# moves with every entry added). A pure move -- a link the search found pointing at a new version -- keeps a valid path,
-# and the configure re-run it may cause changes nothing.
+# moves with every entry added). That holds for a file the configure only searched for; one it READS is an input
+# whoever set it, at that price: OpenSSL's libssl, libcrypto and opensslv.h, and libngtcp2's crypto helper
+# (qbOpenSSL.cmake), whose majors decide whether a process loads two OpenSSL majors -- rebuilt onto another major, a
+# superbuild's own must be read again. A pure move -- a link the search found pointing at a new version -- keeps a valid
+# path, and the configure re-run it may cause changes nothing.
 macro(_qb_find_again package what remedy)
     cmake_parse_arguments(_qb_again "" "FALLBACK" "ENTRIES;PKG_CONFIG;ARGS" ${ARGN})
     if(CMAKE_DISABLE_FIND_PACKAGE_${package})
