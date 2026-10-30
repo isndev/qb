@@ -1556,12 +1556,12 @@ VirtualCore::reply_local(Event &event) noexcept {
         std::memcpy(d + 24, s + 24, bytes - 24);
     }
 #else
-    // One bucket: a constant-size copy the compiler expands inline. `bytes - 24` alone is a library
-    // call to memmove on every event of a target without SSE2 -- arm64 takes this path, 40 bytes an event.
-    if (likely(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES))
-        std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
-    else
-        std::memcpy(d + 24, s + 24, bytes - 24);
+    // Exactly one bucket: more returned above, and an event fills one at least. A constant-size copy the compiler
+    // expands inline, untested: `bytes - 24` alone is a library call to memmove on every event of a target without
+    // SSE2 (arm64 takes this path), and behind a `bytes ==` test g++ read the one case it could not exclude, `bytes`
+    // 0, as a copy of 2^64 - 24 bytes (-Wstringop-overflow on the arm64 release lane).
+    assert(bytes == QB_LOCKFREE_EVENT_BUCKET_BYTES);
+    std::memcpy(d + 24, s + 24, QB_LOCKFREE_EVENT_BUCKET_BYTES - 24);
 #endif
     event.state.bits.alive = 1;
     return;

@@ -764,6 +764,12 @@ policy.
   test reads them through the library's parsers, so qb and its suite build without a deprecation warning against the
   4.1 headers. `readme/3_qb_io/ssl_transport.md` says the SAN is required. An application whose server certificate
   names its host only in the CN is refused by OpenSSL 4.1 clients, whatever framework they use.
+- **qb compiles without a warning on arm64 under g++'s optimised builds.** A same-core `reply` copied its event's
+  tail behind a test of the event's size, and g++ read the one case it could not exclude -- an event of no bucket,
+  which no event is -- as a copy of 2^64 - 24 bytes: `-Wstringop-overflow` on every optimised g++ build of a target
+  without SSE2 (qb's CI lane `ubuntu-arm64-gcc-cxx20-release`). That path holds exactly one bucket, so the copy is
+  now that bucket's constant size with no test, asserted in debug builds. x86-64 builds are unchanged, instruction
+  for instruction.
 
 ### Documentation
 
