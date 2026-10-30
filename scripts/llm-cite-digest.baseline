@@ -166,8 +166,8 @@ llm/qb.llm.api.md	task.h:758-773	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
-llm/qb.llm.api.md	uri.cpp:1123-1162	7001d24b2fe3	if (port_begin && port_begin < port_end) {
-llm/qb.llm.api.md	uri.h:551-551	ad1019a20273	has_query() const noexcept {
+llm/qb.llm.api.md	uri.cpp:1145-1184	7001d24b2fe3	if (port_begin && port_begin < port_end) {
+llm/qb.llm.api.md	uri.h:581-581	ad1019a20273	has_query() const noexcept {
 llm/qb.llm.md	Actor.cpp:660-665	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:660-675	6e87f36f759e	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:843-860	846f083df48d	Actor::reply(Event &event) const noexcept {
@@ -337,8 +337,8 @@ llm/qb.llm.md	time.h:99-99	49cf8beff960	using wall_time = std::chrono::system_cl
 llm/qb.llm.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.md	type_traits.h:744-753	c06907c9bdbd	_qb_detect_own() noexcept {                                          ...
 llm/qb.llm.md	type_traits.h:920-920	d9321c5c623d	inline constexpr bool has_own_on = ::has_method_on<D, void, Evt>::tem...
-llm/qb.llm.md	uri.cpp:1068-1076	7bcfaab8cb54	if (p < p_end && *p == '?') {
-llm/qb.llm.md	uri.cpp:1123-1162	7001d24b2fe3	if (port_begin && port_begin < port_end) {
-llm/qb.llm.md	uri.cpp:1171-1181	af30544ba558	if (query_begin
-llm/qb.llm.md	uri.h:518-528	53630c7d95ca	[[nodiscard]] uint16_t
-llm/qb.llm.md	uri.h:551-553	35a2f12f3a9a	has_query() const noexcept {
+llm/qb.llm.md	uri.cpp:1090-1098	7bcfaab8cb54	if (p < p_end && *p == '?') {
+llm/qb.llm.md	uri.cpp:1145-1184	7001d24b2fe3	if (port_begin && port_begin < port_end) {
+llm/qb.llm.md	uri.cpp:1193-1203	af30544ba558	if (query_begin
+llm/qb.llm.md	uri.h:548-558	53630c7d95ca	[[nodiscard]] uint16_t
+llm/qb.llm.md	uri.h:581-583	35a2f12f3a9a	has_query() const noexcept {

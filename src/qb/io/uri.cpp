@@ -789,6 +789,18 @@ hex_value(char c) {
     return 0;
 }
 
+// The bytes a path holds as themselves, one lookup a byte (Huly QB-1187): [0] a URI reference's, is_path_character();
+// [1] a request target's, is_request_path_character(). unit/core/uri-parse holds both readings to those predicates for
+// every byte.
+constexpr auto path_octet = [] {
+    std::array<std::array<bool, 256>, 2> table{};
+    for (unsigned char const c : std::string_view{"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=%/:@"})
+        table[0][c] = table[1][c] = true;
+    for (unsigned char const c : std::string_view{"[]|"})
+        table[1][c] = true;
+    return table;
+}();
+
 // Extract a substring between two pointers as std::string_view
 inline std::string_view
 make_string_view(const char *begin, const char *end) {
@@ -862,9 +874,10 @@ uri::parse(reading const how) noexcept {
     _fragment    = {};
     _queries.clear();
 
-    // An origin-form target is an absolute path: it begins with '/'. An authority-form one is a host and a port.
-    // Neither has a scheme: only a reference is read for one.
-    if ((how == reading::origin_form && (_source.empty() || _source.front() != '/')) || (how == reading::authority_form && _source.empty())) {
+    // An origin-form target is an absolute path: it begins with '/'. An authority-form one is a host and a port, an
+    // absolute-form one a scheme and an authority: no request target is empty. Only a reference and an absolute-form
+    // target are read for a scheme.
+    if ((how != reading::reference && _source.empty()) || (how == reading::origin_form && _source.front() != '/')) {
         _valid = false;
         return false;
     }
@@ -900,7 +913,8 @@ uri::parse(reading const how) noexcept {
     // Scheme must start with a letter
     // Cast to unsigned char: passing a negative `char` (a non-ASCII byte) to
     // isalpha() is UB per the C standard.
-    if (how == reading::reference && isalpha(static_cast<unsigned char>(*p2))) {
+    const bool uri_reading = how == reading::reference || how == reading::absolute_form;
+    if (uri_reading && isalpha(static_cast<unsigned char>(*p2))) {
         // Check for valid scheme characters (a-z, A-Z, 0-9, +, -, .)
         const char *potential_scheme_end = p2 + 1;
         while (potential_scheme_end < p_end && is_scheme_character(*potential_scheme_end)) {
@@ -917,12 +931,17 @@ uri::parse(reading const how) noexcept {
 
     // Check for authority (//...). An origin-form target has none: its `//` begins a path whose first segment is
     // empty (RFC 9112 §3.2.1 absolute-path), which a reference reads as a network-path (RFC 3986 §4.2). An
-    // authority-form target is one, without the `//`.
+    // authority-form target is one, without the `//`. An absolute-form target is a scheme, then one.
     const char *authority_begin = nullptr;
     const char *authority_end   = nullptr;
     const bool  authority_form  = how == reading::authority_form;
 
-    if (authority_form || (how == reading::reference && p + 1 < p_end && p[0] == '/' && p[1] == '/')) {
+    if (how == reading::absolute_form && (!scheme_begin || p + 1 >= p_end || p[0] != '/' || p[1] != '/')) {
+        _valid = false;
+        return false;
+    }
+
+    if (authority_form || (uri_reading && p + 1 < p_end && p[0] == '/' && p[1] == '/')) {
         if (!authority_form)
             p += 2; // Skip "//"
         authority_begin = p;
@@ -1049,12 +1068,15 @@ uri::parse(reading const how) noexcept {
         }
     }
 
-    // Parse path - it's everything from current position until a '?' or '#'
+    // Parse path - it's everything from current position until a '?' or '#'. The path of a request target a server
+    // received may also hold the octets a browser sends unencoded (is_request_path_character(), Huly QB-1187); a
+    // reference's may not, so that a URI a client builds keeps its meaning.
     if (p < p_end) {
         path_begin = p;
 
+        auto const &allowed = path_octet[how != reading::reference];
         while (p < p_end && *p != '?' && *p != '#') {
-            if (!is_path_character(*p)) {
+            if (!allowed[static_cast<unsigned char>(*p)]) {
                 _valid = false;
                 return false; // Invalid path character
             }
@@ -1337,6 +1359,14 @@ uri::origin_form(std::string target) noexcept {
     uri result;
     result._source = std::move(target);
     result.parse(reading::origin_form);
+    return result;
+}
+
+uri
+uri::absolute_form(std::string target) noexcept {
+    uri result;
+    result._source = std::move(target);
+    result.parse(reading::absolute_form);
     return result;
 }
 

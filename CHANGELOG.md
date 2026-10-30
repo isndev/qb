@@ -103,14 +103,36 @@ policy.
   HTTP/1.1 server read its targets as references, so a client chose the host its handlers saw and the route they
   served. `origin_form()` reads the target as the constructor does with nothing in it read as an authority: the path
   keeps every byte (`///x` is `///x`, where the reference reading kept one slash of three), and the query map is the
-  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte the reference parse
-  refuses (the query and a fragment are read as the constructor reads them). `authority_form()` reads the host and the
-  port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
-  userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
-  digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
-  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. A copy or a move carries either reading, as for every uri (QB-351). The reference parse is unchanged; the
-  private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string literal
-  still names the public factory.
+  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte a request target may not hold
+  (QB-1187 below; the query and a fragment are read as the constructor reads them). `authority_form()` reads the host
+  and the port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
+  userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's digits
+  are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server checks the
+  authority itself, as qbm-http's `origin::is_request_authority()` does. A copy or a move carries either reading, as for
+  every uri (QB-351). The reference parse is unchanged; the private parse() takes the reading as an enumeration, never a
+  `bool`, so `uri::parse("...")` with a string literal still names the public factory.
+
+- **A server reads `[`, `]` and `|` in a request path, as browsers send them: `qb::io::is_request_path_character()`
+  and `qb::io::uri::absolute_form(target)` (Huly QB-1187).** RFC 3986 forbids those three octets in a path, and the
+  WHATWG URL Standard's path percent-encode set leaves them as they are (§1.3 of the Living Standard of 19 October
+  2026), so a browser follows `/search/a|b` or `/doc/[1]` without encoding them: measured on macOS, WebKit (Safari
+  26.6.2) and Node 24's `fetch` send all three raw, Chrome 156 `[` and `]` (it encodes `|`). `origin_form()` refused
+  them, and qbm-http answered such a request 400. `is_request_path_character(c)` is `is_path_character(c)` and `[`,
+  `]`, `|`, and the readings of a request target a server received -- `origin_form()` and the new `absolute_form()`
+  -- read their path with it. `absolute_form(target)` reads an HTTP/1.1 absolute-form target (RFC 9112 §3.2.2), and
+  the text an HTTP/2 or HTTP/3 server composes from `:scheme`, `:authority` and `:path`, as the constructor reads it
+  but for that path; `is_valid()` is false without a scheme followed by `//`. No other octet is added: not `\`, which
+  a browser turns into `/` in an http URL and Windows takes for a separator, nor `^`, which the standard
+  percent-encodes since whatwg/url#846 (2025) and no browser measured sends raw, nor a space, a control, `"`, `<`,
+  `>`, `` ` ``, `{`, `}` or a byte past 0x7F. A URI a client builds keeps its meaning: the constructor reads a URI
+  reference (RFC 3986), and `uri("http://h/a|b")` is invalid as before. The callers of the changed readings are
+  qbm-http's `origin::request_target_uri()` and `origin::request_uri()`; `origin_form()` had no other. `parse()`
+  reads a path from a 256-entry table of the two sets, one lookup a byte, where it called the predicates: a first
+  version with one loop per set cost `origin_form("/health")` 1.25 ns more than the base, and the table makes every
+  reading faster. Measured against `a904abf6`, each side linked to its own library (3 copies of each binary, a seeded
+  order, 8 rounds, a quiet host, macOS arm64): `origin_form("/health")` 12.8 to 9.5 ns, `origin_form` of
+  `/api/v1/users?name=alice` 147.1 to 136.5, the constructor on a 43-byte URI 175.5 to 167.7; the per-byte test pins
+  the table to `is_path_character()` and `is_request_path_character()` for each reading.
 
 ### Changed
 
