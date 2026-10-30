@@ -292,14 +292,15 @@ qb_add_test(MODULE qb-io TIER unit NAME embedded-loop-prefix
 # a libev or wepoll name (ev_*, epoll_*), and some carry qb_ev_ (cmake/qbSymbolPrefix.cmake picks nm or dumpbin).
 qb_add_symbol_prefix_test(NAME qb-io-test-unit-embedded-loop-symbols TARGET qev
                           BANNED ev_ epoll_ REQUIRED qb_ev_ LABELS tier:unit module:qb-io)
-# ngtcp2-openssl-listing (Huly QB-1179, QB-1185): FindNgtcp2.cmake's reading of the OpenSSL libngtcp2_crypto_ossl links,
-# on each platform's listing and on the libraries this configure found -- what qbOpenSSL.cmake disables QUIC on. Where the
-# configure ran the comparison, what it read, the verdict it acted on and the inputs it gave the configure are passed
-# too, and the test re-derives them. The target's APPLE and WIN32 travel under names of their own: script mode defines
-# the host's, and keeps them. qb's libssl and libcrypto are not passed on Windows: never read there, and MSVC's
-# FindOpenSSL can make them optimized/debug lists.
+# ngtcp2-openssl-listing (Huly QB-1179, QB-1185, QB-1190): FindNgtcp2.cmake's reading of the OpenSSL
+# libngtcp2_crypto_ossl links, on each platform's listing and on the libraries this configure found -- what
+# qbOpenSSL.cmake disables QUIC on, and stops the configure on when qb's own headers, libssl and libcrypto are not one
+# major. Where the configure ran a comparison, what it read, the verdict it acted on and the inputs it gave the configure
+# are passed too, and the test re-derives them. The target's APPLE, WIN32 and system name travel under names of their
+# own: script mode defines the host's, and keeps them. qb's libssl and libcrypto are not passed on Windows: never read
+# there, and MSVC's FindOpenSSL can make them optimized/debug lists.
 set(_qb_listing_live "")
-if(Ngtcp2_FOUND AND COMMAND _ngtcp2_linked_openssl) # qb's own module found the helper: its block must have compared
+if(Ngtcp2_FOUND AND DEFINED Ngtcp2_OPENSSL_MAJOR) # qb's own module found the helper: its block must have compared
     list(APPEND _qb_listing_live "-DQB_QUIC_FOUND_BY_QB=TRUE" "-DQB_QUIC_COMPARED=${_qb_quic_compared}")
 endif()
 if(_qb_quic_compared) # what the configure read, and the verdict it acted on
@@ -318,21 +319,32 @@ endif()
 if(NOT WIN32)
     list(APPEND _qb_listing_live "-DQB_SSL_LIBRARY=${OPENSSL_SSL_LIBRARY}" "-DQB_CRYPTO_LIBRARY=${OPENSSL_CRYPTO_LIBRARY}"
          "-DQB_OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}")
+    if(DEFINED _qb_openssl_compared) # qb's OpenSSL check ran (SSL found): whether it compared, and what it read
+        list(JOIN _qb_openssl_check_inputs "|" _qb_listing_inputs)
+        list(APPEND _qb_listing_live "-DQB_OPENSSL_COMPARED=${_qb_openssl_compared}"
+             "-DQB_OPENSSL_SSL_READ=${_qb_openssl_ssl_read}" "-DQB_OPENSSL_CRYPTO_READ=${_qb_openssl_crypto_read}"
+             "-DQB_OPENSSL_CHECK_INPUTS=${_qb_listing_inputs}")
+        unset(_qb_listing_inputs)
+    endif()
+endif()
+if(DEFINED _qb_openssl_headers_major) # the major the check took the headers as, which QUIC's comparison stands in
+    list(APPEND _qb_listing_live "-DQB_OPENSSL_HEADERS_MAJOR=${_qb_openssl_headers_major}")
 endif()
 add_test(NAME qb-io-test-unit-ngtcp2-openssl-listing
          COMMAND "${CMAKE_COMMAND}" "-DFIND_MODULE=${QB_CMAKE_DIR}/FindNgtcp2.cmake" "-DLIBRARY=${NGTCP2_CRYPTO_OSSL_LIBRARY}"
                  ${_qb_listing_live}
-                 "-DQB_OPENSSL_VERSION=${OPENSSL_VERSION}" "-DQB_HAS_QUIC=${QB_HAS_QUIC}"
-                 "-DQB_TARGET_APPLE=${APPLE}" "-DQB_TARGET_WIN32=${WIN32}"
+                 "-DQB_OPENSSL_VERSION=${OPENSSL_VERSION}" "-DQB_HAS_SSL=${QB_HAS_SSL}" "-DQB_HAS_QUIC=${QB_HAS_QUIC}"
+                 "-DQB_TARGET_APPLE=${APPLE}" "-DQB_TARGET_WIN32=${WIN32}" "-DQB_TARGET_SYSTEM=${CMAKE_SYSTEM_NAME}"
                  "-DCMAKE_READELF=${CMAKE_READELF}" "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-openssl-listing"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/ngtcp2-openssl-listing/check.cmake")
 set_tests_properties(qb-io-test-unit-ngtcp2-openssl-listing PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
-# quic-openssl-verdict (Huly QB-1185): the QUIC decision of qbDependencies.cmake (cmake/qbOpenSSL.cmake) on libraries
-# planted in a scratch root, through a languageless fixture: two OpenSSL majors -- a libcrypto of another major than
-# qb's libssl included -- disable QUIC, and fail the configure under QB_REQUIRE_FEATURES=ON; two copies and one major do
-# not; and `cmake --build` re-runs the configure when a library it read is rewritten, moved or removed, with Ninja and
-# Unix Makefiles where their tools are found.
+# quic-openssl-verdict (Huly QB-1185, QB-1190): the OpenSSL and QUIC decisions of qbDependencies.cmake
+# (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through a languageless fixture: qb's headers, libssl
+# and libcrypto not one major stop the configure, QUIC or not; two OpenSSL majors between libngtcp2's and qb's disable
+# QUIC, and fail the configure under QB_REQUIRE_FEATURES=ON; two copies and one major do not; and `cmake --build`
+# re-runs the configure when a library it read is rewritten, moved or removed, with Ninja and Unix Makefiles where their
+# tools are found.
 set(_qb_quic_verdict_args
     "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake" "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/quic-openssl-verdict"
     "-DGENERATOR=${CMAKE_GENERATOR}" "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}" "-DTOOLSET=${CMAKE_GENERATOR_TOOLSET}"

@@ -120,13 +120,15 @@ endif()
 # Optional Dependencies
 # -----------------------------------------------------------------------------
 qb_status_message("Searching for optional dependencies...")
-include("${CMAKE_CURRENT_LIST_DIR}/qbOpenSSL.cmake") # _qb_find_openssl(), then _qb_decide_quic() for QUIC
+include("${CMAKE_CURRENT_LIST_DIR}/qbOpenSSL.cmake") # _qb_find_openssl(), _qb_check_openssl(), _qb_decide_quic()
 set(QB_HAS_ARGON2 FALSE) # defined on every path, SSL or not: qbConfig.cmake.in tests it unconditionally (QB-1138)
 # OpenSSL (optional, for SSL/TLS support)
 if(QB_WITH_SSL)
     # find_package(OpenSSL), searching again a path its own search found that is gone (qbOpenSSL.cmake, Huly QB-1185).
     _qb_find_openssl()
     if(OpenSSL_FOUND)
+        # Its headers, libssl and libcrypto one major, or the configure stops: QUIC or not (Huly QB-1190).
+        _qb_check_openssl()
         qb_status_message("Found OpenSSL: ${OPENSSL_VERSION}")
         list(APPEND QB_EXTERNAL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
         set(QB_HAS_SSL TRUE)

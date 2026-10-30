@@ -965,7 +965,8 @@ features default ON and self-disable if their system dep is missing: `QB_WITH_SS
 `QB_WITH_COMPRESSION` (zlib), `QB_WITH_QUIC=AUTO` (ngtcp2, needs SSL; off with a warning when libngtcp2 links another
 OpenSSL major than qb's libssl or libcrypto -- re-checked at the next build after a package update, and at an installed
 QUIC build's `find_package(qb)`, which warns); an OpenSSL or libngtcp2 this build directory found and later lost stops the
-configure, naming it, instead of self-disabling. Opt-in, OFF by default and a configure error when
+configure, naming it, instead of self-disabling, and so do OpenSSL headers, libssl and libcrypto of two majors (a cache
+cleared in part; Linux and macOS, QUIC or not: remove the three `OPENSSL_*` entries or `--fresh`, Huly QB-1190). Opt-in, OFF by default and a configure error when
 asked for without the library: `QB_WITH_ZSTD` / `QB_WITH_BROTLI` (3.3; read `QB_HAS_ZSTD` / `QB_HAS_BROTLI`). libev and stduuid are bundled.
 When qb is embedded, those resolved `QB_HAS_*` answers reach the parent after
 `add_subdirectory(qb)`; a parent `qb_add_executable(... REQUIRES zstd)` or

@@ -75,11 +75,11 @@ LTO flags are only applied to the `Release` configuration. If the compiler repor
 
 TLS lives in `qb-io` and is gated by `QB_WITH_SSL` (default **`ON`**, backed by OpenSSL via `find_package`). If OpenSSL is not found at configure time, `QB_WITH_SSL` is forced **OFF** and the SSL transports compile out — so confirm the feature is actually enabled in your production build, not silently dropped.
 
-<!-- src: qb/cmake/qbConfig.cmake:160 (QB_WITH_SSL ON), qb/cmake/qbDependencies.cmake:126-155 (OpenSSL probe; QB_WITH_SSL forced OFF when absent) -->
+<!-- src: qb/cmake/qbConfig.cmake:160 (QB_WITH_SSL ON), qb/cmake/qbDependencies.cmake:126-157 (OpenSSL probe; QB_WITH_SSL forced OFF when absent) -->
 
 Verify with the configuration banner the build prints, or check that `QB_WITH_SSL=1` is in the compile definitions — since 3.2 that definition is emitted after the OpenSSL probe, so it agrees with the banner (until then a host without OpenSSL compiled with `QB_WITH_SSL=1` while the banner said `SSL: OFF`).
 
-<!-- src: qb/cmake/qbDependencies.cmake:663-665 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:581-613 (configuration banner; the SSL line is :608) -->
+<!-- src: qb/cmake/qbDependencies.cmake:665-667 (QB_WITH_SSL=1 compile def, after the probe), qb/cmake/qbConfig.cmake:581-613 (configuration banner; the SSL line is :608) -->
 
 ### Client connections are secure by default
 

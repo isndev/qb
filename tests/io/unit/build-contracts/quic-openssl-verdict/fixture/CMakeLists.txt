@@ -6,20 +6,21 @@
 # you may not use this file except in compliance with the License.
 #
 # The OpenSSL and QUIC decisions of qbDependencies.cmake (cmake/qbOpenSSL.cmake), driven with planted libraries (Huly
-# QB-1185): a languageless project that runs, with every search confined to the planted root and pkg-config off, what
-# qbDependencies.cmake runs -- _qb_find_openssl() when OPENSSL_ROOT_DIR names a planted OpenSSL or FIND_OPENSSL asks
-# for the default search (else the OPENSSL_* entries given are the readings), qb's own FindNgtcp2.cmake, then _qb_decide_quic() with qb's message helpers -- and
-# writes what it decided to <RESULT_DIR>/verdict.txt and one line per configure to <RESULT_DIR>/configures.txt. The
-# libraries are read through a stand-in tool, or the helper's readings are planted outright (PLANTED_NGTCP2) where
-# nothing can be read. Configured, and rebuilt, by ../check.cmake only.
+# QB-1185, QB-1190): a languageless project that runs, with every search confined to the planted root and pkg-config
+# off, what qbDependencies.cmake runs -- _qb_find_openssl() when OPENSSL_ROOT_DIR names a planted OpenSSL or
+# FIND_OPENSSL asks for the default search (else the OPENSSL_* entries given are the readings), _qb_check_openssl() on
+# the OpenSSL found or given, qb's own FindNgtcp2.cmake (or a parent's, PARENT_MODULE_DIR), then _qb_decide_quic() with
+# qb's message helpers -- and writes what it decided to <RESULT_DIR>/verdict.txt and one line per configure to
+# <RESULT_DIR>/configures.txt. The libraries are read through a stand-in tool, or the helper's readings are planted
+# outright (PLANTED_NGTCP2) where nothing can be read. Configured, and rebuilt, by ../check.cmake only.
 #
 #   cmake -S <this dir> -B <build> -DQB_CMAKE_MODULE_DIR=<qb>/cmake -DRESULT_DIR=<dir> -DPLANT_ROOT=<dir>
 #         [-DOPENSSL_ROOT_DIR=<under the root> | -DFIND_OPENSSL=ON | -DOPENSSL_SSL_LIBRARY=.. -DOPENSSL_CRYPTO_LIBRARY=..
-#          -DOPENSSL_VERSION=..]
-#         [-DNGTCP2_...=.. cache entries] [-DCMAKE_PREFIX_PATH=<under the root>]
+#          -DOPENSSL_VERSION=.. -DOPENSSL_INCLUDE_DIR=..]
+#         [-DNGTCP2_...=.. cache entries] [-DCMAKE_PREFIX_PATH=<under the root>] [-DPARENT_MODULE_DIR=<dir>]
 #         [-DPLANTED_NGTCP2=<ssl major>|<ssl path>|<crypto major>|<crypto path>]
 #         [-DNGTCP2_OTOOL_EXECUTABLE=<stand-in> | -DCMAKE_READELF=<stand-in>] [-DQB_WITH_QUIC=..] [-DQB_REQUIRE_FEATURES=..]
-#         [-DUSE_PKG_CONFIG=ON, PKG_CONFIG_LIBDIR in the environment]
+#         [-DUSE_PKG_CONFIG=ON, PKG_CONFIG_LIBDIR in the environment] [-DCMAKE_SYSTEM_NAME=<another system>]
 #
 cmake_minimum_required(VERSION 3.24)
 project(qb_quic_openssl_verdict NONE)
@@ -42,10 +43,16 @@ else()
     set(CMAKE_DISABLE_FIND_PACKAGE_PkgConfig TRUE)
 endif()
 list(PREPEND CMAKE_MODULE_PATH "${QB_CMAKE_MODULE_DIR}")
+if(PARENT_MODULE_DIR) # a parent project's FindNgtcp2 module, first on the path: it wins the search
+    list(PREPEND CMAKE_MODULE_PATH "${PARENT_MODULE_DIR}")
+endif()
 
 include("${QB_CMAKE_MODULE_DIR}/qbOpenSSL.cmake")
 if(DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)
     _qb_find_openssl()
+endif()
+if(OpenSSL_FOUND OR NOT (DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)) # as qbDependencies.cmake checks the one it found
+    _qb_check_openssl()
 endif()
 
 find_package(Ngtcp2 QUIET)
@@ -61,11 +68,15 @@ endif()
 set(QB_EXTERNAL_LIBRARIES "")
 set(_qb_quic_compared FALSE)
 string(TOUPPER "${QB_WITH_QUIC}" _qb_quic_mode)
-set(_qb_quic_required TRUE)
-if(_qb_quic_mode STREQUAL "AUTO")
-    set(_qb_quic_required FALSE)
+if(_qb_quic_mode MATCHES "^(OFF|FALSE|0|NO|N)$")
+    set(QB_HAS_QUIC FALSE)
+else()
+    set(_qb_quic_required TRUE)
+    if(_qb_quic_mode STREQUAL "AUTO")
+        set(_qb_quic_required FALSE)
+    endif()
+    _qb_decide_quic()
 endif()
-_qb_decide_quic()
 
 file(APPEND "${RESULT_DIR}/configures.txt" "configured\n")
 set(_entries "")
@@ -75,4 +86,6 @@ foreach(_entry IN ITEMS NGTCP2_INCLUDE_DIR NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIB
 endforeach()
 file(WRITE "${RESULT_DIR}/verdict.txt"
      "QB_HAS_QUIC=${QB_HAS_QUIC}\nVERDICT=${_qb_quic_conflict}\nCOMPARED=${_qb_quic_compared}\n"
-     "LIBRARIES=${QB_EXTERNAL_LIBRARIES}\nNGTCP2=${Ngtcp2_FOUND}\nOPENSSL=${OpenSSL_FOUND}\n${_entries}")
+     "LIBRARIES=${QB_EXTERNAL_LIBRARIES}\nNGTCP2=${Ngtcp2_FOUND}\nOPENSSL=${OpenSSL_FOUND}\n"
+     "OPENSSL_COMPARED=${_qb_openssl_compared}\nOPENSSL_READ=${_qb_openssl_ssl_read}|${_qb_openssl_crypto_read}\n"
+     "${_entries}")

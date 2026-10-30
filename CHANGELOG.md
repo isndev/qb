@@ -557,8 +557,8 @@ policy.
     `qb-io-test-system-ssl-socket-loopback` and `-tls-peer-verification` crashed (SIGSEGV), `-quic-handshake` too
     (SIGBUS). Every libssl and libcrypto major read on both sides must now be one; the module reports the helper's
     libcrypto as `Ngtcp2_OPENSSL_CRYPTO_MAJOR` and `Ngtcp2_OPENSSL_CRYPTO_LIBRARY`, and the warning names each library
-    and says when qb's own pair is split -- its TLS then loads both, QUIC or not, which no configure refuses yet
-    (QB-1190).
+    (qb's own pair split -- its TLS then loads both, QUIC or not -- now stops the configure before QUIC is considered:
+    QB-1190, below).
   - `QB_REQUIRE_FEATURES=ON` on two majors, what qb's CI lanes configure with, was measured by hand only. The QUIC
     decision moved from `qbDependencies.cmake` into `cmake/qbOpenSSL.cmake` (`_qb_decide_quic()`, a macro of the same
     code, beside `_qb_find_openssl()`), and `qb-io-test-unit-quic-openssl-verdict` drives both on libraries planted in a
@@ -580,6 +580,39 @@ policy.
   configure's inputs too, reports it. Nine rounds of independent review, the last finding no defect; 39 mutants of the
   fix, planted one at a time, each caught; on macOS arm64 (`cmake -S qb`, openssl@4): Release 255 registered / 255
   executed / 0 skipped, ASan+UBSan 256 / 256 / 0, TSan 255 / 255 / 0, no compiler warning, no sanitizer report.
+
+- **qb's configure stops when its OpenSSL headers, libssl and libcrypto are not one major, QUIC or not: a cache cleared
+  in part configured and built a TLS that crashed (Huly QB-1190).** FindOpenSSL caches `OPENSSL_INCLUDE_DIR`,
+  `OPENSSL_SSL_LIBRARY` and `OPENSSL_CRYPTO_LIBRARY` apart, so one removed from the cache while `OPENSSL_ROOT_DIR` moved
+  to another OpenSSL is found there and the other two are kept. Measured on macOS on the base (`89caeeed`, QUIC off):
+  `cmake -U OPENSSL_SSL_LIBRARY -DOPENSSL_ROOT_DIR=openssl@4` over an openssl@3 tree configured and built green with the
+  3.5.9 headers, `libssl.4` and `libcrypto.3`, and `qb-io-test-system-ssl-socket-loopback` and `-tls-peer-verification`
+  crashed (SIGSEGV); `libssl.3` with `libcrypto.4` crashed both (SIGBUS); the 4.1 headers over the 3.5.9 libraries
+  failed to link. QB-1185 refused that only for QUIC, and only beside a libngtcp2. `_qb_check_openssl()`
+  (`cmake/qbOpenSSL.cmake`) now reads the libssl and the libcrypto as the QUIC check reads libngtcp2's --
+  `FindNgtcp2.cmake`'s reader, on macOS the file the install name names -- and compares the number each file name
+  carries with the one the headers name their libraries with (`OPENSSL_SHLIB_VERSION`, `SHLIB_VERSION_NUMBER` on 1.1,
+  else the release's major: a build may number its libraries apart, as quictls names 3.1's `libssl.so.81.3`); when they
+  are not one, the configure stops, naming the three entries, their paths and majors, and the remedy -- remove all three
+  from the cache, or `--fresh` -- whatever `QB_REQUIRE_FEATURES` says: a cache that contradicts itself, not a missing
+  feature, and a build without TLS is not what was asked for. A static archive, or a library no tool reads, takes its
+  headers' major. Compared on Linux and macOS, where a library's file name carries that number; not on other systems
+  (FreeBSD names OpenSSL 3's `libssl.so.30`) nor for LibreSSL (its libssl and libcrypto are numbered apart), which the
+  configure says, and not on Windows, where nothing is read. `_qb_decide_quic()` takes qb's unread libraries as the
+  check took the headers. The files read are inputs of the configure, the install names on macOS included, so a package
+  update is checked again at the next build. `_qb_decide_quic()` compares only when qb's own `FindNgtcp2.cmake` ran the
+  search -- a parent project's module defines none of its readings, and the reader's functions are now defined QUIC or
+  not -- and its warning no longer mentions qb's own pair, refused before it. `qb-io-test-unit-quic-openssl-verdict`
+  drives the check on planted libraries: each shape measured, beside a libngtcp2, without one and with QUIC off; a
+  static and an unread library; the remedy, by `-U` and by `--fresh`; LibreSSL, another system and a parent's module not
+  compared; and with Ninja and Unix Makefiles, a libcrypto or `opensslv.h` rewritten onto another major stops the next
+  build until it is back, and on macOS so does an `opt/` link moved under qb's libssl.
+  `qb-io-test-unit-ngtcp2-openssl-listing` re-reads the check's readings and inputs on the host. Two rounds of
+  independent review, the second finding no code or test defect; 20 mutants of the check, planted one at a time beside a
+  green control, each caught. On macOS arm64, `cmake -S qb` with openssl@4 4.1.0 and QUIC on, at the tip of this lot
+  (QB-1190, QB-1192, QB-1175): Release 257 / 257 / 0, ASan+UBSan 258 / 258 / 0, TSan 257 / 257 / 0 (registered /
+  executed / skipped), no compiler warning, no sanitizer report; the superproject's OpenSSL, QUIC and build-contract
+  tests 10 / 10.
 
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the
