@@ -42,21 +42,21 @@ namespace qb::io::async::event {
  * When a handler receives this event, it means the timer has expired.
  * The underlying `ev::timer` can be configured for one-shot or repeating behavior.
  *
- * Usage Example (within a class using `with_timeout` which manages a `timer` event internally):
+ * Usage Example (a `with_timeout` component, which manages a `timer` event internally):
  * @code
+ * #include <qb/io/async.h>
+ *
  * class MyTimeoutHandler : public qb::io::async::with_timeout<MyTimeoutHandler> {
  * public:
- *   MyTimeoutHandler(qb::duration timeout) : with_timeout(timeout) {}
+ *   explicit MyTimeoutHandler(qb::duration timeout) : with_timeout(timeout) {}
  *
  *   void onActivity() {
- *     updateTimeout(); // Reset the timer on activity
+ *     updateTimeout(); // the timeout counts from here; the armed watcher is left as it is
  *   }
  *
- *   void on(qb::io::async::event::timer &&event) { // Or const timer& if not modifying it
- *     QB_LOG_INFO("Timeout occurred!");
- *     // Handle the timeout, e.g., close a connection, retry an operation.
- *     // If it was a one-shot timer, it stops automatically.
- *     // For periodic, call updateTimeout() or set() then start() on the event watcher to re-arm.
+ *   void on(qb::io::async::event::timer const &) { // `with_timeout` hands the event over as an lvalue
+ *     // A whole timeout without activity: close a connection, retry an operation... The watcher is one-shot,
+ *     setTimeout(getTimeout()); // stopped now, and updateTimeout() does not re-arm it: this does, from now
  *   }
  * };
  * @endcode
