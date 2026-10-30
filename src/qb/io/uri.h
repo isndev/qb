@@ -148,6 +148,21 @@ is_path_character(int c) {
 }
 
 /**
+ * @brief Checks if a character may stand for itself in the path of an HTTP request target a server received
+ * @param c The character to check
+ * @return true for a path character (is_path_character()) and for `[`, `]` and `|`, false otherwise
+ *
+ * `[`, `]` and `|` are the octets RFC 3986 forbids in a path that the WHATWG URL Standard's path percent-encode set
+ * leaves as they are (§1.3): a browser sends them unencoded. The set leaves `\` too, which stays out: a browser sends
+ * `/` for it in an http URL, and Windows takes it for a separator. `^` is percent-encoded since 2025. uri::origin_form()
+ * and uri::absolute_form() read a path with this set; a URI reference, uri(text), with is_path_character().
+ */
+inline bool
+is_request_path_character(int c) {
+    return is_path_character(c) || c == '[' || c == ']' || c == '|';
+}
+
+/**
  * @brief Checks if a character is valid for the query part of a URI
  * @param c The character to check
  * @return true if the character is valid for query, false otherwise
@@ -198,13 +213,13 @@ class uri {
     //    an IPv4 address */
 
     /// How parse() reads the source: as a URI reference (the constructors), or as one of the HTTP request-target
-    /// forms that are not URIs (origin_form(), authority_form()). An enumeration, not a bool: a string literal
-    /// converts to a bool, and the public `parse("...")` would resolve to this private member.
-    enum class reading : std::uint8_t { reference, origin_form, authority_form };
+    /// forms a server receives (origin_form(), absolute_form(), authority_form()). An enumeration, not a bool: a
+    /// string literal converts to a bool, and the public `parse("...")` would resolve to this private member.
+    enum class reading : std::uint8_t { reference, origin_form, absolute_form, authority_form };
 
     /**
      * @brief Parse the source URI and fill the object fields
-     * @param how The reading: a reference, or the form origin_form() or authority_form() reads
+     * @param how The reading: a reference, or the form origin_form(), absolute_form() or authority_form() reads
      * @return true if parsing succeeded, false otherwise
      */
     bool parse(reading how = reading::reference) noexcept;
@@ -393,13 +408,28 @@ public:
      * @param target The target as it was received, e.g. `/a/b?x=1`.
      * @return The target as `uri(target)` reads it, except that nothing in it is an authority: `//a/b` is the path
      *         `//a/b` with an empty host(), where a URI reference (RFC 3986 §4.2) names the host `a` and the path
-     *         `/b`. is_valid() is false when @p target does not begin with '/' or holds a byte a path may not hold.
-     *         The query and a fragment are read as the constructor reads them: no request target holds a fragment,
-     *         and a server refuses one itself.
+     *         `/b`; and that the path may hold `[`, `]` and `|`, which a browser sends unencoded
+     *         (is_request_path_character()). is_valid() is false when @p target does not begin with '/' or its path
+     *         holds any other byte a URI path may not hold. The query and a fragment are read as the constructor reads
+     *         them: no request target holds a fragment, and a server refuses one itself.
      * @note A server builds the URI of an origin-form request with this function and takes the authority from the
-     *       `Host` field (RFC 9112 §3.3). An absolute-form target (`http://host/path`) is a URI: `uri(target)`.
+     *       `Host` field (RFC 9112 §3.3), and that of an absolute-form one with absolute_form().
      */
     [[nodiscard]] static uri origin_form(std::string target) noexcept;
+
+    /**
+     * @brief Reads an HTTP request target in absolute-form (RFC 9112 §3.2.2): a URI with a scheme and an authority,
+     *        as a server receives one.
+     * @param target The target as it was received, e.g. `http://example.com/a|b?x=1`; also the text an HTTP/2 or
+     *        HTTP/3 server composes from `:scheme`, `:authority` and `:path`.
+     * @return The target as `uri(target)` reads it, except that the path may hold `[`, `]` and `|`, which a browser
+     *         sends unencoded (is_request_path_character()), as origin_form() reads one. is_valid() is false when
+     *         @p target does not begin with a scheme and `://`, or its path holds any other byte a URI path may not
+     *         hold. The authority is read as a reference's -- a userinfo, an empty host are accepted -- and the query
+     *         and a fragment too: a server checks what HTTP requires of them itself.
+     * @note A URI a client builds is a reference, `uri(text)`, which refuses `[`, `]` and `|` in a path.
+     */
+    [[nodiscard]] static uri absolute_form(std::string target) noexcept;
 
     /**
      * @brief Reads an HTTP request target in authority-form (RFC 9112 §3.2.3): the host and the port of a CONNECT

@@ -1016,12 +1016,17 @@ TEST(UriParse, OriginFormReadsNoAuthority) {
 }
 
 /**
- * @test origin_form() refuses a text that is not an absolute path, and a path byte the reference parse refuses.
+ * @test origin_form() refuses a text that is not an absolute path, and a path byte a request target may not hold.
  * @brief An asterisk-form, an absolute-form and an authority-form target are not origin-form: is_valid() is false and
- *        nothing is read from them -- no scheme, no host. The reference parse still reads the first three.
+ *        nothing is read from them -- no scheme, no host. The reference parse still reads the first three. The bytes
+ *        refused are those RFC 3986 forbids in a path that a browser never sends as they are (Huly QB-1187): the
+ *        path percent-encode set of the WHATWG URL Standard but for `?` and `#`, which begin a query and a fragment,
+ *        `\` -- a browser sends `/` --, and anything outside printable ASCII.
  */
 TEST(UriParse, OriginFormRefusesWhatIsNotAnAbsolutePath) {
-    for (std::string_view const target : {"", "*", "a/b", "?q", "http://h/p", "h:80", "/a|b", "/a b", "/a[b]"}) {
+    for (std::string_view const target :
+         {"", "*", "a/b", "?q", "http://h/p", "h:80", "/a b", "/a\\b", "/a^b", "/a\"b", "/a<b", "/a>b", "/a`b", "/a{b", "/a}b", "/a\tb",
+          "/a\x7f", "/a\x01", "/caf\xc3\xa9"}) {
         const auto u = uri::origin_form(std::string{target});
         EXPECT_FALSE(u.is_valid()) << '"' << target << '"';
         EXPECT_TRUE(u.scheme().empty()) << target;
@@ -1054,6 +1059,145 @@ TEST(UriParse, OriginFormSurvivesCopyAndMove) {
         EXPECT_EQ(u->path(), "//a/b");
         EXPECT_EQ(u->query("k"), "v");
         EXPECT_EQ(u->path().data(), u->source().data()) << "the path views this uri's own text";
+    }
+}
+
+// =============================================================================
+// THE OCTETS A BROWSER SENDS IN A REQUEST PATH (Huly QB-1187)
+// =============================================================================
+
+/**
+ * @test is_request_path_character() is is_path_character() and exactly `[`, `]` and `|`.
+ * @brief Those three are the octets RFC 3986 forbids in a path that the WHATWG URL Standard's path percent-encode set
+ *        leaves as they are (§1.3 of the Living Standard of 19 October 2026): a browser sends them unencoded. `\`, which
+ *        the standard leaves too but turns into `/` in an http URL, and `^`, which it encodes since 2025
+ *        (whatwg/url#846), stay out. A negative `char` -- a byte past 0x7F -- is no path character either.
+ */
+TEST(UriClassifiers, RequestPathCharacterIsPathCharacterAndTheOctetsABrowserSendsRaw) {
+    for (int c = 0; c < 256; ++c) {
+        const bool raw_in_a_browser = c == '[' || c == ']' || c == '|';
+        EXPECT_EQ(qb::io::is_request_path_character(c), qb::io::is_path_character(c) || raw_in_a_browser) << "byte " << c;
+        if (raw_in_a_browser)
+            EXPECT_FALSE(qb::io::is_path_character(c)) << "RFC 3986 forbids it in a path: " << static_cast<char>(c);
+    }
+    for (char const c : std::string_view{"\\^\"<>#?`{} \t\x7f"})
+        EXPECT_FALSE(qb::io::is_request_path_character(c)) << "byte " << static_cast<int>(static_cast<unsigned char>(c));
+    for (int c = -128; c < 0; ++c)
+        EXPECT_FALSE(qb::io::is_request_path_character(c)) << "byte " << c;
+}
+
+/**
+ * @test For every byte, each reading holds a path to its predicate: a reference to is_path_character(), origin_form()
+ *       and absolute_form() to is_request_path_character() -- `?` and `#` end the path, as in a reference.
+ * @brief parse() reads a path from a table, one lookup a byte, not from the predicates (Huly QB-1187): this pins the
+ *        table to them, both readings and both halves of the byte range.
+ */
+TEST(UriParse, EachReadingHoldsAPathToItsPredicateForEveryByte) {
+    for (int c = 0; c < 256; ++c) {
+        auto const        byte      = static_cast<char>(c);
+        std::string const path      = std::string{"/a"} + byte + "b";
+        bool const        ends_path = byte == '?' || byte == '#';
+        EXPECT_EQ(uri{path}.is_valid(), qb::io::is_path_character(byte) || ends_path) << "reference, byte " << c;
+        EXPECT_EQ(uri::origin_form(path).is_valid(), qb::io::is_request_path_character(byte) || ends_path) << "origin-form, byte " << c;
+        EXPECT_EQ(uri::absolute_form("http://h" + path).is_valid(), qb::io::is_request_path_character(byte) || ends_path)
+            << "absolute-form, byte " << c;
+    }
+}
+
+/**
+ * @test origin_form() keeps `[`, `]` and `|` in a path, as they were sent.
+ * @brief A browser follows `/search/a|b` without encoding the `|` (WebKit, Node's fetch; Chrome 156 sends `[` and `]`
+ *        raw and encodes `|`). The path is the target's own bytes: nothing is decoded or encoded.
+ */
+TEST(UriParse, OriginFormKeepsTheOctetsABrowserSendsRaw) {
+    struct Case {
+        std::string_view target, path, query;
+    };
+    for (auto const &c :
+         {Case{"/search/a|b", "/search/a|b", ""}, Case{"/a[b]", "/a[b]", ""}, Case{"/[x]/|y|?k=[v]|w", "/[x]/|y|", "k=[v]|w"},
+          Case{"//[::1]/x", "//[::1]/x", ""}, Case{"/a%7Cb", "/a%7Cb", ""}}) {
+        const auto u = uri::origin_form(std::string{c.target});
+        EXPECT_TRUE(u.is_valid()) << c.target;
+        EXPECT_TRUE(u.host().empty()) << c.target;
+        EXPECT_EQ(u.path(), c.path) << c.target;
+        EXPECT_EQ(u.encoded_queries(), c.query) << c.target;
+    }
+    EXPECT_EQ(uri::origin_form("/a?k=[v]|w").query("k"), "[v]|w");
+}
+
+/**
+ * @test A URI a client builds keeps its meaning: the reference parse still refuses `[`, `]` and `|` in a path.
+ * @brief Only the readings of a request target a server received -- origin_form(), absolute_form() -- take them. A
+ *        client whose `uri("http://h/a|b")` was invalid before is told so still, never sent what it did not check.
+ */
+TEST(UriParse, AReferenceStillRefusesTheOctetsABrowserSendsRaw) {
+    for (std::string_view const text : {"/a|b", "/a[b]", "http://h/a|b", "https://h/[x]", "http://[::1]/a]b"}) {
+        const uri u{std::string{text}};
+        EXPECT_FALSE(u.is_valid()) << text;
+        EXPECT_TRUE(u.path().empty()) << text;
+    }
+    EXPECT_TRUE(uri{std::string{"http://h/a%7Cb"}}.is_valid()) << "the encoded spelling";
+}
+
+/**
+ * @test absolute_form() reads a URI with a scheme and an authority, whose path may hold `[`, `]` and `|`.
+ * @brief The absolute-form of an HTTP/1.1 request target (RFC 9112 §3.2.2), and the text an HTTP/2 or HTTP/3 server
+ *        composes from `:scheme`, `:authority` and `:path`: the reference's components, the path read as
+ *        origin_form() reads one.
+ */
+TEST(UriParse, AbsoluteFormReadsAUriWithAnAuthority) {
+    struct Case {
+        std::string_view target, scheme, host, port, path, query;
+    };
+    for (auto const &c :
+         {Case{"http://h/a|b?q=1", "http", "h", "80", "/a|b", "q=1"}, Case{"https://[::1]:8443/[x]/y]", "https", "::1", "8443", "/[x]/y]", ""},
+          Case{"http://h", "http", "h", "80", "/", ""}, Case{"http://h?x", "http", "h", "80", "/", "x"},
+          Case{"HTTP://H:1//a|b", "HTTP", "H", "1", "//a|b", ""}, Case{"http://h/a%7Cb", "http", "h", "80", "/a%7Cb", ""}}) {
+        const auto u = uri::absolute_form(std::string{c.target});
+        EXPECT_TRUE(u.is_valid()) << c.target;
+        EXPECT_EQ(u.source(), c.target);
+        EXPECT_EQ(u.scheme(), c.scheme) << c.target;
+        EXPECT_EQ(u.host(), c.host) << c.target;
+        EXPECT_EQ(u.port(), c.port) << c.target;
+        EXPECT_EQ(u.path(), c.path) << c.target;
+        EXPECT_EQ(u.encoded_queries(), c.query) << c.target;
+    }
+    EXPECT_EQ(uri::absolute_form("http://h/x?k=[v]").query("k"), "[v]") << "the query map is the reference's";
+}
+
+/**
+ * @test absolute_form() refuses a text without a scheme and an authority, and a path byte a request target may not
+ *       hold, and reads nothing from it.
+ */
+TEST(UriParse, AbsoluteFormRefusesWhatIsNotAUriWithAnAuthority) {
+    for (std::string_view const target :
+         {"", "*", "/a", "//h/a", "h/a", "h:80", "http:/a", "http:a", "urn:x", "http://h/a\\b", "http://h/a^b", "http://h/a b", "http://h/a{b}",
+          "http://h/\xc3\xa9", "http://h a/x", "http://[::1/x"}) {
+        const auto u = uri::absolute_form(std::string{target});
+        EXPECT_FALSE(u.is_valid()) << '"' << target << '"';
+        EXPECT_TRUE(u.scheme().empty()) << target;
+        EXPECT_TRUE(u.host().empty()) << target;
+        EXPECT_TRUE(u.path().empty()) << target;
+    }
+}
+
+/**
+ * @test A copy and a move carry the reading of a request target: a path with `|` stays valid, never read again as a
+ *       reference would read it.
+ */
+TEST(UriParse, RequestTargetReadingsSurviveCopyAndMove) {
+    for (auto const &original : {uri::origin_form("/a|b?k=v"), uri::absolute_form("http://h/a|b?k=v")}) {
+        uri copied{original};
+        uri assigned;
+        assigned            = original;
+        auto source_of_move = original;
+        uri  moved{std::move(source_of_move)};
+        for (uri const *u : {&copied, &assigned, &moved}) {
+            EXPECT_TRUE(u->is_valid());
+            EXPECT_EQ(u->path(), "/a|b");
+            EXPECT_EQ(u->query("k"), "v");
+            EXPECT_EQ(u->host(), original.host());
+        }
     }
 }
 
