@@ -549,6 +549,187 @@ if(_posix)
                               "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/o4/lib/libcrypto${_ext}")
     endforeach()
 endif()
+# The openssl command that makes the test certificates is the found OpenSSL's when it makes one, before one on PATH or
+# under CMAKE_PREFIX_PATH; searched at every configure, it follows qb onto another OpenSSL, and falls back to the
+# default search -- then PATH's -- once the prefix has none, or one that answers `version` but cannot make a
+# certificate; cross-compiling, it never takes the target root's, nor one under CMAKE_PREFIX_PATH that does not run
+# here. An OPENSSL_EXECUTABLE already set -- by hand (-DOPENSSL_EXECUTABLE), by a parent's variable, by a
+# find_program() -- is taken as given, a find_program() entry said once, an empty one as no command; qb's choice is
+# kept as the entry, which a later find_program() takes and the next configure chooses again (Huly QB-1175).
+if(_posix)
+    set(_name "openssl-command")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    escape("${WORK_DIR}/${_name}/path" _path_regex)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    # An openssl stand-in in <dir>: `req` (what makes a certificate) exits <req_rc>, default <rc>; anything else <rc>.
+    function(command dir rc)
+        set(_req_rc ${rc})
+        if(ARGC GREATER 2)
+            set(_req_rc ${ARGV2})
+        endif()
+        file(WRITE "${dir}/openssl" "#!/bin/sh\nif [ \"$1\" = req ]; then exit ${_req_rc}; fi\nexit ${rc}\n")
+        file(CHMOD "${dir}/openssl" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+    endfunction()
+    command("${_root}/qb-openssl/bin" 0)
+    command("${WORK_DIR}/${_name}/path" 0)
+    command("${_root}/other/bin" 0)
+    # The default search takes CMAKE_PREFIX_PATH and CMAKE_PROGRAM_PATH from the environment too, ahead of PATH, and
+    # the GitHub macOS runner exports one naming Homebrew's OpenSSL: the cases name their own, the environment's are
+    # cleared.
+    set(_env "--unset=CMAKE_PREFIX_PATH" "--unset=CMAKE_PROGRAM_PATH" "PATH=${WORK_DIR}/${_name}/path:$ENV{PATH}")
+    set(_build "${WORK_DIR}/${_name}/build")
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      "-DCMAKE_PREFIX_PATH=${_root}/other"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "OPENSSL_EXECUTABLE_ENTRY=${_root_regex}/qb-openssl/bin/openssl") # qb's choice, kept
+    command("${_root}/qb-openssl/bin" 1)
+    configure_fixture(${_name} "${_build}" OK HAS "OPENSSL_COMMAND=${_root_regex}/other/bin/openssl") # the default search
+    configure_fixture(${_name} "${_build}" OK "-DCMAKE_PREFIX_PATH=" HAS "OPENSSL_COMMAND=${_path_regex}/openssl")
+    command("${_root}/qb-openssl/bin" 0 1) # answers `version`, cannot make a certificate (no openssl.cnf)
+    configure_fixture(${_name} "${_build}" OK HAS "OPENSSL_COMMAND=${_path_regex}/openssl")
+    command("${_root}/qb-openssl/bin" 0)
+    configure_fixture(${_name} "${_build}" OK HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl")
+    file(REMOVE "${_root}/qb-openssl/bin/openssl")
+    configure_fixture(${_name} "${_build}" OK HAS "OPENSSL_COMMAND=${_path_regex}/openssl")
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_EXECUTABLE=/by/hand/openssl"
+                      HAS "OPENSSL_COMMAND=/by/hand/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    # Named by hand as PATH's -- what qb's Linux CI lanes pass, `command -v openssl` -- is still named.
+    command("${_root}/qb-openssl/bin" 0)
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_EXECUTABLE=${WORK_DIR}/${_name}/path/openssl"
+                      HAS "OPENSSL_COMMAND=${_path_regex}/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    # qb moved onto another OpenSSL (the three entries removed, as QB-1190's remedy says): its command follows.
+    set(_build "${WORK_DIR}/${_name}/moved")
+    plant_openssl("${_root}/next-openssl" 3 b)
+    command("${_root}/next-openssl/bin" 0)
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl")
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_ROOT_DIR=/next-openssl" "-U" "OPENSSL_INCLUDE_DIR"
+                      "-U" "OPENSSL_SSL_LIBRARY" "-U" "OPENSSL_CRYPTO_LIBRARY"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/next-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE")
+    # A parent project's own find_program(OPENSSL_EXECUTABLE) is taken as given, as before -- with a command named by
+    # hand, which that find_program() keeps under its own help string -- and its entry is left to it.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/parent-search" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DQB_WITH_QUIC=OFF" "-DPARENT_FINDS_OPENSSL=ON"
+                      MUST "OPENSSL_EXECUTABLE \\(${_path_regex}/openssl\\) is a find_program\\(\\) entry"
+                      HAS "OPENSSL_COMMAND=${_path_regex}/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE"
+                          "OPENSSL_EXECUTABLE_ENTRY=${_path_regex}/openssl")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/parent-named" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DQB_WITH_QUIC=OFF" "-DPARENT_FINDS_OPENSSL=ON" "-DOPENSSL_EXECUTABLE=/by/hand/openssl"
+                      HAS "OPENSSL_COMMAND=/by/hand/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    # A consumer's find_program(OPENSSL_EXECUTABLE) after qb takes qb's choice, at every configure.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/late" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      "-DLATE_FINDS_OPENSSL=ON"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "LATE_FOUND=${_root_regex}/qb-openssl/bin/openssl")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/late" OK NOT "is a find_program\\(\\) entry"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "LATE_FOUND=${_root_regex}/qb-openssl/bin/openssl")
+    # An empty OPENSSL_EXECUTABLE makes no certificates, as find_program() kept it; NOTFOUND is none, searched for.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/empty" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_EXECUTABLE=" HAS "OPENSSL_COMMAND=" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/notfound" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DQB_WITH_QUIC=OFF" "-DOPENSSL_EXECUTABLE=NOTFOUND"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "OPENSSL_EXECUTABLE_ENTRY=NOTFOUND") # another's entry, even NOTFOUND, left as it is
+    # A parent project's find_program() that finds nothing: its NOTFOUND entry is left to it, at every configure.
+    foreach(_time 1 2)
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/parent-nothing" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                          "-DQB_WITH_QUIC=OFF" "-DPARENT_FINDS_NOTHING=ON"
+                          HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                              "OPENSSL_EXECUTABLE_ENTRY=OPENSSL_EXECUTABLE-NOTFOUND")
+    endforeach()
+    # qb's choice edited in place -- ccmake, cmake-gui, an edited CMakeCache.txt keep qb's help string -- is named.
+    set(_build "${WORK_DIR}/${_name}/edited")
+    configure_fixture(${_name} "${_build}" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl")
+    file(READ "${_build}/CMakeCache.txt" _cache)
+    string(REGEX REPLACE "\nOPENSSL_EXECUTABLE:FILEPATH=[^\n]*\n" "\nOPENSSL_EXECUTABLE:FILEPATH=/edited/openssl\n"
+           _cache "${_cache}")
+    file(WRITE "${_build}/CMakeCache.txt" "${_cache}")
+    configure_fixture(${_name} "${_build}" OK
+                      HAS "OPENSSL_COMMAND=/edited/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    # A variable that names no command, over another's cache entry: qb chooses, and leaves that entry as it is.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/over-entry" OK "-DOPENSSL_ROOT_DIR=/qb-openssl"
+                      "-DQB_WITH_QUIC=OFF" "-DOPENSSL_EXECUTABLE=/by/hand/openssl"
+                      "-DPARENT_OPENSSL_EXECUTABLE=OPENSSL_EXECUTABLE-NOTFOUND"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "OPENSSL_EXECUTABLE_ENTRY=/by/hand/openssl")
+    # A parent project's variable is taken as given, as find_program() took it.
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/parent" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      "-DPARENT_OPENSSL_EXECUTABLE=/parent/openssl"
+                      HAS "OPENSSL_COMMAND=/parent/openssl" "OPENSSL_COMMAND_BY_HAND=TRUE")
+    # A build directory the old generator configured holds its find_program() entry -- PATH's it found, or a command
+    # named by hand it kept, given the same help string: taken as given, as find_program() takes it, and said once,
+    # with -U OPENSSL_EXECUTABLE to let qb choose; one that found nothing is no command, and qb's is searched for.
+    set(_name "openssl-command-cached")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    command("${_root}/qb-openssl/bin" 0)
+    foreach(_old "${WORK_DIR}/openssl-command/path/openssl" "/by/hand/openssl")
+        string(MAKE_C_IDENTIFIER "${_old}" _case)
+        file(WRITE "${WORK_DIR}/${_name}/${_case}.cmake"
+             "set(OPENSSL_EXECUTABLE \"${_old}\" CACHE FILEPATH \"Path to a program.\")\n")
+        escape("${_old}" _old_regex)
+        set(_said "OPENSSL_EXECUTABLE \\(${_old_regex}\\) is a find_program\\(\\) entry -- [^:]* -- taken as given")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/${_case}" OK -C "${WORK_DIR}/${_name}/${_case}.cmake"
+                          "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF" MUST "${_said}"
+                          HAS "OPENSSL_COMMAND=${_old_regex}" "OPENSSL_COMMAND_BY_HAND=TRUE"
+                              "OPENSSL_EXECUTABLE_ENTRY=${_old_regex}")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/${_case}" OK NOT "is a find_program\\(\\) entry"
+                          HAS "OPENSSL_COMMAND=${_old_regex}")
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/${_case}" OK "-U" "OPENSSL_EXECUTABLE"
+                          HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                              "OPENSSL_EXECUTABLE_ENTRY=${_root_regex}/qb-openssl/bin/openssl")
+    endforeach()
+    file(WRITE "${WORK_DIR}/${_name}/notfound.cmake"
+         "set(OPENSSL_EXECUTABLE \"OPENSSL_EXECUTABLE-NOTFOUND\" CACHE FILEPATH \"Path to a program.\")\n")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/notfound" OK -C "${WORK_DIR}/${_name}/notfound.cmake"
+                      "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF" NOT "is a find_program\\(\\) entry"
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "OPENSSL_EXECUTABLE_ENTRY=OPENSSL_EXECUTABLE-NOTFOUND")
+    # No command makes a certificate here, with a consumer's find_program() after qb: qb keeps an empty entry, which
+    # that find_program() keeps -- the same at every configure, none -- and chooses again once one does.
+    set(_name "openssl-command-none")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    command("${_root}/qb-openssl/bin" 0 1)
+    command("${WORK_DIR}/${_name}/path" 0 1)
+    set(_path_before "${_env}")
+    set(_env "--unset=CMAKE_PREFIX_PATH" "--unset=CMAKE_PROGRAM_PATH" "PATH=${WORK_DIR}/${_name}/path:$ENV{PATH}")
+    foreach(_time 1 2)
+        configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                          "-DLATE_FINDS_OPENSSL=ON" NOT "is a find_program\\(\\) entry"
+                          HAS "OPENSSL_COMMAND=" "OPENSSL_COMMAND_BY_HAND=FALSE" "OPENSSL_EXECUTABLE_ENTRY="
+                              "LATE_FOUND=")
+    endforeach()
+    command("${_root}/qb-openssl/bin" 0)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK
+                      HAS "OPENSSL_COMMAND=${_root_regex}/qb-openssl/bin/openssl" "OPENSSL_COMMAND_BY_HAND=FALSE"
+                          "LATE_FOUND=${_root_regex}/qb-openssl/bin/openssl")
+    set(_env "${_path_before}")
+    # Cross-compiling: the found OpenSSL's command is the target's, and may not run here; nor is the target root's
+    # taken, whatever the toolchain's CMAKE_FIND_ROOT_PATH_MODE_PROGRAM says, nor one under CMAKE_PREFIX_PATH that does
+    # not run.
+    set(_name "openssl-command-cross")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/qb-openssl" 3 a)
+    command("${_root}/qb-openssl/bin" 0)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DCMAKE_SYSTEM_NAME=FreeBSD" "-DCMAKE_READELF=${_tool}"
+                      "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF"
+                      HAS "OPENSSL=TRUE" "OPENSSL_COMMAND=${_path_regex}/openssl")
+    command("${_root}/usr/bin" 0)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/both" OK "-DCMAKE_SYSTEM_NAME=FreeBSD" "-DCMAKE_READELF=${_tool}"
+                      "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF" "-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=BOTH"
+                      HAS "OPENSSL=TRUE" "OPENSSL_COMMAND=${_path_regex}/openssl")
+    command("${_root}/target/bin" 126) # a binary for the target: not executable here
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/prefix" OK "-DCMAKE_SYSTEM_NAME=FreeBSD" "-DCMAKE_READELF=${_tool}"
+                      "-DOPENSSL_ROOT_DIR=/qb-openssl" "-DQB_WITH_QUIC=OFF" "-DCMAKE_PREFIX_PATH=${_root}/target"
+                      HAS "OPENSSL=TRUE" "OPENSSL_COMMAND=${_path_regex}/openssl")
+    set(_env "")
+endif()
 foreach(_generator IN LISTS _generators)
     use_generator("${_generator}")
     string(REPLACE " " "-" _name "rebuild-${_generator}")

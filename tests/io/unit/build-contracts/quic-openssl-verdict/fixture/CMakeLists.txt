@@ -8,11 +8,12 @@
 # The OpenSSL and QUIC decisions of qbDependencies.cmake (cmake/qbOpenSSL.cmake), driven with planted libraries (Huly
 # QB-1185, QB-1190): a languageless project that runs, with every search confined to the planted root and pkg-config
 # off, what qbDependencies.cmake runs -- _qb_find_openssl() when OPENSSL_ROOT_DIR names a planted OpenSSL or
-# FIND_OPENSSL asks for the default search (else the OPENSSL_* entries given are the readings), _qb_check_openssl() on
-# the OpenSSL found or given, qb's own FindNgtcp2.cmake (or a parent's, PARENT_MODULE_DIR), then _qb_decide_quic() with
-# qb's message helpers -- and writes what it decided to <RESULT_DIR>/verdict.txt and one line per configure to
-# <RESULT_DIR>/configures.txt. The libraries are read through a stand-in tool, or the helper's readings are planted
-# outright (PLANTED_NGTCP2) where nothing can be read. Configured, and rebuilt, by ../check.cmake only.
+# FIND_OPENSSL asks for the default search (else the OPENSSL_* entries given are the readings), _qb_check_openssl() and
+# _qb_openssl_command() on the OpenSSL found or given, qb's own FindNgtcp2.cmake (or a parent's, PARENT_MODULE_DIR),
+# then _qb_decide_quic() with qb's message helpers -- and writes what it decided to <RESULT_DIR>/verdict.txt and one
+# line per configure to <RESULT_DIR>/configures.txt. The libraries are read through a stand-in tool, or the helper's
+# readings are planted outright (PLANTED_NGTCP2) where nothing can be read. Configured, and rebuilt, by ../check.cmake
+# only.
 #
 #   cmake -S <this dir> -B <build> -DQB_CMAKE_MODULE_DIR=<qb>/cmake -DRESULT_DIR=<dir> -DPLANT_ROOT=<dir>
 #         [-DOPENSSL_ROOT_DIR=<under the root> | -DFIND_OPENSSL=ON | -DOPENSSL_SSL_LIBRARY=.. -DOPENSSL_CRYPTO_LIBRARY=..
@@ -21,6 +22,9 @@
 #         [-DPLANTED_NGTCP2=<ssl major>|<ssl path>|<crypto major>|<crypto path>]
 #         [-DNGTCP2_OTOOL_EXECUTABLE=<stand-in> | -DCMAKE_READELF=<stand-in>] [-DQB_WITH_QUIC=..] [-DQB_REQUIRE_FEATURES=..]
 #         [-DUSE_PKG_CONFIG=ON, PKG_CONFIG_LIBDIR in the environment] [-DCMAKE_SYSTEM_NAME=<another system>]
+#         [-DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=<mode>, NEVER otherwise]
+#         [-DPARENT_OPENSSL_EXECUTABLE=<a parent project's OPENSSL_EXECUTABLE variable>] [-DPARENT_FINDS_OPENSSL=ON]
+#         [-DPARENT_FINDS_NOTHING=ON] [-DLATE_FINDS_OPENSSL=ON]
 #
 cmake_minimum_required(VERSION 3.24)
 project(qb_quic_openssl_verdict NONE)
@@ -34,6 +38,9 @@ set(CMAKE_FIND_ROOT_PATH "${PLANT_ROOT}")
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+if(NOT DEFINED CMAKE_FIND_ROOT_PATH_MODE_PROGRAM)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER) # as a cross toolchain sets it: a program is searched where it is named
+endif()
 if(USE_PKG_CONFIG)
     # PKG_CONFIG_LIBDIR names the planted .pc files only, and FindPkgConfig adds nothing ahead of it: by default it
     # searches the lib/pkgconfig of every CMAKE_PREFIX_PATH entry first, the environment's too, and the GitHub macOS
@@ -53,6 +60,20 @@ if(DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)
 endif()
 if(OpenSSL_FOUND OR NOT (DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)) # as qbDependencies.cmake checks the one it found
     _qb_check_openssl()
+    if(DEFINED PARENT_OPENSSL_EXECUTABLE) # a parent project's variable
+        set(OPENSSL_EXECUTABLE "${PARENT_OPENSSL_EXECUTABLE}")
+    endif()
+    if(PARENT_FINDS_OPENSSL) # a parent project's own search, before qb's
+        find_program(OPENSSL_EXECUTABLE openssl)
+    endif()
+    if(PARENT_FINDS_NOTHING) # ... one that finds nothing
+        find_program(OPENSSL_EXECUTABLE qb-no-such-openssl)
+    endif()
+    _qb_openssl_command(_command _by_hand) # as tests/io/system/CMakeLists.txt finds the test certificates' command
+    if(LATE_FINDS_OPENSSL) # a consumer's own search, after qb's
+        find_program(OPENSSL_EXECUTABLE openssl)
+        set(_late "${OPENSSL_EXECUTABLE}")
+    endif()
 endif()
 
 find_package(Ngtcp2 QUIET)
@@ -91,4 +112,6 @@ file(WRITE "${RESULT_DIR}/verdict.txt"
      "QB_HAS_QUIC=${QB_HAS_QUIC}\nVERDICT=${_qb_quic_conflict}\nCOMPARED=${_qb_quic_compared}\n"
      "LIBRARIES=${QB_EXTERNAL_LIBRARIES}\nNGTCP2=${Ngtcp2_FOUND}\nOPENSSL=${OpenSSL_FOUND}\n"
      "OPENSSL_COMPARED=${_qb_openssl_compared}\nOPENSSL_READ=${_qb_openssl_ssl_read}|${_qb_openssl_crypto_read}\n"
+     "OPENSSL_COMMAND=${_command}\nOPENSSL_COMMAND_BY_HAND=${_by_hand}\n"
+     "OPENSSL_EXECUTABLE_ENTRY=$CACHE{OPENSSL_EXECUTABLE}\nLATE_FOUND=${_late}\n"
      "${_entries}")

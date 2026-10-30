@@ -352,7 +352,7 @@ set(_qb_quic_verdict_args
 add_test(NAME qb-io-test-unit-quic-openssl-verdict
          COMMAND "${CMAKE_COMMAND}" ${_qb_quic_verdict_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/quic-openssl-verdict/check.cmake")
-set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
+set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 300)
 unset(_qb_quic_verdict_args)
 # found-libraries (Huly QB-1192): the searches qbDependencies.cmake runs for Argon2, zlib, zstd and brotli
 # (cmake/qbFoundLibraries.cmake) on libraries planted in a scratch root, through a languageless fixture: a library found

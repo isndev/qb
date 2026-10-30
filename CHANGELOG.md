@@ -699,6 +699,48 @@ policy.
   that need it are skipped and said so; with CMAKE_SYSTEM_NAME Linux, FindOpenSSL's Threads search no longer stops the
   languageless fixture. Suites as for QB-1190 above.
 
+- **qb's test certificates are made by the openssl command of the OpenSSL qb found, not by whichever is first on PATH
+  (Huly QB-1175).** The generator took `find_program(openssl)`: on the Mac where QB-1175 was found, qb built against
+  openssl@4 4.1.0 while the command on PATH was openssl@3's 3.5.9 (and `/usr/bin/openssl` is LibreSSL 3.3.6), and the
+  configure said "SSL certificate generation enabled (OpenSSL OpenSSL 3.5.9 ...)". `_qb_openssl_command()`
+  (`cmake/qbOpenSSL.cmake`) takes an `OPENSSL_EXECUTABLE` already set -- by hand, as qb's CI lanes pass it, by a parent
+  project's variable, or by a `find_program()` -- as given, as `find_program()` did (an empty one makes no certificates,
+  `NOTFOUND` is none); else the first that makes a certificate here (a `req -x509` run, the core of the generator's:
+  answering `version` proves less, an OpenSSL without its `openssl.cnf` answers it and then fails `req`) of the one in
+  the `bin` directory beside the found OpenSSL's include directory, the default search's, and PATH's. A search given
+  that directory as a hint still puts `CMAKE_PREFIX_PATH` and `CMAKE_PROGRAM_PATH` first:
+  `-DCMAKE_PREFIX_PATH=/opt/homebrew` gave openssl@3's again. Cross-compiling, the found OpenSSL's command is the
+  target's and is not tried, the default search is not re-rooted into the target's root, whatever
+  `CMAKE_FIND_ROOT_PATH_MODE_PROGRAM` says, and a target's binary it finds under `CMAKE_PREFIX_PATH` is taken only if it
+  makes a certificate here (it does not run, unless this host can run it), PATH's coming next. Searched at every
+  configure, so that it follows qb onto another OpenSSL; when none makes a certificate, the generation is skipped, as
+  when none was found. Who set the cache entry cannot be told -- `find_program()` gives the one it keeps its own help
+  string, whoever named it -- so an entry with that help string is taken and said once: if the old generator left it, it
+  holds that configure's search (`CMAKE_PREFIX_PATH`'s and `CMAKE_PROGRAM_PATH`'s before PATH's), and `-U
+  OPENSSL_EXECUTABLE` lets qb choose. qb keeps its own choice as that cache entry, under a help string of its own, where
+  there is no other entry (another's NOTFOUND one included) -- empty when none makes a certificate, which
+  `find_program()` keeps where a NOTFOUND one would have it search: a `find_program(OPENSSL_EXECUTABLE)` run after qb in
+  the same build takes it, as it took the old generator's, and the next configure, finding the value qb wrote, chooses
+  again; edited in place (ccmake, cmake-gui, `CMakeCache.txt`, which keep the help string), it is a command named. The
+  configure names the command it uses. `qb-io-test-unit-quic-openssl-verdict` pins each choice on planted prefixes --
+  the prefix's command over PATH's and a `CMAKE_PREFIX_PATH` one; the default search's (the `CMAKE_PREFIX_PATH` one)
+  once the prefix's does not run, PATH's once there is none, and PATH's when the prefix's cannot make a certificate or
+  is gone; the new prefix's once qb moves onto another OpenSSL; PATH's when cross-compiling, even where the target's
+  root holds one or `CMAKE_PREFIX_PATH` one that does not run here; a hand-named command (PATH's included), a parent's
+  variable and a parent's `find_program()` (over a command named by hand too) as given; an older configure's
+  `find_program()` entry taken and said once, `-U OPENSSL_EXECUTABLE` then letting qb choose; a consumer's later
+  `find_program()` taking qb's choice at every configure, and its empty one when none makes a certificate; a parent's
+  NOTFOUND entry left to it; an in-place edit named; an empty value as no command, `NOTFOUND` searched -- and
+  `qb-io-test-unit-openssl-command` makes the choice again on the host, from what the configure chose it from
+  (`OPENSSL_EXECUTABLE` and its cache entry as they were, qb's help string, the include directory, the default search's
+  and PATH's results), running each candidate's `req` itself, and checks the command used, that the generator runs it,
+  and that it runs -- registered whether a command was chosen or none. Eight rounds of independent review, the last
+  finding no defect; 23 mutants of the chooser, planted one at a time beside a green control, each caught. On macOS
+  arm64 with openssl@4 4.1.0, openssl@3 3.5.9 first on PATH and LibreSSL 3.3.6 at /usr/bin: the configure now says "SSL
+  certificate generation enabled (OpenSSL 4.1.0 ..., /opt/homebrew/opt/openssl@4/bin/openssl)",
+  `qb-io-test-unit-openssl-command` passes, and the suites as for QB-1190 above pass with certificates that command
+  made.
+
 - **qb and its TLS and QUIC tests build and pass against OpenSSL 4.1 (Huly QB-1178).** OpenSSL 4.1.0 no longer matches
   a host name against the subject `commonName` by default (RFC 9525): a certificate with no `subjectAltName` of the
   type checked used to be matched on its CN, and is now refused for its name. The flag
