@@ -55,10 +55,10 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1508-1510`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1564`, `:2409-2413`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1564`, `:2413-2417`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
   `qb/src/qb/core/Actor.h:1713,1733,1745,1754,1761,1769`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2290-2291,2303-2307,2331-2333`). **Never capture `this` past a `co_await`** — capture by
+  (`qb/src/qb/core/Actor.h:2294-2295,2307-2311,2335-2337`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1512-1514`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
@@ -175,7 +175,7 @@ it (Huly QB-1100). Its request and its reply then carry the same correlation id 
 tells them apart while the exchange is live: the first arrival is the request and reaches the handler — also when the handler calls
 `resolve_ask` before `answer` calls it again — and the next one is the answer, whatever its form: `reply()`,
 `push_reply()`, a copy of the request, a freshly built event, or the answer of an actor the request was forwarded
-to (`qb/src/qb/core/Actor.cpp:616-635`). The plain ask pays one compare for it at send time. Not from `onInit()`:
+to (`qb/src/qb/core/Actor.cpp:625-644`). The plain ask pays one compare for it at send time. Not from `onInit()`:
 a self-ask before `onInit()` completes could never be answered — the handlers run only afterwards — and throws
 `std::logic_error` at once (`qb/tests/core/system/coroutine/ask-self.cpp`).
 

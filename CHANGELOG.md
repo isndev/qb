@@ -152,7 +152,8 @@ policy.
   became a call with a seven-register prologue; `ask_deliver` grew from 47 to 99 instructions. The table
   now has only constant members (`constinit`), its directories are raw pointers allocated on the cold path,
   the warm path -- the owner's FIFO on the current core, one compare, the band test, a page load, a pop or
-  a push -- is inline in `ask_take` and `ask_unregister`, and everything rare (another core, a slot's first
+  a push -- is inline in `ask_take` and `ask_unregister` (the push resolves nothing since QB-1171, below: it
+  goes into the FIFO the slot recorded at the take), and everything rare (another core, a slot's first
   ask, a new page, a grown table, an exhausted generation) is out of line. Nothing of the contract moves:
   entries stay with their actor slot across reuse, record the exact incarnation that last held them,
   generations retire instead of wrapping, late responses are still consumed as obsolete, self-asks still
@@ -162,7 +163,8 @@ policy.
   `Ask_Scatter<All>/8` -1.1 %, ping-pong latency and dispatch probes level. On g++ 14 (WSL2, both sides
   built with `-falign-functions/-loops/-jumps=64`) every ask cell and probe is level: GCC inlined `take`
   and `release` already and pays no TLS guard, so the 3.0 ns the 3.3.0 registry costs over 3.2.1 on that
-  compiler (12.9 -> 15.9 ns of ask machinery over a push/reply) stays and is the next thing to read.
+  compiler (12.9 -> 15.9 ns of ask machinery over a push/reply) stays and is the next thing to read
+  (QB-1171, below, takes 20 instructions of it back on every ask).
 
 - **The ask registry's warm path resolves the owner's FIFO in one inline step: on Apple clang 21 / arm64
   the split shape of the entry above cost +12-14 % per ask on the Savina bank-transaction cell at one
@@ -176,7 +178,8 @@ policy.
   core selected, the directory grown and the page created on `[[unlikely]]` branches that call out of
   line, each once), `take` pops from it and `release` pushes to it after the other-core test, exactly the
   control shape of the 3.3.0 registry over the constant-initialised table and raw directories of
-  QB-1114. Measured by `qb-vs-others` on the M4 Pro (Apple clang 21, unpinned, three physical copies a
+  QB-1114 (QB-1171, below, then took the release off this resolution: a bound entry is pushed into the FIFO
+  its slot recorded at the take). Measured by `qb-vs-others` on the M4 Pro (Apple clang 21, unpinned, three physical copies a
   side in one seeded order, 12 launches of 3 + 1 per configuration, bootstrap 95 % of the ratio of
   medians, `results/macbook-m4pro-macos-clang21/qb-branch-develop/bisect-1c-variants/final-census/`):
   `savina/bank-transaction` per transfer against released 3.3.0, the split shape -> this commit:
@@ -185,6 +188,34 @@ policy.
   +1.4 % -> -0.2 / -0.1 %; a-star and fib level on both. The MSVC listing of the entry above is to be
   re-read on this shape by its author: the one inline function is what that listing asked for, and
   `QB_MSVC_FORCEINLINE` stays on it.
+
+- **An ask's release pushes its entry into the FIFO its slot recorded at the take instead of resolving the owner's
+  directory again: 26 fewer instructions on the path every ask ends on, on Apple clang / arm64 (Huly QB-1171).**
+  `ask_table::release` re-did, on every ask, the walk `take` had just done -- the current-core compare, the
+  directory, the band test, the page, the FIFO. `take` now records the FIFO it resolved in the ask's slot
+  (`qb::detail::ask_slot::queue`, an opaque `void *`: the registry's types are private to `Actor.cpp`), and the
+  release of a bound entry pushes straight into it, read beside `slot->owner`; FIFO pages never move once created,
+  so the address stays valid for the thread whichever core it serves when the ask ends. An unbound entry (no slot:
+  only the codec tests take one) walks the thread's core directories. The registry entry stays 16 bytes (a
+  `static_assert`); `ask_slot` grows from 32 to 40 bytes in every asking coroutine frame. Nothing of the contract
+  moves: forged ids, double releases, exhausted generations, owners and late replies behave as before. Counted on
+  the probe binaries: the bound release in `ask_unregister` 87 -> 61 instructions on Apple clang 21 / arm64 (two
+  saved registers fewer), `ask_take`'s bound path 28 -> 27 (its bound branch `[[likely]]`: without it the bound
+  path ended on a taken jump into the tail the unbound one fell into); -20 Ir a release under g++ 14 (callgrind,
+  the x86 count on the ticket). Measured on the M4 Pro (Apple clang 21, unpinned, three physical copies a side,
+  8 seeded rounds, each side linked against its own libraries, every cell read across placement families as the
+  x86 census was): `qb-vs-others`' `ask-any-scatter` probe over seven families -- no cell robustly slower in any,
+  the medians of the family ratios 0.984-1.002 (`same` N = 1, 2, 4, 8; `cross` N = 1, 2, 4); `dev/bench` over
+  six families -- `BM_Ask_RoundTrip_SameCore` -3.1 % in every family, `CrossCore` moving with the build both ways
+  around parity (median 0.996), the scatters level. On x86 (the pilot's census, seven g++ and MSVC families)
+  neutral or better in every cell. The ticket's other two trims stay out: `obsolete` inlined on the hot miss gained
+  no robust time and leaned slower in two cells on x86; `await_suspend` forced inline was placement there and
+  MSVC refuses it (C4714). Proven by five new `qb-core-test-unit-actor-id` cases -- a bound entry released while
+  the thread serves another core returns to its owner's FIFO, an unbound one too, a service instance's to its
+  tag's FIFO, the recorded FIFO outlives the registry growing under it, and an entry retires at its last
+  generation after 2^26 - 1 asks (an optimised build drives it in about a second; a -O0 build says it does not)
+  -- all green on the previous registry too (they pin what the change relies on), and by eleven mutants of the
+  release and its tests, all caught.
 
 - **The engine start reads the calling thread's affinity mask once, and asks a host that pins nothing for
   nothing (Huly QB-1111).** `Main::start()` reads `qb::detail::inherited_cpus()` once for every core and hands

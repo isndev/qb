@@ -1793,12 +1793,16 @@ namespace detail {
  *          inside the `ask_awaiter` (which lives in the ask() coroutine frame). A null `deliver`
  *          on a taken slot marks an ask the actor addressed to ITSELF (Huly QB-1100): its delivery
  *          is parked by `ask_self_begin` and `ask_deliver` routes the slot through `ask_self_arrival`,
- *          off the plain path, which still tests the same fields.
+ *          off the plain path, which still tests the same fields. `queue` is the registry's, written
+ *          by `ask_take` and read back by the release beside `owner`.
  */
 struct ask_slot {
     qb::ActorId owner;
-    bool        done                                      = false;
-    void       *self                                      = nullptr;
+    /// The owner's free FIFO in the registry, recorded by `ask_take` (opaque: its type is private to the
+    /// registry): the release pushes the entry back into it without resolving the owner's directory again.
+    void *queue                                           = nullptr;
+    bool  done                                            = false;
+    void *self                                            = nullptr;
     void (*deliver)(void *self, qb::Event &resp) noexcept = nullptr;
 };
 

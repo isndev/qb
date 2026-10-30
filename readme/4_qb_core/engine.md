@@ -52,7 +52,7 @@ const std::vector<qb::ActorId> ids = builder.idList();   // creation order, NotF
 
 **`addActor` does not construct the actor.** It reserves an `ActorId`, stores a `TActorFactory` holding your decayed constructor arguments, and returns the id immediately (`src/qb/core/Main.h:1211-1243`). The object is built much later, on the worker thread, when `start()` calls `factory->create()` (`src/qb/core/Main.cpp:727-731`). Two consequences you can see from the call site:
 
-- **String literals become `std::string`** and every other argument is decayed and stored by value, because the factory has to outlive the call. Anything matching the `reference_wrapper_type` concept is preserved as-is (`src/qb/core/Actor.h:2745-2779`, `:2804-2813`).
+- **String literals become `std::string`** and every other argument is decayed and stored by value, because the factory has to outlive the call. Anything matching the `reference_wrapper_type` concept is preserved as-is (`src/qb/core/Actor.h:2749-2783`, `:2808-2817`).
 - **A valid id reserves an incarnation; it does not prove the actor will exist.** Reservation can fail for a duplicate/refused service or exhausted slot/incarnation capacity. An `onInit()` that later fails is reported through `hasError()`, without changing the value already returned. Service admission returns an instance ID, not the logical address from `getServiceId<Tag>()`.
 
 The initializer owns an incarnation pool with separate ordinary-slot and service-tag banks. Every `addActor` reserves a full generation/core/slot ID before storing its factory. Startup moves that pool into `VirtualCore` before creating any factory and binds each factory's reserved ID while its user allocation hook runs. A nested dynamic child therefore cannot consume a later factory's promised ID; allocation order no longer supplies the identity guarantee. A failed or abandoned reservation advances its generation on release, and a slot is retired rather than wrapped at generation exhaustion. A child constructed during a factory can start `onInit()` immediately; the later startup sweep snapshots IDs, re-resolves each actor, and skips one already started, so it does not run `onInit()` twice (`src/qb/core/Main.cpp:707-737`; `src/qb/core/VirtualCore.cpp:674-718`).
@@ -405,7 +405,7 @@ The generations are what make the mechanism repeatable, and complete. Each signa
 if (event.signum == SIGINT || event.signum == SIGTERM)
     kill();
 ```
-<!-- src: qb/src/qb/core/Actor.cpp:724-725 -->
+<!-- src: qb/src/qb/core/Actor.cpp:733-734 -->
 
 A `SIGHUP` or `SIGUSR1` is delivered and ignored by the default handler — those are the config-reload and stats-dump cases. To act on one, declare your own `on(qb::SignalEvent const&)` and inspect `event.signum`; call `kill()` there if that signal should stop the actor. `unregisterSignal` restores the OS default, `ignoreSignal` sets `SIG_IGN` (the usual reason being `SIGPIPE` on a network server) (`src/qb/core/Main.cpp:1015-1028`).
 
