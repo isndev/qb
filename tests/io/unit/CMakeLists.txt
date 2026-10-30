@@ -352,7 +352,10 @@ set(_qb_quic_verdict_args
 add_test(NAME qb-io-test-unit-quic-openssl-verdict
          COMMAND "${CMAKE_COMMAND}" ${_qb_quic_verdict_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/quic-openssl-verdict/check.cmake")
-set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 300)
+# Its timeout and found-libraries' below: the longest measured, two copies pinned to one core (Linux, CMake 3.31.6),
+# times 5 or more, rounded up to a tier's: 19 s here, 6 s there. Not serial: they share no file, port or lock, and
+# contend for the processor only, which those two copies measure.
+set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
 unset(_qb_quic_verdict_args)
 # found-libraries (Huly QB-1192): the searches qbDependencies.cmake runs for Argon2, zlib, zstd and brotli
 # (cmake/qbFoundLibraries.cmake) on libraries planted in a scratch root, through a languageless fixture: a library found
@@ -406,7 +409,7 @@ unset(_qb_found_inputs)
 add_test(NAME qb-io-test-unit-found-libraries
          COMMAND "${CMAKE_COMMAND}" ${_qb_found_libraries_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/found-libraries/check.cmake")
-set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
+set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 unset(_qb_found_libraries_args)
 # installed-quic-openssl (Huly QB-1183): qbConfig.cmake, generated from cmake/qbConfig.cmake.in as an install does with a
 # QUIC build's values, warns a consumer whose libngtcp2 links another OpenSSL major than the one it links -- and says

@@ -47,6 +47,10 @@ else()
         endfunction()
     endif()
 endif()
+# find_library() and find_path() search the directories of the environment's PATH too: nothing is planted there, and
+# where PATH is long and slow to read -- WSL's, 45 Windows directories under /mnt/c on the host measured -- each search
+# took 0.3 s and a configure 3.7 s, 0.03 s without them. No program is searched here (pkg-config is named).
+set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)
 list(PREPEND CMAKE_MODULE_PATH "${QB_CMAKE_MODULE_DIR}")
 # FindOpenSSL searches Threads for a static OpenSSL on Linux, and FindThreads needs a language this project does not
 # enable: it links nothing, so nothing needs Threads::Threads.

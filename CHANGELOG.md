@@ -575,7 +575,11 @@ policy.
     calls `pkg_check_modules()` whether pkg-config was found or not, and the fixture, which turns pkg-config off to keep
     the searches in the planted root, failed there on the unknown command (3.24.4, Ubuntu 24.04's 3.28.3); it now
     answers that call with a command that does nothing, as 3.31 asks only once pkg-config is found, and the superproject's
-    `cmake-floor` lane runs the build contracts on 3.24.4 and 3.28.3.
+    `cmake-floor` lane runs the build contracts on 3.24.4 and 3.28.3. Its cases that do not test the openssl command
+    name one as a parent project's variable, so no configure makes an RSA key to choose one, and both fixtures' library
+    and header searches skip the directories of the environment's PATH, where nothing is planted: on WSL, whose PATH
+    carries Windows' directories, each search cost 0.3 s, and the test took 118 s there (11 s now; found-libraries 76 s,
+    3 s now). Their timeouts follow, 120 s and 60 s, from the longest measured (two copies on one core: 19 s, 6 s).
   - An installed qb built with QUIC re-ran `find_dependency(Ngtcp2)` at its consumer and compared nothing (QB-1183).
     The generated `qbConfig.cmake` now gives the same verdict on the readings of the `FindNgtcp2.cmake` installed
     beside it and the OpenSSL the consumer links -- not the one qb was built against, which the OpenSSL-major check

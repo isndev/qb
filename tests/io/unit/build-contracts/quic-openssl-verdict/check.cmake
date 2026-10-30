@@ -105,6 +105,12 @@ function(configure_fixture name build expect)
     elseif(_posix)
         list(APPEND _args "-DCMAKE_READELF=${_tool}")
     endif()
+    # A case that does not test the openssl command names one, as a parent project's variable does, which qb takes as
+    # given: nothing searched, nothing run -- else each configure and each re-run tried the commands it found with an
+    # RSA key and a certificate.
+    if(NOT name MATCHES "^openssl-command")
+        list(APPEND _args "-DPARENT_OPENSSL_EXECUTABLE=${WORK_DIR}/no-command/openssl")
+    endif()
     set(_kind DEFINE)
     set(_checks "")
     foreach(_arg IN LISTS ARGN)

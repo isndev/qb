@@ -61,6 +61,11 @@ list(PREPEND CMAKE_MODULE_PATH "${QB_CMAKE_MODULE_DIR}")
 if(PARENT_MODULE_DIR) # a parent project's FindNgtcp2 module, first on the path: it wins the search
     list(PREPEND CMAKE_MODULE_PATH "${PARENT_MODULE_DIR}")
 endif()
+# find_library() and find_path() search the directories of the environment's PATH too: nothing is planted there, and
+# where PATH is long and slow to read -- WSL's, 45 Windows directories under /mnt/c on the host measured -- each search
+# took 0.3 s and a configure 1.7 s. The library and header searches skip them; the openssl command's keep PATH, one of
+# the places they are tested on.
+set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)
 
 include("${QB_CMAKE_MODULE_DIR}/qbOpenSSL.cmake")
 if(DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)
@@ -68,6 +73,7 @@ if(DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)
 endif()
 if(OpenSSL_FOUND OR NOT (DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)) # as qbDependencies.cmake checks the one it found
     _qb_check_openssl()
+    unset(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH) # the command's searches, PATH's among them
     if(DEFINED PARENT_OPENSSL_EXECUTABLE) # a parent project's variable
         set(OPENSSL_EXECUTABLE "${PARENT_OPENSSL_EXECUTABLE}")
     endif()
@@ -82,6 +88,7 @@ if(OpenSSL_FOUND OR NOT (DEFINED OPENSSL_ROOT_DIR OR FIND_OPENSSL)) # as qbDepen
         find_program(OPENSSL_EXECUTABLE openssl)
         set(_late "${OPENSSL_EXECUTABLE}")
     endif()
+    set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)
 endif()
 
 find_package(Ngtcp2 QUIET)
