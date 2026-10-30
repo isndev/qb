@@ -1077,8 +1077,9 @@ TEST(UriClassifiers, RequestPathCharacterIsPathCharacterAndTheOctetsABrowserSend
     for (int c = 0; c < 256; ++c) {
         const bool raw_in_a_browser = c == '[' || c == ']' || c == '|';
         EXPECT_EQ(qb::io::is_request_path_character(c), qb::io::is_path_character(c) || raw_in_a_browser) << "byte " << c;
-        if (raw_in_a_browser)
+        if (raw_in_a_browser) {
             EXPECT_FALSE(qb::io::is_path_character(c)) << "RFC 3986 forbids it in a path: " << static_cast<char>(c);
+        }
     }
     for (char const c : std::string_view{"\\^\"<>#?`{} \t\x7f"})
         EXPECT_FALSE(qb::io::is_request_path_character(c)) << "byte " << static_cast<int>(static_cast<unsigned char>(c));
