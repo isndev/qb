@@ -145,8 +145,8 @@ policy.
   port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
   userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
   digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
-  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)` and
-  `read_authority_form(target)` give the same two readings INTO an existing uri -- the text replaces `source()`, the
+  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)`,
+  `read_absolute_form(target)` and `read_authority_form(target)` give the same readings INTO an existing uri -- the text replaces `source()`, the
   components are parsed in place, the query map's storage is kept -- and return `is_valid()`: the readers of a server
   that parses request after request into one message. qbm-http's HTTP/1.1 parser first read every target into a uri
   built apart and moved into the request: two moves of its strings and its query map, 830 instructions a request on

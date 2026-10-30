@@ -352,8 +352,8 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1063; tcp/socket.cpp:103-110)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
-  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1145-1184; uri.h:568-578)_
-- **An empty URI query is still present.** `has_query()` reports the delimiter: `/p?` is true and `/p` false even though `encoded_queries()` is empty in both. Presence survives copy/move and is independent of edits to `queries()`; assigning new text recomputes it. _(uri.h:601-603; uri.cpp:1090-1098; uri.cpp:1193-1203)_
+  unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1145-1184; uri.h:578-588)_
+- **An empty URI query is still present.** `has_query()` reports the delimiter: `/p?` is true and `/p` false even though `encoded_queries()` is empty in both. Presence survives copy/move and is independent of edits to `queries()`; assigning new text recomputes it. _(uri.h:611-613; uri.cpp:1090-1098; uri.cpp:1193-1203)_
 
 ```cpp
 auto eps = co_await qb::io::async::offload([](std::string h) {

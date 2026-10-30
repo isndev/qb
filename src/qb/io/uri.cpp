@@ -1389,6 +1389,13 @@ uri::read_origin_form(std::string_view target) noexcept {
 }
 
 bool
+uri::read_absolute_form(std::string_view target) noexcept {
+    _af = AF_INET;
+    _source.assign(target);
+    return parse(reading::absolute_form);
+}
+
+bool
 uri::read_authority_form(std::string_view target) noexcept {
     _af = AF_INET;
     _source.assign(target);

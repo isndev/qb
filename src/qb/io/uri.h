@@ -456,6 +456,16 @@ public:
     bool read_origin_form(std::string_view target) noexcept;
 
     /**
+     * @brief Reads an HTTP request target in absolute-form (RFC 9112 §3.2.2) into THIS uri, as absolute_form() reads
+     *        it into a new one: the text replaces source(), the components are parsed in place, the query map's
+     *        storage is kept.
+     * @param target The target as it was received, e.g. `http://example.com/a|b?x=1`.
+     * @return is_valid(): false when @p target does not begin with a scheme and `://`, or its path holds a byte a
+     *         request path may not hold, as for absolute_form().
+     */
+    bool read_absolute_form(std::string_view target) noexcept;
+
+    /**
      * @brief Reads an HTTP request target in authority-form (RFC 9112 §3.2.3) into THIS uri, as authority_form()
      *        reads it into a new one: the text replaces source(), the components are parsed in place.
      * @param target The target as it was received, e.g. `example.com:443`.

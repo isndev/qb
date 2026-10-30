@@ -1262,6 +1262,23 @@ TEST(UriParse, InPlaceReadersGiveWhatTheFormReadersGive) {
     EXPECT_EQ(target.query("b"), "{x}");
     EXPECT_EQ(target.path().data(), target.source().data()) << "the path views this uri's own text";
 
+    for (std::string_view const text :
+         {"http://example.com/a|b?x=1&y=2", "https://[2001:db8::1]:8443/[1]", "http://u@h/x", "http:///x", "/relative", "h:80", "http://h/a^b",
+          "ws://h"}) {
+        const auto fresh = uri::absolute_form(std::string{text});
+        EXPECT_EQ(target.read_absolute_form(text), fresh.is_valid()) << text;
+        EXPECT_EQ(target.is_valid(), fresh.is_valid()) << text;
+        EXPECT_EQ(target.source(), fresh.source()) << text;
+        EXPECT_EQ(target.scheme(), fresh.scheme()) << text;
+        EXPECT_EQ(target.user_info(), fresh.user_info()) << text;
+        EXPECT_EQ(target.host(), fresh.host()) << text;
+        EXPECT_EQ(target.port(), fresh.port()) << text;
+        EXPECT_EQ(target.path(), fresh.path()) << text;
+        EXPECT_EQ(target.encoded_queries(), fresh.encoded_queries()) << text;
+        EXPECT_EQ(target.queries().size(), fresh.queries().size()) << text;
+        EXPECT_EQ(target.af(), fresh.af()) << text;
+    }
+
     target = std::string{"unix:///tmp/qb.sock"};
     ASSERT_EQ(target.af(), AF_UNIX);
     for (std::string_view const text :
