@@ -153,10 +153,10 @@ ANON_NS = re.compile(r"\bnamespace\s*$")
 TEMPLATE_ANGLE = re.compile(r"^template\s*<")
 EMPTY_TEMPLATE = re.compile(r"^template\s*<\s*>")
 EXPL_INST = re.compile(r"^template\s+(?!<)")
-# `QB_MSVC_FORCEINLINE` (qb/utility/branch_hints.h) is an inline specifier on every compiler: `inline` on g++
-# and clang, `__forceinline` on MSVC and clang-cl, which gives the function inline linkage as `inline` does
-# (qbm-http's origin.h defines one at namespace scope, Huly QB-1186). The whole word only: `QB_NOINLINE`, the
-# opposite, spells no inline and leaves a strong symbol.
+# `QB_MSVC_FORCEINLINE` (qb/utility/branch_hints.h) is an inline specifier on every compiler: `__forceinline`
+# on MSVC's cl, `inline` on every other compiler, clang-cl included (it defines `__clang__`); both give the
+# function inline linkage (qbm-http's origin.h defines one at namespace scope, Huly QB-1186). The whole word
+# only: `QB_NOINLINE`, the opposite, spells no inline and leaves a strong symbol.
 SAFE_FUNC = re.compile(r"\b(inline|constexpr|consteval|static|friend|QB_MSVC_FORCEINLINE)\b")
 SAFE_VAR = re.compile(r"\b(inline|constexpr|const|static|extern|typedef|using|concept)\b")
 NOT_A_DECL = re.compile(r"^(namespace|asm|__asm|static_assert)\b")
