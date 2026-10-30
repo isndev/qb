@@ -1086,6 +1086,55 @@ TEST(UriParse, AuthorityFormReadsAHostAndAPort) {
 }
 
 /**
+ * @test read_origin_form() and read_authority_form() read a target into an existing uri exactly as origin_form() and
+ *       authority_form() read it into a new one, and nothing of the previous reading survives.
+ * @brief The readers of a server that parses request after request into one message (Huly QB-1177): a uri built apart
+ *        and moved in cost two moves of its strings and its query map a request. Here a uri that held a reference with a
+ *        userinfo, a port, two queries and a fragment, then a `unix://` text (the family must follow the text, QB-350),
+ *        is read into, and compared component by component with the fresh reading.
+ */
+TEST(UriParse, InPlaceReadersGiveWhatTheFormReadersGive) {
+    uri target{std::string{"https://user@previous.test:9/old?stale=1&gone=2#f"}};
+    ASSERT_TRUE(target.is_valid());
+    ASSERT_EQ(target.queries().size(), 2u);
+    for (std::string_view const text : {"//evil.test/transfer?a=1&b=%7Bx%7D", "///x", "/", "/a?b=//c", "*", "", "h:80", "/a|b"}) {
+        const auto fresh = uri::origin_form(std::string{text});
+        EXPECT_EQ(target.read_origin_form(text), fresh.is_valid()) << text;
+        EXPECT_EQ(target.is_valid(), fresh.is_valid()) << text;
+        EXPECT_EQ(target.source(), fresh.source()) << text;
+        EXPECT_EQ(target.scheme(), fresh.scheme()) << text;
+        EXPECT_EQ(target.user_info(), fresh.user_info()) << text;
+        EXPECT_EQ(target.host(), fresh.host()) << text;
+        EXPECT_EQ(target.port(), fresh.port()) << text;
+        EXPECT_EQ(target.path(), fresh.path()) << text;
+        EXPECT_EQ(target.encoded_queries(), fresh.encoded_queries()) << text;
+        EXPECT_EQ(target.has_query(), fresh.has_query()) << text;
+        EXPECT_EQ(target.fragment(), fresh.fragment()) << text;
+        EXPECT_EQ(target.queries().size(), fresh.queries().size()) << text;
+        EXPECT_EQ(target.af(), fresh.af()) << text;
+        EXPECT_TRUE(target.query("stale").empty()) << text;
+    }
+    ASSERT_TRUE(target.read_origin_form("//evil.test/transfer?a=1&b=%7Bx%7D"));
+    EXPECT_EQ(target.query("b"), "{x}");
+    EXPECT_EQ(target.path().data(), target.source().data()) << "the path views this uri's own text";
+
+    target = std::string{"unix:///tmp/qb.sock"};
+    ASSERT_EQ(target.af(), AF_UNIX);
+    for (std::string_view const text :
+         {"example.com:443", "[2001:db8::1]:443", "EXAMPLE.com:1", "", "example.com", "[::1]", "u@example.com:443"}) {
+        const auto fresh = uri::authority_form(std::string{text});
+        EXPECT_EQ(target.read_authority_form(text), fresh.is_valid()) << text;
+        EXPECT_EQ(target.is_valid(), fresh.is_valid()) << text;
+        EXPECT_EQ(target.source(), fresh.source()) << text;
+        EXPECT_EQ(target.scheme(), fresh.scheme()) << text;
+        EXPECT_EQ(target.host(), fresh.host()) << text;
+        EXPECT_EQ(target.port(), fresh.port()) << text;
+        EXPECT_EQ(target.path(), fresh.path()) << text;
+        EXPECT_EQ(target.af(), fresh.af()) << text;
+    }
+}
+
+/**
  * @test authority_form() refuses a text that is not a host and a port, and reads nothing from it.
  */
 TEST(UriParse, AuthorityFormRefusesWhatIsNotAHostAndAPort) {

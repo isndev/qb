@@ -145,7 +145,18 @@ policy.
   port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
   userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
   digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
-  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. A copy or a move carries either reading, as for every uri (QB-351). The reference parse is unchanged; the
+  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)` and
+  `read_authority_form(target)` give the same two readings INTO an existing uri -- the text replaces `source()`, the
+  components are parsed in place, the query map's storage is kept -- and return `is_valid()`: the readers of a server
+  that parses request after request into one message. qbm-http's HTTP/1.1 parser first read every target into a uri
+  built apart and moved into the request: two moves of its strings and its query map, 830 instructions a request on
+  g++ 14, 54 ns of a 263 ns parse of a two-line GET (`qbm-http-bench-http1-parser`, `BM_Http1Parse_WholeBuffer/corpus:0`,
+  3 physical copies a side in a seeded order, +20 % with a 1.2 % A/A band); read in place, the same parse executes 767
+  fewer instructions a request (5 126 -> 4 359 against 4 076 before the train, the rest QB-1186's Host check) and the
+  cell reads 265 / 329 / 272 ns -- the previous release, the train, the train with this reader (ratios 1.238 and
+  1.026 [1.022, 1.033]); the fragmented parse of the same request is level with the previous release again (314 ->
+  313 ns) and the byte-at-a-time parses keep the train's gain (0.86 and 0.70). A copy or a move carries either reading,
+  as for every uri (QB-351). The reference parse is unchanged; the
   private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string literal
   still names the public factory.
 

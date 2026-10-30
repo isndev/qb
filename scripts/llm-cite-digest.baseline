@@ -167,7 +167,7 @@ llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
 llm/qb.llm.api.md	uri.cpp:1123-1162	7001d24b2fe3	if (port_begin && port_begin < port_end) {
-llm/qb.llm.api.md	uri.h:551-551	ad1019a20273	has_query() const noexcept {
+llm/qb.llm.api.md	uri.h:571-571	ad1019a20273	has_query() const noexcept {
 llm/qb.llm.md	Actor.cpp:660-665	df9e20a73808	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:660-675	6e87f36f759e	Actor::Actor() noexcept
 llm/qb.llm.md	Actor.cpp:843-860	846f083df48d	Actor::reply(Event &event) const noexcept {
@@ -340,5 +340,5 @@ llm/qb.llm.md	type_traits.h:920-920	d9321c5c623d	inline constexpr bool has_own_o
 llm/qb.llm.md	uri.cpp:1068-1076	7bcfaab8cb54	if (p < p_end && *p == '?') {
 llm/qb.llm.md	uri.cpp:1123-1162	7001d24b2fe3	if (port_begin && port_begin < port_end) {
 llm/qb.llm.md	uri.cpp:1171-1181	af30544ba558	if (query_begin
-llm/qb.llm.md	uri.h:518-528	53630c7d95ca	[[nodiscard]] uint16_t
-llm/qb.llm.md	uri.h:551-553	35a2f12f3a9a	has_query() const noexcept {
+llm/qb.llm.md	uri.h:538-548	53630c7d95ca	[[nodiscard]] uint16_t
+llm/qb.llm.md	uri.h:571-573	35a2f12f3a9a	has_query() const noexcept {

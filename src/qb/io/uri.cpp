@@ -1348,6 +1348,23 @@ uri::authority_form(std::string target) noexcept {
     return result;
 }
 
+// The in-place readers: the shape of operator=(std::string const &) with the reading passed through. The family is
+// reset as from() resets it (Huly QB-350); the text is copied into the source the uri already owns, and parse() clears
+// the query map without freeing its storage.
+bool
+uri::read_origin_form(std::string_view target) noexcept {
+    _af = AF_INET;
+    _source.assign(target);
+    return parse(reading::origin_form);
+}
+
+bool
+uri::read_authority_form(std::string_view target) noexcept {
+    _af = AF_INET;
+    _source.assign(target);
+    return parse(reading::authority_form);
+}
+
 // Assignment operators
 uri &
 uri::operator=(std::string const &str) {

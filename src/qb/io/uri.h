@@ -414,6 +414,26 @@ public:
     [[nodiscard]] static uri authority_form(std::string target) noexcept;
 
     /**
+     * @brief Reads an HTTP request target in origin-form (RFC 9112 §3.2.1) into THIS uri, as origin_form() reads it
+     *        into a new one: the text replaces source(), the components are parsed in place, the query map's storage
+     *        is kept.
+     * @param target The target as it was received, e.g. `/a/b?x=1`.
+     * @return is_valid(): false when @p target does not begin with '/' or holds a byte a path may not hold.
+     * @note The reader of a server that parses request after request into one message: a uri built apart and moved
+     *       into the request costs two moves of its strings and its query map, this costs one assignment of the text
+     *       (Huly QB-1177: the moves were 830 instructions a request on g++ 14, 54 ns of a 263 ns parse).
+     */
+    bool read_origin_form(std::string_view target) noexcept;
+
+    /**
+     * @brief Reads an HTTP request target in authority-form (RFC 9112 §3.2.3) into THIS uri, as authority_form()
+     *        reads it into a new one: the text replaces source(), the components are parsed in place.
+     * @param target The target as it was received, e.g. `example.com:443`.
+     * @return is_valid(): false when the text is not a host and a port, as for authority_form().
+     */
+    bool read_authority_form(std::string_view target) noexcept;
+
+    /**
      * @brief Copy assignment operator
      * @param rhs Source URI to copy from (its query map is copied as it is, edits included)
      * @return Reference to this URI
