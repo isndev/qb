@@ -5183,9 +5183,15 @@ ev_now_set(EV_P_ ev_tstamp mono) EV_NOEXCEPT {
          * passes in a row -- goes the way a later one goes, so the branch is taken on every pass unless
          * the clock steps back, predicted everywhere, and what follows starts from the argument. ">" was
          * a coin toss on Apple, 1.5 ns a pass; a branchless max put a 4-cycle maxsd on x86's chain, 1.1 ns.
-         * No ecb_expect: Apple clang's cold-code splitting reads the hint and outlines this whole path into
-         * a call, +1.05 ns a pass on the M4; a branch that always goes one way needs none (Huly QB-1181) */
+         * The hint everywhere but Apple clang: without it g++ 14 makes the keep case the fall-through and
+         * the store an out-of-line block -- a taken jump there and a taken jump back on every pass, +0.8 ns
+         * on x86 --, with it Apple clang's cold-code splitting outlines this whole path into a call, +1.05 ns
+         * a pass on the M4; MSVC reads no hint and compiles the same compare either way (Huly QB-1181) */
+#if defined(__clang__) && defined(__APPLE__)
         if (mono >= mn_now)
+#else
+        if (ecb_expect_true(mono >= mn_now))
+#endif
             mn_now = mono;
 
         if (ecb_expect_true(mn_now - now_floor < EV_TS_CONST(MIN_TIMEJUMP * .5)))

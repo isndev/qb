@@ -418,7 +418,14 @@ policy.
   cold-code splitting moved the whole path into an outlined call, `timer+set0` 9.90 -> 11.00 ns (+11 %, CI [1.095,
   1.131]) against the branchless form; without it `timer+set` reads 25.00 -> 24.55 ns (-1.8 %) and `timer+set0` 9.90
   -> 9.95 (level), `qb-io-bench-timer-dispatch` level in every case, `>` at the same clock 26.80 (+7.2 %, the coin
-  toss, in the same session). MSVC compiles the same code either way (`ecb_expect` is empty there).
+  toss, in the same session). MSVC compiles the same code either way (`ecb_expect` is empty there). Re-read on x86
+  under g++ 14 (an i9-12900K, qev's `bench-pass` at 3cf924c, 25f4d97, 8d47145 and this form, 3 physical copies a side,
+  8 rounds in a seeded order, A/A at most 1.7 %), the hint is what keeps the common store as the fall-through there:
+  without it g++ lays the keep case out as the fall-through and the store as an out-of-line block, a taken jump there
+  and a taken jump back on every pass, `timer+set0` 8.80 -> 9.75 ns (+10.8 %, CI [1.090, 1.137]), `timer+set` level
+  behind its clock read. So the compare carries `ecb_expect_true` everywhere but Apple clang (`defined(__clang__) &&
+  defined(__APPLE__)`, where the line is the M4's): `timer+set0` 8.80 ns again (1.000 [0.989, 1.029]), every other
+  shape level; clang 19 on Linux compiles the two forms to the same bytes, MSVC 19.51 to the same 33 instructions.
   `qb-io-bench-timer-dispatch` over 8 rounds (A/A at most 0.64 %): 1024 timers armed, then drained, 63.9 -> 55.9 µs; a
   `with_timeout` re-armed 23.6 -> 19.2 ns; a 1 ns `callback` from its arm to its fire 1007 -> 80 ns, the old clock's 1
   µs step a timer had to wait out. `ListenerTimerGate.TheLoopsClockIsTheClockOfMonoTime`
