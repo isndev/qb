@@ -365,21 +365,27 @@ TEST_F(CoroutineSchedulerTests, FrameDestroyedAfterCompletion) {
     std::atomic<bool> frame_destroyed{false};
     std::atomic<bool> completed{false};
 
+    // The coroutine parks on a channel the test opens, never on a timer: a 10 ms sleep against the 2 ms run below
+    // left the "still parked" checks a ceiling an 8 ms stall breaks -- the ASan suite under a parallel ctest
+    // completed it first (a ceiling, unlike this suite's order and elapsed-floor checks: see
+    // coroutine_test_support.h).
     auto destroyed_ptr = &frame_destroyed;
     auto completed_ptr = &completed;
-    coro_scheduler().spawn([destroyed_ptr, completed_ptr]() -> task<void> {
+    auto gate          = std::make_shared<channel<int>>(1);
+    coro_scheduler().spawn([destroyed_ptr, completed_ptr, gate]() -> task<void> {
         FrameMarker marker{destroyed_ptr};
-        co_await sleep(10ms);
-        completed_ptr->store(true);
+        auto        opened = co_await gate->recv();
+        completed_ptr->store(opened.has_value());
         co_return;
         // marker destroyed here, as part of frame teardown
     });
 
-    // While parked on the timer the frame (hence the local) is still alive.
+    // While parked the frame (hence the local) is still alive, however long the loop turns.
     qb::io::async::run_for(2ms);
     EXPECT_FALSE(completed.load());
     EXPECT_FALSE(frame_destroyed.load());
 
+    ASSERT_TRUE(gate->try_send(1));
     EXPECT_TRUE(pump_until([&] { return completed.load(); })) << "coroutine never completed";
     EXPECT_TRUE(frame_destroyed.load()) << "frame local was not destroyed after completion";
 }
