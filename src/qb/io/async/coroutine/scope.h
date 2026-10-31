@@ -88,6 +88,7 @@ public:
 private:
     struct task_state {
         bool               completed{false};
+        size_t             completion{0}; ///< its rank among the scope's completions, from 1; join_any answers the lowest
         std::exception_ptr error;
     };
 
@@ -104,6 +105,7 @@ private:
 
         std::vector<std::shared_ptr<task_state>> tasks;
         size_t                                   active_count{0};
+        size_t                                   completions{0};        ///< tasks completed so far: the next one's rank is completions + 1
         std::vector<handle_slot>                 join_all_waiter_slots; ///< one per concurrent join_all
         std::vector<handle_slot>                 join_any_waiter_slots; ///< one per concurrent join_any
         std::exception_ptr                       first_error;
@@ -300,8 +302,9 @@ private:
             err = std::current_exception();
             QB_SCOPE_TRACE("run_wrapped caught exception");
         }
-        state->completed = true;
-        state->error     = err;
+        state->completed  = true;
+        state->completion = ++impl->completions;
+        state->error      = err;
         QB_SCOPE_TRACE("run_wrapped pre-done impl=%p active_before=%zu", (void *) impl.get(), impl->active_count);
         impl->on_task_done(err);
         QB_SCOPE_TRACE("run_wrapped post-done impl=%p", (void *) impl.get());
@@ -431,10 +434,13 @@ public:
     /**
      * @brief Wait for any task to complete (event-driven)
      * @return Index of the first completed task, or total_count() if empty
-     * @details A scope with no task -- never spawned into, or emptied by `prune_completed()` -- has
-     *          nothing that could ever wake the caller, so it answers at once with the sentinel
-     *          `total_count()` (Huly QB-283). Compare the result with `total_count()` to tell the
-     *          two apart; a task spawned AFTER the call is not waited for.
+     * @details First in completion order, not the lowest completed index: the caller's wake goes
+     *          through the ready queue, so a task that finishes before it resumes -- a loaded loop
+     *          runs every expired timer in one pass -- is completed too, and is not the answer
+     *          (Huly QB-1217). A scope with no task -- never spawned into, or emptied by
+     *          `prune_completed()` -- has nothing that could ever wake the caller, so it answers at
+     *          once with the sentinel `total_count()` (Huly QB-283). Compare the result with
+     *          `total_count()` to tell the two apart; a task spawned AFTER the call is not waited for.
      */
     task<size_t>
     join_any() {
@@ -494,10 +500,13 @@ public:
             size_t
             await_resume() noexcept {
                 *slot = {};
-                for (size_t i = 0; i < impl->tasks.size(); ++i)
-                    if (impl->tasks[i]->completed)
-                        return i;
-                return impl->tasks.size();
+
+                const auto &tasks = impl->tasks;
+                size_t      first = tasks.size();
+                for (size_t i = 0; i < tasks.size(); ++i)
+                    if (tasks[i]->completed && (first == tasks.size() || tasks[i]->completion < tasks[first]->completion))
+                        first = i;
+                return first;
             }
         };
 

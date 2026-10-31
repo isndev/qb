@@ -547,6 +547,41 @@ TEST_F(ScopeStructuredConcurrency, JoinAnyEventDrivenReturnsFasterIndex) {
     EXPECT_EQ(winner_idx.load(), 1u) << "the 5ms task (index 1) wins";
 }
 
+// join_any() answers the task that completed FIRST, not the lowest index among the completed ones.
+// Its caller is woken through the ready queue, so a task that finishes between that wake and the
+// caller's resume is completed too by the time it looks: a loaded loop runs two expired timers in
+// one pass, and the test above answered its 50 ms worker -- the Windows gate's debug suite, and 4
+// runs in 48 under injected stalls (Huly QB-1217). Two gates opened 1 then 0 land both completions
+// before the resume, with no timer.
+TEST_F(ScopeStructuredConcurrency, JoinAnyAnswersTheFirstCompletionWhenSeveralPrecedeTheResume) {
+    auto                gate0 = std::make_shared<channel<int>>(1);
+    auto                gate1 = std::make_shared<channel<int>>(1);
+    std::atomic<int>    parked{0};
+    std::atomic<bool>   done{false};
+    std::atomic<size_t> winner_idx{99};
+
+    coro_scheduler().spawn([&, gate0, gate1]() -> task<void> {
+        coroutine_scope scope;
+        scope.spawn([&parked, gate0]() -> task<void> {
+            parked.fetch_add(1);
+            co_await gate0->recv();
+        }); // index 0
+        scope.spawn([&parked, gate1]() -> task<void> {
+            parked.fetch_add(1);
+            co_await gate1->recv();
+        }); // index 1
+        winner_idx.store(co_await scope.join_any());
+        done.store(true);
+    });
+
+    ASSERT_TRUE(pump_until([&] { return parked.load() == 2; })) << "the two workers never parked on their gates";
+    ASSERT_FALSE(done.load()) << "join_any answered before any worker completed";
+    ASSERT_TRUE(gate1->try_send(1));
+    ASSERT_TRUE(gate0->try_send(1));
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "join_any coordinator never finished";
+    EXPECT_EQ(winner_idx.load(), 1u) << "index 1 completed first; index 0 completed before the caller resumed";
+}
+
 TEST_F(ScopeStructuredConcurrency, MultipleConcurrentJoinAllWaiters) {
     int               woken = 0;
     std::atomic<bool> done{false};

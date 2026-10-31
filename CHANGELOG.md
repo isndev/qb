@@ -322,6 +322,17 @@ policy.
 
 ### Fixed
 
+- **`coroutine_scope::join_any()` answers the task that completed first, not the lowest completed index
+  (Huly QB-1217).** Its caller is woken through the ready queue, and `await_resume()` scanned the tasks in index
+  order for one marked completed: a task that finished between that wake and the caller's resume -- a loaded
+  loop runs every expired timer in one pass -- was completed too, and a lower index won. A 5 ms worker at index 1
+  and a 50 ms one at index 0 answered 0 whenever the loop stalled past both deadlines: the Windows gate's debug
+  suite on 2026-10-31, and 4 runs in 48 with the process suspended 20-120 ms at random under MSVC Debug. Each task
+  now records its rank among the scope's completions, and `join_any()` answers the lowest rank; the rank travels
+  with the task through `prune_completed()`, which a remembered index would not. A scope whose tasks had already
+  finished before the call answers the first of them to finish, as documented. Witnessed by two workers parked
+  on channels opened 1 then 0 before the caller resumes (answered 0, now 1) and by the same stall injection: 96
+  repetitions in 96 green.
 - **A timed wait or a `select()` leaves nothing behind on a channel, and its watchdog dies with it
   (Huly QB-273).** A `recv_for()` that timed out, a `send_for()` that timed out, a `select()` another
   channel won and a wait reclaimed while parked all left their entry in the channel's waiter ring until a

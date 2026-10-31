@@ -2021,7 +2021,7 @@ C++20 coroutines. Single-thread per scheduler; bridges to libev. From within an 
 *   `inline retry_policy transient_network_policy()` / `idempotent_policy()` / `aggressive_retry_policy()`.
 
 ### Structured concurrency (`scope.h`)
-*   `class coroutine_scope` — `spawn(task<T>)`/`spawn(Callable)`/`spawn_cancellable`, `join_all()`/`join_any()`/`join_all_for(qb::duration)`, `cancel_all()`, `cancel_token()`, `active_count`/`total_count`/`prune_completed`/`rethrow_if_error`. cleanup_policy `{join_all, cancel_all (default), detach}`. `join_any()` → the index of the first completed task, or `total_count()` at once when the scope holds no task (never spawned into, or emptied by `prune_completed()`).
+*   `class coroutine_scope` — `spawn(task<T>)`/`spawn(Callable)`/`spawn_cancellable`, `join_all()`/`join_any()`/`join_all_for(qb::duration)`, `cancel_all()`, `cancel_token()`, `active_count`/`total_count`/`prune_completed`/`rethrow_if_error`. cleanup_policy `{join_all, cancel_all (default), detach}`. `join_any()` → the index of the first completed task — first in completion order, not the lowest completed index (Huly QB-1217) — or `total_count()` at once when the scope holds no task (never spawned into, or emptied by `prune_completed()`).
 *   `class joining_scope` / `cancelling_scope` / `detaching_scope : public coroutine_scope` — fixed cleanup policy.
 *   `[T<...Tasks>] task<std::tuple<...>> parallel(Tasks...)`, `parallel_map(Range,F,size_t=10)`, `with_scope(F)`, `repeat_while(F,P,cancellation_token={})`, `capture_result(task<T>,std::optional<T>&)`. `parallel`/`parallel_map` store a `void` result as `std::monostate` (see `when_all`).
 
