@@ -22,6 +22,16 @@
  * `uint64_t` (no wall-clock in the timed region); every probe result is folded through
  * `benchmark::DoNotOptimize`; a one-shot out-of-loop guard asserts the state machine reached the
  * expected state (a breaker that never trips / a bucket that never throttles = a broken probe).
+ *
+ * The breaker cells also fold the BREAKER through `benchmark::DoNotOptimize` once per iteration. A
+ * breaker is a local whose address never escapes, so on a closed breaker that never fails `allow()`
+ * is provably `true`, `on_success()` writes what is already there and the probe result is a constant
+ * -- and `DoNotOptimize` of a constant emits nothing: GCC 14 compiled both breaker cells to the bare
+ * iteration loop, `sub $0x8,%rsi; jne` (0.025 ns per op at 5 GHz, one branch per eight iterations),
+ * and a CI gate once read a +108 % on that loop's placement alone, with no instruction of the breaker
+ * in the timed region. Pinning the object in memory (`"+m"` on GCC / Clang, an escaped
+ * address on MSVC) makes every iteration reload the state and store the verdict -- the guard's real
+ * cost around a call.
  */
 
 #include <benchmark/benchmark.h>
@@ -48,6 +58,7 @@ BM_Resilience_CircuitBreaker_Closed(benchmark::State &state) {
         }
         now += 1000; // advance 1 µs/op
         benchmark::DoNotOptimize(ok);
+        benchmark::DoNotOptimize(breaker); // the state machine runs: see the file comment
     }
     if (passed == 0)
         state.SkipWithError("circuit breaker never admitted a call in the closed state");
@@ -74,6 +85,7 @@ BM_Resilience_CircuitBreaker_OpenFastFail(benchmark::State &state) {
             ++rejected;
         // Keep the injected clock inside the cooldown for every iteration.
         benchmark::DoNotOptimize(ok);
+        benchmark::DoNotOptimize(breaker); // the cooldown compare runs: see the file comment
     }
     if (rejected != static_cast<std::uint64_t>(state.iterations()) || breaker.state() != qb::CircuitBreaker::State::open)
         state.SkipWithError("open breaker admitted calls during cooldown (fast-fail path not exercised)");
