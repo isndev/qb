@@ -1256,6 +1256,24 @@ wait_for_quota_event(qb::io::quic::backend &client, qb::io::quic::backend &serve
     return false;
 }
 
+// Opens a client stream once the server's MAX_STREAMS has renewed a slot. That frame is a write like any
+// other: ngtcp2's pacer can hold it longer than a fixed number of exchanges lasts, so they run to a deadline.
+bool
+open_once_renewed(qb::io::quic::backend &client, qb::io::quic::backend &server, qb::io::quic::stream_direction direction,
+                  std::uint64_t &stream_id) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+        deliver_quota_packets(client, server);
+        try {
+            stream_id = client.open_stream(0, direction);
+            return true;
+        } catch (std::runtime_error const &) {
+            // no slot yet
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSlot) {
@@ -1353,10 +1371,9 @@ TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwo
     EXPECT_FALSE(lower_closed) << "the lower stream remains open until its FIN";
     client->send_stream_data(0, first, std::span<const std::byte>{}, true);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
-    for (int i = 0; i < 4; ++i)
-        deliver_quota_packets(*client, *server);
-    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
-    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    std::uint64_t renewed = 0;
+    EXPECT_TRUE(open_once_renewed(*client, *server, qb::io::quic::stream_direction::unidirectional, renewed));
+    EXPECT_TRUE(open_once_renewed(*client, *server, qb::io::quic::stream_direction::unidirectional, renewed));
     EXPECT_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional), std::runtime_error)
         << "both streams invoked stream_open, so their closes must renew exactly two slots";
 }
@@ -1389,17 +1406,17 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
     // Native mutations require the explicit packet drain used by endpoint wrappers.
     deliver_quic_packets(*client, *server);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, first));
-    for (int i = 0; i < 4; ++i)
-        deliver_quota_packets(*client, *server);
-    const auto second = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
+    std::uint64_t second = 0;
+    ASSERT_TRUE(open_once_renewed(*client, *server, qb::io::quic::stream_direction::unidirectional, second))
+        << "the reset stream's close must renew its slot";
     client->send_stream_data(0, second, payload, false);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_started, second));
     server->stop_stream(server_connection_id, second, 0x456);
     deliver_quic_packets(*server, *client);
     ASSERT_TRUE(wait_for_quota_event(*client, *server, qb::io::quic::backend_event::kind::stream_closed, second));
-    for (int i = 0; i < 4; ++i)
-        deliver_quota_packets(*client, *server);
-    EXPECT_NO_THROW((void) client->open_stream(0, qb::io::quic::stream_direction::unidirectional));
+    std::uint64_t third = 0;
+    EXPECT_TRUE(open_once_renewed(*client, *server, qb::io::quic::stream_direction::unidirectional, third))
+        << "the stopped stream's close must renew its slot";
 }
 
 /**
@@ -2235,7 +2252,10 @@ class QuicReadHalfRetransmissionTest : public ::testing::TestWithParam<QuicReadH
 /**
  * @test A lost packet is retransmitted intact after a local read stop or a peer write reset
  * @brief The open-read case is the packet-loss control. The two read-end cases must keep
- *        unacknowledged TX storage alive until ngtcp2 retransmits and acknowledges it.
+ *        unacknowledged TX storage alive until ngtcp2 retransmits and acknowledges it. ngtcp2 paces
+ *        both peers, so no write is expected on the wire at once: the opener is pumped to a deadline,
+ *        the payload's packet -- the one dropped -- is taken at the server's next_timeout() once in
+ *        flight, and the peer's RESET_STREAM at the client's.
  */
 TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     ASSERT_TRUE(require_ssl_files());
@@ -2262,9 +2282,19 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     const auto        stream = client->open_stream(qb::io::quic::stream_direction::bidirectional);
     const std::string opener = "open";
     client->send_stream_data(0, stream, std::span<const std::byte>{reinterpret_cast<const std::byte *>(opener.data()), opener.size()}, false);
-    bool server_saw_opener = false;
-    for (int i = 0; i < 64 && !server_saw_opener; ++i) {
-        deliver_quic_packets(*client, *server);
+    // Pumped to a deadline, not for a number of rounds: the client's pacer can hold the opener behind its
+    // last handshake packet, and each drain offers it to ngtcp2 again at the current time. A deadline would
+    // also outlast a dropped opener's retransmission, so every datagram handed to the server is counted
+    // against the ones it read.
+    bool          server_saw_opener = false;
+    std::uint64_t client_datagrams  = 0;
+    const auto    server_read_from  = server->current_stats().packets_received;
+    const auto    opener_deadline   = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (!server_saw_opener && std::chrono::steady_clock::now() < opener_deadline) {
+        for (auto const &packet : client->drain_packets()) {
+            ++client_datagrams;
+            server->on_udp_datagram({packet.remote, packet.local, std::span<const std::byte>{packet.payload.data(), packet.payload.size()}});
+        }
         deliver_quic_packets(*server, *client);
         for (auto const &event : server->drain_events()) {
             if (event.type == qb::io::quic::backend_event::kind::stream_data && event.stream_id == stream && !event.payload.empty())
@@ -2273,12 +2303,35 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
         (void) client->drain_events();
     }
     ASSERT_TRUE(server_saw_opener);
+    ASSERT_EQ(server->current_stats().packets_received - server_read_from, client_datagrams) << "the server dropped a client datagram";
 
+    // The witness loses the packet that carries the payload. send_stream_data() offers the bytes to
+    // ngtcp2 and writes what it lets out NOW, but ngtcp2 paces: the server's last flight of the
+    // handshake, a round trip ago, set a next send time that grows with the smoothed RTT, and until
+    // then a write yields nothing or an ACK alone. A driver gets the packet from on_timeout() at
+    // next_timeout(), so the server is advanced that way -- the client hears nothing, so nothing sent
+    // meanwhile can be acknowledged -- until the payload's bytes are in flight.
     const std::string payload(512, 'Q');
+    const auto        before = server->current_stats();
     server->send_stream_data(connection_id, stream,
                              std::span<const std::byte>{reinterpret_cast<const std::byte *>(payload.data()), payload.size()}, false);
-    auto lost_packets = server->drain_packets();
-    ASSERT_FALSE(lost_packets.empty()) << "the TX witness needs an unacknowledged packet to lose";
+    auto       lost_packets      = server->drain_packets();
+    const auto payload_in_flight = [&] {
+        return server->current_stats().bytes_in_flight >= before.bytes_in_flight + payload.size();
+    };
+    const auto pacing_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (!payload_in_flight() && std::chrono::steady_clock::now() < pacing_deadline) {
+        const auto expiry = server->next_timeout();
+        ASSERT_NE(expiry, std::chrono::steady_clock::time_point::max()) << "a write ngtcp2 deferred must leave the server a timer";
+        std::this_thread::sleep_until(std::min(expiry, pacing_deadline));
+        server->on_timeout(std::chrono::steady_clock::now());
+        for (auto &packet : server->drain_packets())
+            lost_packets.push_back(std::move(packet));
+    }
+    // An ACK is never in flight and no other frame of that size is pending: only the payload's STREAM
+    // frame adds its 512 bytes, so the packets about to be dropped carry it.
+    ASSERT_TRUE(payload_in_flight()) << "the TX witness needs the payload's packet in flight, unacknowledged, to lose";
+    ASSERT_FALSE(lost_packets.empty());
     if (GetParam() == QuicReadHalfAction::local_stop)
         server->stop_stream(connection_id, stream, 0x29);
 #ifdef QB_IO_QUIC_TEST_HOOKS
@@ -2286,12 +2339,22 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
         // The peer only resets its write half. A full reset would also send STOP_SENDING,
         // legitimately cancelling the server's write and masking the TX lifetime bug.
         qb::io::quic::test::reset_stream_write(*client, stream, 0x2a);
-        deliver_quic_packets(*client, *server);
-        std::size_t reset_events = 0;
-        for (auto const &event : server->drain_events()) {
-            if (event.type == qb::io::quic::backend_event::kind::stream_closed && event.stream_id == stream
-                && event.text == "stream reset by peer" && event.error_code == 0x2a)
-                ++reset_events;
+        // The client's pacer can hold the RESET_STREAM as the server's held the payload: the client is
+        // advanced through its own timer until the server reports the reset. Only client packets travel,
+        // and the client never saw the payload, so the server's TX stays unacknowledged.
+        std::size_t reset_events   = 0;
+        const auto  reset_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        for (;;) {
+            deliver_quic_packets(*client, *server);
+            for (auto const &event : server->drain_events()) {
+                if (event.type == qb::io::quic::backend_event::kind::stream_closed && event.stream_id == stream
+                    && event.text == "stream reset by peer" && event.error_code == 0x2a)
+                    ++reset_events;
+            }
+            if (reset_events > 0 || std::chrono::steady_clock::now() >= reset_deadline)
+                break;
+            std::this_thread::sleep_until(std::min(client->next_timeout(), reset_deadline));
+            client->on_timeout(std::chrono::steady_clock::now());
         }
         ASSERT_EQ(reset_events, 1u) << "the peer RESET_STREAM must reach stream_reset_cb with server TX unacknowledged";
     }
@@ -2329,6 +2392,7 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     EXPECT_TRUE(received == payload) << "retransmission used bytes from a retired TX buffer";
     EXPECT_EQ(acked_bytes, payload.size()) << "the retained TX must release when the peer ACKs it";
     EXPECT_EQ(ack_events, 1u) << "a single retransmitted frame must be acknowledged once";
+    EXPECT_GT(server->current_stats().packets_lost, before.packets_lost) << "the payload must have reached the peer through a retransmission";
 }
 
 #ifdef QB_IO_QUIC_TEST_HOOKS
