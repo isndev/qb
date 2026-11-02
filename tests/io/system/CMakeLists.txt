@@ -214,44 +214,6 @@ if (QB_HAS_SSL)
     unset(_qb_openssl_chosen)
 endif ()
 
-# -----------------------------------------------------------------------------
-# Per-backend libev event-loop test matrix (OPT-IN: QB_IO_EV_TEST_BACKENDS), re-pointed to
-# the migrated target names. See the original block for rationale + valid backend values.
-# -----------------------------------------------------------------------------
-if (QB_IO_EV_TEST_BACKENDS)
-    # event-loop-lifecycle carries the matrix's anti-vacuity guard (Huly QB-81): its
-    # ResolveBackendFlagsHonoursTheMatrixEnvironment case reads the QB_EV_BACKEND this variant
-    # sets and FAILS if the named backend is not compiled in or did not come up at runtime --
-    # the five sensitive binaries never check, so without it a variant whose backend fell back
-    # to auto would pass while testing another backend than the one its name promises.
-    set(QB_IO_BACKEND_SENSITIVE_TESTS
-            qb-io-test-system-tcp-socket-loopback
-            qb-io-test-system-async-bases-framing
-            qb-io-test-system-async-connect-timeout
-            qb-io-test-system-session-json
-            qb-io-test-system-tls-worker-deadline
-            qb-io-test-system-offload
-            qb-io-test-system-event-loop-lifecycle)
-    foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
-        if (TARGET ${_qb_tgt})
-            set(_qb_lock "evmx_${_qb_tgt}")
-            set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
-            get_test_property(${_qb_tgt} LABELS _qb_base_labels)
-            get_test_property(${_qb_tgt} TIMEOUT _qb_base_timeout)
-            foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
-                add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
-                set_tests_properties(${_qb_tgt}-ev-${_qb_be} PROPERTIES
-                        ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
-                        WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
-                        RESOURCE_LOCK "${_qb_lock}"
-                        LABELS "${_qb_base_labels};ev-backend;ev-backend-${_qb_be}"
-                        TIMEOUT "${_qb_base_timeout}")
-            endforeach ()
-        endif ()
-    endforeach ()
-    qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
-endif ()
-
 # A teardown completes when a handler throws, or when an acceptor has none (Huly QB-256).
 qb_add_test(MODULE qb-io TIER system NAME teardown-throwing-handlers SOURCES tcp/teardown-throwing-handlers.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 
@@ -303,3 +265,48 @@ qb_add_test(MODULE qb-io TIER system NAME connector-clock SOURCES tcp/connector-
 # loop's (through qev's ev_now_set) and the system's (the ev_time() this file compiles) -- are injected, never changed
 # on the system; a step back does not lengthen an idle timeout, a step forward does not shorten it.
 qb_add_test(MODULE qb-io TIER system NAME timeout-clock SOURCES async/timeout-clock.cpp DEPENDS ${PROJECT_NAME})
+
+# -----------------------------------------------------------------------------
+# Per-backend libev event-loop test matrix (OPT-IN: QB_IO_EV_TEST_BACKENDS), re-pointed to
+# the migrated target names. See the original block for rationale + valid backend values.
+# Kept LAST in this file: it re-registers targets declared above it, and `if (TARGET ...)`
+# passes over a target declared below it without a word, as it does over one whose REQUIRES
+# gate is off.
+# -----------------------------------------------------------------------------
+if (QB_IO_EV_TEST_BACKENDS)
+    # event-loop-lifecycle carries the matrix's anti-vacuity guard (Huly QB-81): its
+    # ResolveBackendFlagsHonoursTheMatrixEnvironment case reads the QB_EV_BACKEND this variant
+    # sets and FAILS if the named backend is not compiled in or did not come up at runtime --
+    # the sensitive binaries never check, so without it a variant whose backend fell back
+    # to auto would pass while testing another backend than the one its name promises.
+    # connector-clock and timeout-clock (Huly QB-1194) hold a connect deadline and a timeout's
+    # time left on the monotonic clock: each runs under every backend's wait.
+    set(QB_IO_BACKEND_SENSITIVE_TESTS
+            qb-io-test-system-tcp-socket-loopback
+            qb-io-test-system-async-bases-framing
+            qb-io-test-system-async-connect-timeout
+            qb-io-test-system-session-json
+            qb-io-test-system-tls-worker-deadline
+            qb-io-test-system-offload
+            qb-io-test-system-connector-clock
+            qb-io-test-system-timeout-clock
+            qb-io-test-system-event-loop-lifecycle)
+    foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
+        if (TARGET ${_qb_tgt})
+            set(_qb_lock "evmx_${_qb_tgt}")
+            set_tests_properties(${_qb_tgt} PROPERTIES RESOURCE_LOCK "${_qb_lock}")
+            get_test_property(${_qb_tgt} LABELS _qb_base_labels)
+            get_test_property(${_qb_tgt} TIMEOUT _qb_base_timeout)
+            foreach (_qb_be ${QB_IO_EV_TEST_BACKENDS})
+                add_test(NAME ${_qb_tgt}-ev-${_qb_be} COMMAND ${_qb_tgt})
+                set_tests_properties(${_qb_tgt}-ev-${_qb_be} PROPERTIES
+                        ENVIRONMENT "QB_EV_BACKEND=${_qb_be}"
+                        WORKING_DIRECTORY "$<TARGET_FILE_DIR:${_qb_tgt}>"
+                        RESOURCE_LOCK "${_qb_lock}"
+                        LABELS "${_qb_base_labels};ev-backend;ev-backend-${_qb_be}"
+                        TIMEOUT "${_qb_base_timeout}")
+            endforeach ()
+        endif ()
+    endforeach ()
+    qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
+endif ()

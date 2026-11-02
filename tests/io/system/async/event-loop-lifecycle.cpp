@@ -678,7 +678,7 @@ TEST_F(EventLoopLifecycleTest, ResolveBackendFlagsHonoursKnownSupportedBackend) 
 // environment. That variable is honoured only where the backend is built in AND comes up at
 // runtime; otherwise _resolve_backend_flags degrades to auto -- correct for a user, VACUOUS for a
 // matrix variant, whose name would then promise a backend it never touches (a container's seccomp
-// profile blocking io_uring is the realistic case, and the four sensitive binaries never check).
+// profile blocking io_uring is the realistic case, and the sensitive binaries never check).
 // So this binary is in that matrix, and this case reads the AMBIENT variable and asserts the
 // contract it lands on: unpinned, a fresh listener is on the platform's auto backend; pinned to a
 // name the matrix knows, that backend must be compiled in (else the matrix is misconfigured for

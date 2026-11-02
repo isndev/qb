@@ -476,6 +476,9 @@ policy.
   M4 against the base (3 copies a side, seeded order, 8 rounds, quiet host, three sessions, one with functions and loops
   aligned to 64 bytes): `updateTimeout()` (`qb-io-bench-timer-dispatch` `BM_WithTimeout_Rearm`) 19.2 -> 15.5 ns every
   time (A/A at most 1.3 %); a callback from its arm to its fire 79.1 -> 78.9 ns and 1024 timers drained, level.
+  Both binaries run once more under each backend of the per-backend matrix (`-DQB_IO_EV_TEST_BACKENDS`, epoll and
+  io_uring in qb's Linux CI), which now stands last in `tests/io/system/CMakeLists.txt`: it passes over a target
+  declared below it without a word, and the two were declared below it -- green 10 runs in 10 under each on Linux.
 
 - **qb's event loop and another libev linked in one program each run their own code (Huly QB-1139).** The
   embedded copy of the loop (qev) exported libev's own names, `ev_run`, `ev_loop_new` and 71 more, so a program
