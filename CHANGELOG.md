@@ -414,6 +414,17 @@ policy.
   and for a scheduler destroyed while current; and in `qb-io-test-unit-scheduler-abandoned-frames` for its teardown;
   and in `qb-core-test-system-coroutine-basics` for an actor that spawns after a reset on its core, and with its
   core's scheduler alive but unbound.
+- **The async TCP connector delivers a deadline already past when an attempt arms it from the loop, not inside
+  `connect()` (Huly QB-1200).** An attempt arms the connect's deadline once its TCP connect is in progress; a deadline
+  already behind the clock by then -- a name resolution, which `run()` makes synchronously, longer than the timeout --
+  went to `async::callback` with a zero delay, which runs its function inline, so the completion callback ran inside
+  `run()`, inside the caller's `tcp::connect(...)`, re-entering it: what `deliver_failure_deferred()` prevents for every
+  other failure. It now ends the connect there: the attempt's watcher is dropped -- a connect completing in the next
+  turn does not win over its deadline -- and the failure is posted with `deliver_failure_deferred()`, as theirs are:
+  delivered once, from the loop. The coroutine form was not affected (its completion schedules the resume). Witnessed
+  by `qb-io-test-system-connector-clock` (a 1 ns timeout and an attempt started a microsecond after the build, through
+  the four constructors): the completion ran inside `run()` for each; over a descriptor ready in the next turn, a
+  deadline merely deferred lost to the connect, which was delivered connected.
 - **`coroutine_scope::join_any()` answers the task that completed first, not the lowest completed index
   (Huly QB-1217).** Its caller is woken through the ready queue, and `await_resume()` scanned the tasks in index
   order for one marked completed: a task that finished between that wake and the caller's resume -- a loaded
