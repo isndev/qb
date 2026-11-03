@@ -8,26 +8,27 @@ own (the" -- left beside its rewrite by the edit that should have replaced it, a
 verify.sh all passed it (Huly QB-1221). The release body is generated from these entries. In [Unreleased]:
 
   * every paragraph ends its sentence. A paragraph is a run of non-blank lines that a blank line, a heading, a list
-    item, a table, a block quote or an HTML comment that opens a line ends (read to its `-->`, the text after it a
-    line of its own; one still open at the section's end is a finding) -- an item an entry or one of its sub-items, a
-    numbered one only where it can open a list (`1.`, `1)`, or a list still open: an entry, or prose at the list's
-    depth, closes it), as Markdown reads it -- so an entry cut short and followed at once by the next one is still a
-    paragraph that ends unfinished. Its closed comments set aside, and past any closing mark (`)`, `]`, `*`, `_`, `~`,
-    a backtick, a quote), its last line ends on `.`, `!`, `?` or `…`; on `:` only where what it introduces follows --
-    a table, a code block, a block quote, or an item or a paragraph deeper than the paragraph (indented past the item
-    that opens it, or, in an entry's body, at least as deep as the body), which the next entry never is, and a
-    comment between them settles nothing; on `;` only inside an indented list, where another of its items follows,
-    at any depth. What ends
-    otherwise and is no sentence was listed from every section of the six CHANGELOGs of the superproject (1 167
+    item, a table or a block quote ends -- an item an entry or one of its sub-items, a numbered one only where it can
+    open a list (`1.`, `1)`, or a list still open: an entry, or prose at the list's depth, closes it), as Markdown
+    reads it -- so an entry cut short and followed at once by the next one is still a paragraph that ends
+    unfinished. Past any closing mark (`)`, `]`, `*`, `_`, `~`, a backtick, a quote), its last line ends on `.`, `!`,
+    `?` or `…`; on `:` only where what it introduces follows -- a table, a code block, a block quote, or an item or a
+    paragraph deeper than the paragraph (indented past the item that opens it, or, in an entry's body, at least as
+    deep as the body), which the next entry never is, and a break, a reference or a line of HTML between them
+    settles nothing; on `;` only inside an indented list, where another of its items follows, at any depth. What
+    ends otherwise and is no sentence was listed from every section of the six CHANGELOGs of the superproject (1 167
     paragraphs on 2026-11-03, not one other ending): a table row, a link reference definition
     (`[3.0.0]: https://...`), a thematic break (`---`), a fenced code block, read from its fence to the fence that
-    closes it -- and a line that is one HTML tag (`<br>`, `<details>`), which none of them holds. A paragraph whose
-    last lines are such lines ends on the last line that is not;
+    closes it -- and a line that is one HTML tag or one closed comment (`<br>`, `<!-- note -->`), which none of them
+    holds. HTML comments are read no further: one that opens a line ends the paragraph before it, and one closed on
+    its line is set aside where a line ends; one over several lines is text, which a paragraph must end -- a cut is
+    never hidden behind one, and no CHANGELOG writes one. A paragraph whose last lines are such lines ends on the
+    last line that is not;
   * every entry opens on `- ` and a bold headline, as the release body lists it (one opened with `*`, `+` or a tab is
     folded into the entry before it), and none is cut off -- every bracket or parenthesis it opens is closed, past its
     code spans and escapes, no backtick is left open, and its `**` neither opens nor closes on a space nor closes
-    inside a word or before `_` or a backtick, on the bold of another span. All 974 headlines
-    of the corpus on 2026-11-03 pass (a closing bracket with nothing open is set aside: `[0, n)`, `a) b)`);
+    before a letter or a digit, or before a word that holds another `**`: on the bold of another span. All 974
+    headlines of the corpus on 2026-11-03 pass (a closing bracket with nothing open is set aside: `[0, n)`, `a) b)`);
   * no text stands before the first entry of a section or a subsection that holds entries, which the release body
     cannot place;
   * no two entries open on the same bold headline: an entry written twice, as one is in qbm-http's published
@@ -57,12 +58,12 @@ BULLET = re.compile(r"[ \t]*[-*+][ \t]")
 ORDERED = re.compile(r"[ \t]*(\d+)[.)][ \t]")
 TABLE = re.compile(r"[ \t]*\|")
 QUOTE = re.compile(r"[ \t]*>")
-COMMENT = re.compile(r"<!--.*?-->", re.S)
 EXEMPT = re.compile(r"[ \t]*(?:\|.*|\[[^\]]+\]:[ \t]+\S.*|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|<.*>)$")
 CLOSERS = r"[)\]*_~`\"'”’»]*$"
 ENDS, INTRODUCES, ENUMERATES = re.compile(r"[.!?…]" + CLOSERS), re.compile(r":" + CLOSERS), re.compile(r";" + CLOSERS)
 HEADLINE = re.compile(r"- \*\*(.+?)\*\*", re.S)
 CODE_SPAN = re.compile(r"(`+)(?:(?!\1).)+\1")
+LINE_COMMENT = re.compile(r"<!--.*?-->")
 
 
 def fenced(lines):
@@ -97,7 +98,7 @@ def headlines(body, first):
     a fence or not), a headline the `**...**` an entry opens with, its whitespace runs made one space. An entry is
     (line, headline, the bold's text as written), or (line, None, None) without one; a lead, the text of a section or
     a subsection before its first entry, which release_notes() refuses once the section holds an entry or a
-    subsection, is (line, its first line). An entry also carries the character after its bold, or ""."""
+    subsection, is (line, its first line). An entry also carries the word its bold runs into, or ""."""
     entries, leads, at = [], [], 0
     structured = re.search(r"(?m)^(- |### )", body)
     for part in re.split(r"(?m)^(?=### )", body):
@@ -109,8 +110,8 @@ def headlines(body, first):
         pos = at + skip + len(lead)
         for item in items:
             head, number = HEADLINE.match(item), first + body.count("\n", 0, pos)
-            entries.append((number, " ".join(head.group(1).split()), head.group(1), item[head.end():head.end() + 1])
-                           if head else (number, None, None, ""))
+            entries.append((number, " ".join(head.group(1).split()), head.group(1),
+                            re.match(r"\S*", item[head.end():]).group(0)) if head else (number, None, None, ""))
             pos += len(item)
         at += len(part)
     return entries, leads
@@ -152,12 +153,10 @@ def check(path):
         nonlocal paragraphs, pending
         if block:
             paragraphs += 1
-            text = COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), "\n".join(l for _, l in block))
-            last = next(((n, l, w) for (n, w), l in reversed(list(zip(block, text.split("\n"))))
-                         if l.strip() and not EXEMPT.match(l)), None)  # its comments set aside
+            last = next(((n, l) for n, l in reversed(block) if not EXEMPT.match(l)), None)
             if last:
-                number, line, written = last
-                tail = line.rstrip()
+                number, written = last
+                tail = LINE_COMMENT.sub("", written).rstrip()  # a comment closed on its line is set aside
                 opener = block[0][1]
                 indent, item = len(opener) - len(opener.lstrip()), BULLET.match(opener) or ORDERED.match(opener)
                 if INTRODUCES.search(tail):  # the least indent of an item it introduces
@@ -184,20 +183,12 @@ def check(path):
                                 f"...{tail[-70:]}")
             pending = None
 
-    comment = None  # the line an HTML comment that opened a line and is still open opened at; it runs to its `-->`
     for number, line in enumerate(body.split("\n"), first):
         if fence:
             closing = line.strip()
             if closing.startswith(fence) and closing == fence[0] * len(closing):
                 fence = None
             continue
-        if comment:
-            if "-->" not in line:
-                continue
-            end, comment = line.index("-->") + 3, None
-            if not line[end:].strip():
-                continue
-            line = " " * end + line[end:]                # the text after the `-->` is a line of its own
         opened = FENCE.match(line)
         if opened:
             close()
@@ -207,13 +198,7 @@ def check(path):
         if not line.strip():
             close()
             continue
-        indent, stripped = len(line) - len(line.lstrip()), line.lstrip()
-        if stripped.startswith("<!--"):
-            closed = COMMENT.match(stripped)
-            if not closed or not stripped[closed.end():].strip():
-                close()                  # a comment alone on its lines ends a paragraph and settles nothing a `:`
-                comment = None if closed else number  # or a `;` waits for; one with text after it is that text's
-                continue                              # line
+        indent = len(line) - len(line.lstrip())
         if BULLET.match(line) and not indent and not line.startswith("- ") and not EXEMPT.match(line):
             opener = "`-` and a tab" if line.startswith("-\t") else f"`{line[0]}`"
             findings.append(f"{path}:{number}: [Unreleased] an entry opened with {opener}, which the release body does "
@@ -226,10 +211,11 @@ def check(path):
         item = BULLET.match(line) or ordered and (ordered.group(1) == "1" or listing is not None)
         table = TABLE.match(line) and not (block and TABLE.match(block[-1][1]))
         quote = QUOTE.match(line) and not (block and QUOTE.match(block[-1][1]))
-        if heading or item or table or quote:
+        comment = line.lstrip().startswith("<!--")       # interrupts a paragraph, as Markdown reads it
+        if heading or item or table or quote or comment:
             close()
-        if not block:
-            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else
+        if not block and not (EXEMPT.match(line) and not TABLE.match(line)):  # a break, a reference or a line of HTML
+            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else   # settles nothing
                     "quote" if QUOTE.match(line) else "text", indent)
         if heading:
             listing = None
@@ -241,8 +227,6 @@ def check(path):
     follows("end")
     if fence:
         findings.append(f"{path}: [Unreleased] a code fence opens and never closes")
-    if comment:
-        findings.append(f"{path}:{comment}: [Unreleased] an HTML comment opens and does not close: it hides the rest")
     if not paragraphs:
         return None, f"{path}: no paragraph in [Unreleased]", 0
     (entries, leads), seen = headlines(body, first), {}
@@ -257,7 +241,7 @@ def check(path):
         if not balanced(head):
             findings.append(f"{path}:{number}: [Unreleased] a headline cut off -- a bracket or a backtick is left "
                             f"open: {head[:90]}")
-        elif written != written.strip() or after.isalnum() or after in ("_", "`"):
+        elif written != written.strip() or after[:1].isalnum() or "**" in after:
             findings.append(f"{path}:{number}: [Unreleased] a headline cut off -- its `**` opens or closes on a space "
                             f"or closes inside a word, on the bold of another span: {head[:90]}")
         if head in seen:
