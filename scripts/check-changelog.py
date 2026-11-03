@@ -7,33 +7,35 @@ from 2026-10-29 to 2026-11-02, an entry cut off in mid-sentence -- "a session cl
 own (the" -- left beside its rewrite by the edit that should have replaced it, and doc-lint, cite-check, llm-guard and
 verify.sh all passed it (Huly QB-1221). The release body is generated from these entries. In [Unreleased]:
 
-  * every paragraph ends its sentence. A paragraph is a run of non-blank lines that a blank line, a heading or a list
-    item ends -- an entry or one of its sub-items, a numbered item only where it can open a list (`1.`, `1)`, or a
-    list already open), as Markdown reads it -- so an entry cut short and followed at once by the next one is still a
-    paragraph that ends unfinished. Past any closing mark (`)`, `]`, `*`, `_`, a backtick, a quote), its last line
-    ends on `.`, `!` or `?`; on `:` only where an indented item, a table or a code block follows, which is what a
-    `:` introduces (the next entry is none of them); on `;` only where another item of the same list follows. What
-    ends otherwise and is no sentence was listed from every section of the six CHANGELOGs of the superproject (1 165
-    paragraphs on 2026-11-03, not one other ending): a table row, a link reference definition
-    (`[3.0.0]: https://...`), a thematic break (`---`), and a fenced code block, read from its fence to the fence
-    that closes it. A paragraph whose last lines are such lines ends on the last line that is not;
-  * no headline is cut off -- its brackets and parentheses balance, past its code spans, as all 972 of the corpus do;
-  * no two entries open on the same bold headline, or on two that read alike (difflib's ratio NEAR or more): the
-    second copy of an entry rewritten beside the first. The corpus' two such pairs are both copies -- the incident
-    above (0.95) and one entry listed twice in qbm-http's published [3.3.0] (1.00); the closest two that are not
-    read 0.87;
-  * there is one [Unreleased] section.
+  * every paragraph ends its sentence. A paragraph is a run of non-blank lines that a blank line, a heading, a list
+    item, a table or a block quote ends -- an item an entry or one of its sub-items, a numbered one only where it can
+    open a list (`1.`, `1)`, or a list the entry already opened), as Markdown reads it -- so an entry cut short and
+    followed at once by the next one is still a paragraph that ends unfinished. Past any closing mark (`)`, `]`, `*`,
+    `_`, a backtick, a quote), its last line ends on `.`, `!` or `?`; on `:` only where what it introduces follows --
+    a table, a code block, a block quote, or an item deeper than the paragraph (indented past the item that opens
+    it, or, in an entry's body, at least as deep as the body), which the next entry never is; on `;` only inside an
+    indented list, where another item of the same list follows (an entry is never one). What ends otherwise and is
+    no sentence was listed from every section of the six CHANGELOGs of the superproject (1 167 paragraphs on
+    2026-11-03, not one other ending): a table row, a link reference definition (`[3.0.0]: https://...`), a thematic
+    break (`---`), and a fenced code block, read from its fence to the fence that closes it. A paragraph whose last
+    lines are such lines ends on the last line that is not;
+  * no headline is cut off -- an opening bracket or parenthesis is closed, past its code spans, and no backtick is
+    left open, as in all 974 headlines of the corpus on 2026-11-03 (a closing one with nothing open is set aside:
+    `[0, n)`, `a) b)`);
+  * no two entries open on the same bold headline: an entry written twice, as one is in qbm-http's published
+    [3.3.0]. Headlines that only read alike are left alone -- parallel entries are written so, and the incident above
+    is the cut-off sentence;
+  * there is one [Unreleased] heading, outside code blocks.
 
 An entry and its headline are read as dev/agent/release-gate.sh's release_notes() reads them to write the release
 body -- the section runs from `## [Unreleased]` to the next `## [`, its `### ` subsections split it, an entry opens
-with a line `- `, its headline is the `**...**` it opens with -- and `--headlines` lists them, for the superproject's
-battery to compare with what release_notes() publishes.
+with a line `- `, its headline is the `**...**` it opens with -- and `--headlines` lists them (path, line, `bold` or
+`none`, the headline), for the superproject's battery to compare with what release_notes() publishes.
 
 Exit 0 = clean, 1 = at least one finding, 2 = nothing to check: a missing file, or one with no [Unreleased] section
 or no paragraph in it. Usage, from the project root:  python3 scripts/check-changelog.py [--headlines] [FILE ...]
 (default: ./CHANGELOG.md)
 """
-import difflib
 import io
 import os
 import re
@@ -45,20 +47,39 @@ HEADING = re.compile(r"[ \t]*#{1,6}[ \t]")
 BULLET = re.compile(r"[ \t]*[-*+][ \t]")
 ORDERED = re.compile(r"[ \t]*(\d+)[.)][ \t]")
 TABLE = re.compile(r"[ \t]*\|")
+QUOTE = re.compile(r"[ \t]*>")
 EXEMPT = re.compile(r"[ \t]*(?:\|.*|\[[^\]]+\]:[ \t]+\S.*|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$")
 CLOSERS = r"[)\]*_`\"'”’»]*$"
 ENDS, INTRODUCES, ENUMERATES = re.compile(r"[.!?]" + CLOSERS), re.compile(r":" + CLOSERS), re.compile(r";" + CLOSERS)
 HEADLINE = re.compile(r"- \*\*(.+?)\*\*", re.S)
 CODE_SPAN = re.compile(r"(`+)(?:(?!\1).)+\1")
-NEAR = 0.9
+
+
+def fenced(lines):
+    """For each line, whether it is inside a fenced code block or is one of its fences."""
+    out, fence = [], None
+    for line in lines:
+        if fence:
+            closing = line.strip()
+            if closing.startswith(fence) and closing == fence[0] * len(closing):
+                fence = None
+            out.append(True)
+            continue
+        opened = FENCE.match(line)
+        fence = opened.group(1) if opened else None
+        out.append(bool(opened))
+    return out
 
 
 def unreleased(text):
-    """(the first [Unreleased] body, the line its first line is, how many [Unreleased] headings), or None."""
+    """(the first [Unreleased] body, the line its first line is, how many [Unreleased] headings stand outside a code
+    block), or None."""
     section = SECTION.search(text)
     if not section:
         return None
-    return section.group(1), text.count("\n", 0, section.start(1)) + 1, len(re.findall(r"(?m)^## \[Unreleased\]", text))
+    lines = text.split("\n")
+    headings = sum(1 for line, inside in zip(lines, fenced(lines)) if not inside and line.startswith("## [Unreleased]"))
+    return section.group(1), text.count("\n", 0, section.start(1)) + 1, headings
 
 
 def headlines(body, first):
@@ -79,18 +100,16 @@ def headlines(body, first):
 
 
 def balanced(head):
-    """Whether a headline's parentheses and brackets close, its code spans set aside, and no backtick is left open."""
+    """Whether every bracket or parenthesis a headline opens is closed, its code spans set aside, and no backtick is
+    left open. Either kind closes either (`[0, n)`), and a closing one with nothing open is set aside (`a) b)`)."""
     text = CODE_SPAN.sub("", head)
-    depth = {"(": 0, "[": 0}
+    depth = 0
     for c in text:
         if c in "([":
-            depth[c] += 1
-        elif c in ")]":
-            opener = "(" if c == ")" else "["
-            if not depth[opener]:
-                return False
-            depth[opener] -= 1
-    return not any(depth.values()) and "`" not in text
+            depth += 1
+        elif c in ")]" and depth:
+            depth -= 1
+    return not depth and "`" not in text
 
 
 def check(path):
@@ -107,7 +126,7 @@ def check(path):
     if sections > 1:
         findings.append(f"{path}: {sections} [Unreleased] sections -- only the first is read, by this check as by "
                         f"the release gate")
-    block, fence, pending, listing = [], None, None, False  # pending: (line, ':' or ';', its indent, its text)
+    block, fence, pending, listing = [], None, None, False  # pending: (line, ':' or ';', an indent, its text)
 
     def close():
         """End the paragraph in `block`: its last line that is not a table row, a link reference or a break."""
@@ -119,10 +138,11 @@ def check(path):
                 number, line = last
                 tail = line.rstrip()
                 opener = block[0][1]
-                if INTRODUCES.search(tail):
-                    pending = (number, ":", None, tail)
-                elif ENUMERATES.search(tail) and (BULLET.match(opener) or ORDERED.match(opener)):
-                    pending = (number, ";", len(opener) - len(opener.lstrip()), tail)
+                indent, item = len(opener) - len(opener.lstrip()), BULLET.match(opener) or ORDERED.match(opener)
+                if INTRODUCES.search(tail):  # the least indent of an item it introduces
+                    pending = (number, ":", indent + 1 if item else max(indent, 1), tail)
+                elif ENUMERATES.search(tail) and item and indent:
+                    pending = (number, ";", indent, tail)
                 elif not ENDS.search(tail):
                     findings.append(f"{path}:{number}: [Unreleased] a paragraph ends before its sentence does: "
                                     f"...{tail[-70:]}")
@@ -133,9 +153,9 @@ def check(path):
         nonlocal pending
         if pending:
             number, mark, own, tail = pending
-            if mark == ":" and not (kind in ("table", "fence") or kind == "item" and indent > 0) or \
+            if mark == ":" and not (kind in ("table", "fence", "quote") or kind == "item" and indent >= own) or \
                     mark == ";" and not (kind == "item" and indent == own):
-                what = "no indented item, table or code block" if mark == ":" else "no other item of its list"
+                what = "no deeper item, table, code block or quote" if mark == ":" else "no other item of its list"
                 findings.append(f"{path}:{number}: [Unreleased] a paragraph ends on `{mark}` and {what} follows: "
                                 f"...{tail[-70:]}")
             pending = None
@@ -156,14 +176,17 @@ def check(path):
             close()
             continue
         heading = HEADING.match(line)
+        if BULLET.match(line) and not line[0].isspace():
+            listing = False                              # an entry: the list an entry before it opened is over
         ordered = ORDERED.match(line)
         item = BULLET.match(line) or ordered and (ordered.group(1) == "1" or listing)
         table = TABLE.match(line) and not (block and TABLE.match(block[-1][1]))
-        if heading or item or table:
+        quote = QUOTE.match(line) and not (block and QUOTE.match(block[-1][1]))
+        if heading or item or table or quote:
             close()
         if not block:
-            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else "text",
-                    len(line) - len(line.lstrip()))
+            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else
+                    "quote" if QUOTE.match(line) else "text", len(line) - len(line.lstrip()))
         if heading:
             listing = False
             continue
@@ -175,25 +198,22 @@ def check(path):
         findings.append(f"{path}: [Unreleased] a code fence opens and never closes")
     if not paragraphs:
         return None, f"{path}: no paragraph in [Unreleased]", 0
-    entries, seen = headlines(body, first), []
+    entries, seen = headlines(body, first), {}
     for number, head in entries:
         if head is None:
             continue
         if not balanced(head):
-            findings.append(f"{path}:{number}: [Unreleased] a headline cut off -- its brackets do not close: "
-                            f"{head[:90]}")
-        for other, earlier in seen:
-            alike = difflib.SequenceMatcher(None, head, other)
-            if head == other or alike.real_quick_ratio() >= NEAR and alike.quick_ratio() >= NEAR and \
-                    alike.ratio() >= NEAR:
-                how = "the same headline" if head == other else "a headline that reads like the one"
-                findings.append(f"{path}:{number}: [Unreleased] {how} at line {earlier}: {head[:90]}")
-                break
-        seen.append((head, number))
+            findings.append(f"{path}:{number}: [Unreleased] a headline cut off -- a bracket or a backtick is left "
+                            f"open: {head[:90]}")
+        if head in seen:
+            findings.append(f"{path}:{number}: [Unreleased] the same headline as at line {seen[head]}: {head[:90]}")
+        seen.setdefault(head, number)
     return findings, paragraphs, len(entries)
 
 
 def main(argv):
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")  # a console that cannot print a character names it
     listing = "--headlines" in argv
     paths = [a for a in argv if a != "--headlines"] or [os.path.join(os.getcwd(), "CHANGELOG.md")]
     bad = paragraphs = entries = 0
@@ -207,7 +227,7 @@ def main(argv):
                 print(f"  check-changelog: {path}: nothing to list")
                 return 2
             for number, head in headlines(found[0], found[1]):
-                print(f"{path}\t{number}\t{head if head is not None else ''}")
+                print(f"{path}\t{number}\t{'bold' if head is not None else 'none'}\t{head or ''}")
             continue
         findings, seen, items = check(path)
         if findings is None:

@@ -971,13 +971,12 @@ policy.
   written twice (Huly QB-1221).** qbm-http's `[Unreleased]` carried for four days an entry cut off on "(the", left
   beside the rewrite that replaced it, and every guard passed it. The script, shared by the four repositories and run
   by each `doc-lint.sh`, reads the section's entries and headlines as the superproject's release gate reads them to
-  write the release body. A paragraph ends at a blank line, a heading, a table or a list item, so an entry cut short
-  and followed at once by the next one is caught too; it must end on a stop, on a `:` that introduces an indented
-  item, a table or a code block, or on a `;` that another item of its list follows. A headline must close its
-  brackets, and no two may read alike (difflib ratio 0.9 or more). The shapes that end otherwise were listed from
-  every section of the six CHANGELOGs: a table row, a link reference definition, a thematic break, a fenced code
-  block. The six `[Unreleased]` sections pass; qbm-http's cut-off state (`e57ec4e^`) fails twice, at the cut and on
-  the rewrite beside it.
+  write the release body. A paragraph ends at a blank line, a heading, a table, a block quote or a list item, so an
+  entry cut short and followed at once by the next one is caught too; it must end on a stop, on a `:` that introduces
+  a deeper item, a table, a code block or a quote, or on a `;` that another item of its indented list follows. A
+  headline must close every bracket it opens, and no two may be the same. The shapes that end otherwise were listed
+  from every section of the six CHANGELOGs: a table row, a link reference definition, a thematic break, a fenced code
+  block. The six `[Unreleased]` sections pass; qbm-http's cut-off state (`e57ec4e^`) fails, at the cut.
 - **`scripts/cite-check.py` reads two citation shapes it skipped: a range a line opens with after a citation that
   ended the line before on a comma, and a range after a label inside the backticks of its citation (Huly QB-1209,
   QB-1222).** `see src/context.h:92-111,` then `244-334, here.` on the next line, and `` `http.h:690-693 (Reply),
