@@ -70,7 +70,7 @@ function(escape text out_var) # <text> as a regex that matches it
     set(${out_var} "${_escaped}" PARENT_SCOPE)
 endfunction()
 # plant(<package> <prefix> [NO <library>...] [ALSO <library>...]): the headers and libraries the module of <package>
-# looks for, under <prefix>.
+# looks for, under <prefix> -- openssl and ngtcp2 too, for the consumer of an installed qb.
 function(plant package prefix)
     cmake_parse_arguments(_plant "" "" "NO;ALSO" ${ARGN})
     if(package STREQUAL "argon2")
@@ -82,13 +82,21 @@ function(plant package prefix)
     elseif(package STREQUAL "zstd")
         set(_headers "zstd.h")
         set(_libraries zstd)
+    elseif(package STREQUAL "openssl")
+        set(_headers "openssl/ssl.h" "openssl/opensslv.h")
+        set(_libraries ssl crypto)
+    elseif(package STREQUAL "ngtcp2")
+        set(_headers "ngtcp2/ngtcp2.h" "ngtcp2/ngtcp2_crypto.h" "ngtcp2/ngtcp2_crypto_ossl.h")
+        set(_libraries ngtcp2 ngtcp2_crypto_ossl)
     else()
         set(_headers "brotli/encode.h")
         set(_libraries brotlienc brotlidec brotlicommon)
     endif()
-    file(WRITE "${prefix}/include/${_headers}"
-         "#define ZLIB_VERSION \"1.3.1\"\n#define ZSTD_VERSION_MAJOR 1\n#define ZSTD_VERSION_MINOR 5\n"
-         "#define ZSTD_VERSION_RELEASE 7\n")
+    foreach(_header IN LISTS _headers)
+        file(WRITE "${prefix}/include/${_header}"
+             "#define ZLIB_VERSION \"1.3.1\"\n#define ZSTD_VERSION_MAJOR 1\n#define ZSTD_VERSION_MINOR 5\n"
+             "#define ZSTD_VERSION_RELEASE 7\n# define OPENSSL_VERSION_STR \"3.0.0\"\n")
+    endforeach()
     foreach(_library IN LISTS _libraries _plant_ALSO)
         if(NOT _library IN_LIST _plant_NO)
             library_file(${_library} _file)
@@ -102,9 +110,9 @@ endfunction()
 # matching each). The output's lines are joined first: CMake wraps a message's text.
 set(_cases 0)
 set(_failures "")
+set(_fixture_args "-DQB_CMAKE_MODULE_DIR=${QB_CMAKE_MODULE_DIR}") # what <_fixture> is configured with
 function(configure_fixture name expect)
-    set(_args -S "${_fixture}" -B "${WORK_DIR}/${name}/build" -G "${GENERATOR}" -Wno-dev
-              "-DQB_CMAKE_MODULE_DIR=${QB_CMAKE_MODULE_DIR}"
+    set(_args -S "${_fixture}" -B "${WORK_DIR}/${name}/build" -G "${GENERATOR}" -Wno-dev ${_fixture_args}
               "-DRESULT_DIR=${WORK_DIR}/${name}" "-DPLANT_ROOT=${WORK_DIR}/${name}/root")
     if(PLATFORM)
         list(APPEND _args -A "${PLATFORM}")
@@ -208,7 +216,7 @@ if(_failures)
     message(FATAL_ERROR "found-libraries: ${_cases} configures, wrong ones:${_failures}")
 endif()
 
-# `cmake --build` re-runs the configure when a library found is removed, with each generator whose tool is found.
+# `cmake --build` re-runs the configure when a library found is removed, with Ninja and Unix Makefiles where found.
 set(_builds 0)
 set(_generators "")
 if(_posix)
@@ -744,11 +752,507 @@ if(_generators)
         set(_env "")
     endif()
     if(NOT _pkg_config)
-        message(STATUS "found-libraries: no pkg-config on this host: the pkg-config cases are skipped")
+        message(STATUS "found-libraries: no pkg-config on this host: the pkg-config cases, the consumer's too, are skipped")
     endif()
 endif()
+# The consumer of an installed qb (Huly QB-1201): the qbConfig.cmake an install generates searches the consumer's
+# libraries the same way -- Argon2, zlib, zstd and brotli, OpenSSL, and libngtcp2 inside FindNgtcp2.cmake -- through the
+# consumer project beside this file, which loads none of qb's own CMake. Every platform: a library never found fails
+# the configure as before, CMake naming the package it could not find. POSIX, with Ninja and Unix Makefiles where their tools are found: an update that
+# removes the version found re-runs the configure at `cmake --build`, which finds each where the update put it; one
+# removed and found nowhere else makes find_package(qb) report qb not found, naming each entry and the remedy -- a
+# reason a consumer that did not require qb reads, its configure going on -- until it is back; a path set by hand is
+# kept and no input; a library this project found before it asked for qb is left as it is; pkg-config's Homebrew shape.
+set(_lib_fixture "${_fixture}")
+set(_fixture "${CMAKE_CURRENT_LIST_DIR}/consumer")
+# Whether this CMake's find_dependency() marks a package a transitive dependency (FeatureSummary reads the mark).
+file(READ "${CMAKE_ROOT}/Modules/CMakeFindDependencyMacro.cmake" _find_dependency)
+set(_transitive_marks FALSE)
+if(_find_dependency MATCHES "TRANSITIVE_DEPENDENCY")
+    set(_transitive_marks TRUE)
+endif()
+set(_fixture_args "") # nothing of qb's tree: an installed qb carries what it needs
+include(CMakePackageConfigHelpers)
+# install_qb(<case> <package>...): <case>/prefix as the install of a qb built with each <package> -- argon2, zlib,
+# zstd, brotli, openssl, ngtcp2 -- lays it out: qbConfig.cmake generated from cmake/qbConfig.cmake.in with that qb's
+# values (OpenSSL 3.0.0, the version plant() gives), and the files the install puts beside it; stand-ins for Threads
+# and nlohmann_json in <case>/prefix/stand-ins -- nlohmann_json's adds a directory to the module path, as a package's
+# own files may, which qb's must leave there.
+function(install_qb name)
+    set(_dir "${WORK_DIR}/${name}/prefix")
+    set(QB_FRAMEWORK_VERSION 0.0.0)
+    set(QB_FRAMEWORK_VERSION_MAJOR 0)
+    set(QB_FRAMEWORK_VERSION_MINOR 0)
+    set(QB_FRAMEWORK_VERSION_PATCH 0)
+    set(OPENSSL_VERSION 3.0.0)
+    set(QB_ABI_UNORDERED_MAP planted)
+    set(_files "${QB_CMAKE_MODULE_DIR}/qbFoundLibraries.cmake")
+    foreach(_flag SSL COMPRESSION ZSTD BROTLI ARGON2 QUIC)
+        set(QB_HAS_${_flag} FALSE)
+    endforeach()
+    foreach(_package IN LISTS ARGN)
+        if(_package STREQUAL "argon2")
+            set(QB_HAS_ARGON2 TRUE)
+            list(APPEND _files "${QB_CMAKE_MODULE_DIR}/FindArgon2.cmake")
+        elseif(_package STREQUAL "zlib")
+            set(QB_HAS_COMPRESSION TRUE)
+        elseif(_package STREQUAL "zstd")
+            set(QB_HAS_ZSTD TRUE)
+            list(APPEND _files "${QB_CMAKE_MODULE_DIR}/FindZstd.cmake")
+        elseif(_package STREQUAL "brotli")
+            set(QB_HAS_BROTLI TRUE)
+            list(APPEND _files "${QB_CMAKE_MODULE_DIR}/FindBrotli.cmake")
+        elseif(_package STREQUAL "openssl")
+            set(QB_HAS_SSL TRUE)
+        else()
+            set(QB_HAS_QUIC TRUE)
+            list(APPEND _files "${QB_CMAKE_MODULE_DIR}/FindNgtcp2.cmake")
+        endif()
+    endforeach()
+    configure_package_config_file("${QB_CMAKE_MODULE_DIR}/qbConfig.cmake.in" "${_dir}/lib/cmake/qb/qbConfig.cmake"
+                                  INSTALL_DESTINATION lib/cmake/qb INSTALL_PREFIX "${_dir}")
+    # One PACKAGE_INIT block: a comment that named its token was expanded too, and every installed qbConfig.cmake
+    # carried a second one in the middle of that comment.
+    file(STRINGS "${_dir}/lib/cmake/qb/qbConfig.cmake" _inits REGEX "Expanded from @PACKAGE_INIT@")
+    list(LENGTH _inits _inits)
+    if(NOT _inits EQUAL 1)
+        set(_failures "${_failures}\n  ${name}: the generated qbConfig.cmake expands PACKAGE_INIT ${_inits} times"
+            PARENT_SCOPE)
+    endif()
+    file(COPY ${_files} DESTINATION "${_dir}/lib/cmake/qb")
+    file(WRITE "${_dir}/stand-ins/FindThreads.cmake"
+         "set(Threads_FOUND TRUE)\nif(NOT TARGET Threads::Threads)\n    add_library(Threads::Threads INTERFACE IMPORTED)\n"
+         "endif()\n")
+    file(WRITE "${_dir}/stand-ins/Findnlohmann_json.cmake"
+         "set(nlohmann_json_FOUND TRUE)\nset(nlohmann_json_VERSION 3.11.3)\n"
+         "list(APPEND CMAKE_MODULE_PATH \"\${CMAKE_CURRENT_LIST_DIR}/nlohmann\")\n")
+endfunction()
+# Every platform: Zstd never found -- CMake names the package it could not find, and nothing is gone; asked for without
+# REQUIRED, qb is not found, and of this file's variables only the saved module path is left, as find_dependency()'s
+# return has always left it.
+install_qb(consumer-absent zstd)
+file(MAKE_DIRECTORY "${WORK_DIR}/consumer-absent/root")
+configure_fixture(consumer-absent FAIL MUST "Could not find a package configuration file provided by \"Zstd\""
+                  NOT "is gone" "searched again")
+configure_fixture(consumer-absent OK "-DOPTIONAL=ON" NOT "is gone" HAS "QB=0" "LEAKED=\\|_qb_saved_module_path\\|")
+foreach(_generator IN LISTS _generators)
+    use_generator("${_generator}")
+    string(REPLACE " " "-" _name "consumer-${_generator}")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    install_qb(${_name} argon2 zlib zstd brotli openssl ngtcp2)
+    set(_prefixes "")
+    foreach(_package argon2 zlib zstd brotli openssl ngtcp2)
+        plant(${_package} "${_root}/Cellar/${_package}/1")
+        list(APPEND _prefixes "/Cellar/${_package}/1")
+    endforeach()
+    file(WRITE "${WORK_DIR}/${_name}/prefixes.cmake" "set(CMAKE_PREFIX_PATH \"${_prefixes}\" CACHE STRING \"\")\n")
+    set(_inputs "")
+    foreach(_file "argon2;argon2" "zlib;z" "zstd;zstd" "brotli;brotlienc" "brotli;brotlidec" "brotli;brotlicommon"
+                  "openssl;ssl" "openssl;crypto" "ngtcp2;ngtcp2" "ngtcp2;ngtcp2_crypto_ossl")
+        list(GET _file 0 _package)
+        list(GET _file 1 _library)
+        library_file(${_library} _library)
+        list(APPEND _inputs "INPUTS=.*\\|${_root_regex}/Cellar/${_package}/1/lib/${_library}\\|.*")
+    endforeach()
+    foreach(_header "argon2;argon2.h" "zlib;zlib.h" "zstd;zstd.h" "brotli;brotli/encode.h" "openssl;openssl/ssl.h"
+                    "ngtcp2;ngtcp2/ngtcp2.h" "ngtcp2;ngtcp2/ngtcp2_crypto.h" "ngtcp2;ngtcp2/ngtcp2_crypto_ossl.h")
+        list(GET _header 0 _package)
+        list(GET _header 1 _file)
+        escape("${_file}" _file)
+        list(APPEND _inputs "INPUTS=.*\\|${_root_regex}/Cellar/${_package}/1/include/${_file}\\|.*")
+    endforeach()
+    # The module path as the packages qb found left it, without qb's own directory: two entries, a list's ";" matched
+    # by "." (a ";" in an argument would split it).
+    escape("${WORK_DIR}/${_name}/prefix/stand-ins" _stand_ins)
+    set(_stand_ins "${_stand_ins}.${_stand_ins}/nlohmann")
+    set(_marks "")
+    if(_transitive_marks) # each found through qb: still marked a dependency of qb's, as find_dependency() marks it
+        set(_marks "TRANSITIVE=ZLIB:TRUE OpenSSL:TRUE Argon2:TRUE Zstd:TRUE Brotli:TRUE Ngtcp2:TRUE ")
+    endif()
+    set(_policy "") # one generator's consumer as a project from before CMake 3.21, whose foreach keeps its variable
+    if(_generator STREQUAL "Unix Makefiles")
+        set(_policy "-DCMP0124_OLD=ON")
+    endif()
+    configure_fixture(${_name} OK -C "${WORK_DIR}/${_name}/prefixes.cmake" ${_policy}
+                      NOT "CMake Warning" "searched again" "is gone"
+                      HAS "QB=1" "MODULE_PATH=${_stand_ins}" "LEAKED=\\|\\|" "IMPORT_PREFIX=" ${_marks} "ARGON2=TRUE" "ZLIB=TRUE" "ZSTD=TRUE" "BROTLI=TRUE" "OPENSSL=TRUE" "NGTCP2=TRUE"
+                          "ARGON2_LIBRARY=${_root_regex}/Cellar/argon2/1/lib/.*"
+                          "OPENSSL_SSL_LIBRARY=${_root_regex}/Cellar/openssl/1/lib/.*"
+                          "NGTCP2_CRYPTO_OSSL_LIBRARY=${_root_regex}/Cellar/ngtcp2/1/lib/.*" ${_inputs})
+    build_fixture(${_name} "nothing changed" 1)
+    # An update puts each where the default search finds it, and removes the version found: searched again, found there.
+    foreach(_package argon2 zlib zstd brotli openssl ngtcp2)
+        plant(${_package} "${_root}/usr/local")
+        file(REMOVE_RECURSE "${_root}/Cellar/${_package}/1")
+    endforeach()
+    build_fixture(${_name} "each updated elsewhere, the version found removed" 2
+                  "QB=1" "LEAKED=\\|\\|" "ARGON2_LIBRARY=${_root_regex}/usr/local/lib/.*" "ZLIB_LIBRARY_RELEASE=${_root_regex}/usr/local/lib/.*"
+                  "ZSTD_LIBRARY=${_root_regex}/usr/local/lib/.*" "BROTLI_COMMON_LIBRARY=${_root_regex}/usr/local/lib/.*"
+                  "OPENSSL_INCLUDE_DIR=${_root_regex}/usr/local/include" "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/.*"
+                  "NGTCP2_INCLUDE_DIR=${_root_regex}/usr/local/include"
+                  "NGTCP2_CRYPTO_OSSL_LIBRARY=${_root_regex}/usr/local/lib/.*"
+                  OUT "ARGON2_LIBRARY \\(${_root_regex}/Cellar/argon2/1/lib/[^)]*\\) no longer exists: searched again"
+                      "ZLIB_LIBRARY_RELEASE \\(${_root_regex}/Cellar/zlib/1/lib/[^)]*\\) no longer exists: searched again"
+                      "ZSTD_INCLUDE_DIR \\(${_root_regex}/Cellar/zstd/1/include\\) no longer exists: searched again"
+                      "BROTLI_DECODER_LIBRARY \\(${_root_regex}/Cellar/brotli/1/lib/[^)]*\\) no longer exists: searched again"
+                      "OPENSSL_CRYPTO_LIBRARY \\(${_root_regex}/Cellar/openssl/1/lib/[^)]*\\) no longer exists: searched again"
+                      "NGTCP2_LIBRARY \\(${_root_regex}/Cellar/ngtcp2/1/lib/[^)]*\\) no longer exists: searched again")
+    build_fixture(${_name} "nothing changed since" 2)
+    set(_configures 2)
+    # Each removed in turn and found nowhere else: qb is not found, the reason naming what is still missing and the
+    # remedy, until it is back. The include directory stays (a shared prefix): its header is what is gone.
+    foreach(_case "argon2;argon2.h;Argon2;ARGON2;QB_HAS_ARGON2" "zlib;zlib.h;zlib;ZLIB;QB_HAS_COMPRESSION"
+                  "zstd;zstd.h;zstd;ZSTD;QB_HAS_ZSTD" "brotli;brotli/encode.h;brotli;BROTLI;QB_HAS_BROTLI"
+                  "openssl;openssl/ssl.h;OpenSSL;OPENSSL;QB_HAS_SSL" "ngtcp2;ngtcp2/ngtcp2.h;libngtcp2;NGTCP2;QB_HAS_QUIC")
+        list(GET _case 0 _package)
+        list(GET _case 1 _header)
+        list(GET _case 2 _what)
+        list(GET _case 3 _entry)
+        list(GET _case 4 _flag)
+        escape("${_header}" _header_regex)
+        file(REMOVE_RECURSE "${WORK_DIR}/${_name}/one") # this package's files, as plant() lays them out
+        plant(${_package} "${WORK_DIR}/${_name}/one")
+        file(GLOB _mine RELATIVE "${WORK_DIR}/${_name}/one" "${WORK_DIR}/${_name}/one/lib/*"
+                                                            "${WORK_DIR}/${_name}/one/include/*")
+        foreach(_file IN LISTS _mine)
+            file(REMOVE_RECURSE "${_root}/usr/local/${_file}")
+        endforeach()
+        build_fixture(${_name} "${_package} removed" FAILS
+                      OUT "${_entry}_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\) no longer holds ${_header_regex}: searched again"
+                          "the ${_what} this build directory found is gone and was found nowhere else -- ${_entry}_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\), "
+                          "this qb links it \\(${_flag}\\)")
+        build_fixture(${_name} "built again, nothing done" FAILS
+                      OUT "the ${_what} this build directory found is gone and was found nowhere else")
+        plant(${_package} "${_root}/usr/local")
+        math(EXPR _configures "${_configures} + 1")
+        build_fixture(${_name} "${_package} back" ${_configures} "QB=1" "LEAKED=\\|\\|"
+                      "${_entry}_INCLUDE_DIR=${_root_regex}/usr/local/include")
+    endforeach()
+endforeach()
+if(_generators)
+    list(GET _generators 0 _generator)
+    use_generator("${_generator}")
+    # A path set by hand is kept as given, and is no input: its removal re-runs nothing.
+    set(_name "consumer-set-by-hand")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    install_qb(${_name} argon2)
+    plant(argon2 "${_root}/usr/local")
+    plant(argon2 "${_root}/hand")
+    library_file(argon2 _file)
+    configure_fixture(${_name} OK "-DARGON2_LIBRARY=${_root}/hand/lib/${_file}"
+                      HAS "QB=1" "INPUTS=\\|${_root_regex}/usr/local/include/argon2\\.h\\|")
+    file(REMOVE_RECURSE "${_root}/hand")
+    build_fixture(${_name} "the library set by hand removed" 1 "ARGON2_LIBRARY=${_root_regex}/hand/lib/.*")
+    configure_fixture(${_name} OK
+                      MUST "ARGON2_LIBRARY \\(${_root_regex}/hand/lib/[^)]*\\) does not exist; this build directory's search did not find it .*: kept as given"
+                      NOT "is gone" HAS "ARGON2_LIBRARY=${_root_regex}/hand/lib/.*")
+    # A package never had -- a stray header -- is not "gone": the configure fails as before, naming the package.
+    set(_name "consumer-never-had")
+    set(_root "${WORK_DIR}/${_name}/root")
+    install_qb(${_name} argon2)
+    plant(argon2 "${_root}/usr/local" NO argon2)
+    configure_fixture(${_name} FAIL MUST "Could not find a package configuration file provided by \"Argon2\""
+                      NOT "is gone")
+    file(REMOVE "${_root}/usr/local/include/argon2.h")
+    configure_fixture(${_name} FAIL MUST "Could not find a package configuration file provided by \"Argon2\""
+                      "ARGON2_INCLUDE_DIR \\([^)]*\\) no longer holds argon2\\.h: searched again" NOT "is gone")
+    # Each never found, the others found: CMake names it, the module path is as the packages found before left it, and
+    # of this file's variables only the saved module path is left, once this file has saved it, as find_dependency()'s
+    # return has always left it. Argon2, zstd and brotli again beside the project's own imported target, which qb's
+    # search leaves alone: the quiet probe before find_dependency() restores the module path all the same.
+    foreach(_case "zlib;ZLIB;" "openssl;OpenSSL;" "argon2;Argon2;" "ngtcp2;Ngtcp2;" "zstd;Zstd;" "brotli;Brotli;"
+                  "argon2;Argon2;Argon2::Argon2" "zstd;Zstd;Zstd::Zstd" "brotli;Brotli;Brotli::Encoder|Brotli::Decoder")
+        list(GET _case 0 _package)
+        list(GET _case 1 _what)
+        list(GET _case 2 _targets)
+        set(_name "consumer-absent-${_package}")
+        set(_args "")
+        if(_targets)
+            string(APPEND _name "-own")
+            set(_args "-DPARENT_TARGETS=${_targets}")
+        endif()
+        set(_root "${WORK_DIR}/${_name}/root")
+        install_qb(${_name} argon2 zlib zstd brotli openssl ngtcp2)
+        foreach(_other argon2 zlib zstd brotli openssl ngtcp2)
+            if(NOT _other STREQUAL _package)
+                plant(${_other} "${_root}/usr/local")
+            endif()
+        endforeach()
+        escape("${WORK_DIR}/${_name}/prefix/stand-ins" _stand_ins)
+        if(_package STREQUAL "zlib" OR _package STREQUAL "openssl") # before nlohmann_json, and the module path saved
+            set(_leaked "LEAKED=\\|\\|")
+        else()
+            set(_leaked "LEAKED=\\|_qb_saved_module_path\\|")
+            set(_stand_ins "${_stand_ins}.${_stand_ins}/nlohmann")
+        endif()
+        configure_fixture(${_name} OK "-DOPTIONAL=ON" ${_args} NOT "is gone" "searched again"
+                          HAS "QB=0" "MODULE_PATH=${_stand_ins}" "${_leaked}"
+                              "REASON=qb could not be found because dependency ${_what} could not be found\\.")
+    endforeach()
+    # Found in directories side by side, each searching again (an imported target is seen only in the directory that
+    # made it and below): each still marked a dependency of qb's -- and one the project found itself, in a directory of
+    # its own, is still the project's own, as find_dependency() leaves it.
+    if(_transitive_marks)
+        foreach(_case "qb|qb;ZLIB:TRUE OpenSSL:TRUE Argon2:TRUE Zstd:TRUE Brotli:TRUE Ngtcp2:TRUE"
+                      "ZLIB|Zstd|qb;ZLIB:(False|FALSE) OpenSSL:TRUE Argon2:TRUE Zstd:(False|FALSE) Brotli:TRUE Ngtcp2:TRUE")
+            list(GET _case 0 _siblings)
+            list(GET _case 1 _marks)
+            string(MAKE_C_IDENTIFIER "${_siblings}" _name)
+            set(_name "consumer-siblings-${_name}")
+            set(_root "${WORK_DIR}/${_name}/root")
+            install_qb(${_name} argon2 zlib zstd brotli openssl ngtcp2)
+            foreach(_package argon2 zlib zstd brotli openssl ngtcp2)
+                plant(${_package} "${_root}/usr/local")
+            endforeach()
+            configure_fixture(${_name} OK "-DSIBLINGS=${_siblings}" NOT "is gone"
+                              HAS "QB=1" "TRANSITIVE=${_marks} " "LEAKED=\\|\\|")
+        endforeach()
+    endif()
+    # A consumer that does not require qb reads the reason, and its configure goes on.
+    set(_name "consumer-optional")
+    set(_root "${WORK_DIR}/${_name}/root")
+    install_qb(${_name} zstd)
+    plant(zstd "${_root}/Cellar/zstd/1")
+    configure_fixture(${_name} OK "-DOPTIONAL=ON" "-DCMAKE_PREFIX_PATH=/Cellar/zstd/1" HAS "QB=1" "ZSTD=TRUE")
+    file(REMOVE_RECURSE "${_root}/Cellar/zstd/1")
+    escape("${WORK_DIR}/${_name}/prefix/stand-ins" _stand_ins)
+    set(_stand_ins "${_stand_ins}.${_stand_ins}/nlohmann")
+    configure_fixture(${_name} OK "-DOPTIONAL=ON"
+                      HAS "QB=0" "MODULE_PATH=${_stand_ins}" "LEAKED=\\|\\|" "IMPORT_PREFIX="
+                          "REASON=the zstd this build directory found is gone and was found nowhere else -- ZSTD_INCLUDE_DIR .*")
+    # ... zlib and OpenSSL too, lost before qb saves the module path: the project's is left as it was -- not emptied, nor
+    # set to what an earlier find_package(qb) whose find_dependency() failed left saved.
+    foreach(_case "zlib;zlib;ZLIB_INCLUDE_DIR" "openssl;OpenSSL;OPENSSL_INCLUDE_DIR")
+        list(GET _case 0 _package)
+        list(GET _case 1 _what)
+        list(GET _case 2 _entry)
+        set(_lost "consumer-optional-${_package}")
+        set(_lost_root "${WORK_DIR}/${_lost}/root")
+        install_qb(${_lost} ${_package})
+        plant(${_package} "${_lost_root}/Cellar/${_package}/1")
+        configure_fixture(${_lost} OK "-DOPTIONAL=ON" "-DCMAKE_PREFIX_PATH=/Cellar/${_package}/1" HAS "QB=1")
+        file(REMOVE_RECURSE "${_lost_root}/Cellar/${_package}/1")
+        escape("${WORK_DIR}/${_lost}/prefix/stand-ins" _lost_stand_ins)
+        configure_fixture(${_lost} OK "-DOPTIONAL=ON" "-DSTALE_SAVED_MODULE_PATH=/stale"
+                          HAS "QB=0" "MODULE_PATH=${_lost_stand_ins}" "LEAKED=\\|\\|" "IMPORT_PREFIX="
+                              "REASON=the ${_what} this build directory found is gone and was found nowhere else -- ${_entry} .*")
+    endforeach()
+    # ... twice, as two qbm packages each find qb: each reports it, the first not requiring qb, the second requiring it.
+    configure_fixture(${_name} FAIL "-DOPTIONAL=OFF" "-DFIND_TWICE=ON"
+                      MUST "Reason given by package: +the zstd this build directory found is gone and was found nowhere else")
+    plant(zstd "${_root}/Cellar/zstd/1")
+    configure_fixture(${_name} OK "-DFIND_TWICE=ON" HAS "QB=1" "FIRST=1\\|" "LEAKED=\\|\\|")
+    file(REMOVE_RECURSE "${_root}/Cellar/zstd/1")
+    configure_fixture(${_name} OK "-DOPTIONAL=ON" "-DFIND_TWICE=ON"
+                      HAS "QB=0" "FIRST=0\\|the zstd this build directory found is gone .*")
+    # Found by this project before it asked for qb -- the imported target qb links exists -- a library is left as it is:
+    # not searched again, no input; lost, it fails no more than it did before.
+    foreach(_case "zlib;ZLIB::ZLIB;ZLIB" "zstd;Zstd::Zstd;ZSTD" "openssl;OpenSSL::SSL|OpenSSL::Crypto;OPENSSL")
+        list(GET _case 0 _package)
+        list(GET _case 1 _targets)
+        list(GET _case 2 _flag)
+        set(_name "consumer-found-before-${_package}")
+        set(_root "${WORK_DIR}/${_name}/root")
+        install_qb(${_name} ${_package})
+        plant(${_package} "${_root}/Cellar/${_package}/1")
+        configure_fixture(${_name} OK "-DPARENT_TARGETS=${_targets}" "-DCMAKE_PREFIX_PATH=/Cellar/${_package}/1"
+                          HAS "QB=1" "${_flag}=TRUE" "INPUTS=\\|\\|")
+        file(REMOVE_RECURSE "${_root}/Cellar/${_package}/1")
+        configure_fixture(${_name} OK "-DPARENT_TARGETS=${_targets}" NOT "searched again" "is gone" HAS "QB=1")
+    endforeach()
+    # Half of what qb links made by the project -- Brotli::Encoder without Brotli::Decoder, OpenSSL::SSL without
+    # OpenSSL::Crypto: qb's own search runs, records what it found and searches it again when an update removes it --
+    # and beside the project's OpenSSL::SSL needs libcrypto alone: the update's OpenSSL has no libssl, which qb does not
+    # link there.
+    foreach(_case "brotli;Brotli::Encoder;BROTLI_DECODER_LIBRARY" "openssl;OpenSSL::SSL;OPENSSL_CRYPTO_LIBRARY")
+        list(GET _case 0 _package)
+        list(GET _case 1 _targets)
+        list(GET _case 2 _entry)
+        set(_name "consumer-found-half-${_package}")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        install_qb(${_name} ${_package})
+        plant(${_package} "${_root}/Cellar/${_package}/1")
+        configure_fixture(${_name} OK "-DPARENT_TARGETS=${_targets}" "-DCMAKE_PREFIX_PATH=/Cellar/${_package}/1"
+                          HAS "QB=1" "${_entry}=${_root_regex}/Cellar/${_package}/1/lib/.*")
+        set(_without "")
+        if(_package STREQUAL "openssl")
+            set(_without NO ssl)
+        endif()
+        plant(${_package} "${_root}/usr/local" ${_without})
+        file(REMOVE_RECURSE "${_root}/Cellar/${_package}/1")
+        build_fixture(${_name} "${_package} updated elsewhere, the version found removed" 2 "QB=1"
+                      "${_entry}=${_root_regex}/usr/local/lib/.*")
+    endforeach()
+    # ... in one directory of the project, another without that target: libssl is recorded there all the same, and
+    # searched again where the other directory, which links it, finds it after the update.
+    set(_name "consumer-found-half-openssl-siblings")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    install_qb(${_name} openssl)
+    plant(openssl "${_root}/Cellar/openssl/1")
+    configure_fixture(${_name} OK "-DSIBLINGS=qb+OpenSSL::SSL|qb" "-DCMAKE_PREFIX_PATH=/Cellar/openssl/1"
+                      HAS "QB=1" "OPENSSL_SSL_LIBRARY=${_root_regex}/Cellar/openssl/1/lib/.*")
+    plant(openssl "${_root}/usr/local")
+    file(REMOVE_RECURSE "${_root}/Cellar/openssl/1")
+    build_fixture(${_name} "openssl updated elsewhere, the version found removed" 2 "QB=1"
+                  "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/.*" NOTOUT "kept as given")
+    # From a qb built without compression, beside a shared OpenSSL: no search of qb's looks at zlib, so a zlib path of
+    # the project's own that is gone is not qb's to speak of.
+    set(_name "consumer-zlib-not-ours")
+    set(_root "${WORK_DIR}/${_name}/root")
+    install_qb(${_name} openssl)
+    plant(openssl "${_root}/usr/local")
+    plant(zlib "${_root}/own")
+    library_file(z _file)
+    configure_fixture(${_name} OK "-DZLIB_LIBRARY_RELEASE=${_root}/own/lib/${_file}"
+                      HAS "QB=1" "OPENSSL=TRUE" "LEAKED=\\|\\|")
+    file(REMOVE_RECURSE "${_root}/own")
+    configure_fixture(${_name} OK HAS "QB=1" "LEAKED=\\|\\|"
+                      NOT "ZLIB_[A-Z_]+ \\([^)]*\\) does not exist" "searched again")
+    # OpenSSL's libssl lost while a libcrypto and headers are found elsewhere: FindOpenSSL would report OpenSSL found,
+    # and qb links libssl -- reported, naming libssl alone.
+    set(_name "consumer-libssl-lost")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    install_qb(${_name} openssl)
+    plant(openssl "${_root}/Cellar/openssl/1")
+    plant(openssl "${_root}/usr/local" NO ssl)
+    configure_fixture(${_name} OK "-DCMAKE_PREFIX_PATH=/Cellar/openssl/1"
+                      HAS "QB=1" "OPENSSL_SSL_LIBRARY=${_root_regex}/Cellar/openssl/1/lib/.*")
+    file(REMOVE_RECURSE "${_root}/Cellar/openssl/1")
+    configure_fixture(${_name} FAIL
+                      MUST "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_SSL_LIBRARY \\(${_root_regex}/Cellar/openssl/1/lib/[^)]*\\): install one"
+                      NOT "-- OPENSSL_INCLUDE_DIR \\(" "OPENSSL_CRYPTO_LIBRARY \\([^)]*\\): install")
+    # QB: find_package(QB) loads qbConfig.cmake on a file system that ignores case (macOS, Windows), and the loss is
+    # reported under the name asked for. A copy as qb-config.cmake, which find_package(QB) looks for too, gives the same
+    # file to a file system that tells case apart.
+    set(_name "consumer-optional")
+    file(COPY_FILE "${WORK_DIR}/${_name}/prefix/lib/cmake/qb/qbConfig.cmake"
+         "${WORK_DIR}/${_name}/prefix/lib/cmake/qb/qb-config.cmake")
+    plant(zstd "${WORK_DIR}/${_name}/root/Cellar/zstd/1")
+    configure_fixture(${_name} OK "-DOPTIONAL=ON" "-DFIND_TWICE=OFF" "-DPACKAGE_NAME=QB" HAS "QB=1")
+    file(REMOVE_RECURSE "${WORK_DIR}/${_name}/root/Cellar/zstd/1")
+    configure_fixture(${_name} OK "-DOPTIONAL=ON" "-DPACKAGE_NAME=QB"
+                      HAS "QB=0" "REASON=the zstd this build directory found is gone and was found nowhere else .*")
+    # The Homebrew shape: versioned kegs pkg-config alone names, upgraded, the old ones removed -- pkg-config asked again.
+    if(_pkg_config)
+        set(_name "consumer-pkg-config")
+        set(_root "${WORK_DIR}/${_name}/root")
+        escape("${_root}" _root_regex)
+        install_qb(${_name} argon2 zstd brotli openssl ngtcp2)
+        function(plant_consumer_kegs version)
+            foreach(_package argon2 zstd brotli openssl ngtcp2)
+                plant(${_package} "${_root}/Cellar/${_package}/${version}")
+            endforeach()
+            foreach(_pc "libargon2;argon2;-largon2" "libzstd;zstd;-lzstd" "libbrotlienc;brotli;-lbrotlienc"
+                        "libbrotlidec;brotli;-lbrotlidec" "libbrotlicommon;brotli;-lbrotlicommon"
+                        "openssl;openssl;-lssl -lcrypto" "libngtcp2;ngtcp2;-lngtcp2"
+                        "libngtcp2_crypto_ossl;ngtcp2;-lngtcp2_crypto_ossl")
+                list(GET _pc 0 _module)
+                list(GET _pc 1 _package)
+                list(GET _pc 2 _libs)
+                file(WRITE "${_root}/pc/${_module}.pc"
+                     "prefix=/Cellar/${_package}/${version}\nlibdir=\${prefix}/lib\nincludedir=\${prefix}/include\n"
+                     "Name: ${_module}\nDescription: planted\nVersion: 3.0.${version}\nLibs: -L\${libdir} ${_libs}\n"
+                     "Cflags: -I\${includedir}\n")
+            endforeach()
+        endfunction()
+        plant_consumer_kegs(1)
+        set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR=")
+        configure_fixture(${_name} OK "-DUSE_PKG_CONFIG=ON" "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
+                          HAS "QB=1" "ARGON2_LIBRARY=${_root_regex}/Cellar/argon2/1/lib/.*"
+                              "ZSTD_LIBRARY=${_root_regex}/Cellar/zstd/1/lib/.*"
+                              "BROTLI_DECODER_LIBRARY=${_root_regex}/Cellar/brotli/1/lib/.*"
+                              "OPENSSL_SSL_LIBRARY=${_root_regex}/Cellar/openssl/1/lib/.*"
+                              "NGTCP2_LIBRARY=${_root_regex}/Cellar/ngtcp2/1/lib/.*")
+        build_fixture(${_name} "nothing changed" 1)
+        plant_consumer_kegs(2)
+        foreach(_package argon2 zstd brotli openssl ngtcp2)
+            file(REMOVE_RECURSE "${_root}/Cellar/${_package}/1")
+        endforeach()
+        build_fixture(${_name} "upgrades pkg-config alone names, the old kegs removed" 2 "QB=1"
+                      "ARGON2_INCLUDE_DIR=${_root_regex}/Cellar/argon2/2/include"
+                      "ARGON2_LIBRARY=${_root_regex}/Cellar/argon2/2/lib/.*"
+                      "ZSTD_LIBRARY=${_root_regex}/Cellar/zstd/2/lib/.*"
+                      "BROTLI_ENCODER_LIBRARY=${_root_regex}/Cellar/brotli/2/lib/.*"
+                      "OPENSSL_INCLUDE_DIR=${_root_regex}/Cellar/openssl/2/include"
+                      "OPENSSL_CRYPTO_LIBRARY=${_root_regex}/Cellar/openssl/2/lib/.*"
+                      "NGTCP2_CRYPTO_OSSL_LIBRARY=${_root_regex}/Cellar/ngtcp2/2/lib/.*")
+        build_fixture(${_name} "nothing changed since" 2)
+        set(_env "")
+        # A static OpenSSL whose pkg-config names -lz: FindOpenSSL searches zlib itself (CMake 3.26 and later).
+        # - From a qb built without compression nothing else does: zlib's entries are searched again around OpenSSL's
+        #   search, and that zlib lost and found nowhere else is reported, where the generate would fail on the
+        #   ZLIB::ZLIB OpenSSL links, naming neither.
+        # - From one built with it, zlib's own search runs first and decides: recorded, an input, searched again --
+        #   searched after OpenSSL's, it would find the ZLIB::ZLIB FindOpenSSL made and search nothing.
+        if(NOT _openssl_finds_zlib)
+            message(STATUS "found-libraries: FindOpenSSL searches no zlib here: the consumer's static OpenSSL cases "
+                           "are skipped")
+        endif()
+        foreach(_compression off on)
+            if(NOT _openssl_finds_zlib)
+                break()
+            endif()
+            set(_name "consumer-openssl-zlib-${_compression}")
+            set(_root "${WORK_DIR}/${_name}/root")
+            escape("${_root}" _root_regex)
+            if(_compression STREQUAL "on")
+                install_qb(${_name} zlib openssl)
+                set(_lost "this qb links it \\(QB_HAS_COMPRESSION\\)")
+            else()
+                install_qb(${_name} openssl)
+                set(_lost "the OpenSSL found links it")
+            endif()
+            plant(openssl "${_root}/usr/local" NO ssl crypto)
+            file(WRITE "${_root}/usr/local/lib/libssl.a" "")
+            file(WRITE "${_root}/usr/local/lib/libcrypto.a" "")
+            file(WRITE "${_root}/pc/openssl.pc"
+                 "prefix=/usr/local\nlibdir=\${prefix}/lib\nincludedir=\${prefix}/include\nName: OpenSSL\n"
+                 "Description: planted\nVersion: 3.0.0\nLibs: -L\${libdir} -lssl -lcrypto\nLibs.private: -lz\n"
+                 "Cflags: -I\${includedir}\n")
+            plant(zlib "${_root}/Cellar/zlib/1" NO z)
+            file(WRITE "${_root}/Cellar/zlib/1/lib/libz.a" "")
+            set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR=")
+            set(_zlib_mark "") # FindOpenSSL's own search of zlib marks it the project's own, as on the base
+            if(_transitive_marks)
+                set(_zlib_mark "TRANSITIVE=ZLIB:(False|FALSE) .*")
+            endif()
+            configure_fixture(${_name} OK "-DUSE_PKG_CONFIG=ON" "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
+                              "-DOPENSSL_USE_STATIC_LIBS=ON" "-DCMAKE_PREFIX_PATH=/Cellar/zlib/1" "-DCMP0124_OLD=ON"
+                              HAS "QB=1" "OPENSSL=TRUE" "LEAKED=\\|\\|" ${_zlib_mark}
+                                  "ZLIB_LIBRARY_RELEASE=${_root_regex}/Cellar/zlib/1/lib/libz\\.a"
+                                  "INPUTS=.*\\|${_root_regex}/Cellar/zlib/1/lib/libz\\.a\\|.*")
+            build_fixture(${_name} "nothing changed" 1)
+            # Updated where the default search finds it, the version found removed: searched again, found there.
+            plant(zlib "${_root}/usr/local" NO z)
+            file(WRITE "${_root}/usr/local/lib/libz.a" "")
+            file(REMOVE_RECURSE "${_root}/Cellar/zlib/1")
+            build_fixture(${_name} "zlib updated elsewhere, the version found removed" 2 "QB=1" "LEAKED=\\|\\|"
+                          "ZLIB_LIBRARY_RELEASE=${_root_regex}/usr/local/lib/libz\\.a"
+                          OUT "ZLIB_LIBRARY_RELEASE \\(${_root_regex}/Cellar/zlib/1/lib/libz\\.a\\) no longer exists: searched again")
+            # Removed, found nowhere else: reported, naming it and that OpenSSL links it.
+            file(REMOVE "${_root}/usr/local/include/zlib.h" "${_root}/usr/local/lib/libz.a")
+            build_fixture(${_name} "zlib removed" FAILS
+                          OUT "the zlib this build directory found is gone and was found nowhere else -- ZLIB_INCLUDE_DIR \\(${_root_regex}/usr/local/include\\), ZLIB_LIBRARY_RELEASE"
+                              "${_lost}")
+            if(_compression STREQUAL "off")
+                # ... beside an OpenSSL::Crypto the project made itself: the ZLIB::ZLIB FindOpenSSL links is read on
+                # the OpenSSL::SSL it makes too.
+                configure_fixture(${_name} FAIL "-DPARENT_TARGETS=OpenSSL::Crypto"
+                                  MUST "the zlib this build directory found is gone and was found nowhere else")
+            endif()
+            set(_env "")
+        endforeach()
+    endif()
+endif()
+set(_fixture "${_lib_fixture}")
+set(_fixture_args "-DQB_CMAKE_MODULE_DIR=${QB_CMAKE_MODULE_DIR}")
 if(_failures)
-    message(FATAL_ERROR "found-libraries: ${_builds} builds, wrong ones:${_failures}")
+    message(FATAL_ERROR "found-libraries: ${_cases} configures and ${_builds} builds, wrong ones:${_failures}")
 endif()
 
 # The configure that registered this test: what its own searches did.

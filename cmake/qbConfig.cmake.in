@@ -32,7 +32,7 @@ set(QB_VERSION_MAJOR "@QB_FRAMEWORK_VERSION_MAJOR@")
 set(QB_VERSION_MINOR "@QB_FRAMEWORK_VERSION_MINOR@")
 set(QB_VERSION_PATCH "@QB_FRAMEWORK_VERSION_PATCH@")
 
-# Installation prefix. Use the one @PACKAGE_INIT@ already computed correctly above rather than
+# Installation prefix. Use the one PACKAGE_INIT already computed correctly above rather than
 # re-deriving it: this file is installed at <prefix>/lib/cmake/qb/, so walking up from
 # CMAKE_CURRENT_LIST_FILE needs FOUR steps (file -> qb -> cmake -> lib -> prefix). It took three,
 # landing on <prefix>/lib, so QB_INCLUDE_DIRS resolved to <prefix>/lib/include -- a directory that
@@ -43,7 +43,174 @@ set(_IMPORT_PREFIX "${PACKAGE_PREFIX_DIR}")
 # ---- Resolve transitive external dependencies ----
 find_dependency(Threads)
 
+# A library a search of this project found is searched again when an update removed it -- a Homebrew cleanup removes the
+# versioned Cellar keg pkg-config named -- and each file a search produced is an input of the configure, so that
+# `cmake --build` re-runs it (not Xcode's, which checks only the inputs that still exist: there, the next reconfigure
+# does): kept, the next build stopped for good on "missing and no known rule to make it", and a reconfigure failed at
+# generate on the path an imported target named (Huly QB-1201). qb's own configure does the same with the helpers
+# installed beside this file (qbFoundLibraries.cmake), under the same rules: a path set by hand or by a parent project
+# is kept as given and is no input -- and so is a path a configure with an earlier qb cached, which recorded nothing
+# (--fresh, or the entry removed with -U, searches it); a library this build directory had, lost and found nowhere else,
+# makes find_package(qb) report qb not found, naming each entry -- the feature is compiled into qb, so the way out is
+# another copy of the library; one this project found before it asked for qb -- each imported target qb links of it
+# exists -- is left as it is, and of a pair the project made half of, qb's search runs as for the whole (the project's
+# OpenSSL::SSL leaves it needing libcrypto alone). libngtcp2's module searches its own entries again whenever it runs
+# (QB-1185).
+include("${CMAKE_CURRENT_LIST_DIR}/qbFoundLibraries.cmake")
+unset(_qb_saved_module_path) # set below, just before this file may put its own directory on the module path
+# _qb_installed_cleanup() -- the variables of this file's searches and those qbFoundLibraries.cmake's macros set in
+# this scope, unset: before each find_dependency() that follows a search (it returns from this file when its package is
+# not found), at the end, and before a reported loss. Not _qb_kept_said_<entry>, which says a path kept as given once
+# per directory; _IMPORT_PREFIX and _qb_saved_module_path, which this file uses to its end, a failing find_dependency()
+# leaves behind, as it did before these searches.
+macro(_qb_installed_cleanup)
+    foreach(_qb_installed_entry IN ITEMS ZLIB_INCLUDE_DIR ZLIB_LIBRARY_RELEASE ZLIB_LIBRARY_DEBUG OPENSSL_INCLUDE_DIR
+                                         OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY ARGON2_INCLUDE_DIR ARGON2_LIBRARY
+                                         ZSTD_INCLUDE_DIR ZSTD_LIBRARY BROTLI_INCLUDE_DIR BROTLI_ENCODER_LIBRARY
+                                         BROTLI_DECODER_LIBRARY BROTLI_COMMON_LIBRARY)
+        unset(_qb_before_${_qb_installed_entry})
+    endforeach()
+    foreach(_qb_installed_package IN ITEMS ZLIB OpenSSL Argon2 Zstd Brotli)
+        unset(_qb_searched_${_qb_installed_package})
+    endforeach()
+    foreach(_qb_installed_var IN ITEMS FALLBACK REPORT ENTRIES PKG_CONFIG ARGS UNPARSED_ARGUMENTS
+                                       KEYWORDS_MISSING_VALUES forgot forgot_said prefix)
+        unset(_qb_again_${_qb_installed_var})
+    endforeach()
+    if(_qb_installed_zlib_forgot_said GREATER 0)
+        foreach(_qb_installed_var RANGE 1 ${_qb_installed_zlib_forgot_said})
+            unset(_qb_installed_zlib_forgot_said_${_qb_installed_var})
+        endforeach()
+    endif()
+    foreach(_qb_installed_var IN ITEMS gone spec probe file zlib zlib_forgot zlib_forgot_said links index transitive
+                                       components)
+        unset(_qb_installed_${_qb_installed_var})
+    endforeach()
+    unset(_qb_installed_entry)
+    unset(_qb_installed_package)
+    unset(_qb_installed_var)
+    unset(_qb_tell) # _qb_forget_tell()'s loop variable, which foreach restores under CMP0124 NEW only (3.21)
+endmacro()
+# _qb_installed_lost(<var>) -- qb not found, for the reason <var> holds (a variable's name: a macro reads escapes in its
+# arguments again): the find_package() protocol, under the name the consumer asked for (qb, or QB on a file system that
+# ignores case), the module path restored and this file's variables unset (a macro: its return() returns from it).
+macro(_qb_installed_lost var)
+    set(${CMAKE_FIND_PACKAGE_NAME}_NOT_FOUND_MESSAGE "${${var}}")
+    set(${CMAKE_FIND_PACKAGE_NAME}_FOUND FALSE)
+    if(DEFINED _qb_saved_module_path)
+        set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+    endif()
+    _qb_installed_cleanup()
+    unset(_qb_saved_module_path)
+    unset(_IMPORT_PREFIX)
+    return()
+endmacro()
+# _qb_installed_mark_read(<Package>) before a direct find_package(<Package>), _qb_installed_mark_keep(<Package>) after
+# it -- the package left marked as find_dependency() leaves it (FeatureSummary reads the mark): find_package() marks it
+# the project's own, find_dependency() a dependency of qb's, unless the project had found it itself first.
+macro(_qb_installed_mark_read package)
+    unset(_qb_installed_transitive)
+    get_property(_qb_installed_transitive GLOBAL PROPERTY _CMAKE_${package}_TRANSITIVE_DEPENDENCY)
+endmacro()
+macro(_qb_installed_mark_keep package)
+    if(NOT DEFINED _qb_installed_transitive OR _qb_installed_transitive)
+        set_property(GLOBAL PROPERTY _CMAKE_${package}_TRANSITIVE_DEPENDENCY TRUE)
+    endif()
+endmacro()
+# _qb_find_installed(<Package> <what> <QB_HAS_ flag> <where> ENTRIES <entry>... [PKG_CONFIG <prefix>...]
+#                    ARGS <find_package argument>...) -- the search before find_dependency(<Package>), which returns
+# from this file when it is not found: on that path the module path is restored first (once this file has put its own
+# directory there), and a library lost is reported instead.
+macro(_qb_find_installed package what flag where)
+    _qb_installed_mark_read(${package})
+    _qb_find_again(${package} "${what}" "install one, or point ${where} at one: this qb links it (${flag})" ${ARGN}
+                   REPORT _qb_installed_gone)
+    _qb_installed_mark_keep(${package})
+    if(NOT ${package}_FOUND AND DEFINED _qb_saved_module_path)
+        set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+    endif()
+    if(_qb_installed_gone)
+        _qb_installed_lost(_qb_installed_gone)
+    endif()
+endmacro()
+# _qb_probe_installed(<Package>) -- a plain quiet find_package(<Package>) before find_dependency(<Package>), the module
+# path restored when it is not found, as these probes always did: where the project made the target qb links itself
+# (nothing of qb's to search again), and for libngtcp2, whose module searches again itself.
+macro(_qb_probe_installed package)
+    _qb_installed_mark_read(${package})
+    find_package(${package} QUIET)
+    _qb_installed_mark_keep(${package})
+    if(NOT ${package}_FOUND AND DEFINED _qb_saved_module_path)
+        set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+    endif()
+endmacro()
+
+# zlib before OpenSSL: FindOpenSSL searches zlib itself for a static OpenSSL that links it (CMake 3.26 and later), and
+# the search that comes first is the one that decides -- this one, which searches again what it found.
+if(@QB_HAS_COMPRESSION@)
+    if(NOT TARGET ZLIB::ZLIB)
+        _qb_find_installed(ZLIB zlib QB_HAS_COMPRESSION "CMAKE_PREFIX_PATH (or ZLIB_ROOT)"
+                           ENTRIES ZLIB_INCLUDE_DIR/zlib.h ZLIB_LIBRARY_RELEASE ZLIB_LIBRARY_DEBUG ARGS QUIET)
+    endif()
+    _qb_installed_cleanup()
+    find_dependency(ZLIB)
+endif()
+
 if(@QB_HAS_SSL@)
+    # The search asks for both libraries: FindOpenSSL reports OpenSSL found with libcrypto and the headers alone, and
+    # qb::io links libssl -- a libssl lost is then a loss, unless the project made OpenSSL::SSL (below).
+    # find_dependency() below asks as it always has: a consumer that made its own OpenSSL targets before it asked for
+    # qb keeps them.
+    if(NOT WIN32 AND NOT (TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)) # Windows: other names (as qbOpenSSL.cmake)
+        # With compression off nothing above searches zlib, which FindOpenSSL searches itself for a static OpenSSL that
+        # links it (CMake 3.26 and later). As qb's own configure does, its entries are searched again around OpenSSL's
+        # search -- quietly: whether FindOpenSSL searches zlib is known only after, by the ZLIB::ZLIB its targets link,
+        # and only then is it said and made inputs of the configure (what it found is recorded either way, as qb's own
+        # configure records it) -- and that zlib lost and found nowhere else is reported: the generate would fail on
+        # that ZLIB::ZLIB, naming neither.
+        set(_qb_installed_zlib "")
+        if(NOT @QB_HAS_COMPRESSION@ AND NOT TARGET ZLIB::ZLIB AND NOT CMAKE_DISABLE_FIND_PACKAGE_ZLIB)
+            set(_qb_installed_zlib ZLIB_INCLUDE_DIR/zlib.h ZLIB_LIBRARY_RELEASE ZLIB_LIBRARY_DEBUG)
+            set(_qb_forget_quiet TRUE)
+            _qb_forget_vanished(_qb_installed_zlib_forgot ${_qb_installed_zlib})
+            unset(_qb_forget_quiet)
+        endif()
+        # Beside an OpenSSL::SSL the project made, libcrypto is all qb needs: libssl is still searched, recorded and
+        # an input -- another directory of the project, without that target, links it -- but one lost stops nothing.
+        set(_qb_installed_components SSL Crypto)
+        if(TARGET OpenSSL::SSL)
+            set(_qb_installed_components Crypto)
+        endif()
+        _qb_find_installed(OpenSSL OpenSSL QB_HAS_SSL OPENSSL_ROOT_DIR
+                           ENTRIES OPENSSL_INCLUDE_DIR/openssl/ssl.h OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY
+                           PKG_CONFIG _OPENSSL ARGS QUIET COMPONENTS ${_qb_installed_components})
+        if(_qb_installed_zlib)
+            _qb_record_found(${_qb_installed_zlib}) # what FindOpenSSL's search found, if it searched
+            set(_qb_installed_index -1)
+            foreach(_qb_installed_spec IN ITEMS OpenSSL::Crypto OpenSSL::SSL) # FindOpenSSL links it to both
+                if(TARGET ${_qb_installed_spec} AND _qb_installed_index EQUAL -1)
+                    get_target_property(_qb_installed_links ${_qb_installed_spec} INTERFACE_LINK_LIBRARIES)
+                    list(FIND _qb_installed_links ZLIB::ZLIB _qb_installed_index)
+                endif()
+            endforeach()
+            if(NOT _qb_installed_index EQUAL -1) # FindOpenSSL's search looked
+                _qb_forget_tell(_qb_installed_zlib_forgot)
+                _qb_found_inputs(${_qb_installed_zlib})
+                if(NOT TARGET ZLIB::ZLIB)
+                    string(CONCAT _qb_installed_gone
+                           "the OpenSSL found links it: install one, point CMAKE_PREFIX_PATH (or ZLIB_ROOT) at one, or "
+                           "point OPENSSL_ROOT_DIR at an OpenSSL that does not link zlib with this one's three entries "
+                           "removed (cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY "
+                           "-DOPENSSL_ROOT_DIR=<it> <build directory>)")
+                    _qb_stop_if_gone("${_qb_installed_zlib_forgot}" zlib "${_qb_installed_gone}" _qb_installed_gone)
+                    if(_qb_installed_gone)
+                        _qb_installed_lost(_qb_installed_gone)
+                    endif()
+                endif()
+            endif()
+        endif()
+    endif()
+    _qb_installed_cleanup()
     find_dependency(OpenSSL)
     # OpenSSL crosses qb's PUBLIC API, so a major-version mismatch between the build and the
     # consumer is an ABI question, not a detail. Four installed headers include <openssl/...>
@@ -79,10 +246,6 @@ if(@QB_HAS_SSL@)
     unset(_qb_ssl_built)
 endif()
 
-if(@QB_HAS_COMPRESSION@)
-    find_dependency(ZLIB)
-endif()
-
 # qb::io's public headers expose nlohmann::json (qb::json is an alias for it), so the consumer MUST
 # resolve one -- and, since the type crosses the API boundary, the SAME one qb was built against.
 # UNCONDITIONAL since 3.0: qb no longer ships a bundled copy, so there is no configuration in which
@@ -108,27 +271,46 @@ if(@QB_HAS_ARGON2@ OR @QB_HAS_QUIC@ OR @QB_HAS_ZSTD@ OR @QB_HAS_BROTLI@)
 endif()
 
 # find_dependency() RETURNS from this file when the package is absent -- the loud early failure
-# we want, but it also skips the restore below. Probe with a non-fatal find_package first so the
+# we want, but it also skips the restore below. Probe with a non-fatal search first so the
 # module path is restored on that path too, then let find_dependency() do the actual reporting.
 if(@QB_HAS_ARGON2@)
-    if(NOT Argon2_FOUND)
-        find_package(Argon2 QUIET)
-        if(NOT Argon2_FOUND)
-            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
-        endif()
+    if(NOT Argon2_FOUND AND NOT TARGET Argon2::Argon2)
+        _qb_find_installed(Argon2 Argon2 QB_HAS_ARGON2 CMAKE_PREFIX_PATH
+                           ENTRIES ARGON2_INCLUDE_DIR/argon2.h ARGON2_LIBRARY PKG_CONFIG PC_ARGON2 ARGS QUIET)
+    elseif(NOT Argon2_FOUND) # the project's own Argon2::Argon2
+        _qb_probe_installed(Argon2)
     endif()
+    _qb_installed_cleanup()
     find_dependency(Argon2)
 endif()
 
 if(@QB_HAS_QUIC@)
     # qb::io was built against libngtcp2; recreate its imported targets so the
     # transitive (LINK_ONLY) link of qb::io resolves for find_package() consumers.
+    # FindNgtcp2.cmake searches its own entries again (Ngtcp2_VANISHED: what this build directory had, lost and found
+    # nowhere else); each file its search produced -- what it recorded -- is an input of the configure here.
     if(NOT Ngtcp2_FOUND)
-        find_package(Ngtcp2 QUIET)
-        if(NOT Ngtcp2_FOUND)
-            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
+        _qb_probe_installed(Ngtcp2)
+        if(NOT Ngtcp2_FOUND AND Ngtcp2_VANISHED)
+            string(REPLACE ";" ", " _qb_installed_gone "${Ngtcp2_VANISHED}")
+            string(CONCAT _qb_installed_gone "the libngtcp2 this build directory found is gone and was found "
+                          "nowhere else -- ${_qb_installed_gone}: install one, or point CMAKE_PREFIX_PATH at one: "
+                          "this qb links it (QB_HAS_QUIC)")
+            _qb_installed_lost(_qb_installed_gone)
         endif()
+        foreach(_qb_installed_spec IN ITEMS NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIBRARY NGTCP2_INCLUDE_DIR/ngtcp2/ngtcp2.h
+                                            NGTCP2_CRYPTO_INCLUDE_DIR/ngtcp2/ngtcp2_crypto.h
+                                            NGTCP2_CRYPTO_OSSL_INCLUDE_DIR/ngtcp2/ngtcp2_crypto_ossl.h)
+            _qb_found_entry("${_qb_installed_spec}" _qb_installed_entry _qb_installed_probe)
+            _qb_held_file("$CACHE{${_qb_installed_entry}}" "${_qb_installed_probe}" _qb_installed_file)
+            if("$CACHE{${_qb_installed_entry}}" STREQUAL "$CACHE{_NGTCP2_FOUND_${_qb_installed_entry}}"
+               AND IS_ABSOLUTE "${_qb_installed_file}" AND EXISTS "${_qb_installed_file}"
+               AND NOT IS_DIRECTORY "${_qb_installed_file}")
+                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_qb_installed_file}")
+            endif()
+        endforeach()
     endif()
+    _qb_installed_cleanup()
     find_dependency(Ngtcp2)
     # libngtcp2_crypto_ossl calls the OpenSSL it was built against, qb::io the one this project found above: two majors
     # in one process crash at the first QUIC handshake (Huly QB-1179), and a libngtcp2 updated after qb was installed
@@ -196,22 +378,26 @@ endif()
 # The zstd / brotli codecs (Huly QB-79): qb::io links Zstd::Zstd and Brotli::Encoder / Brotli::Decoder by name, which
 # the Find modules shipped beside this file recreate for the consumer.
 if(@QB_HAS_ZSTD@)
-    if(NOT Zstd_FOUND)
-        find_package(Zstd QUIET)
-        if(NOT Zstd_FOUND)
-            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
-        endif()
+    if(NOT Zstd_FOUND AND NOT TARGET Zstd::Zstd)
+        _qb_find_installed(Zstd zstd QB_HAS_ZSTD CMAKE_PREFIX_PATH
+                           ENTRIES ZSTD_INCLUDE_DIR/zstd.h ZSTD_LIBRARY PKG_CONFIG PC_ZSTD ARGS QUIET)
+    elseif(NOT Zstd_FOUND) # the project's own Zstd::Zstd
+        _qb_probe_installed(Zstd)
     endif()
+    _qb_installed_cleanup()
     find_dependency(Zstd)
 endif()
 
 if(@QB_HAS_BROTLI@)
-    if(NOT Brotli_FOUND)
-        find_package(Brotli QUIET)
-        if(NOT Brotli_FOUND)
-            set(CMAKE_MODULE_PATH "${_qb_saved_module_path}")
-        endif()
+    if(NOT Brotli_FOUND AND NOT (TARGET Brotli::Encoder AND TARGET Brotli::Decoder)) # qb::io links both
+        _qb_find_installed(Brotli brotli QB_HAS_BROTLI CMAKE_PREFIX_PATH
+                           ENTRIES BROTLI_INCLUDE_DIR/brotli/encode.h BROTLI_ENCODER_LIBRARY BROTLI_DECODER_LIBRARY
+                                   BROTLI_COMMON_LIBRARY
+                           PKG_CONFIG PC_BROTLIENC PC_BROTLIDEC PC_BROTLICOMMON ARGS QUIET)
+    elseif(NOT Brotli_FOUND) # the project's own Brotli::Encoder and Brotli::Decoder
+        _qb_probe_installed(Brotli)
     endif()
+    _qb_installed_cleanup()
     find_dependency(Brotli)
 endif()
 
@@ -335,7 +521,8 @@ set(QB_HAS_QUIC @QB_HAS_QUIC@)
 # qbmModuleConfig.cmake.in compares it against the value a prebuilt module recorded.
 set(QB_ABI_UNORDERED_MAP "@QB_ABI_UNORDERED_MAP@")
 
-# Clean up internal variables
+# Clean up internal variables -- the searches' too (_qb_installed_cleanup(), above).
+_qb_installed_cleanup()
 unset(_IMPORT_PREFIX)
 unset(_QB_AVAILABLE_COMPONENTS)
 unset(_QB_COMPONENTS_TO_LOAD)

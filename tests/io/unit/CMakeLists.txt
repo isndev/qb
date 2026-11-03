@@ -353,8 +353,11 @@ add_test(NAME qb-io-test-unit-quic-openssl-verdict
          COMMAND "${CMAKE_COMMAND}" ${_qb_quic_verdict_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/quic-openssl-verdict/check.cmake")
 # Its timeout and found-libraries' below: the longest measured, two copies pinned to one core (Linux, CMake 3.31.6),
-# times 5 or more, rounded up to a tier's: 19 s here, 6 s there. Not serial: they share no file, port or lock, and
-# contend for the processor only, which those two copies measure.
+# times 5 or more, rounded up to a tier's: 19 s here, 6 s there -- before QB-1201's consumer cases, which make
+# found-libraries take 2 to 3 times as long (the two versions back to back on one macOS host, at load averages of 12 to
+# 30; not re-measured on Linux): 12 to 18 s by that ratio, five times which is 60 s or more, so 120 s there too (27
+# to 65 s measured on a macOS host under load). Not serial: they share no file, port or lock, and contend for the
+# processor only, which those two copies measure.
 set_tests_properties(qb-io-test-unit-quic-openssl-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
 unset(_qb_quic_verdict_args)
 # found-libraries (Huly QB-1192): the searches qbDependencies.cmake runs for Argon2, zlib, zstd and brotli
@@ -362,6 +365,8 @@ unset(_qb_quic_verdict_args)
 # is an input of the configure, and `cmake --build` re-runs it when an update removes the version found -- searched
 # again, found where the update put it (pkg-config asked again where its tool is found), or found nowhere else and the
 # configure stops, naming it -- with Ninja and Unix Makefiles where their tools are found; a path set by hand is kept.
+# The consumer of an installed qb too (Huly QB-1201): the qbConfig.cmake an install generates searches its libraries --
+# OpenSSL and libngtcp2 as well -- the same way, and reports one lost as the reason qb is not found.
 # What this configure's own searches did is passed too, and re-derived: each package qbDependencies.cmake searched went
 # through its wrapper (the value each entry had before it), a path the search produced is recorded, and each file
 # found is an input of the configure.
@@ -409,7 +414,7 @@ unset(_qb_found_inputs)
 add_test(NAME qb-io-test-unit-found-libraries
          COMMAND "${CMAKE_COMMAND}" ${_qb_found_libraries_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/found-libraries/check.cmake")
-set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
 unset(_qb_found_libraries_args)
 # installed-quic-openssl (Huly QB-1183): qbConfig.cmake, generated from cmake/qbConfig.cmake.in as an install does with a
 # QUIC build's values, warns a consumer whose libngtcp2 links another OpenSSL major than the one it links -- and says

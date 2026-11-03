@@ -219,7 +219,7 @@ the same arguments shape:
 
 - **Libraries** under `${CMAKE_INSTALL_LIBDIR}`, **runtime** under `${CMAKE_INSTALL_BINDIR}`, **headers** under `${CMAKE_INSTALL_INCLUDEDIR}` (GNU install dirs). The export set bundles `qb-io`, `qb-core`, and the bundled `qev`/`stduuid` targets so their names are rewritten under the `qb::` namespace in the dependency graph.
 - **CMake package files** under `${CMAKE_INSTALL_LIBDIR}/cmake/qb`: `qbTargets.cmake` (namespaced `qb::`), `qbConfig.cmake`, and a `qbConfigVersion.cmake` written with `COMPATIBILITY SameMajorVersion` (`CMakeLists.txt:403-407`, generated at `cmake/qbPackage.cmake:211-227`).
-- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), and `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), so a downstream `find_package(qb)` of a QUIC- or Argon2-enabled build can recreate the imported targets `qb::io` links transitively (`CMakeLists.txt:359-368`).
+- **Find modules for consumers:** `FindArgon2.cmake` is installed when the build resolved Argon2 (`QB_HAS_ARGON2`), `FindNgtcp2.cmake` when QUIC was enabled (`QB_HAS_QUIC`), `FindZstd.cmake` and `FindBrotli.cmake` with their codecs (`QB_HAS_ZSTD`, `QB_HAS_BROTLI`), so a downstream `find_package(qb)` can recreate the imported targets `qb::io` links transitively; `qbFoundLibraries.cmake` always, with which `qbConfig.cmake` searches again a library an update removed from the consumer's build directory (`CMakeLists.txt:353-368`; Huly QB-1201, see [cmake_dependencies.md](./cmake_dependencies.md)).
 
 Downstream then consumes the installed copy with `find_package`:
 
