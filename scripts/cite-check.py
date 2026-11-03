@@ -155,21 +155,28 @@ CONT_LEAD = ("`", "/", ",")
 # Two more tails, read exactly as dev/agent/citation_syntax.py reads them, so that the superproject's citation
 # sweep moves what this checks (Huly QB-1209, QB-1222):
 #   see src/context.h:92-111,            a range the next line opens with, when the reading that ended this one
-#   244-334, here.                       is followed by a comma alone -- unless that line opens a numbered list
-#                                        item (`9. item`, `9) item`), which only looks like one;
-#   `http.h:690-693 (Reply), 829-837`    a range after a parenthesised label, inside the code span its citation
-#                                        opens, bound to the citation before the label, never to a path inside
-#                                        it. Outside a code span a label is prose (`a.h:5 (the reply), 3 times`).
-# Each range is read whole or not at all, and a comma list goes on with one space at most after each comma. What
-# may not follow a range: a digit, a range sign before a digit, a `:`, a `.` that ends no sentence (`12:30`,
-# `3.2`, `9..10`) -- the sweep's own rule, without which it would read a part of a range this reads whole.
+#   244-334, here.                       is followed by a comma alone;
+#   `http.h:690-693 (Reply), 829-837`    a range after a parenthesised label, inside the code span of the reading
+#                                        before the label, bound to that reading, never to a path inside the label.
+#                                        Outside a code span a label is prose (`a.h:5 (the reply), 3 times`).
+# Each follows only a reading the two tools take alike: a prose citation whose comma list the sweep reads whole
+# (ANCHORED: no space before a comma, one at most after it, ASCII in its path), the comma tail after it, and these
+# two tails -- never a continuation (`:9`) nor what follows one. Its first range stands alone: a space, a comma, a
+# stop that ends a sentence, a closing mark or the end of the line follows it, so a path that opens with digits
+# (`02-messaging/x.cpp:5`), `64-bit` or `12:30` is no range, and a numbered list item (`9. item`, `9) item`,
+# `12. Then`) opens no wrapped tail. A range after the first is read as the sweep reads a comma tail, whole or not
+# at all: what may not follow it is a digit, a range sign before a digit, a `:`, a `.` that ends no sentence
+# (`12:30`, `3.2`, `9..10`). The two tails are matched on the line with its `src:` bodies blanked.
+_ALONE = r"(?=[\s,;)\]}>`'\"*_|<”’»]|\.(?:[\s)\]}>`'\"*_|<”’»]|$)|$)"
 _NUM = (r"\d+(?:-\d+)?(?!\d|-[-:]?\d|[‐-―−﹘﹣－]\d|…\d|:"
         r"|\.(?![\s)\]}>`'\"*_|<”’»]|$))")
-_SPEC = _NUM + r"(?:,\s?" + _NUM + r")*"
+_SPEC = r"\d+(?:-\d+)?" + _ALONE + r"(?:,\s?" + _NUM + r")*"
 WRAPPED = re.compile(r"[ \t]*(" + _SPEC + r")")
 LIST_ITEM = re.compile(r"[ \t]*\d+[.)](?:\s|$)")
 TRAILING_COMMA = re.compile(r",\s*$")
 LABELLED = re.compile(r"[ \t]*\([^()`\n]*\)[ \t]*,\s?(" + _SPEC + r")")
+ANCHORED = re.compile(r"\d+(?:-\d+)?(?:,\s?" + _NUM + r")*")
+ANCHOR_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./\-]*")
 # CONFIDENCE CHECK.  A guard is worthless until it has been shown to fail, and a citation
 # parser fails SILENTLY: a shape it does not recognise reads as prose and is skipped, so the
 # run stays green over unchecked text.  So an extension OUTSIDE the allowlist whose basename
@@ -488,18 +495,22 @@ for md in doc_files():
             bare = rx.sub(lambda m: " " * len(m.group(0)), bare)
 
         hits = []                                        # (start, end, path, kind, sizes)
-        reads = []                                       # (end, path, kind, sizes, paths) of every reading
+        reads = []                                       # (end, path, kind, sizes, paths, may a tail follow)
+        anchors = set()                                  # the hits a tail may follow: where they start
         m = WRAPPED.match(bare) if carry and not LIST_ITEM.match(bare) else None
         if m:                                            # a range this line opens with (QB-1209)
             prose_seen += 1
             check_tail(rel, ln, m.group(1), carry, "wrapped")
-            reads.append((m.end(), *carry))
+            reads.append((m.end(), *carry, True))
         for m in PROSE.finditer(bare):
             prose_seen += 1
             path, spec = m.group(1), m.group(2).replace("…", "").replace("...", "")
             kind, sizes, paths = resolve_prose(path)
             hits.append((m.start(), m.end(), path, kind, sizes, paths))
-            reads.append((m.end(), path, kind, sizes, paths))
+            whole = ANCHORED.match(bare, m.start(2))
+            if ANCHOR_PATH.fullmatch(path) and whole and whole.end() == m.end(2):
+                anchors.add(m.start())
+            reads.append((m.end(), path, kind, sizes, paths, m.start() in anchors))
             if kind == "MISS":
                 problems.append((rel, ln, f"MISSING {path} (prose)"))
             elif kind != "SKIP":
@@ -511,12 +522,14 @@ for md in doc_files():
         ticks = [i for i, c in enumerate(bare) if c == "`"]
         spans = list(zip(ticks[0::2], ticks[1::2]))      # the code spans, each backtick paired with the next
         for start, end, path, kind, sizes, paths in hits:
+            if start not in anchors:
+                continue                                 # a citation the sweep reads otherwise: no tail after it
             span = next(((a, b) for a, b in spans if a < start < b), None)
             m = LABELLED.match(bare, end) if span else None
             while m and m.end() <= span[1]:              # a range after a label, in its span (QB-1222)
                 prose_seen += 1
                 check_tail(rel, ln, m.group(1), (path, kind, sizes, paths), "labelled")
-                reads.append((m.end(), path, kind, sizes, paths))
+                reads.append((m.end(), path, kind, sizes, paths, True))
                 m = LABELLED.match(bare, m.end())
         for m in PROSE_CONT.finditer(bare):
             if any(s <= m.start() < e for s, e, *_ in hits):
@@ -529,7 +542,7 @@ for md in doc_files():
                 continue                                 # nothing to bind to
             _, _, path, kind, sizes, paths = prior[-1]   # nearest PRECEDING citation
             prose_seen += 1
-            reads.append((m.end(), path, kind, sizes, paths))
+            reads.append((m.end(), path, kind, sizes, paths, False))
             if kind in ("MISS", "SKIP"):
                 continue
             for b in bad_spec(m.group(1), sizes):
@@ -538,7 +551,7 @@ for md in doc_files():
                 problems.append((rel, ln, f"BLANK LINE {path}:{b} (cont) — the cited line "
                                           f"is empty, so the citation has drifted"))
         last = max(reads, key=lambda r: r[0], default=None)
-        carry = last[1:] if last and TRAILING_COMMA.match(bare, last[0]) else None
+        carry = last[1:5] if last and last[5] and TRAILING_COMMA.match(bare, last[0]) else None
         for m in UNKNOWN_EXT.finditer(bare):
             if m.group(2) in ("h", "hpp", "cpp", "cc", "inl", "tpp",
                               "cmake", "txt", "json", "md", "sh"):

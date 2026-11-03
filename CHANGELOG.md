@@ -815,9 +815,11 @@ policy.
   QB-1222).** `see src/context.h:92-111,` then `244-334, here.` on the next line, and `` `http.h:690-693 (Reply),
   829-837` ``: the second range of each was read by no guard and moved by no citation sweep. The script, shared by
   the four repositories, now checks both as it checks the first -- in range, not on a blank line -- and reads them
-  exactly as the superproject's sweep moves them, which its self-test runs this script against, every range of a
-  fixture both ways. What only looks like them stays prose: a numbered list item after the comma (`9. item`), a time
-  or a version (`12:30`, `3.2`), a label outside the backticks. None of the four books holds either shape today.
+  exactly as the superproject's sweep moves them, which its self-test runs this script against, every such range of
+  a fixture both ways. Each follows only a `path.ext:N` citation whose comma list both read whole, and its first range
+  stands alone; what only looks like one stays prose: a numbered list item after the comma (`9. item`), a time, a
+  version or a word that opens with a number (`12:30`, `3.2`, `64-bit`), a range after `:N` or `/N`, a label outside
+  the backticks. None of the four books holds either shape today.
 - **The digest members' Doxygen says what they return: raw bytes, not hex (Huly QB-1148).** `md5`, `sha1`,
   `sha256` and `sha512`, in their string and stream forms, and `evp` said "as a hexadecimal string" while each
   returns the digest's bytes in a `std::string` -- 32 for SHA-256, not 64 characters. `to_hex_string` encodes
