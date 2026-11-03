@@ -815,9 +815,10 @@ policy.
   beside the rewrite that replaced it, and every guard passed it. The script, shared by the four repositories and run
   by each `doc-lint.sh`, reads the section's entries and headlines as the superproject's release gate reads them to
   write the release body. A paragraph ends at a blank line, a heading, a table, a block quote or a list item, so an
-  entry cut short and followed at once by the next one is caught too; it must end on a stop, on a `:` that introduces
-  a deeper item, a table, a code block or a quote, or on a `;` that another item of its indented list follows. A
-  headline must close every bracket it opens, and no two may be the same. The shapes that end otherwise were listed
+  entry cut short and followed at once by the next one is caught too; it must end on a stop, on a `:` before what it
+  introduces, or on a `;` that another item of its indented list follows. Every entry opens on a headline that closes
+  every bracket and its bold where it should, no text stands before a section's first entry, and no two headlines
+  are the same. The shapes that end otherwise were listed
   from every section of the six CHANGELOGs: a table row, a link reference definition, a thematic break, a fenced code
   block. The six `[Unreleased]` sections pass; qbm-http's cut-off state (`e57ec4e^`) fails, at the cut.
 - **`scripts/cite-check.py` reads two citation shapes it skipped: a range a line opens with after a citation that
