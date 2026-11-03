@@ -460,7 +460,8 @@ breaker, throttle with a token bucket, and isolate with a concurrency bulkhead.
   `[backoff*(1-jitter), backoff]` to desynchronize retry storms (`resilience.h:51-59`).
 - **`CircuitBreaker`** is a timer-less single-thread state machine the caller drives with readings of a
   monotonic clock, the same one for every call -- `ask_guarded` passes `qb::mono_now()`'s nanoseconds (since 3.4,
-  Huly QB-1199; on `ctx.time()` a step of the time of day skipped the cooldown, a step back by unsigned wrap). It trips **open** after `failure_threshold` consecutive failures, fails fast during
+  Huly QB-1199; on `ctx.time()` a step of the time of day skipped the cooldown, a step back by unsigned wrap); a reading
+  older than the one its cooldown runs from counts as no time elapsed (since 3.4, Huly QB-1237: it wrapped too). It trips **open** after `failure_threshold` consecutive failures, fails fast during
   `cooldown`, then admits exactly **one** half-open trial; a success closes it, a failure re-opens it
   (`resilience.h:107-168`). `on_abandoned` releases a half-open trial that ended without a verdict so
   the breaker is not wedged (`resilience.h:190-204`). Every half-open admission is numbered

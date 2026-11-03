@@ -794,10 +794,11 @@ TEST(ActorAskGuarded, ACallAdmittedWhileClosedNeverReleasesAnotherCallsTrial) {
 // --- QB-1199: ask_guarded reads the monotonic clock at the call ---------------------------------
 //
 // A breaker's caller may also drive it by hand, with a reading of `qb::mono_now()` taken when it
-// wants -- the contract of `now_ns`. `ask_guarded` reads that clock at the call, not the core's
-// sample of the pass that `qb::deadline` reads: a sample taken earlier in the same pass is OLDER
-// than the hand-fed reading that opened the breaker, `now - opened_at` is unsigned, and it wraps
-// past any cooldown -- the open breaker would admit a trial at once.
+// wants -- the contract of `now_ns`. A guarded ask in the same pass as a hand-fed `on_failure` must
+// find the breaker open: `ask_guarded` reads that clock at the call. A reading on another clock --
+// the time of day of `ctx.time()` -- is decades past the hand-fed one and admits a trial at once.
+// The core's sample of the pass, which `qb::deadline` reads, is OLDER than the hand-fed reading:
+// it wrapped `now - opened_at` past any cooldown until QB-1237, and counts as no time elapsed since.
 
 namespace {
 std::atomic<int> g_mixed_clock{-1}; // 0: refused as open; 1: admitted, the request went out
@@ -850,13 +851,14 @@ TEST(ActorAskGuarded, AHandFedReadingThenAGuardedAskInOnePassFindTheBreakerOpen)
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_mixed_clock.load(), 0) << "the open breaker admitted a trial: ask_guarded read a clock older than the reading that opened it";
+    EXPECT_EQ(g_mixed_clock.load(), 0) << "the open breaker admitted a trial: ask_guarded read a clock other than the one that opened it";
     EXPECT_EQ(breaker->state(), State::open);
 }
 
 // A half-open trial killed in its ask gives the trial back from the cancellation path, re-arming the cooldown
-// from the reading it takes there. That reading is the breaker's clock too: one stamped on another clock leaves
-// `now - opened_at` to wrap at the next call, which is admitted at once instead of a cooldown later.
+// from the reading it takes there. That reading is the breaker's clock too: one stamped on the time of day is
+// decades ahead of the monotonic readings that follow, which count as no time elapsed (QB-1237) -- the breaker
+// refuses every call on the breaker's clock instead of admitting one a cooldown later.
 
 namespace {
 std::atomic<bool> g_killed_trial_ran{false};
@@ -914,7 +916,66 @@ TEST(ActorAskGuarded, AKilledHalfOpenTrialReArmsTheCooldownOnTheBreakersClock) {
     EXPECT_TRUE(g_killed_trial_cancelled.load()) << "the kill surfaces as cancelled_error";
     EXPECT_EQ(breaker->state(), State::open) << "the killed trial is given back: open again, the cooldown re-armed";
     EXPECT_FALSE(breaker->allow(qb::detail::mono_nanos()))
-        << "admitted well inside the re-armed 10 s cooldown: the release was stamped on a clock other than the breaker's";
+        << "admitted well inside the re-armed 10 s cooldown: the release did not re-arm it from a reading of the breaker's clock";
     EXPECT_TRUE(breaker->allow(qb::detail::mono_nanos() + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())))
-        << "a cooldown after the kill, the breaker admits a fresh trial";
+        << "a cooldown after the kill, the breaker admits a fresh trial: refused, the release was stamped on a clock ahead of the breaker's";
+}
+
+// `ask_guarded` reads the monotonic clock at the call, not the core's sample of the pass (QB-1199): the breaker's cooldown
+// ends on a reading taken after the sample, and a guarded ask in that pass must be admitted. On the sample, older than the
+// cooldown's end, it would be refused until a later pass -- no wrap since QB-1237, but a cooldown measured on a stale clock.
+
+namespace {
+std::atomic<int> g_fresh_reading{-1}; // 0: refused as open; 1: admitted as the half-open trial
+} // namespace
+
+// Takes this pass's sample, then opens the breaker on a later reading less the cooldown: the cooldown ends at that reading.
+class FreshReadingClient : public qb::Actor {
+    std::shared_ptr<qb::CircuitBreaker> _breaker;
+    qb::ActorId                         _target;
+
+public:
+    FreshReadingClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
+        : _breaker(std::move(b))
+        , _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto b = _breaker;
+        auto t = _target;
+        spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto sampled = qb::detail::pass_mono_nanos(); // the pass's sample, taken first
+            auto       ends    = qb::detail::mono_nanos();
+            while (ends <= sampled) // strictly after it: the clock ticks in tens of nanoseconds on some hosts
+                ends = qb::detail::mono_nanos();
+            b->on_failure(ends - static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())); // its 10 s cooldown ends at `ends`
+            try {
+                (void) co_await qb::ask_guarded(ctx, b, t, Ping{1}, 50ms); // the same pass, after `ends`
+                g_fresh_reading.store(1);
+            } catch (const qb::circuit_open_error &) {
+                g_fresh_reading.store(0);
+            } catch (const qb::io::async::timeout_error &) {
+                g_fresh_reading.store(1); // admitted: the silent target let the trial time out
+            }
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskGuarded, AGuardedAskReadsTheClockAtTheCallNotThePassSample) {
+    g_fresh_reading.store(-1);
+    auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, 10s);
+    qb::Main main;
+    auto     silent = main.addActor<SilentMarket>(0);
+    main.addActor<FreshReadingClient>(0, breaker, silent);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_fresh_reading.load(), 1)
+        << "the cooldown had ended on the clock at the call: ask_guarded read an older one, the core's sample of the pass";
 }
