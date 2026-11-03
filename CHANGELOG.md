@@ -9,6 +9,29 @@ policy.
 
 ### Added
 
+- **An installed qb built with QUIC gets a Linux consumer in CI, both senses of its OpenSSL-major comparison read on
+  real ELF libraries (Huly QB-1219).** QB-1183 has an installed qb compare, at its consumer, the OpenSSL that
+  libngtcp2_crypto_ossl links with the one the consumer links, read from the libraries' dependency lists, and warn on
+  two majors -- they crash at the first QUIC handshake. That reading had run on macOS only (`otool -L`): every
+  `install-consume` job installs qb without QUIC, Ubuntu 24.04's archive lacking libngtcp2's OpenSSL helper (it needs
+  OpenSSL 3.5). The new `installed-quic-consumer` job builds and installs qb with QUIC required in an Ubuntu 26.04
+  container, whose archive carries the helper, and the new `scripts/check-installed-quic-openssl.sh` consumes the
+  prefix. It requires the system's libngtcp2 and OpenSSL on one major to give no warning, with the installed
+  FindNgtcp2.cmake's readings not empty and equal to `readelf -d`'s own (a reader that read nothing would be silent
+  too), through its `objdump -p` fallback as well (readelf made to fail), and the consumer to build, run, load
+  libngtcp2_crypto_ossl and one libssl and one libcrypto major (`ldd`); and each of the four libraries alone on the
+  next major -- the helper's libssl, its libcrypto, the consumer's libssl, its libcrypto -- and both of each side
+  (stand-ins built in the job, ELF too) to be warned, by qbConfig.cmake's own warning naming each major. A prefix
+  installed without QUIC is refused (exit 2), nothing to prove. Before the lane's first run the script was run on
+  macOS only (Mach-O, `DYLD_PRINT_LIBRARIES`, the system's LibreSSL set aside), green there against a qb installed on
+  copied Homebrew kegs (openssl@4, libngtcp2 1.25), where each of fourteen mutants of the installed qbConfig.cmake and
+  FindNgtcp2.cmake fails it -- the warning made a status line, nothing read, the verdict inverted, the comparison
+  skipped, the consumer's libssl read in the helper, either side's libcrypto read as its libssl, the verdict blind to
+  any one of the four libraries, the warning naming libngtcp2 by another path than the helper found, the warning cut
+  to its head, its text said otherwise, and its words said as an author warning on one major; seven of those passed
+  earlier versions, which did not check a warning's kind, put each library alone on another major, read a warning's
+  text inside it, nor looked for its words said otherwise.
+
 - **Create an actor on another core while the engine runs: `qb::spawn_on` and `qb::Spawner` (Huly QB-54).**
   `Main::addActor` works before `start()` only and `Actor::addRefActor` creates on the caller's own core, so an
   elastic pool or a shard placed on a core with room needed a hand-written factory actor per core. `co_await

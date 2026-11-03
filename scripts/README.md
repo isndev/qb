@@ -41,6 +41,7 @@ Verified by grep across all six repositories, not by filename.
 | `check-cross-compiler-statics.sh` | `.github/workflows/cmake.yml` |
 | `check-installed-headers.sh` | `.github/workflows/install-consume.yml`; the superproject's `package-consume.yml` |
 | `check-installed-headers-selftest.sh` | `.github/workflows/install-consume.yml` (negative controls for the above) |
+| `check-installed-quic-openssl.sh` | `.github/workflows/install-consume.yml` (`installed-quic-consumer`, Linux); humans on macOS, against a prefix installed with QUIC |
 | `installed-entry-points/` | `check-installed-headers.sh` phase 2, via `--entry-dir` |
 | `ci-install-{linux,macos}-dependencies.sh`, `ci-install-windows-dependencies.ps1` | every build workflow here, plus the superproject's `benchmarks.yml` and `package-consume.yml` |
 | `check-spawn-dangling-closure.py` | **only** the superproject (`dev/agent/verify.sh`, root `guards.yml`) — see below |
