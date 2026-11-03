@@ -32,6 +32,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <ctime>
 #include <fstream>
 #include <limits>
+#include <mutex> // qb fork (Huly QB-1207)
 #include <qb/system/time.h>
 #include <qb/utility/build_macros.h>
 #include <queue>
@@ -59,16 +60,13 @@ format_timestamp(std::ostream &os, uint64_t timestamp) {
     // auto duration = std::chrono::microseconds(timestamp);
     // std::chrono::high_resolution_clock::time_point time_point(duration);
     // std::time_t time_t = std::chrono::high_resolution_clock::to_time_t(time_point);
-    std::time_t time_t = timestamp / 1000000;
-#ifdef _WIN32
-    struct tm tmp_tm;
-    gmtime_s(&tmp_tm, &time_t);
-    auto gmtime = &tmp_tm;
-#else
-    auto gmtime = std::gmtime(&time_t);
-#endif
+    std::time_t const time_t = static_cast<std::time_t>(timestamp / 1000000); // qb fork (Huly QB-1207), with the next lines
+    // qb fork (Huly QB-1207): two writer threads can format at once -- a replaced logger's last drain and the new
+    // logger's writer -- so the breakdown is qb's re-entrant one: std::gmtime returns one static object on glibc.
+    std::tm gmtime{};
+    (void) qb::safe_gmtime(time_t, gmtime);
     char buffer[32];
-    strftime(buffer, 32, "%Y-%m-%d %T.", gmtime);
+    strftime(buffer, 32, "%Y-%m-%d %T.", &gmtime); // qb fork (Huly QB-1207): the local breakdown
     char microseconds[7];
     snprintf(microseconds, 7, "%06llu", static_cast<unsigned long long>(timestamp % 1000000));
     os << '[' << buffer << microseconds << ']';
@@ -609,8 +607,9 @@ public:
     NanoLogger(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new RingBuffer(ring_buffer_items(ngl.ring_buffer_size_mb)))
-        , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
-        , m_file_opened(m_file_writer.is_open())
+        , m_file_writer(std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb))) // qb fork (Huly QB-1207)
+        , m_file_opened(m_file_writer->is_open())                  // qb fork (Huly QB-1207): through the pointer
+        , m_ring_items(ring_buffer_items(ngl.ring_buffer_size_mb)) // qb fork (Huly QB-1207)
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -618,26 +617,65 @@ public:
     NanoLogger(GuaranteedLogger, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb)
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
-        , m_file_writer(log_file_path, std::max(1u, log_file_roll_size_mb))
-        , m_file_opened(m_file_writer.is_open())
+        , m_file_writer(std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb))) // qb fork (Huly QB-1207)
+        , m_file_opened(m_file_writer->is_open()) // qb fork (Huly QB-1207): through the pointer
+        , m_ring_items(0)                         // qb fork (Huly QB-1207)
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
 
-    // Whether the constructor opened the first file: read before the writer thread exists, so never torn by a roll.
+    // qb fork (Huly QB-1207): whether the first file of this logger's current life -- its constructor's, or restart()'s
+    // -- was opened: taken before that writer thread writes, so never torn by a roll.
     bool
     file_opened() const noexcept {
         return m_file_opened;
     }
 
     ~NanoLogger() {
-        m_state.store(State::SHUTDOWN);
-        m_thread.join();
+        stop(); // qb fork (Huly QB-1207): a logger initialize() created is never destroyed; one built directly is
     }
 
     void
     add(NanoLogLine &&logline) {
         m_buffer_base->push(std::move(logline));
+    }
+
+    // qb fork (Huly QB-1207): the writer thread drains what the queue holds into the file, the file is closed, and the
+    // logger stays: a thread that read it before initialize() published the next one may still be inside add(), so its
+    // queue must outlive that call. What such a thread leaves in the queue is written when restart() takes it back.
+    void
+    stop() {
+        m_state.store(State::SHUTDOWN);
+        NANOLOG_TEST_HOOK(stopping, 0); // the exit test releases the writer here: it sees SHUTDOWN, only the drain is left
+        if (m_thread.joinable())
+            m_thread.join();
+        m_file_writer.reset();
+    }
+
+    // qb fork (Huly QB-1207): a stopped logger writes to a new file, with a new writer thread; what its queue holds is
+    // written there first. The file is opened, then the thread started: a throw from either leaves the logger stopped,
+    // its queue as it was (the file, created by then, stays).
+    void
+    restart(std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
+        auto       writer = std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb));
+        bool const opened = writer->is_open();
+        m_state.store(State::INIT, std::memory_order_relaxed);
+        try {
+            m_thread = std::thread(&NanoLogger::pop, this); // waits for READY, below
+        } catch (...) {
+            m_state.store(State::SHUTDOWN, std::memory_order_relaxed);
+            throw;
+        }
+        m_file_writer = std::move(writer);
+        m_file_opened = opened;
+        m_state.store(State::READY, std::memory_order_release);
+    }
+
+    // qb fork (Huly QB-1207): the queue initialize() can reuse this logger for: 0 is a GuaranteedLogger's, any other value
+    // a ring of that many items.
+    std::size_t
+    ring_items() const noexcept {
+        return m_ring_items;
     }
 
     void
@@ -650,15 +688,17 @@ public:
         NanoLogLine logline(LogLevel::INFO, nullptr, nullptr, 0);
 
         while (m_state.load() == State::READY) {
-            if (m_buffer_base->try_pop(logline))
-                m_file_writer.write(logline);
-            else
+            if (m_buffer_base->try_pop(logline)) {
+                m_file_writer->write(logline);      // qb fork (Huly QB-1207): through the pointer restart() replaces
+                NANOLOG_TEST_HOOK(writer_wrote, 0); // qb fork (Huly QB-1207): the exit test holds the writer here
+            } else
                 std::this_thread::sleep_for(std::chrono::microseconds(50));
         }
 
         // Pop and log all remaining entries
+        NANOLOG_TEST_HOOK(writer_draining, 0); // qb fork (Huly QB-1207): the test holds a replaced logger here
         while (m_buffer_base->try_pop(logline)) {
-            m_file_writer.write(logline);
+            m_file_writer->write(logline); // qb fork (Huly QB-1207): through the pointer restart() replaces
         }
     }
 
@@ -667,13 +707,65 @@ private:
 
     std::atomic<State>          m_state;
     std::unique_ptr<BufferBase> m_buffer_base;
-    FileWriter                  m_file_writer;
-    bool const                  m_file_opened; // after m_file_writer, before m_thread: initialisation order matters
-    std::thread                 m_thread;
+    std::unique_ptr<FileWriter> m_file_writer; // qb fork (Huly QB-1207): replaced by restart(), so on the heap
+    // qb fork (Huly QB-1207): m_file_opened is no longer const, restart() sets it.
+    bool              m_file_opened; // after m_file_writer, before m_thread: initialisation order matters
+    std::size_t const m_ring_items;  // qb fork (Huly QB-1207)
+    std::thread       m_thread;
+
+public:
+    // qb fork (Huly QB-1207): initialize()'s bookkeeping, touched under its lock only.
+    NanoLogger   *next       = nullptr; // the logger initialize() created before this one (see `loggers`)
+    std::uint64_t stopped_at = 0;       // when initialize() stopped it, in replacements: the oldest is taken back first
 };
 
-std::unique_ptr<NanoLogger> nanologger;
-std::atomic<NanoLogger *>   atomic_nanologger;
+// qb fork (Huly QB-1207): initialize() REPLACES the published logger, and a thread may log while it does. It used to
+// destroy the old logger -- its writer, its queue -- and only then publish the new one: a thread that had read the old
+// pointer, or read it during the destruction, pushed into freed memory, and every thread kept pushing into the old one
+// while it drained, so a thread logging faster than the writer kept initialize() from returning. Now the new logger is
+// published first and the old one then stopped: it drains what it already holds -- every record up to the first one a
+// thread is still writing -- and closes its file before initialize() returns. No logger initialize() created is ever
+// freed: a thread can hold one from its read of `atomic_nanologger` to the end of add() for as long as it is preempted,
+// and nothing on that path may pay to say so. A stopped logger is taken back by a later initialize() for the same queue
+// instead -- the one stopped longest ago first -- so a process holds at most two loggers per queue it asked for; a
+// record a late thread left in one is written then, into that call's file, and lost if no later call takes it back.
+std::atomic<NanoLogger *> atomic_nanologger;
+
+namespace {
+// qb fork (Huly QB-1207): initialize() against itself, and log_file_opened(). Never destroyed: a static destructor
+// that runs after StopAtExit's may still call either.
+std::mutex &
+initialize_mutex() noexcept {
+    alignas(std::mutex) static unsigned char storage[sizeof(std::mutex)];
+    static std::mutex *const                 mutex = new (storage) std::mutex();
+    return *mutex;
+}
+
+NanoLogger   *loggers      = nullptr; // every logger initialize() created, the newest first, linked by `next`
+std::uint64_t replacements = 0;       // the clock of NanoLogger::stopped_at
+
+// What log_file_opened() answers on a thread that called initialize(): that call's open, not a racing call's (-1: none).
+thread_local int last_open = -1;
+
+// qb fork (Huly QB-1207): at exit the published logger is stopped, so that its file is complete -- what destroying it
+// did. It is not freed: a static destructor that runs later and logs pushes into a queue nobody writes, where it used
+// to write into freed memory.
+// It only tries the lock: when qb-io's statics live in a Windows DLL (qb-io built as one, or linked into one), they are
+// destroyed after ExitProcess ended every other thread, and one may have died holding it -- the writer too, so nothing
+// is drained there, as before. Anywhere else, a thread inside initialize() or log_file_opened() at that moment leaves
+// the published logger running.
+struct StopAtExit {
+    constexpr StopAtExit() noexcept = default;
+    ~StopAtExit() {
+        std::unique_lock<std::mutex> lock(initialize_mutex(), std::try_to_lock);
+        if (!lock.owns_lock())
+            return;
+        if (NanoLogger *const published = atomic_nanologger.load(std::memory_order_relaxed))
+            published->stop();
+    }
+};
+StopAtExit stop_at_exit;
+} // namespace
 
 bool
 NanoLog::operator==(NanoLogLine &logline) {
@@ -681,21 +773,55 @@ NanoLog::operator==(NanoLogLine &logline) {
     return true;
 }
 
+namespace {
+// qb fork (Huly QB-1207): the logger for a queue of `ring_items` (0: guaranteed) -- the stopped one stopped longest ago
+// taken back, or a new one `make` builds -- published, then the one it replaces stopped. A throw before the publication
+// leaves the published logger as it was (the new file, created by then, stays).
+template <typename Make>
+void
+publish_logger(std::size_t const ring_items, Make const &make, std::filesystem::path const &log_file_path,
+               uint32_t const log_file_roll_size_mb) {
+    std::lock_guard<std::mutex> lock(initialize_mutex());
+    NanoLogger *const           replaced = atomic_nanologger.load(std::memory_order_relaxed);
+    NanoLogger                 *next     = nullptr;
+    for (NanoLogger *logger = loggers; logger != nullptr; logger = logger->next)
+        if (logger != replaced && logger->ring_items() == ring_items && (next == nullptr || logger->stopped_at < next->stopped_at))
+            next = logger;
+    if (next != nullptr) {
+        next->restart(log_file_path, log_file_roll_size_mb);
+    } else {
+        next       = make();
+        next->next = loggers;
+        loggers    = next;
+    }
+    last_open = next->file_opened() ? 1 : 0;
+    atomic_nanologger.store(next, std::memory_order_seq_cst);
+    if (replaced != nullptr) {
+        replaced->stop();
+        replaced->stopped_at = ++replacements;
+    }
+}
+} // namespace
+
+// qb fork (Huly QB-1207): both overloads publish through publish_logger(), which replaces the logger safely.
 void
 initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
-    nanologger.reset(new NanoLogger(ngl, log_file_path, log_file_roll_size_mb));
-    atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
+    publish_logger(
+        ring_buffer_items(ngl.ring_buffer_size_mb), [&] { return new NanoLogger(ngl, log_file_path, log_file_roll_size_mb); }, log_file_path,
+        log_file_roll_size_mb);
 }
 
 void
 initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb) {
-    nanologger.reset(new NanoLogger(gl, log_file_path, log_file_roll_size_mb));
-    atomic_nanologger.store(nanologger.get(), std::memory_order_seq_cst);
+    publish_logger(0, [&] { return new NanoLogger(gl, log_file_path, log_file_roll_size_mb); }, log_file_path, log_file_roll_size_mb);
 }
 
 bool
 log_file_opened() {
-    NanoLogger const *const logger = atomic_nanologger.load(std::memory_order_acquire);
+    if (last_open >= 0) // qb fork (Huly QB-1207): this thread's last initialize(), whatever another thread did since
+        return last_open == 1;
+    std::lock_guard<std::mutex> lock(initialize_mutex()); // qb fork (Huly QB-1207): ordered after restart()'s write
+    NanoLogger const *const     logger = atomic_nanologger.load(std::memory_order_relaxed); // qb fork (Huly QB-1207): the lock orders it
     return logger && logger->file_opened();
 }
 
