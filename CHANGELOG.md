@@ -9,6 +9,10 @@ policy.
 
 ### Added
 
+- **`qb::deadline_at(qb::mono_time)`: a `qb::deadline` built from an instant of the monotonic clock (Huly QB-1199).**
+  The typed spelling of `deadline{...}`: `qb::deadline_at(qb::mono_now() + 2s)`, `qb::deadline_at(qb::mono_time::max())`
+  for a deadline never met, an instant before the clock's epoch for one already past. Why `at_ns` is no longer a date:
+  under Changed.
 - **Create an actor on another core while the engine runs: `qb::spawn_on` and `qb::Spawner` (Huly QB-54).**
   `Main::addActor` works before `start()` only and `Actor::addRefActor` creates on the caller's own core, so an
   elastic pool or a shard placed on a core with room needed a hand-written factory actor per core. `co_await
@@ -196,6 +200,42 @@ policy.
 
 ### Changed
 
+- **`qb::deadline` is an instant of the monotonic clock (Huly QB-1199).** Its `at_ns` held a date -- nanoseconds since
+  the Unix epoch, built from `ctx.time()`, the core's sample of the wall clock -- so a step of the time of day spent or
+  extended a chain's budget: 120 s forward, a 60 s budget read 0 left 1 ms in and `ask_by` failed without sending; 30 s
+  back, a 200 ms budget read 29.9 s left 300 ms in. `at_ns` now counts `qb::mono_now()`'s nanoseconds since its epoch,
+  and `deadline_in`, `remaining` and `ask_by` read that clock as the core samples it -- once per pass, on the pass's
+  first call, as `ctx.time()` sampled the date -- so `remaining` right after `deadline_in` still reads the budget
+  exactly, and an `ask_by` of a fresh deadline costs what it did (read on each call instead, it cost two clock
+  reads where the base made at most one a pass: +14 ns, 12.6 %, on an Apple M4). On Linux a deadline no longer counts a system suspend, as no loop timer does.
+  `qb::deadline_at(qb::mono_time)` is new: the typed way to build one from an instant, `mono_time::max()` a deadline
+  never met. `deadline{0}` is still already spent. **A hand-built `at_ns` must change:** a value made from a date --
+  `qb::unix_nanos(qb::wall_now()) + d`, `ctx.time() + d` -- now lies decades ahead of the monotonic clock and never
+  expires; write `qb::deadline_in(ctx, d)` or `qb::deadline_at(qb::mono_now() + d)`. A debug build asserts when an
+  `at_ns` is within ten years of the time of day, wherever a deadline comes in from outside -- built from an instant
+  (`deadline_at`) or read (`remaining`, so `ask_by`) -- which catches one filled in by hand, "+2 years" from the date
+  included; no monotonic deadline comes near the date (the band would take a budget of about 47 to 67 years less the
+  uptime), and the two "no deadline" spellings, `deadline_in(ctx, qb::duration::max())` and
+  `deadline_at(qb::mono_time::max())`, land centuries past it (a host whose clock was never set -- before 2001 -- checks
+  nothing). A release build compiles the check out. **A deadline no longer travels:** it is an instant of this boot's
+  monotonic clock, read as decades ahead or long past by another process, another host, or this one after a reboot --
+  send what is left (`qb::remaining(dl, ctx)`) and rebuild it there with `deadline_in`. `remaining()` of a deadline more
+  than `qb::duration::max()` ahead (`deadline{UINT64_MAX}`) now reads `duration::max()`: it wrapped negative, and
+  `ask_by` failed at once.
+- **`ask_guarded` and `rate_limiter::acquire(ctx)` drive their breaker and limiter on the monotonic clock (Huly
+  QB-1199).** They passed `ctx.time()`, the wall clock, as `now_ns`: a step back stopped a limiter's refill until the
+  time of day caught up (a token due in 50 ms not granted in 2 s after 30 s back), a step forward refilled it at once (a
+  token due in 10 s granted 1 ms after 120 s forward), and a breaker open for 60 s admitted a half-open trial 1 ms after
+  a step either way -- back, `now - opened_at` wrapped. They now pass `qb::mono_now()`'s nanoseconds, read at the call
+  -- not the core's sample of the pass that `qb::deadline` reads, which is older than a reading taken later in that
+  pass: a breaker also driven by hand would see its clock go back, and `now - opened_at` wrap past the cooldown.
+  `now_ns` is documented as a reading of a monotonic clock, the same one for every call on one breaker or limiter, and
+  for a breaker never behind a reading it was given: an older one still wraps `now - opened_at` and admits a trial at
+  once (Huly QB-1237, open). On Linux a cooldown or a refill no longer counts a system suspend. **Code that also drives
+  one by hand must pass that clock:**
+  `std::chrono::duration_cast<std::chrono::nanoseconds>(qb::mono_now().time_since_epoch()).count()`, not `ctx.time()`:
+  mixed, the cooldown and the refill compare a date with an uptime. `CircuitBreaker` and `rate_limiter` themselves are
+  unchanged.
 - **The select registration takes a node the caller owns: `channel<T>::register_select_waiter(select_entry
   &entry, channel_select_state &state, size_t idx)`, with `unregister_select_waiter(select_entry &entry)
   noexcept` as its counterpart (Huly QB-273).** The registration took a `std::shared_ptr<channel_select_state>`
@@ -322,6 +362,20 @@ policy.
 
 ### Fixed
 
+- **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
+  clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
+  the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them
+  by the step. Forward, an activation failed at once (1 ms into a 1 s deadline after a 30 s step) and the window forgot
+  the restarts it held, so a failure past the cap was restarted instead of escalated; back, an activation outlived its
+  deadline by the step (31 s for 1 s) and the window held restarts past it, so a failure escalated. Both now read
+  `qb::mono_now()` in nanoseconds (`qb::detail::mono_nanos()`), like the request deadlines; the park a core takes while
+  an actor is Activating, capped by the nearest activation deadline, follows. On Linux they now leave a system suspend
+  out, as every loop timer does. `Actor::time()` is unchanged: a date, the wall clock's nanoseconds; the public delays
+  that read it are under Changed. Witnessed by `qb-core-test-system-delay-clock`, which steps the time of day in its own
+  process -- it defines `std::chrono::system_clock::now()`, the clock every `qb::wall_now()` it links reads, as the
+  system's plus a step -- and checks that each step reached `Actor::time()` before judging the delay (red on the base
+  for all four cases, and for the six of the Changed entries; registered where that definition reaches qb-core: a static
+  qb-core, or a shared one on ELF, over a shared standard library -- not MSVC, whose STL reads the clock in its header).
 - **The async TCP connector delivers a deadline already past when an attempt arms it from the loop, not inside
   `connect()` (Huly QB-1200).** An attempt arms the connect's deadline once its TCP connect is in progress; a deadline
   already behind the clock by then -- a name resolution, which `run()` makes synchronously, longer than the timeout --

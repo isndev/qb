@@ -813,7 +813,7 @@ public:
      * // ... some heavy calculation ...
      * assert(t1 == time()); // true - will not assert within the same event handler execution
      * @endcode
-     * @note This time is primarily for relative measurements or logging within an actor's turn.
+     * @note This time is a date, for logging or stamping: measure elapsed time and deadlines on `qb::mono_now()` (Huly QB-1199).
      * @note For a continuously updating, high-precision timestamp, use `qb::unix_nanos(qb::wall_now())` from `<qb/system/time.h>`.
      * @note Inside `onInit()` the loop has not run yet: construction and `onInit()` are pass 0, so the first `time()` there
      * reads the clock and every actor initialised on that core in the same phase sees that instant. Through 3.0.0 only the
@@ -1763,8 +1763,8 @@ public:
     }
 
     /**
-     * @brief Get current time from the VirtualCore
-     * @return Timestamp in nanoseconds
+     * @brief The core's cached time of day, as `Actor::time()`: a date; elapsed time is read on `qb::mono_now()`
+     * @return Nanoseconds since the Unix epoch
      */
     [[nodiscard]] uint64_t time() const noexcept;
 };
@@ -2977,6 +2977,11 @@ struct service_registry_seal {
     service_registry_seal(service_registry_seal const &)            = delete;
     service_registry_seal &operator=(service_registry_seal const &) = delete;
 };
+
+/// `qb::mono_now()` in nanoseconds as the calling core samples it: read at most once per pass, on the pass's first call,
+/// and the same value for the rest of it -- `VirtualCore::time()`'s monotonic twin, what `qb::deadline` is measured on
+/// (Huly QB-1199). Never a breaker's or a limiter's clock: one also fed by hand would see it go back within a pass.
+[[nodiscard]] std::uint64_t pass_mono_nanos() noexcept;
 } // namespace detail
 
 } // namespace qb

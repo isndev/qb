@@ -685,8 +685,8 @@ public:
         auto b = _breaker;
         auto t = _target;
         spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            const auto t0 = ctx.time();
-            b->on_failure(t0); // threshold 1: open now; the cooldown is driven past below
+            const auto t0 = qb::detail::mono_nanos(); // the breaker's clock: the one ask_guarded reads (since 3.4)
+            b->on_failure(t0);                        // threshold 1: open now; the cooldown is driven past below
             auto trial = [](qb::ScopedCoroContext c, std::shared_ptr<qb::CircuitBreaker> br, qb::ActorId tg) -> qb::io::async::task<int> {
                 auto r = co_await qb::ask_guarded(c, br, tg, Ping{1}, 10s); // the silent target never answers
                 co_return r.response;
@@ -761,8 +761,8 @@ public:
             g_foreign_cancel_ran.store(true);
         });
         spawn([b](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> { // B: someone else's trial
-            const auto now = ctx.time();
-            b->on_failure(now);                                                                             // open
+            const auto now = qb::detail::mono_nanos();                      // the breaker's clock: the one ask_guarded reads (since 3.4)
+            b->on_failure(now);                                             // open
             EXPECT_TRUE(b->allow(now + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count()))); // half-open
             co_return;
         });
@@ -789,4 +789,132 @@ TEST(ActorAskGuarded, ACallAdmittedWhileClosedNeverReleasesAnotherCallsTrial) {
     EXPECT_TRUE(g_foreign_cancel_cancelled.load()) << "the kill surfaces as cancelled_error";
     EXPECT_EQ(breaker->state(), State::half_open)
         << "a call admitted while CLOSED holds no trial: its cancellation must not release the trial in flight (QB-297)";
+}
+
+// --- QB-1199: ask_guarded reads the monotonic clock at the call ---------------------------------
+//
+// A breaker's caller may also drive it by hand, with a reading of `qb::mono_now()` taken when it
+// wants -- the contract of `now_ns`. `ask_guarded` reads that clock at the call, not the core's
+// sample of the pass that `qb::deadline` reads: a sample taken earlier in the same pass is OLDER
+// than the hand-fed reading that opened the breaker, `now - opened_at` is unsigned, and it wraps
+// past any cooldown -- the open breaker would admit a trial at once.
+
+namespace {
+std::atomic<int> g_mixed_clock{-1}; // 0: refused as open; 1: admitted, the request went out
+} // namespace
+
+// Takes this pass's sample, opens the breaker on a later reading, then asks through it in the same pass.
+class MixedClockClient : public qb::Actor {
+    std::shared_ptr<qb::CircuitBreaker> _breaker;
+    qb::ActorId                         _target;
+
+public:
+    MixedClockClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
+        : _breaker(std::move(b))
+        , _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto b = _breaker;
+        auto t = _target;
+        spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto sampled = qb::detail::pass_mono_nanos(); // the pass's sample, taken first
+            auto       opened  = qb::detail::mono_nanos();
+            while (opened <= sampled) // strictly after it: the clock ticks in tens of nanoseconds on some hosts
+                opened = qb::detail::mono_nanos();
+            b->on_failure(opened); // threshold 1: open for 10 s
+            try {
+                (void) co_await qb::ask_guarded(ctx, b, t, Ping{1}, 50ms); // the same pass: no clock may go back
+                g_mixed_clock.store(1);
+            } catch (const qb::circuit_open_error &) {
+                g_mixed_clock.store(0);
+            } catch (const qb::io::async::timeout_error &) {
+                g_mixed_clock.store(1); // admitted: the silent target let the trial time out
+            }
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskGuarded, AHandFedReadingThenAGuardedAskInOnePassFindTheBreakerOpen) {
+    g_mixed_clock.store(-1);
+    auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, 10s);
+    qb::Main main;
+    auto     silent = main.addActor<SilentMarket>(0);
+    main.addActor<MixedClockClient>(0, breaker, silent);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_EQ(g_mixed_clock.load(), 0) << "the open breaker admitted a trial: ask_guarded read a clock older than the reading that opened it";
+    EXPECT_EQ(breaker->state(), State::open);
+}
+
+// A half-open trial killed in its ask gives the trial back from the cancellation path, re-arming the cooldown
+// from the reading it takes there. That reading is the breaker's clock too: one stamped on another clock leaves
+// `now - opened_at` to wrap at the next call, which is admitted at once instead of a cooldown later.
+
+namespace {
+std::atomic<bool> g_killed_trial_ran{false};
+std::atomic<bool> g_killed_trial_cancelled{false};
+std::atomic<bool> g_killed_trial_refused{false}; // the guarded ask was refused: it never was the trial
+} // namespace
+
+// Opens the breaker on a reading a cooldown old, so the guarded ask is the half-open trial; the driver kills it.
+class KilledTrialClient : public qb::Actor {
+    std::shared_ptr<qb::CircuitBreaker> _breaker;
+    qb::ActorId                         _target;
+
+public:
+    KilledTrialClient(std::shared_ptr<qb::CircuitBreaker> b, qb::ActorId t)
+        : _breaker(std::move(b))
+        , _target(t) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Ping>(*this);
+        auto b = _breaker;
+        auto t = _target;
+        spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            b->on_failure(qb::detail::mono_nanos() - static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())); // open, cooldown over
+            try {
+                (void) co_await qb::ask_guarded(ctx, b, t, Ping{1}, 10s); // the trial; the silent target never answers
+            } catch (const qb::io::async::cancelled_error &) {
+                g_killed_trial_cancelled.store(true);
+            } catch (const qb::circuit_open_error &) {
+                g_killed_trial_refused.store(true);
+            }
+            g_killed_trial_ran.store(true);
+        });
+        co_return true;
+    }
+    void
+    on(Ping &e) {
+        resolve_ask(e);
+    }
+};
+
+TEST(ActorAskGuarded, AKilledHalfOpenTrialReArmsTheCooldownOnTheBreakersClock) {
+    g_killed_trial_ran.store(false);
+    g_killed_trial_cancelled.store(false);
+    g_killed_trial_refused.store(false);
+    auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, 10s);
+    qb::Main main;
+    auto     silent = main.addActor<SilentMarket>(0);
+    auto     client = main.addActor<KilledTrialClient>(0, breaker, silent);
+    main.addActor<KillThenStopHelper<>>(0, client, kKillAfter, kStopAfter);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_TRUE(g_killed_trial_ran.load()) << "the trial must have unwound";
+    EXPECT_FALSE(g_killed_trial_refused.load()) << "the cooldown was over: the guarded ask must be admitted as the trial";
+    EXPECT_TRUE(g_killed_trial_cancelled.load()) << "the kill surfaces as cancelled_error";
+    EXPECT_EQ(breaker->state(), State::open) << "the killed trial is given back: open again, the cooldown re-armed";
+    EXPECT_FALSE(breaker->allow(qb::detail::mono_nanos()))
+        << "admitted well inside the re-armed 10 s cooldown: the release was stamped on a clock other than the breaker's";
+    EXPECT_TRUE(breaker->allow(qb::detail::mono_nanos() + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())))
+        << "a cooldown after the kill, the breaker admits a fresh trial";
 }

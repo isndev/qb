@@ -147,10 +147,11 @@ public:
 
 private:
     friend class Actor;
-    // The request-deadline list is reached through the thread's current core (Huly QB-189).
-    friend void detail::deadline_arm(detail::request_deadline &, qb::duration, void (*)(void *) noexcept, void *) noexcept;
-    friend void detail::deadline_disarm_armed(detail::request_deadline &) noexcept;
-    friend bool detail::deadlines_armed() noexcept;
+    // The request-deadline list, and the pass's monotonic sample, are reached through the thread's current core (Huly QB-189, QB-1199).
+    friend void          detail::deadline_arm(detail::request_deadline &, qb::duration, void (*)(void *) noexcept, void *) noexcept;
+    friend void          detail::deadline_disarm_armed(detail::request_deadline &) noexcept;
+    friend bool          detail::deadlines_armed() noexcept;
+    friend std::uint64_t detail::pass_mono_nanos() noexcept;
     // The activation waiters (`ActorHandle::ready_async`) are linked into `_activating` through
     // the thread's current core (Huly QB-62).
     friend detail::activation_state detail::activation_wait(qb::ActorId, detail::activation_waiter &, void (*)(void *, bool) noexcept,
@@ -164,8 +165,7 @@ private:
     friend class Service;
     friend class CoreInitializer;
     friend class Main;
-    // The router's report of a unicast it could not deliver reaches the dead-letter path through
-    // the thread's current core (Huly QB-163).
+    // The router's report of a unicast it could not deliver reaches the dead-letter path through the thread's current core (Huly QB-163).
     friend void Event::__undelivered__(Event &) noexcept;
     // ... and of a broadcast that names a core the engine does not run (Huly QB-268).
     friend void Event::__broadcast_elsewhere__(Event &) noexcept;
@@ -457,7 +457,7 @@ private:
     // `_actor_to_remove` fast-path discipline so non-async actors pay nothing.
     struct Activation {
         qb::io::async::task<bool>             init;                ///< owns the suspended onInit frame
-        std::uint64_t                         deadline_ns = 0;     ///< wall-clock deadline (0 = none)
+        std::uint64_t                         deadline_ns = 0;     ///< monotonic deadline, `qb::detail::mono_nanos()` (0 = none)
         bool                                  cancelling  = false; ///< deadline fired → scope cancelled, awaiting unwind
         std::vector<std::vector<EventBucket>> stash;               ///< FIFO of byte-copied inbound unicast events
         /// The `ready_async` waiters on this activation (Huly QB-62): intrusive nodes living in
@@ -631,11 +631,9 @@ private:
     // only the timed instantiation of the loop touches the recorder.
     bool                   _pass_timing = false;
     detail::TimingRecorder _pass_recorder;
-    // Death watch (Huly QB-51). `_watchers_of`: who watches each actor of this core, from any core.
-    // `_watching`: the watches each actor of this core holds open, on any core -- one entry per
-    // watch, closed by its one answer (`__on_watch_down__`), by `unwatch()` or by the watcher's
-    // removal. Touched by `watch()` / `unwatch()`, by the control events and by the removal of an
-    // actor that is in either -- never by the pass.
+    // Death watch (Huly QB-51). `_watchers_of`: who watches each actor of this core, from any core. `_watching`: the watches each actor of this
+    // core holds open, on any core -- one entry per watch, closed by its one answer (`__on_watch_down__`), by `unwatch()` or by the watcher's
+    // removal. Touched by `watch()` / `unwatch()`, by the control events and by the removal of an actor that is in either -- never by the pass.
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watchers_of;
     qb::unordered_map<ActorId, std::vector<WatchEntry>> _watching;
     std::uint64_t                                       _watch_tickets = 0;     ///< the last ticket a watch of this core got
@@ -645,6 +643,8 @@ private:
     /// than the `thread_local` it was in the loop, whose guard and destructor registration were a TLS derivation
     /// in the pass's loop body; a region vector as that was (QB-1012). Touched by ticking cores only.
     allocator::region_vector<CallbackEntry> _callback_snapshot;
+    mutable std::uint64_t                   _mono_sample      = 0;                 ///< `_nanotimer`'s monotonic twin (Huly QB-1199)
+    mutable std::uint64_t                   _mono_sample_pass = ~std::uint64_t{0}; ///< its `_loop_count`; only an asking pass reads them
     // !Members
 
     VirtualCore(CoreId id, SharedCoreCommunication &engine) noexcept;

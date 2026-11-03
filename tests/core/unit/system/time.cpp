@@ -686,4 +686,33 @@ TEST(EvSeam, MonoDeadlineAfterASpanPastTheClocksEndIsNone) {
     EXPECT_EQ(qb::detail::mono_deadline_after(60., late), late + 60s);
 }
 
+TEST(EvSeam, MonoNanosIsTheMonotonicClockInNanoseconds) {
+    // The unit qb-core keeps its own delays in (Huly QB-1199): `qb::mono_now()`, counted in nanoseconds.
+    const auto before = qb::mono_now();
+    const auto read   = qb::detail::mono_nanos();
+    const auto after  = qb::mono_now();
+    EXPECT_GE(read, static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(before.time_since_epoch()).count()));
+    EXPECT_LE(read, static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(after.time_since_epoch()).count()));
+}
+
+TEST(EvSeam, OnlyADateIsNearTheTimeOfDay) {
+    // How a debug build tells a date from a monotonic reading: the date is within ten years of the time of day, a monotonic
+    // reading -- an instant counted from the boot, or a deadline on it as far as `duration::max()` -- is decades from it.
+    const auto day = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day));
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day + 3'600'000'000'000u)); // an hour ahead
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day - 3'600'000'000'000u)); // an hour behind
+    constexpr std::uint64_t year = 365ull * 24 * 3600 * 1'000'000'000;
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day + 2 * year)); // a token expiry two years ahead, built from the date
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day + 9 * year)); // the band is ten years either side
+    EXPECT_TRUE(qb::detail::near_the_time_of_day(day - 9 * year));
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(day + 11 * year));
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(0));
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(qb::detail::mono_nanos()));
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(qb::detail::mono_nanos() + 3'600'000'000'000u));
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(qb::detail::mono_nanos() + std::uint64_t{INT64_MAX})); // deadline_in(duration::max())
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(std::uint64_t{INT64_MAX}));                            // deadline_at(mono_time::max())
+    EXPECT_FALSE(qb::detail::near_the_time_of_day(day, std::chrono::nanoseconds{0}));                    // nothing is within no span
+}
+
 } // namespace

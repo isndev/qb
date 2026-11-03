@@ -577,7 +577,8 @@ spawn([bh, svc](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 ```
 
 **Deadline budget.** Thread one absolute `qb::deadline` through a chain of `ask_by` so the *whole*
-chain is bounded (a per-`ask` `timeout` resets at each hop; a deadline does not).
+chain is bounded (a per-`ask` `timeout` resets at each hop; a deadline does not). It is an instant of the
+monotonic clock: build it with `qb::deadline_in` or `qb::deadline_at(qb::mono_now() + d)`, never `at_ns` by hand.
 
 ```cpp
 auto dl = qb::deadline_in(ctx, 1s);                       // the whole chain must finish in 1 s
@@ -741,7 +742,8 @@ Strategies: `one_for_one` (restart just the failed child), `one_for_all` (restar
 - `max_restarts` bounds the restart intensity; past it, `on_escalate()` runs instead of restarting
   (escalate by killing the supervisor, alerting, etc.) — otherwise a crash-looping child restarts forever.
   By default the cap is **cumulative** over the supervisor's life; pass a `restart_window`
-  (`Supervisor(strategy, count, max_restarts, window)`) to count it as a sliding window ("N within T").
+  (`Supervisor(strategy, count, max_restarts, window)`) to count it as a sliding window ("N within T"),
+  measured on the monotonic clock: a step of the time of day does not move it.
 - Killing the supervisor (a `KillEvent`) tears down its children first — they are never orphaned.
   `Main::stop()` / `SIGINT` already broadcasts to every actor, so children stop there too.
 

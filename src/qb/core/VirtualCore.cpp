@@ -757,7 +757,7 @@ VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init
     // In particular, a ready continuation still owns the suspended init frame.
     // The actor is now Activating: gate its inbound unicast and keep its frame alive.
     actor._activated = false;
-    const auto now   = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+    const auto now   = qb::detail::mono_nanos();
     Activation act;
     act.init        = std::move(init);
     act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
@@ -767,7 +767,7 @@ VirtualCore::__begin_activation__(Actor &actor, qb::io::async::task<bool> &&init
 
 qb::duration
 VirtualCore::__activation_park_cap__(qb::duration cap) const noexcept {
-    // Activation uses wall time; request deadlines below remain monotonic.
+    // On the monotonic clock, like the request deadlines: a step of the time of day moves neither (Huly QB-1199).
     std::uint64_t nearest = 0;
     for (auto const &entry : _activating) {
         auto const &act = entry.second;
@@ -778,8 +778,8 @@ VirtualCore::__activation_park_cap__(qb::duration cap) const noexcept {
     }
     if (nearest == 0)
         return cap;
-    const auto wall = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
-    const auto left = nearest > wall ? nearest - wall : 0;
+    const auto now  = qb::detail::mono_nanos();
+    const auto left = nearest > now ? nearest - now : 0;
     if (left < static_cast<std::uint64_t>(cap.count()))
         cap = qb::duration{static_cast<qb::duration::rep>(left)};
     return cap;
@@ -823,7 +823,7 @@ void
 VirtualCore::__pump_activations__() {
     if (likely(_activating.empty()))
         return;
-    const auto now = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+    const auto now = qb::detail::mono_nanos();
 
     // Collect ids before invoking cancellation hooks: a hook may add an actor
     // whose onInit suspends, rehashing _activating. No map iterator or reference

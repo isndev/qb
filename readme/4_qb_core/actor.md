@@ -175,11 +175,11 @@ Use `context()` rather than a bare `qb::io::async::sleep`. It returns a `qb::Sco
 
 ### Activating: what is deferred, what is withheld, what is not
 
-If `onInit()` *does* suspend, the actor enters the **Activating** phase. Its still-live frame is moved into the core's `_activating` map, `_activated` flips to `false`, and a deadline is armed (`src/qb/core/VirtualCore.cpp:751-765`).
+If `onInit()` *does* suspend, the actor enters the **Activating** phase. Its still-live frame is moved into the core's `_activating` map, `_activated` flips to `false`, and a deadline is armed on the monotonic clock (`src/qb/core/VirtualCore.cpp:751-765`): `qb::detail::mono_nanos()`, an internal helper, is `qb::mono_now()` in nanoseconds, so a step of the time of day neither ends an activation early nor extends it (on Linux the deadline leaves a system suspend out, as every loop timer does). Through 3.3 it was the wall clock, and a step moved it by the step (Huly QB-1199).
 
 ```cpp
 actor._activated = false;
-const auto now   = static_cast<std::uint64_t>(qb::unix_nanos(qb::wall_now()));
+const auto now   = qb::detail::mono_nanos();
 Activation act;
 act.init        = std::move(init);
 act.deadline_ns = activation_deadline_ns ? now + activation_deadline_ns : 0; // 0 ⇒ no deadline
