@@ -1197,24 +1197,75 @@ TEST(QuicHandshakeLoopback, GracefulCloseDeliversTypedDisconnectReasonToClient) 
 // receive-and-acknowledge machinery deterministically without an event loop.
 // =============================================================================
 
+// The peer whose writes the handshake leaves paced (Huly QB-1224). On an idle host ngtcp2's pacer holds
+// nothing, so a test that expects a write on the wire as soon as the call that queued it returns passes,
+// and fails only on a runner preempted during the handshake (QB-1223). direct_handshake() can be that
+// runner every time: it pauses after each delivery of the paced peer's packets, so the other peer answers
+// and acknowledges them after the pause, and every RTT sample of the paced peer spans it, min_rtt with
+// them. In the 1-RTT space the other peer reports that wait as ack delay, which is not subtracted when that
+// would take a sample below min_rtt (RFC 9002, section 5.3; before the handshake is confirmed ngtcp2 drops
+// such a sample). For the client this needs the stateless Retry (on by default): it discards start_client's
+// Initial, sent before the first counted delivery, whose sample would otherwise set both smoothed_rtt and
+// min_rtt without a pause; without it the ClientPaced check below fails loudly. The other peer's samples do
+// not span the pause: the paced peer answers before pausing. ngtcp2 then holds a write of the paced peer
+// that follows its previous packet by less than about a tenth of the smoothed RTT, until its timer
+// (next_timeout()/on_timeout()) or the first drain past that time. Every test whose assertions wait
+// on a write after direct_handshake() runs unpaced and with each peer paced (QuicPacedExchangeTest and
+// the suites that combine it with their own parameter); the connection-cap test stays unpaced.
+enum class QuicPacedPeer { none, server, client };
+
 namespace {
 
-// Bring two native backends to `connected` by hand-delivering packets; collects
-// the server child connection id observed on the server's `connected` event.
+// Long enough that a held write outlasts the few quick exchanges a test might allow it (Huly QB-1224).
+constexpr std::chrono::milliseconds kHandshakePause{20};
+
+// A broken handshake times out in every case that makes one, and at 3 s each the binary would end at
+// ctest's limit instead of reporting them: a handshake that follows a timed-out one waits 1 s, several
+// times a paced handshake, and says why. The next one that connects clears this.
+bool g_direct_handshake_timed_out = false;
+
+// Bring two native backends to `connected` by hand-delivering packets, pacing `paced` (above); collects
+// the server child connection id observed on the server's `connected` event. Fails the case on a
+// timeout, and when a paced peer's smoothed RTT shows no pause.
 // Returns the server child connection id (0 == handshake did not complete).
 std::uint64_t
-direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, bool &client_connected) {
+direct_handshake(qb::io::quic::backend &client, qb::io::quic::backend &server, bool &client_connected, QuicPacedPeer paced) {
     std::uint64_t server_connection_id = 0;
-    const auto    deadline             = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    const auto    budget               = g_direct_handshake_timed_out ? std::chrono::milliseconds(1000) : std::chrono::milliseconds(3000);
+    const auto    deadline             = std::chrono::steady_clock::now() + budget;
+    // Counted around the whole delivery: a write its timer made due is one of the peer's packets too.
+    const auto deliver = [](qb::io::quic::backend &from, qb::io::quic::backend &to, bool paced_side) {
+        const auto sent = from.current_stats().packets_sent;
+        deliver_ready_quic_packets(from, to);
+        if (paced_side && from.current_stats().packets_sent > sent)
+            std::this_thread::sleep_for(kHandshakePause);
+    };
     while ((!client_connected || server_connection_id == 0) && std::chrono::steady_clock::now() < deadline) {
-        deliver_ready_quic_packets(client, server);
-        deliver_ready_quic_packets(server, client);
+        deliver(client, server, paced == QuicPacedPeer::client);
+        deliver(server, client, paced == QuicPacedPeer::server);
         for (auto const &event : client.drain_events())
             if (event.type == qb::io::quic::backend_event::kind::connected)
                 client_connected = true;
         for (auto const &event : server.drain_events())
             if (event.type == qb::io::quic::backend_event::kind::connected)
                 server_connection_id = event.connection_id;
+    }
+    if (!client_connected || server_connection_id == 0)
+        ADD_FAILURE() << "direct handshake timed out after " << budget.count() << " ms"
+                      << (g_direct_handshake_timed_out ? " (a short deadline: the previous one timed out)" : "");
+    g_direct_handshake_timed_out = !client_connected || server_connection_id == 0;
+    // A pause that no longer reaches an RTT sample (a handshake of another shape) would leave the paced
+    // cases testing nothing their unpaced twin does not: they fail instead. Each paced sample spans the
+    // pause and load only lengthens it; half the pause is margin. ngtcp2's initial estimate means no sample
+    // was taken -- true while the backend keeps ngtcp2's initial_rtt. That the estimate holds writes back
+    // is ngtcp2's pacing, which follows the smoothed RTT under the congestion control the backend leaves at
+    // ngtcp2's default (CUBIC). The test's own unpaced samples then pull the estimate down by an eighth
+    // each: its first writes after the handshake are the most held.
+    if (paced != QuicPacedPeer::none && client_connected && server_connection_id != 0) {
+        const auto rtt = paced == QuicPacedPeer::server ? server.smoothed_rtt(server_connection_id) : client.smoothed_rtt(0);
+        EXPECT_TRUE(rtt.has_value() && *rtt >= kHandshakePause / 2 && *rtt != std::chrono::nanoseconds{NGTCP2_DEFAULT_INITIAL_RTT})
+            << "the handshake pause did not reach the paced peer's smoothed RTT ("
+            << (rtt ? std::chrono::duration_cast<std::chrono::microseconds>(*rtt).count() : -1) << " us)";
     }
     return server_connection_id;
 }
@@ -1274,9 +1325,21 @@ open_once_renewed(qb::io::quic::backend &client, qb::io::quic::backend &server, 
     return false;
 }
 
+std::string
+paced_peer_name(QuicPacedPeer paced) {
+    return paced == QuicPacedPeer::server ? "ServerPaced" : paced == QuicPacedPeer::client ? "ClientPaced" : "Unpaced";
+}
+
 } // namespace
 
-TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSlot) {
+// Each case runs unpaced and with the server's or the client's writes paced (QuicPacedPeer, above).
+class QuicPacedExchangeTest : public ::testing::TestWithParam<QuicPacedPeer> {};
+
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicPacedExchangeTest,
+                         ::testing::Values(QuicPacedPeer::none, QuicPacedPeer::server, QuicPacedPeer::client),
+                         [](::testing::TestParamInfo<QuicPacedPeer> const &info) { return paced_peer_name(info.param); });
+
+TEST_P(QuicPacedExchangeTest, RemoteStreamQuotaRenewsForBothDirectionsAtOneSlot) {
     ASSERT_TRUE(require_ssl_files());
 
     for (auto direction : {qb::io::quic::stream_direction::unidirectional, qb::io::quic::stream_direction::bidirectional}) {
@@ -1296,7 +1359,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSl
         client_tls.verify_peer = false;
         client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
         bool       client_connected     = false;
-        const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+        const auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
         ASSERT_TRUE(client_connected);
         ASSERT_NE(server_connection_id, 0u);
 
@@ -1327,7 +1390,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsForBothDirectionsAtOneSl
     }
 }
 
-TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwoSlots) {
+TEST_P(QuicPacedExchangeTest, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwoSlots) {
     ASSERT_TRUE(require_ssl_files());
     auto                   server = qb::io::quic::make_native_backend();
     auto                   client = qb::io::quic::make_native_backend();
@@ -1343,7 +1406,7 @@ TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwo
     client_tls.verify_peer = false;
     client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
     bool client_connected = false;
-    ASSERT_NE(direct_handshake(*client, *server, client_connected), 0u);
+    ASSERT_NE(direct_handshake(*client, *server, client_connected, GetParam()), 0u);
     ASSERT_TRUE(client_connected);
 
     const auto first  = client->open_stream(0, qb::io::quic::stream_direction::unidirectional);
@@ -1378,7 +1441,7 @@ TEST(QuicHandshakeNativeBackend, HigherRemoteStreamIdBeforeLowerRenewsExactlyTwo
         << "both streams invoked stream_open, so their closes must renew exactly two slots";
 }
 
-TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
+TEST_P(QuicPacedExchangeTest, RemoteStreamQuotaRenewsAfterResetAndStop) {
     ASSERT_TRUE(require_ssl_files());
     auto                   server = qb::io::quic::make_native_backend();
     auto                   client = qb::io::quic::make_native_backend();
@@ -1394,7 +1457,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
     client_tls.verify_peer = false;
     client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
     bool       client_connected     = false;
-    const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    const auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -1426,7 +1489,7 @@ TEST(QuicHandshakeNativeBackend, RemoteStreamQuotaRenewsAfterResetAndStop) {
  *        carries the client's ACK back so the server fires acked_stream_data_offset_cb, emitting a
  *        stream_data_acked event whose byte count matches the sent payload. Covers quic.cpp:1591-1617.
  */
-TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
+TEST_P(QuicPacedExchangeTest, ServerStreamDataIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     auto server = qb::io::quic::make_native_backend();
@@ -1446,7 +1509,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool client_connected     = false;
-    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -1487,7 +1550,7 @@ TEST(QuicHandshakeNativeBackend, ServerStreamDataIsAckedByPeer) {
  *        ACK back so the server's ack_datagram_cb runs release_inflight_datagram(acked=true),
  *        incrementing datagrams_acked. Covers quic.cpp:1560-1573 (acked branch) + 1551-1556.
  */
-TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
+TEST_P(QuicPacedExchangeTest, ServerDatagramIsAckedByPeer) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     qb::io::quic::settings settings;
@@ -1513,7 +1576,7 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool client_connected     = false;
-    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -1539,7 +1602,7 @@ TEST(QuicHandshakeNativeBackend, ServerDatagramIsAckedByPeer) {
 
 enum class QuicTxCredit { stream, connection };
 
-class QuicCreditBlockedHeadTest : public ::testing::TestWithParam<QuicTxCredit> {};
+class QuicCreditBlockedHeadTest : public ::testing::TestWithParam<std::tuple<QuicTxCredit, QuicPacedPeer>> {};
 
 /**
  * @test A head stream without flow-control credit holds back neither other work nor the writer
@@ -1555,7 +1618,7 @@ class QuicCreditBlockedHeadTest : public ::testing::TestWithParam<QuicTxCredit> 
 TEST_P(QuicCreditBlockedHeadTest, BlockedHeadLeavesOtherWorkSendableAndTheWriterIdle) {
     ASSERT_TRUE(require_ssl_files());
 
-    const bool             per_stream = GetParam() == QuicTxCredit::stream;
+    const bool             per_stream = std::get<0>(GetParam()) == QuicTxCredit::stream;
     qb::io::quic::settings server_settings;
     qb::io::quic::settings client_settings;
     server_settings.enable_datagrams = client_settings.enable_datagrams = true;
@@ -1578,7 +1641,7 @@ TEST_P(QuicCreditBlockedHeadTest, BlockedHeadLeavesOtherWorkSendableAndTheWriter
     client_tls.verify_peer = false;
     client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
     bool       client_connected     = false;
-    const auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    const auto server_connection_id = direct_handshake(*client, *server, client_connected, std::get<1>(GetParam()));
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -1630,9 +1693,12 @@ TEST_P(QuicCreditBlockedHeadTest, BlockedHeadLeavesOtherWorkSendableAndTheWriter
 }
 
 INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicCreditBlockedHeadTest,
-                         ::testing::Values(QuicTxCredit::stream, QuicTxCredit::connection),
-                         [](::testing::TestParamInfo<QuicTxCredit> const &info) {
-                             return info.param == QuicTxCredit::stream ? std::string{"StreamCredit"} : std::string{"ConnectionCredit"};
+                         ::testing::Combine(::testing::Values(QuicTxCredit::stream, QuicTxCredit::connection),
+                                            ::testing::Values(QuicPacedPeer::none, QuicPacedPeer::server, QuicPacedPeer::client)),
+                         [](::testing::TestParamInfo<std::tuple<QuicTxCredit, QuicPacedPeer>> const &info) {
+                             return (std::get<0>(info.param) == QuicTxCredit::stream ? std::string{"StreamCredit"}
+                                                                                     : std::string{"ConnectionCredit"})
+                                    + paced_peer_name(std::get<1>(info.param));
                          });
 
 namespace quic_handshake_credit_test {
@@ -1646,7 +1712,7 @@ struct CreditPair {
     std::map<std::uint64_t, std::string>     received;
     std::vector<qb::io::quic::backend_event> client_events;
 
-    CreditPair(std::uint64_t stream_window, std::uint64_t connection_window, qb::io::quic::settings client_settings = {}) {
+    CreditPair(std::uint64_t stream_window, std::uint64_t connection_window, QuicPacedPeer paced, qb::io::quic::settings client_settings = {}) {
         qb::io::quic::settings server_settings;
         server_settings.max_stream_data_bidi_remote = stream_window;
         server_settings.connection_recv_window      = connection_window;
@@ -1661,7 +1727,7 @@ struct CreditPair {
         client_tls.verify_peer = false;
         client->start_client(qb::io::endpoint{"127.0.0.1", 54321}, qb::io::endpoint{"127.0.0.1", 4433}, {"h3"}, client_tls);
         bool client_connected = false;
-        connection_id         = direct_handshake(*client, *server, client_connected);
+        connection_id         = direct_handshake(*client, *server, client_connected, paced);
     }
 
     void
@@ -1680,7 +1746,8 @@ struct CreditPair {
                 received[event.stream_id].append(reinterpret_cast<const char *>(event.payload.data()), event.payload.size());
     }
 
-    // Enough exchanges for anything sendable to arrive and be acknowledged.
+    // Enough exchanges for anything sendable to arrive and be acknowledged, unpaced on an idle host. A paced
+    // write can outlast them: the absences a case asserts after them are weaker in a paced instance.
     void
     rounds(int count) {
         for (int i = 0; i < count; ++i)
@@ -1709,9 +1776,9 @@ struct CreditPair {
  *        second stream's bytes go out at once. Bytes sent on the parked head wait behind its refused
  *        ones; once the head is credited, all of them arrive in order (Huly QB-333).
  */
-TEST(QuicHandshakeNativeBackend, CreditBlockedStreamParksBehindQueuedWorkInOrder) {
+TEST_P(QuicPacedExchangeTest, CreditBlockedStreamParksBehindQueuedWorkInOrder) {
     ASSERT_TRUE(require_ssl_files());
-    quic_handshake_credit_test::CreditPair pair{16, 17};
+    quic_handshake_credit_test::CreditPair pair{16, 17, GetParam()};
     ASSERT_NE(pair.connection_id, 0u);
     auto &received = pair.received;
 
@@ -1750,11 +1817,11 @@ TEST(QuicHandshakeNativeBackend, CreditBlockedStreamParksBehindQueuedWorkInOrder
  *        chunk and two more; a reset must drop all three from the queue accounting, so three new frames
  *        on another stream are accepted (no buffer_overflow close) and delivered (Huly QB-333).
  */
-TEST(QuicHandshakeNativeBackend, ResetOfACreditBlockedStreamReleasesItsQueuedData) {
+TEST_P(QuicPacedExchangeTest, ResetOfACreditBlockedStreamReleasesItsQueuedData) {
     ASSERT_TRUE(require_ssl_files());
     qb::io::quic::settings client_settings;
     client_settings.max_pending_stream_frames = 3;
-    quic_handshake_credit_test::CreditPair pair{16, 1024 * 1024, client_settings};
+    quic_handshake_credit_test::CreditPair pair{16, 1024 * 1024, GetParam(), client_settings};
     ASSERT_NE(pair.connection_id, 0u);
     auto &received = pair.received;
 
@@ -1776,7 +1843,7 @@ TEST(QuicHandshakeNativeBackend, ResetOfACreditBlockedStreamReleasesItsQueuedDat
     EXPECT_EQ(received[head].size(), 16u) << "nothing of the reset stream may be sent after the reset";
 }
 
-class QuicStreamResetTest : public ::testing::TestWithParam<std::uint64_t> {};
+class QuicStreamResetTest : public ::testing::TestWithParam<std::tuple<std::uint64_t, QuicPacedPeer>> {};
 
 /**
  * @test The peer observes a RESET_STREAM frame, and both full closes keep it a reset
@@ -1807,7 +1874,7 @@ TEST_P(QuicStreamResetTest, PeerObservesStreamResetFromServer) {
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool client_connected     = false;
-    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    auto server_connection_id = direct_handshake(*client, *server, client_connected, std::get<1>(GetParam()));
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -1829,7 +1896,7 @@ TEST_P(QuicStreamResetTest, PeerObservesStreamResetFromServer) {
     }
     ASSERT_TRUE(client_saw_stream) << "peer never saw the server stream open";
 
-    const std::uint64_t code = GetParam();
+    const std::uint64_t code = std::get<0>(GetParam());
     server->reset_stream(server_connection_id, stream, code);
 
     // stream_reset_cb's event carries a text; stream_close_cb's, the full close, carries none.
@@ -1881,9 +1948,12 @@ TEST_P(QuicStreamResetTest, PeerObservesStreamResetFromServer) {
     EXPECT_EQ(server_seen.fins, 0);
 }
 
-INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest, ::testing::Values(std::uint64_t{0x42}, std::uint64_t{0}),
-                         [](::testing::TestParamInfo<std::uint64_t> const &info) {
-                             return info.param == 0 ? std::string{"ApplicationCodeZero"} : std::string{"ApplicationCode0x42"};
+INSTANTIATE_TEST_SUITE_P(QuicHandshakeNativeBackend, QuicStreamResetTest,
+                         ::testing::Combine(::testing::Values(std::uint64_t{0x42}, std::uint64_t{0}),
+                                            ::testing::Values(QuicPacedPeer::none, QuicPacedPeer::server, QuicPacedPeer::client)),
+                         [](::testing::TestParamInfo<std::tuple<std::uint64_t, QuicPacedPeer>> const &info) {
+                             return (std::get<0>(info.param) == 0 ? std::string{"ApplicationCodeZero"} : std::string{"ApplicationCode0x42"})
+                                    + paced_peer_name(std::get<1>(info.param));
                          });
 
 /**
@@ -1948,7 +2018,7 @@ TEST(QuicHandshakeNativeBackend, MalformedInitialDatagramIsRejectedByServer) {
  * only ever sees stream_data_acked). So we assert the stop_sending observation on the SERVER side,
  * which is the only side where it can occur. Pumps are bounded; no unbounded waits.
  */
-TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
+TEST_P(QuicPacedExchangeTest, ServerObservesStopSendingWhenItStopsReading) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     auto server = qb::io::quic::make_native_backend();
@@ -1968,7 +2038,7 @@ TEST(QuicHandshakeNativeBackend, ServerObservesStopSendingWhenItStopsReading) {
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool client_connected     = false;
-    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -2060,8 +2130,10 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
     auto first = qb::io::quic::make_native_backend();
     first->start_client(first_endpoint, server_endpoint, {"h3"}, client_tls);
 
-    bool first_connected     = false;
-    auto first_connection_id = direct_handshake(*first, *server, first_connected);
+    bool first_connected = false;
+    // No assertion waits on a write over the admitted connection after its handshake -- the pump below
+    // only keeps it serviced, and the parent close is local: unpaced.
+    auto first_connection_id = direct_handshake(*first, *server, first_connected, QuicPacedPeer::none);
     ASSERT_TRUE(first_connected) << "the first client must connect to fill the single connection slot";
     ASSERT_NE(first_connection_id, 0u);
     EXPECT_EQ(server->current_stats().active_connections, 1u);
@@ -2124,9 +2196,10 @@ TEST(QuicHandshakeNativeBackend, ServerAtConnectionCapDropsSecondClientWithoutSe
  * synthesis. This corrected form observes the synthesis on the SERVER and asserts the client does NOT
  * synthesise.
  *
- * Determinism: bounded two-backend pumps that FAIL LOUD on a deadline; no event loop, no sleeps.
+ * Determinism: bounded two-backend pumps that FAIL LOUD on a deadline; no event loop, and no sleep but the
+ * paced handshake's.
  */
-TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf) {
+TEST_P(QuicPacedExchangeTest, CleanStreamCloseSynthesisesFinOnLocalUnFinnedReadHalf) {
     ASSERT_TRUE(require_ssl_files()) << "QUIC build ships its TLS certs; their absence is a packaging regression";
 
     auto server = qb::io::quic::make_native_backend();
@@ -2146,7 +2219,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool client_connected     = false;
-    auto server_connection_id = direct_handshake(*client, *server, client_connected);
+    auto server_connection_id = direct_handshake(*client, *server, client_connected, GetParam());
     ASSERT_TRUE(client_connected);
     ASSERT_NE(server_connection_id, 0u);
 
@@ -2247,7 +2320,7 @@ TEST(QuicHandshakeNativeBackend, CleanStreamCloseSynthesisesFinOnLocalUnFinnedRe
 
 enum class QuicReadHalfAction { none, local_stop, peer_reset };
 
-class QuicReadHalfRetransmissionTest : public ::testing::TestWithParam<QuicReadHalfAction> {};
+class QuicReadHalfRetransmissionTest : public ::testing::TestWithParam<std::tuple<QuicReadHalfAction, QuicPacedPeer>> {};
 
 /**
  * @test A lost packet is retransmitted intact after a local read stop or a peer write reset
@@ -2275,7 +2348,7 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     client->start_client(client_endpoint, server_endpoint, {"h3"}, client_tls);
 
     bool       client_connected = false;
-    const auto connection_id    = direct_handshake(*client, *server, client_connected);
+    const auto connection_id    = direct_handshake(*client, *server, client_connected, std::get<1>(GetParam()));
     ASSERT_TRUE(client_connected);
     ASSERT_NE(connection_id, 0u);
 
@@ -2332,10 +2405,10 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     // frame adds its 512 bytes, so the packets about to be dropped carry it.
     ASSERT_TRUE(payload_in_flight()) << "the TX witness needs the payload's packet in flight, unacknowledged, to lose";
     ASSERT_FALSE(lost_packets.empty());
-    if (GetParam() == QuicReadHalfAction::local_stop)
+    if (std::get<0>(GetParam()) == QuicReadHalfAction::local_stop)
         server->stop_stream(connection_id, stream, 0x29);
 #ifdef QB_IO_QUIC_TEST_HOOKS
-    if (GetParam() == QuicReadHalfAction::peer_reset) {
+    if (std::get<0>(GetParam()) == QuicReadHalfAction::peer_reset) {
         // The peer only resets its write half. A full reset would also send STOP_SENDING,
         // legitimately cancelling the server's write and masking the TX lifetime bug.
         qb::io::quic::test::reset_stream_write(*client, stream, 0x2a);
@@ -2395,12 +2468,28 @@ TEST_P(QuicReadHalfRetransmissionTest, UnackedBidiWriteSurvivesPacketLoss) {
     EXPECT_GT(server->current_stats().packets_lost, before.packets_lost) << "the payload must have reached the peer through a retransmission";
 }
 
+namespace {
+std::string
+read_half_case_name(::testing::TestParamInfo<std::tuple<QuicReadHalfAction, QuicPacedPeer>> const &info) {
+    const auto action = std::get<0>(info.param);
+    return (action == QuicReadHalfAction::none         ? std::string{"ReadOpen"}
+            : action == QuicReadHalfAction::local_stop ? std::string{"LocalStop"}
+                                                       : std::string{"PeerReset"})
+           + paced_peer_name(std::get<1>(info.param));
+}
+} // namespace
+
 #ifdef QB_IO_QUIC_TEST_HOOKS
 INSTANTIATE_TEST_SUITE_P(ReadOpenStoppedAndPeerReset, QuicReadHalfRetransmissionTest,
-                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop, QuicReadHalfAction::peer_reset));
+                         ::testing::Combine(::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop,
+                                                              QuicReadHalfAction::peer_reset),
+                                            ::testing::Values(QuicPacedPeer::none, QuicPacedPeer::server, QuicPacedPeer::client)),
+                         read_half_case_name);
 #else
 INSTANTIATE_TEST_SUITE_P(ReadOpenAndStopped, QuicReadHalfRetransmissionTest,
-                         ::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop));
+                         ::testing::Combine(::testing::Values(QuicReadHalfAction::none, QuicReadHalfAction::local_stop),
+                                            ::testing::Values(QuicPacedPeer::none, QuicPacedPeer::server, QuicPacedPeer::client)),
+                         read_half_case_name);
 #endif
 
 // =============================================================================
