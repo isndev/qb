@@ -159,7 +159,7 @@ CONT_LEAD = ("`", "/", ",")
 #   `http.h:690-693 (Reply), 829-837`    a range after a parenthesised label, inside the code span of the reading
 #                                        before the label, bound to that reading, never to a path inside the label.
 #                                        Outside a code span a label is prose (`a.h:5 (the reply), 3 times`).
-# Each follows only a reading the two tools take alike: a prose citation whose path opens with a letter and whose
+# Each follows only a reading the two tools take alike: a prose citation whose path opens with a letter or `_`, whose
 # comma list the sweep reads whole (ANCHOR_PATH, ANCHORED: no space before a comma, one at most after it), the comma
 # tail after it, and these two tails -- never a continuation (`:9`) nor what follows one. Each of its ranges stands
 # alone: a space, a comma, a `;`, a stop that ends a sentence, a closing bracket or quote, a backtick or the end of
@@ -488,8 +488,8 @@ for md in doc_files():
         if not do_prose:
             continue
         # Blank out the three `src:` bodies first: they are already checked above, and a
-        # path inside one is the same text as a prose citation.
-        bare = line
+        # path inside one is the same text as a prose citation. The newline goes: `$` ends a line.
+        bare = line.rstrip("\r\n")
         for rx in FORMS:
             bare = rx.sub(lambda m: " " * len(m.group(0)), bare)
 
