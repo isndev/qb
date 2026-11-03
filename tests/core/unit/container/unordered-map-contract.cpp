@@ -1154,3 +1154,37 @@ TEST(IcaseMapNoexcept, TheMoveMembersAreAsNothrowAsTheBaseMapsOwn) {
     Map target;
     EXPECT_THROW(target = std::move(source), std::bad_alloc);
 }
+
+// A key the caller gives up is folded where it is and moved into the map: the const overload of string_to_lower::convert()
+// copied it first, one allocation a key past the small-string capacity (Huly QB-1216: three a browser's HTTP/2 request).
+TEST(UnorderedMapContract, AKeyTheCallerGivesUpIsFoldedInPlaceNotCopied) {
+    std::string       key(40, 'X'); // past every small-string capacity: the bytes live in a heap buffer
+    const char *const buffer = key.data();
+    const std::string folded = qb::string_to_lower::convert(std::move(key));
+    EXPECT_EQ(folded, std::string(40, 'x'));
+    EXPECT_EQ(folded.data(), buffer) << "the caller's buffer, folded and moved on, not a copy";
+
+    const std::string spelled(40, 'Y');
+    std::string       copied_from = spelled;
+    EXPECT_EQ(qb::string_to_lower::convert(copied_from), std::string(40, 'y'));
+    EXPECT_EQ(copied_from, spelled) << "an lvalue is converted into a copy and left as it was";
+
+    qb::icase_unordered_map<int> map;
+    std::string                  name(40, 'Z');
+    map[std::move(name)] = 1;
+    EXPECT_TRUE(map.has(std::string(40, 'z')));
+    EXPECT_TRUE(map.has(std::string(40, 'Z')));
+}
+
+// A LOOKUP never consumes its key, whatever its value category: the converting branch -- a base map without heterogeneous
+// lookup, here std::map with the non-transparent std::less<std::string> -- converts a const view of it, where forwarding the
+// key would have handed an rvalue to the overload above and left the caller's string moved from.
+TEST(UnorderedMapContract, ALookupLeavesTheKeyItWasGivenAsItWas) {
+    qb::icase_basic_map<std::map<std::string, int>> map;
+    map.emplace(std::string("Content-Type"), 1);
+    std::string probe = "CONTENT-TYPE";
+    EXPECT_NE(map.find(std::move(probe)), map.end());
+    EXPECT_EQ(probe, "CONTENT-TYPE") << "find() moved the caller's key into its conversion";
+    EXPECT_EQ(map.erase(std::move(probe)), 1u);
+    EXPECT_EQ(probe, "CONTENT-TYPE") << "erase(key) moved the caller's key into its conversion";
+}

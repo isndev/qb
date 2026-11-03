@@ -196,6 +196,17 @@ policy.
 
 ### Changed
 
+- **An icase map folds a key the caller gives up where it is, instead of copying it first (Huly QB-1216).**
+  `qb::string_to_lower::convert()` had overloads for a string literal, a `const std::string &` and a `std::string_view`, so
+  `emplace()`, `try_emplace()` and `operator[]` given an rvalue `std::string` copied it, folded the copy and dropped the
+  original -- one allocation a key past the small-string capacity (three a browser's HTTP/2 request in qbm-http). The new
+  `convert(std::string &&) noexcept` folds the string in place and returns it moved; an insert with an rvalue key takes it.
+  A lookup never consumes its key: the converting branch of a lookup (a base map without heterogeneous lookup; neither
+  shipped alias takes it) converts a const view of the key. Measured with qbm-http's HTTP/2 server moving the name (its own
+  commit): 3 allocations and ~620 instructions fewer a request; on its own over the shipped request path it reads +4.4..6.0 %
+  on g++ (more of the request's small allocations take glibc's slow path while two 4 KiB bodies keep `malloc_consolidate()`
+  running), and with qbm-http's lazy body (QB-1216) it reads 0.2..2.2 % faster on g++ and 4.0 % faster on MSVC 19.51.
+
 - **The select registration takes a node the caller owns: `channel<T>::register_select_waiter(select_entry
   &entry, channel_select_state &state, size_t idx)`, with `unregister_select_waiter(select_entry &entry)
   noexcept` as its counterpart (Huly QB-273).** The registration took a `std::shared_ptr<channel_select_state>`

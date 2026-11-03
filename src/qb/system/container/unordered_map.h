@@ -202,6 +202,22 @@ public:
     }
 
     /**
+     * @brief Converts a string the caller gives up to lowercase, in place
+     *
+     * The rvalue overload: a key moved into `emplace()`, `try_emplace()` or `operator[]` is folded where it
+     * is and moved on into the map, where the const overload copied it first -- one allocation a key past
+     * the small-string capacity (three a browser's HTTP/2 request, Huly QB-1216).
+     *
+     * @param str The input string, consumed
+     * @return std::string The same string, lowercased
+     */
+    [[nodiscard]] static std::string
+    convert(std::string &&str) noexcept {
+        fold(str.data(), str.data(), str.size());
+        return std::move(str);
+    }
+
+    /**
      * @brief Converts a string_view to lowercase
      *
      * @param str The input string_view
@@ -297,7 +313,7 @@ class icase_basic_map : _Map {
             }
             return op(_Trait::convert(raw));
         } else {
-            return op(_Trait::convert(std::forward<T>(key)));
+            return op(_Trait::convert(std::as_const(key))); // a lookup never consumes its key
         }
     }
 
