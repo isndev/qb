@@ -6,7 +6,7 @@
 #   1. Retired/forbidden tokens in documentation (e.g. qb::Timestamp).
 #   2. Broken internal Markdown links.
 #   2b. Cross-repo URLs naming a dead repository or a non-released git ref.
-#   3. Missing mandatory governance files.  5. A CHANGELOG [Unreleased] paragraph cut short, a headline twice.
+#   3. Missing mandatory governance files; and (section 5) a CHANGELOG [Unreleased] paragraph cut short.
 # Warns (does not fail) on:
 #   4. Narrative pages missing a "Verified-against" front-matter marker.
 #
