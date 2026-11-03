@@ -457,10 +457,19 @@ policy.
   whenever none is bound, through `CoroutineScheduler::current()`, which binds the loop's, instead of keeping one a
   reset may have destroyed -- and since that binds a scheduler on any thread, its debug cross-thread guard now checks
   that the calling thread runs the actor's `VirtualCore`. On a thread that pumps its loop the current scheduler is the
-  one a frame registered with: the waits' slow paths read one thread-local where they read a member
+  one a frame registered with: the waits' slow paths read it from a thread-local where they followed a member
   (`on_event_ready()`, `await_resume()`, the destructors, the watchdogs) and scan the thread's live schedulers, a
   handful, only when it is not; a scheduler's construction and destruction scan them too, and the teardown's drain
-  reads one more thread-local -- the untimed channel paths are untouched. The table holds 16 schedulers per thread:
+  reads one more thread-local. A parked timed wait pays more than that read: its wake resumes through
+  `schedule_via_current()` (out of line on g++ 14, where the cached scheduler's `schedule_resume()` was inlined into
+  the waker), and its awaiter's teardown asks `registration_scheduler()` first. Measured on an i9-12900K against the
+  code before it (Huly QB-1143, `qb-io-bench-channel-timed`, 3 physical copies a side, seeded order): 50 to 58
+  instructions more a parked timed message on g++ 14 (callgrind: `TimedOpsWonEarly/64` 1 094 -> 1 145,
+  `SendForAfterRecvForHistory/0` 2 011 -> 2 069), +0.5 to +1.9 % in time where two alignment families read it on
+  one side (+2.75 % in one family on one cell), level on MSVC 19.51 in three layouts; the paths that park on no timer
+  cost nothing, a try-send and try-receive executing the same 47.9 instructions a message and an untimed parked
+  hand-off 260.1 against 260.0.
+  The table holds 16 schedulers per thread:
   beyond that, an awaiter falls back on the current one, and a frame registered with one of the rest that is not
   current stays in its sets; and it is the thread's own, so a scheduler must die on the thread that built it. A handle
   `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Four limits remain, each
