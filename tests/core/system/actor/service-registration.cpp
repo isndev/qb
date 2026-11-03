@@ -42,6 +42,8 @@
 #include <qb/actor.h>
 #include <qb/main.h>
 
+#include "../../../io/shared/log_writer_drain.h"
+
 namespace service_registration_test {
 
 std::uint64_t
@@ -415,6 +417,10 @@ TEST(ServiceRegistrationDeathTest, ATagFirstRegisteredWhileACoreIsAliveIsRefused
     g_late_id.store(0);
     g_late_probe_id.store(0);
     g_late_ref_valid.store(true);
+    // EXPECT_DEBUG_DEATH forks only without NDEBUG.
+#ifndef NDEBUG
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's engines (Huly QB-1206)
+#endif
     // Debug: the refusal asserts, naming why. Release: the statement runs here, and the refusal is its result.
     EXPECT_DEBUG_DEATH(run_a_registration_on_a_live_core(), "registered while a VirtualCore is alive");
 #ifdef NDEBUG

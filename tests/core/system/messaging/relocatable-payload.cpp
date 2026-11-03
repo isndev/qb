@@ -74,6 +74,8 @@
 #include <qb/main.h>
 #include <qb/string.h>
 
+#include "../../../io/shared/log_writer_drain.h"
+
 namespace {
 
 constexpr const char *kShort = "short-sso"; ///< <= 15 chars: inside every SSO buffer.
@@ -128,21 +130,24 @@ public:
 [[nodiscard]] bool
 run(qb::CoreId sender_core, qb::CoreId receiver_core, std::chrono::seconds budget) {
     g_ok = g_bad = g_seen = 0;
-    auto done             = std::make_shared<std::promise<void>>();
-    auto future           = done->get_future();
-    std::thread([sender_core, receiver_core, done] {
-        qb::Main main;
-        auto     rcv = main.addActor<RelocRecv>(receiver_core);
-        main.addActor<RelocSend>(sender_core, rcv);
-        main.start();
-        main.join();
+    auto        done      = std::make_shared<std::promise<void>>();
+    auto        future    = done->get_future();
+    std::thread worker([sender_core, receiver_core, done] {
+        {
+            qb::Main main;
+            auto     rcv = main.addActor<RelocRecv>(receiver_core);
+            main.addActor<RelocSend>(sender_core, rcv);
+            main.start();
+            main.join();
+        } // destroyed inside the budget: a wedged teardown fails the deadline below, not the join after it
         done->set_value();
-    }).detach();
+    });
     if (future.wait_for(budget) != std::future_status::ready) {
-        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before the still-running worker can contaminate later cases";
         std::fflush(nullptr);
         std::_Exit(EXIT_FAILURE);
     }
+    worker.join(); // no thread of this case outlives it: a death test may fork next (Huly QB-1206)
     return true;
 }
 
@@ -266,22 +271,23 @@ namespace {
 /// tests fail loudly instead of passing on someone else's abort.
 constexpr const char *kGuardDiagnostic = "not trivially relocatable";
 
-/// Drive one whole `qb::Main` to completion on a detached thread and report whether it finished
+/// Drive one whole `qb::Main` to completion on its own thread and report whether it finished
 /// inside @p budget — same shape as `run()` above, so a wedged engine fails the test instead of
 /// hanging the ctest slot.
 [[nodiscard]] bool
 run_engine(void (*body)(), std::chrono::seconds budget) {
-    auto done   = std::make_shared<std::promise<void>>();
-    auto future = done->get_future();
-    std::thread([body, done] {
+    auto        done   = std::make_shared<std::promise<void>>();
+    auto        future = done->get_future();
+    std::thread worker([body, done] {
         body();
         done->set_value();
-    }).detach();
+    });
     if (future.wait_for(budget) != std::future_status::ready) {
-        ADD_FAILURE() << "engine deadline expired; stopping this test process before a detached worker can contaminate later cases";
+        ADD_FAILURE() << "engine deadline expired; stopping this test process before the still-running worker can contaminate later cases";
         std::fflush(nullptr);
         std::_Exit(EXIT_FAILURE);
     }
+    worker.join(); // no thread of this case outlives it: a death test may fork next (Huly QB-1206)
     return true;
 }
 
@@ -342,6 +348,7 @@ TEST(RelocatablePayloadDeathTest, SelfReferentialEventIsRejectedCrossCoreInDebug
     // The statement starts a whole engine, so the child must re-exec rather than fork a process
     // that already holds core threads.
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's engines (Huly QB-1206)
     EXPECT_DEATH(push_self_referential_cross_core(), kGuardDiagnostic)
         << "the debug relocation guard did not reject an event holding a cursor into its own storage: "
            "either it no longer runs on the cross-core path, or it no longer reports why";
@@ -407,6 +414,7 @@ TEST(RelocatablePayloadDeathTest, ShortStdStringEventIsRejectedWhereItIsUnsafe) 
                         "proves it does not false-positive on this very payload";
 
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's engines (Huly QB-1206)
     EXPECT_DEATH(push_short_std_string_cross_core(), kGuardDiagnostic)
         << "this stdlib's short std::string IS self-referential, so the guard must refuse to relocate "
            "it — otherwise the peer core frees a pointer that never came from the heap";
