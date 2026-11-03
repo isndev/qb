@@ -333,8 +333,10 @@ jobs:
       - name: Install dependencies
         run: ./scripts/ci-install-linux-dependencies.sh --profile build
 
-      # QUIC needs libngtcp2, which the build profile does not install. Requesting it therefore
-      # DEGRADES — the exact silent-downgrade shape QB_REQUIRE_FEATURES exists to stop.
+      # QUIC needs libngtcp2's OpenSSL helper, which the build profile asks for and the runner image's
+      # archive (Ubuntu 24.04 today) does not carry: it needs OpenSSL 3.5; the installed-quic-consumer
+      # job below runs on 26.04, which has it. Requesting QUIC here therefore DEGRADES — the exact
+      # silent-downgrade shape QB_REQUIRE_FEATURES exists to stop.
       - name: Control — the degradation is only a warning by default
         run: |
           set -euo pipefail
@@ -510,3 +512,58 @@ jobs:
             grep -Eq "(^|[[:space:]])${field}=[^[:space:]]" "$fp" \
               || { echo "::error::abi-fingerprint.txt field '${field}' is missing or empty"; exit 1; }
           done
+
+  # ── An installed QUIC qb consumed on Linux: the OpenSSL majors read on ELF (Huly QB-1219) ────
+  #
+  # An installed qb built with QUIC compares, at its consumer, the OpenSSL that libngtcp2_crypto_ossl
+  # links with the one the consumer links, and warns on two majors: they crash at the first QUIC
+  # handshake (QB-1183). Every job above installs qb without QUIC, so that reading -- `readelf -d`,
+  # then `objdump -p`, on ELF -- had run on macOS only (`otool -L`). Ubuntu 26.04's archive carries the
+  # helper: a container of that release builds and installs qb with QUIC required, then
+  # scripts/check-installed-quic-openssl.sh consumes the prefix in both senses -- the system's
+  # libngtcp2 and OpenSSL on one major: silent, read for real (readelf and its objdump fallback) and
+  # equal to readelf's own reading, built, run, the helper loaded and one libssl and one libcrypto
+  # major in `ldd`; each of the four libraries alone on the next major, and both of each side
+  # (stand-ins built in the job, ELF too): warned, naming each. The digest pins the base image; the
+  # packages are the archive's of the day.
+  installed-quic-consumer:
+    name: installed QUIC qb consumed on Linux (OpenSSL majors on ELF)
+    runs-on: ubuntu-latest
+    container:
+      # 26.04 by its index digest (Docker Hub, pushed 2026-10-27): the first LTS whose archive carries
+      # libngtcp2-crypto-ossl-dev.
+      image: ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      CMAKE_GENERATOR: Ninja # the script's consumers too: no make needed in the image
+    defaults:
+      run:
+        shell: bash # bash -eo pipefail: the default is bash -e without pipefail (sh where an image has no bash)
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies (gcc-14, libngtcp2 and its OpenSSL helper)
+        run: ./scripts/ci-install-linux-dependencies.sh --gcc-14 --quic
+
+      - name: The OpenSSL helper is there -- without it this job proves nothing
+        run: |
+          [ "${QB_CI_NGTCP2_CRYPTO_BACKEND:-}" = ossl ] \
+            || { echo "::error::libngtcp2's OpenSSL helper did not install (backend '${QB_CI_NGTCP2_CRYPTO_BACKEND:-}')"; exit 1; }
+
+      - name: Build and install qb with QUIC required
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-quic -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/_prefix_quic" \
+            -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
+            -DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON
+          cmake --build build-quic --parallel
+          cmake --install build-quic
+          grep -Eq '(^|[[:space:]])quic=(TRUE|ON|1)([[:space:]]|$)' "$GITHUB_WORKSPACE/_prefix_quic/share/qb/abi-fingerprint.txt" \
+            || { echo "::error::the installed qb records no QUIC"; cat "$GITHUB_WORKSPACE/_prefix_quic/share/qb/abi-fingerprint.txt"; exit 1; }
+
+      - name: The OpenSSL majors compared on ELF, in both senses
+        run: |
+          bash scripts/check-installed-quic-openssl.sh --prefix "$GITHUB_WORKSPACE/_prefix_quic" \
+            --work "$RUNNER_TEMP/quic-consumer"
