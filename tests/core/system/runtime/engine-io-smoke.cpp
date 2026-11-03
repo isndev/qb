@@ -22,9 +22,9 @@
  *     (`std::filesystem::temp_directory_path()`), never the CWD;
  *   - the directory is removed in TearDown, so the test leaves no artefacts;
  *   - nanolog is asynchronous, so before reading we FORCE A FLUSH by re-initialising
- *     the global logger to a throwaway temp path. `qb::io::log::init()` constructs the replacement
- *     logger and then destroys the previous one, whose destructor sets SHUTDOWN, joins its worker,
- *     and drains every queued line to disk — making the original file complete and readable.
+ *     the global logger to a throwaway temp path. `qb::io::log::init()` publishes the replacement
+ *     logger and then stops the previous one: SHUTDOWN, its worker joined after it drained every
+ *     queued line to disk, its file closed — making the original file complete and readable.
  *
  * Log-file naming: `qb::io::log::init("<base>")` rolls files as `<base>.1.log`, `<base>.2.log`, …
  * (see qb/src/qb/vendor/nanolog/nanolog.cpp roll_file()). We read `<base>.1.log`.
@@ -121,12 +121,12 @@ protected:
         std::filesystem::remove_all(_dir, ec);
     }
 
-    // Force nanolog to flush the active file: replacing the global logger destroys the previous
-    // one, whose destructor drains its queue to disk. Returns the path of the first rolled file.
+    // Force nanolog to flush the active file: replacing the global logger stops the previous
+    // one, which drains its queue to disk and closes its file. Returns the path of the first rolled file.
     [[nodiscard]] std::filesystem::path
     flush_and_first_log() const {
         const auto drain = (_dir / "drain").string();
-        qb::io::log::init(drain, 1); // destroys+drains the engine logger
+        qb::io::log::init(drain, 1); // stops+drains the engine logger
         return std::filesystem::path(_base.string() + ".1.log");
     }
 

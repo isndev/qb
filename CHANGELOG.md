@@ -333,6 +333,38 @@ policy.
 
 ### Fixed
 
+- **`qb::io::log::init()` can replace the logger while other threads log (Huly QB-1207).** `nanolog::initialize()`
+  destroyed the logger it replaced -- its writer thread, its queue and the queue's buffers -- and only then published
+  the new one. A thread that had read the old logger and was still inside its log statement pushed into the freed
+  queue (AddressSanitizer: a heap-use-after-free in `nanolog::Buffer::push`, the thread held there by the test hook;
+  UndefinedBehaviorSanitizer: a call through the destroyed logger's queue pointer, with a producer logging during
+  repeated replacements); two threads calling `init` at once reset one `std::unique_ptr` from both; and because the
+  old logger stayed published while it drained, every thread kept pushing into it, so `init` did not return while a
+  thread logged faster than the writer wrote -- one call took 2.2 s, returning only when its producer stopped.
+  `initialize()` now runs under a lock, publishes the new logger first, and then stops the old one: it drains what it
+  already holds -- every record up to the first one a thread is still writing -- and closes its file before `init`
+  returns, as before (given another path than the new one's). A replaced logger is never freed -- a thread can be
+  preempted inside a log statement for as long as it likes, and the path every log call takes pays nothing to say so
+  -- but kept with its queue (a guaranteed logger's 8 MiB buffer, touched where it was written, and its 128 KiB of
+  write flags) and taken back by a later `initialize()` for the same queue, the one stopped longest ago first: a
+  process holds at most two loggers per queue it asked for (the default logger and one `init` hold exactly two). The
+  records a replaced logger still held when it stopped -- the late one and those after it -- are written by that later
+  call, into its file, and lost if none comes. `nanolog::log_file_opened()` answers, on a thread that called
+  `initialize()`, for that thread's last call, so two `init` calls racing each other no longer report each other's
+  open. At exit the published logger is stopped and drained instead of destroyed -- unless another thread holds
+  nanolog's lock then, inside `init` or `log_file_opened()`, which leaves it running; with qb-io's statics in a
+  Windows DLL (qb-io built as one, or linked into one) nothing is drained, its writer thread gone by then, as before
+  -- so a static destructor that logs after it no longer writes into a destroyed logger; its line is dropped (a thread
+  that keeps logging faster than the writer still holds `exit` in that drain, as before). Two writer threads can now
+  format at once -- the replaced logger's last drain beside the new one -- so the timestamp is broken down by
+  `qb::safe_gmtime()` instead of `std::gmtime()`, whose result is one static object on glibc. The log call itself --
+  `NanoLog::operator==`, `NanoLogger::add()`, the queues' `push()` -- compiles to the same instructions. Witnessed in
+  `qb-io-test-unit-guaranteed-logger-buffer`: a thread held inside the replaced logger, a line logged while the
+  replaced logger drains (it went to the replaced logger, now to the new one), replacements from two threads under a
+  producer (every line written exactly once), a logger taken back reporting whether its new file opened, the logger
+  stopped longest ago taken back first, `log_file_opened()` answering for the calling thread (and on another thread
+  for the published logger, racing no `initialize()`), and a process exit after which a static destructor logs (a
+  "threadsafe" death test, which holds the writer until the exit drain and counts every line logged before `exit`).
 - **`coroutine_scope::join_any()` answers the task that completed first, not the lowest completed index
   (Huly QB-1217).** Its caller is woken through the ready queue, and `await_resume()` scanned the tasks in index
   order for one marked completed: a task that finished between that wake and the caller's resume -- a loaded

@@ -252,7 +252,10 @@ struct NonGuaranteedLogger {
 };
 
 /*
- * Provides a guarantee log lines will not be dropped.
+ * Provides a guarantee log lines will not be dropped -- qb fork (Huly QB-1207): with exceptions (see initialize()
+ * below): a record still being written when its logger is stopped (replaced, or at exit), and those after it, unless
+ * a later initialize() takes that logger back; a line logged after the exit drain; and what is queued or unflushed at
+ * exit when that drain is skipped.
  */
 struct GuaranteedLogger {};
 
@@ -265,6 +268,19 @@ struct GuaranteedLogger {};
  * /tmp/nanolog.2.txt
  * etc.
  * log_file_roll_size_mb - mega bytes after which we roll to next log file.
+ * qb fork (Huly QB-1207): initialize() may be called again, from any thread, while other threads log. It publishes
+ * the new logger first and then stops the one it replaces, which writes what it already holds -- every record up to
+ * the first one a thread is still writing -- and closes its file before initialize() returns. Give the new logger
+ * another path: the same path is truncated by the new file. A replaced logger is never freed -- a thread still
+ * inside a log statement may finish into it -- but kept, with its queue (a GuaranteedLogger's 8 MiB buffer, touched
+ * where it was written, and its 128 KiB of write flags, or a ring, all of it), and taken back by a later
+ * initialize() for the same queue (a GuaranteedLogger, or a ring of the same size), the one stopped longest ago
+ * first: a process holds at most two loggers per queue it asks for. The records it still held -- the late one and
+ * those after it -- are written by that later call, into its file, and lost if none comes. At exit the published
+ * logger is stopped the same way (unless another thread holds nanolog's lock then, inside initialize() or
+ * log_file_opened(); and with qb-io's statics in a Windows DLL -- qb-io built as one, or linked into one -- the
+ * writer thread is gone by then, so nothing is drained, as before), and a line logged after that is not written; a
+ * thread that keeps logging faster than the writer holds exit in that drain, as before.
  */
 void initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
@@ -272,7 +288,9 @@ void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_p
 /*
  * qb fork (Huly QB-327): whether the log file of the last initialize() -- its first roll, <log_file_path>.1.log, which
  * initialize() opens before it returns -- was OPENED. False before any initialize(). A file that cannot be opened (a
- * read-only directory, a directory of that name) leaves every line logged through it discarded.
+ * read-only directory, a directory of that name) leaves every line logged through it discarded. qb fork (Huly
+ * QB-1207): on a thread that called initialize(), the answer is that thread's last call, whatever another thread
+ * initialized since; on any other thread, the published logger's.
  */
 bool log_file_opened();
 
