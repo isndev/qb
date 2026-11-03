@@ -27,7 +27,9 @@
  *   - every half-open admission is numbered (`trial()`), and `on_abandoned(now, trial)` releases only
  *     the trial still in flight -- never a newer one, never on behalf of a closed-state call (QB-297);
  *   - a negative cooldown is clamped to zero (must NOT wrap to ~1.8e19 ns and never recover);
- *   - a zero `failure_threshold` is clamped to 1.
+ *   - a zero `failure_threshold` is clamped to 1;
+ *   - a reading older than the one its cooldown runs from counts as no time elapsed (must NOT wrap past the
+ *     cooldown and admit a trial at once: QB-1237).
  *
  * Strengthened over the original CircuitBreakerUnit suite: every transition now also asserts
  * `state()` AND `failure_count()` (not just one observable), and each `allow()` verdict is checked
@@ -38,6 +40,7 @@
  */
 
 #include <cstdint>
+#include <limits>
 
 #include <gtest/gtest.h>
 #include <qb/core/patterns.h>
@@ -324,4 +327,77 @@ TEST(CircuitBreaker, FullLifecycleRoundTrip) {
     EXPECT_FALSE(cb.allow(399 * MS));
     EXPECT_TRUE(cb.allow(400 * MS));
     EXPECT_EQ(cb.state(), State::half_open);
+}
+
+// ---------------------------------------------------------------------------
+// A reading older than the one its cooldown runs from (Huly QB-1237)
+// ---------------------------------------------------------------------------
+
+// One clock, read in another order: a reading taken before an `ask_guarded` whose timeout then opened the breaker
+// is older than the one `on_failure` stamped. The cooldown was `now - opened_at` on unsigned nanoseconds, so such a
+// reading wrapped to ~1.8e19 ns and admitted a half-open trial at once. A reading older than the one the cooldown runs
+// from -- whatever stamped it: the opening failure, a failed trial, an abandoned trial's release, a failure recorded
+// while open -- counts as no time elapsed.
+TEST(CircuitBreaker, AReadingOlderThanTheCooldownsStartCountsAsNoTimeElapsed) {
+    constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
+    qb::CircuitBreaker      cb(1, 10s);
+    cb.on_failure(1'000 * SEC); // opened at t = 1000 s
+    ASSERT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(1'000 * SEC - 1)) << "a reading one nanosecond older than the opening one wrapped past the cooldown";
+    EXPECT_FALSE(cb.allow(0)) << "the oldest reading wrapped past the cooldown";
+    EXPECT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(1'000 * SEC)) << "the opening reading itself: nothing elapsed";
+    EXPECT_FALSE(cb.allow(1'010 * SEC - 1)) << "a nanosecond short of the cooldown";
+    EXPECT_TRUE(cb.allow(1'010 * SEC)) << "a cooldown after the opening reading, the breaker admits its trial";
+    EXPECT_EQ(cb.state(), State::half_open);
+
+    // A failed trial re-arms the cooldown from its own reading: one older than it -- even one a whole cooldown
+    // after the first opening -- is no time elapsed either.
+    cb.on_failure(1'020 * SEC);
+    ASSERT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(1'015 * SEC)) << "older than the re-opening reading, past the first cooldown";
+    EXPECT_FALSE(cb.allow(1'030 * SEC - 1));
+    EXPECT_TRUE(cb.allow(1'030 * SEC));
+
+    // So does the release of an abandoned trial.
+    cb.on_abandoned(1'040 * SEC, cb.trial());
+    ASSERT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(1'035 * SEC)) << "older than the release's reading";
+    EXPECT_FALSE(cb.allow(1'050 * SEC - 1));
+    EXPECT_TRUE(cb.allow(1'050 * SEC));
+    EXPECT_EQ(cb.state(), State::half_open);
+
+    // A failure recorded while open -- a call admitted while closed whose verdict comes late -- re-arms it as well.
+    qb::CircuitBreaker late(1, 10s);
+    late.on_failure(100 * SEC);
+    late.on_failure(200 * SEC);
+    ASSERT_EQ(late.state(), State::open);
+    EXPECT_FALSE(late.allow(150 * SEC)) << "older than the re-arming reading, though past the opening one";
+    EXPECT_FALSE(late.allow(210 * SEC - 1));
+    EXPECT_TRUE(late.allow(210 * SEC));
+}
+
+// The saturation is exact: an older reading is zero elapsed, not one nanosecond. The smallest cooldown refuses it
+// and admits a nanosecond after the opening reading; a zero cooldown admits at once, whatever the reading. And the
+// distance is unsigned over the whole range of readings, never a signed difference.
+TEST(CircuitBreaker, AnOlderReadingIsZeroElapsedAtEveryEdge) {
+    qb::CircuitBreaker one_ns(1, qb::duration{1});
+    one_ns.on_failure(100 * MS);
+    EXPECT_FALSE(one_ns.allow(100 * MS - 1)) << "an older reading under a 1 ns cooldown";
+    EXPECT_FALSE(one_ns.allow(100 * MS)) << "the opening reading under a 1 ns cooldown";
+    EXPECT_TRUE(one_ns.allow(100 * MS + 1));
+
+    qb::CircuitBreaker zero(1, qb::duration::zero());
+    zero.on_failure(100 * MS);
+    EXPECT_TRUE(zero.allow(100 * MS - 1)) << "a zero cooldown has nothing to wait for, an older reading included";
+    EXPECT_EQ(zero.state(), State::half_open);
+
+    // Across the whole range: a distance of 2^63 ns or more is a distance, not a sign.
+    constexpr std::uint64_t LAST = (std::numeric_limits<std::uint64_t>::max)();
+    qb::CircuitBreaker      wide(1, 10s); // not `far`: <windows.h> defines it as an empty macro
+    wide.on_failure(0);
+    EXPECT_TRUE(wide.allow(LAST)) << "the newest reading after the oldest: the cooldown has passed";
+    qb::CircuitBreaker back(1, qb::duration{1});
+    back.on_failure(LAST);
+    EXPECT_FALSE(back.allow(5)) << "the oldest reading after the newest: no time elapsed";
 }

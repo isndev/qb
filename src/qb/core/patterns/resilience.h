@@ -140,7 +140,7 @@ public:
 
     /**
      * @brief Whether a call may proceed now; transitions open -> half-open after cooldown.
-     * @param now_ns Now on a monotonic clock in nanoseconds: one clock for every call on this breaker, never behind a reading it had.
+     * @param now_ns Now on one monotonic clock for every call on this breaker, in ns: one older than the cooldown's start is none elapsed.
      * @return `true` if the call may proceed (closed, or the single half-open trial); `false`
      *         to fail fast (open and still cooling down, or a half-open trial already in flight).
      * @details Half-open admits **exactly one** trial: the call that triggers the open->half-open
@@ -154,7 +154,7 @@ public:
     [[nodiscard]] bool
     allow(uint64_t now_ns) noexcept {
         if (_state == State::open) {
-            if (now_ns - _opened_at >= static_cast<uint64_t>(_cooldown.count())) {
+            if ((std::max) (now_ns, _opened_at) - _opened_at >= static_cast<uint64_t>(_cooldown.count())) {
                 _state = State::half_open; // admit exactly one trial
                 if (++_trial == 0)         // numbered for on_abandoned(now, trial); 0 means "no trial"
                     _trial = 1;

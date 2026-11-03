@@ -18,7 +18,8 @@
  * each by the step. Forward: an activation failed at once, a window forgot the restarts it held, a chain's budget was
  * spent, a limiter was refilled and a breaker's cooldown skipped. Back: an activation outlived its deadline, a window
  * held restarts past it, a budget outlived itself, a limiter stopped refilling until the time of day caught up, and a
- * breaker's cooldown ended at once (its unsigned `now - opened_at` wrapped).
+ * breaker's cooldown ended at once (its unsigned `now - opened_at` wrapped; since QB-1237 an older reading saturates at
+ * zero, and the step would hold the breaker open as long as it is instead).
  *
  * Here the time of day is INJECTED, never changed on the system: this binary defines the clock every `qb::wall_now()`
  * it links reads -- qb-core's included -- as the system's plus a step the test sets. Each case proves first that the
@@ -300,6 +301,8 @@ struct public_outcome {
     bool              timed_out = false; ///< ... threw `timeout_error`
     bool              refused   = false; ///< ... threw `circuit_open_error`
     bool              acquired  = false; ///< the limiter's acquire after the step returned within its budget
+    bool              admitted  = false; ///< the breaker's last `ask_guarded`, two cooldowns after the step, got its reply
+    bool              kept_shut = false; ///< ... threw `circuit_open_error`
 };
 
 /// One scenario, in one coroutine of its own actor: build the delay, step the time of day, wait on the monotonic clock,
@@ -373,8 +376,12 @@ public:
                 }
                 case public_case::breaker_forward:
                 case public_case::breaker_back: {
-                    // One failure opens it for 60 s: after the step, a call must still be refused.
-                    auto const breaker = std::make_shared<qb::CircuitBreaker>(1u, 60s);
+                    // One failure opens it, for 60 s forward and 2 s back: after the step, a call must still be refused;
+                    // back, a call two cooldowns later on the monotonic clock must be admitted -- the step neither cuts the
+                    // cooldown short nor stretches it. Back, the cooldown is long enough for the call 1 ms in to land inside
+                    // it on a loaded host, and short enough for the last one to land well inside the 30 s step.
+                    bool const fwd     = which == public_case::breaker_forward;
+                    auto const breaker = std::make_shared<qb::CircuitBreaker>(1u, fwd ? qb::duration{60s} : qb::duration{2s});
                     try {
                         (void) co_await qb::ask_guarded(c, breaker, silent, Probe{1}, 20ms);
                     } catch (qb::io::async::timeout_error const &) {
@@ -389,6 +396,16 @@ public:
                         out->refused = true;
                     } catch (qb::io::async::timeout_error const &) {
                         out->timed_out = true;
+                    }
+                    if (!fwd) {
+                        co_await c.sleep(4s); // twice the cooldown, on the monotonic clock
+                        try {
+                            (void) co_await qb::ask_guarded(c, breaker, fast, Probe{1}, 1s); // the half-open trial
+                            out->admitted = true;
+                        } catch (qb::circuit_open_error const &) {
+                            out->kept_shut = true;
+                        } catch (qb::io::async::timeout_error const &) {
+                        }
                     }
                     break;
                 }
@@ -513,13 +530,16 @@ TEST(DelayClock, ATimeOfDayStepForwardDoesNotCutABreakersCooldownShort) {
     EXPECT_TRUE(r->refused) << "a breaker open for 60 s admitted a call 1 ms in (answered: " << r->answered << ")";
 }
 
-TEST(DelayClock, ATimeOfDayStepBackDoesNotCutABreakersCooldownShort) {
-    // A breaker open for 60 s, 30 s back: measured on the time of day, `now - opened_at` wrapped and the cooldown ended.
+TEST(DelayClock, ATimeOfDayStepBackNeitherCutsNorStretchesABreakersCooldown) {
+    // A breaker open for 2 s, 30 s back. Measured on the time of day, `now - opened_at` wrapped and the cooldown ended
+    // at once; with an older reading saturated at zero (QB-1237), the step would hold it open 30 s longer instead.
     using namespace delay_clock_test;
     auto const r = public_delay_across_a_step(public_case::breaker_back, -30 * kSeconds);
     ASSERT_TRUE(r->ran);
     ASSERT_LT(r->landed, -15 * kSeconds) << "the injected step did not reach the core's ctx.time()";
-    EXPECT_TRUE(r->refused) << "a breaker open for 60 s admitted a call 1 ms in (answered: " << r->answered << ")";
+    EXPECT_TRUE(r->refused) << "a breaker open for 2 s admitted a call 1 ms in (answered: " << r->answered << ")";
+    EXPECT_TRUE(r->admitted) << (r->kept_shut ? "a breaker open for 2 s still refused a call 4 s later: the step back stretched its cooldown"
+                                              : "a breaker open for 2 s admitted a call 4 s later that never got its reply");
 }
 
 TEST(DelayClock, ACoreParksWhileAnActorIsActivating) {
