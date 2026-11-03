@@ -11,11 +11,12 @@
  * `abandoned_coroutine_frames_total()` -- the number this file reads back in both polarities.
  *
  * WHICH LIFECYCLE REACHES IT. The listener's own teardown (`~listener`, `reset_coro_scheduler()`)
- * runs `destroy_all_suspended()` BEFORE the destructor, so a frame parked on the listener's
- * scheduler is destroyed, not abandoned -- pinned here too, so the report is never mistaken
- * for that path. The abandon path is a `CoroutineScheduler` owned directly (the class is
- * public) and destroyed while a frame is still suspended on it: that is what the cases below
- * build, with `CoroutineScheduler::set_current()` naming it the thread's scheduler.
+ * runs `destroy_all_suspended()` BEFORE the destructor, so a frame the listener's scheduler owns
+ * (spawned) is destroyed, not abandoned -- pinned here too, so the report is never mistaken for that
+ * path; a frame a task driven by hand owns is left to that task, and dropped unreported (QB-1220).
+ * The abandon path is a `CoroutineScheduler` owned directly (the class is public) and destroyed
+ * while a frame is still suspended on it: that is what the cases below build, with
+ * `CoroutineScheduler::set_current()` naming it the thread's scheduler.
  *
  * The abandoned frame is NOT leaked by the test: the coroutine parks on an awaiter that registers
  * it as suspended (exactly what a watcher awaiter does) and the test keeps the `task` that owns
@@ -78,6 +79,19 @@ park_for_ever() {
 task<void>
 finish_at_once() {
     co_return;
+}
+
+task<void>
+sleep_for_ever() {
+    co_await sleep(5000ms);
+}
+
+/// Holds a task parked on a timer, then yields: spawned as is (no closure wrapper), its own frame is the one queued.
+task<void>
+hold_a_parked_task_then_yield() {
+    task<void> parked = sleep_for_ever();
+    parked.handle().resume(); // parks on its timer, registered with the current scheduler, owned by this frame
+    co_await sleep(0ms);      // back of the current scheduler's ready queue
 }
 
 class SchedulerAbandonedFrames : public ::testing::Test {
@@ -157,7 +171,7 @@ TEST_F(SchedulerAbandonedFrames, TheTallyAccumulatesAcrossTeardowns) {
 }
 
 /**
- * @test The listener's teardown DESTROYS a parked frame (`destroy_all_suspended` runs before the
+ * @test The listener's teardown DESTROYS a parked frame it owns (`destroy_all_suspended` runs before the
  *       destructor), so it reports nothing: the report is for a directly-owned scheduler, never
  *       for the lifecycle the framework drives itself.
  */
@@ -168,4 +182,33 @@ TEST_F(SchedulerAbandonedFrames, ListenerTeardownDestroysRatherThanAbandons) {
     EXPECT_EQ(coro_scheduler().active_count(), 1u);
     listener::current.reset_coro_scheduler(); // destroy_all_suspended, then ~CoroutineScheduler
     EXPECT_EQ(abandoned_coroutine_frames_total(), before) << "a frame the teardown destroyed is not an abandoned one";
+}
+
+/**
+ * @test A scheduler destroyed while ANOTHER one is current scrubs what its own frames leave behind: a spawned frame it
+ *       destroys at its teardown holds a task parked on a timer, registered with it, and that registration goes with the
+ *       task -- the teardown reports nothing (Huly QB-1220: the awaiter reaches the scheduler it registered with while
+ *       that one lives, and the teardown is the destroying scheduler that ~task scrubs).
+ */
+TEST_F(SchedulerAbandonedFrames, ATeardownWhileAnotherSchedulerIsCurrentLeavesNothingBehind) {
+    auto *const       listener_scheduler = &coro_scheduler();
+    const std::size_t before             = abandoned_coroutine_frames_total();
+    {
+        CoroutineScheduler sched;
+        {
+            struct rebind { // `sched` current while it runs, the listener's again however this block ends
+                ~rebind() {
+                    CoroutineScheduler::set_current(listener_scheduler_);
+                }
+                CoroutineScheduler *listener_scheduler_;
+            } const restore{listener_scheduler};
+            CoroutineScheduler::set_current(&sched);
+            sched.spawn(hold_a_parked_task_then_yield()); // owned by `sched`
+            sched.run_ready(1);                           // one resume: it runs to its yield, queued in `sched` again
+            ASSERT_EQ(sched.pending_count(), 1u);
+            ASSERT_EQ(sched.active_count(), 2u);
+        }
+    } // ~CoroutineScheduler: destroys the queued spawned frame, and with it the task parked on its timer
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), listener_scheduler);
+    EXPECT_EQ(abandoned_coroutine_frames_total(), before) << "the registration of a frame the teardown destroyed was left behind";
 }

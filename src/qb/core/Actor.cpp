@@ -789,17 +789,17 @@ Actor::__resolve_coro_scheduler__() const noexcept {
     if (likely(expected != nullptr)) {
         if (unlikely(coro_scheduler_ != expected))
             coro_scheduler_ = expected;
-    } else if (unlikely(!coro_scheduler_)) {
-        // Extremely rare: spawn called before any TLS scheduler exists on this thread.
-        coro_scheduler_ = &qb::io::async::listener::current.coro_scheduler();
+    } else {
+        // Extremely rare: no TLS scheduler on this thread yet, or a reset left none -- the cached one may be gone.
+        coro_scheduler_ = &qb::io::async::CoroutineScheduler::current(); // binds the loop's (Huly QB-1220)
     }
     // Finding 2.D.5: debug-only guard against cross-thread spawn. The actor system is
-    // strictly mono-thread per VirtualCore; spawning from another thread is UB. We
-    // cannot tell which VirtualCore owns this actor here, but we CAN verify a TLS
-    // scheduler exists on the caller thread, excluding unrelated std::thread contexts.
-    assert(qb::io::async::CoroutineScheduler::current_ptr() != nullptr
-           && "Actor::spawn_detached/spawn called from a thread without a coroutine "
-              "scheduler — are you calling this from outside the VirtualCore?");
+    // strictly mono-thread per VirtualCore; spawning from another thread is UB. The
+    // branch above binds a scheduler on any thread (Huly QB-1220), so the guard checks
+    // that the calling thread runs the VirtualCore this actor's id names.
+    assert(VirtualCore::_handler != nullptr && VirtualCore::_handler->getIndex() == id().index()
+           && "Actor::spawn_detached/spawn called off the actor's VirtualCore thread "
+              "— are you calling this from outside the VirtualCore?");
 }
 
 void

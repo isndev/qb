@@ -106,7 +106,7 @@ struct awaiter_base {
     bool resumed_{false};
 
     /**
-     * @brief Pointer to the scheduler
+     * @brief The scheduler current at the suspension; reached afterwards only while it lives (Huly QB-1220)
      */
     CoroutineScheduler *scheduler_ = nullptr;
 
@@ -190,11 +190,11 @@ struct awaiter_base {
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
      * of qb-io already does — see async/listener.h:1128, "every waker in qb-io defers through
-     * `schedule_via_current`". This one and the tcp connector's were the exceptions.
+     * `schedule_via_current`". This one was an exception; the tcp connector's still is (Huly QB-1234).
      *
-     * The cached pointer stays as the FALLBACK (and `unregister_suspended` still uses it, since
-     * that is where the handle was registered), so nothing regresses on the ordinary path where
-     * the two are the same object.
+     * The cached pointer is followed only while that scheduler lives (Huly QB-1220): a task driven by hand
+     * can keep this frame across `listener::reset_coro_scheduler()`, which destroys it. The unregistration
+     * and the teardown go through `registration_scheduler()`; the resume, through the CURRENT scheduler.
      */
     void
     on_event_ready() noexcept {
@@ -204,15 +204,15 @@ struct awaiter_base {
 
         // Unregister from suspended set before resuming
         if (scheduler_ && handle_) {
-            scheduler_->unregister_suspended(handle_);
+            unregister_suspended_from(scheduler_, handle_);
         }
 
 #ifdef QB_DEBUG_COROUTINES
         std::cerr << "[AWAITER] on_event_ready: scheduler=" << scheduler_ << " handle=" << handle_.address() << "\n";
 #endif
 
-        if (auto *target = CoroutineScheduler::current_ptr() ? CoroutineScheduler::current_ptr() : scheduler_; target && handle_) {
-            target->schedule_resume(handle_);
+        if (handle_) {
+            schedule_via_current(handle_); // the loop's scheduler, bound here if none is
         }
 #ifdef QB_DEBUG_COROUTINES
         else {
@@ -244,7 +244,7 @@ struct awaiter_base {
     void
     unregister_suspended() noexcept {
         if (scheduler_ && handle_) {
-            scheduler_->unregister_suspended(handle_);
+            unregister_suspended_from(scheduler_, handle_);
         }
     }
 
@@ -263,7 +263,7 @@ struct awaiter_base {
     void
     unschedule() noexcept {
         if (scheduler_ && handle_) {
-            scheduler_->forget(handle_);
+            forget_frame_from(scheduler_, handle_);
         }
     }
 
