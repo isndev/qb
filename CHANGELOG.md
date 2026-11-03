@@ -971,9 +971,9 @@ policy.
   written twice (Huly QB-1221).** qbm-http's `[Unreleased]` carried for four days an entry cut off on "(the", left
   beside the rewrite that replaced it, and every guard passed it. The script, shared by the four repositories and run
   by each `doc-lint.sh`, reads the section's entries and headlines as the superproject's release gate reads them to
-  write the release body. A paragraph ends at a blank line, a heading, a table, a block quote, an HTML comment that
-  opens a line or a list item, so an entry cut short and followed at once by the next one is caught too; its closed
-  comments set aside, it
+  write the release body. A paragraph ends at a blank line, a heading, a table, a block quote, a line an HTML comment
+  opens or a list item, so an entry cut short and followed at once by the next one is caught too; a comment closed
+  on its line set aside, it
   must end on a stop, on a `:` before what it introduces, or on a `;` that another item of its indented list
   follows. Every entry opens on `- ` and a headline that closes every bracket and its bold where it should, no text
   stands before a section's first entry, and no two headlines are the same. The shapes that end otherwise were
