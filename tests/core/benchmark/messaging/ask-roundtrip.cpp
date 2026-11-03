@@ -28,6 +28,9 @@
  *   - SERVICE-LOGICAL / SERVICE-INSTANCE — the same service and Trader on core 0. Only the
  *     captured destination differs: a stable logical address or the exact service incarnation.
  *     Every ask retains that destination; replies do not replace it with their source ID.
+ *   - ASK-BY SAME-CORE — the same-core round trip through `qb::ask_by(ctx, market, Ping{seq},
+ *     qb::deadline_in(ctx, 500ms))`: a deadline built and read back on every ask. An A/B of this cell
+ *     across builds prices the clock `deadline_in` and `remaining` read (since 3.4, Huly QB-1199).
  *
  * Latency hand-off: the trader owns a `shared_ptr<pg::latency>` captured into the coroutine; its
  * destructor publishes mean + sample count into the cross-thread sink via the shared
@@ -93,8 +96,9 @@ struct NoReplyCheck {};
 // just-completed frame un-drained at teardown — see the ask-roundtrip system test).
 struct AskBenchDone final : qb::Event {};
 
-// Drives `kBenchAsks` sequential asks at `_market`, sampling each round-trip into `_latency`.
-template <bool VerifyReplies>
+// Drives `kBenchAsks` sequential asks at `_market`, sampling each round-trip into `_latency`; `ByDeadline` asks through
+// `qb::ask_by` with a fresh `qb::deadline_in(ctx, 500ms)` instead of `qb::ask` with a 500 ms timeout.
+template <bool VerifyReplies, bool ByDeadline = false>
 class BenchTrader final : public qb::Actor {
     const qb::ActorId                                 _market;
     std::shared_ptr<pg::latency<1000 * 1000, 900000>> _latency;
@@ -122,8 +126,14 @@ public:
         spawn([mkt, lat, check](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             static_cast<void>(check);
             for (std::uint32_t i = 0; i < kBenchAsks; ++i) {
-                const auto t0 = std::chrono::steady_clock::now();
-                auto       r  = co_await qb::ask(ctx, mkt, Ping{static_cast<int>(i)}, 500ms);
+                const auto t0  = std::chrono::steady_clock::now();
+                auto const ask = [&] { // one form compiled per Trader: the plain cell's coroutine is the one it always was
+                    if constexpr (ByDeadline)
+                        return qb::ask_by(ctx, mkt, Ping{static_cast<int>(i)}, qb::deadline_in(ctx, 500ms));
+                    else
+                        return qb::ask(ctx, mkt, Ping{static_cast<int>(i)}, 500ms);
+                };
+                auto r = co_await ask();
                 lat->add(std::chrono::steady_clock::now() - t0);
                 benchmark::DoNotOptimize(r.response);
                 if constexpr (VerifyReplies) {
@@ -149,12 +159,12 @@ public:
     }
 };
 
-template <bool VerifyReplies>
+template <bool VerifyReplies, bool ByDeadline = false>
 bool
 build_ask_roundtrip(qb::Main &main, std::uint32_t const market_core, std::shared_ptr<pg::latency<1000 * 1000, 900000>> const &latency,
                     ReplyCheck *check) {
     auto const mkt    = main.addActor<Market>(market_core);
-    const auto trader = main.addActor<BenchTrader<VerifyReplies>>(0, mkt, latency, check);
+    const auto trader = main.addActor<BenchTrader<VerifyReplies, ByDeadline>>(0, mkt, latency, check);
     return mkt.is_valid() && trader.is_valid();
 }
 
@@ -257,6 +267,11 @@ BM_Ask_RoundTrip_SameCore(benchmark::State &state) {
 }
 
 void
+BM_AskBy_RoundTrip_SameCore(benchmark::State &state) {
+    run_ask_roundtrip(state, 0, build_ask_roundtrip<true, true>, build_ask_roundtrip<false, true>);
+}
+
+void
 BM_Ask_RoundTrip_CrossCore(benchmark::State &state) {
     const auto cap = qb::bench::cappedBenchmarkCores();
     if (cap < 2u) {
@@ -283,6 +298,7 @@ BM_Ask_RoundTrip_ServiceInstance_SameCore(benchmark::State &state) {
 using namespace ask_roundtrip_benchmark;
 
 BENCHMARK(BM_Ask_RoundTrip_SameCore)->Unit(benchmark::kMillisecond)->UseRealTime();
+BENCHMARK(BM_AskBy_RoundTrip_SameCore)->Unit(benchmark::kMillisecond)->UseRealTime();
 BENCHMARK(BM_Ask_RoundTrip_CrossCore)->Unit(benchmark::kMillisecond)->UseRealTime();
 BENCHMARK(BM_Ask_RoundTrip_ServiceLogical_SameCore)->Unit(benchmark::kMillisecond)->UseRealTime();
 BENCHMARK(BM_Ask_RoundTrip_ServiceInstance_SameCore)->Unit(benchmark::kMillisecond)->UseRealTime();
