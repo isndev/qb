@@ -978,7 +978,7 @@ policy.
   the file, is a finding. Every entry opens on `- ` and a headline that closes every bracket and its bold where it
   should, no text stands before a section's first entry, and no two headlines are the same. The shapes that end
   otherwise were listed from every section of the six CHANGELOGs: a table row, a link reference definition, a
-  thematic break, a fenced code block (and a line of HTML tags and elements with no text outside an element, or of
+  thematic break, a fenced code block (and a line of HTML tags and of elements that hold text but no tag, or of
   closed comments, which none of them holds). The six `[Unreleased]` sections pass; qbm-http's cut-off state
   (`e57ec4e^`) fails, at the cut.
 - **`scripts/cite-check.py` reads two citation shapes it skipped: a range a line opens with after a citation that

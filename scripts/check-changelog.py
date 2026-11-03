@@ -15,18 +15,18 @@ verify.sh all passed it (Huly QB-1221). The release body is generated from these
     `?` or `…`; on `:` only where what it introduces follows -- a table, a code block, a block quote, or an item or a
     paragraph deeper than the paragraph (indented past the item that opens it, or, in an entry's body, at least as
     deep as the body), which the next entry never is, and a break, a reference or a line of HTML between them
-    settles nothing; on `;` only inside an indented list, where another of its items follows, at any depth. What
-    ends otherwise and is no sentence was listed from every section of the six CHANGELOGs of the superproject (1 190
-    paragraphs on 2026-11-03, not one other ending): a table row, a link reference definition
-    (`[3.0.0]: https://...`), a thematic break (`---`), a fenced code block, read from its fence to the fence that
-    closes it -- and a line of HTML tags and elements with no text outside an element (`<br>`,
-    `<details><summary>More</summary>`) or of closed comments (`<!-- note -->`), which none of them holds, read with
-    its closed comments set aside. HTML comments are read no
-    further: a line that is only closed comments is a block of its own, which ends the paragraph before it and
-    settles nothing; one that opens a line with text after it ends the paragraph before it; one closed inside a line
-    is set aside; one over several lines is text, which a paragraph must end, and one that opens a line and closes
-    nowhere in the section is a finding, for it hides the rest of the file. No CHANGELOG writes a comment. A
-    paragraph whose last lines are such lines ends on the last line that is not;
+    settles nothing, the first line after them that is none of these does; on `;` only inside an indented list,
+    where another of its items follows, at any depth. What ends otherwise and is no sentence was listed from every
+    section of the six CHANGELOGs of the superproject (1 190 paragraphs on 2026-11-03, not one other ending): a
+    table row, a link reference definition (`[3.0.0]: https://...`), a thematic break (`---`), a fenced code block, read
+    from its fence to the fence that closes it -- and a line of HTML tags and of elements that hold text but no tag,
+    nothing between them (`<br>`, `<details><summary>More</summary>`), or of closed comments (`<!-- note -->`, `<!-->`),
+    which none of them holds, read with its closed comments set aside. HTML comments are read no further: a line that is
+    only closed comments is a block of its own, which ends the paragraph before it and settles nothing; one that opens a
+    line with text after it ends the paragraph before it; one closed inside a line is set aside; one over several lines
+    is text, which a paragraph must end, and one that opens a line and closes nowhere in the section is a finding, for
+    it hides the rest of the file. No CHANGELOG writes a comment. A paragraph whose last lines are such lines ends on
+    the last line that is not;
   * every entry opens on `- ` and a bold headline, as the release body lists it (one opened with `*`, `+` or a tab is
     folded into the entry before it), and none is cut off -- every bracket or parenthesis it opens is closed, past its
     code spans and escapes, no backtick is left open, and its `**` neither opens nor closes on a space nor closes
@@ -63,12 +63,13 @@ ORDERED = re.compile(r"[ \t]*(\d+)[.)][ \t]")
 TABLE = re.compile(r"[ \t]*\|")
 QUOTE = re.compile(r"[ \t]*>")
 EXEMPT = re.compile(r"[ \t]*(?:\|.*|\[[^\]]+\]:[ \t]+\S.*|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}"
-                    r"|(?:[ \t]*(?:<([A-Za-z][A-Za-z0-9-]*)[^<>]*>[^<>]*</\1[ \t]*>|<[^<>]*>))+[ \t]*)$")
+                    r"|(?:[ \t]*(?:<([A-Za-z][A-Za-z0-9-]*)[^<>]*>(?=[^<>]*[^<>\s])[^<>]*</\1[ \t]*>"
+                    r"|<[^<>]*>))+[ \t]*)$")  # an element holds text, or `<b></b>` would match two ways
 CLOSERS = r"[)\]*_~`\"'”’»]*$"
 ENDS, INTRODUCES, ENUMERATES = re.compile(r"[.!?…]" + CLOSERS), re.compile(r":" + CLOSERS), re.compile(r";" + CLOSERS)
 HEADLINE = re.compile(r"- \*\*(.+?)\*\*", re.S)
 CODE_SPAN = re.compile(r"(`+)(?:(?!\1).)+\1")
-LINE_COMMENT = re.compile(r"<!--.*?-->")
+LINE_COMMENT = re.compile(r"<!--(?:-?>|.*?-->)")  # `<!-->` and `<!--->` close where they open
 AFTER = re.compile(r"(?:(`+)(?:(?!\1).)+\1|_[^_\n]*_|\S)*")  # the word a bold runs into, spans whole
 
 
@@ -228,9 +229,9 @@ def check(path):
                             f"section: it hides the rest of the file")
         if comment and not bare.strip():
             continue                                     # a line of closed comments: a block of its own
-        if not block and not (EXEMPT.match(bare) and not TABLE.match(bare)):  # a break, a reference or a line of HTML
-            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else   # settles nothing
-                    "quote" if QUOTE.match(line) else "text", indent)
+        if not (EXEMPT.match(bare) and not TABLE.match(bare)):  # a break, a reference or a line of HTML settles
+            follows("heading" if heading else "item" if item else "table" if TABLE.match(line) else   # nothing; the
+                    "quote" if QUOTE.match(line) else "text", indent)                    # first other line does
         if heading:
             listing = None
             continue
