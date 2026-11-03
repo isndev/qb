@@ -178,15 +178,26 @@ fetched fallback: a fetched copy belongs to no export set, and installing its he
 ways out. `<prefix>/include` therefore contains exactly `qb` on every host.
 
 The install exports `qbConfig.cmake` and a `SameMajorVersion` version file. It also exports the
-bundled `FindArgon2` / `FindNgtcp2` modules **when, and only when, the corresponding feature was
-actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`, `FindNgtcp2.cmake` if
-`QB_HAS_QUIC` (`CMakeLists.txt:292-297`). They travel with the package because `qbConfig.cmake`
-calls `find_dependency(Argon2)` / `find_dependency(Ngtcp2)` by name and a consumer has no way to
-invent them; a build with those features off needs neither. With QUIC, the generated `qbConfig.cmake`
-also compares the OpenSSL the consumer's libngtcp2 links with the one the consumer links, as qb's own
-configure did, and warns on two majors -- they crash at the first QUIC handshake, and QUIC is compiled
-into the installed qb, so the consumer cannot turn it off: point `OPENSSL_ROOT_DIR` at libngtcp2's
-OpenSSL, and rebuild qb against it if that is another major (Huly QB-1183).
+bundled `FindArgon2` / `FindNgtcp2` / `FindZstd` / `FindBrotli` modules **when, and only when, the
+corresponding feature was actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`,
+`FindNgtcp2.cmake` if `QB_HAS_QUIC`, `FindZstd.cmake` and `FindBrotli.cmake` with their codecs
+(`CMakeLists.txt:353-368`). They travel with the package because `qbConfig.cmake` calls
+`find_dependency(Argon2)` / `find_dependency(Ngtcp2)` and the others by name and a consumer has no way
+to invent them; a build with those features off needs none. `qbFoundLibraries.cmake` travels always:
+with it `qbConfig.cmake` searches again, in the consumer's build directory, a library an update
+removed (a Homebrew cleanup removes the versioned keg pkg-config named), and makes each file a search
+found an input of the consumer's configure, so the next build finds the new version (with Xcode, whose
+build checks only the inputs that still exist, the next reconfigure does) instead of stopping for good
+on "missing and no known rule to make it" (an OpenSSL found again on another major than this qb's is
+taken as a fresh configure takes it, with `qbConfig.cmake`'s major-mismatch warning, not refused); a
+library lost and found nowhere else makes `find_package(qb)` report qb not found, naming it (Huly
+QB-1201). A path set by hand is kept as given, and so is one a configure with an earlier qb cached,
+which recorded nothing: reconfigure that build directory with `--fresh` once, or remove those entries
+(`cmake -U <entry> <build directory>`). With QUIC, the generated `qbConfig.cmake` also compares the
+OpenSSL the consumer's libngtcp2 links with the one the consumer links, as qb's own configure did, and
+warns on two majors -- they crash at the first QUIC handshake, and QUIC is compiled into the installed
+qb, so the consumer cannot turn it off: point `OPENSSL_ROOT_DIR` at libngtcp2's OpenSSL, and rebuild
+qb against it if that is another major (Huly QB-1183).
 
 ### What was this prefix built with?
 

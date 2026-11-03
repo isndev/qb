@@ -25,8 +25,10 @@
 # search again what the search itself found, and stop the configure when it is found nowhere else (Huly QB-1185 for
 # OpenSSL in qbOpenSSL.cmake, QB-1192 for the rest); _qb_find_argon2(), _qb_find_zlib(), _qb_find_zstd() and
 # _qb_find_brotli() are qbDependencies.cmake's find_package() calls for the other four. A file of its own so that a
-# fixture drives them with planted libraries (qb-io-test-unit-found-libraries); macros so that what they find stays in
-# the caller's scope. libngtcp2's search does the same inside FindNgtcp2.cmake, which an installed qb ships.
+# fixture drives them with planted libraries (qb-io-test-unit-found-libraries), and so that an installed qb ships it:
+# its qbConfig.cmake searches its consumer's libraries the same way (Huly QB-1201) -- which is why nothing here calls
+# qb's own helpers but qb_error_message(), which that consumer never reaches. Macros so that what they find stays in the
+# caller's scope. libngtcp2's search does the same inside FindNgtcp2.cmake, which an installed qb ships too.
 # -----------------------------------------------------------------------------
 
 # _qb_forget_vanished(<out_var> <entry>...) before a search, _qb_record_found(<entry>...) after it. A path the search
@@ -80,7 +82,7 @@ macro(_qb_forget_say var)
         math(EXPR _said "${_said} + 1")
         set(_said_${_said} "${${var}}")
     else()
-        qb_status_message("${${var}}")
+        message(STATUS "[qb] ${${var}}")
     endif()
 endmacro()
 function(_qb_forget_vanished out_var)
@@ -108,7 +110,7 @@ function(_qb_forget_vanished out_var)
                 _qb_forget_say(_text)
                 unset(${_entry} CACHE)
                 list(APPEND _forgotten "${_entry} (${_path})")
-            elseif(NOT "${_qb_kept_said_${_entry}}" STREQUAL "${_path}") # once per configure: two searches may ask
+            elseif(NOT "${_qb_kept_said_${_entry}}" STREQUAL "${_path}") # once per directory: two searches may ask
                 string(CONCAT _kept "${_entry} (${_path}) ${_kept}; this build directory's search did not find it (set "
                                     "by hand, by a parent project, or before qb recorded its searches): kept as given "
                                     "-- set it again, or configure with --fresh to search for it")
@@ -130,7 +132,7 @@ endfunction()
 macro(_qb_forget_tell out_var)
     if(${out_var}_said GREATER 0)
         foreach(_qb_tell RANGE 1 ${${out_var}_said})
-            qb_status_message("${${out_var}_said_${_qb_tell}}")
+            message(STATUS "[qb] ${${out_var}_said_${_qb_tell}}")
         endforeach()
     endif()
 endmacro()
@@ -145,11 +147,17 @@ function(_qb_record_found)
     endforeach()
 endfunction()
 
-# _qb_stop_if_gone(<forgotten> <what> <remedy>) -- after the search _qb_forget_vanished() asked for: what was searched
-# again and is not found now -- not one found again beside another missing -- stops the configure, naming each entry and
-# the path it had, then <remedy>. Whether to ask is the caller's: OpenSSL's search asks on the entries alone, whatever
-# OpenSSL_FOUND says (FindOpenSSL reports OpenSSL found without libssl); _qb_find_again() when its package is lost.
+# _qb_stop_if_gone(<forgotten> <what> <remedy> [<out_var>]) -- after the search _qb_forget_vanished() asked for: what
+# was searched again and is not found now -- not one found again beside another missing -- stops the configure, naming
+# each entry and the path it had, then <remedy>. Whether to ask is the caller's: OpenSSL's search asks on the entries
+# alone, whatever OpenSSL_FOUND says (FindOpenSSL reports OpenSSL found without libssl); _qb_find_again() when its
+# package is lost. With <out_var>, that text goes into it instead (empty when nothing stops): an installed qb's
+# qbConfig.cmake, whose find_package(qb) reports it as the reason qb is not found -- a stop of its own would end a
+# configure that asked for qb QUIET, without REQUIRED.
 function(_qb_stop_if_gone forgotten what remedy)
+    if(ARGC GREATER 3)
+        set(${ARGV3} "" PARENT_SCOPE)
+    endif()
     set(_gone "")
     foreach(_entry IN LISTS forgotten)
         string(REGEX MATCH "^[A-Z0-9_]+" _name "${_entry}")
@@ -162,12 +170,16 @@ function(_qb_stop_if_gone forgotten what remedy)
         # One string: qb_error_message() interpolates ${ARGN}, and several arguments come back joined by ";".
         string(CONCAT _gone "the ${what} this build directory found is gone and was found nowhere else -- ${_gone}: "
                             "${remedy}")
-        qb_error_message("${_gone}")
+        if(ARGC GREATER 3)
+            set(${ARGV3} "${_gone}" PARENT_SCOPE)
+        else()
+            qb_error_message("${_gone}")
+        endif()
     endif()
 endfunction()
 
 # _qb_find_again(<Package> <what> <remedy> ENTRIES <entry>... [PKG_CONFIG <prefix>...] [ARGS <argument>...]
-#                [FALLBACK <bool>]) --
+#                [FALLBACK <bool>] [REPORT <var>]) --
 # find_package(<Package> <argument>...) with the entries its search caches searched again when that search found them
 # and they are gone, pkg-config asked again with them (FindPkgConfig keeps its answer, which names the removed
 # directory, until __pkg_config_checked_<prefix> is gone). The configure stops when <Package> is not found now, this
@@ -185,9 +197,13 @@ endfunction()
 # whoever set it, at that price: OpenSSL's libssl, libcrypto and opensslv.h, and libngtcp2's crypto helper
 # (qbOpenSSL.cmake), whose majors decide whether a process loads two OpenSSL majors -- rebuilt onto another major, a
 # superbuild's own must be read again. A pure move -- a link the search found pointing at a new version -- keeps a valid
-# path, and the configure re-run it may cause changes nothing.
+# path, and the configure re-run it may cause changes nothing. With REPORT, the text that would stop the configure goes
+# into <var> instead, empty when nothing would (_qb_stop_if_gone()): an installed qb's qbConfig.cmake.
 macro(_qb_find_again package what remedy)
-    cmake_parse_arguments(_qb_again "" "FALLBACK" "ENTRIES;PKG_CONFIG;ARGS" ${ARGN})
+    cmake_parse_arguments(_qb_again "" "FALLBACK;REPORT" "ENTRIES;PKG_CONFIG;ARGS" ${ARGN})
+    if(_qb_again_REPORT)
+        set(${_qb_again_REPORT} "")
+    endif()
     if(CMAKE_DISABLE_FIND_PACKAGE_${package})
         find_package(${package} ${_qb_again_ARGS}) # turned off: nothing searched, so nothing searched again or said
     else()
@@ -207,7 +223,7 @@ macro(_qb_find_again_searched package what remedy)
     if(${package}_FOUND)
         set(_QB_HAD_${package} TRUE CACHE INTERNAL "")
     elseif("$CACHE{_QB_HAD_${package}}" AND NOT _qb_again_FALLBACK)
-        _qb_stop_if_gone("${_qb_again_forgot}" "${what}" "${remedy}")
+        _qb_stop_if_gone("${_qb_again_forgot}" "${what}" "${remedy}" ${_qb_again_REPORT})
     endif()
     _qb_found_inputs(${_qb_again_ENTRIES})
 endmacro()

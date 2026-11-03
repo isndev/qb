@@ -54,8 +54,10 @@ if(NOT _generated MATCHES "find_dependency\\(Ngtcp2\\)")
     message(FATAL_ERROR "installed-quic-openssl: the generated qbConfig.cmake has no QUIC block to test")
 endif()
 
-# The FindNgtcp2.cmake an install puts beside qbConfig.cmake: here its functions, and the readings planted for the case
-# (a real one reads them from libngtcp2_crypto_ossl, which no lane is guaranteed to have).
+# qbFoundLibraries.cmake, which an install puts beside qbConfig.cmake for its searches (Huly QB-1201), and the
+# FindNgtcp2.cmake it puts there: here its functions, and the readings planted for the case (a real one reads them from
+# libngtcp2_crypto_ossl, which no lane is guaranteed to have).
+file(COPY "${QB_CMAKE_MODULE_DIR}/qbFoundLibraries.cmake" DESTINATION "${WORK_DIR}/prefix/lib/cmake/qb")
 file(WRITE "${WORK_DIR}/prefix/lib/cmake/qb/FindNgtcp2.cmake"
      "set(NGTCP2_FIND_FUNCTIONS_ONLY ON)\ninclude(\"${QB_CMAKE_MODULE_DIR}/FindNgtcp2.cmake\")\n"
      "unset(NGTCP2_FIND_FUNCTIONS_ONLY)\nset(Ngtcp2_FOUND TRUE)\nset(NGTCP2_CRYPTO_OSSL_LIBRARY /planted/libngtcp2_crypto_ossl)\n"

@@ -350,10 +350,10 @@ if (QB_INSTALL)
     # a consumer's include root. The rule that used to do this is gone rather than disabled, which
     # is what makes the installed include root exactly `qb` on every host instead of host-dependent.
     #
-    # CMake exports the Argon2:: / Ngtcp2:: ad-hoc IMPORTED targets that qb::io links
-    # transitively BY NAME, with no recreation; a find_package(qb) consumer has no way to
-    # invent them, so the Find modules qbConfig.cmake.in calls travel with the package.
-    set(_qb_find_modules)
+    # CMake exports the Argon2:: / Ngtcp2:: ad-hoc IMPORTED targets that qb::io links transitively BY NAME,
+    # with no recreation; a find_package(qb) consumer has no way to invent them, so the Find modules
+    # qbConfig.cmake.in calls travel with the package -- and qbFoundLibraries.cmake, its searches' helpers.
+    set(_qb_find_modules "${QB_CMAKE_DIR}/qbFoundLibraries.cmake")
     if (QB_HAS_ARGON2)
         list(APPEND _qb_find_modules "${QB_CMAKE_DIR}/FindArgon2.cmake")
     endif ()

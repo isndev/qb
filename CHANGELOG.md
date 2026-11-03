@@ -739,6 +739,65 @@ policy.
   missed the planted OpenSSL: three cases failed) or a `CMAKE_TOOLCHAIN_FILE` (applied to every fixture build tree: a
   cross one failed both tests) no longer reaches either fixture. Suites as for QB-1190 above.
 
+- **An installed qb searches again, at its consumer, a library an update removed -- Argon2, zlib, zstd, brotli, OpenSSL
+  and libngtcp2 -- instead of leaving that consumer's build broken for good (Huly QB-1201).** QB-1192 did this for qb's
+  own build directory; the consumer of an installed qb has a build directory of its own, where the generated
+  `qbConfig.cmake` ran `find_dependency()` through the Find modules shipped beside it, and CMake's FindZLIB and
+  FindOpenSSL, with nothing of the kind. Measured on the base with copied Homebrew kegs (no brew run): a qb built
+  against them and installed, a consumer configured and built on it, then each keg upgraded and the old one removed --
+  the consumer's `cmake --build` stopped on "'.../Cellar/argon2/1/lib/libargon2.dylib', needed by 'consumer', missing
+  and no known rule to make it", and likewise for zstd, brotli, zlib, OpenSSL and libngtcp2; an explicit reconfigure
+  failed at generate ('Imported target "qb::core" includes non-existent path'; for OpenSSL, 'The link interface of
+  target "Ngtcp2::crypto_ossl" contains: OpenSSL::SSL but the target was not found'). libngtcp2's module did search its
+  own entries again (QB-1185), but nothing made its files inputs of the consumer's configure, so the build never re-ran
+  it. `cmake/qbFoundLibraries.cmake` is now installed beside `qbConfig.cmake`, always, and `qbConfig.cmake` runs the
+  same searches with it around each `find_dependency()`: in the consumer's build directory a path a search found is
+  recorded, searched again when its file is gone (pkg-config asked again), and each file a search produced is an input
+  of the configure, so the next `cmake --build` re-runs it, finds the new version and links it (not under Xcode, whose
+  build checks only the inputs that still exist: there, reconfigure; an OpenSSL found again on another major than the
+  one qb was built against is taken with the existing major-mismatch warning, as a fresh configure takes it: the base
+  stopped there until `--fresh`); libngtcp2's files its module recorded are inputs there too. A library that build
+  directory had, lost and found nowhere else, makes `find_package(qb)` report qb not found -- naming each entry still
+  missing and the way out, another copy of the library, its feature being compiled into qb -- as the reason given by the
+  package: a consumer that requires qb stops on it, one that asked without `REQUIRED` reads it and its configure goes on
+  -- under the name it asked for, `QB` too on a file system that ignores case; OpenSSL's search asks for libssl and
+  libcrypto both, so a libssl lost beside a libcrypto found elsewhere is a loss, not an OpenSSL found without the
+  library qb links -- unless the consumer made `OpenSSL::SSL` itself, when libcrypto is all qb needs (libssl still
+  searched again and an input, for a directory of the project without that target). A path set by hand or by a parent
+  project is kept as given and is no input, as in qb's own build for Argon2, zlib, zstd and brotli (qb's own OpenSSL
+  search makes OpenSSL's files inputs whoever set them; the consumer's does not, nor libngtcp2's helper set by hand, so
+  a superbuild that rebuilds one of those onto another major re-runs nothing), and so is a path a configure with an
+  earlier qb cached, which recorded nothing (`--fresh` once has it searched); a library the consumer found before it
+  asked for qb -- each imported target qb links of it exists (Brotli::Encoder and Brotli::Decoder, OpenSSL::SSL and
+  OpenSSL::Crypto) -- is left as it is, and of a pair it made half of, qb's search runs as for the whole (beside its
+  OpenSSL::SSL, needing libcrypto alone); a package never found fails as before; OpenSSL is not searched again on
+  Windows, as in qb's own build; libngtcp2's module searches its own entries whenever it runs. zlib is now searched
+  before OpenSSL there: FindOpenSSL searches zlib itself for a static OpenSSL that links it (CMake 3.26 and later), and
+  the first search decides; from a qb built without compression its entries are searched again around OpenSSL's search,
+  quietly, as qb's own configure does -- said and made inputs once OpenSSL is known to link it, recorded either way --
+  and that zlib lost and found nowhere else is reported, where the generate would fail on the `ZLIB::ZLIB` OpenSSL
+  links, naming neither. A package these searches -- the quiet probes too -- find is left marked for FeatureSummary as
+  `find_dependency()` leaves it: a dependency of qb's, unless the project found it itself first; the base's probes
+  marked Argon2, zstd, brotli and libngtcp2 the project's own, and `feature_summary()` listed them so. zlib beside a
+  static OpenSSL stays marked the project's own, as before: FindOpenSSL's own search of it marks it so. Where the
+  project made the imported target qb links itself, the quiet probe still runs before `find_dependency()`, as it did
+  before. The module path is saved where it was, just before qb puts its own directory there (a package's own files may
+  change it before), and is restored on every path this file decides, a reported loss included; the searches' variables
+  are unset before each `find_dependency()` that follows one, at the end and on a reported loss (a failing
+  `find_dependency()` still leaves `_IMPORT_PREFIX`, and the saved module path once it is saved -- Argon2, libngtcp2,
+  zstd, brotli --, as before). To serve both build directories, `qbFoundLibraries.cmake` prints through
+  `message(STATUS "[qb] ...")` rather than qb's own helper (the same output), `_qb_find_again()` takes `REPORT <var>`
+  and `_qb_stop_if_gone()` an out variable, which receive the text that stops qb's own configure. Every installed
+  `qbConfig.cmake` also carried `configure_package_config_file()`'s init block twice -- a comment named its token, which
+  was expanded too (harmless, the same values); the comment no longer does. The install docs now name `FindZstd.cmake`
+  and `FindBrotli.cmake` among the modules installed, which QB-79 added and they left out. Proved on macOS (CMake
+  4.4.5): red on the base for each of the six packages, on a real install over copied kegs;
+  `qb-io-test-unit-found-libraries` right at 101 configures and 104 builds (Ninja and Unix Makefiles); 56 mutants of the
+  template, the helpers and the test, planted in a copy after a green control: 55 caught, the survivor equivalent;
+  twelve independent review rounds on pristine snapshots, each fix reviewed in the next, the residuals filed (QB-1250 to
+  QB-1253, QB-1256, QB-1258, QB-1261); qb standalone Release 263 registered / 263 executed / 0 skipped, QUIC on; the
+  superproject's release build contracts 11 / 11 / 0.
+
 - **qb's test certificates are made by the openssl command of the OpenSSL qb found, not by whichever is first on PATH
   (Huly QB-1175).** The generator took `find_program(openssl)`: on the Mac where QB-1175 was found, qb built against
   openssl@4 4.1.0 while the command on PATH was openssl@3's 3.5.9 (and `/usr/bin/openssl` is LibreSSL 3.3.6), and the
