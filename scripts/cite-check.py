@@ -159,24 +159,23 @@ CONT_LEAD = ("`", "/", ",")
 #   `http.h:690-693 (Reply), 829-837`    a range after a parenthesised label, inside the code span of the reading
 #                                        before the label, bound to that reading, never to a path inside the label.
 #                                        Outside a code span a label is prose (`a.h:5 (the reply), 3 times`).
-# Each follows only a reading the two tools take alike: a prose citation whose comma list the sweep reads whole
-# (ANCHORED: no space before a comma, one at most after it, ASCII in its path), the comma tail after it, and these
-# two tails -- never a continuation (`:9`) nor what follows one. Its first range stands alone: a space, a comma, a
-# stop that ends a sentence, a closing mark or the end of the line follows it, so a path that opens with digits
-# (`02-messaging/x.cpp:5`), `64-bit` or `12:30` is no range, and a numbered list item (`9. item`, `9) item`,
-# `12. Then`) opens no wrapped tail. A range after the first is read as the sweep reads a comma tail, whole or not
-# at all: what may not follow it is a digit, a range sign before a digit, a `:`, a `.` that ends no sentence
-# (`12:30`, `3.2`, `9..10`). The two tails are matched on the line with its `src:` bodies blanked.
-_ALONE = r"(?=[\s,;)\]}>`'\"*_|<”’»]|\.(?:[\s)\]}>`'\"*_|<”’»]|$)|$)"
-_NUM = (r"\d+(?:-\d+)?(?!\d|-[-:]?\d|[‐-―−﹘﹣－]\d|…\d|:"
-        r"|\.(?![\s)\]}>`'\"*_|<”’»]|$))")
-_SPEC = r"\d+(?:-\d+)?" + _ALONE + r"(?:,\s?" + _NUM + r")*"
+# Each follows only a reading the two tools take alike: a prose citation whose path opens with a letter and whose
+# comma list the sweep reads whole (ANCHOR_PATH, ANCHORED: no space before a comma, one at most after it), the comma
+# tail after it, and these two tails -- never a continuation (`:9`) nor what follows one. Each of its ranges stands
+# alone: a space, a comma, a `;`, a stop that ends a sentence, a closing bracket or quote, a backtick or the end of
+# the line follows it -- so a path or a word that opens with digits (`02-messaging/x.cpp:5`, `30_seconds`, `90's`,
+# `64-bit`), a time (`12:30`), a version (`3.2`) or a fraction (`3/4`) is no range -- and a numbered list item
+# (`9. item`, `9) item`, `12. Then`) opens no wrapped tail. The two tails are matched on the line with its `src:`
+# bodies blanked.
+_ALONE = r"(?=[\s,;)\]}`\"”»]|\.(?:[\s)\]}`\"”»]|$)|$)"
+_RANGE = r"\d+(?:-\d+)?" + _ALONE
+_SPEC = _RANGE + r"(?:,\s?" + _RANGE + r")*"
 WRAPPED = re.compile(r"[ \t]*(" + _SPEC + r")")
 LIST_ITEM = re.compile(r"[ \t]*\d+[.)](?:\s|$)")
 TRAILING_COMMA = re.compile(r",\s*$")
 LABELLED = re.compile(r"[ \t]*\([^()`\n]*\)[ \t]*,\s?(" + _SPEC + r")")
-ANCHORED = re.compile(r"\d+(?:-\d+)?(?:,\s?" + _NUM + r")*")
-ANCHOR_PATH = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_./\-]*")
+ANCHORED = re.compile(r"\d+(?:-\d+)?(?:,\s?\d+(?:-\d+)?)*")
+ANCHOR_PATH = re.compile(r"[A-Za-z_][A-Za-z0-9_./\-]*")
 # CONFIDENCE CHECK.  A guard is worthless until it has been shown to fail, and a citation
 # parser fails SILENTLY: a shape it does not recognise reads as prose and is skipped, so the
 # run stays green over unchecked text.  So an extension OUTSIDE the allowlist whose basename
@@ -526,7 +525,7 @@ for md in doc_files():
                 continue                                 # a citation the sweep reads otherwise: no tail after it
             span = next(((a, b) for a, b in spans if a < start < b), None)
             m = LABELLED.match(bare, end) if span else None
-            while m and m.end() <= span[1]:              # a range after a label, in its span (QB-1222)
+            while m:                                     # a range after a label, in its span (QB-1222)
                 prose_seen += 1
                 check_tail(rel, ln, m.group(1), (path, kind, sizes, paths), "labelled")
                 reads.append((m.end(), path, kind, sizes, paths, True))
