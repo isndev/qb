@@ -30,6 +30,7 @@ Verified by grep across all six repositories, not by filename.
 |---|---|
 | `doc-lint.sh` | `.github/workflows/doc-lint.yml`; the superproject's `dev/agent/verify.sh`; humans (`CONTRIBUTING.md`, the PR template) |
 | `cite-check.py` | `doc-lint.sh` §1b |
+| `check-changelog.py` | `doc-lint.sh` §5; the superproject's `dev/agent/verify.sh`, for the CHANGELOGs of qb-examples and qev |
 | `llm-guard.py` | `doc-lint.sh` §1c |
 | `gen-llms-txt.py` | `doc-lint.sh` §1d |
 | `llm-guard.baseline`, `llm-cite-digest.baseline` | data for `llm-guard.py`; both are `paths:` triggers in `doc-lint.yml` |

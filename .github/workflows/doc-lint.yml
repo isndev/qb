@@ -17,6 +17,10 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
+      # The two shared scripts doc-lint.sh runs (sections 1b and 5): a change to either alone
+      # must run it too.
+      - 'scripts/cite-check.py'
+      - 'scripts/check-changelog.py'
       # The agent-facing llm/ docs moved into this repo, and scripts/llm-guard.py (driven
       # from doc-lint.sh section 1c) is the only guard that reads them in a STANDALONE
       # checkout -- the superproject that used to hold them is private, so without these
@@ -71,6 +75,10 @@ on:
       - 'CONTRIBUTING.md'
       - 'CODE_OF_CONDUCT.md'
       - 'scripts/doc-lint.sh'
+      # The two shared scripts doc-lint.sh runs (sections 1b and 5): a change to either alone
+      # must run it too.
+      - 'scripts/cite-check.py'
+      - 'scripts/check-changelog.py'
       # The agent-facing llm/ docs moved into this repo, and scripts/llm-guard.py (driven
       # from doc-lint.sh section 1c) is the only guard that reads them in a STANDALONE
       # checkout -- the superproject that used to hold them is private, so without these
