@@ -13,15 +13,20 @@
 # An entry matching nothing is reported as `baseline-stale` and FAILS, so this file cannot rot
 # into a blanket exemption.  Re-derive with: python3 scripts/llm-guard.py --no-baseline
 #
+# A note's coordinates are of two kinds. One that says where something IS is a coordinate of the
+# HEAD, and the superproject's citation sweep moves it with the lines, as it moves the key. One that
+# says where something WAS -- a RE-KEYED history -- is written `L<n>`, with the commit it was read at:
+# written `:<n>`, the next sweep rewrites it into a state it never described (Huly QB-1198).
+#
 # KNOWN LIMIT, stated because it has already cost something.  A key pins the citation against
 # the CITATION moving; it does not pin it against the SOURCE moving underneath a citation that
 # stays put.  Rule 2b (the digest) is what covers that — and it cannot key a citation whose
 # basename is ambiguous inside this repo, which is 8 of qb's 77 resolvable cited ranges.
-# `llm/qb.llm.md` cited `listener.h:1066-1072` for the run/run_once/run_until logic_error; the
-# throw had moved to :997 and the cited lines had become an unrelated comment about
+# `llm/qb.llm.md` cited `listener.h` L936-942 for the run/run_once/run_until logic_error; the
+# throw had moved to L989 and the cited lines had become an unrelated comment about
 # thread_local symbol tables, while the entry here still asserted ":940" and absorbed the
-# finding.  Corrected to :988-1001 when the docs moved into this repo.  When re-verifying an
+# finding.  Corrected to L980-993 when the docs moved into this repo.  When re-verifying an
 # entry, read the cited lines — do not trust the note.
 
-llm/qb.llm.md	listener.h:1556-1569	correct: `ensure_not_inside_ready_drain` is qb/src/qb/io/async/listener.h:1556-1569 and the std::logic_error for async::run/run_once/run_until inside a handler is thrown at :1557. The rule's inferred subject `run_sync` is only named in a neighbouring @note at :1173. RE-KEYED from :1016-1029 by the perf/park-in-ev-loop shift (listener::arm_wake/wake/run_once_for grew listener.h; before that from :988-1001 by perf/core-hot-path), then by the QB-182 / QB-191 / QB-190 / QB-253 shifts (:1142 -> :1171 -> :1263 -> :1420 -> :1435 -> :1444), then by Huly QB-257 (-> :1462 -> :1463); then by Huly QB-275 (-> :1471), QB-448 / QB-276 (-> :1552) and the exact QB-275 gate (-> :1556); re-read at the new coordinates each time, not offset -- and the three numbers in the first two sentences are re-read with the key, never swept.
-llm/qb.llm.md	ssl/context.h:157-157	correct: `class QB_API Context` is qb/src/qb/io/tcp/ssl/context.h:157. `SSL_CTX_free` is named in passing as the thing you must NOT call. RE-KEYED from :127-127 by the formatting sweep, which added one line above the class, then from :128-128 by Huly QB-83, which declared `OcspContext` above it; the declaration was re-read at the new coordinate each time, not offset.
+llm/qb.llm.md	listener.h:1556-1569	correct: `ensure_not_inside_ready_drain` is qb/src/qb/io/async/listener.h:1556-1569 and the std::logic_error for async::run/run_once/run_until inside a handler is thrown at :1565. The rule's inferred subject `run_sync` is only named in a neighbouring @note at :1181. RE-KEYED by every shift of listener.h since the docs moved here, the key's first line each time at the qb commit that moved it: L980 at the move (6e029127), L1008 (perf/core-hot-path, 61b0b4cf), L1133 (perf/park-in-ev-loop: listener::arm_wake/wake/run_once_for grew listener.h, 7761b0c5), L1162 (QB-182, 670e9433), L1254 (QB-191, 5f2d8537), L1353 (QB-190, b8d562f6), L1368 (QB-192, bf7effe8), L1377 (QB-253, 12adaf33), L1423 (the pass timing, 2c93c893), L1436 (T2, 0e818396), L1453, L1454 and L1455 (Huly QB-251 / QB-257, 1751bccf, e3e31b49, b272687a), L1463 (Huly QB-275, 0756fd72), L1544 (QB-448 / QB-276, 80de7337), L1548 (the exact QB-275 gate, 35f48a03), L1556 (Huly QB-1129 / QB-1131, 8ff79c9a); re-read at the new coordinates each time, not offset. The first two sentences are the present state, which a sweep moves with the key; the history is written `L<n>`, which no sweep reads -- written `:<n>` it was rewritten by four sweeps (Huly QB-1198).
+llm/qb.llm.md	ssl/context.h:157-157	correct: `class QB_API Context` is qb/src/qb/io/tcp/ssl/context.h:157. `SSL_CTX_free` is named in passing as the thing you must NOT call. RE-KEYED from L127 by the formatting sweep, which added one line above the class, then from L128 by Huly QB-83, which declared `OcspContext` above it; the declaration was re-read at the new coordinate each time, not offset.
