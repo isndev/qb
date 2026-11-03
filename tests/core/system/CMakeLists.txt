@@ -252,3 +252,13 @@ qb_add_test(MODULE qb-core TIER system NAME ask-self SOURCES coroutine/ask-self.
 # actor's own registry, a core without a registry is reported down instead of failing the scrape, a throwing source
 # is contained and counted, a reset source is gone, and a core with no registry refuses to scrape.
 qb_add_test(MODULE qb-core TIER system NAME metrics-scrape SOURCES engine/metrics-scrape.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore coroutine)
+# delay-clock pins the delays qb-core measures -- an activation deadline, a supervisor's restart window, a qb::deadline,
+# the clock ask_guarded and rate_limiter::acquire read -- to the monotonic clock (Huly QB-1199). It steps the time of day
+# by defining std::chrono::system_clock::now() in its own executable, which qb-core's qb::wall_now() calls bind to when
+# the standard library compiles now() out of line (libc++, a shared libstdc++) and qb-core is static, or shared on ELF
+# (the executable's definition interposes): not MSVC's STL (now() is header code), not a shared qb-core on Mach-O, not a
+# statically linked standard library (its chrono object defines now() beside the steady clock qb reads: a duplicate
+# definition at the link, not a silent pass -- flags a toolchain file or target_link_options adds are not seen here).
+if(NOT WIN32 AND NOT (APPLE AND QB_BUILD_SHARED_LIBS) AND NOT " ${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_CXX_FLAGS} " MATCHES "static-libstdc|static-libc\\+\\+| -static ")
+    qb_add_test(MODULE qb-core TIER system NAME delay-clock SOURCES engine/delay-clock.cpp DEPENDS ${PROJECT_NAME} LABELS init patterns)
+endif()

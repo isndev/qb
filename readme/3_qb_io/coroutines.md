@@ -798,12 +798,12 @@ public:
     void on(StartProcessing& req) {
         int      rid   = req.request_id;    // capture by VALUE only
         auto     data  = req.data;          // shared_ptr copy — the bytes are not copied
-        uint64_t start = time();
+        qb::mono_time start = qb::mono_now(); // elapsed time is monotonic: time() is a date
 
         spawn([rid, data, start](auto ctx) -> qb::io::async::task<void> {
             // Isolated context: NO access to actor members here.
             std::string result = co_await AsyncService::process_data(*data);
-            uint64_t    ns     = ctx.time() - start;
+            auto        ns     = static_cast<uint64_t>((qb::mono_now() - start).count());
             // `template` is required: ctx's type is dependent inside a generic lambda.
             ctx.template push<ProcessingComplete>(rid, std::move(result), ns);
         });

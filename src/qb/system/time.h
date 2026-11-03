@@ -1022,6 +1022,38 @@ mono_deadline_after(double const seconds) noexcept {
     return seconds > 0. ? mono_deadline_after(seconds, mono_now()) : mono_time::max();
 }
 
+// ---------------------------------------------------------------------------
+// A monotonic reading in nanoseconds (Huly QB-1199)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief `mono_now()` in nanoseconds since the monotonic clock's epoch: the unit qb-core keeps the delays it measures
+ *        itself in -- an activation's deadline, a supervisor's restart window -- which no step of the time of day moves.
+ *        `Actor::time()` stays a date, nanoseconds of the wall clock. Unlike a date, a reading means something only
+ *        against another reading of the same boot: the clock's epoch is unspecified.
+ */
+[[nodiscard]] inline std::uint64_t
+mono_nanos() noexcept {
+    return static_cast<std::uint64_t>(std::chrono::duration_cast<duration>(mono_now().time_since_epoch()).count());
+}
+
+/**
+ * @brief Whether `ns`, read as nanoseconds since the Unix epoch, falls within `within` -- ten years by default -- of the
+ *        time of day: how a debug build tells a date from a `mono_nanos()` reading (Huly QB-1199). The monotonic clock
+ *        counts from the boot on every supported system, decades away from the date: a deadline on it lands in the band
+ *        only for a budget of about 47 to 67 years less the uptime, and `duration::max()` centuries past it. A time of day
+ *        before 2001 is a clock never set (a board without its RTC, before NTP): it reads about the uptime, so it tells
+ *        nothing apart, and nothing is near it.
+ */
+[[nodiscard]] inline bool
+near_the_time_of_day(std::uint64_t const ns, duration const within = std::chrono::hours{24 * 3653}) noexcept {
+    const auto day = static_cast<std::uint64_t>(unix_nanos(wall_now()));
+    const auto w   = static_cast<std::uint64_t>(within.count());
+    if (day < 978'307'200'000'000'000u) // 2001-01-01T00:00:00Z
+        return false;
+    return ns > day ? ns - day < w : day - ns < w;
+}
+
 } // namespace detail
 
 } // namespace qb

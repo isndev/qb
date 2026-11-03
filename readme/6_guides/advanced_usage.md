@@ -258,14 +258,14 @@ void on(StartProcessing &req) {
     // Snapshot everything BEFORE the coroutine — capture by value only.
     int         req_id = req.request_id;
     std::string data   = req.data;
-    uint64_t    start  = time();           // VirtualCore time, nanoseconds
+    qb::mono_time start = qb::mono_now(); // elapsed time is monotonic: time() is a date
     qb::ActorId sender = req.getSource();
 
     spawn([req_id, data, start, sender](auto ctx)
                     -> qb::io::async::task<void> {
         // Isolated context: NO access to actor members here.
         std::string result = co_await AsyncService::process_data(data);
-        uint64_t    elapsed = ctx.time() - start;
+        auto elapsed = static_cast<uint64_t>((qb::mono_now() - start).count()); // nanoseconds
 
         // Only way back into the actor: an event via ctx.
         ctx.template push<ProcessingComplete>(req_id, result, elapsed);

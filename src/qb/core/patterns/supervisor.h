@@ -239,7 +239,7 @@ public:
     restarts_in_window() const noexcept {
         if (_window <= qb::duration::zero())
             return 0;
-        const auto  now    = time();
+        const auto  now    = qb::detail::mono_nanos();
         const auto  win_ns = static_cast<std::uint64_t>(_window.count());
         const auto  cutoff = now > win_ns ? now - win_ns : std::uint64_t{0};
         std::size_t n      = 0;
@@ -316,7 +316,7 @@ private:
     over_restart_limit() {
         if (_window <= qb::duration::zero())
             return _restarts >= _max_restarts; // cumulative (legacy)
-        const auto now    = time();
+        const auto now    = qb::detail::mono_nanos();
         const auto win_ns = static_cast<std::uint64_t>(_window.count());
         const auto cutoff = now > win_ns ? now - win_ns : std::uint64_t{0};
         while (!_restart_times.empty() && _restart_times.front() < cutoff)
@@ -331,7 +331,7 @@ private:
     record_restart() {
         ++_restarts;
         if (_max_restarts && _window > qb::duration::zero())
-            _restart_times.push_back(time());
+            _restart_times.push_back(qb::detail::mono_nanos());
     }
 
     // Restart slots [from, to). `down` already terminated, so it is not killed, only respawned.
@@ -354,7 +354,7 @@ private:
     unsigned                   _restarts = 0;
     std::vector<qb::ActorId>   _children;
     std::vector<std::uint64_t> _gen;
-    std::deque<std::uint64_t>  _restart_times; ///< restart timestamps (ns) for the sliding window.
+    std::deque<std::uint64_t>  _restart_times; ///< restart times for the sliding window (`qb::detail::mono_nanos()`).
 };
 
 /** @brief Alias for `Supervisor`. */

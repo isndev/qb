@@ -578,7 +578,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   does not convert and will not compile. _(patterns/request.h:317)_ When the request is built from
   a handful of values, use the **emplace** form `co_await qb::ask<E>(ctx, target, timeout, args...)`
   (`E` explicit; `ask_by<E>(ctx, target, dl, args...)` likewise): it constructs the event in the
-  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:350,425)_
+  pipe slot instead of copying a cache-line-aligned temporary three times. _(patterns/request.h:350,437)_
   The target may be the asker itself — a scatter over every core's registry includes its own: the actor's own
   handler answers the request (Huly QB-1100). Not from `onInit()`: a self-ask before `onInit()` completes throws
   `std::logic_error` at once, since the handlers run only afterwards.
@@ -780,7 +780,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   later one in that pass returns it, a pass nobody asks reads none — and a core with no registered callback skips the tick phase, so its `LoopEvent` does not ask either. Inside `onInit()` there is no pass yet (pass 0), so it is
   the instant the first actor on that core asked — a real epoch value, shared by every actor on that core. It was 0 there through
   3.0.0, which made `qb::deadline_in(context(), d)` inside `onInit()` land in 1970 and every `ask_by` on that chain
-  fail `timeout_error` without sending. For a
+  fail `timeout_error` without sending. No delay of qb-core reads it (3.4, Huly QB-1199): an async `onInit()`'s activation
+  deadline, a `Supervisor`'s restart window, a `qb::deadline` (`deadline_in`, `deadline_at`, `remaining`, `ask_by`) and the clock
+  `ask_guarded` / `rate_limiter::acquire(ctx)` hand their breaker and limiter are on `qb::mono_now()`, like the request deadlines. For a
   continuously-updating value use `qb::wall_now()` /
   `qb::unix_nanos(qb::wall_now())`. _(Actor.h:805-822; VirtualCore.h:1020-1032; VirtualCore.cpp:1650-1657)_
 - **`getCoreStats()` reads the CALLER's own core; a view across cores is asked for, never read.** It returns a copy of

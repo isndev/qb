@@ -134,7 +134,7 @@ TEST(InitClock, TimeIsARealInstantBeforeTheFirstLoopPass) {
     EXPECT_GE(g_async_after.load(), g_async_before.load());
 }
 
-/// Why this is not a cosmetic fix. `qb::deadline_in(ctx, d)` is ABSOLUTE — `ctx.time() + d` — and
+/// Why this was not a cosmetic fix. `qb::deadline_in(ctx, d)` was `ctx.time() + d` until 3.4 (Huly QB-1199) — and
 /// `qb::remaining(dl, ctx)` clamps to zero. Built from `onInit()` with a zero clock it evaluated to
 /// `0 + d`, an instant in 1970, so the first `qb::remaining()` taken once the loop was running
 /// returned ZERO and every `ask_by` on that chain failed `timeout_error` before sending anything.

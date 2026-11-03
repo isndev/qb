@@ -111,8 +111,8 @@ struct circuit_open_error : std::runtime_error {
  * @details
  * Trips **open** after `failure_threshold` consecutive failures, then fails fast for a `cooldown`
  * window; afterwards it admits a **half-open** trial — a success closes it, a failure re-opens it.
- * It is a plain single-thread state machine (no timer of its own): the caller drives it with the
- * `VirtualCore` timestamp (`ctx.time()`). Hold it by `std::shared_ptr` so a coroutine can capture
+ * It is a plain single-thread state machine (no timer of its own): the caller drives it with readings of a
+ * monotonic clock, the same one for every call (`ask_guarded`: `qb::mono_now()`'s). Hold it by `std::shared_ptr` so a coroutine can capture
  * it **by value** and outlive its actor — see `qb::ask_guarded`.
  * @note Half-open admits trial calls until the next result resolves the state; in a typical
  *       single-coroutine flow that is exactly one trial.
@@ -140,7 +140,7 @@ public:
 
     /**
      * @brief Whether a call may proceed now; transitions open -> half-open after cooldown.
-     * @param now_ns Current `VirtualCore` timestamp in nanoseconds (e.g. `ctx.time()`).
+     * @param now_ns Now on a monotonic clock in nanoseconds: one clock for every call on this breaker, never behind a reading it had.
      * @return `true` if the call may proceed (closed, or the single half-open trial); `false`
      *         to fail fast (open and still cooling down, or a half-open trial already in flight).
      * @details Half-open admits **exactly one** trial: the call that triggers the open->half-open
@@ -177,7 +177,7 @@ public:
     /**
      * @brief Record a failed call: open the breaker if the threshold is reached (or a half-open
      *        trial failed).
-     * @param now_ns Current `VirtualCore` timestamp in nanoseconds.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds.
      */
     void
     on_failure(uint64_t now_ns) noexcept {
@@ -190,7 +190,7 @@ public:
     /**
      * @brief Release a half-open trial that was abandoned without a verdict (e.g. its caller was
      *        killed mid-`ask`), re-arming the cooldown so a later call gets a fresh trial.
-     * @param now_ns Current `VirtualCore` timestamp in nanoseconds.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds.
      * @details Without this, a single-trial half-open whose trial is cancelled (no `on_success` /
      *          `on_failure`) would wedge the breaker rejecting every subsequent call. No-op unless
      *          half-open.
@@ -206,7 +206,7 @@ public:
     /**
      * @brief Release the half-open trial number `trial` abandoned without a verdict -- only if it is
      *        still the trial in flight.
-     * @param now_ns Timestamp the cooldown is re-armed from.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds: the cooldown is re-armed from it.
      * @param trial The `trial()` read right after the `allow()` that admitted the call; `0` for a call
      *        admitted while the breaker was closed, which holds no trial.
      * @details The plain `on_abandoned(now_ns)` releases WHATEVER trial is in flight, which is right
@@ -266,7 +266,7 @@ using circuit_breaker = CircuitBreaker;
  * Starts full with `capacity` tokens; one token regenerates every `per_token`. `acquire(ctx)`
  * consumes a token, **waiting** (cancellation-aware via `ctx.sleep`) when the bucket is empty;
  * `try_acquire(now_ns)` is the non-blocking probe. It is a plain single-thread state machine (no
- * timer of its own) driven by the `VirtualCore` clock (`ctx.time()` / `now_ns`). Hold it by
+ * timer of its own) driven by readings of a monotonic clock (`acquire(ctx)`: `qb::mono_now()`'s; `now_ns`). Hold it by
  * `std::shared_ptr` to share one limiter across coroutines that outlive their actor — like
  * `qb::CircuitBreaker`. Smooths bursts to a steady rate; pair with `ask_guarded` / `ask_retry`.
  * @code
@@ -290,7 +290,7 @@ public:
 
     /**
      * @brief Non-blocking: consume a token if one is available at `now_ns`.
-     * @param now_ns Current `VirtualCore` timestamp in nanoseconds (e.g. `ctx.time()`).
+     * @param now_ns Now on a monotonic clock, in nanoseconds -- the same clock for every call on this limiter (since 3.4).
      * @return `true` and consumes a token, or `false` if the bucket is empty.
      */
     [[nodiscard]] bool
@@ -305,12 +305,12 @@ public:
 
     /**
      * @brief Cancellation-aware: wait until a token is available, then consume it.
-     * @param ctx The coroutine context (its clock drives refill; its scope cancels the wait).
+     * @param ctx The coroutine context (its scope cancels the wait; `qb::mono_now()` drives the refill, since 3.4).
      * @throws qb::io::async::cancelled_error if the actor is killed while waiting.
      */
     [[nodiscard]] qb::io::async::task<void>
     acquire(qb::ScopedCoroContext ctx) {
-        while (!try_acquire(ctx.time())) {
+        while (!try_acquire(qb::detail::mono_nanos())) {
             const double deficit = 1.0 - _tokens; // fractional tokens still needed, in [0, 1)
             const auto   wait_ns = static_cast<qb::duration::rep>(deficit * _per_token_ns);
             co_await ctx.sleep(qb::duration{wait_ns > 0 ? wait_ns : static_cast<qb::duration::rep>(_per_token_ns)});
@@ -559,7 +559,7 @@ template <ask_event_type E>
 ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> breaker, qb::ActorId target, E req, qb::duration timeout) {
     qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its own alignment on clang < 22
     assert(breaker && "qb::ask_guarded requires a non-null CircuitBreaker");
-    const uint64_t admitted_at = ctx.time();
+    const uint64_t admitted_at = qb::detail::mono_nanos(); // the breaker's clock: monotonic (on ctx.time() until 3.4)
     if (!breaker->allow(admitted_at))
         throw qb::circuit_open_error{}; // fail fast — the request is never sent
     detail::breaker_trial_lease trial{*breaker, admitted_at};
@@ -573,13 +573,13 @@ ask_guarded(qb::ScopedCoroContext ctx, std::shared_ptr<qb::CircuitBreaker> break
     } catch (const qb::io::async::cancelled_error &) {
         // Actor killed — not a breaker failure: give back the trial this call holds, if any, so the
         // breaker is not wedged half-open; a future call re-arms after the cooldown.
-        trial.release(ctx.time());
+        trial.release(qb::detail::mono_nanos());
         throw;
     } catch (...) {
         failure = std::current_exception();
     }
     trial.verdict();
-    breaker->on_failure(ctx.time());
+    breaker->on_failure(qb::detail::mono_nanos());
     std::rethrow_exception(failure);
 }
 

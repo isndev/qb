@@ -105,12 +105,13 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
 | `qb::ask_operation<E>` | the exchange as an awaitable in the awaiting frame — `co_await` yields `E`; converts to `task<E>` (rvalue) | `request.h:110-179` |
 | `qb::ask<E>` (emplace) | `ask_emplace_operation<E, Args...> ask(ScopedCoroContext ctx, ActorId target, qb::duration timeout, Args... args)` — `E` explicit, the request is constructed in the pipe slot | `request.h:348-352` |
 | `qb::ask_emplace_operation<E, Args...>` | the emplace form's operation — holds the arguments, builds `E` in the slot at `await_suspend()` | `request.h:192-260` |
-| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:455-462` |
+| `qb::answer` | `void answer(Actor &self, E &e, Fn &&fn) noexcept(noexcept(fn(e)))` | `request.h:467-474` |
 | `qb::deadline` | `struct deadline { std::uint64_t at_ns{0}; }` | `request.h:362-364` |
-| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:373-377` |
-| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:380-384` |
-| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:408-416` |
-| `qb::ask_by<E>` (emplace) | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, deadline dl, Args... args)` | `request.h:423-430` |
+| `qb::deadline_at` | `deadline deadline_at(qb::mono_time when) noexcept` (since 3.4) | `request.h:378-382` |
+| `qb::deadline_in` | `deadline deadline_in(ScopedCoroContext ctx, qb::duration dur) noexcept` | `request.h:385-388` |
+| `qb::remaining` | `qb::duration remaining(deadline dl, ScopedCoroContext ctx) noexcept` | `request.h:391-396` |
+| `qb::ask_by` | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, E req, deadline dl)` | `request.h:420-428` |
+| `qb::ask_by<E>` (emplace) | `task<E> ask_by(ScopedCoroContext ctx, ActorId target, deadline dl, Args... args)` | `request.h:435-442` |
 
 - `ask` stamps a fresh correlation id, `push_to`s the request, and `co_await`s a single custom
   awaiter that handles correlation, timeout and cancel-on-kill with no detached helper
@@ -127,7 +128,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   caller's temporaries at a moment they may already be gone (`request.h:328-330`). Prefer it when
   the request is built from a handful of values; keep the by-value form for a request you already
   hold (retry loops, fan-out). `ask_by<E>(ctx, target, dl, args...)` is its deadline twin
-  (`request.h:423-430`).
+  (`request.h:435-442`).
   Every one of these pattern coroutines opens with `qb::io::async::pin_frame_copy(req)`: clang older than 22 lays
   a never-written by-value parameter out at the wrong alignment on x86-64 Linux and Intel macOS (LLVM
   issue 159571) — the shield, and the rule for a coroutine of your own, are in
@@ -145,13 +146,18 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   type being exactly `task<E>`: a concept written that way silently selects a fallback.
 - `answer` is the responder helper. It first calls `self.resolve_ask(e)` (routing any reply to one of
   the responder's own pending asks, or discarding an obsolete own response, returning early in both cases), then sets `e.response = fn(e)` and
-  `reply()`s the same event back, preserving the correlation id (`request.h:455-462`). **`fn` must
+  `reply()`s the same event back, preserving the correlation id (`request.h:467-474`). **`fn` must
   not throw** — a throwing handler terminates the worker core; carry failure in the response payload
-  instead (`request.h:447-454`).
-- `deadline` is an **absolute** completion time (epoch nanoseconds). Thread one `deadline` through a
+  instead (`request.h:459-466`).
+- `deadline` is an **absolute** completion time on the monotonic clock: `at_ns` counts `qb::mono_now()`'s nanoseconds (since 3.4, Huly
+  QB-1199; it was a date, and a step of the time of day spent or extended the budget). Build it with `deadline_in(ctx, d)` or
+  `deadline_at(when)`, never `at_ns` from a date: that lies decades ahead and never expires (a debug build asserts on an
+  `at_ns` within ten years of the time of day; the "no deadline" spellings `deadline_in(ctx, duration::max())` and
+  `deadline_at(mono_time::max())` pass). It is an instant of this boot: to hand a budget to another process or
+  host, send what is left (`remaining`) and rebuild it there. Thread one `deadline` through a
   chain of `ask_by` calls to bound the *whole* chain end-to-end; each hop gets only the time the
-  previous hop left (`request.h:355-364`, `:386-416`). `ask_by` throws `timeout_error` immediately,
-  sending nothing, if the budget is already spent (`request.h:410-415`).
+  previous hop left (`request.h:355-364`, `:398-428`). `ask_by` throws `timeout_error` immediately,
+  sending nothing, if the budget is already spent (`request.h:422-427`).
 
 The asker routes replies by calling `resolve_ask(e)` in its own `on(E&)` handler
 (`qb/src/qb/core/Actor.h:1584-1607`); one actor can both ask and answer the same event type
@@ -215,7 +221,7 @@ spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 ```cpp
 spawn([fast](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
     const auto dl = qb::deadline_in(c, 100ms);            // whole budget
-    // remaining(dl, c) reads back exactly 100'000'000 ns in the same loop pass.
+    // remaining(dl, c) reads back exactly 100'000'000 ns in the same loop pass (one monotonic sample a pass).
 
     try {                                                  // already-spent budget → fail fast
         (void) co_await qb::ask_by(c, fast, Probe{5}, qb::deadline{0});
@@ -248,7 +254,7 @@ sequenceDiagram
     Reg-->>Co: resume → returns filled E
     Note over Co: timeout → timeout_error · kill → cancelled_error
 ```
-<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,455-462 and qb/src/qb/core/Actor.h:1584-1607 -->
+<!-- Reflects qb/src/qb/core/patterns/request.h:315-319,467-474 and qb/src/qb/core/Actor.h:1584-1607 -->
 
 ---
 
@@ -452,8 +458,9 @@ breaker, throttle with a token bucket, and isolate with a concurrency bulkhead.
   cancellation-aware (`ctx.sleep`). Throws `timeout_error` after `max_attempts` tries
   (`resilience.h:38-60`, `:446-485`). `jitter` in `[0,1]` draws the actual wait uniformly from
   `[backoff*(1-jitter), backoff]` to desynchronize retry storms (`resilience.h:51-59`).
-- **`CircuitBreaker`** is a timer-less single-thread state machine the caller drives with
-  `ctx.time()`. It trips **open** after `failure_threshold` consecutive failures, fails fast during
+- **`CircuitBreaker`** is a timer-less single-thread state machine the caller drives with readings of a
+  monotonic clock, the same one for every call -- `ask_guarded` passes `qb::mono_now()`'s nanoseconds (since 3.4,
+  Huly QB-1199; on `ctx.time()` a step of the time of day skipped the cooldown, a step back by unsigned wrap). It trips **open** after `failure_threshold` consecutive failures, fails fast during
   `cooldown`, then admits exactly **one** half-open trial; a success closes it, a failure re-opens it
   (`resilience.h:107-168`). `on_abandoned` releases a half-open trial that ended without a verdict so
   the breaker is not wedged (`resilience.h:190-204`). Every half-open admission is numbered
@@ -470,7 +477,8 @@ breaker, throttle with a token bucket, and isolate with a concurrency bulkhead.
   lease `:498-531`; Huly QB-297).
 - **`rate_limiter`** is a token bucket: starts full with `capacity` tokens, regenerates one every
   `per_token`. `acquire(ctx)` waits (cancellation-aware) when empty; `try_acquire(now_ns)` is the
-  non-blocking probe (`resilience.h:261-346`).
+  non-blocking probe (`resilience.h:261-346`). Both run on a monotonic clock: `acquire(ctx)` reads `qb::mono_now()`
+  (since 3.4, Huly QB-1199; on `ctx.time()` a step back stopped the refill until the time of day caught up).
 - **`bulkhead`** caps concurrent operations. `enter(ctx)` returns an RAII `slot` that frees the
   permit on scope exit, waiting (cancellation-aware) when full; `try_enter` is non-blocking. Built on
   the cancel-aware `semaphore`, so a killed actor parked on a full bulkhead unwinds without leaking a
@@ -922,8 +930,8 @@ qb::io::async::task<bool> onInit() override {
 
 | Goal | Pattern | Entry point |
 |---|---|---|
-| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:317,457`) |
-| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:410,362`) |
+| One typed round-trip to one actor | request/reply | `qb::ask` + `qb::answer` (`request.h:317,469`) |
+| Bound the total latency of a request chain | request/reply | `qb::ask_by` + `qb::deadline` (`request.h:422,362`) |
 | Ask many, need every reply | scatter-gather | `qb::ask_all` (`scatter.h:59`) |
 | Ask many, fan out without overwhelming a downstream | scatter-gather | `qb::ask_all(…, max_in_flight)` (`scatter.h:113`) |
 | Ask many, fastest reply wins (hedged) | scatter-gather | `qb::ask_any` (`scatter.h:143`) |
@@ -949,7 +957,7 @@ qb::io::async::task<bool> onInit() override {
 
 - **`answer`'s `fn` must not throw.** A throwing actor handler terminates the worker core; there is no
   per-event exception containment on the steady-state dispatch path. Validate before `answer`, or
-  carry failure in the response payload (`request.h:447-454`).
+  carry failure in the response payload (`request.h:459-466`).
 - **Capture by value, never `this`.** The scope token bounds a coroutine's lifetime but does not make
   actor-member access legal after a `co_await` (`qb/src/qb/core/Actor.h:1512-1514`). The
   long-lived resilience helpers (`CircuitBreaker`, `rate_limiter`, `bulkhead`) are held by

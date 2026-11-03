@@ -354,33 +354,45 @@ ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeout, Args...
 /**
  * @struct deadline
  * @ingroup Patterns
- * @brief An **absolute** completion time (UNIX-epoch nanoseconds) shared across an ask chain.
- * @details Propagating one `deadline` down a sequence of `ask_by` calls bounds the *total* time of
- *          the whole chain — unlike a per-`ask` relative `timeout`, which resets at each hop. Build
- *          it with `qb::deadline_in(ctx, dur)`; query the time left with `qb::remaining(dl, ctx)`.
+ * @brief An **absolute** completion time on the monotonic clock, shared across an ask chain.
+ * @details Propagating one `deadline` down a sequence of `ask_by` calls bounds the *total* time of the chain — unlike a
+ *          per-`ask` relative `timeout`, which resets at each hop; no step of the time of day moves it. Build it with
+ *          `qb::deadline_in(ctx, dur)` or `qb::deadline_at(when)`; query the time left with `qb::remaining(dl, ctx)`.
  */
 struct deadline {
-    std::uint64_t at_ns{0}; ///< absolute deadline, in nanoseconds since the epoch (cf. `Actor::time()`).
+    std::uint64_t at_ns{0}; ///< `qb::mono_now()` in nanoseconds since its epoch; 0 is past. Until 3.4 a date (Huly QB-1199).
 };
 
-/** @brief A `deadline` `dur` from now (using the context's cached `VirtualCore` clock).
- *  @note It is an ABSOLUTE instant, so it inherits whatever `ctx.time()` reads at the moment you build it. Through 3.0.0
- *        that was **0 inside `onInit()`** (the field is refreshed by the loop, and `onInit()` runs before the first pass),
- *        which made a deadline built there land in 1970: MEASURED `dl.at_ns = 500000000` for a `500ms` budget, and the
- *        first `remaining()` taken once the loop was running returned **0 ns**, so every `ask_by` on that chain threw
- *        `timeout_error` without sending anything. `time()` is now sampled on demand, `onInit()` being pass 0 like any
- *        other (`VirtualCore::time()`); pinned by `InitClock.ADeadlineBuiltInOnInitIsNotAlreadyExpired`. */
+namespace detail {
+/// A deadline's `at_ns`, once a debug build has checked it is no date (Huly QB-1199) where one comes in from outside --
+/// `deadline_at`, `remaining`; `deadline_in`'s is the uptime plus a budget. A date lies within ten years of the time of day
+/// (`near_the_time_of_day`), no monotonic deadline does; `duration::max()`, `mono_time::max()` land centuries past. Free in release.
+[[nodiscard]] inline std::uint64_t
+monotonic_at(std::uint64_t const ns) noexcept {
+    assert(!near_the_time_of_day(ns)
+           && "qb::deadline: at_ns looks like a wall-clock epoch value: build the deadline with deadline_in/deadline_at from qb::mono_now()");
+    return ns;
+}
+} // namespace detail
+
+/// The `deadline` at `when` on the monotonic clock: build one from an instant this way, never `at_ns` by hand (since 3.4).
 [[nodiscard]] inline deadline
-deadline_in(qb::ScopedCoroContext ctx, qb::duration dur) noexcept {
-    const auto add = dur.count() > 0 ? static_cast<std::uint64_t>(dur.count()) : std::uint64_t{0};
-    return deadline{ctx.time() + add};
+deadline_at(qb::mono_time const when) noexcept {
+    return deadline{detail::monotonic_at(static_cast<std::uint64_t>((std::max) (qb::duration{when.time_since_epoch()}, {}).count()))};
 }
 
-/** @brief Time left until `dl` (clamped to zero — never negative). */
+/** @brief A `deadline` `dur` from now on the monotonic clock, as the core sampled it this pass (on `ctx.time()` until 3.4). */
+[[nodiscard]] inline deadline
+deadline_in([[maybe_unused]] qb::ScopedCoroContext ctx, qb::duration dur) noexcept {
+    return deadline{qb::detail::pass_mono_nanos() + (dur.count() > 0 ? static_cast<std::uint64_t>(dur.count()) : 0u)}; // never a date: no check
+}
+
+/** @brief Time left until `dl` on the core's monotonic sample of this pass (clamped to zero — never negative). */
 [[nodiscard]] inline qb::duration
-remaining(deadline dl, qb::ScopedCoroContext ctx) noexcept {
-    const auto now = ctx.time();
-    return dl.at_ns > now ? qb::duration{static_cast<qb::duration::rep>(dl.at_ns - now)} : qb::duration::zero();
+remaining(deadline dl, [[maybe_unused]] qb::ScopedCoroContext ctx) noexcept {
+    const auto now = qb::detail::pass_mono_nanos();
+    const auto at  = detail::monotonic_at(dl.at_ns); // a deadline built by hand is checked here
+    return at > now ? qb::duration{static_cast<qb::duration::rep>((std::min) (at - now, std::uint64_t{INT64_MAX}))} : qb::duration::zero();
 }
 
 /**

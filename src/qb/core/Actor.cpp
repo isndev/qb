@@ -1046,3 +1046,16 @@ qb::operator<<(std::ostream &os, qb::Actor const &actor) {
     os << "Actor[" << actor.getName() << "](" << actor.id().index() << "." << actor.id().sid() << "@" << actor.id().generation() << ")";
     return os;
 }
+
+// The pass's monotonic sample (Huly QB-1199), here at the tail so that it moves no line of this file. It is what
+// `VirtualCore::time()` is to the date: building a deadline and reading it back in one pass cost one clock read, as they
+// did on the date -- read on each call, an `ask_by` of a fresh deadline paid two (+14 ns on the M4, 12.6 %).
+std::uint64_t
+qb::detail::pass_mono_nanos() noexcept {
+    VirtualCore const &core = *VirtualCore::_handler;
+    if (unlikely(core._mono_sample_pass != core._loop_count)) {
+        core._mono_sample      = qb::detail::mono_nanos();
+        core._mono_sample_pass = core._loop_count;
+    }
+    return core._mono_sample;
+}
