@@ -56,7 +56,7 @@ on:
       - 'script/**'
       # Deliberately NOT 'examples/**': the 112 examples/ citation tokens name the
       # SIBLING examples submodule, so qb has no examples/ of its own for a filter to
-      # match, and resolve_in_project() SKIPs them (cite-check.py:293). Adding it would
+      # match, and resolve_in_project() SKIPs them (cite-check.py:311). Adding it would
       # guard nothing. Those 112 are validated by no repo -- tracked separately.
   pull_request:
     branches: [ main, develop ]
@@ -110,7 +110,7 @@ on:
       - 'script/**'
       # Deliberately NOT 'examples/**': the 112 examples/ citation tokens name the
       # SIBLING examples submodule, so qb has no examples/ of its own for a filter to
-      # match, and resolve_in_project() SKIPs them (cite-check.py:293). Adding it would
+      # match, and resolve_in_project() SKIPs them (cite-check.py:311). Adding it would
       # guard nothing. Those 112 are validated by no repo -- tracked separately.
 
 
