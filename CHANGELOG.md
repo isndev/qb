@@ -810,6 +810,14 @@ policy.
 
 ### Documentation
 
+- **`scripts/cite-check.py` reads two citation shapes it skipped: a range a line opens with after a citation that
+  ended the line before on a comma, and a range after a label inside the backticks of its citation (Huly QB-1209,
+  QB-1222).** `see src/context.h:92-111,` then `244-334, here.` on the next line, and `` `http.h:690-693 (Reply),
+  829-837` ``: the second range of each was read by no guard and moved by no citation sweep. The script, shared by
+  the four repositories, now checks both as it checks the first -- in range, not on a blank line -- and reads them
+  exactly as the superproject's sweep moves them, which its self-test runs this script against, every range of a
+  fixture both ways. What only looks like them stays prose: a numbered list item after the comma (`9. item`), a time
+  or a version (`12:30`, `3.2`), a label outside the backticks. None of the four books holds either shape today.
 - **The digest members' Doxygen says what they return: raw bytes, not hex (Huly QB-1148).** `md5`, `sha1`,
   `sha256` and `sha512`, in their string and stream forms, and `evp` said "as a hexadecimal string" while each
   returns the digest's bytes in a `std::string` -- 32 for SHA-256, not 64 characters. `to_hex_string` encodes
