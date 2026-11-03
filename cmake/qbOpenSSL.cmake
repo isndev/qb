@@ -19,7 +19,7 @@
 # qb Framework - qb's OpenSSL, and whether libngtcp2's can join it
 #
 # _qb_find_openssl() finds the OpenSSL qb links, searching again a path its own search found that is gone,
-# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major,
+# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major, or older than 3.0,
 # _qb_openssl_command() finds that OpenSSL's openssl command for the test certificates (a function), and
 # _qb_decide_quic(), once find_package(Ngtcp2) has run, decides whether the OpenSSL libngtcp2_crypto_ossl links and
 # qb's can share one process, and so whether QUIC is enabled. A file of its own so that a fixture drives them with
@@ -52,6 +52,7 @@ include("${CMAKE_CURRENT_LIST_DIR}/qbFoundLibraries.cmake")
 macro(_qb_find_openssl)
     set(_qb_openssl_entries OPENSSL_INCLUDE_DIR/openssl/ssl.h OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
     set(_qb_openssl_forgot "")
+    set(_qb_openssl_zlib_had_before "$CACHE{_QB_HAD_ZLIB}") # set for a zlib this search finds: a refusal puts it back
     # QB-1185's code recorded each entry its search found, and not whether it found OpenSSL: a build directory it
     # configured had an OpenSSL when what FindOpenSSL needs to find one -- the headers and libcrypto -- was there, each
     # recorded or set (by hand, by a parent project), one at least recorded -- read before this configure records its
@@ -121,6 +122,10 @@ macro(_qb_find_openssl)
     # requires libcrypto and the headers only, and finds OpenSSL without libssl) -- once this build directory has found
     # an OpenSSL: what it never found one with (stray headers in a shared prefix, libraries without headers) stops
     # nothing, nor does an OpenSSL turned off (CMAKE_DISABLE_FIND_PACKAGE_OpenSSL, as a qb CI lane configures).
+    set(_qb_openssl_had_before "${_qb_openssl_recorded}") # "had" without this search's: a refusal puts it back
+    if(DEFINED CACHE{_QB_HAD_OpenSSL})
+        set(_qb_openssl_had_before "$CACHE{_QB_HAD_OpenSSL}")
+    endif()
     if(NOT WIN32 AND OpenSSL_FOUND)
         set(_QB_HAD_OpenSSL TRUE CACHE INTERNAL "")
     elseif(NOT DEFINED CACHE{_QB_HAD_OpenSSL})
@@ -188,12 +193,36 @@ endfunction()
 # tests/io/unit/CMakeLists.txt hands to qb-io-test-unit-ngtcp2-openssl-listing.
 #
 # qb needs OpenSSL 3.0 or later (_QB_OPENSSL_MINIMUM): src/qb/io/crypto.h declares deleters for EVP_MAC and EVP_MAC_CTX
-# and crypto.cpp calls EVP_MAC_fetch() with OSSL_PARAMs, 3.0's API, unguarded. find_package(OpenSSL) asks no version,
-# so an older OpenSSL whose readings agree is not refused here -- its compile fails, as before; one whose readings do
-# not agree is refused for being older than qb supports, not as a cache cleared in part: a release that old may number
-# its libraries apart from itself -- RHEL 7 and Amazon Linux 2 name 1.0.2k's libssl.so.10, beside headers whose
-# SHLIB_VERSION_NUMBER starts with 1 -- and the remedy is another OpenSSL, not the three entries cleared.
+# and crypto.cpp calls EVP_MAC_fetch() with OSSL_PARAMs, 3.0's API, unguarded. find_package(OpenSSL) asks no version --
+# asked one, a 1.1 would be "OpenSSL not found", naming no minimum -- so the check is here, on every platform, with two
+# readings: the version FindOpenSSL reports, and the one the header itself says -- OPENSSL_VERSION_NUMBER's 0xMNN..., a
+# literal before 3.0 (LibreSSL's says 2.0), an expression from 3.0 that is not read -- the second answering where the
+# first reports none (a FindOpenSSL whose own read failed, or a version set otherwise). LibreSSL is refused by its own
+# marker too (LIBRESSL_VERSION_NUMBER): its API is OpenSSL 1.1's, whatever its numbers say. Either below the minimum
+# stops the configure with the remedy (Huly QB-1213): before, an older OpenSSL whose readings agreed configured and
+# failed at its compile, far from its cause. On Windows the remedy removes LIB_EAY* and SSL_EAY*: FindOpenSSL caches the
+# libraries there under those names, which removing OPENSSL_SSL_LIBRARY does not reach. An OpenSSL refused for its age
+# leaves "had" as it was before this search (_qb_openssl_refused()). One whose readings do not agree is refused
+# for being older than qb supports, not as a cache cleared in part: a release that old may number its libraries apart
+# from itself -- RHEL 7 and Amazon Linux 2 name 1.0.2k's libssl.so.10, beside headers whose SHLIB_VERSION_NUMBER starts
+# with 1 -- and the remedy is another OpenSSL, not the three entries cleared.
 set(_QB_OPENSSL_MINIMUM 3.0)
+# _qb_openssl_refused() -- an OpenSSL refused for its age leaves "had" (_QB_HAD_OpenSSL) as it was before this
+# configure's search: a build directory that never had one still has none, the refused one removed afterwards as one
+# never found; one that had one -- an OpenSSL 3 an update removed, this old one found elsewhere in its place -- still
+# has it, its loss stopping the configure. So does the zlib that search found for a static OpenSSL (_QB_HAD_ZLIB):
+# found for the refused one, it is not had either. _qb_openssl_had_before is unset when no search ran: nothing to put
+# back.
+macro(_qb_openssl_refused)
+    if(DEFINED _qb_openssl_had_before)
+        set(_QB_HAD_OpenSSL "${_qb_openssl_had_before}" CACHE INTERNAL "")
+        if("${_qb_openssl_zlib_had_before}" STREQUAL "")
+            unset(_QB_HAD_ZLIB CACHE)
+        else()
+            set(_QB_HAD_ZLIB "${_qb_openssl_zlib_had_before}" CACHE INTERNAL "")
+        endif()
+    endif()
+endmacro()
 macro(_qb_check_openssl)
     string(REGEX MATCH "^[0-9]+" _qb_openssl_headers_major "${OPENSSL_VERSION}")
     set(_qb_openssl_ssl_read "")
@@ -201,21 +230,59 @@ macro(_qb_check_openssl)
     set(_qb_openssl_check_inputs "")
     set(_qb_openssl_compared FALSE)
     set(_qb_openssl_libressl FALSE)
+    set(_qb_openssl_libressl_version "") # " M.N.P", read from LIBRESSL_VERSION_NUMBER
     set(_qb_openssl_shlib "")
+    set(_qb_openssl_said_number "") # OPENSSL_VERSION_NUMBER's 0xMNN... (before 3.0, LibreSSL's 0x20000000L)
     if(EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
+        string(CONCAT _qb_openssl_wanted "LIBRESSL_VERSION_NUMBER|OPENSSL_SHLIB_VERSION|SHLIB_VERSION_NUMBER|"
+                                         "OPENSSL_VERSION_NUMBER")
         file(STRINGS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h" _qb_openssl_defines REGEX
-             "^[ \t]*#[ \t]*define[ \t]+(LIBRESSL_VERSION_NUMBER|OPENSSL_SHLIB_VERSION|SHLIB_VERSION_NUMBER)[ \t]")
+             "^[ \t]*#[ \t]*define[ \t]+(${_qb_openssl_wanted})[ \t]")
         foreach(_qb_openssl_define IN LISTS _qb_openssl_defines)
             if(_qb_openssl_define MATCHES "LIBRESSL_VERSION_NUMBER")
                 set(_qb_openssl_libressl TRUE)
+                if(_qb_openssl_define MATCHES "0[xX]([0-9a-fA-F])([0-9a-fA-F][0-9a-fA-F])([0-9a-fA-F][0-9a-fA-F])")
+                    math(EXPR _qb_openssl_libressl_major "0x${CMAKE_MATCH_1}")
+                    math(EXPR _qb_openssl_libressl_minor "0x${CMAKE_MATCH_2}")
+                    math(EXPR _qb_openssl_libressl_patch "0x${CMAKE_MATCH_3}")
+                    set(_qb_openssl_libressl_version
+                        " ${_qb_openssl_libressl_major}.${_qb_openssl_libressl_minor}.${_qb_openssl_libressl_patch}")
+                endif()
             elseif(_qb_openssl_define MATCHES "OPENSSL_SHLIB_VERSION[ \t]+\"?([0-9]+)")
                 set(_qb_openssl_shlib "${CMAKE_MATCH_1}")
             elseif(_qb_openssl_define MATCHES "SHLIB_VERSION_NUMBER[ \t]+\"([0-9]+)")
                 if("${_qb_openssl_shlib}" STREQUAL "") # 1.1's; OPENSSL_SHLIB_VERSION wins when both are there
                     set(_qb_openssl_shlib "${CMAKE_MATCH_1}")
                 endif()
+            elseif(_qb_openssl_define MATCHES "OPENSSL_VERSION_NUMBER[ \t]+0[xX]([0-9a-fA-F])([0-9a-fA-F][0-9a-fA-F])")
+                set(_qb_openssl_said_number "${CMAKE_MATCH_1};${CMAKE_MATCH_2}") # from 3.0 an expression: not read
             endif()
         endforeach()
+    endif()
+    set(_qb_openssl_said "") # the header's own reading, MAJOR.MINOR
+    if(NOT "${_qb_openssl_said_number}" STREQUAL "")
+        list(GET _qb_openssl_said_number 0 _qb_openssl_said_major)
+        list(GET _qb_openssl_said_number 1 _qb_openssl_said_minor)
+        math(EXPR _qb_openssl_said_major "0x${_qb_openssl_said_major}")
+        math(EXPR _qb_openssl_said_minor "0x${_qb_openssl_said_minor}")
+        set(_qb_openssl_said "${_qb_openssl_said_major}.${_qb_openssl_said_minor}")
+    endif()
+    set(_qb_openssl_old "") # each reading below qb's minimum, said
+    if(NOT "${OPENSSL_VERSION}" STREQUAL "" AND OPENSSL_VERSION VERSION_LESS _QB_OPENSSL_MINIMUM)
+        string(APPEND _qb_openssl_old "FindOpenSSL reports OpenSSL ${OPENSSL_VERSION}")
+    endif()
+    if(NOT "${_qb_openssl_said}" STREQUAL "" AND _qb_openssl_said VERSION_LESS _QB_OPENSSL_MINIMUM)
+        if(NOT "${_qb_openssl_old}" STREQUAL "")
+            string(APPEND _qb_openssl_old ", and ")
+        endif()
+        string(APPEND _qb_openssl_old "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h says ${_qb_openssl_said}")
+    endif()
+    if(_qb_openssl_libressl) # whatever its numbers say: LibreSSL's API is OpenSSL 1.1's
+        if(NOT "${_qb_openssl_old}" STREQUAL "")
+            string(APPEND _qb_openssl_old ", and ")
+        endif()
+        string(APPEND _qb_openssl_old
+               "the header is LibreSSL${_qb_openssl_libressl_version}'s, whose API is OpenSSL 1.1's")
     endif()
     if(NOT "${_qb_openssl_shlib}" STREQUAL "")
         set(_qb_openssl_headers_major "${_qb_openssl_shlib}")
@@ -268,15 +335,17 @@ macro(_qb_check_openssl)
         endif()
         _qb_openssl_library_said(OPENSSL_SSL_LIBRARY ssl "${_qb_openssl_ssl_read}" _qb_openssl_ssl_said)
         _qb_openssl_library_said(OPENSSL_CRYPTO_LIBRARY crypto "${_qb_openssl_crypto_read}" _qb_openssl_crypto_said)
-        if(NOT "${OPENSSL_VERSION}" STREQUAL "" AND OPENSSL_VERSION VERSION_LESS _QB_OPENSSL_MINIMUM)
+        if(NOT "${_qb_openssl_old}" STREQUAL "")
+            _qb_openssl_refused() # refused for its age: as the one-major refusal below
             string(CONCAT _qb_openssl_split
-                   "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) "
+                   "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later (${_qb_openssl_old}): OPENSSL_INCLUDE_DIR "
+                   "(${OPENSSL_INCLUDE_DIR}) "
                    "holds ${_qb_openssl_headers_said}; ${_qb_openssl_ssl_said}; and ${_qb_openssl_crypto_said}. A "
                    "release that old may number its libraries apart from itself (RHEL 7 names 1.0.2k's libssl.so.10), "
                    "so these majors are no sign of a cache cleared in part. Point OPENSSL_ROOT_DIR at an OpenSSL "
-                   "${_QB_OPENSSL_MINIMUM} or later with this one's three entries removed -- cmake -U "
+                   "${_QB_OPENSSL_MINIMUM} or later with this one's three entries removed:\n  cmake -U "
                    "OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<it> "
-                   "<build directory>, or --fresh -- or configure without TLS (-DQB_WITH_SSL=OFF)")
+                   "<build directory>\nor configure without TLS (-DQB_WITH_SSL=OFF)")
         else()
             string(CONCAT _qb_openssl_split
                    "qb's OpenSSL is not one major: OPENSSL_INCLUDE_DIR (${OPENSSL_INCLUDE_DIR}) holds "
@@ -288,6 +357,27 @@ macro(_qb_check_openssl)
                    "[-DOPENSSL_ROOT_DIR=<one OpenSSL>] <build directory> -- or configure with --fresh")
         endif()
         qb_error_message("${_qb_openssl_split}")
+    elseif(NOT "${_qb_openssl_old}" STREQUAL "") # one major, older than qb's minimum: the compile would fail
+        if(WIN32) # FindOpenSSL caches the libraries under other names there: -U OPENSSL_SSL_LIBRARY clears nothing
+            string(CONCAT _qb_openssl_old_remedy
+                   "Point OPENSSL_ROOT_DIR at an OpenSSL ${_QB_OPENSSL_MINIMUM} or later with this one's entries "
+                   "removed:\n  cmake -U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\" "
+                   "-DOPENSSL_ROOT_DIR=<it> <build directory>\nFindOpenSSL caches the libraries here as LIB_EAY and "
+                   "SSL_EAY, or MSVC's LIB_EAY_DEBUG/_RELEASE and SSL_EAY_DEBUG/_RELEASE, which removing "
+                   "OPENSSL_SSL_LIBRARY does not reach. Or configure without TLS (-DQB_WITH_SSL=OFF)")
+        else()
+            string(CONCAT _qb_openssl_old_remedy
+                   "Point OPENSSL_ROOT_DIR at an OpenSSL ${_QB_OPENSSL_MINIMUM} or later with this one's three entries "
+                   "removed:\n  cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY "
+                   "-DOPENSSL_ROOT_DIR=<it> <build directory>\nor configure without TLS (-DQB_WITH_SSL=OFF)")
+        endif()
+        string(CONCAT _qb_openssl_old_said
+               "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later, and the one found is older: ${_qb_openssl_old} "
+               "(OPENSSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR}, OPENSSL_SSL_LIBRARY ${OPENSSL_SSL_LIBRARY}, "
+               "OPENSSL_CRYPTO_LIBRARY ${OPENSSL_CRYPTO_LIBRARY}). qb calls OpenSSL ${_QB_OPENSSL_MINIMUM}'s EVP_MAC "
+               "API, which its compile would not find (Huly QB-1213). ${_qb_openssl_old_remedy}")
+        _qb_openssl_refused()
+        qb_error_message("${_qb_openssl_old_said}")
     endif()
 endmacro()
 

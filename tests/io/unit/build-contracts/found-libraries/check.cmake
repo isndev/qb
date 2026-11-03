@@ -9,7 +9,8 @@
 #   missing and the remedy, and keeps stopping until it is back -- each of the four; a header removed from an include
 #   directory that stays (a shared prefix) is searched again too; a path set by hand is no input, and a configure keeps
 #   it and says so; a package never had (a stray header) stops nothing; zlib's debug library gone loses nothing, and
-#   FindZLIB's own ZLIB_LIBRARY override clears a stop.
+#   FindZLIB's own ZLIB_LIBRARY override clears a stop. A static OpenSSL older than 3.0, refused (QB-1213), leaves the
+#   zlib its search found had or not as it was.
 #   Where pkg-config is found, the Homebrew shape: versioned kegs that pkg-config alone names, its answer asked again.
 #
 # - the configure that registered this test, when it passes LIVE_SEARCHED: each package it searched went through its
@@ -763,6 +764,34 @@ if(_generators)
         file(COPY "${WORK_DIR}/openssl-zlib/root/usr" DESTINATION "${_root}")
         configure_fixture(${_name} FAIL "-DFIND=openssl" MUST "the zlib this build directory found is gone"
                           NOT "the OpenSSL this build directory found is gone")
+        # A static OpenSSL older than 3.0, refused (QB-1213), leaves the zlib its search found as it leaves the OpenSSL:
+        # in a build directory that never had a zlib, both removed and TLS turned off, qb's own zlib search finds none
+        # and stops nothing; in one that had it, the same loss still stops the configure.
+        foreach(_had FALSE TRUE)
+            set(_name "openssl-zlib-refused-${_had}")
+            set(_root "${WORK_DIR}/${_name}/root")
+            file(COPY "${WORK_DIR}/openssl-zlib/root/usr" "${WORK_DIR}/openssl-zlib/root/pc" DESTINATION "${_root}")
+            file(WRITE "${_root}/usr/local/include/openssl/opensslv.h"
+                 "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+            plant(zlib "${_root}/Cellar/zlib/1")
+            file(WRITE "${_root}/Cellar/zlib/1/lib/libz.a" "")
+            set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR="
+                     "CMAKE_PREFIX_PATH=${_decoy}")
+            set(_args "-DUSE_PKG_CONFIG=ON" "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}" "-DOPENSSL_USE_STATIC_LIBS=ON"
+                      "-DCMAKE_PREFIX_PATH=/Cellar/zlib/1" "-DQB_DEPS_FETCH_FALLBACK=OFF" "-DQB_INSTALL=OFF"
+                      "-DCHECK_OPENSSL=ON")
+            if(_had)
+                configure_fixture(${_name} OK "-DFIND=zlib" ${_args} HAS "ZLIB=TRUE")
+            endif()
+            configure_fixture(${_name} FAIL "-DFIND=openssl|zlib" ${_args}
+                              MUST "qb needs OpenSSL 3\\.0 or later, and the one found is older")
+            file(REMOVE_RECURSE "${_root}/usr" "${_root}/Cellar/zlib/1")
+            if(_had)
+                configure_fixture(${_name} FAIL "-DFIND=zlib" MUST "the zlib this build directory found is gone")
+            else()
+                configure_fixture(${_name} OK "-DFIND=zlib" NOT "is gone" HAS "ZLIB=FALSE")
+            endif()
+        endforeach()
         set(_env "")
     endif()
     if(NOT _pkg_config)

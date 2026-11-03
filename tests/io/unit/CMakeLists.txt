@@ -339,10 +339,10 @@ add_test(NAME qb-io-test-unit-ngtcp2-openssl-listing
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-openssl-listing"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/ngtcp2-openssl-listing/check.cmake")
 set_tests_properties(qb-io-test-unit-ngtcp2-openssl-listing PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
-# quic-openssl-verdict (Huly QB-1185, QB-1190): the OpenSSL and QUIC decisions of qbDependencies.cmake
+# quic-openssl-verdict (Huly QB-1185, QB-1190, QB-1213): the OpenSSL and QUIC decisions of qbDependencies.cmake
 # (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through a languageless fixture: qb's headers, libssl
-# and libcrypto not one major stop the configure, QUIC or not; two OpenSSL majors between libngtcp2's and qb's disable
-# QUIC, and fail the configure under QB_REQUIRE_FEATURES=ON; two copies and one major do not; and `cmake --build`
+# and libcrypto not one major, or older than 3.0, stop the configure; two OpenSSL majors between libngtcp2's and qb's
+# disable QUIC and fail the configure under QB_REQUIRE_FEATURES=ON; two copies and one major do not; and `cmake --build`
 # re-runs the configure when a library it read is rewritten, moved or removed, with Ninja and Unix Makefiles where their
 # tools are found.
 set(_qb_quic_verdict_args

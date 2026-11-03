@@ -389,9 +389,9 @@ covered by an installed-entry-point link test. The umbrellas remain the usual en
 
 ## Platform notes
 
-- **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL). Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
+- **Linux:** POSIX sockets. Use GCC or Clang with solid C++20 support. Install optional dependency headers when enabling features (`libssl-dev`, `libargon2-dev`, `zlib1g-dev` on Debian/Ubuntu; `openssl-devel`, `zlib-devel` on Fedora/RHEL): qb needs OpenSSL 3.0 or later, on every platform, and an older one stops the configure. Install libngtcp2 packages when QUIC is required. qb links `dl` and `rt` (`qb/cmake/qbDependencies.cmake`).
 - **macOS:** POSIX sockets. Recent Xcode / Apple Clang. Homebrew supplies optional dependencies (`brew install openssl argon2 zlib`); point CMake at them with `CMAKE_PREFIX_PATH` when needed. On Apple Silicon, native-arch tuning uses `-mcpu=native` because `-march=native` is rejected (`qbCompiler.cmake:395-409`); qb links the `Foundation` framework.
-- **Windows:** Winsock2. Use a Visual Studio 2022 (or newer) MSVC toolset that supports `/std:c++23`. For optional features, put OpenSSL/zlib development libraries on `CMAKE_PREFIX_PATH` (or set `OPENSSL_ROOT_DIR`); CI uses vcpkg. qb links `ws2_32` and `mswsock`.
+- **Windows:** Winsock2. Use a Visual Studio 2022 (or newer) MSVC toolset that supports `/std:c++23`. For optional features, put OpenSSL (3.0 or later)/zlib development libraries on `CMAKE_PREFIX_PATH` (or set `OPENSSL_ROOT_DIR`); CI uses vcpkg. qb links `ws2_32` and `mswsock`.
 
 ## Pitfalls
 

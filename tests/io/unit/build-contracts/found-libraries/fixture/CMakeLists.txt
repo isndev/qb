@@ -18,6 +18,7 @@
 #         [-DCMAKE_PREFIX_PATH=<under the root>]
 #         [-DQB_DEPS_FETCH_FALLBACK=<bool>] [-DPARENT_ZLIB_TARGET=ON]
 #         [-DUSE_PKG_CONFIG=ON, PKG_CONFIG_LIBDIR in the environment]
+#         [-DCHECK_OPENSSL=ON: _qb_check_openssl() after an OpenSSL found, as qbDependencies.cmake runs it]
 #
 cmake_minimum_required(VERSION 3.24)
 project(qb_found_libraries NONE)
@@ -73,6 +74,9 @@ foreach(_name IN LISTS _find)
         _qb_find_brotli()
     elseif(_name STREQUAL "openssl")
         _qb_find_openssl()
+        if(CHECK_OPENSSL AND OpenSSL_FOUND)
+            _qb_check_openssl()
+        endif()
     else()
         message(FATAL_ERROR "FIND names '${_name}', not argon2, zlib, zstd, brotli or openssl")
     endif()

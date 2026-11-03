@@ -476,7 +476,7 @@ of its cache-line buckets, is a compile error: bulk data travels behind a pointe
 
 | Option | Default | Purpose |
 |---|---|---|
-| `QB_WITH_SSL` | `ON` | SSL/TLS and crypto (OpenSSL); auto-disabled if OpenSSL is absent |
+| `QB_WITH_SSL` | `ON` | SSL/TLS and crypto (OpenSSL 3.0 or later); auto-disabled if OpenSSL is absent (unless this build directory had found one, off Windows), a configure error if it is older |
 | `QB_WITH_COMPRESSION` | `ON` | Compression (zlib) |
 | `QB_WITH_ZSTD` / `QB_WITH_BROTLI` | `OFF` | The zstd / brotli codecs beside zlib's (3.3); need the system library |
 | `QB_WITH_QUIC` | `AUTO` | QUIC/HTTP3 via ngtcp2, on when found |

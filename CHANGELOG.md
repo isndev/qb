@@ -421,6 +421,35 @@ policy.
   park on every pass), 8+8 interleaved runs per latency on the M4: a mean park of 128.9 against 128.9 us at 100 us,
   1186.2 against 1187.2 us at 1 ms.
 
+- **qb refuses at configure an OpenSSL older than 3.0, its real minimum, instead of failing at its compile (Huly
+  QB-1213).** qb calls OpenSSL 3.0's EVP_MAC API (`crypto.h` declares deleters for `EVP_MAC`, `crypto.cpp` calls
+  `EVP_MAC_fetch()`), and `find_package(OpenSSL)` asks no version -- asked one, a 1.1 would be "OpenSSL not found",
+  naming no minimum. An OpenSSL 1.1 or 1.0.2 whose headers, libssl and libcrypto agreed therefore configured and failed
+  at the compile, far from its cause and with no remedy: measured on a fake 1.1.1w prefix (stub headers,
+  `libssl.1.1.dylib` and `libcrypto.1.1.dylib`), the base configured it with SSL on. `_qb_check_openssl()`
+  (`cmake/qbOpenSSL.cmake`) now stops the configure on every platform when either of two readings is below 3.0 -- the
+  version FindOpenSSL reports, or the one the header itself says (`OPENSSL_VERSION_NUMBER`'s `0xMNN...`, a literal
+  before 3.0), which answers where FindOpenSSL reports none or a newer one -- and on LibreSSL's marker, its API being
+  OpenSSL 1.1's whatever its numbers say, naming each reading (LibreSSL's own version too), the three entries and the
+  remedy: another OpenSSL through `OPENSSL_ROOT_DIR` with the three entries removed -- on Windows `-U "LIB_EAY*" -U
+  "SSL_EAY*"` for the two libraries, FindOpenSSL caching them there under those names -- in the same build directory,
+  the command on a line of its own that CMake prints unwrapped, or `-DQB_WITH_SSL=OFF`. An error, not a build without
+  TLS that nobody asked for, as for QB-1190's split cache; headers that old whose majors disagree keep their own
+  message, now naming the reading that was old. An OpenSSL so refused leaves what the build directory had as it was,
+  and so does the zlib its search found for a static one: one that never had an OpenSSL, the refused one removed
+  afterwards, goes on without TLS as if none was ever found; one that had an OpenSSL 3, which an update replaced by the
+  refused one, still stops on its loss. BoringSSL and AWS-LC, whose version is in `base.h`, not in the `opensslv.h`
+  read, pass as before (Huly QB-1262). `qb-io-test-unit-quic-openssl-verdict`: `openssl-1.1` and `libressl` now fail
+  the configure; new cases refuse a 1.1 or a 1.0.2 read by the header alone or by FindOpenSSL alone, LibreSSL by its
+  marker alone, an old split read by the header alone, an old OpenSSL where majors are not compared (FreeBSD) and on
+  Windows, and an OpenSSL refused then removed: one major or split in a build directory that had none, one major in one
+  that had an OpenSSL 3 and in one QB-1185's code configured; they pass 3.0 read either way and OpenSSL 3's own header,
+  whose `OPENSSL_VERSION_NUMBER` is an expression. The command a refusal prints is taken from its output and run as
+  printed, with nothing else, on the refused build directory -- off Windows to an OpenSSL 3 found and read again
+  there, on Windows too, MSVC's debug and release libraries included. `qb-io-test-unit-found-libraries`: a static
+  OpenSSL 1.1 refused leaves its zlib had or not as it was. INSTALL.md, `building.md`'s platform notes, README.md's
+  options table, `ssl_transport.md`, `cmake_dependencies.md` and `qb.llm.md` say the minimum.
+
 ### Fixed
 
 - **`CircuitBreaker::allow` counts a reading older than the one its cooldown runs from as no time elapsed (Huly

@@ -131,7 +131,7 @@ if(QB_WITH_SSL)
     # find_package(OpenSSL), searching again a path its own search found that is gone (qbOpenSSL.cmake, Huly QB-1185).
     _qb_find_openssl()
     if(OpenSSL_FOUND)
-        # Its headers, libssl and libcrypto one major, or the configure stops: QUIC or not (Huly QB-1190).
+        # Its headers, libssl and libcrypto one major, and 3.0 or later, or the configure stops (Huly QB-1190, QB-1213).
         _qb_check_openssl()
         qb_status_message("Found OpenSSL: ${OPENSSL_VERSION}")
         list(APPEND QB_EXTERNAL_LIBRARIES OpenSSL::SSL OpenSSL::Crypto)
