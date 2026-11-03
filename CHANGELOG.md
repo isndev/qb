@@ -973,13 +973,13 @@ policy.
   by each `doc-lint.sh`, reads the section's entries and headlines as the superproject's release gate reads them to
   write the release body. A paragraph ends at a blank line, a heading, a table, a block quote, a line an HTML comment
   opens or a list item, so an entry cut short and followed at once by the next one is caught too; a comment closed
-  on its line set aside, it
-  must end on a stop, on a `:` before what it introduces, or on a `;` that another item of its indented list
-  follows. Every entry opens on `- ` and a headline that closes every bracket and its bold where it should, no text
-  stands before a section's first entry, and no two headlines are the same. The shapes that end otherwise were
-  listed from every section of the six CHANGELOGs: a table row, a link reference definition, a thematic break, a
-  fenced code block (and a line that is one HTML tag, which none of them holds). The six
-  `[Unreleased]` sections pass; qbm-http's cut-off state (`e57ec4e^`) fails, at the cut.
+  on its line set aside, it must end on a stop, on a `:` before what it introduces, or on a `;` that another item of
+  its indented list follows. A comment that opens a line and closes nowhere in the section, which hides the rest of
+  the file, is a finding. Every entry opens on `- ` and a headline that closes every bracket and its bold where it
+  should, no text stands before a section's first entry, and no two headlines are the same. The shapes that end
+  otherwise were listed from every section of the six CHANGELOGs: a table row, a link reference definition, a
+  thematic break, a fenced code block (and a line that is one HTML tag, one element or one closed comment, which none
+  of them holds). The six `[Unreleased]` sections pass; qbm-http's cut-off state (`e57ec4e^`) fails, at the cut.
 - **`scripts/cite-check.py` reads two citation shapes it skipped: a range a line opens with after a citation that
   ended the line before on a comma, and a range after a label inside the backticks of its citation (Huly QB-1209,
   QB-1222).** `see src/context.h:92-111,` then `244-334, here.` on the next line, and `` `http.h:690-693 (Reply),
