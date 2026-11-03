@@ -19,8 +19,9 @@ verify.sh all passed it (Huly QB-1221). The release body is generated from these
     ends otherwise and is no sentence was listed from every section of the six CHANGELOGs of the superproject (1 190
     paragraphs on 2026-11-03, not one other ending): a table row, a link reference definition
     (`[3.0.0]: https://...`), a thematic break (`---`), a fenced code block, read from its fence to the fence that
-    closes it -- and a line that is one HTML tag, one element or one closed comment (`<br>`, `<summary>More</summary>`,
-    `<!-- note -->`), which none of them holds, read with its closed comments set aside. HTML comments are read no
+    closes it -- and a line of HTML tags and elements with no text outside an element (`<br>`,
+    `<details><summary>More</summary>`) or of closed comments (`<!-- note -->`), which none of them holds, read with
+    its closed comments set aside. HTML comments are read no
     further: a line that is only closed comments is a block of its own, which ends the paragraph before it and
     settles nothing; one that opens a line with text after it ends the paragraph before it; one closed inside a line
     is set aside; one over several lines is text, which a paragraph must end, and one that opens a line and closes
@@ -62,7 +63,7 @@ ORDERED = re.compile(r"[ \t]*(\d+)[.)][ \t]")
 TABLE = re.compile(r"[ \t]*\|")
 QUOTE = re.compile(r"[ \t]*>")
 EXEMPT = re.compile(r"[ \t]*(?:\|.*|\[[^\]]+\]:[ \t]+\S.*|(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}"
-                    r"|<[^<>]*>[ \t]*|<([A-Za-z][A-Za-z0-9-]*)[^<>]*>[^<>]*</\1[ \t]*>[ \t]*)$")
+                    r"|(?:[ \t]*(?:<([A-Za-z][A-Za-z0-9-]*)[^<>]*>[^<>]*</\1[ \t]*>|<[^<>]*>))+[ \t]*)$")
 CLOSERS = r"[)\]*_~`\"'”’»]*$"
 ENDS, INTRODUCES, ENUMERATES = re.compile(r"[.!?…]" + CLOSERS), re.compile(r":" + CLOSERS), re.compile(r";" + CLOSERS)
 HEADLINE = re.compile(r"- \*\*(.+?)\*\*", re.S)
@@ -222,7 +223,7 @@ def check(path):
         comment = line.lstrip().startswith("<!--")       # interrupts a paragraph, as Markdown reads it
         if heading or item or table or quote or comment:
             close()
-        if comment and "-->" not in "\n".join(lines[number - first:])[line.index("<!--") + 4:]:
+        if comment and "-->" not in "\n".join(lines[number - first:])[line.index("<!--") + 2:]:  # `<!-->` closes
             findings.append(f"{path}:{number}: [Unreleased] an HTML comment opens a line and closes nowhere in the "
                             f"section: it hides the rest of the file")
         if comment and not bare.strip():
