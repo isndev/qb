@@ -365,6 +365,55 @@ policy.
   stopped longest ago taken back first, `log_file_opened()` answering for the calling thread (and on another thread
   for the published logger, racing no `initialize()`), and a process exit after which a static destructor logs (a
   "threadsafe" death test, which holds the writer until the exit drain and counts every line logged before `exit`).
+- **A task driven by hand and kept across `reset_coro_scheduler()` is destroyed once, by its task (Huly QB-1220).**
+  `destroy_all_suspended()` -- which `listener::reset_coro_scheduler()`, `recycle_coro_scheduler()` and so every
+  `VirtualCore` teardown run -- destroyed every frame registered as suspended, the spawned ones and the ones a `task`
+  resumed by hand owns alike. A hand-driven `task` parked on a `sleep()`, a socket wait or a channel's `recv_for()` /
+  `send_for()` and kept across the reset then destroyed its frame a second time when it went; and the awaiter in it,
+  which cached the scheduler it registered with, reached that destroyed scheduler at its destruction and at its
+  watcher's firing (AddressSanitizer: a heap-use-after-free in `CoroutineScheduler::forget()`, from `~timer_awaiter`,
+  `~timed_recv_awaiter` and `~timed_send_awaiter`; the coroutine frame pool hides the double destruction itself, which
+  the frame count shows). The scheduler now destroys only what it owns -- a spawned root and its chain -- and drops a
+  frame it does not own from its bookkeeping, unreported, for its task to destroy. Each thread keeps the schedulers
+  alive on it (entered by the constructor, left by the destructor, trivially destructible so a thread's last teardown
+  still finds it); `awaiter_base` and the channels' timed waits, when their wait ends and in their destructor, reach
+  the scheduler they registered with while it lives, current or not, and the CURRENT one otherwise
+  (`unregister_suspended_from()` and `forget_frame_from()`, new, through `registration_scheduler()`): the cached
+  pointer is compared, never followed once its scheduler is gone. While a scheduler destroys its frames
+  (`destroy_all_suspended()`, its teardown's drain) it is the thread's `detail::destroying_scheduler()`, which
+  `forget_frame_if_current()` (from `~task`) scrubs too; an awaiter whose watcher fires with no scheduler current
+  binds the loop's (`schedule_via_current()`) instead of the one it cached. So a wait still parked on its watcher when
+  the reset runs wakes later, in the next scheduler, and so does a socket wait whose watcher had already fired, that
+  watcher staying armed; a wait whose wake had already queued the frame in the scheduler the reset destroyed or
+  recycled -- a timer, a channel's watchdog or hand-off, a mutex or semaphore grant, an async completion -- is not
+  resumed. `reset_coro_scheduler()` now unbinds the thread's current scheduler only when it is its own -- a temporary
+  listener that never created one left the thread with none -- and a scheduler destroyed while it is the current one
+  unbinds itself, where it left the thread's current pointer dangling. A temporary listener that does create its
+  scheduler takes over as current and leaves none bound, as before; an `Actor` now re-resolves its cached scheduler
+  whenever none is bound, through `CoroutineScheduler::current()`, which binds the loop's, instead of keeping one a
+  reset may have destroyed -- and since that binds a scheduler on any thread, its debug cross-thread guard now checks
+  that the calling thread runs the actor's `VirtualCore`. On a thread that pumps its loop the current scheduler is the
+  one a frame registered with: the waits' slow paths read one thread-local where they read a member
+  (`on_event_ready()`, `await_resume()`, the destructors, the watchdogs) and scan the thread's live schedulers, a
+  handful, only when it is not; a scheduler's construction and destruction scan them too, and the teardown's drain
+  reads one more thread-local -- the untimed channel paths are untouched. The table holds 16 schedulers per thread:
+  beyond that, an awaiter falls back on the current one, and a frame registered with one of the rest that is not
+  current stays in its sets; and it is the thread's own, so a scheduler must die on the thread that built it. A handle
+  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Four limits remain, each
+  with its ticket: a chain that awaits a helper that spawns -- a combinator, a `coroutine_scope`, a timeout,
+  `make_cancellable()`, `cancellable_sleep()`, `make_shared_task()` -- is not wholly its task's: the helpers are the
+  scheduler's, and the reset destroys them (Huly QB-1238); the other way round, a spawned coroutine that awaits a
+  `task` it does not own (`co_await` on one held elsewhere) leaves that task's frame with a continuation to the
+  destroyed root (Huly QB-1243); a `task` destroyed unfinished while its frame is queued in a live scheduler that is
+  neither current nor destroying leaves that entry (Huly QB-1245); and the tcp connector's awaiters still fall back on
+  their cached scheduler (Huly QB-1234). Witnessed in `qb-io-test-unit-scheduler-lifecycle` for `sleep()`,
+  `recv_for()`, `send_for()` and a socket wait -- each destroyed once by its task, each woken in the next scheduler or
+  with none bound -- for `recycle_coro_scheduler()`, for a scheduler destroying its frames while another is current,
+  whether they registered with it or with the current one, for a frame registered with a live scheduler that is not
+  current, for the live-scheduler table, for a temporary listener's reset, with and without a scheduler of its own,
+  and for a scheduler destroyed while current; and in `qb-io-test-unit-scheduler-abandoned-frames` for its teardown;
+  and in `qb-core-test-system-coroutine-basics` for an actor that spawns after a reset on its core, and with its
+  core's scheduler alive but unbound.
 - **`coroutine_scope::join_any()` answers the task that completed first, not the lowest completed index
   (Huly QB-1217).** Its caller is woken through the ready queue, and `await_resume()` scanned the tasks in index
   order for one marked completed: a task that finished between that wake and the caller's resume -- a loaded

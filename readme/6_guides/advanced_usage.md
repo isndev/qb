@@ -278,7 +278,7 @@ The result arrives as an ordinary event handler — `on(ProcessingComplete&)` �
 
 ### Lifecycle
 
-- `spawn()` and `spawn_detached()` must be called from the actor's `VirtualCore` worker thread; each debug-asserts that a coroutine scheduler exists on the calling thread.
+- `spawn()` and `spawn_detached()` must be called from the actor's `VirtualCore` worker thread; each debug-asserts that the calling thread runs the actor's `VirtualCore`.
 - Each call creates two coroutine frames by design (a lifetime-tracking wrapper plus your body). The wrapper increments a reference-counted census cell that outlives the actor (a plain count — the frame and the actor share one thread), so a suspended coroutine cannot use-after-free its owner.
 - A `spawn()` coroutine also joins the actor's cancellation scope; `kill()` cancels the scope, so any of its coroutines parked on a cancellation-aware op (`ctx.sleep`, `qb::ask`, `ctx.until_cancelled`, `ctx.cancellation_point`) unwind promptly instead of running to a long timeout. `spawn_detached()` is not cancelled by that scope; completion still requires its VirtualCore to remain running.
 - `has_active_coroutines()` reports whether any spawned coroutine is still in flight — useful when deciding whether it is safe to `kill()`.

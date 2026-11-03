@@ -637,8 +637,8 @@ public:
      *
      * @note A parked wait holds a watchdog `ev_timer` on its thread's loop, as `sleep()` does, and is
      *       registered with the thread's scheduler while it is armed: the listener's teardown destroys
-     *       it with the other parked frames, and a frame kept beyond that listener (a task held by a
-     *       static, say) must not be destroyed after it -- `timer_awaiter`'s contract.
+     *       it with the frames it owns when a spawned coroutine waits, else it is the task's (QB-1220);
+     *       a frame kept beyond that listener must not be destroyed after it -- `timer_awaiter`'s contract.
      */
     task<std::optional<T>>
     recv_for(qb::duration timeout) {
@@ -692,10 +692,10 @@ public:
             timed_recv_awaiter &operator=(timed_recv_awaiter &&)      = delete;
 
             ~timed_recv_awaiter() {
-                // timer_awaiter's unschedule(): a frame destroyed by destroy_all_suspended() -- not through its task
-                // -- after a delivery queued it must leave the ready queue and the suspended set with it.
+                // timer_awaiter's unschedule(): a frame destroyed after a delivery queued it must leave the ready queue
+                // and the suspended set with it, wherever it registered (QB-1220: see registration_scheduler).
                 if (_scheduler)
-                    _scheduler->forget(_handle);
+                    forget_frame_from(_scheduler, _handle); // never through `_scheduler` alone: it may be gone (QB-1220)
                 disarm();
                 if (!state.resolved) {
                     unregister();
@@ -730,7 +730,7 @@ public:
             void
             unregister_suspended() noexcept {
                 if (_scheduler)
-                    _scheduler->unregister_suspended(_handle);
+                    unregister_suspended_from(_scheduler, _handle);
             }
 
             /// Unlink our node from the channel's list, if it still hangs there and the channel lives.
@@ -898,7 +898,7 @@ public:
 
             ~timed_send_awaiter() {
                 if (_scheduler)
-                    _scheduler->forget(_handle); // timer_awaiter's unschedule(): see ~timed_recv_awaiter
+                    forget_frame_from(_scheduler, _handle); // timer_awaiter's unschedule(): see ~timed_recv_awaiter
                 disarm();
                 if (!_guard) {
                     _guard = true;
@@ -919,7 +919,7 @@ public:
             void
             unregister_suspended() noexcept {
                 if (_scheduler)
-                    _scheduler->unregister_suspended(_handle);
+                    unregister_suspended_from(_scheduler, _handle);
             }
 
             /// Unlink our node from the channel's list, if it still hangs there and the channel lives.

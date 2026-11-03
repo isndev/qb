@@ -18,7 +18,9 @@
  * plus the safe `CoroContext` surface (`ctx.id()`, `ctx.time()`, `ctx.push`), multiple concurrent
  * coroutines per actor, a locally-caught exception inside a coroutine body, and the two teardown
  * shapes a real actor must survive: dying while a coroutine is still parked, and a coroutine that
- * lets an exception ESCAPE its frame (the engine must absorb it, not terminate).
+ * lets an exception ESCAPE its frame (the engine must absorb it, not terminate). Last, a spawn after
+ * `listener::reset_coro_scheduler()` on the actor's core, or with the core's scheduler alive but unbound, lands in a
+ * live, bound scheduler (Huly QB-1220).
  *
  * Every in-coroutine / in-handler effect is mirrored to a file-scope `std::atomic` that is reset
  * before the run and asserted AFTER `join()` — so a coroutine that silently never delivered fails
@@ -52,14 +54,17 @@ namespace {
 // ---------------------------------------------------------------------------
 // Per-run observation flags (reset at the start of every TEST).
 // ---------------------------------------------------------------------------
-std::atomic<int>  g_basic_result{-1};          // value the BasicCoroActor handler observed
-std::atomic<int>  g_multi_completed{0};        // increments delivered to MultiCoroActor
-std::atomic<bool> g_exc_caught{false};         // local catch inside ExceptionCoroActor ran
-std::atomic<int>  g_safety_result{-1};         // value the SafetyTestActor handler observed
-std::atomic<bool> g_safety_ctx_valid{false};   // ctx.id().is_valid() && ctx.time() > 0 held
-std::atomic<bool> g_quickkill_body_ran{false}; // the parked coro body MUST NOT complete
-std::atomic<bool> g_escaping_threw{false};     // the escaping coroutine reached its throw
-std::atomic<int>  g_survivor_result{-1};       // sibling coroutine that must still deliver
+std::atomic<int>  g_basic_result{-1};            // value the BasicCoroActor handler observed
+std::atomic<int>  g_multi_completed{0};          // increments delivered to MultiCoroActor
+std::atomic<bool> g_exc_caught{false};           // local catch inside ExceptionCoroActor ran
+std::atomic<int>  g_safety_result{-1};           // value the SafetyTestActor handler observed
+std::atomic<bool> g_safety_ctx_valid{false};     // ctx.id().is_valid() && ctx.time() > 0 held
+std::atomic<bool> g_quickkill_body_ran{false};   // the parked coro body MUST NOT complete
+std::atomic<bool> g_escaping_threw{false};       // the escaping coroutine reached its throw
+std::atomic<int>  g_survivor_result{-1};         // sibling coroutine that must still deliver
+std::atomic<int>  g_after_reset_result{-1};      // the coroutine spawned after the scheduler was reset (Huly QB-1220)
+std::atomic<int>  g_after_unbind_result{-1};     // the coroutine spawned with the core's scheduler unbound (Huly QB-1220)
+std::atomic<bool> g_spawn_bound_the_core{false}; // that spawn bound the core's scheduler as current
 
 // A LOUD bounded watchdog: stops the engine after `deadline` and flips `g_watchdog_fired`.
 // A test asserts `g_watchdog_fired == false` after join() — a hung run fails with a message
@@ -68,15 +73,18 @@ std::atomic<bool> g_watchdog_fired{false};
 
 void
 reset_flags() {
-    g_basic_result       = -1;
-    g_multi_completed    = 0;
-    g_exc_caught         = false;
-    g_safety_result      = -1;
-    g_safety_ctx_valid   = false;
-    g_quickkill_body_ran = false;
-    g_escaping_threw     = false;
-    g_survivor_result    = -1;
-    g_watchdog_fired     = false;
+    g_basic_result         = -1;
+    g_multi_completed      = 0;
+    g_exc_caught           = false;
+    g_safety_result        = -1;
+    g_safety_ctx_valid     = false;
+    g_quickkill_body_ran   = false;
+    g_escaping_threw       = false;
+    g_survivor_result      = -1;
+    g_after_reset_result   = -1;
+    g_after_unbind_result  = -1;
+    g_spawn_bound_the_core = false;
+    g_watchdog_fired       = false;
 }
 
 } // namespace
@@ -345,4 +353,115 @@ TEST(ActorCoroutine, UncaughtExceptionEscapingCoroutineIsAbsorbed) {
     EXPECT_FALSE(g_watchdog_fired.load()) << "the surviving sibling coroutine did not complete in time";
     EXPECT_TRUE(g_escaping_threw.load()) << "the escaping coroutine must have reached its throw";
     EXPECT_EQ(g_survivor_result.load(), 7) << "a sibling coroutine must still run after another coroutine threw uncaught";
+}
+
+// ---------------------------------------------------------------------------
+// 7. A spawn after the thread's scheduler was reset lands in a live one (Huly QB-1220).
+// ---------------------------------------------------------------------------
+struct CoroResetNowEvent : public qb::Event {};
+
+class SpawnAfterResetActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<CoroResetNowEvent>(*this);
+        registerEvent<CoroCompletedEvent>(*this);
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> { // caches the listener's scheduler in this actor
+            ctx.template push<CoroResetNowEvent>();
+            co_return;
+        });
+        co_return true;
+    }
+
+    void
+    on(const CoroResetNowEvent &) {
+        qb::io::async::listener::current.reset_coro_scheduler(); // destroys the scheduler this actor cached
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
+            co_await qb::io::async::sleep(1ms);
+            ctx.template push<CoroCompletedEvent>(7);
+        });
+    }
+
+    void
+    on(const CoroCompletedEvent &ev) {
+        g_after_reset_result.store(ev.result, std::memory_order_relaxed);
+        qb::Main::stop();
+    }
+};
+
+/**
+ * @test An actor that spawns after `listener::reset_coro_scheduler()` on its core spawns into a live scheduler.
+ * @brief The reset destroys the scheduler and leaves none bound; the actor's cached pointer was revalidated only
+ *        against a bound one, so the next spawn went into the destroyed scheduler (AddressSanitizer: a
+ *        heap-use-after-free in `CoroutineScheduler::spawn`; a debug build's cross-thread assert). It re-resolves
+ *        the loop's scheduler whenever none is bound, and the coroutine runs.
+ */
+TEST(ActorCoroutine, ASpawnAfterTheSchedulerWasResetRuns) {
+    reset_flags();
+    qb::Main main;
+    main.addActor<SpawnAfterResetActor>(0);
+    main.addActor<WatchdogActor>(0, 5s);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_watchdog_fired.load()) << "the coroutine spawned after the reset never ran";
+    EXPECT_EQ(g_after_reset_result.load(), 7);
+}
+
+// ---------------------------------------------------------------------------
+// 8. A spawn with the core's scheduler alive but unbound binds it (Huly QB-1220).
+// ---------------------------------------------------------------------------
+struct CoroUnbindNowEvent : public qb::Event {};
+
+class SpawnWithTheSchedulerUnboundActor : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<CoroUnbindNowEvent>(*this);
+        registerEvent<CoroCompletedEvent>(*this);
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> { // caches the core's scheduler in this actor
+            ctx.template push<CoroUnbindNowEvent>();
+            co_return;
+        });
+        co_return true;
+    }
+
+    void
+    on(const CoroUnbindNowEvent &) {
+        {
+            qb::io::async::listener temporary;
+            (void) temporary.coro_scheduler(); // takes over as current; its reset unbinds it, leaving none bound
+        }
+        spawn_detached([](auto ctx) -> qb::io::async::task<void> {
+            co_await qb::io::async::sleep(1ms);
+            ctx.template push<CoroCompletedEvent>(9);
+        });
+        g_spawn_bound_the_core = qb::io::async::CoroutineScheduler::current_ptr() == &qb::io::async::listener::current.coro_scheduler();
+    }
+
+    void
+    on(const CoroCompletedEvent &ev) {
+        g_after_unbind_result.store(ev.result, std::memory_order_relaxed);
+        qb::Main::stop();
+    }
+};
+
+/**
+ * @test An actor that spawns while its core's scheduler is alive but unbound -- a temporary listener that created its
+ *       own scheduler took over as current, and its reset unbound it -- spawns into the core's scheduler, bound again.
+ * @brief Before 3.4 the actor kept the scheduler it had cached and spawned with none bound: the core's scheduler
+ *        stayed unbound (a debug build's assert fired) until a coroutine suspended. Re-resolving through
+ *        `listener::current.coro_scheduler()`, which binds only a scheduler it creates, fails the same way.
+ */
+TEST(ActorCoroutine, ASpawnWithTheCoresSchedulerUnboundRuns) {
+    reset_flags();
+    qb::Main main;
+    main.addActor<SpawnWithTheSchedulerUnboundActor>(0);
+    main.addActor<WatchdogActor>(0, 5s);
+    main.start(false);
+    main.join();
+    EXPECT_FALSE(main.hasError());
+    EXPECT_FALSE(g_watchdog_fired.load()) << "the coroutine spawned with the scheduler unbound never ran";
+    EXPECT_EQ(g_after_unbind_result.load(), 9);
+    EXPECT_TRUE(g_spawn_bound_the_core.load()) << "the spawn left the core's scheduler unbound";
 }

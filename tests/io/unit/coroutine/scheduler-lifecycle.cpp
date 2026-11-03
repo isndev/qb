@@ -48,11 +48,16 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
@@ -1467,21 +1472,21 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
 }
 
 /**
- * @test destroy_all_suspended() sweeps a non-owned suspended frame
- * @brief The trailing non-owned suspended sweep (destroy_all_suspended) — a frame that is
- *        registered as suspended on a watcher but is NOT owned by the scheduler (never
- *        spawned) is destroyed by the second pass, stopping its watcher via the awaiter
- *        destructor.
+ * @test destroy_all_suspended() leaves a frame it does not own to the task that owns it
+ * @brief A frame registered as suspended on a watcher but NOT owned by the scheduler (never
+ *        spawned) stays parked and registered: its task destroys it, once, and the awaiter's
+ *        destructor stops the watcher then (Huly QB-1220).
  *
  * Construction: build a plain `task<void>` that awaits a long `sleep` and resume it once so
  * its timer_awaiter parks it (calling register_suspended on the fixture's TLS scheduler).
  * The frame is therefore in suspended_coroutines_ but NOT owned_frames_ (it was never
- * spawned). We `detach()` the task so the task<T> object relinquishes ownership; then
- * destroy_all_suspended()'s owned-root pass is a no-op (owned_frames_ empty) and the trailing
- * sweep destroys the lone suspended frame — exactly once, with the timer stopped so it can
- * never fire afterwards.
+ * spawned). destroy_all_suspended() used to destroy it in a trailing sweep, and the task --
+ * which still owns it -- destroyed it a second time; with `detach()` the test made the sweep
+ * the single destroyer, which no owner can rely on (it cannot tell a frame a live task holds
+ * from one nobody does). Now the owned-root pass is a no-op (owned_frames_ empty) and the
+ * frame is the task's, and the scheduler forgets it.
  */
-TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame) {
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedLeavesANonOwnedFrameToItsTask) {
     auto      &sched    = coro_scheduler();
     const long baseline = detail::CoroutineFrameAllocator::live_frames;
 
@@ -1494,23 +1499,21 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedSweepsNonOwnedSuspendedFrame)
         co_await sleep(5000ms);
         fired_ptr->store(true); // must NEVER fire — frame destroyed while parked
     };
-    auto parked = parked_fn();
+    {
+        auto parked = parked_fn();
+        auto h      = parked.handle();
+        ASSERT_TRUE(h);
+        h.resume(); // run body to the sleep awaiter -> register_suspended (NOT owned)
+        ASSERT_FALSE(h.done());
+        EXPECT_EQ(sched.active_count(), 1u) << "the non-owned frame should be tracked as suspended";
 
-    auto h = parked.handle();
-    ASSERT_TRUE(h);
-    h.resume(); // run body to the sleep awaiter -> register_suspended (NOT owned)
-    ASSERT_FALSE(h.done());
-    EXPECT_EQ(sched.active_count(), 1u) << "the non-owned frame should be tracked as suspended";
-
-    // Relinquish task<T> ownership so destroy_all_suspended is the single destroyer.
-    auto raw = parked.detach();
-    ASSERT_EQ(raw, h);
-
-    // owned_frames_ is empty here (frame was never spawned), so only the trailing
-    // non-owned suspended sweep (lines 693-702) destroys it.
-    sched.destroy_all_suspended();
-    EXPECT_EQ(sched.active_count(), 0u) << "non-owned suspended frame not swept";
-    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "destroy_all_suspended leaked the non-owned suspended frame";
+        sched.destroy_all_suspended();
+        EXPECT_FALSE(h.done());
+        EXPECT_EQ(sched.active_count(), 0u) << "the scheduler forgets a frame it does not own";
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1) << "destroy_all_suspended destroyed a frame a task owns";
+    } // the task destroys its frame; the awaiter's destructor stops the timer and leaves the suspended set
+    EXPECT_EQ(sched.active_count(), 0u);
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "the frame was destroyed twice, or never";
 
     // The awaiter destructor stopped the timer; pumping the loop must not fire the body.
     qb::io::async::run_for(10ms);
@@ -1551,4 +1554,495 @@ TEST_F(CoroutineSchedulerTests, CurrentSchedulerPtrFreeFunctionMatchesStatic) {
     // Re-establish the scheduler so the fixture TearDown finds a consistent state.
     (void) qb::io::async::listener::current.coro_scheduler();
     EXPECT_EQ(current_scheduler_ptr(), &qb::io::async::listener::current.coro_scheduler());
+}
+
+// =============================================================================
+// A CHAIN DRIVEN BY HAND, KEPT ACROSS reset_coro_scheduler() (Huly QB-1220)
+// =============================================================================
+// A task resumed by hand -- never spawned -- that parks on a wait the scheduler tracks (a timer, a channel's timed
+// wait) is owned by its task<T>, not by the scheduler. destroy_all_suspended() destroyed it anyway, so a task kept
+// across reset_coro_scheduler() destroyed its frame a second time; and its awaiter, which outlives that scheduler,
+// reached the destroyed scheduler at its resume and at its destruction. The frames come from the coroutine frame pool,
+// which AddressSanitizer does not see: the frame count is the witness of the double destruction, and the destroyed
+// scheduler, an ordinary heap object, is what AddressSanitizer reports.
+
+/**
+ * @test A sleep driven by hand, kept across the reset, is destroyed once -- by its task -- and its timer never fires.
+ */
+TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenSleepToTheTaskThatOwnsIt) {
+    const long        baseline  = detail::CoroutineFrameAllocator::live_frames;
+    const std::size_t abandoned = abandoned_coroutine_frames_total();
+    std::atomic<bool> resumed{false};
+    auto const        body = [&resumed]() -> task<void> {
+        co_await sleep(5000ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume(); // runs to the sleep: registered with the listener's scheduler, never spawned
+        ASSERT_EQ(coro_scheduler().active_count(), 1u);
+        qb::io::async::listener::current.reset_coro_scheduler();
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1) << "the reset destroyed a frame its task owns";
+        EXPECT_EQ(abandoned_coroutine_frames_total(), abandoned) << "a frame left to its task is not an abandoned one";
+        (void) coro_scheduler(); // the scheduler of what follows
+    } // `parked` destroys its frame, and the awaiter in it must not reach the scheduler the reset destroyed
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "the frame was destroyed twice, or never";
+    qb::io::async::run_for(10ms);
+    EXPECT_FALSE(resumed.load()) << "the destroyed frame's timer fired";
+}
+
+/**
+ * @test A sleep driven by hand, kept across the reset, still wakes -- in the scheduler that is current when its timer
+ *       fires -- and completes.
+ */
+TEST_F(CoroutineSchedulerTests, AHandDrivenSleepKeptAcrossTheResetStillWakes) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> resumed{false};
+    auto const        body = [&resumed]() -> task<void> {
+        co_await sleep(5ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume();
+        qb::io::async::listener::current.reset_coro_scheduler();
+        (void) coro_scheduler();
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the timer of a frame kept across the reset never woke it";
+        EXPECT_TRUE(parked.handle().done());
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A sleep driven by hand, kept across the reset, wakes even when no scheduler is bound when its timer fires: the
+ *       resume binds the loop's scheduler, never the one the awaiter registered with, which the reset destroyed.
+ */
+TEST_F(CoroutineSchedulerTests, AHandDrivenSleepKeptAcrossTheResetWakesWithNoSchedulerBound) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> resumed{false};
+    auto const        body = [&resumed]() -> task<void> {
+        co_await sleep(5ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume();
+        qb::io::async::listener::current.reset_coro_scheduler();
+        ASSERT_EQ(CoroutineScheduler::current_ptr(), nullptr); // nothing bound until the timer fires
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the timer of a frame kept across the reset never woke it";
+        EXPECT_TRUE(parked.handle().done());
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A channel's timed receive driven by hand, kept across the reset, is destroyed once -- by its task.
+ * @brief recv_for() is a coroutine of its own: the reset destroyed that inner frame, and the task's frame destroyed it
+ *        again through the inner task it awaits.
+ */
+TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenRecvForToTheTaskThatOwnsIt) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>       ch;
+    std::optional<int> received;
+    std::atomic<bool>  resumed{false};
+    auto const         body = [&]() -> task<void> {
+        received = co_await ch.recv_for(5000ms);
+        resumed  = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume(); // parks in recv_for: its watchdog armed, the inner frame registered
+        ASSERT_EQ(coro_scheduler().active_count(), 1u);
+        qb::io::async::listener::current.reset_coro_scheduler();
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2) << "the reset destroyed a frame a task owns";
+        (void) coro_scheduler();
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "a frame was destroyed twice, or never";
+    EXPECT_EQ(ch.waiter_census().selects, 0u) << "the destroyed receive is still linked to the channel";
+    EXPECT_FALSE(resumed.load());
+}
+
+/**
+ * @test A channel's timed receive driven by hand, kept across the reset, still receives -- in the next scheduler.
+ */
+TEST_F(CoroutineSchedulerTests, AHandDrivenRecvForKeptAcrossTheResetStillReceives) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>       ch;
+    std::optional<int> received;
+    std::atomic<bool>  resumed{false};
+    auto const         body = [&]() -> task<void> {
+        received = co_await ch.recv_for(5000ms);
+        resumed  = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume();
+        qb::io::async::listener::current.reset_coro_scheduler();
+        (void) coro_scheduler();
+        EXPECT_TRUE(ch.try_send(7));
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the receive kept across the reset never completed";
+        EXPECT_EQ(received, std::optional<int>{7});
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A channel's timed send driven by hand, kept across the reset, is destroyed once -- by its task -- and leaves
+ *       the channel as it found it.
+ */
+TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenSendForToTheTaskThatOwnsIt) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>      ch; // rendezvous: the send parks until a receiver comes
+    std::atomic<bool> resumed{false};
+    auto const        body = [&]() -> task<void> {
+        (void) co_await ch.send_for(7, 5000ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume(); // parks in send_for: its watchdog armed, the inner frame registered
+        ASSERT_EQ(coro_scheduler().active_count(), 1u);
+        qb::io::async::listener::current.reset_coro_scheduler();
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2) << "the reset destroyed a frame a task owns";
+        (void) coro_scheduler();
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "a frame was destroyed twice, or never";
+    EXPECT_EQ(ch.waiter_census().senders, 0u) << "the destroyed send is still linked to the channel";
+    EXPECT_FALSE(resumed.load());
+}
+
+/**
+ * @test A channel's timed send driven by hand, kept across the reset, still delivers -- to a receiver of the next
+ *       scheduler.
+ */
+TEST_F(CoroutineSchedulerTests, AHandDrivenSendForKeptAcrossTheResetStillDelivers) {
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>      ch;
+    bool              delivered = false;
+    std::atomic<bool> resumed{false};
+    int               got  = 0;
+    auto const        body = [&]() -> task<void> {
+        delivered = co_await ch.send_for(7, 5000ms);
+        resumed   = true;
+    };
+    {
+        task<void> parked = body();
+        (void) coro_scheduler();
+        parked.handle().resume();
+        qb::io::async::listener::current.reset_coro_scheduler();
+        coro_scheduler().spawn([&]() -> task<void> { got = (co_await ch.recv()).value_or(-1); });
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the send kept across the reset never completed";
+        EXPECT_TRUE(delivered);
+        EXPECT_EQ(got, 7);
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+#if !defined(_WIN32)
+/**
+ * @test A socket wait driven by hand, kept across the reset, still wakes when its descriptor becomes readable, and is
+ *       destroyed once -- by its task -- when it is kept parked instead.
+ */
+TEST_F(CoroutineSchedulerTests, AHandDrivenSocketWaitKeptAcrossTheResetBelongsToItsTask) {
+    int fds[2];
+    ASSERT_EQ(::pipe(fds), 0);
+    const long        baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::atomic<bool> resumed{false};
+    auto const        body = [&, read_fd = fds[0]]() -> task<void> {
+        co_await wait_readable(read_fd);
+        resumed = true;
+    };
+    {
+        task<void> woken  = body();
+        task<void> parked = body();
+        (void) coro_scheduler();
+        woken.handle().resume();
+        parked.handle().resume();
+        ASSERT_EQ(coro_scheduler().active_count(), 2u);
+        qb::io::async::listener::current.reset_coro_scheduler();
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 2) << "the reset destroyed a frame a task owns";
+        (void) coro_scheduler();
+        parked = task<void>{}; // destroyed by its task, still parked: its watcher stopped, the scheduler untouched
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1);
+        char const byte = 'x';
+        ASSERT_EQ(::write(fds[1], &byte, 1), 1);
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the socket wait kept across the reset never woke";
+        EXPECT_TRUE(woken.handle().done());
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+    ::close(fds[0]);
+    ::close(fds[1]);
+}
+#endif
+
+namespace scheduler_lifecycle_test {
+/// Names `s` the thread's current scheduler for a scope, whatever ends it (an ASSERT's early return included).
+struct scoped_current {
+    CoroutineScheduler *was;
+    explicit scoped_current(CoroutineScheduler *s) noexcept
+        : was(CoroutineScheduler::current_ptr()) {
+        CoroutineScheduler::set_current(s);
+    }
+    ~scoped_current() {
+        CoroutineScheduler::set_current(was);
+    }
+};
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test destroy_all_suspended() on a scheduler that is not the thread's current one scrubs its OWN queues.
+ * @brief An inner frame whose timer fired and queued it in this scheduler, destroyed through its owned root while
+ *        another scheduler is current, must leave this scheduler's ready queue -- a later drain would otherwise read
+ *        the freed frame. Its awaiter reaches the scheduler it registered with while that one lives (Huly QB-1220);
+ *        the base did, through its cached pointer, and the first design of QB-1220, which went through the current one,
+ *        did not.
+ */
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsItsOwnQueuesWhenAnotherSchedulerIsCurrent) {
+    auto *const                                             listener_scheduler = &coro_scheduler();
+    const long                                              baseline           = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler                                      standalone;
+    std::optional<scheduler_lifecycle_test::scoped_current> bound{std::in_place, &standalone};
+    auto const                                              inner = []() -> task<void> {
+        co_await sleep(1ms);
+    };
+    standalone.spawn([&inner]() -> task<void> { co_await inner(); });
+    standalone.run_ready(); // the root awaits the inner task, which parks on its timer, registered with `standalone`
+    for (int i = 0; i < 2000 && standalone.pending_count() == 0; ++i)
+        qb::io::async::listener::current.run_once_for(1ms); // the timer fires: the inner frame is queued in `standalone`
+    ASSERT_EQ(standalone.pending_count(), 1u) << "the inner frame's timer never queued it";
+    EXPECT_EQ(standalone.active_count(), 1u) << "a fired timer is counted once: queued, no longer suspended";
+    bound.reset();                      // the listener's scheduler current again
+    standalone.destroy_all_suspended(); // the root, then the inner frame through it
+    EXPECT_EQ(standalone.pending_count(), 0u) << "the destroyed inner frame is still queued in the scheduler that destroyed it";
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), listener_scheduler) << "the current scheduler was not restored";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A scheduler that runs frames while ANOTHER one is current, then destroys them, scrubs the scheduler they
+ *       registered with -- the current one -- not itself.
+ * @brief An awaiter registers with the scheduler current when it suspends; `run_ready()` does not make its own scheduler
+ *        current. The destroyer reaches its own bookkeeping only for the frames that registered with it (Huly
+ *        QB-1220: a design that made the destroyer current while it destroyed left this registration behind).
+ */
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsTheSchedulerItsFramesRegisteredWith) {
+    auto             &listener_scheduler = coro_scheduler();
+    const std::size_t active             = listener_scheduler.active_count();
+    const long        baseline           = detail::CoroutineFrameAllocator::live_frames;
+    {
+        CoroutineScheduler standalone; // never current: what it runs suspends under the listener's scheduler
+        auto const         inner = []() -> task<void> {
+            co_await sleep(5000ms);
+        };
+        standalone.spawn([&inner]() -> task<void> { co_await inner(); });
+        standalone.run_ready();
+        ASSERT_EQ(listener_scheduler.active_count(), active + 1) << "the inner frame registers with the current scheduler";
+        standalone.destroy_all_suspended(); // its root, and the inner frame through it
+        EXPECT_EQ(listener_scheduler.active_count(), active) << "the destroyed frame is still registered where it registered";
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test recycle_coro_scheduler() -- a VirtualCore's teardown -- leaves a sleep driven by hand to the task that owns it:
+ *       destroyed once, not reported, and still woken by its timer.
+ */
+TEST_F(CoroutineSchedulerTests, RecycleLeavesAHandDrivenSleepToTheTaskThatOwnsIt) {
+    const long        baseline  = detail::CoroutineFrameAllocator::live_frames;
+    const std::size_t abandoned = abandoned_coroutine_frames_total();
+    std::atomic<bool> resumed{false};
+    auto const        body = [&resumed]() -> task<void> {
+        co_await sleep(5ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        auto      &sched  = coro_scheduler();
+        parked.handle().resume();
+        ASSERT_EQ(sched.active_count(), 1u);
+        qb::io::async::listener::current.recycle_coro_scheduler();
+        EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline + 1) << "the recycle destroyed a frame its task owns";
+        EXPECT_EQ(sched.active_count(), 0u) << "the scheduler forgets a frame it does not own";
+        EXPECT_EQ(abandoned_coroutine_frames_total(), abandoned) << "a frame left to its task is not an abandoned one";
+        EXPECT_TRUE(pump_until([&] { return resumed.load(); })) << "the sleep kept across the recycle never woke";
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A frame a task owns, queued in a scheduler by a wait list (no watcher, no cached scheduler), leaves that
+ *       scheduler's queues when the scheduler destroys the chain while ANOTHER one is current.
+ * @brief An untimed channel receive is woken by a send: schedule_via_current() queues it in the scheduler then current.
+ *        Its frame is a task the spawned root awaits, so ~task scrubs it -- from the current scheduler only, until
+ *        Huly QB-1220: the destroying scheduler kept the freed frame queued, for its next drain to read.
+ */
+TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsAWokenWaitListFrameFromItsOwnQueue) {
+    const long                                              baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>                                            ch;
+    CoroutineScheduler                                      standalone;
+    std::optional<scheduler_lifecycle_test::scoped_current> bound{std::in_place, &standalone};
+    auto const                                              inner = [&ch]() -> task<void> {
+        (void) co_await ch.recv();
+    };
+    standalone.spawn([&inner]() -> task<void> { co_await inner(); });
+    standalone.run_ready();      // the root awaits the inner task, parked on the channel
+    ASSERT_TRUE(ch.try_send(1)); // wakes it: queued in `standalone`, the current scheduler
+    ASSERT_EQ(standalone.pending_count(), 1u);
+    bound.reset();
+    standalone.destroy_all_suspended(); // the root, then the inner task's frame through its ~task
+    EXPECT_EQ(standalone.pending_count(), 0u) << "the destroyed frame is still queued in the scheduler that destroyed it";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A frame destroyed through its raw handle while its scheduler destroys, that scheduler not being current,
+ *       leaves that scheduler's queues: its awaiter reaches the scheduler it registered with while that one lives.
+ */
+TEST_F(CoroutineSchedulerTests, AFrameDestroyedByHandleDuringItsSchedulersDestroyLeavesItsQueues) {
+    const long                                              baseline = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler                                      standalone;
+    std::optional<scheduler_lifecycle_test::scoped_current> bound{std::in_place, &standalone};
+    auto const                                              naps = []() -> task<void> {
+        co_await sleep(1ms);
+    };
+    std::coroutine_handle<> raw = naps().detach(); // a frame its holder destroys by hand
+    raw.resume();                                  // parks on its timer, registered with `standalone`
+    struct destroys_on_exit {
+        std::coroutine_handle<> h;
+        ~destroys_on_exit() {
+            h.destroy();
+        }
+    };
+    standalone.spawn([raw]() -> task<void> {
+        destroys_on_exit const holder{raw};
+        co_await sleep(5000ms); // the spawned root that holds it, parked
+    });
+    standalone.run_ready();
+    for (int i = 0; i < 2000 && standalone.pending_count() == 0; ++i)
+        qb::io::async::listener::current.run_once_for(1ms); // the 1 ms timer fires: the raw frame queued in `standalone`
+    ASSERT_EQ(standalone.pending_count(), 1u);
+    bound.reset();
+    standalone.destroy_all_suspended(); // the root, whose holder destroys the raw frame by its handle
+    EXPECT_EQ(standalone.pending_count(), 0u) << "the frame destroyed by its handle is still queued in its scheduler";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test Destroying a listener that has no scheduler leaves the thread's current scheduler bound.
+ * @brief ~listener runs reset_coro_scheduler(), which cleared the thread's current scheduler whatever it was: a
+ *        temporary listener unbound the thread's own (Huly QB-1220), and every awaiter resolving "the current one"
+ *        found none.
+ */
+TEST_F(CoroutineSchedulerTests, ATemporaryListenerLeavesTheThreadsSchedulerBound) {
+    auto *const sched = &coro_scheduler();
+    {
+        qb::io::async::listener temporary;
+    }
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), sched) << "destroying another listener unbound this thread's scheduler";
+}
+
+/**
+ * @test A frame registered with a scheduler that is alive but not current -- nothing current at all -- is scrubbed
+ *       from THAT scheduler when it is destroyed: the awaiter reaches the scheduler it registered with while it lives.
+ */
+TEST_F(CoroutineSchedulerTests, AFrameRegisteredWithALiveSchedulerIsScrubbedThereWhenNoneIsCurrent) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler standalone; // alive throughout; the listener's loop pumps its watchers, never its queue
+    std::atomic<bool>  resumed{false};
+    auto const         body = [&resumed]() -> task<void> {
+        co_await sleep(1ms);
+        resumed = true;
+    };
+    {
+        task<void> parked = body();
+        {
+            scheduler_lifecycle_test::scoped_current const bound{&standalone};
+            parked.handle().resume(); // registered with `standalone`
+            for (int i = 0; i < 2000 && standalone.pending_count() == 0; ++i)
+                qb::io::async::listener::current.run_once_for(1ms); // the timer fires: queued in `standalone`
+            ASSERT_EQ(standalone.pending_count(), 1u);
+        }
+        scheduler_lifecycle_test::scoped_current const none{nullptr};
+        parked = task<void>{}; // destroyed with no scheduler current
+    }
+    EXPECT_EQ(standalone.pending_count(), 0u) << "the destroyed frame is still queued in the scheduler it registered with";
+    EXPECT_FALSE(resumed.load());
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test The thread's live schedulers: a scheduler is known from its construction to its destruction, whichever one of
+ *       several goes first, and one beyond the table's 16 is unknown -- its awaiters then fall back on the current
+ *       scheduler -- without keeping a slot once it goes.
+ * @brief The registry only compares the cached pointer, never follows it (Huly QB-1220): a scheduler left known after
+ *        its destruction is followed into freed memory, one forgotten while it lives leaves its frames in its queues.
+ */
+TEST_F(CoroutineSchedulerTests, ASchedulerIsKnownLiveFromItsConstructionToItsDestruction) {
+    using detail::is_live_scheduler;
+    auto                      first  = std::make_unique<CoroutineScheduler>();
+    auto                      second = std::make_unique<CoroutineScheduler>();
+    auto                      third  = std::make_unique<CoroutineScheduler>();
+    CoroutineScheduler const *gone   = second.get();
+    EXPECT_TRUE(is_live_scheduler(first.get()) && is_live_scheduler(gone) && is_live_scheduler(third.get()));
+    second.reset(); // entered before `third`: not the table's last slot
+    EXPECT_FALSE(is_live_scheduler(gone)) << "a destroyed scheduler is still known live";
+    EXPECT_TRUE(is_live_scheduler(first.get()) && is_live_scheduler(third.get())) << "destroying one forgot another";
+    gone = first.get();
+    first.reset();
+    EXPECT_FALSE(is_live_scheduler(gone));
+    EXPECT_TRUE(is_live_scheduler(third.get()));
+
+    std::vector<std::unique_ptr<CoroutineScheduler>> many;
+    for (int i = 0; i < 20; ++i)
+        many.push_back(std::make_unique<CoroutineScheduler>());
+    EXPECT_FALSE(is_live_scheduler(many.back().get())) << "the table holds 16: the rest are unknown";
+    std::vector<CoroutineScheduler const *> addresses;
+    for (auto const &each : many)
+        addresses.push_back(each.get());
+    many.clear();
+    EXPECT_TRUE(is_live_scheduler(third.get())) << "destroying the others forgot one still alive";
+    for (CoroutineScheduler const *each : addresses)
+        EXPECT_FALSE(is_live_scheduler(each)) << "a destroyed scheduler is still known live";
+    auto const again = std::make_unique<CoroutineScheduler>();
+    EXPECT_TRUE(is_live_scheduler(again.get())) << "the schedulers beyond the table kept slots once destroyed";
+}
+
+/**
+ * @test A temporary listener that ran a coroutine took over as the thread's current scheduler when it created its own;
+ *       once it is gone, none is bound, and the next lookup binds the thread's own listener's again.
+ * @brief Its reset unbinds only its own scheduler (Huly QB-1220) -- here the current one, so the thread is left with
+ *        none until a lookup that binds -- `current()`, `schedule_via_current()`, an actor's spawn -- binds the loop's
+ *        again; `current_ptr()`, `run_ready()` and `forget_frame_if_current()` do not (Huly QB-1245).
+ */
+TEST_F(CoroutineSchedulerTests, ATemporaryListenerThatCreatedItsSchedulerLeavesTheThreadsOwnToBeBoundAgain) {
+    auto *const sched = &coro_scheduler();
+    {
+        qb::io::async::listener   temporary;
+        CoroutineScheduler *const its = &temporary.coro_scheduler(); // created here
+        EXPECT_EQ(CoroutineScheduler::current_ptr(), its) << "its scheduler took over as current";
+    }
+    EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr) << "the temporary listener's destroyed scheduler is still bound";
+    EXPECT_EQ(&CoroutineScheduler::current(), sched) << "the thread's own scheduler was not bound again";
+}
+
+/**
+ * @test A scheduler destroyed while it is the thread's current one unbinds itself.
+ * @brief A directly-owned scheduler left the thread's current pointer dangling until its owner cleared it, and an
+ *        awaiter falling back on "the current scheduler" in that window followed it (Huly QB-1220).
+ */
+TEST_F(CoroutineSchedulerTests, ASchedulerDestroyedWhileCurrentUnbindsItself) {
+    auto *const sched = &coro_scheduler();
+    {
+        auto standalone = std::make_unique<CoroutineScheduler>();
+        CoroutineScheduler::set_current(standalone.get());
+        standalone.reset();
+        EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr) << "the destroyed scheduler is still the current one";
+    }
+    CoroutineScheduler::set_current(sched);
 }

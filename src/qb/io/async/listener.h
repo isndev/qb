@@ -1420,10 +1420,10 @@ public:
     }
 
     /**
-     * @brief Destroy every frame the coroutine scheduler tracks and return it to a fresh state,
+     * @brief Destroy every frame the coroutine scheduler owns and return it to a fresh state,
      *        keeping the scheduler (and its storage) bound to this loop -- see
-     *        `CoroutineScheduler::recycle()`. What a `VirtualCore` does at its teardown: the frames
-     *        die with their engine, and the next engine on this thread starts warm. No-op when no
+     *        `CoroutineScheduler::recycle()`. What a `VirtualCore` does at its teardown: the spawned
+     *        frames die with their engine, and the next engine on this thread starts warm. No-op when no
      *        scheduler exists.
      */
     inline void
@@ -1433,11 +1433,10 @@ public:
     }
 
     /**
-     * @brief Reset the coroutine scheduler (for test isolation).
-     *
-     * Destroys the current scheduler and clears the thread-local current pointer.
-     * The next call to coro_scheduler() will create a new scheduler.
-     * Use in test TearDown to avoid leftover state affecting the next test.
+     * @brief Reset the coroutine scheduler (for test isolation). Destroys the frames the scheduler owns (spawned),
+     *        then the scheduler, and clears the thread-local current pointer if it names that scheduler -- another
+     *        listener's stays bound; a frame it does not own -- a task driven by hand -- is its task's (Huly QB-1220).
+     * The next call to coro_scheduler() will create a new scheduler. Use in test TearDown.
      */
     inline void
     reset_coro_scheduler() {
@@ -1445,7 +1444,8 @@ public:
         if (_coro_scheduler) {
             _coro_scheduler->destroy_all_suspended();
         }
-        CoroutineScheduler::set_current(nullptr);
+        if (CoroutineScheduler::current_ptr() == _coro_scheduler.get())
+            CoroutineScheduler::set_current(nullptr);
         _coro_scheduler.reset();
         QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
