@@ -128,7 +128,7 @@ concept StarttlsNegotiator = requires(N n, qb::io::tcp::socket &s, int revents) 
  * @brief Handles asynchronous TCP connection establishment
  *
  * Manages non-blocking `n_connect`, completion on `EV_WRITE`, and an optional
- * monotonic deadline (`qb::mono_now()`) via `async::callback`. The instance is kept alive with
+ * monotonic deadline (`qb::mono_now()`) via `async::callback` (one already past fails from the loop). The instance is kept alive with
  * `std::shared_ptr` and `self_hold_` until exactly one completion is delivered to
  * the user callback (so the object is not destroyed while libev still references
  * it) -- by its io watcher's hold while one is armed, by the deferred callback's
@@ -234,17 +234,14 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
             deliver(Socket_{});
     }
 
-    // Deliver an *immediate* (synchronous) connect failure on the next event-loop
-    // turn instead of inline. n_connect() can fail synchronously — notably on
-    // Windows, where a non-blocking connect to a closed loopback port reports the
-    // refusal right away rather than deferring it via WSAEWOULDBLOCK — and
-    // delivering the failure inline re-enters the caller (e.g. a client that pushes
-    // a request from inside its own disconnect/failure handler, which then re-enters
-    // that handler and drops work queued during the current pass). `async::defer()`
-    // posts it to the tail of the current loop turn, so the completion callback is
-    // never invoked re-entrantly from run(), exactly matching the POSIX path where a
-    // non-blocking connect goes EINPROGRESS and the result is reported from the loop
-    // (EV_WRITE / deadline).
+    // Deliver a connect failure known at once -- a synchronous one, or a deadline already past when an attempt arms it
+    // (Huly QB-1200) -- on the next event-loop turn instead of inline. n_connect() can fail synchronously — notably on
+    // Windows, where a non-blocking connect to a closed loopback port reports the refusal right away rather than deferring
+    // it via WSAEWOULDBLOCK — and delivering the failure inline re-enters the caller (e.g. a client that pushes a request
+    // from inside its own disconnect/failure handler, which then re-enters that handler and drops work queued during the
+    // current pass). `async::defer()` posts it to the tail of the current loop turn, so the completion callback is never
+    // invoked re-entrantly from run(), exactly matching the POSIX path where a non-blocking connect goes EINPROGRESS and
+    // the result is reported from the loop (EV_WRITE / deadline).
     void
     deliver_failure_deferred() {
         // Bind the connector's lifetime to the deferred callback via a STRONG capture — NOT
@@ -257,9 +254,9 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         // the connector + its captured completion callback are reclaimed; no leak.
         //
         // The capture TAKES OVER the self-hold an earlier attempt's watcher armed (Huly QB-873): that
-        // watcher is gone -- the TCP connect failed on its readiness, or was refused at once on a
-        // later address -- and with it the teardown hook that broke the hold, so a hold left set
-        // outlives the dropped callback just the same.
+        // watcher is gone -- the TCP connect failed on its readiness, was refused at once on a later
+        // address, or its deadline had passed when it was armed -- and with it the teardown hook that
+        // broke the hold, so a hold left set outlives the dropped callback just the same.
         auto self = self_hold_ ? std::exchange(self_hold_, nullptr) : this->shared_from_this();
         qb::io::async::defer([self = std::move(self)]() { self->deliver_failure(); });
     }
@@ -291,15 +288,18 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     arm_deadline() {
         if (deadline_ == qb::mono_time::max() || deadline_armed_)
             return;
-        deadline_armed_                 = true;
-        const qb::duration       remain = deadline_ - qb::mono_now();
-        std::weak_ptr<connector> w      = this->shared_from_this();
+        deadline_armed_           = true;
+        const qb::duration remain = deadline_ - qb::mono_now();
+        if (remain <= qb::duration::zero()) { // past already when the attempt arms it (Huly QB-1200): it fails now, from the loop
+            listener::current.unregisterEvent(std::exchange(io_iface_, nullptr)); // no completion can follow the deadline's
+            return deliver_failure_deferred();
+        }
         qb::io::async::callback(
-            [w]() {
+            [w = this->weak_from_this()]() {
                 if (auto self = w.lock())
                     self->on_deadline();
             },
-            remain > qb::duration::zero() ? remain : qb::duration::zero());
+            remain);
     }
 
     [[nodiscard]] finalize_result

@@ -76,6 +76,7 @@ stepped_time_of_day() noexcept {
 
 #include <qb/io/tcp/listener.h>
 #include <qb/io/tcp/socket.h>
+#include <qb/io/udp/socket.h>
 
 #include "../../shared/coroutine_test_support.h"
 
@@ -334,5 +335,165 @@ TEST_F(ConnectorClock, ATimeOfDayStepForwardDoesNotCutAnAttemptsShareShort) {
         EXPECT_GE(r.second_at, 3000ms - kClockRounding) << "the first address gave way early, by " << (3000ms - r.second_at).count()
                                                         << " ns: the step forward was counted against its share";
         EXPECT_FALSE(r.ended) << "the connect ended before its second attempt";
+    }
+}
+
+namespace connector_clock_test {
+
+// A TCP connect that WOULD complete in the next loop turn: its descriptor, an unconnected UDP socket, is writable at
+// once, and once it is ready the connect reports up and done. What the connector reads of it is counted, like the
+// silent descriptor's.
+class ReadyPeerSocket {
+    std::shared_ptr<qb::io::udp::socket> _ready;
+
+public:
+    [[nodiscard]] bool
+    is_open() const noexcept {
+        return _ready && _ready->is_open();
+    }
+
+    [[nodiscard]] auto
+    native_handle() const noexcept {
+        return _ready->native_handle();
+    }
+
+    int
+    n_connect(qb::io::uri const &) {
+        return n_connect(qb::io::endpoint{});
+    }
+
+    int
+    n_connect(qb::io::endpoint const &) {
+        attempt_starts.push_back(qb::mono_now());
+        auto made = std::make_shared<qb::io::udp::socket>();
+        _ready    = made->init() ? made : nullptr;
+        if (!_ready)
+            ADD_FAILURE() << "the system refused a UDP socket: no connect is held in progress";
+        qb::io::socket::set_last_errno(_ready ? EINPROGRESS : ECONNREFUSED);
+        return -1;
+    }
+
+    [[nodiscard]] int
+    handshake_status() const noexcept {
+        ++readiness_events;
+        return 1; // up and done
+    }
+
+    template <typename T>
+    int
+    get_optval(int, int, T &out) const noexcept {
+        ++readiness_events;
+        out = T{};
+        return 0;
+    }
+
+    void
+    disconnect() noexcept {
+        _ready.reset();
+    }
+};
+
+/// What a connect whose deadline is already behind the clock when its attempt arms it delivered, and when.
+struct expired_outcome {
+    int  completions  = 0;
+    int  ended_in_run = 0;    ///< completions delivered before `run()` returned
+    bool open         = true; ///< what it delivered last was an open socket
+    int  readiness    = 0;    ///< what the connector read of the descriptor once the loop reported it ready
+};
+
+// Build the connector in form `f` with `timeout` over a `Socket_` descriptor, start its attempt a microsecond later -- a
+// 1 ns deadline is behind the clock when the attempt arms it, whatever the attempt takes -- then pump the loop.
+template <typename Socket_>
+expired_outcome
+connect_already_past(form const f, qb::duration const timeout = 1ns) {
+    expired_outcome result;
+    auto const      done    = std::make_shared<expired_outcome>();
+    auto const      running = std::make_shared<bool>(false);
+    auto            on      = [done, running](Socket_ &&socket) {
+        done->open = socket.is_open();
+        done->ended_in_run += *running ? 1 : 0;
+        ++done->completions;
+    };
+    using connector_t = qb::io::async::tcp::connector<Socket_, decltype(on)>;
+    std::vector<qb::io::endpoint> const endpoints(1, qb::io::endpoint().as_in("127.0.0.1", 9));
+    qb::io::uri const                   remote{"tcp://127.0.0.1:9"};
+    double const                        seconds = qb::detail::to_ev_seconds(timeout);
+    std::shared_ptr<connector_t>        op;
+    switch (f) {
+        case form::uri:
+            op = std::make_shared<connector_t>(std::move(on), remote, seconds);
+            break;
+        case form::socket_uri:
+            op = std::make_shared<connector_t>(std::move(on), Socket_{}, remote, seconds);
+            break;
+        case form::endpoints:
+            op = std::make_shared<connector_t>(std::move(on), endpoints, "127.0.0.1", seconds);
+            break;
+        case form::socket_endpoints:
+            op = std::make_shared<connector_t>(std::move(on), Socket_{}, endpoints, "127.0.0.1", seconds);
+            break;
+    }
+    auto const built = qb::mono_now(); // after the connector read the clock for its deadline
+    while (qb::mono_now() - built < 1us) {
+    }
+    *running = true;
+    op->run();
+    *running = false;
+    op.reset(); // the connector keeps itself alive while its connect is in flight
+    (void) pump_until([&] { return done->completions > 0; }, 3s);
+    qb::io::async::run_for(10ms); // a second completion, if one were coming, has had its turns
+    result           = *done;
+    result.readiness = readiness_events;
+    EXPECT_EQ(attempt_starts.size(), 1u) << "the connect never started its attempt";
+    attempt_starts.clear();
+    readiness_events = 0;
+    qb::io::async::listener::current.clear();
+    return result;
+}
+
+} // namespace connector_clock_test
+
+TEST_F(ConnectorClock, ADeadlinePastWhenTheAttemptArmsItFailsFromTheLoopNotInsideRun) {
+    // Huly QB-1200. A deadline already behind the clock when the attempt arms it -- a name resolution longer than the
+    // timeout -- went to `async::callback` with a zero delay, which runs its function inline: the completion ran inside
+    // `run()`, so inside the caller's `connect()`, re-entering it. The connector's other failures are delivered from
+    // the loop (`deliver_failure_deferred`); so must this one, once, and with an empty socket.
+    using namespace connector_clock_test;
+    for (form const f : kEveryForm) {
+        SCOPED_TRACE(name(f));
+        auto const r = connect_already_past<SilentPeerSocket>(f);
+        ASSERT_EQ(r.readiness, 0) << "a silent descriptor turned ready: the connect was not held in progress";
+        EXPECT_EQ(r.ended_in_run, 0) << "the completion ran inside run(), inside the caller's connect()";
+        EXPECT_EQ(r.completions, 1) << "the expired deadline did not end the connect exactly once";
+        EXPECT_FALSE(r.open);
+    }
+}
+
+TEST_F(ConnectorClock, ADeadlinePastWhenTheAttemptArmsItWinsOverAConnectThatCompletesNext) {
+    // The same expired deadline over a descriptor the loop reports ready in its next turn: the connect is not given
+    // that turn. Its watcher goes when the deadline is found past, so the failure is the only completion -- not a
+    // connected socket delivered past its deadline because the failure waited for the loop.
+    using namespace connector_clock_test;
+    for (form const f : kEveryForm) {
+        SCOPED_TRACE(name(f));
+        auto const r = connect_already_past<ReadyPeerSocket>(f);
+        EXPECT_EQ(r.ended_in_run, 0) << "the completion ran inside run(), inside the caller's connect()";
+        EXPECT_EQ(r.completions, 1) << "the connect did not end exactly once";
+        EXPECT_FALSE(r.open) << "a connect whose deadline had passed when it was armed was delivered connected";
+        EXPECT_EQ(r.readiness, 0) << "the loop still watched the descriptor after the deadline was found past";
+    }
+}
+
+TEST_F(ConnectorClock, TheReadyDescriptorConnectsWhenItsDeadlineIsAhead) {
+    // The positive control of the case above: with its deadline ahead, the same descriptor is reported ready in the next
+    // turn and the connect is delivered connected -- the fake does what that case needs it to do on this backend.
+    using namespace connector_clock_test;
+    for (form const f : kEveryForm) {
+        SCOPED_TRACE(name(f));
+        auto const r = connect_already_past<ReadyPeerSocket>(f, 3s);
+        EXPECT_EQ(r.ended_in_run, 0);
+        EXPECT_EQ(r.completions, 1);
+        EXPECT_TRUE(r.open) << "the descriptor was never reported ready: the case above proves nothing on this backend";
+        EXPECT_GT(r.readiness, 0) << "the loop never reported the descriptor";
     }
 }
