@@ -48,6 +48,8 @@
 #include <utility>
 #include <vector>
 
+#include "../../shared/log_writer_drain.h"
+
 namespace {
 
 class AsyncIoBaseTest : public ::testing::Test {
@@ -1831,6 +1833,7 @@ TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDeliversEverythingWhileThePeerKee
 // re-executed ("threadsafe"); the patterns are substrings of the assertions' own text.
 TEST(AsyncIoBaseDeathTest, StartWhileADisconnectIsPendingIsRefused) {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's logging cases (Huly QB-1206)
     EXPECT_DEATH(
         {
             qb::io::async::init();
@@ -1845,6 +1848,7 @@ TEST(AsyncIoBaseDeathTest, StartWhileADisconnectIsPendingIsRefused) {
 
 TEST(AsyncIoBaseDeathTest, ResetIoStateWhileADisconnectIsPendingIsRefused) {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's logging cases (Huly QB-1206)
     EXPECT_DEATH(
         {
             qb::io::async::init();
@@ -1859,6 +1863,7 @@ TEST(AsyncIoBaseDeathTest, ResetIoStateWhileADisconnectIsPendingIsRefused) {
 
 TEST(AsyncIoBaseDeathTest, StartFromInsideDisposeIsRefused) {
     GTEST_FLAG_SET(death_test_style, "threadsafe");
+    qb::io::test::drain_log_writer_before_fork(); // a --gtest_repeat pass follows this binary's logging cases (Huly QB-1206)
     EXPECT_DEATH(
         {
             qb::io::async::init();
