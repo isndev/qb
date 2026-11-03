@@ -63,11 +63,15 @@ An OpenSSL whose headers, `libssl` and `libcrypto` are not one major stops the c
 Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part -- one entry removed while
 `OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
 entries and their majors; remove all three from the cache, or configure with `--fresh`. qb needs OpenSSL 3.0 or later
-(`crypto.h` uses its `EVP_MAC` API): headers older than that whose majors disagree are refused for being too old, and
-the message names that minimum -- a release that old may number its libraries apart from itself, as RHEL 7 names
-1.0.2k's `libssl.so.10`. An older OpenSSL whose majors agree is not refused at configure time; its compile fails.
+(`crypto.h` uses its `EVP_MAC` API), and an older one stops the configure on every platform, by the version FindOpenSSL
+reports or by the one its header says -- LibreSSL, by its marker, too: the message names the version, the paths and
+the remedy, another OpenSSL through `OPENSSL_ROOT_DIR` with the three entries removed (on Windows,
+`-U "LIB_EAY*" -U "SSL_EAY*"` for the two libraries: FindOpenSSL caches them there under those names), or
+`-DQB_WITH_SSL=OFF` (Huly QB-1213); before, one whose majors agreed configured and failed at its compile. Headers that
+old whose majors disagree are refused for being too old, not as a cache cleared in part: a release that old may number
+its libraries apart from itself, as RHEL 7 names 1.0.2k's `libssl.so.10`.
 
-<!-- src: qb/cmake/qbOpenSSL.cmake:197-292 -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:226-382 -->
 
 | Symbol | Meaning |
 | --- | --- |

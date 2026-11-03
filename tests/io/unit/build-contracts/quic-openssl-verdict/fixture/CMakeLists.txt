@@ -6,7 +6,7 @@
 # you may not use this file except in compliance with the License.
 #
 # The OpenSSL and QUIC decisions of qbDependencies.cmake (cmake/qbOpenSSL.cmake), driven with planted libraries (Huly
-# QB-1185, QB-1190): a languageless project that runs, with every search confined to the planted root and pkg-config
+# QB-1185, QB-1190, QB-1213): a languageless project that runs, with every search confined to the planted root and pkg-config
 # off, what qbDependencies.cmake runs -- _qb_find_openssl() when OPENSSL_ROOT_DIR names a planted OpenSSL or
 # FIND_OPENSSL asks for the default search (else the OPENSSL_* entries given are the readings), _qb_check_openssl() and
 # _qb_openssl_command() on the OpenSSL found or given, qb's own FindNgtcp2.cmake (or a parent's, PARENT_MODULE_DIR),
@@ -120,7 +120,9 @@ endif()
 file(APPEND "${RESULT_DIR}/configures.txt" "configured\n")
 set(_entries "NGTCP2_VANISHED=${Ngtcp2_VANISHED}\n") # FindNgtcp2's own answer, which a consumer of an installed qb reads
 foreach(_entry IN ITEMS NGTCP2_INCLUDE_DIR NGTCP2_LIBRARY NGTCP2_CRYPTO_OSSL_LIBRARY NGTCP2_CRYPTO_INCLUDE_DIR
-                        NGTCP2_CRYPTO_OSSL_INCLUDE_DIR OPENSSL_INCLUDE_DIR OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY)
+                        NGTCP2_CRYPTO_OSSL_INCLUDE_DIR OPENSSL_INCLUDE_DIR OPENSSL_SSL_LIBRARY OPENSSL_CRYPTO_LIBRARY
+                        LIB_EAY SSL_EAY LIB_EAY_DEBUG LIB_EAY_RELEASE SSL_EAY_DEBUG SSL_EAY_RELEASE) # the last six:
+                        # FindOpenSSL's cache on Windows, MSVC's by configuration
     string(APPEND _entries "${_entry}=$CACHE{${_entry}}\n")
 endforeach()
 file(WRITE "${RESULT_DIR}/verdict.txt"

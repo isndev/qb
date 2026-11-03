@@ -1,4 +1,4 @@
-# qb-io-test-unit-quic-openssl-verdict (Huly QB-1185, QB-1190). The OpenSSL and QUIC decisions qbDependencies.cmake
+# qb-io-test-unit-quic-openssl-verdict (Huly QB-1185, QB-1190, QB-1213). The OpenSSL and QUIC decisions qbDependencies.cmake
 # takes (cmake/qbOpenSSL.cmake) on libraries planted in a scratch root, through the fixture beside this file:
 # - two OpenSSL majors disable QUIC with a warning, and QB_REQUIRE_FEATURES=ON makes that a configure error -- what the
 #   qb CI lanes configure with -- while one major enables QUIC silently, two copies of one major keep it with a warning
@@ -7,8 +7,9 @@
 # - qb's own headers, libssl and libcrypto not one major -- a half-cleared cache -- stop the configure, QUIC or not, with
 #   the three majors and the remedy, which then works (POSIX: read through a stand-in tool that prints the planted
 #   listing, as the module reads otool or readelf); a static or unread library takes its headers' major; LibreSSL, and
-#   a system whose file names need not carry the release's major, are not compared; headers older than qb's minimum,
-#   OpenSSL 3.0, are refused for that when their readings disagree.
+#   a system whose file names need not carry the release's major, are not compared; an OpenSSL older than qb's minimum,
+#   3.0 -- by FindOpenSSL's version or the header's own -- is refused for that, its readings agreeing or not, with a
+#   command printed on a line of its own that, run as printed on the build directory, finds another (QB-1213).
 # - the files read are inputs of the configure: `cmake --build` re-runs it when a library is rewritten, when the link the
 #   search found is moved onto a file older than the build -- as a package manager restores an archive's times -- and
 #   the one it named removed (libngtcp2's, qb's libssl), when qb's opensslv.h changes, and when files vanish: a path the
@@ -83,9 +84,12 @@ function(escape text out_var) # <text> as a regex that matches it
     set(${out_var} "${_escaped}" PARENT_SCOPE)
 endfunction()
 
-# configure_fixture(<case> <build dir> OK|FAIL <-D...>... [MUST <regex>...] [NOT <regex>...] [HAS <line regex>...]):
-# configures the fixture, then checks its exit, its output (MUST hold each regex, NOT none) and verdict.txt (HAS a line
-# matching each). The output's lines are joined first: CMake wraps a warning's text.
+# configure_fixture(<case> <build dir> OK|FAIL [AS_PRINTED] <-D...>... [MUST <regex>...] [NOT <regex>...]
+#                   [HAS <line regex>...] [LINE <line regex>...]): configures the fixture, then checks its exit, its
+# output (MUST hold each regex, NOT none) and verdict.txt (HAS a line matching each). The output's lines are joined first
+# for MUST and NOT -- CMake wraps a warning's text -- and not for LINE, a whole line of the output as printed. AS_PRINTED
+# runs cmake with the arguments given and nothing of the harness's own -- no argument, no _env setting -- on a build
+# directory a configure of the case made (printed_command()); the output is kept in <case>/output.txt.
 set(_cases 0)
 set(_failures "")
 function(configure_fixture name build expect)
@@ -114,8 +118,13 @@ function(configure_fixture name build expect)
     endif()
     set(_kind DEFINE)
     set(_checks "")
+    if(ARGC GREATER 3 AND "${ARGV3}" STREQUAL "AS_PRINTED")
+        set(_args "")
+        set(_env "")
+        list(REMOVE_AT ARGN 0)
+    endif()
     foreach(_arg IN LISTS ARGN)
-        if(_arg STREQUAL "MUST" OR _arg STREQUAL "NOT" OR _arg STREQUAL "HAS")
+        if(_arg STREQUAL "MUST" OR _arg STREQUAL "NOT" OR _arg STREQUAL "HAS" OR _arg STREQUAL "LINE")
             set(_kind "${_arg}")
         elseif(_kind STREQUAL "DEFINE")
             list(APPEND _args "${_arg}")
@@ -126,6 +135,7 @@ function(configure_fixture name build expect)
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_env} "${CMAKE_COMMAND}" ${_args}
                     RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
     string(REGEX REPLACE "[ \t\r]*\n[ \t]*" " " _flat "${_out}")
+    file(WRITE "${WORK_DIR}/${name}/output.txt" "${_out}")
     set(_verdict "")
     if(EXISTS "${WORK_DIR}/${name}/verdict.txt")
         file(READ "${WORK_DIR}/${name}/verdict.txt" _verdict)
@@ -151,11 +161,30 @@ function(configure_fixture name build expect)
             string(APPEND _wrong "\n    '${_check}' in its output")
         elseif(_kind STREQUAL "HAS" AND NOT "\n${_verdict}" MATCHES "\n${_check}\n")
             string(APPEND _wrong "\n    verdict.txt has no line '${_check}'")
+        elseif(_kind STREQUAL "LINE" AND NOT "\n${_out}\n" MATCHES "\n${_check}\n") # as printed: not wrapped
+            string(APPEND _wrong "\n    no line '${_check}' in its output")
         endif()
     endwhile()
     if(_wrong)
         set(_failures "${_failures}\n  ${name}:${_wrong}\n    verdict.txt: ${_verdict}\n    output: ${_flat}" PARENT_SCOPE)
     endif()
+endfunction()
+
+# printed_command(<case> <OPENSSL_ROOT_DIR> <build dir> <out_var>): the remedy command the case's last configure printed
+# on a line of its own (cmake -U ...), its <it> and <build directory> filled in, as configure_fixture(AS_PRINTED)'s
+# arguments: what a user who copies it runs. Nothing printed: arguments cmake refuses, so the configure fails.
+function(printed_command name root build out_var)
+    file(READ "${WORK_DIR}/${name}/output.txt" _out)
+    if(NOT "\n${_out}\n" MATCHES "\n +cmake (-U [^\n]*)\n")
+        set(${out_var} "--no-remedy-command-printed" PARENT_SCOPE)
+        return()
+    endif()
+    string(REPLACE "<build directory>" "@BUILD@" _line "${CMAKE_MATCH_1}")
+    string(REPLACE "<it>" "@IT@" _line "${_line}")
+    separate_arguments(_args UNIX_COMMAND "${_line}")
+    list(TRANSFORM _args REPLACE "@IT@" "${root}")
+    list(TRANSFORM _args REPLACE "^@BUILD@$" "${build}")
+    set(${out_var} ${_args} PARENT_SCOPE)
 endfunction()
 
 # A planted libngtcp2 under <case>/root -- its headers and its core library; the crypto helper is each case's -- as the
@@ -213,6 +242,57 @@ configure_fixture(absent-auto "${WORK_DIR}/absent-auto/build" OK ${_unread} "-DQ
 file(MAKE_DIRECTORY "${WORK_DIR}/openssl-absent/root")
 configure_fixture(openssl-absent "${WORK_DIR}/openssl-absent/build" OK "-DFIND_OPENSSL=ON"
                   NOT "is gone" HAS "OPENSSL=FALSE")
+# An OpenSSL older than qb's minimum, 3.0, is refused on Windows too (QB-1213), nothing read there but the versions, and
+# the remedy removes LIB_EAY* and SSL_EAY*: FindOpenSSL caches the libraries there under those names -- MSVC's with
+# _DEBUG and _RELEASE -- which removing OPENSSL_SSL_LIBRARY does not reach. The command is a line of its own, which
+# CMake prints unwrapped: copied as printed, it is one command.
+set(_older "qb needs OpenSSL 3\\.0 or later, and the one found is older: ")
+set(_posix_command "cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<it> <build directory>")
+set(_windows_command "cmake -U OPENSSL_INCLUDE_DIR -U \"LIB_EAY\\*\" -U \"SSL_EAY\\*\" -DOPENSSL_ROOT_DIR=<it> <build directory>")
+set(_windows_remedy "entries removed: +${_windows_command} +FindOpenSSL caches the libraries here as LIB_EAY and SSL_EAY")
+set(_lib "${WORK_DIR}/windows-1.1/root/lib")
+file(WRITE "${_lib}/include/openssl/opensslv.h" "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n")
+configure_fixture(windows-1.1 "${WORK_DIR}/windows-1.1/build" FAIL "-DQB_WITH_QUIC=OFF" "-DCMAKE_SYSTEM_NAME=Windows"
+                  "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl.lib" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto.lib"
+                  "-DOPENSSL_VERSION=1.1.1w" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                  MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w, and .*/opensslv\\.h says 1\\.1 \\(" "${_windows_remedy}"
+                  LINE " +${_windows_command}"
+                  NOT "-U OPENSSL_SSL_LIBRARY" "--fresh" "not one major")
+# The command run as printed, on the refused build directory, finds the other OpenSSL's headers and libraries there
+# -- MSVC's _DEBUG and _RELEASE libraries too (FindOpenSSL's MSVC branch, MSVC set by hand: the
+# fixture enables no language). The three POSIX entries removed instead find its headers and keep the old libraries,
+# which nothing compares on Windows: what the command is there for.
+set(_root "${WORK_DIR}/windows-remedy/root")
+foreach(_prefix "o111w;# define OPENSSL_VERSION_NUMBER  0x1010117fL\n" "o3w;# define OPENSSL_VERSION_STR \"3.0.13\"\n")
+    list(GET _prefix 0 _name)
+    list(GET _prefix 1 _header)
+    file(WRITE "${_root}/${_name}/include/openssl/ssl.h" "")
+    file(WRITE "${_root}/${_name}/include/openssl/opensslv.h" "${_header}")
+    foreach(_library libssl libcrypto libssld libcryptod) # the last two: MSVC's debug names
+        file(WRITE "${_root}/${_name}/lib/${_library}.lib" "")
+    endforeach()
+endforeach()
+set(_refused "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and .*/o111w/include/openssl/opensslv\\.h says 1\\.1")
+foreach(_msvc OFF ON)
+    set(_build "${WORK_DIR}/windows-remedy/msvc-${_msvc}")
+    configure_fixture(windows-remedy "${_build}" FAIL "-DQB_WITH_QUIC=OFF" "-DCMAKE_SYSTEM_NAME=Windows" "-DMSVC=${_msvc}"
+                      "-DFIND_OPENSSL=ON" "-DOPENSSL_ROOT_DIR=/o111w" MUST "${_refused}" "${_windows_remedy}")
+    if(_msvc)
+        set(_moved "SSL_EAY_RELEASE=.*/o3w/lib/libssl\\.lib" "SSL_EAY_DEBUG=.*/o3w/lib/libssld\\.lib"
+                   "LIB_EAY_RELEASE=.*/o3w/lib/libcrypto\\.lib" "LIB_EAY_DEBUG=.*/o3w/lib/libcryptod\\.lib")
+    else()
+        set(_moved "SSL_EAY=.*/o3w/lib/libssl\\.lib" "LIB_EAY=.*/o3w/lib/libcrypto\\.lib")
+    endif()
+    printed_command(windows-remedy /o3w "${_build}" _printed)
+    configure_fixture(windows-remedy "${_build}" OK AS_PRINTED ${_printed} NOT "qb needs OpenSSL"
+                      HAS "OPENSSL=TRUE" "OPENSSL_INCLUDE_DIR=.*/o3w/include" ${_moved})
+endforeach()
+set(_build "${WORK_DIR}/windows-remedy/posix-entries")
+configure_fixture(windows-remedy "${_build}" FAIL "-DQB_WITH_QUIC=OFF" "-DCMAKE_SYSTEM_NAME=Windows" "-DFIND_OPENSSL=ON"
+                  "-DOPENSSL_ROOT_DIR=/o111w" MUST "${_refused}")
+configure_fixture(windows-remedy "${_build}" OK "-U" "OPENSSL_INCLUDE_DIR" "-U" "OPENSSL_SSL_LIBRARY"
+                  "-U" "OPENSSL_CRYPTO_LIBRARY" "-DOPENSSL_ROOT_DIR=/o3w" NOT "qb needs OpenSSL"
+                  HAS "OPENSSL_INCLUDE_DIR=.*/o3w/include" "SSL_EAY=.*/o111w/lib/libssl\\.lib") # the old one's, kept
 # Paths that never existed -- libraries a superbuild builds after this configure -- are kept, never searched again.
 plant_ngtcp2(not-yet-built _ngtcp2)
 set(_later "${WORK_DIR}/not-yet-built/later")
@@ -310,8 +390,36 @@ if(_posix)
                   NOT "not one major" HAS "OPENSSL_COMPARED=TRUE" HAS "OPENSSL_READ=81\\|81")
     numbered_case(quictls-split FAIL 3.1.7 "# define OPENSSL_SHLIB_VERSION 81.3\n" 81 3
                   MUST "${_split}[^)]*\\) holds the headers of OpenSSL 3\\.1\\.7, for libraries of major 81; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 81; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 3\\.")
-    numbered_case(openssl-1.1 OK 1.1.1w "# define SHLIB_VERSION_NUMBER \"1.1\"\n" 1 1
-                  NOT "not one major" HAS "OPENSSL_READ=1\\|1")
+    # An OpenSSL older than qb's minimum whose readings agree is refused at the configure, which names the version, the
+    # path and the remedy (QB-1213): it configured, and failed at the compile, on OpenSSL 3.0's EVP_MAC API.
+    numbered_case(openssl-1.1 FAIL 1.1.1w "# define SHLIB_VERSION_NUMBER \"1.1\"\n" 1 1
+                  MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w \\(OPENSSL_INCLUDE_DIR .*/openssl-1\\.1/root/lib/include, OPENSSL_SSL_LIBRARY .*/libssl, OPENSSL_CRYPTO_LIBRARY .*/libcrypto\\)"
+                       "three entries removed: +${_posix_command} +or configure without TLS \\(-DQB_WITH_SSL=OFF\\)"
+                  LINE " +${_posix_command}"
+                  NOT "not one major" "says" "--fresh")
+    # ... by either reading: the header's own (OPENSSL_VERSION_NUMBER's 0xMNN... before 3.0) where the version reported
+    # says otherwise -- set by hand, or empty -- and the version reported where the header says 3.0.
+    numbered_case(header-1.1 FAIL 3.0.0 "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n" 1 1
+                  MUST "${_older}.*/header-1\\.1/root/lib/include/openssl/opensslv\\.h says 1\\.1 \\("
+                  NOT "FindOpenSSL reports" "not one major")
+    numbered_case(header-1.0.2 FAIL "" "# define OPENSSL_VERSION_NUMBER 0x1000214fL\n# define SHLIB_VERSION_NUMBER \"1.0.0\"\n" 1 1
+                  MUST "${_older}.*/opensslv\\.h says 1\\.0 \\(" NOT "FindOpenSSL reports" "not one major")
+    numbered_case(reported-1.1 FAIL 1.1.1w "# define OPENSSL_VERSION_MAJOR 3\n# define OPENSSL_VERSION_MINOR 0\n# define OPENSSL_SHLIB_VERSION 3\n" 3 3
+                  MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w \\(" NOT "says" "not one major")
+    # 3.0 itself passes, read either way: FindOpenSSL's 3.0.0 beside a header that says nothing of it (3.0's own
+    # OPENSSL_VERSION_NUMBER is an expression), or a header's 0x30000010L beside no version reported.
+    numbered_case(openssl-3.0 OK 3.0.0 "# define OPENSSL_VERSION_MAJOR 3\n# define OPENSSL_VERSION_MINOR 0\n# define OPENSSL_SHLIB_VERSION 3\n" 3 3
+                  NOT "qb needs OpenSSL" "not one major" HAS "OPENSSL_READ=3\\|3")
+    numbered_case(hex-3.0 OK "" "# define OPENSSL_VERSION_NUMBER 0x30000010L\n# define OPENSSL_SHLIB_VERSION 3\n" 3 3
+                  NOT "qb needs OpenSSL" "not one major" HAS "OPENSSL_READ=3\\|3")
+    # ... and OpenSSL 3's own header, whose OPENSSL_VERSION_NUMBER is an expression continued over five lines: not read,
+    # with a version reported or none.
+    set(_expression "# define OPENSSL_VERSION_MAJOR  3\n# define OPENSSL_VERSION_MINOR  5\n# define OPENSSL_SHLIB_VERSION 3\n")
+    string(APPEND _expression "# define OPENSSL_VERSION_NUMBER          \\\n    ( (OPENSSL_VERSION_MAJOR<<28)        \\\n"
+                              "      |(OPENSSL_VERSION_MINOR<<20)       \\\n      |(OPENSSL_VERSION_PATCH<<4)        \\\n"
+                              "      |0x0L )\n")
+    numbered_case(real-3.5 OK 3.5.9 "${_expression}" 3 3 NOT "qb needs OpenSSL" "not one major" HAS "OPENSSL_READ=3\\|3")
+    numbered_case(real-3.5-unread OK "" "${_expression}" 3 3 NOT "qb needs OpenSSL" "not one major")
     numbered_case(shlib-first OK 3.1.7 "# define OPENSSL_SHLIB_VERSION 81.3\n# define SHLIB_VERSION_NUMBER \"1.1\"\n" 81 81
                   NOT "not one major")
     numbered_case(shlib-last OK 3.1.7 "# define SHLIB_VERSION_NUMBER \"1.1\"\n# define OPENSSL_SHLIB_VERSION 81.3\n" 81 81
@@ -321,18 +429,22 @@ if(_posix)
     # Headers older than qb's minimum, OpenSSL 3.0, whose readings disagree, are refused for that and the remedy names
     # it: RHEL 7 numbers 1.0.2k's libraries libssl.so.10 beside headers whose SHLIB_VERSION_NUMBER starts with 1 (its
     # own "1.0.2k" or upstream's "1.0.0", one reading), no cache cleared in part; nor is a 1.1 one beside OpenSSL 3's
-    # libssl. One whose readings agree is not refused here (openssl-1.1 above): its compile is.
-    set(_minimum "qb needs OpenSSL 3\\.0 or later: OPENSSL_INCLUDE_DIR \\([^)]*\\) holds the headers of OpenSSL ")
-    escape("-DOPENSSL_ROOT_DIR=<it> <build directory>, or --fresh -- or configure without TLS (-DQB_WITH_SSL=OFF)"
-           _minimum_remedy)
+    # libssl. One whose readings agree is refused too (openssl-1.1 above), not as a split.
+    set(_minimum "qb needs OpenSSL 3\\.0 or later \\(FindOpenSSL reports OpenSSL [^)]*\\): OPENSSL_INCLUDE_DIR \\([^)]*\\) holds the headers of OpenSSL ")
+    set(_minimum_remedy "three entries removed: +${_posix_command} +or configure without TLS \\(-DQB_WITH_SSL=OFF\\)")
     numbered_case(old-release FAIL 1.0.2k "# define SHLIB_VERSION_NUMBER \"1.0.2k\"\n" 10 10
                   MUST "${_minimum}1\\.0\\.2k, for libraries of major 1; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 10; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 10\\."
+                       "${_minimum_remedy}"
+                  NOT "not one major")
+    numbered_case(header-old-split FAIL "" "# define OPENSSL_VERSION_NUMBER 0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n" 3 1
+                  MUST "qb needs OpenSSL 3\\.0 or later \\(.*/header-old-split/root/lib/include/openssl/opensslv\\.h says 1\\.1\\): OPENSSL_INCLUDE_DIR \\([^)]*\\) holds OpenSSL headers whose version FindOpenSSL could not read, for libraries of major 1; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3;"
                        "${_minimum_remedy}"
                   NOT "not one major")
     numbered_case(old-split FAIL 1.1.1w "# define SHLIB_VERSION_NUMBER \"1.1\"\n" 3 1
                   MUST "${_minimum}1\\.1\\.1w, for libraries of major 1; OPENSSL_SSL_LIBRARY \\([^)]*\\) is a libssl of major 3; and OPENSSL_CRYPTO_LIBRARY \\([^)]*\\) is a libcrypto of major 1\\."
                        "${_minimum_remedy}"
-                  NOT "not one major")
+                  LINE " +${_posix_command}"
+                  NOT "not one major" "--fresh")
     # One major, read: the readings are the libraries', not the headers' stood in.
     set(_lib "${WORK_DIR}/one-openssl/root/lib")
     plant("${_lib}/libssl" 3 3)
@@ -342,17 +454,29 @@ if(_posix)
                       "-DOPENSSL_VERSION=3.5.9" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
                       NOT "CMake Warning" "not one major"
                       HAS "OPENSSL_COMPARED=TRUE" HAS "OPENSSL_READ=3\\|3")
-    # LibreSSL numbers its libssl and libcrypto apart: never compared, said.
+    # LibreSSL numbers its libssl and libcrypto apart: never compared, said -- and, FindOpenSSL and its header reading it
+    # as 2.0, refused for qb's minimum (QB-1213): its API is OpenSSL 1.1's.
     set(_lib "${WORK_DIR}/libressl/root/lib")
     plant("${_lib}/libssl" 55 52)
     plant("${_lib}/libcrypto" "" 52)
-    file(WRITE "${_lib}/include/openssl/opensslv.h" "#define LIBRESSL_VERSION_NUMBER\t0x3080200fL\n")
-    configure_fixture(libressl "${WORK_DIR}/libressl/build" OK "-DQB_WITH_QUIC=OFF"
+    file(WRITE "${_lib}/include/openssl/opensslv.h"
+         "#define LIBRESSL_VERSION_NUMBER\t0x3080200fL\n#define OPENSSL_VERSION_NUMBER\t0x20000000L\n")
+    configure_fixture(libressl "${WORK_DIR}/libressl/build" FAIL "-DQB_WITH_QUIC=OFF"
                       "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
                       "-DOPENSSL_VERSION=2.0.0" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
                       MUST "OpenSSL majors not compared: LibreSSL numbers its libssl and libcrypto apart"
-                      NOT "not one major"
-                      HAS "OPENSSL_COMPARED=FALSE" HAS "OPENSSL_READ=\\|")
+                           "${_older}FindOpenSSL reports OpenSSL 2\\.0\\.0, and .*/opensslv\\.h says 2\\.0, and the header is LibreSSL 3\\.8\\.2's, whose API is OpenSSL 1\\.1's \\("
+                      NOT "not one major")
+    # ... by its marker alone, its numbers unread: LibreSSL's API is OpenSSL 1.1's, whatever it says.
+    set(_lib "${WORK_DIR}/libressl-marker/root/lib")
+    plant("${_lib}/libssl" 55 52)
+    plant("${_lib}/libcrypto" "" 52)
+    file(WRITE "${_lib}/include/openssl/opensslv.h" "#define LIBRESSL_VERSION_NUMBER\t0x3080200fL\n")
+    configure_fixture(libressl-marker "${WORK_DIR}/libressl-marker/build" FAIL "-DQB_WITH_QUIC=OFF"
+                      "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                      "-DOPENSSL_VERSION=" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                      MUST "${_older}the header is LibreSSL 3\\.8\\.2's, whose API is OpenSSL 1\\.1's \\("
+                      NOT "FindOpenSSL reports" "says" "not one major")
     # A system whose base OpenSSL need not carry the release's major in its file names (FreeBSD's libssl.so.30 holds
     # OpenSSL 3): never compared, said. Read through the stand-in as readelf, whatever the host.
     set(_lib "${WORK_DIR}/elsewhere/root/lib")
@@ -365,6 +489,17 @@ if(_posix)
                       MUST "OpenSSL majors not compared on FreeBSD: a library's file name need not carry its release's major there"
                       NOT "not one major"
                       HAS "OPENSSL_COMPARED=FALSE")
+    # ... an OpenSSL older than qb's minimum is refused there all the same: the minimum holds on every platform.
+    set(_lib "${WORK_DIR}/elsewhere-1.1/root/lib")
+    plant_as(ELF "${_lib}/libssl" 11 11)
+    plant_as(ELF "${_lib}/libcrypto" "" 11)
+    configure_fixture(elsewhere-1.1 "${WORK_DIR}/elsewhere-1.1/build" FAIL "-DQB_WITH_QUIC=OFF" "-DCMAKE_SYSTEM_NAME=FreeBSD"
+                      "-DCMAKE_READELF=${_tool}"
+                      "-DOPENSSL_SSL_LIBRARY=${_lib}/libssl" "-DOPENSSL_CRYPTO_LIBRARY=${_lib}/libcrypto"
+                      "-DOPENSSL_VERSION=1.1.1w" "-DOPENSSL_INCLUDE_DIR=${_lib}/include"
+                      MUST "OpenSSL majors not compared on FreeBSD"
+                           "qb needs OpenSSL 3\\.0 or later, and the one found is older: FindOpenSSL reports OpenSSL 1\\.1\\.1w \\("
+                      NOT "not one major")
     # There, the QUIC decision still reads qb's libssl and libcrypto, and two majors refuse QUIC with the remedy that
     # fits when libngtcp2 read nothing.
     plant_ngtcp2(split-qb _ngtcp2)
@@ -886,6 +1021,79 @@ if(_generators)
     file(REMOVE "${_root}/usr/lib/libssl${_ext}" "${_root}/usr/lib/libssl.a")
     build_fixture(${_name} "the libssl found first removed" FAILS ""
                   OUT "found nowhere else -- OPENSSL_SSL_LIBRARY \\(${_root_regex}/usr/lib/libssl")
+    # An OpenSSL refused for its age (QB-1213) leaves "had" as it was: in a build directory that never had one, the
+    # refused one removed is as one never found -- OpenSSL not found, the configure going on without it -- not one lost.
+    set(_name "refused-then-removed")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 1 "1.1${_ext}")
+    file(WRITE "${_root}/usr/local/include/openssl/opensslv.h"
+         "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and .*/opensslv\\.h says 1\\.1 \\(")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON"
+                      NOT "is gone" "qb needs OpenSSL" HAS "OPENSSL=FALSE")
+    # ... and so is one refused for its age whose majors disagree: headers of 1.1 beside OpenSSL 3's libssl.
+    set(_name "refused-split-then-removed")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 1 "1.1${_ext}")
+    plant("${_root}/usr/local/lib/libssl.1.1${_ext}" 3 3)
+    file(WRITE "${_root}/usr/local/include/openssl/opensslv.h"
+         "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "qb needs OpenSSL 3\\.0 or later \\(FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and .*/opensslv\\.h says 1\\.1\\): OPENSSL_INCLUDE_DIR")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON"
+                      NOT "is gone" "qb needs OpenSSL" HAS "OPENSSL=FALSE")
+    # The command a refusal prints, run as printed on the refused build directory, finds the OpenSSL it points at,
+    # read again there: an OpenSSL 3.
+    set(_name "posix-remedy")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/usr/local" 1 "1.1${_ext}")
+    file(WRITE "${_root}/usr/local/include/openssl/opensslv.h"
+         "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+    plant_openssl("${_root}/o3" 3 "3${_ext}")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and .*/opensslv\\.h says 1\\.1 \\("
+                      LINE " +${_posix_command}")
+    printed_command(${_name} /o3 "${WORK_DIR}/${_name}/build" _printed)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK AS_PRINTED ${_printed} NOT "qb needs OpenSSL" "is gone"
+                      HAS "OPENSSL=TRUE" "OPENSSL_INCLUDE_DIR=${_root_regex}/o3/include" "OPENSSL_READ=3\\|3")
+    # In one that had an OpenSSL 3, an update that removed it for a 1.1 found elsewhere is refused, and the 1.1 removed
+    # in turn is still the OpenSSL 3 lost: the configure stops, naming it, rather than going on without TLS.
+    set(_name "had-refused-removed")
+    set(_root "${WORK_DIR}/${_name}/root")
+    escape("${_root}" _root_regex)
+    plant_openssl("${_root}/usr/local" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON"
+                      HAS "OPENSSL=TRUE" "OPENSSL_SSL_LIBRARY=${_root_regex}/usr/local/lib/libssl${_ext}")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    plant_openssl("${_root}/usr" 1 "1.1${_ext}")
+    file(WRITE "${_root}/usr/include/openssl/opensslv.h"
+         "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and ${_root_regex}/usr/include/openssl/opensslv\\.h says 1\\.1 \\("
+                      NOT "is gone")
+    file(REMOVE_RECURSE "${_root}/usr")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_"
+                      NOT "qb needs OpenSSL")
+    # So in a build directory QB-1185's code configured, which recorded what it found and not whether it had an OpenSSL
+    # (_QB_HAD_OpenSSL removed stands for one): what it recorded is what it had, and a refusal does not forget it.
+    set(_name "recorded-refused-removed")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_openssl("${_root}/usr/local" 3 a)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK "-DFIND_OPENSSL=ON" HAS "OPENSSL=TRUE")
+    file(REMOVE_RECURSE "${_root}/usr/local")
+    plant_openssl("${_root}/usr" 1 "1.1${_ext}")
+    file(WRITE "${_root}/usr/include/openssl/opensslv.h"
+         "# define OPENSSL_VERSION_NUMBER  0x1010117fL\n# define SHLIB_VERSION_NUMBER \"1.1\"\n")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON" "-U" "_QB_HAD_OpenSSL"
+                      MUST "${_older}FindOpenSSL reports OpenSSL 1\\.1\\.1w?, and .*/opensslv\\.h says 1\\.1 \\(")
+    file(REMOVE_RECURSE "${_root}/usr")
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" FAIL "-DFIND_OPENSSL=ON"
+                      MUST "the OpenSSL this build directory found is gone and was found nowhere else -- OPENSSL_")
     # A package removal that takes OpenSSL's headers from an include directory that stays -- a shared prefix -- leaves
     # OPENSSL_INCLUDE_DIR naming a directory without openssl/ssl.h: searched again too, and found where OpenSSL now is.
     set(_name "shared-include")

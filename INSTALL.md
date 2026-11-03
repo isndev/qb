@@ -77,7 +77,7 @@ qb resolves dependencies in three ways. Most builds need nothing installed beyon
 | GoogleTest       | Fetched at configure time when `QB_BUILD_TESTS=ON`                   | Tests                         |
 | Google Benchmark | Fetched at configure time when `QB_BUILD_BENCHMARKS=ON`              | Benchmarks                    |
 | zlib             | System first, fetched as a fallback when `QB_DEPS_FETCH_FALLBACK=ON` | `QB_WITH_COMPRESSION`         |
-| OpenSSL          | System only (`find_package`)                                         | `QB_WITH_SSL` (TLS, crypto)   |
+| OpenSSL          | System only (`find_package`), 3.0 or later                           | `QB_WITH_SSL` (TLS, crypto)   |
 | Argon2           | System only, looked up only when OpenSSL is present                  | Password hashing              |
 | ngtcp2           | System only                                                          | `QB_WITH_QUIC` (requires SSL) |
 | gperftools       | System only                                                          | `QB_WITH_PROFILING`           |
@@ -125,6 +125,11 @@ or the build directory starts afresh. With compression on, a zlib lost is built 
 `QB_DEPS_FETCH_FALLBACK` is on and `QB_INSTALL` off, or taken from a parent project's `ZLIB::ZLIB`. Only paths a
 search recorded are searched again: a build directory configured before QB-1185 (OpenSSL, libngtcp2) or QB-1192 (the
 others) keeps its paths until one `--fresh`.
+
+An OpenSSL older than 3.0 -- qb calls 3.0's `EVP_MAC` API -- stops the configure, naming the version found, its paths
+and the remedy: `OPENSSL_ROOT_DIR` at an OpenSSL 3.0 or later with the three entries removed (on Windows,
+`-U "LIB_EAY*" -U "SSL_EAY*"` for the two libraries: FindOpenSSL caches them there under those names), or
+`-DQB_WITH_SSL=OFF` (Huly QB-1213); LibreSSL, whose API is OpenSSL 1.1's, is one.
 
 If OpenSSL is not found, `QB_WITH_SSL` is forced off and the SSL/QUIC features are disabled rather than failing the
 build -- unless this build directory had found it: an OpenSSL (off Windows), a libngtcp2 its QUIC linked (or that a
