@@ -264,7 +264,7 @@ elif [ "$nomarker" -eq 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-echo "== 5. CHANGELOG [Unreleased] (every paragraph ends its sentence, no headline written twice) =="
+echo "== 5. CHANGELOG [Unreleased] (every sentence ended, every entry on one headline, none cut off or twice) =="
 # An entry rewritten beside the one it replaced left the old one cut off on "(the" in qbm-http's
 # [Unreleased] for four days, under every guard here (Huly QB-1221): nothing read the section whole.
 # The release body is generated from these entries, so check-changelog.py reads them as the
