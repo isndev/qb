@@ -260,5 +260,5 @@ qb_add_test(MODULE qb-core TIER system NAME metrics-scrape SOURCES engine/metric
 # statically linked standard library (its chrono object defines now() beside the steady clock qb reads: a duplicate
 # definition at the link, not a silent pass -- flags a toolchain file or target_link_options adds are not seen here).
 if(NOT WIN32 AND NOT (APPLE AND QB_BUILD_SHARED_LIBS) AND NOT " ${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_CXX_FLAGS} " MATCHES "static-libstdc|static-libc\\+\\+| -static ")
-    qb_add_test(MODULE qb-core TIER system NAME delay-clock SOURCES engine/delay-clock.cpp DEPENDS ${PROJECT_NAME} LABELS init patterns)
+    qb_add_test(MODULE qb-core TIER system NAME delay-clock SOURCES engine/delay-clock.cpp DEPENDS ${PROJECT_NAME} LABELS init patterns serial)
 endif()

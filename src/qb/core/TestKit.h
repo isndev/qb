@@ -78,7 +78,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
+#include <qb/core/detail/monotonic_wait.h> // std::condition_variable, its timed wait off the time of day (Huly QB-1227)
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -746,7 +746,7 @@ public:
         _engine.start(true);
         {
             std::unique_lock<std::mutex> guard(state->lock);
-            result.timed_out = !state->done.wait_for(guard, watchdog, [&state] { return state->finished; });
+            result.timed_out = !qb::detail::wait_for_monotonic(state->done, guard, watchdog, [&state] { return state->finished; });
         }
         qb::Main::stop(); // the driver stopped it already unless the watchdog fired: idempotent, and no join hangs
         _engine.join();

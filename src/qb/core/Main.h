@@ -31,7 +31,7 @@
 #define QB_MAIN_H
 #include <array>
 #include <atomic>
-#include <condition_variable>
+#include <qb/core/detail/monotonic_wait.h> // std::condition_variable, its timed wait off the time of day (Huly QB-1227)
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -562,7 +562,7 @@ public:
             seq_cst_fence();
             if (!has_data()) {
                 std::unique_lock lk(_mtx);
-                _cv.wait_for(lk, cap, [this] { return has_data(); });
+                (void) detail::wait_for_monotonic(_cv, lk, cap, [this] { return has_data(); }, detail::past_range::returns_at_once);
             }
             _parked.store(Park::None, std::memory_order_relaxed);
         }

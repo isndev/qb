@@ -89,3 +89,7 @@ qb_add_test(MODULE qb-core TIER unit NAME mpsc-block-ring SOURCES lockfree/mpsc-
 # and shapes refused before anything is printed, the merge (one series summed in any label order, conflicts dropped
 # and counted) and describe(CoreStats).
 qb_add_test(MODULE qb-core TIER unit NAME metrics-text SOURCES metrics/metrics-text.cpp DEPENDS ${PROJECT_NAME})
+# monotonic-wait pins qb::detail::wait_for_monotonic (Huly QB-1227), the timed wait of a core's mailbox park and of
+# TestKit's watchdog: wait_for's contract (a predicate true on entry, a non-positive timeout, a timeout, a notify) and a
+# duration::max() timeout that waits rather than overflowing into an immediate timeout.
+qb_add_test(MODULE qb-core TIER unit NAME monotonic-wait SOURCES core/monotonic-wait.cpp DEPENDS ${PROJECT_NAME})

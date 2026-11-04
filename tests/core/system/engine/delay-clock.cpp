@@ -29,14 +29,17 @@
  * The clock is replaced at link time: the executable's definition of `std::chrono::system_clock::now()` is the one
  * qb-core's calls bind to when qb-core is a static library, or a shared one on ELF (an executable's definition
  * interposes); not a shared qb-core on Mach-O, which binds libc++'s own, nor MSVC's STL, which reads the clock in its
- * header. The CMake registration is gated on that. A core that steps the clock keeps the default latency 0, so it never
- * parks on a condition variable: libc++ on macOS computes a timed wait's end from `system_clock::now()`, and a stepped
- * clock would stretch the park by the step (Huly QB-1227). The one core that parks, in the park case, steps nothing.
+ * header. The CMake registration is gated on that. libc++ on macOS computes a `std::condition_variable` timed wait's end
+ * from `system_clock::now()`, which libpthread turns back into a relative wait with its own reading of the time of day,
+ * so a clock injected here moved such a wait by the injected offset until qb timed it on the monotonic clock there (Huly
+ * QB-1227): the parked-core cases at the end inject it on purpose -- what a time mock does to a process.
  */
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <memory>
 #include <thread>
@@ -48,6 +51,7 @@
 #include <qb/core/patterns.h>
 #include <qb/icallback.h>
 #include <qb/main.h>
+#include <qb/testkit.h>
 
 #include "../../shared/InitFixtures.h"
 #include "../../shared/ProbeResponders.h"
@@ -579,4 +583,173 @@ TEST(DelayClock, AClockNeverSetLeavesTheDateCheckSilent) {
     time_of_day_step   = 0;
     ASSERT_TRUE(stepped) << "the injected time of day did not read the uptime";
     EXPECT_FALSE(near) << "a deadline 500 ms ahead on the monotonic clock read as a date";
+}
+
+// ===========================================================================
+// A core parked on its mailbox's condition variable (Huly QB-1227)
+// ===========================================================================
+
+namespace delay_clock_test {
+
+struct park_outcome {
+    std::atomic<bool>         ran{false};
+    std::atomic<std::int64_t> landed{0}; ///< the step as `ctx.time()` saw it
+    std::atomic<std::int64_t> took{-1};  ///< the ask's arm to its `timeout_error`, on `qb::mono_now()`, ns
+};
+
+/// On a core with a latency -- one that parks on its mailbox's condition variable between passes, each park capped by
+/// the latency and by the earliest request deadline -- sets this process's time of day ahead of the kernel's, as a time
+/// mock does, then asks a silent responder for 300 ms.
+class ParkedAsker : public qb::Actor {
+    std::int64_t                  _step;
+    qb::ActorId                   _silent;
+    std::shared_ptr<park_outcome> _out;
+
+public:
+    ParkedAsker(std::int64_t step, qb::ActorId silent, std::shared_ptr<park_outcome> out)
+        : _step(step)
+        , _silent(silent)
+        , _out(std::move(out)) {}
+
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::test::Probe>(*this);
+        spawn([step = _step, silent = _silent, out = _out](qb::ScopedCoroContext c) -> qb::io::async::task<void> {
+            auto const wall  = c.time();
+            auto const mono  = qb::mono_now();
+            time_of_day_step = step;
+            co_await c.sleep(1ms);
+            out->landed   = landed(wall, c.time(), mono, qb::mono_now());
+            auto const t0 = qb::mono_now();
+            try {
+                (void) co_await qb::ask(c, silent, qb::test::Probe{1}, 300ms); // no io watcher: the core parks on the cv
+            } catch (qb::io::async::timeout_error const &) {
+            }
+            out->took = ns(qb::mono_now() - t0);
+            out->ran  = true;
+            qb::Main::stop();
+        });
+        co_return true;
+    }
+    void
+    on(qb::test::Probe &e) {
+        resolve_ask(e);
+    }
+};
+
+[[nodiscard]] inline std::shared_ptr<park_outcome>
+parked_ask_across_a_step(std::int64_t step, std::int64_t &cpu_ns) {
+    auto const out = std::make_shared<park_outcome>();
+    qb::Main   main;
+    main.core(0).setLatency(1ms);
+    auto const silent = main.addActor<qb::test::SilentResponder>(0);
+    main.addActor<ParkedAsker>(0, step, silent, out);
+    rusage before{}, after{};
+    getrusage(RUSAGE_SELF, &before);
+    main.start();
+    end_run(main, out->ran, 30s);
+    getrusage(RUSAGE_SELF, &after);
+    auto const cpu = [](rusage const &u) {
+        return std::int64_t{u.ru_utime.tv_sec + u.ru_stime.tv_sec} * kSeconds + std::int64_t{u.ru_utime.tv_usec + u.ru_stime.tv_usec} * 1000;
+    };
+    cpu_ns = cpu(after) - cpu(before);
+    EXPECT_FALSE(main.hasError());
+    return out;
+}
+
+} // namespace delay_clock_test
+
+TEST(DelayClock, ACoreParkedOnItsMailboxWaitsOnTheMonotonicClock) {
+    // This process's time of day 5 s ahead of the kernel's while a core with a 1 ms latency parks through a 300 ms ask: a
+    // park whose end is computed from `system_clock::now()` -- libc++'s condition_variable on Apple -- lasts 5 s longer,
+    // and the ask times out 5.3 s in. Timed on the monotonic clock, at 300 ms.
+    using namespace delay_clock_test;
+    std::int64_t cpu = 0;
+    auto const   r   = parked_ask_across_a_step(5 * kSeconds, cpu);
+    ASSERT_TRUE(r->ran);
+    ASSERT_GT(r->landed, 4 * kSeconds) << "the injected step did not reach the core's ctx.time()";
+    EXPECT_GE(r->took, ns(300ms)) << "the ask timed out early";
+    EXPECT_LT(r->took, ns(2500ms)) << "the ask timed out " << r->took / 1'000'000 << " ms in: the parked core waited on the time of day";
+    std::printf("        [park] the ask timed out %lld ms in, %lld us of CPU\n", static_cast<long long>(r->took / 1'000'000),
+                static_cast<long long>(cpu / 1000));
+    EXPECT_LT(cpu, r->took / 4) << "the process ran " << cpu / 1'000'000 << " ms of CPU over a " << r->took / 1'000'000
+                                << " ms ask: the core spun instead of parking (a park takes ~4 % of it)";
+}
+
+TEST(DelayClock, ACoreParkedOnItsMailboxWaitsItsDeadlineWithoutAStep) {
+    // The positive control: the same parked ask with the system's time of day.
+    using namespace delay_clock_test;
+    std::int64_t cpu = 0;
+    auto const   r   = parked_ask_across_a_step(0, cpu);
+    ASSERT_TRUE(r->ran);
+    EXPECT_GE(r->took, ns(300ms)) << "the ask timed out early";
+    EXPECT_LT(r->took, ns(2500ms)) << "the ask timed out " << r->took / 1'000'000 << " ms in";
+    std::printf("        [park] the ask timed out %lld ms in, %lld us of CPU\n", static_cast<long long>(r->took / 1'000'000),
+                static_cast<long long>(cpu / 1000));
+    EXPECT_LT(cpu, r->took / 4) << "the process ran " << cpu / 1'000'000 << " ms of CPU over a " << r->took / 1'000'000
+                                << " ms ask: the core spun instead of parking (a park takes ~4 % of it)";
+}
+
+TEST(DelayClock, ATestKitWatchdogWaitsOnTheMonotonicClock) {
+    // The TestKit's watchdog is a condition-variable wait on the test's own thread (Huly QB-1227): with this process's time
+    // of day 5 s ahead of the kernel's, a wait whose end is computed from `system_clock::now()` fires 5 s late.
+    using namespace delay_clock_test;
+    struct lift_the_step {
+        ~lift_the_step() {
+            time_of_day_step = 0;
+        }
+    } const lift;
+    qb::test::TestKit kit;
+    time_of_day_step = 5 * kSeconds;
+    timespec real{};
+    ::clock_gettime(CLOCK_REALTIME, &real);
+    auto const ahead = ns(std::chrono::system_clock::now().time_since_epoch()) - (std::int64_t{real.tv_sec} * kSeconds + real.tv_nsec);
+    ASSERT_GT(ahead, 4 * kSeconds) << "the injected time of day did not reach system_clock::now()";
+    auto const t0   = qb::mono_now();
+    auto const r    = kit.run([](qb::ScopedCoroContext c) -> qb::io::async::task<void> { co_await c.sleep(30s); }, 300ms);
+    auto const took = ns(qb::mono_now() - t0);
+    EXPECT_TRUE(r.timed_out) << "a scenario sleeping 30 s ended before a 300 ms watchdog";
+    EXPECT_GE(took, ns(300ms)) << "the watchdog fired early";
+    EXPECT_LT(took, ns(2500ms)) << "the watchdog fired " << took / 1'000'000 << " ms in: its end was computed from the time of day";
+}
+
+TEST(DelayClock, ATestKitWatchdogOfDurationMaxWaitsForTheScenario) {
+    // A watchdog of `qb::duration::max()` -- no watchdog -- must not overflow the wait's end into the past: the run waits
+    // for the scenario, which ends on its own.
+    using namespace delay_clock_test;
+    qb::test::TestKit kit;
+    auto const        t0   = qb::mono_now();
+    auto const        r    = kit.run([](qb::ScopedCoroContext c) -> qb::io::async::task<void> { co_await c.sleep(10ms); }, qb::duration::max());
+    auto const        took = ns(qb::mono_now() - t0);
+    EXPECT_FALSE(r.timed_out) << "a watchdog of duration::max() fired: its end overflowed";
+    EXPECT_TRUE(r.completed);
+    EXPECT_GE(took, ns(10ms));
+}
+
+TEST(DelayClock, ACoreWithTheLongestLatencyStillSeesAStop) {
+    // `setLatency(qb::duration::max())`: a park past the clock's range returns at once (Huly QB-1227), as the standard
+    // libraries' `wait_for` did -- an untimed park would never see `qb::Main::stop()`, which wakes no parked core. A hang
+    // here ends the binary after 10 s rather than the run.
+    std::atomic<bool> joined{false};
+    std::thread       watchdog([&joined] {
+        auto const until = qb::mono_now() + 10s;
+        while (!joined && qb::mono_now() < until)
+            std::this_thread::sleep_for(10ms);
+        if (!joined) {
+            std::fprintf(stderr, "DelayClock.ACoreWithTheLongestLatencyStillSeesAStop: the stop was never observed\n");
+            std::_Exit(3);
+        }
+    });
+    {
+        qb::Main main;
+        main.core(0).setLatency(qb::duration::max());
+        main.addActor<qb::test::SilentResponder>(0);
+        main.start();
+        std::this_thread::sleep_for(50ms);
+        qb::Main::stop();
+        main.join();
+        joined = true;
+        EXPECT_FALSE(main.hasError());
+    }
+    watchdog.join();
 }

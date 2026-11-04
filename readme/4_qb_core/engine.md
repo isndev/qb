@@ -87,14 +87,14 @@ To create an actor after startup, do it from inside a running actor with `addRef
 
 ```cpp
 void
-wait() noexcept {
-    if (_latency <= qb::duration::zero())
+wait(qb::duration const cap) noexcept {
+    if (cap <= qb::duration::zero())
         return;
     _parked.store(Park::Cv, std::memory_order_relaxed);
     seq_cst_fence();
     if (!has_data()) {
         std::unique_lock lk(_mtx);
-        _cv.wait_for(lk, _latency, [this] { return has_data(); });
+        (void) detail::wait_for_monotonic(_cv, lk, cap, [this] { return has_data(); }, detail::past_range::returns_at_once);
     }
     _parked.store(Park::None, std::memory_order_relaxed);
 }
@@ -104,7 +104,7 @@ wait() noexcept {
 | `setLatency(...)` | `Mailbox::wait()` | Cost |
 |---|---|---|
 | `qb::duration::zero()` (the default) | returns immediately — the core stays on the lock-free poll | lowest latency, one CPU fully occupied |
-| `> 0` | parks for up to that span, once the core has been idle for its **idle-spin floor** (`setIdleSpin`, 50 µs by default) — inside its event loop when it owns active qb-io watchers (`ev_run(EVRUN_ONCE)` capped at `latency`), on a `std::condition_variable` when it owns none | lower CPU at idle; a core parked in its loop still answers io and io timers at poll latency, a core parked on its mailbox wakes only for a producer's `notify()` or the timeout |
+| `> 0` | parks for up to that span, once the core has been idle for its **idle-spin floor** (`setIdleSpin`, 50 µs by default) — inside its event loop when it owns active qb-io watchers (`ev_run(EVRUN_ONCE)` capped at `latency`), on a `std::condition_variable` when it owns none, its timeout timed on the monotonic clock, never the time of day (since 3.4, Huly QB-1227) | lower CPU at idle; a core parked in its loop still answers io and io timers at poll latency, a core parked on its mailbox wakes only for a producer's `notify()` or the timeout |
 
 `qb::duration` is `std::chrono::nanoseconds`, so pass a chrono value — `std::chrono::nanoseconds(500'000)`, `std::chrono::microseconds(500)`, `qb::duration::zero()` — never a bare integer ([the time vocabulary](../0_foundations/time.md)). Calling `setLatency` more than once on a core is safe; the last value wins.
 

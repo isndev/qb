@@ -369,6 +369,34 @@ policy.
   `-falign-functions/-loops/-jumps=64`) `PublishStylePut` -26 to -66 %, `Http1Serialize` -3 to -9 %,
   `JsonInteger` -3 to -8 %, `MultiBulk` and `PutInPipe` level, the bare pipe and framing loops level with
   identical code. Instructions per 201-argument multi-bulk (callgrind): 57,710 -> 47,054.
+- **A core parked on its mailbox, and `qb::test::TestKit`'s watchdog, time their wait without reading the time of day on
+  Apple (Huly QB-1227).** A core with a latency and no io watcher parks on its mailbox's `std::condition_variable`, the
+  wait capped by the latency and by its earliest request deadline. libc++ on Apple has no `pthread_cond_clockwait`: its
+  `wait_for` -- and its `wait_until` of a `steady_clock` instant alike -- turns the wait into an absolute deadline of
+  `system_clock::now()`, which libpthread turns back into a relative wait with its own reading of the time of day. The
+  wait moved by whatever separated the two readings: a step of the time of day landing between them (well under a
+  microsecond), or a process whose `system_clock::now()` is interposed by a time mock -- with it 5 s ahead, as
+  `qb-core-test-system-delay-clock` injects, a 300 ms `ask` on a core with a 1 ms latency timed out 5.3 s in and a 300
+  ms TestKit watchdog fired 5 s late. A real step during a park does not move it: libpthread waits the relative time on
+  the kernel's clock. Both waits now go through `qb::detail::wait_for_monotonic` (`<qb/core/detail/monotonic_wait.h>`):
+  on Apple `pthread_cond_timedwait_relative_np`, re-armed from `qb::mono_now()` after every wake -- two monotonic reads
+  and one call per wake, where libc++ made six `steady_clock` reads, a `system_clock` read and libpthread a time-of-day
+  read; elsewhere the standard library's `wait_for` (timed on `CLOCK_MONOTONIC` by libstdc++ on glibc 2.30 or newer). A
+  timeout past the clock's range no longer overflows `now + timeout` on any platform: TestKit's watchdog then waits
+  without end (the entry under Fixed), while a core's park keeps returning at once, as both standard libraries'
+  `wait_for` did -- a park without end would never see `qb::Main::stop()`, which wakes no parked core, so a core given
+  `setLatency(qb::duration::max())` still polls instead of parking (left as it was, a decision of its own). Proven by
+  `DelayClock.ACoreParkedOnItsMailboxWaitsOnTheMonotonicClock` and
+  `DelayClock.ATestKitWatchdogWaitsOnTheMonotonicClock`, red on the base on macOS, with
+  `DelayClock.ACoreParkedOnItsMailboxWaitsItsDeadlineWithoutAStep` as the positive control and the CPU the process burns
+  as proof the core parked rather than spun; by `DelayClock.ACoreWithTheLongestLatencyStillSeesAStop`; by
+  `qb-core-test-unit-monotonic-wait`, the helper held to `wait_for`'s contract and to both past-range answers; and by
+  mutants: the park and the watchdog back on `wait_for`, the helper's Apple branch off, a timeout reported as the
+  predicate satisfied, a relative wait a thousand times too short (a spinning park), the saturation removed, the park
+  given no end, and the past-range answer ignored are caught; an ignored error of the relative wait cannot be provoked
+  with a valid condition variable and mutex. The park's cost is level -- qb-vs-others' `parked-cadence` probe (a `cv`
+  park on every pass), 8+8 interleaved runs per latency on the M4: a mean park of 128.9 against 128.9 us at 100 us,
+  1186.2 against 1187.2 us at 1 ms.
 
 ### Fixed
 
@@ -420,6 +448,12 @@ policy.
   caught: each write stamping any reading (alone, and all three), each keeping the older stamp (`min`), and the max
   skipped on an opening from closed. With Apple clang each write gains a branchless max (`csel` on arm64, `cmova` on
   x86-64); `allow()` and `on_success()`, the path of a call through a closed breaker, compile to the same instructions.
+- **A `qb::test::TestKit` watchdog of `qb::duration::max()` waits for the scenario (Huly QB-1227).** The watchdog was
+  `std::condition_variable::wait_for(watchdog)`, and libc++'s `wait_for` of `nanoseconds::max()` returns `false` at once
+  (its end overflows into the past; measured, while a span of 200 years waits): a run given no watchdog reported
+  `timed_out` before its scenario ran. Such a watchdog now waits without end, on every platform (the QB-1227 entry under
+  Changed). Proven by `DelayClock.ATestKitWatchdogOfDurationMaxWaitsForTheScenario` and
+  `MonotonicWait.ADurationMaxTimeoutWaitsUntilNotified`.
 - **`qb::io::log::init()` can replace the logger while other threads log (Huly QB-1207).** `nanolog::initialize()`
   destroyed the logger it replaced -- its writer thread, its queue and the queue's buffers -- and only then published
   the new one. A thread that had read the old logger and was still inside its log statement pushed into the freed
