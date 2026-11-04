@@ -29,7 +29,9 @@
  *   - a negative cooldown is clamped to zero (must NOT wrap to ~1.8e19 ns and never recover);
  *   - a zero `failure_threshold` is clamped to 1;
  *   - a reading older than the one its cooldown runs from counts as no time elapsed (must NOT wrap past the
- *     cooldown and admit a trial at once: QB-1237).
+ *     cooldown and admit a trial at once: QB-1237);
+ *   - a stamp older than the cooldown's start keeps that start (must NOT move it back and end the cooldown
+ *     early: QB-1264).
  *
  * Strengthened over the original CircuitBreakerUnit suite: every transition now also asserts
  * `state()` AND `failure_count()` (not just one observable), and each `allow()` verdict is checked
@@ -400,4 +402,94 @@ TEST(CircuitBreaker, AnOlderReadingIsZeroElapsedAtEveryEdge) {
     qb::CircuitBreaker back(1, qb::duration{1});
     back.on_failure(LAST);
     EXPECT_FALSE(back.allow(5)) << "the oldest reading after the newest: no time elapsed";
+}
+
+// ---------------------------------------------------------------------------
+// A stamp older than the cooldown's start (Huly QB-1264)
+// ---------------------------------------------------------------------------
+
+// The calls that (re-)arm the cooldown stamp the reading they are given. One older than the cooldown's start -- one
+// clock, read in another order: the late verdict of a call admitted while closed, a trial given back with a reading
+// taken before its admission -- moved the start back and ended the cooldown early. Such a stamp keeps the breaker's
+// clock: the cooldown still runs from its start. A newer reading re-arms it, as before.
+TEST(CircuitBreaker, AFailureStampedBeforeTheCooldownsStartKeepsIt) {
+    constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
+    qb::CircuitBreaker      cb(1, 10s);
+    cb.on_failure(1'000 * SEC); // opened at t = 1000 s
+    cb.on_failure(990 * SEC);   // the late failure of a call admitted while closed, its reading older
+    ASSERT_EQ(cb.state(), State::open);
+    EXPECT_FALSE(cb.allow(1'000 * SEC)) << "the cooldown ran from the older stamp: a trial admitted at its start";
+    EXPECT_FALSE(cb.allow(1'010 * SEC - 1)) << "a nanosecond short of a cooldown after its start";
+    EXPECT_TRUE(cb.allow(1'010 * SEC)) << "a cooldown after its start, the breaker admits its trial";
+
+    // A failed trial whose reading is older than the cooldown's start keeps it too.
+    qb::CircuitBreaker failed(1, 10s);
+    failed.on_failure(1'000 * SEC);
+    ASSERT_TRUE(failed.allow(1'010 * SEC)); // the half-open trial
+    failed.on_failure(990 * SEC);
+    ASSERT_EQ(failed.state(), State::open);
+    EXPECT_FALSE(failed.allow(1'010 * SEC - 1)) << "a failed trial stamped before the cooldown's start moved it back";
+    EXPECT_TRUE(failed.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+
+    // An opening from closed: a late success closed the open breaker, then a late failure, its reading older than the
+    // previous start, opens it again. The previous start still holds.
+    qb::CircuitBreaker reopened(1, 10s);
+    reopened.on_failure(1'000 * SEC);
+    reopened.on_success();
+    ASSERT_EQ(reopened.state(), State::closed);
+    reopened.on_failure(995 * SEC);
+    ASSERT_EQ(reopened.state(), State::open);
+    EXPECT_FALSE(reopened.allow(1'005 * SEC)) << "an opening from closed stamped before the previous start moved it back";
+    EXPECT_FALSE(reopened.allow(1'010 * SEC - 1));
+    EXPECT_TRUE(reopened.allow(1'010 * SEC));
+
+    // Positive controls: a newer failure while open, or a newer opening from closed, re-arms the cooldown from its reading.
+    qb::CircuitBreaker later(1, 10s);
+    later.on_failure(1'000 * SEC);
+    later.on_failure(1'005 * SEC);
+    EXPECT_FALSE(later.allow(1'015 * SEC - 1)) << "a newer failure while open re-arms the cooldown from its reading";
+    EXPECT_TRUE(later.allow(1'015 * SEC));
+
+    qb::CircuitBreaker next_cycle(1, 10s);
+    next_cycle.on_failure(1'000 * SEC);
+    next_cycle.on_success();
+    next_cycle.on_failure(1'005 * SEC);
+    EXPECT_FALSE(next_cycle.allow(1'015 * SEC - 1)) << "a newer opening from closed arms the cooldown from its reading";
+    EXPECT_TRUE(next_cycle.allow(1'015 * SEC));
+}
+
+TEST(CircuitBreaker, ATrialGivenBackWithAnOlderStampKeepsTheCooldownsStart) {
+    constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
+
+    // The plain release, then the numbered one: each given a reading older than the cooldown's start.
+    qb::CircuitBreaker plain(1, 10s);
+    plain.on_failure(1'000 * SEC);
+    ASSERT_TRUE(plain.allow(1'010 * SEC));
+    plain.on_abandoned(990 * SEC);
+    ASSERT_EQ(plain.state(), State::open);
+    EXPECT_FALSE(plain.allow(1'010 * SEC - 1)) << "on_abandoned(now) stamped before the cooldown's start moved it back";
+    EXPECT_TRUE(plain.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+
+    qb::CircuitBreaker numbered(1, 10s);
+    numbered.on_failure(1'000 * SEC);
+    ASSERT_TRUE(numbered.allow(1'010 * SEC));
+    numbered.on_abandoned(990 * SEC, numbered.trial());
+    ASSERT_EQ(numbered.state(), State::open);
+    EXPECT_FALSE(numbered.allow(1'010 * SEC - 1)) << "on_abandoned(now, trial) stamped before the cooldown's start moved it back";
+    EXPECT_TRUE(numbered.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+
+    // Positive control: a release with a newer reading re-arms the cooldown from it, in both forms.
+    qb::CircuitBreaker plain_later(1, 10s);
+    plain_later.on_failure(1'000 * SEC);
+    ASSERT_TRUE(plain_later.allow(1'010 * SEC));
+    plain_later.on_abandoned(1'020 * SEC);
+    EXPECT_FALSE(plain_later.allow(1'030 * SEC - 1)) << "a newer release re-arms the cooldown from its reading";
+    EXPECT_TRUE(plain_later.allow(1'030 * SEC));
+
+    qb::CircuitBreaker numbered_later(1, 10s);
+    numbered_later.on_failure(1'000 * SEC);
+    ASSERT_TRUE(numbered_later.allow(1'010 * SEC));
+    numbered_later.on_abandoned(1'020 * SEC, numbered_later.trial());
+    EXPECT_FALSE(numbered_later.allow(1'030 * SEC - 1)) << "a newer numbered release re-arms the cooldown from its reading";
+    EXPECT_TRUE(numbered_later.allow(1'030 * SEC));
 }

@@ -245,7 +245,7 @@ policy.
   one by hand must pass that clock:**
   `std::chrono::duration_cast<std::chrono::nanoseconds>(qb::mono_now().time_since_epoch()).count()`, not `ctx.time()`:
   mixed, the cooldown and the refill compare a date with an uptime. `rate_limiter` itself is unchanged, and
-  `CircuitBreaker` changes only by QB-1237.
+  `CircuitBreaker` changes only by QB-1237 and QB-1264.
 - **The select registration takes a node the caller owns: `channel<T>::register_select_waiter(select_entry
   &entry, channel_select_state &state, size_t idx)`, with `unregister_select_waiter(select_entry &entry)
   noexcept` as its counterpart (Huly QB-273).** The registration took a `std::shared_ptr<channel_select_state>`
@@ -385,10 +385,10 @@ policy.
   and also asked through `ask_guarded` refuses every guarded call while its cooldown runs from a time-of-day stamp**: a
   cooldown stamped on `ctx.time()` (`ask_guarded`'s own clock until QB-1199) is decades ahead of the monotonic readings
   `ask_guarded` passes, which count as no time elapsed, where they wrapped and skipped the cooldown before; stamp it
-  with `qb::mono_now()`'s nanoseconds (the QB-1199 entry under Changed). Proven by
-  `CircuitBreaker.AReadingOlderThanTheCooldownsStartCountsAsNoTimeElapsed` and
-  `CircuitBreaker.AnOlderReadingIsZeroElapsedAtEveryEdge` (`qb-core-test-unit-circuit-breaker`), both red on the base,
-  and by twelve mutants, all caught: seven of the saturation's shape (the unsigned base, both boundaries, an older
+  with `qb::mono_now()`'s nanoseconds (the QB-1199 entry under Changed); a breaker that already took a date keeps it
+  since QB-1264 and must be replaced. Proven by `CircuitBreaker.AReadingOlderThanTheCooldownsStartCountsAsNoTimeElapsed`
+  and `CircuitBreaker.AnOlderReadingIsZeroElapsedAtEveryEdge` (`qb-core-test-unit-circuit-breaker`), both red on the
+  base, and by twelve mutants, all caught: seven of the saturation's shape (the unsigned base, both boundaries, an older
   reading refused even under a zero cooldown, one nanosecond high, `min`, a signed difference), caught by those two, and
   five of `ask_guarded`'s clock (each of its three readings on the time of day, all three, the pass's sample), caught by
   the clock cases of `ActorAskGuarded` -- among them the new
@@ -397,6 +397,29 @@ policy.
   `DelayClock.ATimeOfDayStepBackNeitherCutsNorStretchesABreakersCooldown` now also requires a call two cooldowns later
   to be admitted. With Apple clang on arm64 the closed and half-open paths of `allow()` compile to the same
   instructions; the open path's `sub` becomes `subs` + `csel`, branchless.
+- **A `CircuitBreaker` stamp older than the cooldown's start keeps the breaker's clock (Huly QB-1264).** `on_failure` --
+  an opening, a failure recorded while open, a failed trial -- and both forms of `on_abandoned` stamped the cooldown's
+  start with the reading they were given. One older than the current start -- the same clock read in another order --
+  moved the start back and ended the cooldown early: a breaker opened at 1000 s with a 10 s cooldown, then handed the
+  late failure of a call admitted while closed, stamped 990 s, admitted its trial at 1000 s; a late success followed by
+  a late failure older than the previous start did the same. Each write now keeps the later of the two, `(std::max)
+  (opened_at, now_ns)`: a stale stamp leaves the cooldown running from its start, a newer one re-arms it as before. For
+  a failed or abandoned trial this matters only to a reading older than the trial's admission, the start plus the
+  cooldown being never later than the admission. A verdict or a release stamped before the admission re-arms the
+  cooldown from that stamp or the start, the later of the two, not from the admission -- `allow()` records no admission
+  time -- so the next trial may come sooner than a cooldown after the admission, at once when the stamp is a cooldown or
+  more older than it. **The start never moves back for the breaker's whole life, `on_success` included: a stamp ahead of
+  the clock -- a time-of-day reading passed by hand, a sentinel -- now holds every later opening until the clock reaches
+  it**, where the next opening on the right clock replaced it before; such a breaker must be replaced (QB-1237's
+  mixed-clock case becomes permanent). `ask_guarded` changes nothing: its stamps are never older than the cooldown's
+  start (a failure and a cancellation read the clock at the call, the release from its destructor reads the trial's
+  admission). Proven by `CircuitBreaker.AFailureStampedBeforeTheCooldownsStartKeepsIt` (a failure while open, a failed
+  trial, an opening from closed after a late success) and
+  `CircuitBreaker.ATrialGivenBackWithAnOlderStampKeepsTheCooldownsStart` (both releases), red on the base at each of the
+  three writes, each with its positive control (a newer stamp still re-arms the cooldown), and by eight mutants, all
+  caught: each write stamping any reading (alone, and all three), each keeping the older stamp (`min`), and the max
+  skipped on an opening from closed. With Apple clang each write gains a branchless max (`csel` on arm64, `cmova` on
+  x86-64); `allow()` and `on_success()`, the path of a call through a closed breaker, compile to the same instructions.
 - **`qb::io::log::init()` can replace the logger while other threads log (Huly QB-1207).** `nanolog::initialize()`
   destroyed the logger it replaced -- its writer thread, its queue and the queue's buffers -- and only then published
   the new one. A thread that had read the old logger and was still inside its log statement pushed into the freed

@@ -177,20 +177,20 @@ public:
     /**
      * @brief Record a failed call: open the breaker if the threshold is reached (or a half-open
      *        trial failed).
-     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds: a (re-)opening runs from it, or from the previous start if later.
      */
     void
     on_failure(uint64_t now_ns) noexcept {
         if (_state == State::half_open || ++_failures >= _threshold) {
             _state     = State::open;
-            _opened_at = now_ns;
+            _opened_at = (std::max) (_opened_at, now_ns);
         }
     }
 
     /**
      * @brief Release a half-open trial that was abandoned without a verdict (e.g. its caller was
      *        killed mid-`ask`), re-arming the cooldown so a later call gets a fresh trial.
-     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds: the cooldown is re-armed from it, or from its start if later.
      * @details Without this, a single-trial half-open whose trial is cancelled (no `on_success` /
      *          `on_failure`) would wedge the breaker rejecting every subsequent call. No-op unless
      *          half-open.
@@ -199,14 +199,14 @@ public:
     on_abandoned(uint64_t now_ns) noexcept {
         if (_state == State::half_open) {
             _state     = State::open;
-            _opened_at = now_ns;
+            _opened_at = (std::max) (_opened_at, now_ns);
         }
     }
 
     /**
      * @brief Release the half-open trial number `trial` abandoned without a verdict -- only if it is
      *        still the trial in flight.
-     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds: the cooldown is re-armed from it.
+     * @param now_ns Now on the breaker's monotonic clock, in nanoseconds: the cooldown is re-armed from it, or from its start if later.
      * @param trial The `trial()` read right after the `allow()` that admitted the call; `0` for a call
      *        admitted while the breaker was closed, which holds no trial.
      * @details The plain `on_abandoned(now_ns)` releases WHATEVER trial is in flight, which is right
@@ -219,7 +219,7 @@ public:
     on_abandoned(uint64_t now_ns, std::uint32_t trial) noexcept {
         if (_state == State::half_open && trial != 0 && trial == _trial) {
             _state     = State::open;
-            _opened_at = now_ns;
+            _opened_at = (std::max) (_opened_at, now_ns);
         }
     }
 
