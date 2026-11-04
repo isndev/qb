@@ -54,13 +54,17 @@ namespace ask_deadlines_test {
 std::atomic<int>           g_timeouts{0};
 std::atomic<int>           g_replies{0};
 std::atomic<int>           g_cancels{0};
-std::atomic<int>           g_max_active_watchers{0};  ///< the loop's referenced active count, max seen while waiting
-std::atomic<int>           g_armed_while_waiting{-1}; ///< `deadlines_armed()` observed from the pass callback
-std::atomic<int>           g_armed_after{-1};         ///< `deadlines_armed()` right after the awaited ask resumed
-std::atomic<long long>     g_fire_delay_us{-1};       ///< arm -> timeout_error, microseconds
-std::atomic<std::uint64_t> g_busy_passes{0};
-std::atomic<std::uint64_t> g_deadline_at_ns{0};       ///< the busy ask's deadline, `mono_now()` epoch
-std::atomic<int>           g_ticks_after_deadline{0}; ///< busy passes that ran after the deadline and before the timeout
+std::atomic<int>           g_max_active_watchers{0};    ///< the loop's referenced active count, max seen while waiting
+std::atomic<int>           g_armed_while_waiting{-1};   ///< `deadlines_armed()` observed from the pass callback
+std::atomic<int>           g_armed_after{-1};           ///< `deadlines_armed()` right after the awaited ask resumed
+std::atomic<long long>     g_fire_delay_us{-1};         ///< arm -> timeout_error, microseconds
+std::atomic<std::uint64_t> g_deadline_at_ns{0};         ///< no earlier than the busy ask's deadline, `mono_now()` epoch
+std::atomic<int>           g_ticks_after_deadline{0};   ///< busy passes that ran after the deadline and before the timeout
+std::atomic<std::uint64_t> g_wait_ticks{0};             ///< busy passes from the arm to the timeout
+std::atomic<int>           g_idle_passes{0};            ///< passes with no tick, from the arm to the first tick after the timeout
+std::atomic<bool>          g_tick_after_timeout{false}; ///< the chain was still ticking when the deadline fired
+std::atomic<std::uint64_t> g_arm_t0_ns{0};              ///< the busy ask's `t0`, `mono_now()` epoch
+std::atomic<std::uint64_t> g_first_tick_ns{0};          ///< the first tick after the arm, `mono_now()` epoch
 std::atomic<int>           g_order[3]{{0}, {0}, {0}};
 std::atomic<int>           g_order_n{0};
 std::array<int, 3>         g_expected_order{};
@@ -74,9 +78,13 @@ reset() {
     g_armed_while_waiting  = -1;
     g_armed_after          = -1;
     g_fire_delay_us        = -1;
-    g_busy_passes          = 0;
     g_deadline_at_ns       = 0;
     g_ticks_after_deadline = 0;
+    g_wait_ticks           = 0;
+    g_idle_passes          = 0;
+    g_tick_after_timeout   = false;
+    g_arm_t0_ns            = 0;
+    g_first_tick_ns        = 0;
     g_order_n              = 0;
 }
 
@@ -289,39 +297,54 @@ TEST(AskDeadlines, FireInDeadlineOrderNotArmingOrder) {
 
 // ---------------------------------------------------------------------------
 // 4. A BUSY core fires on time. Busy in the pass's own sense: an event moves on EVERY pass (the
-//    actor re-sends itself a tick from the tick's handler), so the core never takes the idle
-//    path and its free clock read -- only the busy-pass check, coarse clock first, can fire the
-//    deadline. The tick chain stops itself after 2 s so a check that never fires ends as a
-//    failed assertion, not a hang.
+//    actor re-sends itself a tick from the tick's handler), so the deadline can only be fired by
+//    the check at the top of a busy pass -- the coarse clock first, the precise one only once the
+//    coarse reading says the earliest deadline may be due. The wait is 150 ms, longer than the
+//    coarse tick the pre-check allows for on every platform (20 ms on Linux and Windows, 50 ms on
+//    Apple), so for most of it the pre-check returns on the coarse reading alone and must still let
+//    the precise read through in time. The tick chain stops itself after 2 s and, if the deadline
+//    has not fired by then, ends the run, so a check that never fires is a failed assertion, not a
+//    hang.
+//
+//    "Busy for the whole wait" is MEASURED, in passes (Huly QB-1236): the chain runs before the
+//    ask is armed, no pass between the arm and the timeout goes without a tick (the pass index of
+//    consecutive ticks never skips one: a chain held back by anything but its own handler), and the
+//    chain is still ticking in the pass after the timeout -- the deadline fired on a busy core. A
+//    loaded host that deschedules the core's thread runs fewer passes in the wait, not idle ones,
+//    so the premise holds however few there are; a floor on the passes counted in a wall-clock
+//    window failed under load (5 for a floor of 10 in a 20 ms wait). The other two cases block the
+//    core's thread, which is what a deschedule looks like from inside -- for the whole wait, and
+//    between the reading the case takes at the arm and the ask's own -- and the verdicts must not
+//    move.
 // ---------------------------------------------------------------------------
 struct Tick : public qb::Event {};
 
+constexpr qb::duration kBusyWait = 150ms; ///< longer than every platform's coarse tick: the pre-check skips for most of it
+
 class BusyAsker : public qb::Actor {
+    static constexpr std::uint64_t kTicksBeforeArm = 10; ///< the chain is running before the deadline is armed
+
     qb::ActorId   _market;
+    qb::duration  _stall_in_wait; ///< blocks the core's thread right after the arm, as a deschedule would
+    qb::duration  _stall_at_arm;  ///< blocks it between the case's `t0` and the ask's own reading
     qb::mono_time _started{};
+    std::uint64_t _ticks        = 0;
+    std::uint64_t _last_pass    = 0;
+    bool          _tracking     = false; ///< from the arm to the first tick after the timeout
+    bool          _stalled      = false;
     bool          _stop_ticking = false;
 
 public:
-    explicit BusyAsker(qb::ActorId m)
-        : _market(m) {}
+    BusyAsker(qb::ActorId m, qb::duration stall_in_wait, qb::duration stall_at_arm)
+        : _market(m)
+        , _stall_in_wait(stall_in_wait)
+        , _stall_at_arm(stall_at_arm) {}
     qb::io::async::task<bool>
     onInit() override {
         registerEvent<Ping>(*this);
         registerEvent<Done>(*this);
         registerEvent<Tick>(*this);
         _started = qb::mono_now();
-        auto mkt = _market;
-        spawn([mkt](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            const auto t0    = qb::mono_now();
-            g_deadline_at_ns = static_cast<std::uint64_t>((t0 + 20ms).time_since_epoch().count());
-            try {
-                co_await qb::ask(ctx, mkt, Ping{1}, 20ms);
-            } catch (const qb::io::async::timeout_error &) {
-                ++g_timeouts;
-                g_fire_delay_us = std::chrono::duration_cast<std::chrono::microseconds>(qb::mono_now() - t0).count();
-            }
-            ctx.push<Done>();
-        });
         push<Tick>(id());
         co_return true;
     }
@@ -330,16 +353,44 @@ public:
         // ~50 us of work, then the next tick: one event per pass, for the whole wait. Lateness is
         // counted in PASSES, not wall-clock time -- a loaded host can deschedule this thread for
         // milliseconds, and a pass that did not run cannot have fired anything.
-        const auto now = qb::mono_now();
-        if (g_timeouts.load() == 0 && g_deadline_at_ns.load() != 0
-            && static_cast<std::uint64_t>(now.time_since_epoch().count()) >= g_deadline_at_ns.load())
-            ++g_ticks_after_deadline;
+        const auto now    = qb::mono_now();
+        const auto now_ns = static_cast<std::uint64_t>(now.time_since_epoch().count());
+        const auto pass   = getCoreStats().loop_passes;
+        if (_tracking) {
+            if (pass > _last_pass + 1)
+                ++g_idle_passes; // a pass ran without a tick
+            if (g_timeouts.load() != 0) {
+                g_tick_after_timeout = true;
+                _tracking            = false;
+            } else {
+                ++g_wait_ticks;
+                // The first pass after the arm: the ask armed its deadline on its own reading, taken after the
+                // case's `t0` and before this one -- `kBusyWait` from now is no earlier than it, so a thread
+                // descheduled between the two can only shrink the count below, never inflate it.
+                if (g_deadline_at_ns.load() == 0) {
+                    g_first_tick_ns  = now_ns;
+                    g_deadline_at_ns = now_ns + static_cast<std::uint64_t>(std::chrono::nanoseconds(kBusyWait).count());
+                } else if (now_ns >= g_deadline_at_ns.load()) {
+                    ++g_ticks_after_deadline;
+                }
+            }
+        }
+        _last_pass = pass;
+
         volatile std::uint64_t x = 0;
         for (int i = 0; i < 20000; ++i)
             x = x * 6364136223846793005ull + 1442695040888963407ull;
-        ++g_busy_passes;
+        if (++_ticks == kTicksBeforeArm) {
+            _tracking = true;
+            arm();
+        } else if (_tracking && _stall_in_wait > qb::duration::zero() && !_stalled) {
+            _stalled = true;
+            std::this_thread::sleep_for(_stall_in_wait); // the core's thread off the CPU for the whole wait
+        }
         if (!_stop_ticking && now - _started < 2s)
             push<Tick>(id());
+        else if (!_stop_ticking && g_timeouts.load() == 0)
+            push<Done>(id()); // 2 s and the deadline never fired: end the run, the assertions name it
     }
     void
     on(Ping &e) {
@@ -351,35 +402,85 @@ public:
         push<qb::KillEvent>(_market);
         kill();
     }
+
+private:
+    void
+    arm() {
+        auto mkt = _market;
+        spawn([mkt, stall = _stall_at_arm](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+            const auto t0 = qb::mono_now();
+            g_arm_t0_ns   = static_cast<std::uint64_t>(t0.time_since_epoch().count());
+            if (stall > qb::duration::zero())
+                std::this_thread::sleep_for(stall); // the core's thread off the CPU before the ask reads its clock
+            try {
+                co_await qb::ask(ctx, mkt, Ping{1}, kBusyWait);
+            } catch (const qb::io::async::timeout_error &) {
+                ++g_timeouts;
+                g_fire_delay_us = std::chrono::duration_cast<std::chrono::microseconds>(qb::mono_now() - t0).count();
+            }
+            ctx.push<Done>();
+        });
+    }
 };
 
-TEST(AskDeadlines, ABusyCoreFiresOnTimeThroughTheCoarsePreCheck) {
+/// The verdicts of the busy-core cases: what fires, when, and the measured premise that the core was busy.
+void
+expect_busy_core_fired_on_time(const char *label) {
+    EXPECT_EQ(g_timeouts.load(), 1) << "a deadline on a core that is never idle must still fire (the busy-pass check)";
+    EXPECT_EQ(g_idle_passes.load(), 0) << "a pass without a tick ran between the arm and the timeout: the chain was held back";
+    EXPECT_TRUE(g_tick_after_timeout.load()) << "the tick chain stopped before the deadline fired: it did not fire on a busy core";
+    std::printf("        [%s] %llu ticks during the wait, first one %lld us after t0, timeout fired %lld us after t0 (deadline %lld ms), "
+                "%d busy passes ran past the deadline first\n",
+                label, static_cast<unsigned long long>(g_wait_ticks.load()),
+                static_cast<long long>(g_first_tick_ns.load() - g_arm_t0_ns.load()) / 1000, static_cast<long long>(g_fire_delay_us.load()),
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(kBusyWait).count()),
+                g_ticks_after_deadline.load());
+    EXPECT_GE(g_fire_delay_us.load(), std::chrono::duration_cast<std::chrono::microseconds>(kBusyWait).count()) << "never early";
+    // The precise witness is the FIRE DELAY, read for the eye: tens to hundreds of microseconds past the deadline on a
+    // quiet host. It is not bounded above: one wall-clock sample on a loaded host says how long the thread was off the
+    // CPU, not how late the check was (Huly QB-1236). Lateness is asserted in PASSES: the deadline counted here is no
+    // earlier than the true one, and once the pre-check's coarse reading reaches within a coarse tick of it, every pass
+    // reads the precise clock, so the first pass past the deadline fires it before its tick runs -- at most one tick
+    // lands past it, on any host and in any build. A pre-check that withheld the precise read until the coarse clock
+    // itself crossed the deadline fires up to a coarse step late (a jiffy on Linux, 15.6 ms on Windows: tens to
+    // hundreds of passes; Apple's approximate clock steps every few microseconds, where it cannot show), and a deadline
+    // fired 5 ms late lands ~150 passes past it.
+    EXPECT_LE(g_ticks_after_deadline.load(), 1) << "a busy pass ran past the deadline without the pre-check firing it";
+}
+
+void
+run_busy_core(qb::duration stall_in_wait, qb::duration stall_at_arm) {
     reset();
     qb::Main main;
     unpin(main);
     auto mkt = main.addActor<SilentMarket>(0);
-    main.addActor<BusyAsker>(0, mkt);
+    main.addActor<BusyAsker>(0, mkt, stall_in_wait, stall_at_arm);
     main.start(false);
     main.join();
     EXPECT_FALSE(main.hasError());
-    EXPECT_EQ(g_timeouts.load(), 1) << "a deadline on a core that is never idle must still fire (the busy-pass check)";
-    EXPECT_GE(g_busy_passes.load(), 10u)
-        << "the core must actually have been busy for the whole wait (~40 ticks in 20 ms under a coverage build, ~1200 at -O3)";
-    std::printf("        [busy] %llu ticks, timeout fired %lld us after the arm (deadline 20 ms), %d busy passes ran past the deadline first\n",
-                static_cast<unsigned long long>(g_busy_passes.load()), static_cast<long long>(g_fire_delay_us.load()),
-                g_ticks_after_deadline.load());
-    EXPECT_GE(g_fire_delay_us.load(), 20'000) << "never early";
-    // The precise witness is the FIRE DELAY (asserted below): rock-stable at ~20.14-20.19 ms in
-    // every build, i.e. fired 140-190 us after the true 20 ms deadline -- never early, never a
-    // scheduler tick (10-16 ms) late. The pass COUNT is only a coarse guard against a GROSS
-    // regression -- a broken pre-check that withheld the precise read until the coarse clock
-    // itself crossed the deadline would fire up to a coarse tick (several ms) late, ~50-200 busy
-    // passes at these pass rates. The straddling window itself holds 2-3 passes at -O3 and 2-5
-    // under TSan's per-atomic instrumentation (measured, fire delay unchanged), so the bound sits
-    // an order of magnitude below the regression it guards and well above the instrumented noise.
-    EXPECT_LE(g_ticks_after_deadline.load(), 20)
-        << "the coarse pre-check fires within a handful of busy passes of the deadline, never the ~50-200 a scheduler tick would take";
-    EXPECT_LT(g_fire_delay_us.load(), 20'000 + 200'000) << "sanity: a loaded host may deschedule the core, not stall it";
+}
+
+TEST(AskDeadlines, ABusyCoreFiresOnTimeThroughTheCoarsePreCheck) {
+    run_busy_core(qb::duration::zero(), qb::duration::zero());
+    expect_busy_core_fired_on_time("busy");
+}
+
+// The same case with the core's thread off the CPU for the whole wait -- what a loaded host does to it, and what made the
+// pass floor this case had fail (Huly QB-1236): a block right after the arm, past the deadline, leaves one pass in the wait.
+TEST(AskDeadlines, ABusyCoreDescheduledForTheWholeWaitStillFiresThroughTheCoarsePreCheck) {
+    run_busy_core(kBusyWait + 5ms, qb::duration::zero());
+    expect_busy_core_fired_on_time("descheduled in the wait");
+    EXPECT_GE(g_fire_delay_us.load(), std::chrono::duration_cast<std::chrono::microseconds>(kBusyWait + 5ms).count())
+        << "the block lasted past the deadline: it cannot have fired before the core ran again";
+}
+
+// The thread off the CPU between the case's reading at the arm and the ask's own: the deadline the ask armed is later
+// than `t0` plus the wait, and the passes the case counts past "the deadline" must be counted past the true one.
+TEST(AskDeadlines, ABusyCoreDescheduledAtTheArmCountsPassesFromTheTrueDeadline) {
+    run_busy_core(qb::duration::zero(), 25ms);
+    expect_busy_core_fired_on_time("descheduled at the arm");
+    EXPECT_GE(g_fire_delay_us.load(), std::chrono::duration_cast<std::chrono::microseconds>(kBusyWait + 25ms).count())
+        << "the ask armed its deadline after the block";
 }
 
 // ---------------------------------------------------------------------------
