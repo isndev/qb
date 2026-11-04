@@ -49,6 +49,7 @@
 #include <vector>
 
 #include "../../shared/log_writer_drain.h"
+#include "../../shared/loopback_fixture.h"
 
 namespace {
 
@@ -824,6 +825,77 @@ dispatched_over(int passes) {
     return events;
 }
 
+/// What `sock`'s receive buffer holds, or nothing when the socket cannot say (it is closed).
+std::optional<std::size_t>
+readable_bytes(qb::io::tcp::socket &sock) {
+#ifdef _WIN32
+    u_long held = 0;
+#else
+    int held = 0;
+#endif
+    if (::QB_IOCTLSOCKET(sock.native_handle(), FIONREAD, &held) != 0)
+        return std::nullopt;
+    return static_cast<std::size_t>(held);
+}
+
+/// The peer writes `bytes`, then the case waits -- on a clock, not a pass count -- until they sit in the
+/// probe's receive buffer. write() returning does not say they do: they may still be crossing the loopback.
+/// On macOS a 4-byte write is usually not readable yet at the far end when write() returns: it is a few
+/// microseconds later on an idle host, milliseconds on a loaded one -- longer than the fixed non-blocking
+/// passes the cases below assert on last (Huly QB-1233). The count taken first is all the peer had sent:
+/// every peer write the probe reads goes through here.
+::testing::AssertionResult
+deliver(StreamPair &pair, std::string_view bytes) {
+    const auto before = readable_bytes(pair.probe);
+    if (!before)
+        return ::testing::AssertionFailure() << "the probe's receive buffer cannot be read: its socket is closed, nothing can reach it";
+    if (pair.peer.write(bytes.data(), bytes.size()) != static_cast<int>(bytes.size()))
+        return ::testing::AssertionFailure() << "the peer could not write its " << bytes.size() << " bytes";
+    const auto deadline = std::chrono::steady_clock::now() + qb::io::test::kLoopbackWaitBudget;
+    for (;;) {
+        const auto held = readable_bytes(pair.probe);
+        if (!held)
+            return ::testing::AssertionFailure() << "the probe's receive buffer could no longer be read";
+        if (*held >= *before + bytes.size())
+            return ::testing::AssertionSuccess();
+        if (std::chrono::steady_clock::now() >= deadline)
+            return ::testing::AssertionFailure() << "the peer's " << bytes.size() << " bytes did not reach the probe within "
+                                                 << qb::io::test::kLoopbackWaitBudget.count() << " ms";
+        std::this_thread::sleep_for(std::chrono::microseconds{100});
+    }
+}
+
+/// What the peer reads of the session's output: `n` bytes, waited for on a clock -- they cross the loopback
+/// too, and a blocking read waited for ever when they never came (Huly QB-1233) -- then whatever had already
+/// arrived behind them: a reply sent twice shows when its copy is there. A short read is a short string.
+std::string
+reply_of(qb::io::tcp::socket &peer, std::size_t n) {
+    std::string reply(n, '\0');
+    reply.resize(qb::io::test::read_exact_within(peer, reply.data(), n));
+    if (const auto behind = readable_bytes(peer); behind && *behind > 0) {
+        std::string more(*behind, '\0');
+        if (const int got = peer.read(more.data(), more.size()); got > 0)
+            reply.append(more.data(), static_cast<std::size_t>(got));
+    }
+    return reply;
+}
+
+/// Non-blocking loop passes until `done()` holds, for at most the loopback budget: for an event whose cause
+/// crosses the loopback after the call that sent it -- the peer's FIN -- which no number of passes is sure
+/// to outlast (Huly QB-1233). Not qb::io::async::run_until(), which has no deadline.
+template <typename Done>
+::testing::AssertionResult
+pass_until(Done &&done, std::string_view what) {
+    const auto deadline = std::chrono::steady_clock::now() + qb::io::test::kLoopbackWaitBudget;
+    while (!done()) {
+        if (std::chrono::steady_clock::now() >= deadline)
+            return ::testing::AssertionFailure() << what << ": not within " << qb::io::test::kLoopbackWaitBudget.count() << " ms";
+        if (qb::io::async::run(EVRUN_NOWAIT) == 0)
+            std::this_thread::sleep_for(std::chrono::microseconds{100});
+    }
+    return ::testing::AssertionSuccess();
+}
+
 } // namespace
 
 TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
@@ -832,7 +904,7 @@ TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
     ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input), nullptr);
 
     input.base().start();
-    ASSERT_EQ(pair.peer.write("abcdefghZ", 9), 9);
+    ASSERT_TRUE(deliver(pair, "abcdefghZ"));
 
     run_nowait_iterations();
 
@@ -845,10 +917,10 @@ TEST_F(AsyncIoBaseTest, InputReadsFramesAndReportsPendingThenEof) {
     EXPECT_TRUE(input.base().has_pending_data());
 
     input.flush(input.pendingRead());
-    ASSERT_EQ(pair.peer.write("wxyz", 4), 4);
+    ASSERT_TRUE(deliver(pair, "wxyz"));
     run_nowait_iterations();
 
-    EXPECT_EQ(input.messages.back(), "wxyz");
+    EXPECT_EQ(input.messages, (std::vector<std::string>{"abcd", "efgh", "wxyz"})); // not back(): a miss must fail, not crash the run
     EXPECT_EQ(input.pendingRead(), 0u);
     EXPECT_EQ(input.eof_events, 1u);
 }
@@ -860,7 +932,7 @@ TEST_F(AsyncIoBaseTest, InputDisconnectsOnProtocolErrorAndOversizedFrame) {
         ASSERT_NE(input.base().switch_protocol<FourByteInputProtocol>(input, true), nullptr);
 
         input.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(input.messages, (std::vector<std::string>{"data"}));
@@ -877,7 +949,7 @@ TEST_F(AsyncIoBaseTest, InputDisconnectsOnProtocolErrorAndOversizedFrame) {
         input.base().set_max_message_size(4u);
 
         input.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -894,7 +966,7 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
         input.base().protocol()->not_ok();
 
         input.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -911,7 +983,7 @@ TEST_F(AsyncIoBaseTest, InputDisposesWhenProtocolIsInvalidOrClearedBeforeRead) {
         EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
 
         input.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(input.disconnected_events, 1u);
@@ -941,10 +1013,7 @@ TEST_F(AsyncIoBaseTest, OutputDrainsPartialWritesAndPublishesEos) {
     EXPECT_EQ(output.base().bytes_written(), 6u);
     ASSERT_FALSE(output.base().has_pending_data());
 
-    std::array<char, 8> buffer{};
-    const auto          read = pair.peer.read(buffer.data(), buffer.size());
-    ASSERT_EQ(read, 6);
-    EXPECT_EQ(std::string_view(buffer.data(), 6), "abcdef");
+    EXPECT_EQ(reply_of(pair.peer, 6), "abcdef");
 }
 
 TEST_F(AsyncIoBaseTest, OutputDisconnectIsIdempotentAndReportsReason) {
@@ -1025,7 +1094,7 @@ TEST_F(AsyncIoBaseTest, DuplexProcessesInputAndDrainsReplyInSameEventCycle) {
     ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, false, true), nullptr);
 
     session.base().start();
-    ASSERT_EQ(pair.peer.write("abcdZ", 5), 5);
+    ASSERT_TRUE(deliver(pair, "abcdZ"));
 
     run_nowait_iterations();
 
@@ -1042,10 +1111,7 @@ TEST_F(AsyncIoBaseTest, DuplexProcessesInputAndDrainsReplyInSameEventCycle) {
     EXPECT_TRUE(session.base().has_pending_read());
     EXPECT_FALSE(session.base().has_pending_write());
 
-    std::array<char, 8> buffer{};
-    const auto          read = pair.peer.read(buffer.data(), buffer.size());
-    ASSERT_EQ(read, 4);
-    EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+    EXPECT_EQ(reply_of(pair.peer, 4), "pong");
 }
 
 TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
@@ -1086,7 +1152,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolLifecycleAccessorsAndNoProtocolDisposal) {
         PipeDuplexProbe session{pair.probe};
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.disconnected_events, 1u);
@@ -1103,7 +1169,7 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
         session.base().clear_protocols();
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages.size(), 0u);
@@ -1118,7 +1184,7 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true), nullptr);
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1129,10 +1195,7 @@ TEST_F(AsyncIoBaseTest, DuplexClearedProtocolAndCloseAfterDeliverDisposeCleanly)
         EXPECT_EQ(session.base().bytes_written(), 4u);
         EXPECT_FALSE(session.base().is_connected());
 
-        std::array<char, 8> buffer{};
-        const auto          read = pair.peer.read(buffer.data(), buffer.size());
-        ASSERT_EQ(read, 4);
-        EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+        EXPECT_EQ(reply_of(pair.peer, 4), "pong");
 
         session.reset_state();
         EXPECT_TRUE(session.base().is_connected());
@@ -1165,7 +1228,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnInvalidProtocolAndReadOverflow) {
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true), nullptr);
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1183,7 +1246,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnInvalidProtocolAndReadOverflow) {
         session.force_read_overflow();
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages.size(), 0u);
@@ -1200,7 +1263,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
         session.base().set_max_message_size(4u);
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_TRUE(session.messages.empty());
@@ -1215,7 +1278,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
         ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session), nullptr);
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1224,10 +1287,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
         EXPECT_EQ(session.disconnected_events, 1u);
         EXPECT_EQ(session.last_disconnect_reason, 77);
 
-        std::array<char, 8> buffer{};
-        const auto          read = pair.peer.read(buffer.data(), buffer.size());
-        ASSERT_EQ(read, 4);
-        EXPECT_EQ(std::string_view(buffer.data(), 4), "bye!");
+        EXPECT_EQ(reply_of(pair.peer, 4), "bye!");
     }
 
     {
@@ -1236,7 +1296,7 @@ TEST_F(AsyncIoBaseTest, DuplexProtocolEdgeCasesPreserveFlushAndDeferredDrainSema
         ASSERT_NE(session.base().switch_protocol<NonFlushingDuplexProtocol>(session), nullptr);
 
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
@@ -1320,10 +1380,7 @@ TEST_F(AsyncIoBaseTest, DuplexResetForReconnectLeavesNothingOfThePreviousConnect
     EXPECT_TRUE(session.base().is_connected()) << "start() clears the dispose latches";
     session.base().publish(std::string_view{"next"});
     run_nowait_iterations();
-    std::array<char, 16> buffer{};
-    const auto           read = next.peer.read(buffer.data(), buffer.size());
-    ASSERT_EQ(read, 4);
-    EXPECT_EQ(std::string_view(buffer.data(), 4), "next");
+    EXPECT_EQ(reply_of(next.peer, 4), "next");
 }
 
 // What was published BEFORE start() leaves with it (Huly QB-202): publish() asks for EV_WRITE on a
@@ -1341,11 +1398,7 @@ TEST_F(AsyncIoBaseTest, DuplexStartSendsWhatWasPublishedBeforeIt) {
     run_nowait_iterations();
     EXPECT_EQ(session.pendingWrite(), 0u) << "the bytes published before start() must have left";
 
-    pair.peer.set_nonblocking(true); // a regression must fail here, not hang the test on a blocking read
-    std::array<char, 16> buffer{};
-    const auto           read = pair.peer.read(buffer.data(), buffer.size());
-    ASSERT_EQ(read, 5);
-    EXPECT_EQ(std::string_view(buffer.data(), 5), "early");
+    EXPECT_EQ(reply_of(pair.peer, 5), "early");
 }
 
 // disconnect_now() (Huly QB-202): the teardown a standalone client needs done before its disconnect
@@ -1375,17 +1428,14 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowTearsDownBeforeReturning) {
         PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session, true), nullptr);
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"data"}));
         EXPECT_EQ(session.pendingWrite(), 0u);
         EXPECT_EQ(session.disconnected_events, 1u);
         EXPECT_EQ(session.last_disconnect_reason, 77);
-        std::array<char, 8> buffer{};
-        const auto          read = pair.peer.read(buffer.data(), buffer.size());
-        ASSERT_EQ(read, 4);
-        EXPECT_EQ(std::string_view(buffer.data(), 4), "bye!") << "from a handler, the reply drains first, as with disconnect()";
+        EXPECT_EQ(reply_of(pair.peer, 4), "bye!") << "from a handler, the reply drains first, as with disconnect()";
     }
 
     {
@@ -1398,7 +1448,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowTearsDownBeforeReturning) {
         ASSERT_NE(session.base().switch_protocol<DisconnectingDuplexProtocol>(session, true), nullptr);
         session.force_write_would_block();
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
 
         for (int pass = 0; pass < 100 && session.messages.empty(); ++pass)
             qb::io::async::run(EVRUN_NOWAIT);
@@ -1430,7 +1480,7 @@ TEST_F(AsyncIoBaseTest, InputTeardownCompletesWhenItsHooksThrow) {
     EXPECT_EQ(input.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
     EXPECT_FALSE(input.base().is_connected());
 
-    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    ASSERT_TRUE(deliver(pair, "data"));
     EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed input wake nothing";
 }
 
@@ -1464,7 +1514,7 @@ TEST_F(AsyncIoBaseTest, DuplexTeardownCompletesWhenItsHooksThrow) {
     EXPECT_EQ(session.dispose_events, 1u) << "on(dispose) must run after a throwing on(disconnected)";
     EXPECT_FALSE(session.base().is_connected());
 
-    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    ASSERT_TRUE(deliver(pair, "data"));
     EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
 }
 
@@ -1483,7 +1533,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectNowCompletesWhenItsHooksThrow) {
     EXPECT_EQ(session.last_disconnect_reason, 42);
     EXPECT_FALSE(session.base().is_connected());
 
-    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    ASSERT_TRUE(deliver(pair, "data"));
     EXPECT_EQ(dispatched_over(20), 0u) << "the watcher must be stopped: bytes for a disposed io wake nothing";
 }
 
@@ -1502,7 +1552,7 @@ namespace {
 /// What `peer` reads up to a clean EOF within `budget`, or nothing when the connection stays open
 /// (a peer never blocks here: it reads "would block" until the budget runs out) or is reset.
 std::optional<std::string>
-read_to_eof(qb::io::tcp::socket &peer, std::chrono::milliseconds budget = std::chrono::milliseconds{1000}) {
+read_to_eof(qb::io::tcp::socket &peer, std::chrono::milliseconds budget = qb::io::test::kLoopbackWaitBudget) {
     peer.set_nonblocking(true);
     const auto            deadline = std::chrono::steady_clock::now() + budget;
     std::string           received;
@@ -1547,8 +1597,7 @@ TEST_F(AsyncIoBaseTest, InputDisposeEndsItsTransport) {
         input.base().start();
 
         pair.peer.disconnect();
-        for (int pass = 0; pass < 100 && input.dispose_events == 0u; ++pass)
-            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_TRUE(pass_until([&] { return input.dispose_events != 0u; }, "the dispose the peer's FIN causes"));
         ASSERT_EQ(input.dispose_events, 1u);
         EXPECT_FALSE(pair.probe.is_open()) << "an input whose peer hung up must not keep its end open";
     }
@@ -1601,7 +1650,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisposeEndsItsTransportOnEveryPath) {
         PipeDuplexProbe session{pair.probe};
         ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true), nullptr);
         session.base().start();
-        ASSERT_EQ(pair.peer.write("data", 4), 4);
+        ASSERT_TRUE(deliver(pair, "data"));
 
         for (int pass = 0; pass < 100 && session.dispose_events == 0u; ++pass)
             qb::io::async::run(EVRUN_NOWAIT);
@@ -1617,8 +1666,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisposeEndsItsTransportOnEveryPath) {
         session.base().start();
 
         pair.peer.disconnect();
-        for (int pass = 0; pass < 100 && session.dispose_events == 0u; ++pass)
-            qb::io::async::run(EVRUN_NOWAIT);
+        ASSERT_TRUE(pass_until([&] { return session.dispose_events != 0u; }, "the dispose the peer's FIN causes"));
         ASSERT_EQ(session.dispose_events, 1u);
         EXPECT_FALSE(pair.probe.is_open()) << "a client whose peer hung up must not keep its end open";
     }
@@ -1634,7 +1682,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisposeEndsItsTransportOnEveryPath) {
         run_nowait_iterations();
         ASSERT_EQ(session.pendingWrite(), 0u);
 
-        ASSERT_EQ(pair.peer.write("unread", 6), 6); // no loop pass reads it: the disconnect is handled first
+        ASSERT_TRUE(deliver(pair, "unread")); // in the probe's buffer, unread: no loop pass reads it, the disconnect is handled first
         session.base().disconnect();
         run_nowait_iterations();
         ASSERT_EQ(session.dispose_events, 1u);
@@ -1697,7 +1745,7 @@ TEST_F(AsyncIoBaseTest, InputDisconnectsOnAFramingErrorInTheEventThatCarriedIt) 
     input.base().start();
 
     const auto bytes = sized_frame("abc") + kZeroHeader; // a good frame, then a zero-length header
-    ASSERT_EQ(pair.peer.write(bytes.data(), bytes.size()), static_cast<int>(bytes.size()));
+    ASSERT_TRUE(deliver(pair, bytes));
     run_nowait_iterations();
 
     EXPECT_EQ(input.messages, (std::vector<std::string>{"abc"})) << "the frame before the error is delivered";
@@ -1713,7 +1761,7 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnAFramingErrorInTheEventThatCarriedIt)
         ASSERT_NE(session.base().switch_protocol<SizedDuplexProtocol>(session), nullptr);
         session.base().start();
 
-        ASSERT_EQ(pair.peer.write(kZeroHeader.data(), kZeroHeader.size()), 4);
+        ASSERT_TRUE(deliver(pair, kZeroHeader));
         run_nowait_iterations();
 
         EXPECT_TRUE(session.messages.empty());
@@ -1730,16 +1778,14 @@ TEST_F(AsyncIoBaseTest, DuplexDisconnectsOnAFramingErrorInTheEventThatCarriedIt)
         session.base().start();
 
         const auto bytes = sized_frame("abc") + kZeroHeader;
-        ASSERT_EQ(pair.peer.write(bytes.data(), bytes.size()), static_cast<int>(bytes.size()));
+        ASSERT_TRUE(deliver(pair, bytes));
         run_nowait_iterations();
 
         EXPECT_EQ(session.messages, (std::vector<std::string>{"abc"}));
         EXPECT_EQ(session.disconnected_events, 1u);
         EXPECT_FALSE(session.base().is_connected());
 
-        std::array<char, 8> buffer{};
-        ASSERT_EQ(pair.peer.read(buffer.data(), buffer.size()), 4);
-        EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+        EXPECT_EQ(reply_of(pair.peer, 4), "pong");
     }
 }
 
@@ -1757,7 +1803,7 @@ TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDisposesWhateverTheLastSocketErro
     ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session, true, true), nullptr);
     session.base().start();
 
-    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    ASSERT_TRUE(deliver(pair, "data"));
     run_nowait_iterations();
 
     EXPECT_EQ(session.eos_events, 1u) << "the final delivery is reported first";
@@ -1765,9 +1811,7 @@ TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDisposesWhateverTheLastSocketErro
     EXPECT_EQ(session.dispose_events, 1u);
     EXPECT_FALSE(session.base().is_connected());
 
-    std::array<char, 8> buffer{};
-    ASSERT_EQ(pair.peer.read(buffer.data(), buffer.size()), 4);
-    EXPECT_EQ(std::string_view(buffer.data(), 4), "pong");
+    EXPECT_EQ(reply_of(pair.peer, 4), "pong");
 }
 
 // The same graceful close, with an output larger than the socket takes at once and a peer that keeps
@@ -1785,37 +1829,53 @@ TEST_F(AsyncIoBaseTest, DuplexCloseAfterDeliverDeliversEverythingWhileThePeerKee
     session.set_max_chunk(std::size_t{1} << 20);
     ASSERT_NE(session.base().switch_protocol<ReplyThenCloseDuplexProtocol>(session, reply), nullptr);
     session.base().start();
-    ASSERT_EQ(pair.peer.write("data", 4), 4);
+    ASSERT_TRUE(deliver(pair, "data"));
 
-    // Write until the socket is full: the pending output stops falling.
-    std::size_t last   = static_cast<std::size_t>(-1);
-    int         stable = 0;
-    for (int i = 0; i < 100000 && stable < 200; ++i) {
+    // Write until the socket is full: the pending output, and what the peer holds, stop moving -- unchanged
+    // across passes for 100 ms, a clock and not a pass count: what frees room in the probe's socket crosses
+    // the loopback (Huly QB-1233).
+    auto       last      = std::make_pair(session.pendingWrite(), readable_bytes(pair.peer).value_or(0u));
+    auto       still     = std::chrono::steady_clock::now();
+    const auto settle_by = still + qb::io::test::kLoopbackWaitBudget;
+    bool       settled   = false;
+    while (!settled && std::chrono::steady_clock::now() < settle_by) {
         qb::io::async::run(EVRUN_NOWAIT);
-        const auto now = session.pendingWrite();
-        stable         = now == last ? stable + 1 : 0;
-        last           = now;
+        const auto now = std::make_pair(session.pendingWrite(), readable_bytes(pair.peer).value_or(0u));
+        if (now != last) {
+            last  = now;
+            still = std::chrono::steady_clock::now();
+        } else {
+            settled = std::chrono::steady_clock::now() - still >= std::chrono::milliseconds{100};
+        }
     }
+    ASSERT_TRUE(settled) << "the pending output and the peer's buffer never stopped moving";
     ASSERT_EQ(session.messages, (std::vector<std::string>{"data"}));
     ASSERT_GT(session.pendingWrite(), 0u) << "the socket buffers must be full for this test to prove anything";
     ASSERT_EQ(session.disconnected_events, 0u);
 
-    ASSERT_EQ(pair.peer.write("more", 4), 4); // a read readiness, alone: the probe's socket is full
+    ASSERT_TRUE(deliver(pair, "more")); // a read readiness, alone: the probe's socket is full
     for (int i = 0; i < 50; ++i)
         qb::io::async::run(EVRUN_NOWAIT);
     EXPECT_EQ(session.disconnected_events, 0u) << "a read event during the delivery must not end the connection";
+    EXPECT_FALSE(session.base().is_reading()) << "the read readiness came alone: only that path stops the reads";
 
-    // The peer drains: every byte arrives, then the connection ends.
+    // The peer drains: every byte arrives, then the connection ends -- on a clock too: every byte crosses
+    // the loopback.
     pair.peer.set_nonblocking(true);
     std::vector<char> buffer(std::size_t{1} << 20);
-    std::size_t       received  = 0;
-    char              last_byte = 0;
-    for (int i = 0; i < 1000000 && received < kReply; ++i) {
-        qb::io::async::run(EVRUN_NOWAIT);
-        const auto n = pair.peer.read(buffer.data(), buffer.size());
+    std::size_t       received   = 0;
+    char              last_byte  = 0;
+    const auto        drained_by = std::chrono::steady_clock::now() + 10 * qb::io::test::kLoopbackWaitBudget;
+    while (received < kReply && std::chrono::steady_clock::now() < drained_by) {
+        const bool moved = qb::io::async::run(EVRUN_NOWAIT) != 0;
+        const auto n     = pair.peer.read(buffer.data(), buffer.size());
         if (n > 0) {
             received += static_cast<std::size_t>(n);
             last_byte = buffer[static_cast<std::size_t>(n) - 1];
+        } else if (qb::io::socket::get_last_errno() == 0) {
+            break; // the peer's EOF (tcp::socket::read() reports it as -1 with the error cleared): nothing more comes
+        } else if (!moved) {
+            std::this_thread::sleep_for(std::chrono::microseconds{100});
         }
     }
     EXPECT_EQ(received, kReply) << "the whole reply must be delivered before the close";
