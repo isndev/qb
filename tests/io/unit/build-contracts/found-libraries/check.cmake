@@ -55,6 +55,12 @@ set(_openssl_finds_zlib FALSE)
 if(_find_openssl MATCHES "find_package\\(ZLIB\\)")
     set(_openssl_finds_zlib TRUE)
 endif()
+# ... and whether a static OpenSSL whose pkg-config names -pthread makes it call find_package(Threads) on any UNIX, the
+# branch it takes on Linux without one.
+set(_openssl_finds_threads FALSE)
+if(_find_openssl MATCHES "\"-pthread\"[^\n]*\n[^\n]*\n[^\n]*find_package\\(Threads\\)")
+    set(_openssl_finds_threads TRUE)
+endif()
 # A library's file name as find_library() looks for it on this host.
 function(library_file name out_var)
     if(WIN32)
@@ -242,9 +248,17 @@ function(build_fixture name label want_count)
     execute_process(COMMAND "${CMAKE_COMMAND}" -E env ${_env} "${CMAKE_COMMAND}" --build "${WORK_DIR}/${name}/build"
                     RESULT_VARIABLE _rc OUTPUT_VARIABLE _out ERROR_VARIABLE _out)
     string(REGEX REPLACE "[ \t\r]*\n[ \t]*" " " _flat "${_out}")
-    file(STRINGS "${WORK_DIR}/${name}/configures.txt" _lines)
+    # A configure that never reached the end writes neither file: a case that failed, said as one, not a test stopped
+    # here with the cases after it left unrun.
+    set(_lines "")
+    set(_verdict "")
+    if(EXISTS "${WORK_DIR}/${name}/configures.txt")
+        file(STRINGS "${WORK_DIR}/${name}/configures.txt" _lines)
+    endif()
+    if(EXISTS "${WORK_DIR}/${name}/verdict.txt")
+        file(READ "${WORK_DIR}/${name}/verdict.txt" _verdict)
+    endif()
     list(LENGTH _lines _count)
-    file(READ "${WORK_DIR}/${name}/verdict.txt" _verdict)
     math(EXPR _n "${_builds} + 1")
     set(_builds ${_n} PARENT_SCOPE)
     set(_wrong "")
@@ -1221,9 +1235,11 @@ if(_generators)
             if(_transitive_marks)
                 set(_zlib_mark "TRANSITIVE=ZLIB:(False|FALSE) .*")
             endif()
+            # Its pkg-config names no -pthread: on Linux FindOpenSSL calls find_package(Threads), which the consumer
+            # answers by enabling C, as it does on every UNIX for a static OpenSSL (LANGUAGES).
             configure_fixture(${_name} OK "-DUSE_PKG_CONFIG=ON" "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
                               "-DOPENSSL_USE_STATIC_LIBS=ON" "-DCMAKE_PREFIX_PATH=/Cellar/zlib/1" "-DCMP0124_OLD=ON"
-                              HAS "QB=1" "OPENSSL=TRUE" "LEAKED=\\|\\|" ${_zlib_mark}
+                              HAS "QB=1" "OPENSSL=TRUE" "LEAKED=\\|\\|" "LANGUAGES=C" ${_zlib_mark}
                                   "ZLIB_LIBRARY_RELEASE=${_root_regex}/Cellar/zlib/1/lib/libz\\.a"
                                   "INPUTS=.*\\|${_root_regex}/Cellar/zlib/1/lib/libz\\.a\\|.*")
             build_fixture(${_name} "nothing changed" 1)
@@ -1247,6 +1263,31 @@ if(_generators)
             endif()
             set(_env "")
         endforeach()
+        # A static OpenSSL whose pkg-config names -pthread: FindOpenSSL calls find_package(Threads) on any UNIX -- the
+        # call it makes on Linux for one that names none (above) -- and CMake's FindThreads needs the C the consumer
+        # enables for it: qb found, on macOS too, where nothing else reaches that call, and OpenSSL::Crypto linking the
+        # Threads::Threads that call made (OPENSSL_THREADS), so the case cannot pass without it.
+        if(_openssl_finds_threads)
+            set(_name "consumer-openssl-pthread")
+            set(_root "${WORK_DIR}/${_name}/root")
+            install_qb(${_name} openssl)
+            plant(openssl "${_root}/usr/local" NO ssl crypto)
+            file(WRITE "${_root}/usr/local/lib/libssl.a" "")
+            file(WRITE "${_root}/usr/local/lib/libcrypto.a" "")
+            file(WRITE "${_root}/pc/openssl.pc"
+                 "prefix=/usr/local\nlibdir=\${prefix}/lib\nincludedir=\${prefix}/include\nName: OpenSSL\n"
+                 "Description: planted\nVersion: 3.0.0\nLibs: -L\${libdir} -lssl -lcrypto\nLibs.private: -pthread\n"
+                 "Cflags: -I\${includedir}\n")
+            set(_env "PKG_CONFIG_LIBDIR=${_root}/pc" "PKG_CONFIG_PATH=" "PKG_CONFIG_SYSROOT_DIR=")
+            configure_fixture(${_name} OK "-DUSE_PKG_CONFIG=ON" "-DPKG_CONFIG_EXECUTABLE=${_pkg_config}"
+                              "-DOPENSSL_USE_STATIC_LIBS=ON"
+                              HAS "QB=1" "OPENSSL=TRUE" "LEAKED=\\|\\|" "LANGUAGES=C" "OPENSSL_THREADS=TRUE")
+            build_fixture(${_name} "nothing changed" 1 "QB=1" "OPENSSL_THREADS=TRUE")
+            set(_env "")
+        else()
+            message(STATUS "found-libraries: FindOpenSSL calls no find_package(Threads) for -pthread here: the "
+                           "consumer's -pthread case is skipped")
+        endif()
     endif()
 endif()
 set(_fixture "${_lib_fixture}")

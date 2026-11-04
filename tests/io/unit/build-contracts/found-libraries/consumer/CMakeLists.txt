@@ -5,14 +5,14 @@
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 #
-# The consumer of an installed qb (Huly QB-1201): a languageless project that runs find_package(qb) against the prefix
-# ../check.cmake generated in <RESULT_DIR>/prefix -- the qbConfig.cmake an install generates from
-# cmake/qbConfig.cmake.in, and the files an install puts beside it, with stand-in Threads and nlohmann_json modules --
-# with every search confined to the planted root and pkg-config off unless asked, and none of qb's own CMake loaded: an
-# installed qb has to search its consumer's libraries on its own. Writes what was found, the cache entries, the
-# configure's inputs and the module path find_package(qb) left (it puts its own directory there for its searches only)
-# to <RESULT_DIR>/verdict.txt, and one line per configure to <RESULT_DIR>/configures.txt. Configured, and rebuilt, by
-# ../check.cmake only.
+# The consumer of an installed qb (Huly QB-1201): a project, languageless but for a static OpenSSL (below), that runs
+# find_package(qb) against the prefix ../check.cmake generated in <RESULT_DIR>/prefix -- the qbConfig.cmake an install
+# generates from cmake/qbConfig.cmake.in, and the files an install puts beside it, with stand-in Threads and
+# nlohmann_json modules -- with every search confined to the planted root and pkg-config off unless asked, and none of
+# qb's own CMake loaded: an installed qb has to search its consumer's libraries on its own. Writes what was found, the
+# cache entries, the configure's inputs, the module path find_package(qb) left (it puts its own directory there for
+# its searches only) and the languages enabled to <RESULT_DIR>/verdict.txt, and one line per configure to
+# <RESULT_DIR>/configures.txt. Configured, and rebuilt, by ../check.cmake only.
 #
 #   cmake -S <this dir> -B <build> -DRESULT_DIR=<dir> -DPLANT_ROOT=<dir> [-DCMAKE_PREFIX_PATH=<under the root>]
 #         [-D<entry>=.. cache entries] [-DOPTIONAL=ON] [-DFIND_TWICE=ON] [-DPACKAGE_NAME=QB]
@@ -24,6 +24,19 @@
 #
 cmake_minimum_required(VERSION 3.24)
 project(qb_found_libraries_consumer NONE)
+# A static OpenSSL planted (libssl.a, libcrypto.a): FindOpenSSL's static branch may call find_package(Threads) -- on
+# Linux when its pkg-config names no -pthread, on any UNIX when it does -- and CMake's own FindThreads, which a module's
+# call reaches whatever stand-in this project puts first (CMP0017), refuses a project that enables neither C nor CXX.
+# As a consumer that links a static OpenSSL enables a language, this one enables C then, before its searches are
+# confined to the planted root: the compiler is found where it is. UNIX only, as that branch. Elsewhere it enables
+# none, so the cost of a compiler stays with the configures that need it. FindOpenSSL reads the libraries' paths, not
+# the disk: a static one cached or set by hand counts too.
+if(UNIX AND IS_DIRECTORY "${PLANT_ROOT}")
+    file(GLOB_RECURSE _static LIST_DIRECTORIES false "${PLANT_ROOT}/libssl.a" "${PLANT_ROOT}/libcrypto.a")
+    if(_static OR "$CACHE{OPENSSL_SSL_LIBRARY}" MATCHES "\\.a$" OR "$CACHE{OPENSSL_CRYPTO_LIBRARY}" MATCHES "\\.a$")
+        enable_language(C)
+    endif()
+endif()
 
 set(_prefix "${RESULT_DIR}/prefix")
 if(NOT EXISTS "${_prefix}/lib/cmake/qb/qbConfig.cmake")
@@ -44,7 +57,8 @@ else()
     endif()
 endif()
 set(CMAKE_FIND_USE_SYSTEM_ENVIRONMENT_PATH FALSE)
-# FindThreads needs a language this project does not enable, and nlohmann_json's package is not planted: stand-ins.
+# qbConfig.cmake's find_dependency(Threads) is answered by a stand-in, FindThreads needing a language this project
+# enables only for a static OpenSSL; nlohmann_json's package is not planted: a stand-in too.
 list(PREPEND CMAKE_MODULE_PATH "${_prefix}/stand-ins")
 if(CMP0124_OLD)
     cmake_policy(SET CMP0124 OLD)
@@ -91,6 +105,15 @@ foreach(_entry IN ITEMS ARGON2_INCLUDE_DIR ARGON2_LIBRARY ZLIB_INCLUDE_DIR ZLIB_
 endforeach()
 get_property(_inputs DIRECTORY PROPERTY CMAKE_CONFIGURE_DEPENDS)
 list(JOIN _inputs "|" _inputs)
+get_property(_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+list(REMOVE_ITEM _languages NONE)
+set(_openssl_threads FALSE) # what FindOpenSSL's static branch linked: Threads::Threads once it found Threads
+if(TARGET OpenSSL::Crypto)
+    get_target_property(_openssl_links OpenSSL::Crypto INTERFACE_LINK_LIBRARIES)
+    if("Threads::Threads" IN_LIST _openssl_links)
+        set(_openssl_threads TRUE)
+    endif()
+endif()
 string(REPLACE "\n" " " _reason "${${_name}_NOT_FOUND_MESSAGE}")
 string(REPLACE "\n" " " _first "${_first}")
 get_cmake_property(_leaked VARIABLES) # what find_package(qb) left in this scope of its own internals
@@ -107,4 +130,5 @@ file(WRITE "${RESULT_DIR}/verdict.txt"
      "QB=${${_name}_FOUND}\nREASON=${_reason}\nFIRST=${_first}\nLEAKED=|${_leaked}|\nTRANSITIVE=${_transitive}\n"
      "ARGON2=${Argon2_FOUND}\nZLIB=${ZLIB_FOUND}\nZSTD=${Zstd_FOUND}\n"
      "BROTLI=${Brotli_FOUND}\nOPENSSL=${OpenSSL_FOUND}\nNGTCP2=${Ngtcp2_FOUND}\nINPUTS=|${_inputs}|\n"
-     "MODULE_PATH=${CMAKE_MODULE_PATH}\nIMPORT_PREFIX=${_IMPORT_PREFIX}\n${_entries}")
+     "MODULE_PATH=${CMAKE_MODULE_PATH}\nIMPORT_PREFIX=${_IMPORT_PREFIX}\nLANGUAGES=${_languages}\n"
+     "OPENSSL_THREADS=${_openssl_threads}\n${_entries}")
