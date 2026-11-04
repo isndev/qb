@@ -24,6 +24,12 @@
 
 @PACKAGE_INIT@
 
+# Ngtcp2_ROOT, which the libngtcp2 remedy below names, reaches FindNgtcp2's searches under CMP0074 alone: NEW for this
+# file whatever the consumer's own minimum -- find_package() gives a package's file a policy scope of its own -- and set
+# before find_dependency() is defined, which runs under the policies in effect where it was.
+if(POLICY CMP0074)
+    cmake_policy(SET CMP0074 NEW)
+endif()
 include(CMakeFindDependencyMacro)
 
 # Set version information
@@ -222,23 +228,37 @@ if(@QB_HAS_SSL@)
     # qbDependencies.cmake are both unversioned), and OpenSSL's major is NOT one of the five
     # link-enforced ABI axes, so nothing catches it: a prebuilt bottle or .deb built against
     # openssl@3 and consumed against a different major fails at link or at load, loudly, but with
-    # no diagnostic naming the cause. Warn at configure time instead, where it is cheap to act on.
+    # no diagnostic naming the cause.
     #
-    # A WARNING rather than an error on purpose: distributions ship a wide range of OpenSSL
-    # patch/minor levels and only the MAJOR is an ABI boundary, so a hard failure here would break
-    # legitimate consumers. Compare majors only, and say nothing when they agree.
+    # Only the MAJOR is an ABI boundary -- distributions ship a wide range of patch/minor levels, which
+    # pass in silence -- and another one makes qb not found, with the remedy (Huly QB-1256): a warning
+    # here let a build go on to that link or load failure, its cause scrolled away.
     set(_qb_ssl_built "@OPENSSL_VERSION@")
     if(_qb_ssl_built AND OPENSSL_VERSION)
         string(REGEX REPLACE "^([0-9]+).*" "\\1" _qb_ssl_built_major "${_qb_ssl_built}")
         string(REGEX REPLACE "^([0-9]+).*" "\\1" _qb_ssl_have_major "${OPENSSL_VERSION}")
         if(NOT _qb_ssl_built_major STREQUAL _qb_ssl_have_major)
-            message(WARNING
-                "[qb] OpenSSL MAJOR version mismatch: this qb was built against "
-                "${_qb_ssl_built}, you are building against ${OPENSSL_VERSION}. OpenSSL types "
-                "cross qb's public API (SSL_CTX* is in the signature set), so this is an ABI "
-                "boundary -- expect an unresolved symbol at link, or a loader failure at run "
-                "time. Rebuild qb against ${OPENSSL_VERSION}, or point CMAKE_PREFIX_PATH at an "
-                "OpenSSL ${_qb_ssl_built_major}.x.")
+            set(_qb_ssl_entries "-U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY")
+            if(WIN32) # FindOpenSSL caches the libraries there as LIB_EAY and SSL_EAY (MSVC: _DEBUG, _RELEASE)
+                set(_qb_ssl_entries "-U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\"")
+            endif()
+            string(CONCAT _qb_installed_gone
+                   "this qb was built against OpenSSL ${_qb_ssl_built}, and this project found OpenSSL "
+                   "${OPENSSL_VERSION} (OPENSSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR}, OPENSSL_SSL_LIBRARY "
+                   "${OPENSSL_SSL_LIBRARY}, OPENSSL_CRYPTO_LIBRARY ${OPENSSL_CRYPTO_LIBRARY}): another major, an ABI "
+                   "boundary -- OpenSSL types cross qb's public API (SSL_CTX* is in the signature set) -- that "
+                   "fails at link or at load (Huly QB-1256). Point OPENSSL_ROOT_DIR at an OpenSSL "
+                   "${_qb_ssl_built_major} with this one's entries removed:\n  cmake ${_qb_ssl_entries} "
+                   "-DOPENSSL_ROOT_DIR=<it> <build directory>\nor rebuild qb against OpenSSL ${OPENSSL_VERSION}.")
+            if(@QB_HAS_QUIC@)
+                string(APPEND _qb_installed_gone " This qb has QUIC: the libngtcp2 found must link that OpenSSL's "
+                                                 "major too.")
+            endif()
+            unset(_qb_ssl_entries)
+            unset(_qb_ssl_built_major)
+            unset(_qb_ssl_have_major)
+            unset(_qb_ssl_built)
+            _qb_installed_lost(_qb_installed_gone)
         endif()
         unset(_qb_ssl_built_major)
         unset(_qb_ssl_have_major)
@@ -316,8 +336,10 @@ if(@QB_HAS_QUIC@)
     # in one process crash at the first QUIC handshake (Huly QB-1179), and a libngtcp2 updated after qb was installed
     # brings them back (QB-1183). qb's configure refused that pair; here the same verdict compares the readings of the
     # FindNgtcp2.cmake installed beside this file with the OpenSSL this project links -- not the one qb was built
-    # against: the OpenSSL-major check above holds that one. A WARNING, like it: QUIC is compiled into qb, a consumer
-    # cannot turn it off. A FindNgtcp2 module of the consumer's own that won the search reads nothing: nothing to say.
+    # against: the OpenSSL-major check above holds that one. Two majors make qb not found, as that check does (Huly
+    # QB-1256): QUIC is compiled into qb, a consumer cannot turn it off. The remedy points the side that is not on qb's
+    # OpenSSL major -- this project's libraries or libngtcp2 -- at one that is. A FindNgtcp2 module of the consumer's
+    # own that won the search reads nothing: nothing to say.
     if(NOT "${Ngtcp2_OPENSSL_MAJOR}${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" STREQUAL ""
        AND COMMAND _ngtcp2_linked_openssl AND COMMAND _ngtcp2_openssl_conflict)
         _ngtcp2_linked_openssl("${OPENSSL_SSL_LIBRARY}" _qb_have_ssl _qb_have_ssl_path _qb_have_unused
@@ -335,7 +357,27 @@ if(@QB_HAS_QUIC@)
                                  "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" "${Ngtcp2_OPENSSL_CRYPTO_LIBRARY}"
                                  "${_qb_have_ssl}" "${_qb_have_ssl_path}" "${_qb_have_crypto}" "${_qb_have_crypto_path}"
                                  FALSE _qb_have_conflict)
-        if(_qb_have_conflict STREQUAL "MAJORS")
+        # qb's OpenSSL major, or this project's headers' where qb's was not recorded: the side that is not on it is
+        # the one to point elsewhere, both where neither is. This project's libraries off it, read where its headers
+        # are on it (the OpenSSL-major check above read those), is the same ABI boundary, libngtcp2 agreeing or not.
+        # A library's file name carries its release's major on Darwin and Linux only, where qb's configure compares
+        # (a base system may number them apart): elsewhere the readings are compared with each other alone, and both
+        # sides' remedies printed.
+        string(REGEX MATCH "^[0-9]+" _qb_have_built "@OPENSSL_VERSION@")
+        if("${_qb_have_built}" STREQUAL "")
+            set(_qb_have_built "${_qb_have_headers}")
+        endif()
+        set(_qb_have_numbered FALSE)
+        if(CMAKE_SYSTEM_NAME MATCHES "^(Darwin|Linux)$")
+            set(_qb_have_numbered TRUE)
+        endif()
+        set(_qb_have_off FALSE)
+        if(_qb_have_numbered AND NOT "${_qb_have_built}" STREQUAL ""
+           AND ((NOT "${_qb_have_ssl}" STREQUAL "" AND NOT "${_qb_have_ssl}" STREQUAL "${_qb_have_built}")
+                OR (NOT "${_qb_have_crypto}" STREQUAL "" AND NOT "${_qb_have_crypto}" STREQUAL "${_qb_have_built}")))
+            set(_qb_have_off TRUE)
+        endif()
+        if(_qb_have_conflict STREQUAL "MAJORS" OR _qb_have_off)
             set(_qb_have_ngtcp2 "OpenSSL ${Ngtcp2_OPENSSL_MAJOR}")
             if("${Ngtcp2_OPENSSL_MAJOR}" STREQUAL "")
                 set(_qb_have_ngtcp2 "OpenSSL ${Ngtcp2_OPENSSL_CRYPTO_MAJOR}")
@@ -352,15 +394,58 @@ if(@QB_HAS_QUIC@)
             if(NOT "${OPENSSL_CRYPTO_LIBRARY}" STREQUAL "")
                 set(_qb_have_crypto_shown " (${OPENSSL_CRYPTO_LIBRARY})")
             endif()
-            message(WARNING
-                "[qb] libngtcp2 (${NGTCP2_CRYPTO_OSSL_LIBRARY}) links ${_qb_have_ngtcp2}, and this "
-                "project links the libssl of OpenSSL ${_qb_have_ssl}${_qb_have_ssl_shown} and the libcrypto of "
-                "OpenSSL ${_qb_have_crypto}${_qb_have_crypto_shown}: two OpenSSL majors in one process crash at "
-                "the first QUIC handshake. "
-                "QUIC is compiled into this qb (built against OpenSSL @OPENSSL_VERSION@) and cannot be turned off "
-                "here: point OPENSSL_ROOT_DIR at the OpenSSL libngtcp2 links, and rebuild qb against it if that is "
-                "another major than this qb's.")
+            set(_qb_have_remedy "")
+            if(_qb_have_off OR NOT _qb_have_numbered)
+                set(_qb_have_entries "-U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY")
+                if(WIN32) # LIB_EAY and SSL_EAY there; unreached while FindNgtcp2 reads no library on Windows
+                    set(_qb_have_entries "-U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\"")
+                endif()
+                string(APPEND _qb_have_remedy "Point OPENSSL_ROOT_DIR at an OpenSSL ${_qb_have_built} with this "
+                              "project's OpenSSL entries removed:\n  cmake ${_qb_have_entries} "
+                              "-DOPENSSL_ROOT_DIR=<it> <build directory>\n")
+            endif()
+            foreach(_qb_have_major IN ITEMS "${Ngtcp2_OPENSSL_MAJOR}" "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}")
+                if(NOT "${_qb_have_major}" STREQUAL ""
+                   AND (NOT _qb_have_numbered OR NOT "${_qb_have_major}" STREQUAL "${_qb_have_built}")
+                   AND NOT _qb_have_remedy MATCHES "Ngtcp2_ROOT")
+                    string(APPEND _qb_have_remedy "Point Ngtcp2_ROOT at a libngtcp2 built against OpenSSL "
+                                  "${_qb_have_built} with this one's five entries removed:\n  cmake -U "
+                                  "NGTCP2_INCLUDE_DIR -U NGTCP2_LIBRARY -U NGTCP2_CRYPTO_OSSL_LIBRARY -U "
+                                  "NGTCP2_CRYPTO_INCLUDE_DIR -U NGTCP2_CRYPTO_OSSL_INCLUDE_DIR -DNgtcp2_ROOT=<it> "
+                                  "<build directory>\n")
+                endif()
+            endforeach()
+            if(_qb_have_conflict STREQUAL "MAJORS")
+                string(CONCAT _qb_installed_gone
+                       "libngtcp2 (NGTCP2_CRYPTO_OSSL_LIBRARY ${NGTCP2_CRYPTO_OSSL_LIBRARY}) links ${_qb_have_ngtcp2}, "
+                       "and this project links the libssl of OpenSSL ${_qb_have_ssl}${_qb_have_ssl_shown} and the "
+                       "libcrypto of OpenSSL ${_qb_have_crypto}${_qb_have_crypto_shown}: two OpenSSL majors in one "
+                       "process crash at the first QUIC handshake, and QUIC is compiled into this qb (built against "
+                       "OpenSSL @OPENSSL_VERSION@) (Huly QB-1183, QB-1256). ${_qb_have_remedy}Or rebuild qb and "
+                       "libngtcp2 against one OpenSSL major.")
+            else()
+                set(_qb_have_said "say ${OPENSSL_VERSION}")
+                if("${OPENSSL_VERSION}" STREQUAL "")
+                    set(_qb_have_said "give no version")
+                endif()
+                string(CONCAT _qb_installed_gone
+                       "this qb was built against OpenSSL @OPENSSL_VERSION@, and this project's OpenSSL libraries are "
+                       "another major: the libssl of OpenSSL ${_qb_have_ssl}${_qb_have_ssl_shown} and the libcrypto of "
+                       "OpenSSL ${_qb_have_crypto}${_qb_have_crypto_shown}, read from the files, where its headers "
+                       "(OPENSSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR}) ${_qb_have_said} -- an ABI boundary that fails at "
+                       "link or at load (Huly QB-1256). ${_qb_have_remedy}Or rebuild qb against the OpenSSL those "
+                       "libraries are.")
+            endif()
+            foreach(_qb_have_var IN ITEMS ssl ssl_path crypto crypto_path unused unused_path headers conflict ngtcp2
+                                          ssl_shown crypto_shown built remedy entries major off said numbered)
+                unset(_qb_have_${_qb_have_var})
+            endforeach()
+            unset(_qb_have_var)
+            _qb_installed_lost(_qb_installed_gone)
         endif()
+        unset(_qb_have_built)
+        unset(_qb_have_off)
+        unset(_qb_have_numbered)
         unset(_qb_have_ssl)
         unset(_qb_have_ssl_path)
         unset(_qb_have_crypto)
@@ -525,6 +610,10 @@ set(QB_ABI_UNORDERED_MAP "@QB_ABI_UNORDERED_MAP@")
 _qb_installed_cleanup()
 unset(_IMPORT_PREFIX)
 unset(_QB_AVAILABLE_COMPONENTS)
+unset(_QB_core_DEPENDS)
+unset(_QB_io_DEPENDS)
 unset(_QB_COMPONENTS_TO_LOAD)
 unset(_QB_REQUIRED_COMPONENTS_FOUND)
+unset(_comp) # the loops' variable, which a consumer's policies before CMP0124 (3.21) keep
+unset(_comp_deps)
 unset(_qb_targets_file)

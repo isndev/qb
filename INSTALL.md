@@ -193,16 +193,16 @@ with it `qbConfig.cmake` searches again, in the consumer's build directory, a li
 removed (a Homebrew cleanup removes the versioned keg pkg-config named), and makes each file a search
 found an input of the consumer's configure, so the next build finds the new version (with Xcode, whose
 build checks only the inputs that still exist, the next reconfigure does) instead of stopping for good
-on "missing and no known rule to make it" (an OpenSSL found again on another major than this qb's is
-taken as a fresh configure takes it, with `qbConfig.cmake`'s major-mismatch warning, not refused); a
+on "missing and no known rule to make it" (an OpenSSL found again on another major than this qb's
+makes qb not found, as a fresh configure on it does, with the remedy: Huly QB-1256); a
 library lost and found nowhere else makes `find_package(qb)` report qb not found, naming it (Huly
 QB-1201). A path set by hand is kept as given, and so is one a configure with an earlier qb cached,
 which recorded nothing: reconfigure that build directory with `--fresh` once, or remove those entries
 (`cmake -U <entry> <build directory>`). With QUIC, the generated `qbConfig.cmake` also compares the
 OpenSSL the consumer's libngtcp2 links with the one the consumer links, as qb's own configure did, and
-warns on two majors -- they crash at the first QUIC handshake, and QUIC is compiled into the installed
-qb, so the consumer cannot turn it off: point `OPENSSL_ROOT_DIR` at libngtcp2's OpenSSL, and rebuild
-qb against it if that is another major (Huly QB-1183).
+two majors make qb not found -- they crash at the first QUIC handshake, and QUIC is in the installed qb
+-- as an OpenSSL of another major than qb's does, each reason printing the remedy (an OpenSSL, or a
+libngtcp2, on qb's major) on a line of its own (Huly QB-1183, QB-1256).
 
 ### What was this prefix built with?
 

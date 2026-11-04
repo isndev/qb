@@ -34,7 +34,8 @@ policy.
   any one of the four libraries, the warning naming libngtcp2 by another path than the helper found, the warning cut
   to its head, its text said otherwise, and its words said as an author warning on one major; seven of those passed
   earlier versions, which did not check a warning's kind, put each library alone on another major, read a warning's
-  text inside it, nor looked for its words said otherwise.
+  text inside it, nor looked for its words said otherwise. Since QB-1256 (under Changed) the report is qb not found,
+  and the script expects that report.
 
 - **Create an actor on another core while the engine runs: `qb::spawn_on` and `qb::Spawner` (Huly QB-54).**
   `Main::addActor` works before `start()` only and `Actor::addRefActor` creates on the caller's own core, so an
@@ -449,6 +450,30 @@ policy.
   there, on Windows too, MSVC's debug and release libraries included. `qb-io-test-unit-found-libraries`: a static
   OpenSSL 1.1 refused leaves its zlib had or not as it was. INSTALL.md, `building.md`'s platform notes, README.md's
   options table, `ssl_transport.md`, `cmake_dependencies.md` and `qb.llm.md` say the minimum.
+- **An installed qb whose consumer finds OpenSSL, or a libngtcp2, on another major than qb's reports qb not found, with
+  the remedy (Huly QB-1256).** The generated `qbConfig.cmake` warned on both, and went on: a qb built against OpenSSL 3
+  then linked a libssl 4, across OpenSSL types in qb's public API (`SSL_CTX*` is in the signature set), and failed at
+  link or at load, its cause scrolled away; libngtcp2 on another OpenSSL major than this project's crashes at the
+  first QUIC handshake (QB-1183). Both now set `qb_FOUND` false (under the name the consumer asked for) with the
+  reason: the OpenSSL versions and paths, or both majors with each library, and a remedy on a line of its own, which
+  CMake prints unwrapped -- this project's OpenSSL entries removed with `OPENSSL_ROOT_DIR` at an OpenSSL of qb's major
+  (`LIB_EAY*` and `SSL_EAY*` on Windows), or, where libngtcp2 is the side off qb's major, its five entries removed with
+  `Ngtcp2_ROOT` at one built against it; or a rebuild. Only the major is compared, as before: a newer minor of qb's
+  passes in silence. This project's OpenSSL libraries read off qb's major where its headers are on it (the QUIC
+  verdict reads the libraries) are the same boundary and report qb not found too, libngtcp2 agreeing with them or not
+  -- on Darwin and Linux, where a library's file name carries its release's major, as qb's configure compares; on
+  another system the readings are compared with each other alone, and a conflict prints both sides' remedies.
+  `Ngtcp2_ROOT` reaches the search whatever the consumer's minimum: `qbConfig.cmake` sets CMP0074 in its own policy
+  scope, before `find_dependency()` is defined. The consumer's module path is restored and `qbConfig.cmake`'s own
+  variables unset (the component loader's were left before); the records of its searches stay in the cache.
+  `qb-io-test-unit-installed-quic-openssl` expects the reports (and a found qb where nothing differs, a newer minor
+  included), and a consumer project, by the real searches on planted libraries, takes each printed command from the
+  output and runs it as printed, on the build directory the report stopped: it finds what it names, and qb -- from a
+  project whose policies predate CMP0074 too, and with MSVC's names on an emulated Windows.
+  `scripts/check-installed-quic-openssl.sh` (QB-1219's `installed-quic-consumer` lane) expects, for each library on
+  the next major, the configure stopped on that report -- its only error, naming each major and libngtcp2 by the path
+  found, with the side's remedy printed on its own line and not the other side's -- where it expected the warning.
+  INSTALL.md, `quic_transport.md`, `qb.llm.md` and QB-1201's notes say so.
 
 ### Fixed
 
@@ -926,7 +951,8 @@ policy.
   - An installed qb built with QUIC re-ran `find_dependency(Ngtcp2)` at its consumer and compared nothing (QB-1183).
     The generated `qbConfig.cmake` now gives the same verdict on the readings of the `FindNgtcp2.cmake` installed
     beside it and the OpenSSL the consumer links -- not the one qb was built against, which the OpenSSL-major check
-    above it holds -- and warns, naming both majors: QUIC is compiled into qb, the consumer cannot turn it off.
+    above it holds -- and warns, naming both majors: QUIC is compiled into qb, the consumer cannot turn it off (qb
+    not found since QB-1256, under Changed).
     `qb-io-test-unit-installed-quic-openssl` generates the file from its template and runs eleven consumers.
   A number that is not the release's major (FreeBSD's base `libssl.so.30`) is compared as it reads; such hosts are
   outside the supported platforms. A library replaced at the same path by a file older than the build directory is not
@@ -1077,8 +1103,8 @@ policy.
   recorded, searched again when its file is gone (pkg-config asked again), and each file a search produced is an input
   of the configure, so the next `cmake --build` re-runs it, finds the new version and links it (not under Xcode, whose
   build checks only the inputs that still exist: there, reconfigure; an OpenSSL found again on another major than the
-  one qb was built against is taken with the existing major-mismatch warning, as a fresh configure takes it: the base
-  stopped there until `--fresh`); libngtcp2's files its module recorded are inputs there too. A library that build
+  one qb was built against makes qb not found, as a fresh configure on it does (QB-1256): the base stopped there
+  until `--fresh`); libngtcp2's files its module recorded are inputs there too. A library that build
   directory had, lost and found nowhere else, makes `find_package(qb)` report qb not found -- naming each entry still
   missing and the way out, another copy of the library, its feature being compiled into qb -- as the reason given by the
   package: a consumer that requires qb stops on it, one that asked without `REQUIRED` reads it and its configure goes on

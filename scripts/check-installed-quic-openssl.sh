@@ -2,25 +2,27 @@
 #
 # check-installed-quic-openssl.sh -- an installed qb built with QUIC compares, at its consumer, the OpenSSL that
 # libngtcp2_crypto_ossl links with the one the consumer links, on this host's real libraries (Huly QB-1219; the
-# comparison is QB-1183's).
+# comparison is QB-1183's, its report QB-1256's).
 #
 # Such a qb re-runs find_dependency(Ngtcp2) at its consumer; the FindNgtcp2.cmake installed beside its qbConfig.cmake
 # reads which libssl and libcrypto the found helper links -- from the library's dependency list: `readelf -d` on ELF,
-# `otool -L` on Mach-O -- and qbConfig.cmake reads the consumer's own the same way, then warns on two majors: they crash
-# at the first QUIC handshake, and QUIC is compiled into qb, so the consumer cannot turn it off. The unit test
+# `otool -L` on Mach-O -- and qbConfig.cmake reads the consumer's own the same way, then reports qb not found on two
+# majors, with the remedy: they crash at the first QUIC handshake, and QUIC is compiled into qb. The unit test
 # qb-io-test-unit-installed-quic-openssl plants the readings; this reads real files, in both senses:
-#   1. the consumer as installed -- libngtcp2 and the consumer on one major: no warning, and the readings
+#   1. the consumer as installed -- libngtcp2 and the consumer on one major: found, nothing said, and the readings
 #      FindNgtcp2.cmake made are not empty and equal this script's own reading of the same files (a reader that read
 #      nothing would say nothing either) -- on ELF through `objdump -p` too, readelf made to fail; the consumer then
 #      builds and runs, loads libngtcp2_crypto_ossl, and the libssl and the libcrypto majors it loads are one each,
 #      that major (`ldd` on Linux, DYLD_PRINT_LIBRARIES on macOS, the system's LibreSSL set aside);
 #   2. the consumer of a libngtcp2_crypto_ossl that links the NEXT major -- a stand-in built here in the host's format,
-#      the found helper's place taken by hand -- is warned, naming both majors; and so is the consumer of one whose
-#      libssl alone, then whose libcrypto alone, is on the next major;
-#   3. a consumer whose own libssl and libcrypto are on the next major (stand-ins too), against the real helper, is
-#      warned, naming both; and so is one whose libssl alone, then whose libcrypto alone, is.
-# Each of the four libraries is thus once the only one on another major. A warning is qbConfig.cmake's CMake Warning,
-# not the same words said otherwise. Senses 2 and 3 only configure: nothing is linked against a stand-in.
+#      the found helper's place taken by hand -- does not find qb, the reason naming both majors and libngtcp2 by the
+#      path found, its remedy a libngtcp2 on the consumer's major; and so with one whose libssl alone, then whose
+#      libcrypto alone, is on the next major;
+#   3. a consumer whose own libssl and libcrypto are on the next major (stand-ins too), against the real helper, does
+#      not find qb either, its remedy this project's OpenSSL entries; and so with its libssl alone, then its libcrypto.
+# Each of the four libraries is thus once the only one on another major. A report is find_package()'s own error giving
+# qbConfig.cmake's reason, its remedy on a line of its own, not the same words said otherwise. Senses 2 and 3 only
+# configure: nothing is linked against a stand-in.
 #
 #   check-installed-quic-openssl.sh --prefix <installed qb> --work <scratch directory> [-- <consumer cmake arguments>]
 #
@@ -207,43 +209,60 @@ configure() {
         ${extra[@]+"${extra[@]}"} "$@" > "${dir}.log" 2>&1
 }
 reading() { if [[ -f "$1/readings.txt" ]]; then sed -n "s/^$2=//p" "$1/readings.txt"; fi; } # empty when missing
-# warned <directory> [<regex> [<helper>]]: the configure logged in <directory>.log gave qbConfig.cmake's warning of two
-# majors -- a CMake Warning raised there, not the same words said otherwise -- whose own text matches <regex> too, and
-# names libngtcp2 by <helper>, the path found (NGTCP2_CRYPTO_OSSL_LIBRARY; on Mach-O the file read is the one the loader
-# opens for it). The log is read whole first: a grep -q that stops early would end the reader of a pipe under pipefail;
-# each warning is one line -- the log's lines from one that begins "CMake Warning" to its "Call Stack" line, joined (CMake
-# indents a message's wrapped lines, so none of them begins so), nothing said outside a warning kept -- and its runs of
-# spaces are squeezed, CMake reflowing a warning's text, as are <helper>'s. Its status says which part is missing: 1 the
-# warning, 2 the text, 3 the path; missing_part names it.
-warned() {
-  local warnings needle segment status=1
-  warnings="$(awk '/^CMake Warning/ { if (w != "") print w; w = $0; next }
-                   /^Call Stack \(most recent call first\):/ { if (w != "") print w; w = ""; next }
-                   w != "" { w = w " " $0 }
-                   END { if (w != "") print w }' "$1.log" | tr -s ' ')"
-  needle="$(tr -s ' ' <<<"[qb] libngtcp2 (${3:-}) links")"
+# The remedies qbConfig.cmake prints on a line of their own, which CMake does not wrap: libngtcp2's five entries, or this
+# project's three OpenSSL ones.
+ngtcp2_remedy='cmake -U NGTCP2_INCLUDE_DIR -U NGTCP2_LIBRARY -U NGTCP2_CRYPTO_OSSL_LIBRARY -U NGTCP2_CRYPTO_INCLUDE_DIR -U NGTCP2_CRYPTO_OSSL_INCLUDE_DIR -DNgtcp2_ROOT=<it> <build directory>'
+openssl_remedy='cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY -DOPENSSL_ROOT_DIR=<it> <build directory>'
+# reported <directory> <regex> <helper> <remedy> <other remedy>: the configure logged in <directory>.log stopped on
+# find_package(qb), whose package reported qb not found for two majors -- CMake's own error giving qbConfig.cmake's
+# reason, not the same words said otherwise, and the configure's only error: qbConfig.cmake returned there, nothing of
+# it ran on -- the reason matching <regex> too, naming libngtcp2 by <helper>, the path found (NGTCP2_CRYPTO_OSSL_LIBRARY;
+# on Mach-O the file read is the one the loader opens for it), with <remedy> printed as a line of its own and <other
+# remedy>, the other side's, not printed. The log is read whole first: a grep -q that stops early would end the reader
+# of a pipe under pipefail; each error is one line -- the log's lines from one that begins "CMake Error" to the next
+# such line or to "-- Configuring incomplete", joined (CMake indents a message's lines, so none of them begins so) --
+# and its runs of spaces are squeezed, CMake reflowing a message's text, as are <helper>'s. Its status says which part
+# is wrong: 1 no report, 2 the text, 3 the path, 4 the remedy missing, 5 the other side's printed, 6 another error;
+# missing_part names it.
+reported() {
+  local errors needle segment status=1
+  errors="$(awk '/^CMake (Error|Warning)/ { if (e != "") print e; e = $0; next }
+                 /^-- Configuring incomplete/ { if (e != "") print e; e = ""; next }
+                 e != "" { e = e " " $0 }
+                 END { if (e != "") print e }' "$1.log" | tr -s ' ')"
+  needle="$(tr -s ' ' <<<"libngtcp2 (NGTCP2_CRYPTO_OSSL_LIBRARY ${3}) links")"
   while IFS= read -r segment; do
-    grep -Eq '^CMake Warning at .*/qbConfig\.cmake:[0-9]+ \(message\): \[qb\] libngtcp2 .*: two OpenSSL majors in one process crash at the first QUIC handshake' <<<"${segment}" \
+    grep -Eq '^CMake Error at [^ ]*CMakeLists\.txt:[0-9]+ \(find_package\): Found package configuration file: .*/qbConfig\.cmake but it set qb_FOUND to FALSE so package "qb" is considered to be NOT FOUND\. Reason given by package: libngtcp2 .*: two OpenSSL majors in one process crash at the first QUIC handshake' <<<"${segment}" \
       || continue
-    if [[ -n "${2:-}" ]] && ! grep -Eq "^CMake Warning at .*/qbConfig\.cmake:[0-9]+ \(message\): \[qb\] libngtcp2 .*$2" <<<"${segment}"; then
+    if ! grep -Eq "Reason given by package: libngtcp2 .*$2" <<<"${segment}"; then
       status=2
-    elif [[ -n "${3:-}" ]] && ! grep -qF -- "${needle}" <<<"${segment}"; then
+    elif ! grep -qF -- "${needle}" <<<"${segment}"; then
       status=3
+    elif ! grep -qxF -- "    $4" "$1.log"; then
+      status=4
+    elif grep -qxF -- "    $5" "$1.log"; then
+      status=5
+    elif [[ "$(grep -c '^CMake Error' "$1.log")" != 1 ]]; then
+      status=6
     else
       return 0
     fi
-  done <<<"${warnings}"
+  done <<<"${errors}"
   return "${status}"
 }
-missing_part() { # <warned's status> <helper>
+missing_part() { # <reported's status> <helper> <remedy> <other remedy>
   case "$1" in
-    1) echo "no warning of two majors from qbConfig.cmake" ;;
-    2) echo "the warning does not name each major" ;;
-    *) echo "the warning does not name libngtcp2 by the path found ($2)" ;;
+    1) echo "no report of two majors from qbConfig.cmake: qb not found, for that reason" ;;
+    2) echo "the report does not name each major" ;;
+    3) echo "the report does not name libngtcp2 by the path found ($2)" ;;
+    4) echo "the report does not print its remedy on a line of its own ($3)" ;;
+    5) echo "the report prints the other side's remedy too ($4)" ;;
+    *) echo "another CMake Error beside the report: qbConfig.cmake ran on after it" ;;
   esac
 }
 
-# 1. As installed: one major on both sides, read for real, no warning; built, run, one libssl major loaded.
+# 1. As installed: one major on both sides, read for real, qb found and nothing said; built, run, one libssl major
+#    loaded.
 same="${work}/same"
 if ! configure "${same}"; then
   cat "${same}.log" >&2
@@ -277,22 +296,24 @@ elif [[ "${have_ssl}" != "${read_ssl}" || "${have_crypto}" != "${read_ssl}" || "
 fi
 major="${read_ssl}"
 # Everything below compares with that major, one on both sides: unknown, or two on this host, it would only blame the
-# warning that is right.
+# report that is right.
 if ((failures)) || [[ -z "${major}" ]]; then
   echo "check-installed-quic-openssl (${format}): ${failures} check(s) failed, before any stand-in" >&2
   exit 1
 fi
-# silent <directory>: the configure logged in <directory>.log said nothing of qbConfig.cmake's -- no warning, nor its
-# words said any other way: "[qb] libngtcp2" begins that message alone, where a message begins (a status line's "-- ",
-# a warning's indented body, a notice's bare line), not inside a path. What it said is printed, with its context.
+# silent <directory>: the configure logged in <directory>.log said nothing of qbConfig.cmake's two-major report -- nor
+# its words said any other way: "libngtcp2 (NGTCP2_CRYPTO_OSSL_LIBRARY" begins that reason, and "[qb] libngtcp2" began
+# the warning it replaced, where a message begins (a status line's "-- ", an indented body, a bare line), not inside a
+# path. What it said is printed, with its context.
 silent() {
-  if grep -Eq '^[[:space:]]*(-- )?\[qb\][[:space:]]+libngtcp2' "$1.log"; then
-    grep -E -B 2 -A 4 '^[[:space:]]*(-- )?\[qb\][[:space:]]+libngtcp2' "$1.log" >&2 || true
+  local said='^[[:space:]]*(-- )?(\[qb\][[:space:]]+libngtcp2|libngtcp2 \(NGTCP2_CRYPTO_OSSL_LIBRARY)'
+  if grep -Eq "${said}" "$1.log"; then
+    grep -E -B 2 -A 4 "${said}" "$1.log" >&2 || true
     return 1
   fi
 }
 if ! silent "${same}"; then
-  fail "one major on both sides, and the consumer was warned of two"
+  fail "one major on both sides, and the consumer was told of two"
 fi
 if [[ "${format}" == ELF ]]; then # the same reading through `objdump -p`, which FindNgtcp2.cmake falls back on
   objdump_dir="${work}/objdump"
@@ -314,7 +335,7 @@ if [[ "${format}" == ELF ]]; then # the same reading through `objdump -p`, which
   elif [[ "$(reading "${objdump_dir}" HELPER_SSL)" != "${major}" || "$(reading "${objdump_dir}" HELPER_CRYPTO)" != "${major}" ]] \
        || ! silent "${objdump_dir}"; then
     fail "through objdump -p FindNgtcp2.cmake read libssl '$(reading "${objdump_dir}" HELPER_SSL)'," \
-         "libcrypto '$(reading "${objdump_dir}" HELPER_CRYPTO)', want ${major}, without a warning"
+         "libcrypto '$(reading "${objdump_dir}" HELPER_CRYPTO)', want ${major}, with nothing said"
   fi
 fi
 # majors_loaded <loader output> <name>: the majors of the lib<name> the consumer loaded, sorted, space-separated.
@@ -411,43 +432,40 @@ for name in ssl crypto; do
   fi
 done
 
-# 2. libngtcp2's OpenSSL on the next major, both libraries, its libssl alone, its libcrypto alone: warned, naming each.
+# 2. libngtcp2's OpenSSL on the next major, both libraries, its libssl alone, its libcrypto alone: qb not found, the
+#    reason naming each major (what FindNgtcp2.cmake read in the stand-in) and libngtcp2's remedy.
 for case in "next|${next}|${next}|links OpenSSL ${next}, and this project links the libssl of OpenSSL ${major} " \
             "ssl|${next}|${major}|links the libssl of OpenSSL ${next} and the libcrypto of OpenSSL ${major}, and this project links the libssl of OpenSSL ${major} " \
             "crypto|${major}|${next}|links the libssl of OpenSSL ${major} and the libcrypto of OpenSSL ${next}, and this project links the libssl of OpenSSL ${major} "; do
   IFS='|' read -r name ssl_major crypto_major text <<<"${case}"
   dir="${work}/helper-${name}"
   planted="$(helper "helper-${name}" "${ssl_major}" "${crypto_major}")" # exits the script on a stand-in that misreads
-  if ! configure "${dir}" "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${planted}"; then
-    cat "${dir}.log" >&2
-    fail "the consumer of a libngtcp2 on libssl ${ssl_major} / libcrypto ${crypto_major} did not configure"
-  elif [[ "$(reading "${dir}" HELPER_SSL)|$(reading "${dir}" HELPER_CRYPTO)" != "${ssl_major}|${crypto_major}" ]]; then
-    fail "FindNgtcp2.cmake read '$(reading "${dir}" HELPER_SSL)|$(reading "${dir}" HELPER_CRYPTO)' in a stand-in built for ${ssl_major}|${crypto_major}"
+  if configure "${dir}" "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${planted}"; then
+    fail "the consumer of a libngtcp2 on libssl ${ssl_major} / libcrypto ${crypto_major} configured: qb was found"
   else
     why=0
-    warned "${dir}" "${text}" "${planted}" || why=$?
+    reported "${dir}" "${text}" "${planted}" "${ngtcp2_remedy}" "${openssl_remedy}" || why=$?
     if ((why)); then
       cat "${dir}.log" >&2
-      fail "libngtcp2 on libssl ${ssl_major} / libcrypto ${crypto_major}, the consumer on ${major}: $(missing_part "${why}" "${planted}")"
+      fail "libngtcp2 on libssl ${ssl_major} / libcrypto ${crypto_major}, the consumer on ${major}: $(missing_part "${why}" "${planted}" "${ngtcp2_remedy}" "${openssl_remedy}")"
     fi
   fi
 done
 
 # 3. The consumer's own OpenSSL on the next major, both libraries, its libssl alone, its libcrypto alone, against the
-#    real helper: warned, naming each.
-# consumer_case <name> <text the warning must hold> <cmake argument>...
+#    real helper: qb not found, the reason naming each major and this project's OpenSSL remedy.
+# consumer_case <name> <text the reason must hold> <cmake argument>...
 consumer_case() {
   local name="$1" text="$2" dir="${work}/consumer-$1"
   shift 2
-  if ! configure "${dir}" "$@"; then
-    cat "${dir}.log" >&2
-    fail "the consumer with its ${name} OpenSSL on ${next} did not configure"
+  if configure "${dir}" "$@"; then
+    fail "the consumer with its ${name} OpenSSL on ${next} configured: qb was found"
   else
     why=0
-    warned "${dir}" "${text}" "${helper}" || why=$?
+    reported "${dir}" "${text}" "${helper}" "${openssl_remedy}" "${ngtcp2_remedy}" || why=$?
     if ((why)); then
       cat "${dir}.log" >&2
-      fail "libngtcp2 on OpenSSL ${major}, the consumer's ${name} OpenSSL on ${next}: $(missing_part "${why}" "${helper}")"
+      fail "libngtcp2 on OpenSSL ${major}, the consumer's ${name} OpenSSL on ${next}: $(missing_part "${why}" "${helper}" "${openssl_remedy}" "${ngtcp2_remedy}")"
     fi
   fi
 }
@@ -469,4 +487,5 @@ if ((failures)); then
 fi
 echo "check-installed-quic-openssl (${format}): libngtcp2 and the consumer on OpenSSL ${major}, read for real -- silent," \
      "built, run, the helper and one libssl and libcrypto major loaded; libngtcp2's OpenSSL on ${next}, its libssl alone," \
-     "its libcrypto alone -- warned; the consumer's OpenSSL on ${next}, its libssl alone, its libcrypto alone -- warned"
+     "its libcrypto alone -- qb not found, libngtcp2's remedy; the consumer's OpenSSL on ${next}, its libssl alone, its" \
+     "libcrypto alone -- qb not found, its OpenSSL's remedy"

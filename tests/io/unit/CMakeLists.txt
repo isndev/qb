@@ -416,12 +416,12 @@ add_test(NAME qb-io-test-unit-found-libraries
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/found-libraries/check.cmake")
 set_tests_properties(qb-io-test-unit-found-libraries PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120)
 unset(_qb_found_libraries_args)
-# installed-quic-openssl (Huly QB-1183): qbConfig.cmake, generated from cmake/qbConfig.cmake.in as an install does with a
-# QUIC build's values, warns a consumer whose libngtcp2 links another OpenSSL major than the one it links -- and says
-# nothing when they agree, or when the consumer's own FindNgtcp2 module won the search.
+# installed-quic-openssl (Huly QB-1183, QB-1256): qbConfig.cmake, generated from cmake/qbConfig.cmake.in as an install
+# does with a QUIC build's values, reports qb not found to a consumer whose OpenSSL, or whose libngtcp2's, is another
+# major than qb's, with a remedy that, run as printed, finds one that is -- and says nothing when they agree.
 add_test(NAME qb-io-test-unit-installed-quic-openssl
-         COMMAND "${CMAKE_COMMAND}" "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake"
-                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/installed-quic-openssl"
+         COMMAND "${CMAKE_COMMAND}" "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake" "-DGENERATOR=${CMAKE_GENERATOR}"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/installed-quic-openssl" "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/installed-quic-openssl/check.cmake")
 set_tests_properties(qb-io-test-unit-installed-quic-openssl PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
 # reconnect contract (Huly QB-126): the vocabulary every connection-keeping client shares, and the

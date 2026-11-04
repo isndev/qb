@@ -516,16 +516,16 @@ jobs:
   # ── An installed QUIC qb consumed on Linux: the OpenSSL majors read on ELF (Huly QB-1219) ────
   #
   # An installed qb built with QUIC compares, at its consumer, the OpenSSL that libngtcp2_crypto_ossl
-  # links with the one the consumer links, and warns on two majors: they crash at the first QUIC
-  # handshake (QB-1183). Every job above installs qb without QUIC, so that reading -- `readelf -d`,
-  # then `objdump -p`, on ELF -- had run on macOS only (`otool -L`). Ubuntu 26.04's archive carries the
-  # helper: a container of that release builds and installs qb with QUIC required, then
-  # scripts/check-installed-quic-openssl.sh consumes the prefix in both senses -- the system's
-  # libngtcp2 and OpenSSL on one major: silent, read for real (readelf and its objdump fallback) and
-  # equal to readelf's own reading, built, run, the helper loaded and one libssl and one libcrypto
-  # major in `ldd`; each of the four libraries alone on the next major, and both of each side
-  # (stand-ins built in the job, ELF too): warned, naming each. The digest pins the base image; the
-  # packages are the archive's of the day.
+  # links with the one the consumer links, and reports qb not found on two majors, with the remedy:
+  # they crash at the first QUIC handshake (QB-1183, QB-1256). Every job above installs qb without
+  # QUIC, so that reading -- `readelf -d`, then `objdump -p`, on ELF -- had run on macOS only
+  # (`otool -L`). Ubuntu 26.04's archive carries the helper: a container of that release builds and installs
+  # qb with QUIC required, then scripts/check-installed-quic-openssl.sh consumes the prefix in both
+  # senses -- the system's libngtcp2 and OpenSSL on one major: silent, read for real (readelf and its
+  # objdump fallback) and equal to readelf's own reading, built, run, the helper loaded and one libssl
+  # and one libcrypto major in `ldd`; each of the four libraries alone on the next major, and both of
+  # each side (stand-ins built in the job, ELF too): qb not found, the reason naming each major and
+  # the side's remedy. The digest pins the base image; the packages are the archive's of the day.
   installed-quic-consumer:
     name: installed QUIC qb consumed on Linux (OpenSSL majors on ELF)
     runs-on: ubuntu-latest

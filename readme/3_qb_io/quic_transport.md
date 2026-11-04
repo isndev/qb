@@ -55,7 +55,7 @@ directory keeps the OpenSSL it found cached, so reconfigure it with `--fresh`. T
 major of the headers in `OPENSSL_INCLUDE_DIR` when qb's libssl is static or cannot be read); that the headers
 compiled are the found OpenSSL's is `qb-io-test-unit-openssl-headers`' (Huly QB-1180). An installed qb built with
 QUIC compares again at `find_package(qb)` -- the libngtcp2 the consumer finds against the OpenSSL the consumer links
--- and warns: QUIC is compiled in, the consumer cannot turn it off (Huly QB-1183).
+-- and two majors make qb not found, with the remedy: QUIC is compiled in, the consumer cannot turn it off (Huly QB-1183, QB-1256).
 
 <!-- src: qb/cmake/qbConfig.cmake:168-169 -->
 <!-- src: qb/cmake/qbDependencies.cmake:276-303, qb/cmake/qbOpenSSL.cmake:52-152, qb/cmake/qbOpenSSL.cmake:530-654 -->
