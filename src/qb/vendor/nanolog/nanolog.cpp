@@ -683,6 +683,9 @@ public:
             // process does not have is undefined (libc++ on macOS refuses it, and the child died of std::terminate).
             // The queue and the file writer are left as copied -- the parent writes them -- so the child neither
             // drains the parent's records nor flushes the parent's buffered bytes.
+            // qb fork (Huly QB-1246): a fresh std::thread built over the copied one ends that object's lifetime without
+            // its destructor, whose only effect on a joinable thread would be std::terminate ([basic.life]/5). Not
+            // detach(): pthread_detach on a thread this process does not have is the same undefined call as the join.
             new (&m_thread) std::thread();
             return;
         }
