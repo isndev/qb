@@ -486,6 +486,29 @@ policy.
   stopped longest ago taken back first, `log_file_opened()` answering for the calling thread (and on another thread
   for the published logger, racing no `initialize()`), and a process exit after which a static destructor logs (a
   "threadsafe" death test, which holds the writer until the exit drain and counts every line logged before `exit`).
+- **A child of `fork()` no longer joins, at its `exit()` or in its `qb::io::log::init()`, a writer thread only its
+  parent has (Huly QB-1246).** `fork()` copies the calling thread only: the logger a child inherits is published with
+  a writer thread that runs in the parent. At the child's `exit()` -- and in a child's `qb::io::log::init()`, which
+  stops the logger it replaces -- nanolog stopped that logger as the parent does, by joining its writer. A join of a
+  thread the process does not have is undefined: libc++ on macOS refuses it, and the child died of `std::terminate`
+  (`thread::join failed: No such process`, signal 6, measured on the 3.4 train); other C libraries return from it or
+  wait. A pthread_atfork handler now counts, in each child, one more fork generation -- it only increments an integer
+  and takes no lock -- and a logger records the generation its writer thread started in. Stopping a logger of an older
+  generation forgets that thread instead of joining it and leaves the queue and the file writer as copied, so the
+  child neither drains its parent's records nor flushes its parent's buffered bytes into the file they share;
+  `initialize()` never takes such a logger back, and `log_file_opened()` answers false for it -- a call the child's
+  thread made in the parent does not count. A child that calls `init()` gets a logger of its own, drained at its exit
+  -- and should, before it logs: a line logged into the inherited logger is never written, stays in memory, and can
+  block for ever when the fork caught the parent's writer, or another of its logging threads, inside the queue's lock;
+  `init()` and `log_file_opened()` wait for ever when the fork caught another of the parent's threads inside `init` or
+  `log_file_opened()`. A child of `vfork()` must `_exit()`, as POSIX says. The parent is unchanged: `init()` still
+  drains the old writer before it returns (Huly QB-1206). Stopping a logger and choosing one to take back read the
+  generation, a relaxed load; the log call itself is untouched. Witnessed in
+  `qb-io-test-unit-guaranteed-logger-buffer` by a "fast" death test (fork, no exec) whose child destroys a logger
+  built directly, logs and exits, and fails with 4 wherever it stops a logger of its parent, on every C library; and
+  in `qb-io-test-system-logger-fork-exit` -- a child that exits, one that logs and then exits, and one that calls
+  `init()` three times, each killed after 10 s if it hangs -- with the parent's file holding each of its lines once
+  and none of the child's.
 - **A task driven by hand and kept across `reset_coro_scheduler()` is destroyed once, by its task (Huly QB-1220).**
   `destroy_all_suspended()` -- which `listener::reset_coro_scheduler()`, `recycle_coro_scheduler()` and so every
   `VirtualCore` teardown run -- destroyed every frame registered as suspended, the spawned ones and the ones a `task`

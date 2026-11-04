@@ -28,9 +28,9 @@ namespace qb::io::test {
 // single pass nothing is queued yet; on a --gtest_repeat pass after the first, the previous pass's tests
 // have just queued their lines. Replacing the logger joins the old writer once every queued line is
 // written; the new writer, started before that join, has nothing to format. So the fork meets no writer
-// inside a line -- provided no other thread logs meanwhile, which would also reach the logger being
-// destroyed (Huly QB-1207). "./qb" and 512 MB are LogInitializer's own file and roll size (a binary that
-// chose another path is sent back to this one); reopening it truncates the log, and the old writer's last
+// inside a line -- provided no other thread logs meanwhile, which would hand the new writer a line to format.
+// "./qb" and 512 MB are LogInitializer's own file and roll size (a binary that chose another path is sent
+// back to this one); reopening it truncates the log, and the old writer's last
 // lines land at its old offset, as every threadsafe death-test child already does to the file.
 inline void
 drain_log_writer_before_fork() {

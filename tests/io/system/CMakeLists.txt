@@ -86,9 +86,9 @@ qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/
 qb_add_test(MODULE qb-io TIER system NAME session-json          SOURCES session/session-json.cpp          DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES session/text-protocol-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME varint-netstring-roundtrip SOURCES session/varint-netstring-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network) # Huly QB-80
-
-# --- io (blocking + async file ops) / quic (native + loopback handshake) ---
+# --- io (blocking + async file ops, the logger at a fork's exit) / quic (native + loopback handshake) ---
 qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-blocking-io.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER system NAME logger-fork-exit SOURCES io/logger-fork-exit.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-loop SOURCES quic/quic-endpoint-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
 if (TARGET qb-io-test-system-quic-handshake AND NOT QB_INSTALL)

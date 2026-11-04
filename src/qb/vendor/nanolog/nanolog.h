@@ -280,7 +280,13 @@ struct GuaranteedLogger {};
  * logger is stopped the same way (unless another thread holds nanolog's lock then, inside initialize() or
  * log_file_opened(); and with qb-io's statics in a Windows DLL -- qb-io built as one, or linked into one -- the
  * writer thread is gone by then, so nothing is drained, as before), and a line logged after that is not written; a
- * thread that keeps logging faster than the writer holds exit in that drain, as before.
+ * thread that keeps logging faster than the writer holds exit in that drain, as before. qb fork (Huly QB-1246): in a
+ * child of fork() that does not exec, a logger its parent created -- whose writer thread runs in the parent -- is
+ * stopped without a join, its queue and its file left as copied, and never taken back; the child holds its parent's
+ * loggers beside its own. Call initialize() in the child before it logs: a line logged into an inherited logger is
+ * never written, stays in memory, and can block for ever if the fork caught the parent's writer, or another of its
+ * logging threads, inside the queue's lock; initialize() itself waits for ever if the fork caught another of the
+ * parent's threads inside initialize() or log_file_opened(). A child of vfork() must _exit().
  */
 void initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
 void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);
@@ -290,7 +296,9 @@ void initialize(NonGuaranteedLogger ngl, std::filesystem::path const &log_file_p
  * initialize() opens before it returns -- was OPENED. False before any initialize(). A file that cannot be opened (a
  * read-only directory, a directory of that name) leaves every line logged through it discarded. qb fork (Huly
  * QB-1207): on a thread that called initialize(), the answer is that thread's last call, whatever another thread
- * initialized since; on any other thread, the published logger's.
+ * initialized since; on any other thread, the published logger's. qb fork (Huly QB-1246): in a child of fork(), a call
+ * its thread made in the parent does not count, and an inherited logger answers false (it writes nothing there); that
+ * answer takes nanolog's lock, so it waits for ever when the fork caught another of the parent's threads holding it.
  */
 bool log_file_opened();
 

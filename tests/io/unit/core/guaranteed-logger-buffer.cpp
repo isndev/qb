@@ -32,6 +32,10 @@
 #include <thread>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 #include <gtest/gtest.h>
 
 namespace guaranteed_logger_buffer_test {
@@ -57,6 +61,10 @@ LogsAtExit logs_at_exit;
 namespace guaranteed_logger_buffer_test {
 // Every nanolog::Buffer destroyed so far, gate or no gate (the `destroyed` hook).
 std::atomic<int> buffers_destroyed{0};
+
+// The fork test's parent (Huly QB-1246): a child of it that reaches `stopping` stops a logger of its parent the way
+// the parent does -- before the join of a thread the child does not have. Exits 4 there, on every C library.
+std::atomic<long> fork_test_parent{0};
 
 // The exit test's hold (Huly QB-1207): armed, the writer waits after its first write until a logger begins to stop.
 // Atomics only, so trivially destructible: defined after nanolog.cpp's statics, they are destroyed before StopAtExit
@@ -88,6 +96,11 @@ thread_local bool   marked_thread = false;
 
 void
 hook(int phase, unsigned int index) {
+#if !defined(_WIN32)
+    if (phase == stopping && fork_test_parent.load(std::memory_order_relaxed) != 0
+        && fork_test_parent.load(std::memory_order_relaxed) != static_cast<long>(::getpid()))
+        std::_Exit(4);
+#endif
     if (phase == stopping || phase == writer_wrote) {
         if (!hold_writer.load(std::memory_order_acquire))
             return;
@@ -651,4 +664,54 @@ TEST(GuaranteedLoggerReplacementDeathTest, AtExitTheLoggerFileIsCompleteAndALate
         ASSERT_EQ(seen[n], 1) << "line " << n << " was written " << seen[n] << " times: the logger was not drained at exit";
     EXPECT_EQ(seen[count], 0) << "a line logged after the logger stopped was written";
 }
+
+#if !defined(_WIN32)
+// The forked child's whole life in the test below: destroy the logger its parent built directly, log one line into
+// the published one it inherited, then exit().
+void
+destroy_log_and_exit(nanolog::NanoLogger *direct) {
+    delete direct; // its writer is the parent's: a std::thread destroyed joinable would terminate
+    NANO_LOG(nanolog::LogLevel::INFO) << "logged by the forked child";
+    std::exit(0);
+}
+
+/**
+ * @test A child of fork() that calls exit() exits without joining its parent's writer (Huly QB-1246).
+ * @brief The "fast" death-test style forks and does not exec: the child inherits the published logger, whose writer
+ *        thread exists only in the parent, and its exit() ran StopAtExit, which joined that thread -- undefined; libc++
+ *        on macOS refuses the join and terminates. The hook makes the stop itself the failure, on every C library: a
+ *        child that reaches it exits 4. The parent's writer is idle when the child is forked
+ *        (its line is in the file), so the fork meets no line being written (Huly QB-1193). The child writes nothing
+ *        into its parent's file, and the parent's logger still writes its own lines. The child also destroys a logger
+ *        its parent built directly, never published, whose std::thread must not be destroyed joinable there.
+ */
+TEST(GuaranteedLoggerForkDeathTest, AForkedChildExitsWithoutJoiningItsParentsWriter) {
+    std::string const style = GTEST_FLAG_GET(death_test_style);
+    LogDir const      dir;
+    nanolog::initialize(nanolog::GuaranteedLogger(), dir.path() / "parent", 1);
+    NANO_LOG(nanolog::LogLevel::INFO) << "logged before the fork";
+    for (int i = 0; i < 10000 && read_file(dir.path() / "parent.1.log").find("logged before the fork") == std::string::npos; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_NE(read_file(dir.path() / "parent.1.log").find("logged before the fork"), std::string::npos) << "the writer never wrote";
+    auto *const direct = new nanolog::NanoLogger(nanolog::GuaranteedLogger(), dir.path() / "direct", 1); // never published
+
+    GTEST_FLAG_SET(death_test_style, "fast"); // fork, no exec: the child keeps the parent's logger
+    fork_test_parent.store(static_cast<long>(::getpid()), std::memory_order_relaxed);
+    EXPECT_EXIT(destroy_log_and_exit(direct), ::testing::ExitedWithCode(0), "") << "4: the child stopped a logger of its parent";
+    fork_test_parent.store(0, std::memory_order_relaxed);
+    GTEST_FLAG_SET(death_test_style, style);
+    delete direct; // here, the writer is this process's: joined
+    // Read before this process writes again: its stream writes at the offset it remembers, over a line the child
+    // would have appended to the file they share.
+    EXPECT_EQ(read_file(dir.path() / "parent.1.log").find("logged by the forked child"), std::string::npos)
+        << "the child wrote into its parent's file";
+
+    NANO_LOG(nanolog::LogLevel::INFO) << "logged after the fork";
+    nanolog::initialize(nanolog::GuaranteedLogger(), dir.path() / "after", 1); // completes parent.1.log
+    std::string const text = read_file(dir.path() / "parent.1.log");
+    EXPECT_NE(text.find("logged after the fork"), std::string::npos) << "the parent's logger lost a line after the fork";
+    EXPECT_EQ(text.find("logged before the fork"), text.rfind("logged before the fork")) << "a line was written twice";
+    EXPECT_EQ(text.find("logged by the forked child"), std::string::npos) << "the child wrote into its parent's file";
+}
+#endif
 } // namespace guaranteed_logger_buffer_test

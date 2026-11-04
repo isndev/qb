@@ -40,12 +40,39 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <string>
 #include <thread>
 #include <tuple>
+#ifndef _WIN32
+#include <pthread.h> // qb fork (Huly QB-1246): pthread_atfork
+#endif
 
 #ifndef NANOLOG_TEST_HOOK
 #define NANOLOG_TEST_HOOK(phase, index) ((void) 0)
 #endif
 
 namespace {
+
+// qb fork (Huly QB-1246): how many fork()s separate this process from the one that loaded nanolog, counted in each
+// child by a pthread_atfork handler that only increments an integer -- it takes no lock (Huly QB-1193). fork() copies
+// the calling thread only: a logger records the generation its writer thread started in, and a child, one generation
+// further, never joins, drains or takes back a logger of its parent. Registered by the first call, which comes before
+// any logger exists; a generation, unlike a process id, is never reused. Windows has no fork(): always 0. Not counted:
+// a child of _Fork() or of a raw clone (no handler runs), and every child if pthread_atfork failed -- the old behaviour.
+std::atomic<unsigned long> fork_generation{0};
+
+#ifndef _WIN32
+void
+count_fork_in_child() noexcept {
+    fork_generation.fetch_add(1, std::memory_order_relaxed);
+}
+#endif
+
+unsigned long
+current_fork_generation() noexcept {
+#ifndef _WIN32
+    static bool const counted = ::pthread_atfork(nullptr, nullptr, &count_fork_in_child) == 0;
+    (void) counted;
+#endif
+    return fork_generation.load(std::memory_order_relaxed);
+}
 
 /* Returns microseconds since epoch */
 uint64_t
@@ -610,6 +637,7 @@ public:
         , m_file_writer(std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb))) // qb fork (Huly QB-1207)
         , m_file_opened(m_file_writer->is_open())                  // qb fork (Huly QB-1207): through the pointer
         , m_ring_items(ring_buffer_items(ngl.ring_buffer_size_mb)) // qb fork (Huly QB-1207)
+        , m_writer_generation(current_fork_generation())           // qb fork (Huly QB-1246)
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -618,8 +646,9 @@ public:
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
         , m_file_writer(std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb))) // qb fork (Huly QB-1207)
-        , m_file_opened(m_file_writer->is_open()) // qb fork (Huly QB-1207): through the pointer
-        , m_ring_items(0)                         // qb fork (Huly QB-1207)
+        , m_file_opened(m_file_writer->is_open())        // qb fork (Huly QB-1207): through the pointer
+        , m_ring_items(0)                                // qb fork (Huly QB-1207)
+        , m_writer_generation(current_fork_generation()) // qb fork (Huly QB-1246)
         , m_thread(&NanoLogger::pop, this) {
         m_state.store(State::READY, std::memory_order_release);
     }
@@ -632,7 +661,9 @@ public:
     }
 
     ~NanoLogger() {
-        stop(); // qb fork (Huly QB-1207): a logger initialize() created is never destroyed; one built directly is
+        // qb fork (Huly QB-1207): a logger initialize() created is never destroyed; one built directly is. qb fork (Huly
+        // QB-1246): destroyed in a child of fork(), its members still flush and close the copy of its parent's writer.
+        stop();
     }
 
     void
@@ -646,6 +677,15 @@ public:
     void
     stop() {
         m_state.store(State::SHUTDOWN);
+        if (!owned_here()) {
+            // qb fork (Huly QB-1246): a child of fork() stops a logger of its parent -- at its exit, or replacing it.
+            // The writer thread is the parent's, absent here: it is forgotten, never joined -- a join of a thread this
+            // process does not have is undefined (libc++ on macOS refuses it, and the child died of std::terminate).
+            // The queue and the file writer are left as copied -- the parent writes them -- so the child neither
+            // drains the parent's records nor flushes the parent's buffered bytes.
+            new (&m_thread) std::thread();
+            return;
+        }
         NANOLOG_TEST_HOOK(stopping, 0); // the exit test releases the writer here: it sees SHUTDOWN, only the drain is left
         if (m_thread.joinable())
             m_thread.join();
@@ -660,6 +700,7 @@ public:
         auto       writer = std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb));
         bool const opened = writer->is_open();
         m_state.store(State::INIT, std::memory_order_relaxed);
+        m_writer_generation = current_fork_generation(); // qb fork (Huly QB-1246): the new writer's generation
         try {
             m_thread = std::thread(&NanoLogger::pop, this); // waits for READY, below
         } catch (...) {
@@ -669,6 +710,13 @@ public:
         m_file_writer = std::move(writer);
         m_file_opened = opened;
         m_state.store(State::READY, std::memory_order_release);
+    }
+
+    // qb fork (Huly QB-1246): whether this process started the writer thread -- false in a child of fork() for every
+    // logger its parent created. Such a logger is never joined, drained or taken back here.
+    bool
+    owned_here() const noexcept {
+        return m_writer_generation == current_fork_generation();
     }
 
     // qb fork (Huly QB-1207): the queue initialize() can reuse this logger for: 0 is a GuaranteedLogger's, any other value
@@ -709,8 +757,9 @@ private:
     std::unique_ptr<BufferBase> m_buffer_base;
     std::unique_ptr<FileWriter> m_file_writer; // qb fork (Huly QB-1207): replaced by restart(), so on the heap
     // qb fork (Huly QB-1207): m_file_opened is no longer const, restart() sets it.
-    bool              m_file_opened; // after m_file_writer, before m_thread: initialisation order matters
-    std::size_t const m_ring_items;  // qb fork (Huly QB-1207)
+    bool              m_file_opened;       // after m_file_writer, before m_thread: initialisation order matters
+    std::size_t const m_ring_items;        // qb fork (Huly QB-1207)
+    unsigned long     m_writer_generation; // qb fork (Huly QB-1246): the fork generation of the writer thread
     std::thread       m_thread;
 
 public:
@@ -727,8 +776,9 @@ public:
 // thread is still writing -- and closes its file before initialize() returns. No logger initialize() created is ever
 // freed: a thread can hold one from its read of `atomic_nanologger` to the end of add() for as long as it is preempted,
 // and nothing on that path may pay to say so. A stopped logger is taken back by a later initialize() for the same queue
-// instead -- the one stopped longest ago first -- so a process holds at most two loggers per queue it asked for; a
-// record a late thread left in one is written then, into that call's file, and lost if no later call takes it back.
+// instead -- the one stopped longest ago first -- so a process holds at most two loggers per queue it asked for (a
+// child of fork() holds its parent's too); a record a late thread left in one is written then, into that call's file,
+// and lost if no later call takes it back.
 std::atomic<NanoLogger *> atomic_nanologger;
 
 namespace {
@@ -746,6 +796,8 @@ std::uint64_t replacements = 0;       // the clock of NanoLogger::stopped_at
 
 // What log_file_opened() answers on a thread that called initialize(): that call's open, not a racing call's (-1: none).
 thread_local int last_open = -1;
+// qb fork (Huly QB-1246): the fork generation last_open was answered in -- a child's copy of it is its parent's.
+thread_local unsigned long last_open_generation = 0;
 
 // qb fork (Huly QB-1207): at exit the published logger is stopped, so that its file is complete -- what destroying it
 // did. It is not freed: a static destructor that runs later and logs pushes into a queue nobody writes, where it used
@@ -785,7 +837,8 @@ publish_logger(std::size_t const ring_items, Make const &make, std::filesystem::
     NanoLogger *const           replaced = atomic_nanologger.load(std::memory_order_relaxed);
     NanoLogger                 *next     = nullptr;
     for (NanoLogger *logger = loggers; logger != nullptr; logger = logger->next)
-        if (logger != replaced && logger->ring_items() == ring_items && (next == nullptr || logger->stopped_at < next->stopped_at))
+        if (logger != replaced && logger->ring_items() == ring_items && logger->owned_here() // qb fork (Huly QB-1246)
+            && (next == nullptr || logger->stopped_at < next->stopped_at))
             next = logger;
     if (next != nullptr) {
         next->restart(log_file_path, log_file_roll_size_mb);
@@ -794,7 +847,8 @@ publish_logger(std::size_t const ring_items, Make const &make, std::filesystem::
         next->next = loggers;
         loggers    = next;
     }
-    last_open = next->file_opened() ? 1 : 0;
+    last_open            = next->file_opened() ? 1 : 0;
+    last_open_generation = current_fork_generation(); // qb fork (Huly QB-1246)
     atomic_nanologger.store(next, std::memory_order_seq_cst);
     if (replaced != nullptr) {
         replaced->stop();
@@ -818,11 +872,13 @@ initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint
 
 bool
 log_file_opened() {
-    if (last_open >= 0) // qb fork (Huly QB-1207): this thread's last initialize(), whatever another thread did since
+    // qb fork (Huly QB-1207): this thread's last initialize(), whatever another thread did since -- qb fork (Huly
+    // QB-1246): made in this process, not copied from a parent by fork()
+    if (last_open >= 0 && last_open_generation == current_fork_generation())
         return last_open == 1;
     std::lock_guard<std::mutex> lock(initialize_mutex()); // qb fork (Huly QB-1207): ordered after restart()'s write
     NanoLogger const *const     logger = atomic_nanologger.load(std::memory_order_relaxed); // qb fork (Huly QB-1207): the lock orders it
-    return logger && logger->file_opened();
+    return logger && logger->owned_here() && logger->file_opened(); // qb fork (Huly QB-1246): a parent's writes nothing here
 }
 
 std::atomic<unsigned int> loglevel = {0};
