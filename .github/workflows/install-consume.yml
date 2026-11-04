@@ -333,18 +333,19 @@ jobs:
       - name: Install dependencies
         run: ./scripts/ci-install-linux-dependencies.sh --profile build
 
-      # QUIC needs libngtcp2's OpenSSL helper, which the build profile asks for and the runner image's
-      # archive (Ubuntu 24.04 today) does not carry: it needs OpenSSL 3.5; the installed-quic-consumer
-      # job below runs on 26.04, which has it. Requesting QUIC here therefore DEGRADES — the exact
-      # silent-downgrade shape QB_REQUIRE_FEATURES exists to stop.
+      # Requesting QUIC with libngtcp2's search turned off (CMAKE_DISABLE_FIND_PACKAGE_Ngtcp2) DEGRADES —
+      # the exact silent-downgrade shape QB_REQUIRE_FEATURES exists to stop — whatever the runner image
+      # carries. The runner's archive no longer decides it (Huly QB-1250): Ubuntu 24.04's lacks libngtcp2's
+      # OpenSSL helper (it needs OpenSSL 3.5 or newer), 26.04's has it, as the installed-quic-consumer job below
+      # relies on, and an ubuntu-latest moved to 26.04 would have built QUIC here and turned both steps red.
       - name: Control — the degradation is only a warning by default
         run: |
           set -euo pipefail
           cmake -S . -B b-warn -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
-            -DQB_WITH_QUIC=ON > /tmp/warn.log 2>&1
-          grep -q "QUIC support disabled" /tmp/warn.log \
-            || { echo "::error::QUIC did not degrade on this runner — the QB_REQUIRE_FEATURES check below would be vacuous"; cat /tmp/warn.log; exit 1; }
+            -DQB_WITH_QUIC=ON -DCMAKE_DISABLE_FIND_PACKAGE_Ngtcp2=ON > /tmp/warn.log 2>&1
+          grep -Fq "CMake Warning" /tmp/warn.log && grep -Fq "[qb] libngtcp2 not found - QUIC support disabled" /tmp/warn.log \
+            || { echo "::error::QUIC did not degrade, as a warning, with CMAKE_DISABLE_FIND_PACKAGE_Ngtcp2=ON — the QB_REQUIRE_FEATURES check below would be vacuous"; cat /tmp/warn.log; exit 1; }
           echo "configure succeeded with a degraded feature, as designed"
 
       - name: QB_REQUIRE_FEATURES=ON turns the same downgrade into a configure error
@@ -353,11 +354,12 @@ jobs:
           set +e
           cmake -S . -B b-require -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DQB_BUILD_TESTS=OFF -DQB_BUILD_EXAMPLES=OFF \
-            -DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON > /tmp/require.log 2>&1
+            -DQB_WITH_QUIC=ON -DCMAKE_DISABLE_FIND_PACKAGE_Ngtcp2=ON -DQB_REQUIRE_FEATURES=ON > /tmp/require.log 2>&1
           rc=$?
           set -e
           [ "$rc" -ne 0 ] || { echo "::error::configure SUCCEEDED with QB_REQUIRE_FEATURES=ON and an unsatisfiable feature"; cat /tmp/require.log; exit 1; }
           grep -q "QB_REQUIRE_FEATURES=ON, so this downgrade is an error" /tmp/require.log \
+            && grep -Fq "[qb] libngtcp2 not found - QUIC support disabled" /tmp/require.log \
             || { echo "::error::configure failed, but not for the reason under test"; cat /tmp/require.log; exit 1; }
 
       # 3.0 deleted the bundled copy: OFF now means "always FETCH the pinned tag", not "use the
@@ -518,7 +520,7 @@ jobs:
   # An installed qb built with QUIC compares, at its consumer, the OpenSSL that libngtcp2_crypto_ossl
   # links with the one the consumer links, and reports qb not found on two majors, with the remedy:
   # they crash at the first QUIC handshake (QB-1183, QB-1256). Every job above installs qb without
-  # QUIC, so that reading -- `readelf -d`, then `objdump -p`, on ELF -- had run on macOS only
+  # QUIC on Ubuntu 24.04, so that reading -- `readelf -d`, then `objdump -p`, on ELF -- had run on macOS only
   # (`otool -L`). Ubuntu 26.04's archive carries the helper: a container of that release builds and installs
   # qb with QUIC required, then scripts/check-installed-quic-openssl.sh consumes the prefix in both
   # senses -- the system's libngtcp2 and OpenSSL on one major: silent, read for real (readelf and its
