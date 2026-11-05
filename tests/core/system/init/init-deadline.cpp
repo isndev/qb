@@ -623,7 +623,7 @@ run_park_witness(bool with_io) {
     EXPECT_EQ(state->request_armed_passes.load(), 0) << "request cap would mask the defect";
     const auto elapsed = state->cancelled_ns.load() - state->started_ns.load();
     EXPECT_GT(elapsed, 0);
-    EXPECT_LT(elapsed, kAdmissionBound.count()) << "200 ms activation, 500 ms bound, 8 s park";
+    EXPECT_LT(elapsed, kAdmissionBound.count()) << "200 ms activation, 500 ms bound, a 1 s park (8 s latency, QB-1227's ceiling)";
     EXPECT_GE(state->destroyed_ns.load(), state->cancelled_ns.load());
     if (with_io) {
         EXPECT_GT(g_port.load(), 0);

@@ -301,7 +301,7 @@ public:
      * @note
      * - `0` (default): Low latency mode. The VirtualCore spins actively, consuming 100% CPU
      *   on its assigned core, to process events with minimal delay.
-     * - `latency > 0`: The VirtualCore may sleep for up to this duration if idle, reducing CPU usage.
+     * - `latency > 0`: The VirtualCore may sleep for up to this duration, a second at most, if idle, reducing CPU usage.
      *   This introduces a potential worst-case latency for new event processing. WHERE it sleeps
      *   depends on what the core owns: a core with active qb-io watchers (sockets, timers,
      *   `qb::io::async::callback`) parks inside its event loop, so io readiness and io timers wake
@@ -499,7 +499,7 @@ public:
      *          `_parked`. A core whose io loop has nothing to deliver parks in the condition
      *          variable above (`Park::Cv`). A core that owns io watchers parks INSIDE its io
      *          loop instead (`Park::Loop`, `wait(listener &)`): the same Dekker pair, but the
-     *          block is the loop's own `ev_run(EVRUN_ONCE)` capped at `_latency`, so a socket
+     *          block is the loop's own `ev_run(EVRUN_ONCE)` capped at `_latency` (1 s at most), so a socket
      *          becoming readable ends it at poll latency rather than at the timeout — a parked
      *          core used to answer io only when `_latency` expired (measured p50 0.9–1.2 ms at
      *          100 µs latency, 15.6 ms at 10 ms, against 19 µs while polling; qb-vs-others
@@ -517,7 +517,7 @@ public:
         enum class Park : std::uint8_t { None = 0, Cv, Loop };
 
     private:
-        const qb::duration _latency;   ///< Longest single park; 0 = the consumer never parks.
+        const qb::duration _latency;   ///< Longest single park, `detail::kLongestPark` at most; 0 = never parks.
         const qb::duration _idle_spin; ///< Idle time the consumer spins through before it parks.
         // The consumer's "I am about to block" flag. Its own line: producers read it on every
         // enqueue, the consumer writes it only around a park, and nothing else may share it.
@@ -533,11 +533,11 @@ public:
             , _idle_spin(idle_spin) {}
 
         /**
-         * @brief Park the consumer until data is enqueued, `notify()` lands, or `_latency` elapses.
+         * @brief Park the consumer until data is enqueued, `notify()` lands, or `_latency` (1 s at most) elapses.
          * @ingroup Engine
          * @details Consumer side of the handshake described on the class. Returns at once — without
          *          touching the mutex — if a producer has already published something; otherwise
-         *          blocks for at most `_latency`, re-checking `has_data()` on every wake so a spurious
+         *          blocks for `_latency`, a second at most, re-checking `has_data()` on every wake so a spurious
          *          one cannot return early with an empty ring set. A no-op when `_latency` is 0.
          * @note Only the owning core's thread may call this.
          */
@@ -552,7 +552,7 @@ public:
          * @details The core passes the smaller of `_latency` and the time to its earliest request
          *          deadline (Huly QB-189): a timed `ask` no longer holds a libev timer that would
          *          end the park by itself, so the park must not outlast the deadline. A `cap` of
-         *          zero or less returns at once.
+         *          zero or less returns at once; one above `detail::kLongestPark`, a second, is cut to it (QB-1227).
          */
         void
         wait(qb::duration const cap) noexcept {
@@ -562,14 +562,14 @@ public:
             seq_cst_fence();
             if (!has_data()) {
                 std::unique_lock lk(_mtx);
-                (void) detail::wait_for_monotonic(_cv, lk, cap, [this] { return has_data(); }, detail::past_range::returns_at_once);
+                (void) detail::wait_for_monotonic(_cv, lk, (std::min) (cap, detail::kLongestPark), [this] { return has_data(); });
             }
             _parked.store(Park::None, std::memory_order_relaxed);
         }
 
         /**
          * @brief Park the consumer INSIDE its io loop: until data is enqueued, `notify()` lands, an
-         *        io watcher fires, or `_latency` elapses.
+         *        io watcher fires, or `_latency` (1 s at most) elapses.
          * @ingroup Engine
          * @param loop The consumer's own listener — the one `attach_loop()` published.
          * @return Whether the loop turn delivered any event (io dispatch, deferred callback or
@@ -578,7 +578,7 @@ public:
          *         park. `false` when the park ended on mailbox data, on the cap, or not at all.
          * @details The `Park::Loop` shape described on the class. Same handshake as `wait()` —
          *          announce, fence, re-check the rings — but the block is
-         *          `listener::run_once_for(_latency)`, and the loop's wake is armed first
+         *          `listener::run_once_for(_latency)`, a second at most, and the loop's wake is armed first
          *          (idempotent; a core that never reaches this never creates the wake pipe).
          *          The announce is a RELEASE store, not the relaxed one `wait()` uses, and
          *          that is load-bearing: `arm_wake()` creates the wake pipe on the core's
@@ -620,7 +620,7 @@ public:
             seq_cst_fence();
             if (has_data())
                 return false;
-            return loop.run_once_for(cap) != 0;
+            return loop.run_once_for((std::min) (cap, detail::kLongestPark)) != 0;
         }
 
         /**

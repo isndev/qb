@@ -33,6 +33,8 @@
  *   - the cap holds: a core parked in its loop over a far deadline wakes at `latency` and sees a
  *     `Main::stop()` — without the cap timer the poll would sleep to the far deadline;
  *   - the configuration surface: default, per-core override, `Main`-wide fan-out, chaining.
+ *   - one park lasts a second at most, whatever the latency (QB-1227): `Main::stop()` wakes no parked core, so a
+ *     longer park held a stop for its whole length, and `qb::duration::max()` returned at once and the core polled.
  *
  * The CPU/wall ratio is a diagnostic on a quiet, unconstrained host. A runnable core descheduled
  * by the OS can consume little CPU without ever parking; the ratio alone cannot prove the park.
@@ -45,6 +47,8 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
+#include <memory>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -271,6 +275,109 @@ TEST(CoreParkPolicy, IdleSpinConfigurationSurface) {
     EXPECT_EQ(main.core(1).getIdleSpin(), 3ms);
     main.core(1).setIdleSpin(); // the default argument restores the default
     EXPECT_EQ(main.core(1).getIdleSpin(), qb::CoreInitializer::kDefaultIdleSpin);
+}
+
+// ===========================================================================
+// One park lasts a second at most, whatever the latency (Huly QB-1227)
+// ===========================================================================
+
+std::atomic<std::uint64_t> g_passes{0};
+
+/// Reads its core's pass count when the stop reaches it, then ends. With `far_timer` it also owns a qb-io timer an hour
+/// away, so the idle core parks inside its event loop; without, on its mailbox's condition variable.
+class StopCounter : public qb::Actor {
+    bool                  _far_timer;
+    std::shared_ptr<void> _timer; ///< the far timer; destroying it with the actor cancels it
+
+public:
+    explicit StopCounter(bool const far_timer)
+        : _far_timer(far_timer) {}
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<qb::SignalEvent>(*this);
+        if (_far_timer)
+            _timer = qb::io::async::scoped_callback([] {}, std::chrono::hours{1});
+        co_return true;
+    }
+    void
+    on(qb::SignalEvent const &) noexcept {
+        g_passes.store(getCoreStats().loop_passes, std::memory_order_release);
+        kill();
+    }
+};
+
+struct park_run {
+    std::uint64_t            passes = 0; ///< the core's passes from its start to the stop reaching it
+    std::chrono::nanoseconds cpu{};      ///< the process's CPU time while the core idled
+    std::chrono::nanoseconds took{};     ///< `Main::stop()` to `join()` returning
+};
+
+/// One core with `latency` and no idle spin -- it parks on its first idle pass -- left idle for `idle`, then stopped.
+park_run
+idle_then_stop(char const *label, qb::duration const latency, std::chrono::milliseconds const idle, bool const far_timer) {
+    g_passes.store(0, std::memory_order_release);
+    park_run r;
+    qb::Main main;
+    main.core(0).setLatency(latency).setIdleSpin(0us);
+    main.addActor<StopCounter>(0, far_timer);
+    main.start(true);
+    auto const cpu_before = process_cpu_time();
+    std::this_thread::sleep_for(idle);
+    r.cpu              = process_cpu_time() - cpu_before;
+    auto const stop_at = Clock::now();
+    qb::Main::stop();
+    main.join();
+    r.took   = Clock::now() - stop_at;
+    r.passes = g_passes.load(std::memory_order_acquire);
+    EXPECT_FALSE(main.hasError());
+    std::printf("        [park] latency %s, %lld ms idle: %llu passes, %lld us of CPU, the stop seen %lld ms after it was raised\n", label,
+                static_cast<long long>(idle.count()), static_cast<unsigned long long>(r.passes),
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::microseconds>(r.cpu).count()),
+                static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(r.took).count()));
+    return r;
+}
+
+TEST(CoreParkPolicy, ACoreGivenTheLongestLatencyParksASecondAtATime) {
+    // `setLatency(qb::duration::max())`. Its park's end overflowed the clock, so the park returned at once and the core
+    // polled -- 28 million passes a second on an M4; an untimed park instead would never have seen `Main::stop()`,
+    // which wakes no parked core. One park lasts a second at most now.
+    constexpr auto kIdle = 2500ms;
+    auto const     r     = idle_then_stop("max", qb::duration::max(), kIdle, false);
+    EXPECT_LE(r.passes, 12u) << r.passes << " passes in " << kIdle.count() << " ms idle: the core polled instead of parking";
+    EXPECT_LT(r.cpu, kIdle / 4) << "the process ran " << std::chrono::duration_cast<std::chrono::milliseconds>(r.cpu).count()
+                                << " ms of CPU over " << kIdle.count() << " ms idle: the core polled instead of parking";
+    EXPECT_LT(r.took, 1500ms) << "the stop was seen " << std::chrono::duration_cast<std::chrono::milliseconds>(r.took).count()
+                              << " ms after it was raised: a park outlasted a second";
+}
+
+TEST(CoreParkPolicy, ACoreParkedOnItsMailboxSeesAStopWithinASecondWhateverItsLatency) {
+    // A latency of 20 s, no io watcher: the core parks on its condition variable, which `Main::stop()` does not notify. The
+    // park held the stop for the whole latency; it lasts a second at most now.
+    auto const r = idle_then_stop("20 s", 20s, 300ms, false);
+    EXPECT_LT(r.took, 1500ms) << "the stop was seen " << std::chrono::duration_cast<std::chrono::milliseconds>(r.took).count()
+                              << " ms after it was raised: the park waited out its latency";
+}
+
+TEST(CoreParkPolicy, ACoreParkedInItsLoopSeesAStopWithinASecondWhateverItsLatency) {
+    // The same core owning a timer an hour away parks inside its event loop, its block capped by the same second. libev
+    // bounds one blocking poll at 0.743 s of its own, except where it watches for time jumps with a timerfd (Linux,
+    // `QB_EV_USE_TIMERFD`): there it blocked up to the latency, 20 s here, and some seventeen days given duration::max().
+    auto const r = idle_then_stop("20 s, loop", 20s, 300ms, true);
+    EXPECT_LT(r.cpu, 150ms) << "the process ran " << std::chrono::duration_cast<std::chrono::milliseconds>(r.cpu).count()
+                            << " ms of CPU over 300 ms idle: the core polled instead of parking in its loop";
+    EXPECT_LT(r.took, 1500ms) << "the stop was seen " << std::chrono::duration_cast<std::chrono::milliseconds>(r.took).count()
+                              << " ms after it was raised: the loop park waited out its latency";
+}
+
+TEST(CoreParkPolicy, ALatencyUnderASecondStillParksItsWholeLatency) {
+    // The positive control: the ceiling leaves a latency under a second alone. A core of 300 ms parks 300 ms at a time --
+    // seven parks in 2.1 s; a shorter park shows as more passes.
+    constexpr auto kIdle = 2100ms;
+    auto const     r     = idle_then_stop("300 ms", 300ms, kIdle, false);
+    EXPECT_GE(r.passes, 6u) << r.passes << " passes in " << kIdle.count() << " ms idle: the core parked longer than its latency";
+    EXPECT_LE(r.passes, 16u) << r.passes << " passes in " << kIdle.count() << " ms idle: the core parked shorter than its latency";
+    EXPECT_LT(r.took, 800ms) << "the stop was seen " << std::chrono::duration_cast<std::chrono::milliseconds>(r.took).count()
+                             << " ms after it was raised, past a 300 ms park";
 }
 
 } // namespace core_park_policy_test

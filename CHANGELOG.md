@@ -405,22 +405,23 @@ policy.
   the kernel's clock. Both waits now go through `qb::detail::wait_for_monotonic` (`<qb/core/detail/monotonic_wait.h>`):
   on Apple `pthread_cond_timedwait_relative_np`, re-armed from `qb::mono_now()` after every wake -- two monotonic reads
   and one call per wake, where libc++ made six `steady_clock` reads, a `system_clock` read and libpthread a time-of-day
-  read; elsewhere the standard library's `wait_for` (timed on `CLOCK_MONOTONIC` by libstdc++ on glibc 2.30 or newer). A
-  timeout past the clock's range no longer overflows `now + timeout` on any platform: TestKit's watchdog then waits
-  without end (the entry under Fixed), while a core's park keeps returning at once, as both standard libraries'
-  `wait_for` did -- a park without end would never see `qb::Main::stop()`, which wakes no parked core, so a core given
-  `setLatency(qb::duration::max())` still polls instead of parking (left as it was, a decision of its own). Proven by
-  `DelayClock.ACoreParkedOnItsMailboxWaitsOnTheMonotonicClock` and
+  read; elsewhere the standard library's `wait_until` of an end at most a day after a fresh reading, re-armed the same
+  way (timed on `CLOCK_MONOTONIC` by libstdc++ on glibc 2.30 or newer) -- `wait_for` read the clock again, and where
+  libstdc++ has no `pthread_cond_clockwait` (musl, glibc before 2.30) it moves a `steady_clock` end to `system_clock`,
+  whose headroom is smaller: a timeout of some 236 years or more overflowed there all the same. A timeout of zero or
+  less returns `pred()` at once, as `wait_for` does. A timeout past the clock's range no longer overflows `now +
+  timeout` on any platform: TestKit's watchdog then waits without end, and a core's park never asks for one: it lasts a
+  second at most (both under Fixed). Proven by `DelayClock.ACoreParkedOnItsMailboxWaitsOnTheMonotonicClock` and
   `DelayClock.ATestKitWatchdogWaitsOnTheMonotonicClock`, red on the base on macOS, with
   `DelayClock.ACoreParkedOnItsMailboxWaitsItsDeadlineWithoutAStep` as the positive control and the CPU the process burns
   as proof the core parked rather than spun; by `DelayClock.ACoreWithTheLongestLatencyStillSeesAStop`; by
   `qb-core-test-unit-monotonic-wait`, the helper held to `wait_for`'s contract and to both past-range answers; and by
   mutants: the park and the watchdog back on `wait_for`, the helper's Apple branch off, a timeout reported as the
-  predicate satisfied, a relative wait a thousand times too short (a spinning park), the saturation removed, the park
-  given no end, and the past-range answer ignored are caught; an ignored error of the relative wait cannot be provoked
-  with a valid condition variable and mutex. The park's cost is level -- qb-vs-others' `parked-cadence` probe (a `cv`
-  park on every pass), 8+8 interleaved runs per latency on the M4: a mean park of 128.9 against 128.9 us at 100 us,
-  1186.2 against 1187.2 us at 1 ms.
+  predicate satisfied, a relative wait a thousand times too short (a spinning park), the saturation removed, and the
+  past-range answer ignored are caught; an ignored error of the relative wait cannot be provoked with a valid condition
+  variable and mutex. The park's cost is level -- qb-vs-others' `parked-cadence` probe (a `cv` park on every pass), 8+8
+  interleaved runs per latency on the M4: a mean park of 128.9 against 128.9 us at 100 us, 1186.2 against 1187.2 us at 1
+  ms.
 
 - **qb refuses at configure an OpenSSL older than 3.0, its real minimum, instead of failing at its compile (Huly
   QB-1213).** qb calls OpenSSL 3.0's EVP_MAC API (`crypto.h` declares deleters for `EVP_MAC`, `crypto.cpp` calls
@@ -532,12 +533,48 @@ policy.
   opening from closed, the admission not recorded, and `ask_guarded`'s cancellation releasing with the admission. With
   Apple clang each of the three verdict writes gains a branchless max (`csel` on arm64, `cmova` on x86-64) and the
   admission a store; the closed path of `allow()`, and `on_success()`, compile to the same instructions.
-- **A `qb::test::TestKit` watchdog of `qb::duration::max()` waits for the scenario (Huly QB-1227).** The watchdog was
-  `std::condition_variable::wait_for(watchdog)`, and libc++'s `wait_for` of `nanoseconds::max()` returns `false` at once
-  (its end overflows into the past; measured, while a span of 200 years waits): a run given no watchdog reported
-  `timed_out` before its scenario ran. Such a watchdog now waits without end, on every platform (the QB-1227 entry under
-  Changed). Proven by `DelayClock.ATestKitWatchdogOfDurationMaxWaitsForTheScenario` and
-  `MonotonicWait.ADurationMaxTimeoutWaitsUntilNotified`.
+- **A wait of `qb::duration::max()` no longer ends at once, and no park of a core lasts more than a second (Huly
+  QB-1227).** TestKit's watchdog was `std::condition_variable::wait_for(watchdog)`, and libc++'s `wait_for` of
+  `nanoseconds::max()` returns `false` at once (its end overflows into the past; measured, while a span of 200 years
+  waits): a run given no watchdog reported `timed_out` before its scenario ran. Such a watchdog now waits without end,
+  on every platform (the QB-1227 entry under Changed), and a run whose engine stops before its scenario ends -- the
+  scenario stopping it, another actor's exception on the driver's core, an engine that refuses to start, the driver
+  built or not -- returns then, its scenario reported as not run to its end: the scenario's frame dies with its core and
+  no catch block of it runs, so the driver's destructor ends the wait, and a refused start ends it in `run()` itself
+  (`finish()` is first-call-wins: a driver destroyed before its scenario ends reports it not run to its end even if the
+  frame finishes later), where such a run waited out its watchdog, and with none would have waited for ever. A core's
+  park overflowed the same way: given `setLatency(qb::duration::max())` it returned from every park at once and polled
+  -- 28 million passes a second on the M4 -- and given a latency over a second it held a `qb::Main::stop()` for the
+  whole of it (19.7 s at a 20 s latency, measured), as `stop()` only advances counters, to stay safe in a signal
+  handler, and wakes no parked core. One park now lasts a second at most (`qb::detail::kLongestPark`), on the condition
+  variable and in the io loop alike: a stop lands within a second whatever the latency, and a latency of a second or
+  less parks as before. libev already bounded the loop park at 0.743 s, except where it watches for time jumps with a
+  timerfd (Linux, `QB_EV_USE_TIMERFD`): there it blocked up to the latency. Proven by
+  `DelayClock.ATestKitWatchdogOfDurationMaxWaitsForTheScenario`, `MonotonicWait.ADurationMaxTimeoutWaitsUntilNotified`
+  and four runs given no watchdog -- `DelayClock.ATestKitRunOfNoWatchdogEndsWhenItsScenarioStopsTheEngineAndSuspends`,
+  `...WhenAnotherActorsExceptionStopsTheEngine`, `...WhenTheEngineFailsToStart` and `...WhenItsDriverIsNeverBuilt` --
+  all four hung on the base, the binary ended by its own 20 s watchdog; by
+  `MailboxParkHandshake.AParkLastsASecondAtMostWhateverTheLatency` and
+  `...AParkOfTheLongestLatencyLastsASecondInsteadOfReturningAtOnce` (20 s and no time at all on the base),
+  `CoreParkPolicy.ACoreGivenTheLongestLatencyParksASecondAtATime` (5 passes in 2.5 s, 70 million on the base) and
+  `CoreParkPolicy.ACoreParkedOnItsMailboxSeesAStopWithinASecondWhateverItsLatency`, red on the base, with
+  `MailboxParkHandshake.ALoopParkLastsASecondAtMostWhateverTheLatency` and
+  `CoreParkPolicy.ACoreParkedInItsLoopSeesAStopWithinASecondWhateverItsLatency` for the loop park and
+  `MailboxParkHandshake.AParkUnderASecondLastsItsLatency` and
+  `CoreParkPolicy.ALatencyUnderASecondStillParksItsWholeLatency` as the positive controls. A one-second park would have
+  hidden a park the deadline does not bound in two tests: their bounds are tightened,
+  `AskDeadlines.AParkingCoreWakesForTheDeadline_*` to 500 ms and `DelayClock.ACoreParksWhileAnActorIsActivating` to 800
+  ms. Nineteen mutants after a green unmutated control, sixteen caught: the condition variable's ceiling removed (the
+  base), a ceiling a thousand times too short or ten times too long, the ceiling used as a floor, a past-range park
+  without end; the driver's destructor ending no wait, `finish()` letting the last call win, the destructor reporting
+  the scenario run to its end, `run()` ignoring a refused start, and both at once (the base); six of seven of the lot's
+  earlier mutants of the helper. Three survive: the loop park's ceiling removed -- libev ends one poll at 0.743 s on
+  every default build, so only a Linux build with `QB_EV_USE_TIMERFD` can see it --, a non-positive timeout reaching
+  `now + timeout` (equivalent but at the range's lower end), and an ignored error of the relative wait, which a valid
+  condition variable and mutex cannot provoke. The parks' cost is level -- qb-vs-others' `parked-cadence` probe, 8+8
+  interleaved runs per cell on the M4, each side linked against its own qb, marker held: a mean park of 130.2 against
+  130.0 us on the condition variable at 100 us, 1213.6 against 1213.1 us at 1 ms, 118.3 against 118.2 us in the loop at
+  100 us, 1201.6 against 1201.1 us at 1 ms.
 - **`qb::io::log::init()` can replace the logger while other threads log (Huly QB-1207).** `nanolog::initialize()`
   destroyed the logger it replaced -- its writer thread, its queue and the queue's buffers -- and only then published
   the new one. A thread that had read the old logger and was still inside its log statement pushed into the freed

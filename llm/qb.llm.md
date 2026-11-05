@@ -225,7 +225,7 @@ int main() {
 thread's affinity, which its core pinned, is put back when it returns (3.3, Huly QB-1083).
 `Main::core(idx)` throws once the engine is running, and `std::range_error` for `idx >= qb::MaxCores`
 (256). A core started with **0 actors fails startup** (`Error::NoActor`). `setLatency` takes a
-`qb::duration`: `qb::duration::zero()` = busy-spin (an idle pass still makes one ordered read of the CPU counter, `lfence; rdtsc`: that read paces the poll of the peer rings); `>0` parks up to that span when idle — after
+`qb::duration`: `qb::duration::zero()` = busy-spin (an idle pass still makes one ordered read of the CPU counter, `lfence; rdtsc`: that read paces the poll of the peer rings); `>0` parks up to that span, a second at most per park (3.4, Huly QB-1227: `Main::stop()` wakes no parked core, so it lands within that second), when idle — after
 polling for `setIdleSpin` (default 50 µs) since its last activity, so a prompt reply is still picked
 up on the lock-free path. WHERE it parks depends on what the core owns: with active qb-io watchers
 (sockets, timers, `async::callback`) it parks inside its event loop, so io readiness and io timers wake

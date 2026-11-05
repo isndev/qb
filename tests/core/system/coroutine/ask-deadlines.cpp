@@ -407,6 +407,7 @@ private:
     void
     arm() {
         auto mkt = _market;
+        // `spawn` queues the frame: the next pass runs it (the ask armed) in its loop step, before it receives the Tick.
         spawn([mkt, stall = _stall_at_arm](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             const auto t0 = qb::mono_now();
             g_arm_t0_ns   = static_cast<std::uint64_t>(t0.time_since_epoch().count());
@@ -653,7 +654,7 @@ run_parked(bool with_watcher) {
     qb::Main main;
     unpin(main);
     // Park on the first idle pass, for up to 3 s: a park the deadline does not bound would show
-    // as ~3 s, which no scheduling delay reaches.
+    // as ~1 s on the cv (one park's ceiling, QB-1227), 0.743 s in the loop (libev's), which no scheduling delay reaches.
     main.core(0).setLatency(3s).setIdleSpin(0us);
     auto mkt = main.addActor<SilentMarket>(0);
     main.addActor<ParkedAsker>(0, mkt, with_watcher);
@@ -664,8 +665,8 @@ run_parked(bool with_watcher) {
     std::printf("        [parked, %s] timeout fired %lld us after the arm (deadline 30 ms, latency 3 s)\n",
                 with_watcher ? "loop park" : "cv park", static_cast<long long>(g_fire_delay_us.load()));
     EXPECT_GE(g_fire_delay_us.load(), 30'000) << "never early";
-    EXPECT_LT(g_fire_delay_us.load(), 1'000'000)
-        << "the park must be bounded by the deadline (~30 ms; 30.3 measured in isolation), not by the 3 s latency";
+    EXPECT_LT(g_fire_delay_us.load(), 500'000)
+        << "the park must be bounded by the deadline (~30 ms; 30.3 measured in isolation), not by the latency's 1 s park";
 }
 
 TEST(AskDeadlines, AParkingCoreWakesForTheDeadline_ConditionVariablePark) {

@@ -210,10 +210,8 @@ struct ScenarioState {
     std::exception_ptr      error;
 
     void
-    finish(bool ran_to_end, std::exception_ptr thrown) {
-        {
-            std::lock_guard<std::mutex> guard(lock);
-            finished  = true;
+    finish(bool ran_to_end, std::exception_ptr thrown) { // the first call decides: the frame's, or the driver's destruction
+        if (std::lock_guard<std::mutex> guard(lock); !std::exchange(finished, true)) {
             completed = ran_to_end;
             error     = std::move(thrown);
         }
@@ -253,7 +251,9 @@ protected:
     ScenarioDriverBase(std::shared_ptr<ScenarioRunner> runner, std::shared_ptr<ScenarioState> state)
         : _runner(std::move(runner))
         , _state(std::move(state)) {}
-
+    ~ScenarioDriverBase() override { // destroyed before its scenario ended: the run ends, not run to its end (Huly QB-1227)
+        _state->finish(false, nullptr);
+    }
     void
     start_scenario() {
         spawn([runner = std::move(_runner), state = _state](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
@@ -686,8 +686,8 @@ expect_none(qb::ScopedCoroContext ctx, qb::ActorId probe, qb::duration window) {
 /**
  * @brief An engine for one test: add the actors and probes, then `run()` one scenario.
  * @details `run()` adds the driver, starts the engine on its own threads, waits for the scenario to
- *          end -- the driver stops the engine at once when it returns or throws -- or for the watchdog,
- *          then joins and reads `hasError()`. One run per kit: an engine does not restart.
+ *          end -- the driver stops the engine at once when it returns or throws -- for the watchdog, or for the
+ *          driver's end (an engine stopped first), then joins and reads `hasError()`. One run per kit: an engine does not restart.
  *          `qb::Main::stop()` stops every engine of the process, so kits run one at a time. Configure
  *          the cores through `engine()` before `run()` (a core runs at latency 0, spinning, by default).
  */
@@ -724,9 +724,8 @@ public:
      * @brief Run @p scenario on a driver actor on @p core and wait for it, at most @p watchdog.
      * @tparam Asks The exchange types the scenario `qb::ask`s other actors with: the driver registers
      *         them so their replies resolve (`kit.run<Quote>(...)`). `expect` needs none.
-     * @param scenario A callable `qb::io::async::task<void>(qb::ScopedCoroContext)`, kept by the driver
-     *        for the run: capture by value.
-     * @param watchdog The longest the run may take; the engine is stopped when it passes.
+     * @param scenario A callable `qb::io::async::task<void>(qb::ScopedCoroContext)`, kept by the driver for the run: capture by value.
+     * @param watchdog The longest the run may take, stopped when it passes; `qb::duration::max()`: none. An engine stopped first ends it.
      * @param core The core the driver runs on.
      * @throws std::logic_error on a second run, or when the driver cannot be added.
      */
@@ -743,7 +742,8 @@ public:
             throw std::logic_error("qb::test::TestKit::run: the scenario driver could not be added");
 
         RunResult result;
-        _engine.start(true);
+        if (_engine.start(true); _engine.hasError()) // startup refused: the driver may never have been built to end the wait
+            state->finish(false, nullptr);
         {
             std::unique_lock<std::mutex> guard(state->lock);
             result.timed_out = !qb::detail::wait_for_monotonic(state->done, guard, watchdog, [&state] { return state->finished; });

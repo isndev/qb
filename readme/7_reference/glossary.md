@@ -108,7 +108,7 @@ The top-level controller. It owns the [`CoreInitializer`](#coreinitializer-qbcor
 
 #### Latency (`setLatency`)
 
-The idle wait budget of a [`VirtualCore`](#virtualcore-qbvirtualcore), expressed as a [`qb::duration`](#qbduration). `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode (100% CPU on its core); a positive value lets the core park on a `condition_variable` for up to that span when idle, trading worst-case latency for lower CPU. See [Engine](../4_qb_core/engine.md).
+The idle wait budget of a [`VirtualCore`](#virtualcore-qbvirtualcore), expressed as a [`qb::duration`](#qbduration). `setLatency(qb::duration::zero())` — the default — puts the core in busy-spin low-latency mode (100% CPU on its core); a positive value lets the core park -- in its event loop when it owns io watchers, on a `condition_variable` otherwise -- for up to that span, a second at most per park (since 3.4), when idle, trading worst-case latency for lower CPU. See [Engine](../4_qb_core/engine.md).
 
 #### `LoopEvent` (`qb::LoopEvent`)
 

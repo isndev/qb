@@ -27,7 +27,8 @@
  *   - `mpsc::has_data()` sees an item on ANY producer ring and nothing on an empty set;
  *   - two threads bouncing one item between two mailboxes, parking on EVERY hop (the most
  *     adversarial cadence for the race) with a latency far above the cost of a hop, never
- *     observe a wait that lasts the latency: a single lost wakeup would.
+ *     observe a wait that lasts the latency: a single lost wakeup would;
+ *   - one park lasts a second at most, whatever the latency, on the condition variable and in the io loop (QB-1227).
  */
 
 #include <atomic>
@@ -149,6 +150,52 @@ TEST(MailboxParkHandshake, PingPongParkingOnEveryHopNeverLosesAWakeup) {
     EXPECT_EQ(waits.load(), 2 * kHops - 1);
     const auto worst = std::chrono::nanoseconds{worst_wait_ns.load()};
     EXPECT_LT(worst, kLatency / 2) << "a wait that reached the latency is a lost wakeup; worst = " << worst.count() << " ns";
+}
+
+// ---- one park's ceiling (Huly QB-1227) ----------------------------------------------------------
+
+// `Main::stop()` wakes no parked core: it only advances counters, to stay safe in a signal handler. A park longer than a
+// second would hold a stop for its whole length, so one park lasts a second at most, whatever the latency.
+TEST(MailboxParkHandshake, AParkLastsASecondAtMostWhateverTheLatency) {
+    Mailbox    mb(kProducers, 20s, 0us);
+    const auto t0 = Clock::now();
+    mb.wait();
+    const auto elapsed = Clock::now() - t0;
+    EXPECT_GE(elapsed, 900ms) << "the park is a real one, a second long";
+    EXPECT_LT(elapsed, 3s) << "a park of a 20 s latency outlasted a second";
+}
+
+TEST(MailboxParkHandshake, AParkOfTheLongestLatencyLastsASecondInsteadOfReturningAtOnce) {
+    // `qb::duration::max()`: the park's end overflowed the clock and it returned at once -- a core given that latency
+    // polled, 28 million passes a second on an M4.
+    Mailbox    mb(kProducers, qb::duration::max(), 0us);
+    const auto t0 = Clock::now();
+    mb.wait();
+    const auto elapsed = Clock::now() - t0;
+    EXPECT_GE(elapsed, 900ms) << "the park returned at once: a core with this latency polls";
+    EXPECT_LT(elapsed, 3s);
+}
+
+TEST(MailboxParkHandshake, AParkUnderASecondLastsItsLatency) {
+    // The positive control: the ceiling leaves a latency under a second alone.
+    Mailbox    mb(kProducers, 300ms, 0us);
+    const auto t0 = Clock::now();
+    mb.wait();
+    const auto elapsed = Clock::now() - t0;
+    EXPECT_GE(elapsed, 250ms) << "a 300 ms park ended early"; // MSVC rounds to ms
+    EXPECT_LT(elapsed, 900ms) << "a 300 ms park lasted the ceiling instead";
+}
+
+TEST(MailboxParkHandshake, ALoopParkLastsASecondAtMostWhateverTheLatency) {
+    // The park inside the io loop. libev bounds one blocking poll at 0.743 s of its own, except where it watches for time
+    // jumps with a timerfd (Linux, `QB_EV_USE_TIMERFD`): there the poll blocked up to the cap, 20 s here.
+    Mailbox    mb(kProducers, 20s, 0us);
+    auto      &loop = qb::io::async::listener::current;
+    const auto t0   = Clock::now();
+    (void) mb.wait(loop);
+    const auto elapsed = Clock::now() - t0;
+    EXPECT_GE(elapsed, 500ms) << "the loop park is a real one: libev's own bound is 0.743 s, the ceiling 1 s";
+    EXPECT_LT(elapsed, 3s) << "a loop park of a 20 s latency outlasted a second";
 }
 
 } // namespace mailbox_park_handshake_test

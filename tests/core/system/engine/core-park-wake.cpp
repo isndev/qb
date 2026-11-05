@@ -366,8 +366,8 @@ TEST(CoreParkWake, CrossCorePushWakesACoreParkedInItsLoop) {
     // Core 1 holds a 60 s timer, so it parks in its loop under a 2 s cap; core 0 pushes after
     // 150 ms. The producer finds `Park::Loop` published and sends the loop's `ev_async` — the
     // one path through which a mailbox event can end a loop park. Delivery must be far under the
-    // cap: without the async send the ping would wait the full 2 s (the cap), and without the cap
-    // the full 60 s (the timer).
+    // cap: without the async send the ping would wait out the park -- the 2 s cap, cut to a second by QB-1227's ceiling,
+    // 0.743 s where libev bounds one poll -- and without any cap the full 60 s (the timer).
     reset_atoms();
     constexpr auto kLatency = 2000ms; // ms, so `kLatency / 4` is 500 ms and not `2s / 4 == 0s`
     constexpr auto kDelay   = 150ms;

@@ -102,7 +102,7 @@ TEST(MonotonicWait, ADurationMaxTimeoutWaitsUntilNotified) {
 }
 
 TEST(MonotonicWait, APastRangeTimeoutReturnsAtOnceWhenAsked) {
-    // A core's mailbox park asks for this: a park without end would never see qb::Main::stop(), which wakes no parked core.
+    // The answer a caller that must not wait without end asks for (a core's park never reaches it: a second at most).
     using namespace monotonic_wait_test;
     auto const w = wait_with(qb::duration::max(), false, -1ms, qb::detail::past_range::returns_at_once);
     EXPECT_FALSE(w.result);

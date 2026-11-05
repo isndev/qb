@@ -1093,7 +1093,7 @@ VirtualCore::__workflow_loop__() {
         //
         // WHERE it parks depends on whether the io loop has anything to deliver. With io
         // watchers active the park is taken INSIDE the loop (`Mailbox::wait(listener &)`:
-        // `ev_run(EVRUN_ONCE)` capped at `latency`, ended by the producer through the
+        // `ev_run(EVRUN_ONCE)` capped at `latency`, a second at most, ended by the producer through the
         // loop's async watcher), so a socket that becomes readable wakes the core at poll
         // latency instead of at the timeout -- a cv-parked core answered io only when
         // `latency` expired (p50 0.9-1.2 ms at 100 us, 15.6 ms at 10 ms, against 19 us polling;

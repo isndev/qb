@@ -42,6 +42,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 
 #include <sys/resource.h>
@@ -549,7 +550,7 @@ TEST(DelayClock, ATimeOfDayStepBackNeitherCutsNorStretchesABreakersCooldown) {
 TEST(DelayClock, ACoreParksWhileAnActorIsActivating) {
     // A core with latency parks while an actor is Activating, its park capped by the activation deadline: the cap and the
     // deadline must be read on one clock. Read on two, the time left reads 0 and the core spins through the activation, or
-    // reads decades and the core sleeps its whole latency past the deadline; without the cap it sleeps that latency too.
+    // reads decades and the core sleeps a whole park, a second, past the deadline; without the cap it sleeps that too.
     using namespace delay_clock_test;
     auto const                     out = std::make_shared<activation_outcome>();
     qb::test::ScopedDeadline const knob(static_cast<std::uint64_t>(ns(500ms)));
@@ -567,7 +568,7 @@ TEST(DelayClock, ACoreParksWhileAnActorIsActivating) {
     ASSERT_TRUE(out->ended) << "the activation deadline never cancelled the init";
     auto const span = out->at - out->began;
     EXPECT_GE(span, ns(500ms)) << "the activation deadline fired early";
-    EXPECT_LT(span, ns(2s)) << "the activation deadline fired " << span / 1'000'000 << " ms in: the parked core slept past it";
+    EXPECT_LT(span, ns(800ms)) << "the activation deadline fired " << span / 1'000'000 << " ms in: the parked core slept past it";
     EXPECT_LT(cpu(after) - cpu(before), span / 2) << "the process ran " << (cpu(after) - cpu(before)) / 1'000'000 << " ms of CPU over a "
                                                   << span / 1'000'000 << " ms activation: the core spun instead of parking until its deadline";
 }
@@ -727,9 +728,9 @@ TEST(DelayClock, ATestKitWatchdogOfDurationMaxWaitsForTheScenario) {
 }
 
 TEST(DelayClock, ACoreWithTheLongestLatencyStillSeesAStop) {
-    // `setLatency(qb::duration::max())`: a park past the clock's range returns at once (Huly QB-1227), as the standard
-    // libraries' `wait_for` did -- an untimed park would never see `qb::Main::stop()`, which wakes no parked core. A hang
-    // here ends the binary after 10 s rather than the run.
+    // `setLatency(qb::duration::max())`: one park lasts a second at most (Huly QB-1227) -- an untimed park would never
+    // see `qb::Main::stop()`, which wakes no parked core, and one past the clock's range returned at once. A hang here
+    // ends the binary after 10 s rather than the run.
     std::atomic<bool> joined{false};
     std::thread       watchdog([&joined] {
         auto const until = qb::mono_now() + 10s;
@@ -752,4 +753,121 @@ TEST(DelayClock, ACoreWithTheLongestLatencyStillSeesAStop) {
         EXPECT_FALSE(main.hasError());
     }
     watchdog.join();
+}
+
+// ===========================================================================
+// A TestKit run of no watchdog when the engine stops before its scenario ends (Huly QB-1227)
+// ===========================================================================
+
+namespace delay_clock_test {
+
+struct Boom : qb::Event {};
+
+/// Throws out of its handler: the exception unwinds its core's thread and stops every actor on it.
+class Thrower : public qb::Actor {
+public:
+    qb::io::async::task<bool>
+    onInit() override {
+        registerEvent<Boom>(*this);
+        co_return true;
+    }
+    void
+    on(Boom const &) {
+        throw std::runtime_error("boom");
+    }
+};
+
+/// Throws from its constructor: its core's factories stop there, and an actor registered after it is never built.
+class ThrowsWhenBuilt : public qb::Actor {
+public:
+    ThrowsWhenBuilt() {
+        throw std::runtime_error("not built");
+    }
+};
+
+/// Runs @p body; a body still running after @p limit ends the binary with exit code 3 -- a hang is a failure, not a
+/// stuck suite.
+template <typename Body>
+void
+or_exit_after(std::chrono::seconds const limit, char const *what, Body &&body) {
+    std::atomic<bool> done{false};
+    std::thread       watchdog([&done, limit, what] {
+        auto const until = qb::mono_now() + limit;
+        while (!done && qb::mono_now() < until)
+            std::this_thread::sleep_for(10ms);
+        if (!done) {
+            std::fprintf(stderr, "%s: the run never returned\n", what);
+            std::_Exit(3);
+        }
+    });
+    body();
+    done = true;
+    watchdog.join();
+}
+
+} // namespace delay_clock_test
+
+// A run given no watchdog (`qb::duration::max()`) waits for its scenario without end since QB-1227. An engine that stops
+// before the scenario ends destroys the scenario's frame with its core, and no catch block of it runs: the driver's
+// destructor ends the wait then, the scenario reported as not run to its end. Before, such a run never returned.
+TEST(DelayClock, ATestKitRunOfNoWatchdogEndsWhenItsScenarioStopsTheEngineAndSuspends) {
+    using namespace delay_clock_test;
+    or_exit_after(20s, "DelayClock.ATestKitRunOfNoWatchdogEndsWhenItsScenarioStopsTheEngineAndSuspends", [] {
+        qb::test::TestKit kit;
+        auto const        run = kit.run(
+            [](qb::ScopedCoroContext) -> qb::io::async::task<void> {
+                qb::Main::stop();
+                co_await qb::io::async::sleep(std::chrono::hours(1)); // no cancellation reaches it: the frame dies with its core
+            },
+            qb::duration::max());
+        EXPECT_FALSE(run);
+        EXPECT_FALSE(run.completed);
+        EXPECT_FALSE(run.timed_out) << "no watchdog, nothing to time out";
+        EXPECT_FALSE(run.error) << "the frame was destroyed, never resumed: nothing thrown";
+    });
+}
+
+TEST(DelayClock, ATestKitRunOfNoWatchdogEndsWhenAnotherActorsExceptionStopsTheEngine) {
+    using namespace delay_clock_test;
+    or_exit_after(20s, "DelayClock.ATestKitRunOfNoWatchdogEndsWhenAnotherActorsExceptionStopsTheEngine", [] {
+        qb::test::TestKit kit;
+        auto const        thrower = kit.add<Thrower>(0);
+        auto const        run     = kit.run(
+            [thrower](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
+                ctx.push_to<Boom>(thrower);
+                co_await ctx.sleep(std::chrono::hours(1)); // the driver's core dies of the exception under it
+            },
+            qb::duration::max());
+        EXPECT_FALSE(run);
+        EXPECT_TRUE(run.engine_error) << run.describe();
+        EXPECT_FALSE(run.completed);
+        EXPECT_FALSE(run.timed_out);
+    });
+}
+
+TEST(DelayClock, ATestKitRunOfNoWatchdogEndsWhenTheEngineFailsToStart) {
+    using namespace delay_clock_test;
+    or_exit_after(20s, "DelayClock.ATestKitRunOfNoWatchdogEndsWhenTheEngineFailsToStart", [] {
+        qb::test::TestKit kit;
+        (void) kit.engine().core(1); // a registered core with no actor: the engine refuses to start
+        auto const run = kit.run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, qb::duration::max());
+        EXPECT_FALSE(run);
+        EXPECT_TRUE(run.engine_error) << run.describe();
+        EXPECT_FALSE(run.completed);
+    });
+}
+
+TEST(DelayClock, ATestKitRunOfNoWatchdogEndsWhenItsDriverIsNeverBuilt) {
+    // An actor registered before the driver throws from its constructor: the startup stops at it, the driver is never
+    // built, and no destructor of it can end the wait -- `run()` does, on the refused start.
+    using namespace delay_clock_test;
+    or_exit_after(20s, "DelayClock.ATestKitRunOfNoWatchdogEndsWhenItsDriverIsNeverBuilt", [] {
+        qb::test::TestKit kit;
+        (void) kit.add<ThrowsWhenBuilt>(0);
+        auto const run = kit.run([](qb::ScopedCoroContext) -> qb::io::async::task<void> { co_return; }, qb::duration::max());
+        EXPECT_FALSE(run);
+        EXPECT_TRUE(run.engine_error) << run.describe();
+        EXPECT_FALSE(run.completed);
+        EXPECT_FALSE(run.timed_out);
+    });
 }
