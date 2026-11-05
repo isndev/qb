@@ -29,6 +29,7 @@
 
 #ifndef QB_MAIN_H
 #define QB_MAIN_H
+#include <algorithm> // std::min, the park's ceiling (Huly QB-1227)
 #include <array>
 #include <atomic>
 #include <qb/core/detail/monotonic_wait.h> // std::condition_variable, its timed wait off the time of day (Huly QB-1227)
@@ -41,8 +42,7 @@
 #include <span>
 #include <thread>
 #include <vector>
-// include from qb
-#include <qb/io/async/listener.h>
+#include <qb/io/async/listener.h> // the includes from qb
 #include <qb/system/lockfree/mpsc.h>
 #include <qb/system/time.h>
 #include <qb/utility/compat.h>
@@ -517,7 +517,7 @@ public:
         enum class Park : std::uint8_t { None = 0, Cv, Loop };
 
     private:
-        const qb::duration _latency;   ///< Longest single park, `detail::kLongestPark` at most; 0 = never parks.
+        const qb::duration _latency;   ///< The configured park; `wait` cuts one to `detail::kLongestPark`; 0 = never parks.
         const qb::duration _idle_spin; ///< Idle time the consumer spins through before it parks.
         // The consumer's "I am about to block" flag. Its own line: producers read it on every
         // enqueue, the consumer writes it only around a park, and nothing else may share it.
