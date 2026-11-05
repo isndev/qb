@@ -149,15 +149,15 @@ public:
      *          the state via `on_success` / `on_failure`, or be released via `on_abandoned` when it
      *          ends without a verdict (its caller killed, its frame destroyed as a race loser) —
      *          otherwise the breaker would stay half-open and reject everything. The admission is
-     *          numbered (`trial()`), so the release can name the trial it gives back.
+     *          numbered (`trial()`), so the release can name the trial it gives back, and its reading becomes the cooldown's start.
      */
     [[nodiscard]] bool
     allow(uint64_t now_ns) noexcept {
         if (_state == State::open) {
             if ((std::max) (now_ns, _opened_at) - _opened_at >= static_cast<uint64_t>(_cooldown.count())) {
-                _state = State::half_open; // admit exactly one trial
-                if (++_trial == 0)         // numbered for on_abandoned(now, trial); 0 means "no trial"
-                    _trial = 1;
+                _state     = State::half_open;                        // admit exactly one trial
+                _opened_at = now_ns;                                  // its admission: a verdict stamped before it re-arms from it
+                _trial     = _trial == UINT32_MAX ? 1u : _trial + 1u; // numbered for on_abandoned(now, trial); 0 means "no trial"
                 return true;
             }
             return false; // still cooling down
@@ -491,9 +491,9 @@ namespace detail {
  *          `half_open` and the admission numbered `trial()`); a call admitted while closed holds
  *          nothing. A verdict (`on_success` / `on_failure`) disarms it. Otherwise it releases its own
  *          trial -- `release(now)` from the cancellation path, or its destructor when the frame is
- *          destroyed parked, which runs destructors and no catch block. The destructor re-arms the
- *          cooldown from the admission time: it may run during teardown, where the context's clock is
- *          not reachable, and an admission time can never be later than a caller's next `allow()`.
+ *          destroyed parked, which runs destructors and no catch block. The destructor gives it back
+ *          stamped with the admission, the cooldown's start already (QB-1264): it may run during teardown,
+ *          where the context's clock is not reachable, and can never be later than a caller's next `allow()`.
  */
 class breaker_trial_lease {
     CircuitBreaker *_breaker = nullptr; ///< null: no trial held (closed-state call, or verdicted)

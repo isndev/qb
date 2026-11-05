@@ -462,7 +462,7 @@ breaker, throttle with a token bucket, and isolate with a concurrency bulkhead.
   monotonic clock, the same one for every call -- `ask_guarded` passes `qb::mono_now()`'s nanoseconds (since 3.4,
   Huly QB-1199; on `ctx.time()` a step of the time of day skipped the cooldown, a step back by unsigned wrap); a reading
   older than the one its cooldown runs from counts as no time elapsed (since 3.4, Huly QB-1237: it wrapped too), and a
-  stamp older than that start leaves it in place (since 3.4, Huly QB-1264: it moved the start back). It trips **open** after `failure_threshold` consecutive failures, fails fast during
+  stamp older than that start leaves it in place, a trial's admission being the start too (since 3.4, Huly QB-1264: it moved the start back). It trips **open** after `failure_threshold` consecutive failures, fails fast during
   `cooldown`, then admits exactly **one** half-open trial; a success closes it, a failure re-opens it
   (`resilience.h:107-168`). `on_abandoned` releases a half-open trial that ended without a verdict so
   the breaker is not wedged (`resilience.h:190-204`). Every half-open admission is numbered

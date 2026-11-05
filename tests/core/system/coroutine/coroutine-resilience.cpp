@@ -861,9 +861,10 @@ TEST(ActorAskGuarded, AHandFedReadingThenAGuardedAskInOnePassFindTheBreakerOpen)
 // refuses every call on the breaker's clock instead of admitting one a cooldown later.
 
 namespace {
-std::atomic<bool> g_killed_trial_ran{false};
-std::atomic<bool> g_killed_trial_cancelled{false};
-std::atomic<bool> g_killed_trial_refused{false}; // the guarded ask was refused: it never was the trial
+std::atomic<bool>          g_killed_trial_ran{false};
+std::atomic<bool>          g_killed_trial_cancelled{false};
+std::atomic<bool>          g_killed_trial_refused{false}; // the guarded ask was refused: it never was the trial
+std::atomic<std::uint64_t> g_killed_trial_asked_at{0};    // the breaker's clock just before the guarded ask, ns
 } // namespace
 
 // Opens the breaker on a reading a cooldown old, so the guarded ask is the half-open trial; the driver kills it.
@@ -882,6 +883,7 @@ public:
         auto t = _target;
         spawn([b, t](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
             b->on_failure(qb::detail::mono_nanos() - static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())); // open, cooldown over
+            g_killed_trial_asked_at.store(qb::detail::mono_nanos());
             try {
                 (void) co_await qb::ask_guarded(ctx, b, t, Ping{1}, 10s); // the trial; the silent target never answers
             } catch (const qb::io::async::cancelled_error &) {
@@ -903,6 +905,7 @@ TEST(ActorAskGuarded, AKilledHalfOpenTrialReArmsTheCooldownOnTheBreakersClock) {
     g_killed_trial_ran.store(false);
     g_killed_trial_cancelled.store(false);
     g_killed_trial_refused.store(false);
+    g_killed_trial_asked_at.store(0);
     auto     breaker = std::make_shared<qb::CircuitBreaker>(1u, 10s);
     qb::Main main;
     auto     silent = main.addActor<SilentMarket>(0);
@@ -917,6 +920,12 @@ TEST(ActorAskGuarded, AKilledHalfOpenTrialReArmsTheCooldownOnTheBreakersClock) {
     EXPECT_EQ(breaker->state(), State::open) << "the killed trial is given back: open again, the cooldown re-armed";
     EXPECT_FALSE(breaker->allow(qb::detail::mono_nanos()))
         << "admitted well inside the re-armed 10 s cooldown: the release did not re-arm it from a reading of the breaker's clock";
+    // The admission is the cooldown's start too (QB-1264): a release stamped before the kill -- with the admission, or any
+    // older reading -- leaves the cooldown running from the admission, which only a reading taken at the kill passes.
+    auto const asked_at = g_killed_trial_asked_at.load();
+    ASSERT_NE(asked_at, 0u);
+    EXPECT_FALSE(breaker->allow(asked_at + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s + kKillAfter / 2).count())))
+        << "the cooldown ran from the admission: the release was not stamped with a reading taken at the kill";
     EXPECT_TRUE(breaker->allow(qb::detail::mono_nanos() + static_cast<std::uint64_t>(std::chrono::nanoseconds(10s).count())))
         << "a cooldown after the kill, the breaker admits a fresh trial: refused, the release was stamped on a clock ahead of the breaker's";
 }

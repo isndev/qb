@@ -31,7 +31,9 @@
  *   - a reading older than the one its cooldown runs from counts as no time elapsed (must NOT wrap past the
  *     cooldown and admit a trial at once: QB-1237);
  *   - a stamp older than the cooldown's start keeps that start (must NOT move it back and end the cooldown
- *     early: QB-1264).
+ *     early: QB-1264);
+ *   - a trial's admission is the cooldown's start too: a verdict or a release stamped before it re-arms from it
+ *     (must NOT re-arm from the older stamp and admit the next trial early: QB-1264, sequence B).
  *
  * Strengthened over the original CircuitBreakerUnit suite: every transition now also asserts
  * `state()` AND `failure_count()` (not just one observable), and each `allow()` verdict is checked
@@ -338,8 +340,8 @@ TEST(CircuitBreaker, FullLifecycleRoundTrip) {
 // One clock, read in another order: a reading taken before an `ask_guarded` whose timeout then opened the breaker
 // is older than the one `on_failure` stamped. The cooldown was `now - opened_at` on unsigned nanoseconds, so such a
 // reading wrapped to ~1.8e19 ns and admitted a half-open trial at once. A reading older than the one the cooldown runs
-// from -- whatever stamped it: the opening failure, a failed trial, an abandoned trial's release, a failure recorded
-// while open -- counts as no time elapsed.
+// from -- whatever stamped it: the opening failure, a trial's admission, a failed trial, an abandoned trial's release, a
+// failure recorded while open -- counts as no time elapsed.
 TEST(CircuitBreaker, AReadingOlderThanTheCooldownsStartCountsAsNoTimeElapsed) {
     constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
     qb::CircuitBreaker      cb(1, 10s);
@@ -429,7 +431,9 @@ TEST(CircuitBreaker, AFailureStampedBeforeTheCooldownsStartKeepsIt) {
     failed.on_failure(990 * SEC);
     ASSERT_EQ(failed.state(), State::open);
     EXPECT_FALSE(failed.allow(1'010 * SEC - 1)) << "a failed trial stamped before the cooldown's start moved it back";
-    EXPECT_TRUE(failed.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+    EXPECT_FALSE(failed.allow(1'010 * SEC)) << "the trial's admission is the cooldown's start: no new trial at once";
+    EXPECT_FALSE(failed.allow(1'020 * SEC - 1));
+    EXPECT_TRUE(failed.allow(1'020 * SEC)) << "a cooldown after the trial's admission";
 
     // An opening from closed: a late success closed the open breaker, then a late failure, its reading older than the
     // previous start, opens it again. The previous start still holds.
@@ -468,7 +472,8 @@ TEST(CircuitBreaker, ATrialGivenBackWithAnOlderStampKeepsTheCooldownsStart) {
     plain.on_abandoned(990 * SEC);
     ASSERT_EQ(plain.state(), State::open);
     EXPECT_FALSE(plain.allow(1'010 * SEC - 1)) << "on_abandoned(now) stamped before the cooldown's start moved it back";
-    EXPECT_TRUE(plain.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+    EXPECT_FALSE(plain.allow(1'010 * SEC)) << "the trial's admission is the cooldown's start: no new trial at once";
+    EXPECT_TRUE(plain.allow(1'020 * SEC));
 
     qb::CircuitBreaker numbered(1, 10s);
     numbered.on_failure(1'000 * SEC);
@@ -476,7 +481,8 @@ TEST(CircuitBreaker, ATrialGivenBackWithAnOlderStampKeepsTheCooldownsStart) {
     numbered.on_abandoned(990 * SEC, numbered.trial());
     ASSERT_EQ(numbered.state(), State::open);
     EXPECT_FALSE(numbered.allow(1'010 * SEC - 1)) << "on_abandoned(now, trial) stamped before the cooldown's start moved it back";
-    EXPECT_TRUE(numbered.allow(1'010 * SEC)); // the stated limit: from the start, not from the trial's admission
+    EXPECT_FALSE(numbered.allow(1'010 * SEC)) << "the trial's admission is the cooldown's start: no new trial at once";
+    EXPECT_TRUE(numbered.allow(1'020 * SEC));
 
     // Positive control: a release with a newer reading re-arms the cooldown from it, in both forms.
     qb::CircuitBreaker plain_later(1, 10s);
@@ -492,4 +498,75 @@ TEST(CircuitBreaker, ATrialGivenBackWithAnOlderStampKeepsTheCooldownsStart) {
     numbered_later.on_abandoned(1'020 * SEC, numbered_later.trial());
     EXPECT_FALSE(numbered_later.allow(1'030 * SEC - 1)) << "a newer numbered release re-arms the cooldown from its reading";
     EXPECT_TRUE(numbered_later.allow(1'030 * SEC));
+}
+
+// The trial's admission is the cooldown's start too (Huly QB-1264, sequence B): a verdict or a release stamped before the
+// admission -- older than it, though newer or older than the opening -- re-arms the cooldown from the admission, not
+// from the stamp. In 3.3.0 the next trial came a cooldown after the stamp, at once for a stamp a cooldown or more before
+// the admission.
+TEST(CircuitBreaker, AVerdictStampedBeforeItsTrialsAdmissionReArmsFromTheAdmission) {
+    constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
+    for (std::uint64_t const stamp : {995 * SEC, 1'005 * SEC}) {
+        qb::CircuitBreaker released(1, 10s); // opened at 1000 s, the trial admitted at 1010 s, given back with `stamp`
+        released.on_failure(1'000 * SEC);
+        ASSERT_TRUE(released.allow(1'010 * SEC));
+        released.on_abandoned(stamp, released.trial());
+        ASSERT_EQ(released.state(), State::open);
+        EXPECT_FALSE(released.allow(1'010 * SEC)) << "a release stamped " << stamp / SEC << " s re-armed from it or the opening";
+        EXPECT_FALSE(released.allow(1'020 * SEC - 1)) << "a release stamped " << stamp / SEC << " s re-armed from it or the opening";
+        EXPECT_TRUE(released.allow(1'020 * SEC)) << "a cooldown after the admission, a fresh trial";
+
+        qb::CircuitBreaker failed(1, 10s); // the same trial failing, its verdict stamped `stamp`
+        failed.on_failure(1'000 * SEC);
+        ASSERT_TRUE(failed.allow(1'010 * SEC));
+        failed.on_failure(stamp);
+        ASSERT_EQ(failed.state(), State::open);
+        EXPECT_FALSE(failed.allow(1'020 * SEC - 1)) << "a failure stamped " << stamp / SEC << " s re-armed from it or the opening";
+        EXPECT_TRUE(failed.allow(1'020 * SEC));
+    }
+
+    // The admission holds through a close: a success, then a late failure stamped between the opening and the admission,
+    // re-opens the breaker from the admission -- the start never moves back, `on_success` included.
+    qb::CircuitBreaker closed_between(1, 10s);
+    closed_between.on_failure(1'000 * SEC);
+    ASSERT_TRUE(closed_between.allow(1'010 * SEC));
+    closed_between.on_success();
+    closed_between.on_failure(1'005 * SEC);
+    ASSERT_EQ(closed_between.state(), State::open);
+    EXPECT_FALSE(closed_between.allow(1'015 * SEC)) << "an opening from closed stamped before the last admission re-armed from the stamp";
+    EXPECT_FALSE(closed_between.allow(1'020 * SEC - 1));
+    EXPECT_TRUE(closed_between.allow(1'020 * SEC));
+
+    // A release stamped with the admission itself -- what `ask_guarded`'s lease does from its destructor -- re-arms from it.
+    qb::CircuitBreaker at_admission(1, 10s);
+    at_admission.on_failure(1'000 * SEC);
+    ASSERT_TRUE(at_admission.allow(1'010 * SEC));
+    at_admission.on_abandoned(1'010 * SEC, at_admission.trial());
+    ASSERT_EQ(at_admission.state(), State::open);
+    EXPECT_FALSE(at_admission.allow(1'020 * SEC - 1));
+    EXPECT_TRUE(at_admission.allow(1'020 * SEC));
+
+    // Positive control: a verdict stamped after the admission re-arms from its own reading, as before.
+    qb::CircuitBreaker after(1, 10s);
+    after.on_failure(1'000 * SEC);
+    ASSERT_TRUE(after.allow(1'010 * SEC));
+    after.on_failure(1'012 * SEC);
+    EXPECT_FALSE(after.allow(1'022 * SEC - 1));
+    EXPECT_TRUE(after.allow(1'022 * SEC));
+}
+
+// The stated consequence (Huly QB-1264): the reading that admits a trial is a stamp like any other. One ahead of the
+// breaker's clock -- the end of the range here, a time-of-day reading passed by hand in practice -- holds every later
+// opening until the clock reaches it, `on_success` included; such a breaker must be replaced.
+TEST(CircuitBreaker, AnAdmittingReadingAheadOfTheClockHoldsTheStart) {
+    constexpr std::uint64_t SEC = 1'000 * MS; // one second in nanoseconds
+    qb::CircuitBreaker      ahead(1, 10s);
+    ahead.on_failure(1'000 * SEC);
+    ASSERT_TRUE(ahead.allow(UINT64_MAX)); // admitted on a reading far ahead: the start
+    ahead.on_failure(1'020 * SEC);
+    ASSERT_EQ(ahead.state(), State::open);
+    EXPECT_FALSE(ahead.allow(UINT64_MAX - 1)) << "a failure on the right clock moved the start back from the far admission";
+    ahead.on_success();
+    ahead.on_failure(2'000 * SEC);
+    EXPECT_FALSE(ahead.allow(3'000 * SEC)) << "an opening from closed on the right clock replaced the far start";
 }
