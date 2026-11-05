@@ -220,14 +220,15 @@ read_some_within(qb::io::tcp::socket &sock, void *dest, std::size_t cap, std::ch
 }
 
 // ---------------------------------------------------------------------------
-// read_exact_within — read EXACTLY `want` bytes, or as many as arrived by the deadline.
+// read_exact_within — read EXACTLY `want` bytes, or as many as arrived by the deadline
+// or before the peer's EOF.
 //
 // The read-loop form: returns the number of bytes actually collected, so a caller
 // asserting `== want` gets a precise short-read failure instead of a hang when the
 // peer stops mid-message. `tcp::socket::read()` reports both "nothing yet" and
-// "peer closed" as -1, and telling them apart needs an errno read that a later qb
-// call can clobber — so both simply run the budget out and return the short count.
-// A failure therefore costs `budget`, never the run.
+// "peer closed" as -1; the error it leaves, read before any other call, tells them
+// apart: cleared on the peer's clean close, after which nothing more can come, so the
+// short count returns at once. A failure therefore costs at most `budget`, never the run.
 // ---------------------------------------------------------------------------
 inline std::size_t
 read_exact_within(qb::io::tcp::socket &sock, void *dest, std::size_t want, std::chrono::milliseconds budget = kLoopbackWaitBudget) {
@@ -241,6 +242,8 @@ read_exact_within(qb::io::tcp::socket &sock, void *dest, std::size_t want, std::
             got += static_cast<std::size_t>(n);
             continue;
         }
+        if (qb::io::socket::get_last_errno() == 0)
+            break; // the peer's clean close (read() clears the error on it): nothing more can come
         if (std::chrono::steady_clock::now() >= deadline)
             break;
         std::this_thread::sleep_for(1ms);
