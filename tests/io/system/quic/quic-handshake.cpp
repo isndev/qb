@@ -2625,3 +2625,215 @@ TEST(QuicHandshakeNativeBackend, VerifiedClientBindsItsServerNameAndFailsClosedO
 }
 
 #endif // QB_HAS_QUIC
+
+// The closes the native backend writes, read on the peer: QUIC builds with the test hooks only (Huly QB-1275).
+#if defined(QB_HAS_QUIC) && defined(QB_IO_QUIC_TEST_HOOKS)
+namespace quic_handshake_close_code_test {
+constexpr int           kTransportClose        = 0;     // NGTCP2_CCERR_TYPE_TRANSPORT
+constexpr std::uint64_t kInternalError         = 0x1;   // RFC 9000 §20.1 INTERNAL_ERROR
+constexpr std::uint64_t kNoApplicationProtocol = 0x178; // RFC 9001 §4.8: CRYPTO_ERROR + no_application_protocol (120)
+constexpr auto          kCloseDeliveryBudget   = std::chrono::seconds(3);
+constexpr std::uint16_t kServerPort            = 4433;
+constexpr std::uint16_t kClientPort            = 54321;
+
+qb::io::quic::tls_config
+server_tls() {
+    qb::io::quic::tls_config tls;
+    tls.certificate_file = ssl_resource_path("cert.pem");
+    tls.private_key_file = ssl_resource_path("key.pem");
+    return tls;
+}
+
+qb::io::quic::tls_config
+client_tls() {
+    qb::io::quic::tls_config tls;
+    tls.server_name = "localhost";
+    tls.verify_peer = false;
+    return tls;
+}
+
+// What each side reported while pumped: whether it connected, and its own first connection_closed event.
+struct sides {
+    bool                                       client_connected = false;
+    bool                                       server_connected = false;
+    std::optional<qb::io::quic::backend_event> client_closed;
+    std::optional<qb::io::quic::backend_event> server_closed;
+};
+
+void
+record(std::vector<qb::io::quic::backend_event> const &events, bool &connected, std::optional<qb::io::quic::backend_event> &closed) {
+    for (auto const &event : events) {
+        connected |= event.type == qb::io::quic::backend_event::kind::connected;
+        if (event.type == qb::io::quic::backend_event::kind::connection_closed && !closed)
+            closed = event;
+    }
+}
+
+// Pumps both ways until `peer` has received a CONNECTION_CLOSE and both sides reported their close (or the budget is
+// spent), keeping the last close `peer` read: a server drops its connection once closed. {0, 0} -- a transport NO_ERROR
+// -- is also what ngtcp2 answers before any close arrived, so it never ends the wait (no case here expects NO_ERROR).
+std::pair<int, std::uint64_t>
+pump_until_close_received(qb::io::quic::backend &client, qb::io::quic::backend &server, qb::io::quic::backend &peer, sides &seen) {
+    const auto                    deadline = std::chrono::steady_clock::now() + kCloseDeliveryBudget;
+    std::pair<int, std::uint64_t> received{-1, 0};
+    while (std::chrono::steady_clock::now() < deadline) {
+        for (auto *from : {&client, &server}) {
+            qb::io::test::deliver_quic_packets(*from, from == &client ? server : client);
+            if (auto const now = qb::io::quic::test::received_close(peer); now.first >= 0 && !(now.first == 0 && now.second == 0))
+                received = now;
+        }
+        record(client.drain_events(), seen.client_connected, seen.client_closed);
+        record(server.drain_events(), seen.server_connected, seen.server_closed);
+        if (received.first >= 0 && seen.client_closed && seen.server_closed)
+            break;
+    }
+    return received;
+}
+} // namespace quic_handshake_close_code_test
+
+/**
+ * @test A local stream TX-queue overflow closes the connection with a TRANSPORT close, INTERNAL_ERROR (0x1), never the
+ *       local disconnect_reason cast onto the wire (Huly QB-1275).
+ * @brief `disconnect_reason::buffer_overflow` is -7: cast to a QUIC error code it is 2^64-7, past the 62-bit varint,
+ *        which the close then clamped -- the peer read an application close, code 0, after a complete handshake.
+ *        The client's queue holds one frame; its second send overflows it.
+ */
+TEST(QuicHandshakeCloseCode, AStreamQueueOverflowClosesWithATransportInternalError) {
+    namespace t = quic_handshake_close_code_test;
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings client_settings;
+    client_settings.max_pending_stream_frames = 1;
+    client->configure(client_settings);
+    server->start_server(qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::server_tls());
+    client->start_client(qb::io::endpoint{"127.0.0.1", t::kClientPort}, qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::client_tls());
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    ASSERT_TRUE(client_connected && server_connection_id != 0);
+
+    std::array<std::byte, 8> payload{};
+    auto const               stream = client->open_stream(qb::io::quic::stream_direction::bidirectional);
+    client->send_stream_data(0, stream, payload, false); // queued: the queue's one frame
+    client->send_stream_data(0, stream, payload, false); // overflows it: the client closes
+    t::sides   seen;
+    auto const received = t::pump_until_close_received(*client, *server, *server, seen);
+    EXPECT_EQ(received.first, t::kTransportClose) << "type " << received.first << ", code 0x" << std::hex << received.second;
+    EXPECT_EQ(received.second, t::kInternalError) << "code 0x" << std::hex << received.second;
+    ASSERT_TRUE(seen.client_closed) << "the client reported no close";
+    EXPECT_EQ(seen.client_closed->connection_reason, qb::io::quic::disconnect_reason::buffer_overflow);
+}
+
+/// @test The same through the byte limit: `max_pending_stream_bytes` overrun is a TRANSPORT INTERNAL_ERROR too (Huly QB-1275).
+TEST(QuicHandshakeCloseCode, AStreamByteQueueOverflowClosesWithATransportInternalError) {
+    namespace t = quic_handshake_close_code_test;
+    ASSERT_TRUE(require_ssl_files());
+    auto                   server = qb::io::quic::make_native_backend();
+    auto                   client = qb::io::quic::make_native_backend();
+    qb::io::quic::settings client_settings;
+    client_settings.max_pending_stream_bytes = 8;
+    client->configure(client_settings);
+    server->start_server(qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::server_tls());
+    client->start_client(qb::io::endpoint{"127.0.0.1", t::kClientPort}, qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::client_tls());
+    bool          client_connected     = false;
+    std::uint64_t server_connection_id = 0;
+    drive_two_backend_handshake(*client, *server, client_connected, server_connection_id);
+    ASSERT_TRUE(client_connected && server_connection_id != 0);
+
+    std::array<std::byte, 8> payload{};
+    auto const               stream = client->open_stream(qb::io::quic::stream_direction::bidirectional);
+    client->send_stream_data(0, stream, payload, false); // queued: the queue's 8 bytes
+    client->send_stream_data(0, stream, payload, false); // past them: the client closes
+    t::sides   seen;
+    auto const received = t::pump_until_close_received(*client, *server, *server, seen);
+    EXPECT_EQ(received.first, t::kTransportClose) << "type " << received.first << ", code 0x" << std::hex << received.second;
+    EXPECT_EQ(received.second, t::kInternalError) << "code 0x" << std::hex << received.second;
+    ASSERT_TRUE(seen.client_closed) << "the client reported no close";
+    EXPECT_EQ(seen.client_closed->connection_reason, qb::io::quic::disconnect_reason::buffer_overflow);
+}
+
+/**
+ * @test A server that shares no ALPN with the client refuses the handshake with the no_application_protocol alert:
+ *       the client receives a TRANSPORT close, CRYPTO_ERROR 0x178, and neither side reports `connected` (RFC 9001 §8.1,
+ *       Huly QB-1275).
+ * @brief Before 3.4 the server answered NOACK and the handshake went on without an ALPN; only the client closed, from its
+ *        check at the handshake's completion -- before its Finished went out, so the server never completed -- with an
+ *        application close, which a Handshake packet carries as APPLICATION_ERROR 0x0c. Both sides report the refusal
+ *        as `handshake_failed`: the client read a TLS alert in the server's close.
+ */
+TEST(QuicHandshakeCloseCode, AServerSharingNoAlpnRefusesTheHandshakeWithNoApplicationProtocol) {
+    namespace t = quic_handshake_close_code_test;
+    ASSERT_TRUE(require_ssl_files());
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->start_server(qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"custom-quic"}, t::server_tls());
+    client->start_client(qb::io::endpoint{"127.0.0.1", t::kClientPort}, qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::client_tls());
+    t::sides   seen;
+    auto const received = t::pump_until_close_received(*client, *server, *client, seen);
+    EXPECT_EQ(received.first, t::kTransportClose) << "type " << received.first << ", code 0x" << std::hex << received.second;
+    EXPECT_EQ(received.second, t::kNoApplicationProtocol) << "code 0x" << std::hex << received.second;
+    EXPECT_FALSE(seen.client_connected);
+    EXPECT_FALSE(seen.server_connected);
+    ASSERT_TRUE(seen.client_closed && seen.server_closed) << "a side reported no close";
+    EXPECT_EQ(seen.client_closed->connection_reason, qb::io::quic::disconnect_reason::handshake_failed)
+        << "the client read the server's refusal as a close of a connected peer";
+    EXPECT_EQ(seen.server_closed->connection_reason, qb::io::quic::disconnect_reason::handshake_failed);
+}
+
+/**
+ * @test A client whose server completed the handshake without selecting an ALPN closes it with the same alert,
+ *       CRYPTO_ERROR 0x178 on the wire, and never reports `connected` (RFC 9001 §8.1, Huly QB-1275).
+ * @brief The server here answers NOACK, as qb's own did: the client's check at the handshake's completion is the net, and
+ *        its own close says so -- `handshake_failed`, "QUIC ALPN negotiation failed" -- so the close came from that check,
+ *        not from the TLS stack refusing the handshake first.
+ */
+TEST(QuicHandshakeCloseCode, AClientWhoseServerSelectedNoAlpnClosesWithNoApplicationProtocol) {
+    namespace t = quic_handshake_close_code_test;
+    ASSERT_TRUE(require_ssl_files());
+    struct restore_alpn_answer {
+        ~restore_alpn_answer() {
+            qb::io::quic::test::answer_alpn_with_noack_for_server(false);
+        }
+    } const restore;
+    qb::io::quic::test::answer_alpn_with_noack_for_server(true);
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->start_server(qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"custom-quic"}, t::server_tls());
+    client->start_client(qb::io::endpoint{"127.0.0.1", t::kClientPort}, qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::client_tls());
+    t::sides   seen;
+    auto const received = t::pump_until_close_received(*client, *server, *server, seen);
+    EXPECT_EQ(received.first, t::kTransportClose) << "type " << received.first << ", code 0x" << std::hex << received.second;
+    EXPECT_EQ(received.second, t::kNoApplicationProtocol) << "code 0x" << std::hex << received.second;
+    EXPECT_FALSE(seen.client_connected);
+    ASSERT_TRUE(seen.client_closed) << "the client reported no close";
+    EXPECT_EQ(seen.client_closed->connection_reason, qb::io::quic::disconnect_reason::handshake_failed);
+    EXPECT_EQ(seen.client_closed->text, "QUIC ALPN negotiation failed");
+}
+
+/// @test The positive control: a shared ALPN negotiates, and each side's `connected` event carries it (Huly QB-1275).
+TEST(QuicHandshakeCloseCode, ASharedAlpnNegotiatesAndTheConnectedEventsCarryIt) {
+    namespace t = quic_handshake_close_code_test;
+    ASSERT_TRUE(require_ssl_files());
+    auto server = qb::io::quic::make_native_backend();
+    auto client = qb::io::quic::make_native_backend();
+    server->start_server(qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"custom-quic", "h3"}, t::server_tls());
+    client->start_client(qb::io::endpoint{"127.0.0.1", t::kClientPort}, qb::io::endpoint{"127.0.0.1", t::kServerPort}, {"h3"}, t::client_tls());
+    std::string client_alpn, server_alpn;
+    const auto  deadline = std::chrono::steady_clock::now() + t::kCloseDeliveryBudget;
+    while ((client_alpn.empty() || server_alpn.empty()) && std::chrono::steady_clock::now() < deadline) {
+        qb::io::test::deliver_quic_packets(*client, *server);
+        qb::io::test::deliver_quic_packets(*server, *client);
+        for (auto const &event : client->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                client_alpn = event.text;
+        for (auto const &event : server->drain_events())
+            if (event.type == qb::io::quic::backend_event::kind::connected)
+                server_alpn = event.text;
+    }
+    EXPECT_EQ(client_alpn, "h3");
+    EXPECT_EQ(server_alpn, "h3");
+    EXPECT_EQ(qb::io::quic::test::received_close(*client), (std::pair<int, std::uint64_t>{t::kTransportClose, 0}))
+        << "a close was received on a negotiated connection";
+}
+#endif // QB_HAS_QUIC && QB_IO_QUIC_TEST_HOOKS

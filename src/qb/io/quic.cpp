@@ -52,23 +52,23 @@ make_wire_alpn(std::vector<std::string> const &protocols) {
 }
 
 #ifdef QB_IO_QUIC_TEST_HOOKS
-// Test hook: the next `failing_random_fills` fills fail exactly as a failing RAND_bytes does.
-std::size_t failing_random_fills = 0;
+// Test hooks: the next `failing_random_fills` fills fail as a failing RAND_bytes does; the ALPN NOACK, Huly QB-1275.
+std::size_t failing_random_fills   = 0;
+bool        answer_alpn_with_noack = false;
 
 bool
 injected_random_failure() noexcept {
     return failing_random_fills > 0 && (--failing_random_fills, true);
 }
 #else
+constexpr bool answer_alpn_with_noack = false;
 constexpr bool
 injected_random_failure() noexcept {
     return false;
 }
 #endif
 
-// Returns true when `dest` was filled with CSPRNG bytes. On RAND_bytes failure
-// the buffer is zeroed (defensive) and false is returned so security-critical
-// callers can fail closed instead of proceeding with predictable bytes.
+// True when `dest` was filled with CSPRNG bytes; on RAND_bytes failure it is zeroed and false returned (callers fail closed).
 bool
 fill_random(uint8_t *dest, size_t len) {
     if (len == 0)
@@ -153,7 +153,7 @@ alpn_select_cb(SSL *, const unsigned char **out, unsigned char *outlen, const un
     if (SSL_select_next_proto(const_cast<unsigned char **>(&selected), &selected_len, wire_alpn.data(),
                               static_cast<unsigned int>(wire_alpn.size()), in, inlen)
         != OPENSSL_NPN_NEGOTIATED) {
-        return SSL_TLSEXT_ERR_NOACK;
+        return answer_alpn_with_noack ? SSL_TLSEXT_ERR_NOACK : SSL_TLSEXT_ERR_ALERT_FATAL; // RFC 9001 §8.1 (Huly QB-1275)
     }
     *out    = selected;
     *outlen = selected_len;
@@ -165,11 +165,8 @@ get_conn_cb(ngtcp2_crypto_conn_ref *ref) {
     return *static_cast<ngtcp2_conn **>(ref->user_data);
 }
 
-// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid`, `_get_expiry` and `_get_max_data_left` in favour of the
-// const-correct `*2` spellings (identical semantics; only the `conn` parameter gained `const`).
-// qb's FindNgtcp2 does not pin a minimum version, so select at COMPILE TIME rather than dropping
-// support for pre-1.23 releases — an unconditional switch would simply fail to build there.
-// NGTCP2_VERSION_NUM is 0xMMmmpp; 1.23.0 == 0x011700.
+// ngtcp2 1.23 deprecated `ngtcp2_conn_get_scid`, `_get_expiry`, `_get_max_data_left`, `_get_tls_alert` and `_get_ccerr`
+// for the const `*2` spellings; FindNgtcp2 pins no minimum, so select at COMPILE TIME. NGTCP2_VERSION_NUM is 0xMMmmpp; 1.23.0 == 0x011700.
 #if defined(NGTCP2_VERSION_NUM) && NGTCP2_VERSION_NUM >= 0x011700
 inline std::size_t
 conn_get_scid(const ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
@@ -183,6 +180,8 @@ inline std::uint64_t
 conn_get_max_data_left(const ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_max_data_left2(conn);
 }
+constexpr auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert2;
+constexpr auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr2;
 #else
 inline std::size_t
 conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
@@ -196,7 +195,11 @@ inline std::uint64_t
 conn_get_max_data_left(ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_max_data_left(conn);
 }
+constexpr auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert;
+constexpr auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr;
 #endif
+using enum disconnect_reason;                                        // the close paths below name the reasons unqualified
+disconnect_reason received_close_reason(ngtcp2_conn *conn) noexcept; // the end of the file (Huly QB-1275)
 
 std::chrono::steady_clock::time_point
 to_time_point(ngtcp2_tstamp ts, std::chrono::steady_clock::time_point base) {
@@ -248,15 +251,13 @@ class native_backend final : public backend {
     tls_config                                                        _server_tls;
     std::string                                                       _local_cid_key;
     std::string                                                       _original_dcid_key;
-    /// CID keys this child currently owns in the PARENT's `_server_cid_index`, as installed by
-    /// `reconcile_server_cids` from ngtcp2's ACTIVE (non-retired) SCID set. Kept so reconcile can
-    /// remove the ones ngtcp2 has since retired — see the note there. Excludes `_local_cid_key` /
-    /// `_original_dcid_key`, which the accept path owns and which must outlive CID rotation.
+    /// CID keys this child currently owns in the PARENT's `_server_cid_index`, as installed by `reconcile_server_cids` from
+    /// ngtcp2's ACTIVE (non-retired) SCID set. Kept so reconcile can remove the ones ngtcp2 has since retired — see the note
+    /// there. Excludes `_local_cid_key` / `_original_dcid_key`, which the accept path owns and which must outlive CID rotation.
     std::vector<std::string> _indexed_scid_keys;
-    // Address-validation Retry (RFC 9000 §8.1). PARENT: a stable secret keys the retry tokens it
-    // generates and later verifies. CHILD: when the connection was accepted only after a validated
-    // Retry token, carry the recovered original DCID (from the token) + the retry SCID we issued, so
-    // accept_server_connection sets original_dcid/retry_scid in the transport params correctly.
+    // Address-validation Retry (RFC 9000 §8.1). PARENT: a stable secret keys the retry tokens it generates and later verifies.
+    // CHILD: when the connection was accepted only after a validated Retry token, carry the recovered original DCID (from the
+    // token) + the retry SCID we issued, so accept_server_connection sets original_dcid/retry_scid in the transport params.
     std::array<std::uint8_t, 32>          _retry_secret{};
     bool                                  _retry_secret_ready = false;
     bool                                  _has_retry_context  = false;
@@ -274,8 +275,7 @@ class native_backend final : public backend {
     bool                                  _started               = false;
     bool                                  _closing               = false;
     bool                                  _close_event_queued    = false;
-    // A read- or credit-triggered writer attempt is due; this does not promise positive output.
-    bool _transport_pending = false;
+    bool _transport_pending = false; // a read- or credit-triggered writer attempt is due; this does not promise positive output
     // Chunks of the streams ngtcp2 refused for lack of their own flow-control credit, in stream order,
     // out of the writer's way until extend_max_stream_data_cb reports the peer raised that credit.
     qb::unordered_map<std::uint64_t, std::deque<queued_stream>> _credit_blocked_streams;
@@ -379,7 +379,7 @@ public:
             ++_stats.packets_received;
             _stats.bytes_received += datagram.payload.size();
         } else if (rv == NGTCP2_ERR_CLOSING || rv == NGTCP2_ERR_DRAINING) {
-            queue_close_event(disconnect_reason::application_close, 0, "QUIC connection close received");
+            queue_close_event(received_close_reason(_conn), 0, "QUIC connection close received"); // a TLS refusal: handshake_failed
         } else {
             write_connection_close(rv, "QUIC packet read failed: " + std::to_string(rv));
         }
@@ -551,14 +551,14 @@ public:
         if (_closing)
             return;
         if (_config.max_pending_stream_frames > 0 && _queued_stream_frames >= _config.max_pending_stream_frames) {
-            write_application_close(static_cast<std::uint64_t>(disconnect_reason::buffer_overflow),
-                                    "QUIC stream TX frame queue limit exceeded");
+            // A local failure: a transport INTERNAL_ERROR on the wire, never a disconnect_reason cast (Huly QB-1275).
+            write_close(&ngtcp2_ccerr_set_transport_error, NGTCP2_INTERNAL_ERROR, "QUIC stream TX frame queue limit exceeded");
             queue_close_event(disconnect_reason::buffer_overflow, 0, "QUIC stream TX frame queue limit exceeded");
             return;
         }
         if (_config.max_pending_stream_bytes > 0
             && data.size() > _config.max_pending_stream_bytes - std::min(_queued_stream_bytes, _config.max_pending_stream_bytes)) {
-            write_application_close(static_cast<std::uint64_t>(disconnect_reason::buffer_overflow), "QUIC stream TX byte queue limit exceeded");
+            write_close(&ngtcp2_ccerr_set_transport_error, NGTCP2_INTERNAL_ERROR, "QUIC stream TX byte queue limit exceeded");
             queue_close_event(disconnect_reason::buffer_overflow, 0, "QUIC stream TX byte queue limit exceeded");
             return;
         }
@@ -1390,20 +1390,20 @@ private:
     }
 
     void
-    write_application_close(std::uint64_t application_error_code, std::string_view reason) {
+    write_application_close(std::uint64_t code, std::string_view reason) {
+        // A QUIC error code is a varint below 2^62 (RFC 9000 §16) and ngtcp2 aborts encoding more: such a code goes as 0.
+        write_close(&ngtcp2_ccerr_set_application_error, code < (std::uint64_t{1} << 62) ? code : 0, reason);
+    }
+
+    /// A CONNECTION_CLOSE that `set` fills: an application code, or -- qb's own failures -- a transport one or a TLS alert.
+    template <typename Code>
+    void
+    write_close(void (*set)(ngtcp2_ccerr *, Code, const uint8_t *, size_t), std::type_identity_t<Code> code, std::string_view reason) {
         if (!_conn || _closing)
             return;
-        // A QUIC application error code is encoded as a varint and MUST be < 2^62,
-        // otherwise ngtcp2 aborts in ngtcp2_put_uvarintlen() while encoding the
-        // CONNECTION_CLOSE frame. Some internal call sites pass a negative
-        // disconnect_reason cast to uint64_t (e.g. transport_error == -1 ->
-        // 0xffff...), which is out of range; clamp those to 0 (no specific error).
-        constexpr std::uint64_t kMaxQuicVarint = (static_cast<std::uint64_t>(1) << 62) - 1;
-        if (application_error_code > kMaxQuicVarint)
-            application_error_code = 0;
         ngtcp2_ccerr ccerr;
         ngtcp2_ccerr_default(&ccerr);
-        ngtcp2_ccerr_set_application_error(&ccerr, application_error_code, reinterpret_cast<const uint8_t *>(reason.data()), reason.size());
+        set(&ccerr, code, reinterpret_cast<const uint8_t *>(reason.data()), reason.size());
         write_connection_close_packet(ccerr);
     }
 
@@ -1411,11 +1411,11 @@ private:
     write_connection_close(int liberr, std::string_view reason) {
         if (!_conn || _closing)
             return;
-        ngtcp2_ccerr ccerr;
-        ngtcp2_ccerr_default(&ccerr);
-        ngtcp2_ccerr_set_liberr(&ccerr, liberr, reinterpret_cast<const uint8_t *>(reason.data()), reason.size());
-        write_connection_close_packet(ccerr);
-        queue_close_event(disconnect_reason::transport_error, static_cast<std::uint64_t>(-liberr), reason);
+        if (const std::uint8_t alert = conn_get_tls_alert(_conn); liberr == NGTCP2_ERR_CRYPTO || liberr == NGTCP2_ERR_CALLBACK_FAILURE)
+            write_close(&ngtcp2_ccerr_set_transport_error, alert ? NGTCP2_CRYPTO_ERROR | alert : NGTCP2_INTERNAL_ERROR, reason);
+        else // above, the TLS stack's or qb's own failure (RFC 9001 §4.8); here a violation of the peer, an idle close: ngtcp2 infers it
+            write_close(&ngtcp2_ccerr_set_liberr, liberr, reason);
+        queue_close_event(conn_get_tls_alert(_conn) ? handshake_failed : transport_error, static_cast<std::uint64_t>(-liberr), reason);
     }
 
     void
@@ -1722,12 +1722,12 @@ private:
     }
 
     static int
-    handshake_completed_cb(ngtcp2_conn *, void *user_data) {
+    handshake_completed_cb(ngtcp2_conn *conn, void *user_data) {
         auto *self = static_cast<native_backend *>(user_data);
         if (!self->_alpn.empty() && self->negotiated_alpn().empty()) {
-            self->write_application_close(static_cast<std::uint64_t>(disconnect_reason::protocol_error), "QUIC ALPN negotiation failed");
-            self->queue_close_event(disconnect_reason::handshake_failed, 0, "QUIC ALPN negotiation failed");
-            return 0;
+            ngtcp2_conn_set_tls_alert(conn, SSL_AD_NO_APPLICATION_PROTOCOL); // RFC 9001 §8.1: the read that failed writes the close
+            self->queue_close_event(handshake_failed, 0, "QUIC ALPN negotiation failed");
+            return NGTCP2_ERR_CALLBACK_FAILURE; // never a CONNECTION_CLOSE from inside a callback (ngtcp2_conn_write_connection_close)
         }
         self->_events.push_back({backend_event::kind::connected, self->_connection_id, 0, 0, self->negotiated_alpn(), {}});
         return 0;
@@ -1746,7 +1746,7 @@ public:
     retry_secret_ready_for_test() const noexcept {
         return _retry_secret_ready;
     }
-
+    friend std::pair<int, std::uint64_t> received_close_of(native_backend &peer); // QB-1275's witnesses, at the end
     [[nodiscard]] bool
     retry_secret_zeroed_for_test() const noexcept {
         return std::all_of(_retry_secret.begin(), _retry_secret.end(), [](std::uint8_t byte) { return byte == 0; });
@@ -1793,6 +1793,25 @@ make_native_backend() {
 }
 
 #ifdef QB_IO_QUIC_TEST_HOOKS
+namespace {
+// The CONNECTION_CLOSE `peer` received -- a server listener: its first connection's -- as {ngtcp2_ccerr_type, code};
+// {-1, 0} when it has no connection (Huly QB-1275).
+std::pair<int, std::uint64_t>
+received_close_of(native_backend &peer) {
+    native_backend *conn = &peer;
+    if (peer._server_parent)
+        conn = peer._server_connections.empty() ? nullptr : peer._server_connections.begin()->second.get();
+    if (!conn || !conn->_conn)
+        return {-1, 0};
+#if defined(NGTCP2_VERSION_NUM) && NGTCP2_VERSION_NUM >= 0x011700
+    ngtcp2_ccerr const *received = ngtcp2_conn_get_ccerr2(conn->_conn);
+#else
+    ngtcp2_ccerr const *received = ngtcp2_conn_get_ccerr(conn->_conn);
+#endif
+    return {static_cast<int>(received->type), received->error_code};
+}
+} // namespace
+
 namespace test {
 namespace {
 native_backend &
@@ -1823,7 +1842,31 @@ bool
 retry_secret_zeroed(backend &server) {
     return native(server).retry_secret_zeroed_for_test();
 }
+
+std::pair<int, std::uint64_t>
+received_close(backend &peer) {
+    return received_close_of(native(peer));
+}
+
+void
+answer_alpn_with_noack_for_server(bool on) {
+    answer_alpn_with_noack = on;
+}
 } // namespace test
+#endif
+
+#ifdef QB_HAS_QUIC
+namespace {
+// The reason this side reports for the close its peer sent: a TLS alert -- CRYPTO_ERROR, RFC 9001 §4.8; a server sharing
+// no ALPN sends no_application_protocol -- refused the handshake; any other close ended the connection (Huly QB-1275).
+disconnect_reason
+received_close_reason(ngtcp2_conn *conn) noexcept {
+    ngtcp2_ccerr const *received = conn_get_ccerr(conn);
+    bool const          tls_alert =
+        received->type == NGTCP2_CCERR_TYPE_TRANSPORT && (received->error_code & ~std::uint64_t{0xff}) == NGTCP2_CRYPTO_ERROR;
+    return tls_alert ? handshake_failed : application_close;
+}
+} // namespace
 #endif
 
 } // namespace qb::io::quic
