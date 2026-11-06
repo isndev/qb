@@ -411,16 +411,16 @@ private:
         }
         QB_SCHED_TRACE("  drained ready_queue: %zu items", ready_drained);
         (void) ready_drained;
-        // Destroy frames deferred by completed spawned coroutines that were not
-        // drained by a final run_ready() (e.g. the loop completing them on its
-        // last tick before teardown). They are suspended at final_suspend.
-        for (auto h : frames_to_destroy_) {
-            if (h) {
-                owned_frames_.erase(h.address());
+        // Destroy the spawned frames a final run_ready() did not drain, one popped at a time: a destruction may cancel,
+        // null or defer another, which a range-for read past. One another live scheduler owns leaves its set (Huly QB-1243).
+        while (!frames_to_destroy_.empty()) {
+            std::coroutine_handle<> const h = frames_to_destroy_.back();
+            frames_to_destroy_.pop_back();
+            if (h && owned_frames_.erase(h.address()) == 0)
+                scrub_elsewhere(this, h);
+            if (h)
                 h.destroy();
-            }
         }
-        frames_to_destroy_.clear();
         if (const std::size_t abandoned = suspended_coroutines_.size(); abandoned != 0)
             report_abandoned_coroutine_frames(abandoned, this);
         QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
@@ -526,7 +526,7 @@ public:
         h.destroy();
     }
 
-private: // `h` out of the queues and sets of the thread's other schedulers (Huly QB-1245). Defined at the end of this file.
+private: // `h` out of the thread's other schedulers: queues (Huly QB-1245), ownership, deferred list (QB-1243). At the end.
     static void scrub_elsewhere(CoroutineScheduler const *self, std::coroutine_handle<> h) noexcept;
 
 public:
@@ -779,14 +779,14 @@ public:
             }
         }
 
-        // Drain frames whose detached (spawned) coroutines reached final_suspend
-        // during this run. Each is suspended at final_suspend (not running), so
-        // destroying it here is safe and frees the frame exactly once.
+        // Drain the spawned frames that reached final_suspend (suspended there, not running): each is freed once. One
+        // another live scheduler owns -- it finished here -- leaves that owner's set too (Huly QB-1243).
         while (!frames_to_destroy_.empty()) {
             auto h = frames_to_destroy_.back();
             frames_to_destroy_.pop_back();
             if (h) {
-                owned_frames_.erase(h.address());
+                if (owned_frames_.erase(h.address()) == 0)
+                    scrub_elsewhere(this, h);
                 h.destroy();
             }
         }
@@ -1428,7 +1428,10 @@ private:
 /**
  * Every other scheduler of the thread that may hold `h` forgets it: each live one of the table, and the current one and
  * the one destroying its frames when the table has no slot for them (a thread with more than 16) -- both alive, so both
- * reachable, as forget_frame_if_current() reaches them (Huly QB-1245). One read of the table.
+ * reachable. Each drops it from its queues and sets (Huly QB-1245), from its ownership set and from its deferred
+ * destructions (Huly QB-1243): a root completes where it was resumed, and its destruction is deferred to the scheduler
+ * current then, so its owner keeps a handle the other one frees, or the other one an entry its owner frees. Nulled, not
+ * erased: a drain skips a null. An owner beyond the table that is neither current nor destroying is not reached.
  */
 QB_NOINLINE inline void // out of line: run_ready()'s drain calls it on its foreign path only
 CoroutineScheduler::scrub_elsewhere(CoroutineScheduler const *self, std::coroutine_handle<> h) noexcept {
@@ -1436,6 +1439,10 @@ CoroutineScheduler::scrub_elsewhere(CoroutineScheduler const *self, std::corouti
         if (other == nullptr || other == self)
             return;
         other->forget(h);
+        other->owned_frames_.erase(h.address());
+        for (std::coroutine_handle<> &deferred : other->frames_to_destroy_)
+            if (deferred == h)
+                deferred = {};
     };
     CoroutineScheduler *const        current       = current_ptr();
     CoroutineScheduler *const        destroying    = detail::destroying_scheduler();
