@@ -2018,7 +2018,7 @@ TEST_F(CoroutineSchedulerTests, ASchedulerIsKnownLiveFromItsConstructionToItsDes
  *       once it is gone, none is bound, and the next lookup binds the thread's own listener's again.
  * @brief Its reset unbinds only its own scheduler (Huly QB-1220) -- here the current one, so the thread is left with
  *        none until a lookup that binds -- `current()`, `schedule_via_current()`, an actor's spawn -- binds the loop's
- *        again; `current_ptr()`, `run_ready()` and `forget_frame_if_current()` do not (Huly QB-1245).
+ *        again; `current_ptr()` and `run_ready()` do not -- `forget_frame_if_current()` scrubs every live one (QB-1245).
  */
 TEST_F(CoroutineSchedulerTests, ATemporaryListenerThatCreatedItsSchedulerLeavesTheThreadsOwnToBeBoundAgain) {
     auto *const sched = &coro_scheduler();
@@ -2045,4 +2045,179 @@ TEST_F(CoroutineSchedulerTests, ASchedulerDestroyedWhileCurrentUnbindsItself) {
         EXPECT_EQ(CoroutineScheduler::current_ptr(), nullptr) << "the destroyed scheduler is still the current one";
     }
     CoroutineScheduler::set_current(sched);
+}
+
+namespace scheduler_lifecycle_test {
+// A hand-driven frame that parks on `ch` and is woken through its wait list (Huly QB-1245).
+inline task<void>
+receive_once(channel<int> &ch) {
+    (void) co_await ch.recv();
+}
+
+// A hand-driven frame that parks on a timer.
+inline task<void>
+nap(qb::duration d) {
+    co_await sleep(d);
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A task destroyed unfinished while its frame is queued in a live scheduler that is neither current nor
+ *       destroying leaves that scheduler's queue (Huly QB-1245).
+ * @brief The frame was woken from a channel's wait list while `queued_in` was current, so it sits in that queue; the
+ *        task is destroyed while another scheduler is current. ~task scrubbed only the current scheduler (and the one
+ *        destroying its frames): `queued_in` kept the entry, and its next drain read done() of a freed frame -- hidden
+ *        from AddressSanitizer by the frame pool, so the queue is counted.
+ */
+TEST_F(CoroutineSchedulerTests, ATaskDestroyedWhileQueuedInALiveSchedulerNotCurrentLeavesThatQueue) {
+    const long                baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>              ch;
+    CoroutineScheduler        queued_in;
+    CoroutineScheduler        other;
+    std::optional<task<void>> held;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&queued_in};
+        held.emplace(scheduler_lifecycle_test::receive_once(ch));
+        held->handle().resume();     // parks on the channel: driven by hand, never spawned
+        ASSERT_TRUE(ch.try_send(1)); // wakes it: queued in `queued_in`, the current scheduler
+        ASSERT_EQ(queued_in.pending_count(), 1u);
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&other};
+        held.reset(); // unfinished, destroyed while `other` is current
+    }
+    EXPECT_EQ(queued_in.pending_count(), 0u) << "the destroyed frame is still queued in a live scheduler";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test The same with no scheduler current at all -- the window a temporary listener that created its own scheduler
+ *       leaves behind (Huly QB-1245): the loop's own scheduler is alive, unbound, and holds the frame.
+ */
+TEST_F(CoroutineSchedulerTests, ATaskDestroyedWithNoSchedulerCurrentLeavesTheQueueItIsIn) {
+    const long                baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto *const               sched    = &coro_scheduler();
+    channel<int>              ch;
+    std::optional<task<void>> held;
+    held.emplace(scheduler_lifecycle_test::receive_once(ch));
+    held->handle().resume();
+    ASSERT_TRUE(ch.try_send(1)); // queued in the thread's own scheduler, current here
+    ASSERT_EQ(sched->pending_count(), 1u);
+    {
+        scheduler_lifecycle_test::scoped_current const none{nullptr};
+        held.reset();
+    }
+    EXPECT_EQ(sched->pending_count(), 0u) << "the destroyed frame is still queued in the loop's scheduler";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A frame whose timer was armed under one scheduler and fired under another -- queued in the second, the
+ *       current one when it fired -- leaves the second's queue when its task is destroyed under the first.
+ * @brief Its awaiter scrubs the scheduler it registered with; ~task scrubbed the current one, the first again: the
+ *        scheduler that queued it kept the entry (Huly QB-1245).
+ */
+TEST_F(CoroutineSchedulerTests, ATimerFrameQueuedUnderAnotherSchedulerLeavesItWhenItsTaskGoes) {
+    const long                baseline = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler        armed_under;
+    CoroutineScheduler        fired_under;
+    std::optional<task<void>> held;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&armed_under};
+        held.emplace(scheduler_lifecycle_test::nap(1ms));
+        held->handle().resume(); // registered with `armed_under`
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&fired_under};
+        for (int i = 0; i < 2000 && fired_under.pending_count() == 0; ++i)
+            qb::io::async::listener::current.run_once_for(1ms); // the timer fires: queued in `fired_under`
+        ASSERT_EQ(fired_under.pending_count(), 1u);
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&armed_under};
+        held.reset();
+    }
+    EXPECT_EQ(fired_under.pending_count(), 0u) << "the destroyed frame is still queued where its timer put it";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A scheduler beyond the live table -- the 17th of its thread -- destroying its frames while another is current
+ *       scrubs a woken frame from its own queue (Huly QB-1245).
+ * @brief The inner frame was queued in `beyond` by the channel's hand-off; the cascade from its owned root destroys it
+ *        through ~task while `beyond` is neither current nor in the table, so only the destroying scheduler's own
+ *        scrub reaches that queue. A design guard: the base scrubbed the destroying scheduler too.
+ */
+TEST_F(CoroutineSchedulerTests, ASchedulerBeyondTheTableDestroyingItsFramesScrubsAWokenOneFromItsQueue) {
+    const long                                       baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::vector<std::unique_ptr<CoroutineScheduler>> table_fillers;
+    for (int i = 0; i < 16; ++i)
+        table_fillers.push_back(std::make_unique<CoroutineScheduler>());
+    channel<int>       ch;
+    CoroutineScheduler beyond;
+    ASSERT_FALSE(detail::is_live_scheduler(&beyond)) << "the table has room: this case needs a scheduler beyond it";
+    auto const inner = [&ch]() -> task<void> {
+        (void) co_await ch.recv();
+    };
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&beyond};
+        beyond.spawn([&inner]() -> task<void> { co_await inner(); });
+        beyond.run_ready();          // the root awaits the inner task, parked on the channel
+        ASSERT_TRUE(ch.try_send(1)); // wakes it: queued in `beyond`, the current scheduler
+        ASSERT_EQ(beyond.pending_count(), 1u);
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{table_fillers.front().get()};
+        beyond.destroy_all_suspended(); // the root, then the inner task's frame through its ~task
+    }
+    EXPECT_EQ(beyond.pending_count(), 0u) << "the destroyed frame is still queued in the scheduler that destroyed it";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A spawned root queued in a live scheduler other than its own -- woken while that one was current -- leaves
+ *       that queue when its own scheduler destroys it (Huly QB-1245).
+ * @brief A root is destroyed by its scheduler through its handle, never by a `~task`: destroy_all_suspended() scrubbed
+ *        its own queues only, and the scheduler that queued the root kept the entry for its next drain to read.
+ */
+TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInAnotherLiveSchedulerLeavesItWhenItsSchedulerDestroysIt) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>       ch;
+    CoroutineScheduler owner;
+    CoroutineScheduler woken_under;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        owner.spawn(scheduler_lifecycle_test::receive_once(ch));
+        owner.run_ready(); // the root parks on the channel
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&woken_under};
+        ASSERT_TRUE(ch.try_send(1)); // wakes it: queued in `woken_under`, the current scheduler
+        ASSERT_EQ(woken_under.pending_count(), 1u);
+    }
+    owner.destroy_all_suspended(); // the root it owns
+    EXPECT_EQ(woken_under.pending_count(), 0u) << "the destroyed root is still queued in the scheduler that woke it";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/// @test The same through `cancel_spawned()`, the reclaim every helper uses (Huly QB-1245).
+TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInAnotherLiveSchedulerLeavesItWhenItsSchedulerCancelsIt) {
+    const long              baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>            ch;
+    CoroutineScheduler      owner;
+    CoroutineScheduler      woken_under;
+    std::coroutine_handle<> root;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        root = owner.spawn_tracked(scheduler_lifecycle_test::receive_once(ch));
+        owner.run_ready();
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&woken_under};
+        ASSERT_TRUE(ch.try_send(1));
+        ASSERT_EQ(woken_under.pending_count(), 1u);
+    }
+    owner.cancel_spawned(root);
+    EXPECT_EQ(woken_under.pending_count(), 0u) << "the cancelled root is still queued in the scheduler that woke it";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
