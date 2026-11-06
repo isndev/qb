@@ -503,6 +503,23 @@ policy.
   `cmake` lane gains a row that builds and tests qb with `QB_EV_USE_TIMERFD=ON`, `ubuntu-gcc-cxx20-release-timerfd`,
   and a step that asserts on every row that the generated loop header carries what the row asked for.
 
+- **On Linux a loop that has run a path watcher no longer polls and runs on every non-blocking pass once the last one
+  stopped, and the linux aio backend no longer makes every non-blocking pass poll (Huly QB-1277).** The first `ev_stat`
+  of a loop -- every `file_watcher`, `directory_watcher` and `use<T>::file` -- creates the loop's inotify fd, which
+  lives as long as the loop, and its watcher counted in `ev_io_count` from then on: once a core had watched a path and
+  stopped, every `run(EVRUN_NOWAIT)` holding anything else -- a far timer, a pending `sleep` -- polled the backend and
+  ran `ev_run`, in the default build (inotify is compiled in wherever the system has it). qev now stops that watcher
+  with the last watch and starts it again with the next; it still counts while a path is watched, a change of a file on
+  a local filesystem reaching the loop through that fd alone. The linux aio backend (`QB_EV_USE_LINUXAIO=ON`, opt-in,
+  then `QB_EV_BACKEND=linuxaio`) watched its own epoll set through an `ev_io` that counted the same way from the loop's
+  creation on; it is the loop's own now, as io_uring's deadline timerfd has been since QB-81. Instructions per
+  non-blocking pass (callgrind, as in the entry above, base -> fix): a path watcher started then stopped beside a far
+  timer 407.7 -> 113.0 with the timerfd off and 408.0 -> 113.0 on, plus the base's uncounted `epoll_wait`; a path still
+  watched 408.4 -> 408.0 off and 408.4 -> 408.3 on. Proven by `ListenerTimerGate.AStoppedPathWatcherLeavesNoFdTheGatePolls`
+  (`qb-io-test-unit-listener-timer-gate`), red on the base in every build (`ev_io_count` 1 after the stop, a thousand
+  passes beside a far timer 1000 loop runs; under linux aio the count is 2), and by the whole binary under
+  `QB_EV_BACKEND=linuxaio` with the backend compiled in: 9 of its 15 cases red on the base, 15/15 on the fix.
+
 - **`CircuitBreaker::allow` counts a reading older than the one its cooldown runs from as no time elapsed (Huly
   QB-1237).** `allow(now_ns)` tested the cooldown as `now_ns - opened_at >= cooldown` on unsigned nanoseconds. A reading
   older than the one the cooldown runs from -- one clock, read in another order: a reading kept from before an

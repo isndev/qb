@@ -19,7 +19,8 @@
  * far one must still cost no loop pass (Huly QB-275) -- but the loop's own read of the wall clock,
  * half a second after the last, which a periodic needs to follow a step of that clock and the loop
  * names through `ev_timer_next`; and the realtime timerfd a periodic creates under
- * `QB_EV_USE_TIMERFD` is the loop's own, not an fd that makes every pass poll (Huly QB-1277).
+ * `QB_EV_USE_TIMERFD` is the loop's own, not an fd that makes every pass poll; nor, once the last path
+ * watcher stopped, is the inotify fd the first one created on Linux (Huly QB-1277).
  *
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  * Licensed under the Apache License, Version 2.0. See LICENSE for details.
@@ -27,6 +28,9 @@
 
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <string>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -210,6 +214,43 @@ TEST_F(ListenerTimerGate, ThePeriodicsTimerfdIsNotAnFdTheGatePolls) {
     }
     RawTimer far_off(3600.);
     EXPECT_EQ(loop_runs_over(1000), 0u) << "the periodic stopped, the timerfd still open: a far timer's passes skip the loop";
+    EXPECT_EQ(far_off.hits, 0);
+}
+
+/// A path watcher, qb's own `ev_stat` user (`async::directory_watcher`: any path, no read of its own).
+struct PathWatch : qb::io::async::directory_watcher<PathWatch> {
+    int hits = 0;
+    void
+    on(qb::io::async::event::file const &) {
+        ++hits;
+    }
+};
+
+TEST_F(ListenerTimerGate, AStoppedPathWatcherLeavesNoFdTheGatePolls) {
+    // On Linux the first `ev_stat` of a loop -- a `file_watcher`, a `directory_watcher`, a `use<T>::file` --
+    // creates the loop's inotify fd, which lives as long as the loop. While a path is watched it must count:
+    // a change of a file on a local filesystem reaches the loop through that fd alone, the stat timer being
+    // off there -- the first half below. It went on counting after the last watcher stopped, so every
+    // non-blocking pass of a loop that had ever watched a path polled and ran the loop (Huly QB-1277, the
+    // timerfd's sibling) -- the second half. Elsewhere a stat watcher is a timer, and both halves hold.
+    const auto path =
+        std::filesystem::temp_directory_path() / ("qb-1277-" + std::to_string(qb::mono_now().time_since_epoch().count()) + ".watched");
+    std::ofstream(path) << 'a';
+    {
+        PathWatch w;
+        w.start(path, 100ms);
+        std::ofstream(path, std::ios::app) << 'b';
+        const auto t0 = qb::mono_now();
+        while (w.hits == 0 && qb::mono_now() - t0 < 5s)
+            listener::current.run(EVRUN_NOWAIT);
+        EXPECT_GE(w.hits, 1) << "a change of the watched file reached its watcher under non-blocking passes";
+        w.disconnect();
+    }
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    EXPECT_EQ(ev_io_count(loop()), 0u) << "no path watched any more: the loop's inotify fd is not an fd the gate polls for";
+    RawTimer far_off(3600.);
+    EXPECT_EQ(loop_runs_over(1000), 0u) << "the watcher stopped, the inotify fd still open: a far timer's passes skip the loop";
     EXPECT_EQ(far_off.hits, 0);
 }
 
