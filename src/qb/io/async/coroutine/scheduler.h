@@ -513,12 +513,12 @@ public:
         // ours: do nothing.
         if (owned_frames_.erase(addr) == 0)
             return;
-        suspended_coroutines_.erase(addr);
-        // If the helper was already woken (its timer fired in this same tick) it can
-        // be sitting in the ready queue + in-flight set. Scrub both before freeing
-        // the frame so the next run_ready() does not pop a destroyed handle.
-        if (in_flight_.erase(addr) != 0)
-            ready_queue_.erase_if([addr](const ready_item &it) { return it.handle && it.handle.address() == addr; });
+        // If the helper was already woken (its timer fired in this same tick) it can be sitting in a ready queue and
+        // an in-flight set: this scheduler's, or another live one's -- the one current when its waker fired (Huly
+        // QB-1245). Scrub them all before freeing the frame, so no later run_ready() pops a destroyed handle (the
+        // second call scrubs the thread's other live schedulers; this one again costs two lookups that find nothing).
+        forget(h);
+        forget_frame_if_current(h);
         // Defensive: a frame queued for deferred destruction has already completed
         // (so callers' done-flag guard would skip it), but never let it be freed twice.
         for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
@@ -982,11 +982,11 @@ public:
             }
             auto handle = std::coroutine_handle<>::from_address(addr);
             if (handle && (deferred || !handle.done())) {
-                // A stale ready entry (a root resumed by hand rather than by run_ready(), so
-                // never popped) must not outlive the frame it names: run_ready() would call
-                // done() on freed memory.
-                if (in_flight_.erase(addr) != 0)
-                    ready_queue_.erase_if([addr](const ready_item &it) { return it.handle && it.handle.address() == addr; });
+                // A stale ready entry -- a root resumed by hand rather than by run_ready(), so never popped, or one a
+                // waker queued in another live scheduler, current when it fired (Huly QB-1245) -- must not outlive the
+                // frame it names: that run_ready() would call done() on freed memory.
+                forget(handle);
+                forget_frame_if_current(handle);
                 QB_SCHED_TRACE("destroy_all_suspended destroying owned root handle=%p", (void *) addr);
                 handle.destroy();
             }
@@ -1213,20 +1213,20 @@ defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
     CoroutineScheduler::current().defer_destroy(handle);
 }
 
-/**
- * @brief Scrub a coroutine handle from the current scheduler -- and from the scheduler destroying its frames when that
- *        one is not current (Huly QB-1220) -- before its frame is freed. Declared in task.h, called from task<T>::~task
- *        / move-assignment for a still-in-flight frame: `forget()` drops it from the ready queue / in-flight / suspended
- *        sets, so a waker that already queued it cannot leave a handle for the next run_ready() drain (a use-after-free).
+/*
+ * forget_frame_if_current() -- declared in task.h -- is defined at the end of this file, beside the table of the
+ * thread's live schedulers it scrubs (Huly QB-1245). It runs from task<T>::~task and move-assignment when a frame goes
+ * before its end: a waker may already have queued that frame -- schedule_via_current() puts it in whichever scheduler
+ * is current when the wake comes -- and the task can go while another scheduler is current, or none is (a temporary
+ * listener that created its own scheduler leaves none bound when it goes). Until 3.4 only the current scheduler was
+ * scrubbed, and since QB-1220 the one destroying its frames: a third live one kept the entry, and its next run_ready()
+ * or teardown drain read the freed frame -- done() first, then a resume. The frame pool kept that read from
+ * AddressSanitizer; qb-io-test-unit-scheduler-lifecycle counts the queues instead. Every scheduler that may hold the
+ * frame now forgets it: the current one, every other live one in the table, and one destroying its frames beyond the
+ * table's 16. A thread usually has one scheduler: one forget(), as before, and one read of the table. The wake and
+ * resume paths are unchanged: only a frame destroyed unfinished pays for it, as it always did; and since the scrub no
+ * longer depends on which scheduler is current, a task may go anywhere on its thread.
  */
-inline void
-forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
-    CoroutineScheduler *const current = CoroutineScheduler::current_ptr();
-    if (current)
-        current->forget(handle);
-    if (CoroutineScheduler *const destroying = detail::destroying_scheduler(); destroying && destroying != current)
-        destroying->forget(handle);
-}
 
 /**
  * @brief Implementation of CoroutineScheduler::spawn
@@ -1349,6 +1349,28 @@ forget_frame_from(CoroutineScheduler *registered, std::coroutine_handle<> handle
         sched->forget(handle);
 }
 
+/**
+ * @brief Scrub a coroutine handle from every scheduler of this thread before its frame is freed: the current one, every
+ *        other live one, and the one destroying its frames (Huly QB-1220, QB-1245). Declared in task.h, called from
+ *        task<T>::~task / move-assignment for a still-in-flight frame: `forget()` drops it from the ready queue,
+ *        in-flight and suspended sets, so a waker that already queued it -- in whichever scheduler was current then --
+ *        cannot leave a handle for a later run_ready() or teardown drain (a use-after-free). A thread usually has one
+ *        scheduler: one forget(), as before. A scheduler beyond the table's 16 is scrubbed only while it is current or
+ *        destroying.
+ */
+inline void
+forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
+    CoroutineScheduler *const current = CoroutineScheduler::current_ptr();
+    if (current)
+        current->forget(handle);
+    detail::live_schedulers_t const &live = detail::live_schedulers();
+    for (unsigned i = 0; i < live.count; ++i)
+        if (live.slot[i] != current)
+            live.slot[i]->forget(handle);
+    if (CoroutineScheduler *const destroying = detail::destroying_scheduler();
+        destroying && destroying != current && !detail::is_live_scheduler(destroying))
+        destroying->forget(handle);
+}
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_SCHEDULER_H
