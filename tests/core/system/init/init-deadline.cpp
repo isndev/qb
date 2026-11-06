@@ -27,7 +27,7 @@
  * The deadline (here 200-250 ms) is configured far below the natural completion (5 s / never), so
  * the assertions check the *ordering* invariant — the deadline cancelled BEFORE natural completion
  * (`destroyed == true && completed_naturally == false`) — rather than a fragile wall-clock bound.
- * A generous ctest TIMEOUT remains the only backstop; there is no tight `EXPECT_LT(elapsed, ...)`.
+ * For these three cases a generous ctest TIMEOUT is the only backstop, no tight `EXPECT_LT(elapsed, ...)`; the park witness below has one.
  *
  * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
  */
@@ -600,7 +600,7 @@ run_park_witness(bool with_io) {
     main.core(0).setAffinity(qb::CoreIdSet{qb::NoAffinity});
     main.core(0).setLatency(kLatency).setIdleSpin(0ns);
     main.core(1).setAffinity(qb::CoreIdSet{qb::NoAffinity});
-    main.core(1).setLatency(0ns);
+    main.core(1).setLatency(1ms); // parks, not spins: a spinning core 1 takes a CPU core 0 needs on a small runner (QB-1227)
     if (with_io)
         main.addActor<IdleSocketActor>(0); // ephemeral socket only; nobody sends it traffic
     const auto owner = main.addActor<Owner>(0, state);
