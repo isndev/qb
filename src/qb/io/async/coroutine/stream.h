@@ -90,11 +90,11 @@ private:
     // producer starts -- at once for backpressure(), on the first pull for debounce().
     // ---------------------------------------------------------------------------------------------
 
-    // The producer's end of its lease (detail::worker_lease::slot_guard). It lives in the producer
-    // frame, constructed first in its body, and clears the slot when the producer ends -- normally
-    // (before its final_suspend frees the frame) or destroyed while parked -- so a lease never hands
-    // a finished frame's address to cancel_spawned(), where it could already name another coroutine.
-    // Both producers below construct it under this name.
+    // The producer's end of its lease (detail::worker_lease::slot_guard). It is the producer's
+    // parameter, moved into a local first in its body, and clears the slot when the producer ends --
+    // normally (before its final_suspend frees the frame), destroyed parked, or before it ever ran
+    // (Huly QB-1238) -- so a lease never hands a gone frame's address to cancel_spawned().
+    // Both producers below take it under this name.
     using producer_slot_guard = detail::worker_lease::slot_guard;
 
     // backpressure(): the permit the producer took for the element in flight, released on every exit
@@ -718,7 +718,7 @@ public:
     // producer frame is destroyed parked by its lease (Huly QB-289).
     static task<void>
     backpressure_fill_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> buffer, std::shared_ptr<semaphore> sem,
-                           std::shared_ptr<std::exception_ptr> err, std::shared_ptr<std::coroutine_handle<>> self) {
+                           std::shared_ptr<std::exception_ptr> err, producer_slot_guard self) {
         producer_slot_guard ends_the_slot{std::move(self)};
         try {
             while (true) {
@@ -744,7 +744,7 @@ public:
     // is gone (Huly QB-289).
     static task<void>
     debounce_produce_task(std::function<task<std::optional<T>>()> fn, std::shared_ptr<channel<T>> ch, std::shared_ptr<std::exception_ptr> err,
-                          std::shared_ptr<std::coroutine_handle<>> self) {
+                          producer_slot_guard self) {
         producer_slot_guard ends_the_slot{std::move(self)};
         try {
             while (true) {

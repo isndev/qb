@@ -1001,8 +1001,8 @@ public:
         // unreported: the frame is its task's. Its awaiter reaches the scheduler it registered with
         // while that one lives, else the CURRENT one (`registration_scheduler()`), never one that is
         // gone -- and its watcher, still armed, resumes it through the scheduler current when it fires.
-        // A chain that awaits a helper that spawns (a combinator, a scope, a timeout, make_cancellable,
-        // cancellable_sleep, make_shared_task) is not wholly its task's: the helpers are this scheduler's (Huly QB-1238).
+        // A chain that awaits a helper that spawns (a combinator, a scope, a timeout, make_cancellable, cancellable_sleep,
+        // make_shared_task) loses those frames here, never resumed by them; the helper keeps no handle to them (QB-1238).
         // A frame nobody owns any more (a handle `detach()`ed and dropped) is leaked by its dropper.
         detail::destroying_scheduler() = was;
         QB_SCHED_TRACE("destroy_all_suspended drops %zu frame(s) it does not own", suspended_coroutines_.size());
@@ -1371,6 +1371,60 @@ forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
         destroying && destroying != current && !detail::is_live_scheduler(destroying))
         destroying->forget(handle);
 }
+
+namespace detail {
+/**
+ * @brief The shared state of a helper that spawns frames the scheduler owns, as each of those frames holds it: its
+ *        parameter, so it lives exactly as long as the frame, whether the frame ever ran or not (Huly QB-1238).
+ * @details The helpers -- `when_all` and `when_any` (their branches), a timeout (its runner), `make_cancellable()`
+ *          (its runner), `cancellable_sleep()` and `with_deadline()` (their timers), a scope's timed join (its
+ *          timer) -- keep each frame's handle in their state, `slot`, to reclaim it with `cancel_spawned()` when the
+ *          awaiting coroutine goes first; a frame that completed cleared the slot, or a completion flag of the
+ *          state kept the teardown from using it. A frame destroyed before it completed -- by
+ *          `reset_coro_scheduler()`, `recycle_coro_scheduler()`, a `VirtualCore`'s end, before it ever ran or parked
+ *          mid-way -- left its handle behind, and the helper's teardown, later, reclaimed whatever frame the
+ *          frame pool had placed at that address since: a frame of an unrelated coroutine, of the next scheduler.
+ *          Destroying this parameter clears the slot. A moved-from one (the ramp's own parameter, once the frame
+ *          took its copy) clears nothing.
+ */
+template <typename State>
+class spawned_state {
+public:
+    spawned_state(std::shared_ptr<State> state, std::coroutine_handle<> &slot) noexcept
+        : state_(std::move(state))
+        , slot_(&slot) {}
+    spawned_state(spawned_state &&other) noexcept
+        : state_(std::move(other.state_))
+        , slot_(other.slot_) {}
+    spawned_state(spawned_state const &)            = delete;
+    spawned_state &operator=(spawned_state const &) = delete;
+    spawned_state &operator=(spawned_state &&)      = delete;
+
+    ~spawned_state() {
+        if (state_)
+            *slot_ = {};
+    }
+
+    [[nodiscard]] State *
+    operator->() const noexcept {
+        return state_.get();
+    }
+
+    [[nodiscard]] State &
+    operator*() const noexcept {
+        return *state_;
+    }
+
+    [[nodiscard]] explicit
+    operator bool() const noexcept {
+        return state_ != nullptr;
+    }
+
+private:
+    std::shared_ptr<State>   state_;
+    std::coroutine_handle<> *slot_;
+};
+} // namespace detail
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_SCHEDULER_H

@@ -2384,3 +2384,320 @@ TEST_F(CoroutineSchedulerTests, AVoidTaskDestroyedWhileACoroutineAwaitsItLeavesT
     }
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
+
+namespace scheduler_lifecycle_test {
+/**
+ * Huly QB-1238. `make(done)` builds a task driven by hand that awaits a helper spawning frames the scheduler owns --
+ * a combinator, a timeout, a cancellable operation or sleep, a scope's timed join -- over a short nap, and sets
+ * `*done` once resumed. `first` parks on its helper; the reset destroys the helper's frames, whose handles the
+ * helper's shared state kept; `second`, the same helper again, is handed the blocks the reset freed by the frame
+ * pool; `first`'s owner destroys it, and its helper's teardown reclaims its frames through those handles: a stale
+ * one destroyed a frame of `second`, which never finished.
+ */
+template <typename Make>
+void
+expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler(Make make, bool started = true) {
+    const long                baseline    = detail::CoroutineFrameAllocator::live_frames;
+    bool                      second_done = false;
+    std::optional<task<void>> first;
+    std::optional<task<void>> second;
+    first.emplace(make(nullptr));
+    second.emplace(make(&second_done));
+    first->handle().resume(); // the helper spawns its frames, the scheduler's
+    if (started)
+        coro_scheduler().run_ready();                        // they run: the inner naps park on their timers (else destroyed unstarted)
+    qb::io::async::listener::current.reset_coro_scheduler(); // destroys them; `first` stays parked on its helper
+    second->handle().resume();                               // the same helper: its frames take the blocks the reset freed
+    first.reset();                                           // its helper's teardown reclaims the frames its handles named
+    EXPECT_TRUE(pump_until([&] { return second_done; })) << "the first helper's teardown destroyed a frame of the second";
+    second.reset();
+    EXPECT_TRUE(pump_until([&] { return detail::CoroutineFrameAllocator::live_frames == baseline; })) << "a frame outlived both tasks";
+}
+} // namespace scheduler_lifecycle_test
+
+/// @test `when_all` over tasks, kept across the reset (Huly QB-1238): see the driver above.
+TEST_F(CoroutineSchedulerTests, AWhenAllKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        (void) co_await when_all(scheduler_lifecycle_test::nap(5ms), scheduler_lifecycle_test::nap(5ms));
+        if (done)
+            *done = true;
+    });
+}
+
+namespace scheduler_lifecycle_test {
+inline task<int>
+nap_then(qb::duration d, int value) {
+    co_await sleep(d);
+    co_return value;
+}
+
+/// A scope's worker in a frame beyond the pool: the scope's own frames are then the only pooled ones it allocates.
+inline task<void>
+wait_closed(std::shared_ptr<channel<int>> ch) {
+    beyond_the_pool pad{};
+    pad.bytes[0] = 1;
+    (void) co_await ch->recv();
+    pad.bytes[1] = pad.bytes[0];
+}
+
+/// Joins `scope` within 5 ms -- it times out, its worker waiting for `ch` to close -- then closes `ch` and joins.
+inline task<bool>
+time_out_then_join(coroutine_scope &scope, std::shared_ptr<channel<int>> ch, task<bool> timed_join) {
+    bool const joined = co_await timed_join;
+    ch->close();
+    co_await scope.join_all();
+    co_return !joined;
+}
+
+inline std::vector<task<void>>
+two_naps() {
+    std::vector<task<void>> naps;
+    naps.push_back(nap(5ms));
+    naps.push_back(nap(5ms));
+    return naps;
+}
+} // namespace scheduler_lifecycle_test
+
+/// @test `when_all` over a vector of tasks, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, AWhenAllOverAVectorKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        (void) co_await when_all(scheduler_lifecycle_test::two_naps());
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test `when_any` over tasks, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, AWhenAnyKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        (void) co_await when_any(scheduler_lifecycle_test::nap(5ms), scheduler_lifecycle_test::nap(5ms));
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test `when_any` over a vector of tasks, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, AWhenAnyOverAVectorKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        (void) co_await when_any(scheduler_lifecycle_test::two_naps());
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test A timeout over a `task<void>`, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ATimeoutKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        co_await coro_with_timeout(scheduler_lifecycle_test::nap(5ms), 10s);
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test A timeout over a `task<int>`, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ATimeoutOverAValueKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        int const value = co_await coro_with_timeout(scheduler_lifecycle_test::nap_then(5ms, 7), 10s);
+        if (done)
+            *done = value == 7;
+    });
+}
+
+/// @test `make_cancellable()` over a `task<void>`, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ACancellableOperationKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        co_await make_cancellable(scheduler_lifecycle_test::nap(5ms), cancellation_token{});
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test `make_cancellable()` over a `task<int>`, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ACancellableValueKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        int const value = co_await make_cancellable(scheduler_lifecycle_test::nap_then(5ms, 7), cancellation_token{});
+        if (done)
+            *done = value == 7;
+    });
+}
+
+/// @test `cancellable_sleep()`, kept across the reset (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ACancellableSleepKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        co_await cancellable_sleep(5ms, cancellation_token{});
+        if (done)
+            *done = true;
+    });
+}
+
+/// @test `with_deadline()`, kept across the reset (Huly QB-1238): its `when_any` branches and its deadline timer.
+TEST_F(CoroutineSchedulerTests, ADeadlineKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        co_await with_deadline(scheduler_lifecycle_test::nap(5ms), std::chrono::steady_clock::now() + 10s);
+        if (done)
+            *done = true;
+    });
+}
+
+/**
+ * @test A scope's timed join, kept across the reset (Huly QB-1238): its timer's handle named a frame of the next one.
+ * @brief The same case as the driver above, laid out so the frame pool's reuse is certain: the workers' frames are
+ *        beyond the pool, and the second task builds its join's frame before the reset, then parks on a gate. After
+ *        the reset its only pooled frames are the two the scheduler owns -- its worker's wrapper and its join's
+ *        timer -- and they take the two blocks the reset freed; the first task's teardown reclaimed its timer through
+ *        the stale handle, destroying one of them, and the second never finished.
+ */
+TEST_F(CoroutineSchedulerTests, AScopesTimedJoinKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    const long                baseline    = detail::CoroutineFrameAllocator::live_frames;
+    bool                      second_done = false;
+    channel<int>              gate;
+    std::optional<task<void>> first;
+    std::optional<task<void>> second;
+    first.emplace([]() -> task<void> {
+        auto            ch = std::make_shared<channel<int>>();
+        coroutine_scope scope;
+        scope.spawn(scheduler_lifecycle_test::wait_closed(ch));
+        (void) co_await scheduler_lifecycle_test::time_out_then_join(scope, ch, scope.join_all_for(5ms));
+    }());
+    second.emplace([](channel<int> &gate, bool &done) -> task<void> {
+        auto            ch = std::make_shared<channel<int>>();
+        coroutine_scope scope;
+        task<bool>      join = scheduler_lifecycle_test::time_out_then_join(scope, ch, scope.join_all_for(5ms));
+        (void) co_await gate.recv();                            // parked across the reset: its frames exist already
+        scope.spawn(scheduler_lifecycle_test::wait_closed(ch)); // after it: the worker's wrapper, pooled
+        done = co_await join;                                   // the timer, pooled
+    }(gate, second_done));
+    first->handle().resume();                                // its worker and its join's timer, the scheduler's
+    coro_scheduler().run_ready();                            // the worker parks on its channel, the timer on its sleep
+    second->handle().resume();                               // builds its join, parks on the gate
+    qb::io::async::listener::current.reset_coro_scheduler(); // destroys the first task's worker and timer
+    ASSERT_TRUE(gate.try_send(1));
+    for (int i = 0; i < 4; ++i)
+        coro_scheduler().run_ready(); // the second spawns its worker and its timer, in the blocks the reset freed
+    first.reset();                    // its join's teardown reclaims its timer through the handle it kept
+    EXPECT_TRUE(pump_until([&] { return second_done; })) << "the first join's teardown destroyed a frame of the second";
+    second.reset();
+    EXPECT_TRUE(pump_until([&] { return detail::CoroutineFrameAllocator::live_frames == baseline; })) << "a frame outlived both tasks";
+}
+
+/**
+ * @test A shared task kept across the reset (Huly QB-1238): its runner keeps no handle, owns its inner task and goes
+ *       with it, so the reset leaves the awaiting task unresumed and safe to destroy. A design guard.
+ */
+TEST_F(CoroutineSchedulerTests, ASharedTaskKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        co_await make_shared_task(scheduler_lifecycle_test::nap(5ms));
+        if (done)
+            *done = true;
+    });
+}
+
+/**
+ * @test A scope's untimed join kept across the reset (Huly QB-1238): the scope keeps no handle of its workers, so the
+ *       reset leaves the joining task unresumed and safe to destroy. A design guard.
+ */
+TEST_F(CoroutineSchedulerTests, AScopesJoinKeptAcrossTheResetReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler([](bool *done) -> task<void> {
+        coroutine_scope scope;
+        scope.spawn(scheduler_lifecycle_test::nap(5ms));
+        co_await scope.join_all();
+        if (done)
+            *done = true;
+    });
+}
+
+/**
+ * @test The deadline timer of `with_deadline()`, destroyed by the reset, leaves its state no handle to it (Huly
+ *       QB-1238).
+ * @brief Read on the state itself: in the case through `with_deadline()` above, its `when_any` branches already
+ *        decide the outcome, so a stale timer handle there reaches a frame of the next scheduler only when the frame
+ *        pool happens to place one of them -- not the timer -- at its address.
+ */
+TEST_F(CoroutineSchedulerTests, ADeadlineTimerDestroyedByTheResetLeavesItsStateNoHandleToIt) {
+    const long               baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto                     state    = std::make_shared<detail::with_deadline_timeout_state>();
+    std::optional<task<int>> parked;
+    parked.emplace(detail::with_deadline_run_timeout(state, std::chrono::steady_clock::now() + 10s, cancellation_token{}));
+    parked->handle().resume(); // its awaiter spawns the deadline timer, the scheduler's
+    ASSERT_TRUE(state->timer_handle);
+    coro_scheduler().run_ready(); // the timer parks on its sleep
+    qb::io::async::listener::current.reset_coro_scheduler();
+    EXPECT_FALSE(state->timer_handle) << "the deadline's state still names the timer frame the reset destroyed";
+    parked.reset();
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test `when_all`'s branches destroyed by the reset before they ever ran leave its state no handle to them (Huly
+ *       QB-1238): the reset comes between the spawn and the first `run_ready()`.
+ */
+TEST_F(CoroutineSchedulerTests, AWhenAllWhoseBranchesTheResetDestroyedUnstartedReachesNoFrameOfTheNextScheduler) {
+    scheduler_lifecycle_test::expect_a_kept_helper_reaches_no_frame_of_the_next_scheduler(
+        [](bool *done) -> task<void> {
+            (void) co_await when_all(scheduler_lifecycle_test::nap(5ms), scheduler_lifecycle_test::nap(5ms));
+            if (done)
+                *done = true;
+        },
+        false);
+}
+
+namespace scheduler_lifecycle_test {
+inline task<void>
+send_then_receive(std::shared_ptr<channel<int>> in, std::shared_ptr<channel<int>> out, std::optional<int> *got) {
+    (void) co_await in->send(1);
+    if (auto const value = co_await out->recv())
+        *got = *value;
+}
+
+inline task<void>
+collect_into(async_stream<int> stream, std::vector<int> *got, bool *done) {
+    *got  = co_await stream.collect();
+    *done = true;
+}
+
+inline int
+plus_one(int value) {
+    return value + 1;
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A pipeline whose worker the reset destroyed before it ever ran leaves its lease no handle to it (Huly
+ *       QB-1238): the worker's slot guard is its parameter.
+ * @brief The worker built its slot guard first in its body, so a frame destroyed unstarted left the slot behind; the
+ *        second pipeline's worker took the block the reset freed, and the first pipeline's last handles ended their
+ *        lease through the stale slot -- destroying the second's worker, whose pipeline never answered.
+ */
+TEST_F(CoroutineSchedulerTests, APipelineWhoseWorkerTheResetDestroyedUnstartedReachesNoFrameOfTheNextScheduler) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    auto       first    = make_pipeline<int, int>(&scheduler_lifecycle_test::plus_one); // its worker spawned, never run
+    qb::io::async::listener::current.reset_coro_scheduler();                            // destroys that worker before it ever ran
+    auto second = make_pipeline<int, int>(&scheduler_lifecycle_test::plus_one);         // its worker: the block the reset freed
+    first       = {};                                                                   // the last handles: the lease ends
+    std::optional<int> got;
+    task<void>         consumer = scheduler_lifecycle_test::send_then_receive(second.first, second.second, &got);
+    consumer.handle().resume();
+    EXPECT_TRUE(pump_until([&] { return got.has_value(); })) << "the first pipeline's lease destroyed the second's worker";
+    EXPECT_EQ(got.value_or(0), 2);
+    consumer = task<void>{};
+    second   = {};
+    EXPECT_TRUE(pump_until([&] { return detail::CoroutineFrameAllocator::live_frames == baseline; })) << "a frame outlived both pipelines";
+}
+
+/// @test The same for `async_stream::backpressure()`'s producer, spawned at once (Huly QB-1238).
+TEST_F(CoroutineSchedulerTests, ABackpressuredStreamWhoseProducerTheResetDestroyedUnstartedReachesNoFrameOfTheNextScheduler) {
+    const long                       baseline = detail::CoroutineFrameAllocator::live_frames;
+    std::optional<async_stream<int>> first{async_stream<int>::from_vector({1, 2, 3}).backpressure(2)};
+    qb::io::async::listener::current.reset_coro_scheduler(); // destroys its producer before it ever ran
+    std::optional<async_stream<int>> second{async_stream<int>::from_vector({1, 2, 3}).backpressure(2)};
+    first.reset(); // the first stream's last handle: its lease ends
+    std::vector<int> got;
+    bool             done     = false;
+    task<void>       consumer = scheduler_lifecycle_test::collect_into(std::move(*second), &got, &done);
+    second.reset();
+    consumer.handle().resume();
+    EXPECT_TRUE(pump_until([&] { return done; })) << "the first stream's lease destroyed the second's producer";
+    EXPECT_EQ(got, (std::vector<int>{1, 2, 3}));
+    consumer = task<void>{};
+    EXPECT_TRUE(pump_until([&] { return detail::CoroutineFrameAllocator::live_frames == baseline; })) << "a frame outlived both streams";
+}

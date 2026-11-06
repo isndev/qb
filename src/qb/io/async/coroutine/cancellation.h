@@ -768,7 +768,7 @@ public:
         await_suspend(std::coroutine_handle<> h) {
             ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             state->continuation  = h;
-            state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
+            state->runner_handle = coro_scheduler().spawn_tracked(task_runner({state, state->runner_handle}));
             if (throw_on_cancel) {
                 // Route the cancel wake-up through the shared task_done guard so
                 // it cannot double-resume (or resume a destroyed frame) after the
@@ -825,7 +825,7 @@ public:
 
     private:
         static task<void>
-        task_runner(std::shared_ptr<shared_state> state) {
+        task_runner(detail::spawned_state<shared_state> state) {
             try {
                 state->result.emplace(co_await state->inner_task);
             } catch (...) {
@@ -916,7 +916,7 @@ public:
         await_suspend(std::coroutine_handle<> h) {
             ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
             state->continuation  = h;
-            state->runner_handle = coro_scheduler().spawn_tracked(task_runner(state));
+            state->runner_handle = coro_scheduler().spawn_tracked(task_runner({state, state->runner_handle}));
             if (throw_on_cancel) {
                 // See the non-void specialization: guard the cancel wake-up with
                 // the shared task_done flag to avoid double-resume / use-after-free,
@@ -953,7 +953,7 @@ public:
 
     private:
         static task<void>
-        task_runner(std::shared_ptr<shared_state> state) {
+        task_runner(detail::spawned_state<shared_state> state) {
             try {
                 co_await state->inner_task;
             } catch (...) {
@@ -1088,7 +1088,7 @@ struct cancellable_sleep_awaiter {
                 schedule_via_current(s->handle);
             }
         });
-        state->timer_handle = coro_scheduler().spawn_tracked(timer_task(duration, state));
+        state->timer_handle = coro_scheduler().spawn_tracked(timer_task(duration, {state, state->timer_handle}));
     }
 
     void
@@ -1101,7 +1101,7 @@ private:
     // Never use a lambda here — the compiler may store a pointer to the local lambda
     // object rather than a copy, causing a dangling reference after await_suspend returns.
     static task<void>
-    timer_task(qb::duration d, std::shared_ptr<sleep_state> s) {
+    timer_task(qb::duration d, detail::spawned_state<sleep_state> s) {
         co_await sleep(d);
         // The timer has fired: its frame self-reclaims at final_suspend, so clear the tracked
         // handle. A stale handle here would let a later dtor/cancel cancel_spawned() an unrelated
@@ -1219,7 +1219,7 @@ struct with_deadline_timeout_awaiter {
 
         // spawn_tracked (not spawn) so the dtor / cancel hook can reclaim the detached
         // timer the instant another path resolves this branch.
-        state->timer_handle = coro_scheduler().spawn_tracked(deadline_timer_task(state, remaining));
+        state->timer_handle = coro_scheduler().spawn_tracked(deadline_timer_task({state, state->timer_handle}, remaining));
     }
 
     int
@@ -1229,7 +1229,7 @@ struct with_deadline_timeout_awaiter {
 
 private:
     static task<void>
-    deadline_timer_task(std::shared_ptr<with_deadline_timeout_state> s, qb::duration remaining) {
+    deadline_timer_task(detail::spawned_state<with_deadline_timeout_state> s, qb::duration remaining) {
         co_await sleep(remaining);
         // The timer has fired: its frame self-reclaims at final_suspend, so clear the
         // tracked handle. A stale handle here would let a later dtor/cancel cancel_spawned()
