@@ -508,19 +508,15 @@ public:
         if (!h)
             return;
         void *addr = h.address();
-        // Only frames we own may be freed here. If it is not owned it has either
-        // already completed (frame freed — destroying again is UB) or was never
-        // ours: do nothing.
+        // Only frames we own may be freed here: one that is not has completed (freed) or was never ours.
         if (owned_frames_.erase(addr) == 0)
             return;
-        // If the helper was already woken (its timer fired in this same tick) it can be sitting in a ready queue and
-        // an in-flight set: this scheduler's, or another live one's -- the one current when its waker fired (Huly
-        // QB-1245). Scrub them all before freeing the frame, so no later run_ready() pops a destroyed handle (the
-        // second call scrubs the thread's other live schedulers; this one again costs two lookups that find nothing).
+        // Woken already (its timer fired this tick), it can sit in a ready queue and an in-flight set: this
+        // scheduler's, or another's, current when its waker fired (Huly QB-1245). Scrub them before freeing it, so no
+        // later run_ready() pops a destroyed handle: the table's, the current one and the destroying one beyond it.
         forget(h);
-        forget_frame_if_current(h);
-        // Defensive: a frame queued for deferred destruction has already completed
-        // (so callers' done-flag guard would skip it), but never let it be freed twice.
+        scrub_elsewhere(this, h);
+        // Defensive: a deferred destruction (a completed frame) is never let free it twice.
         for (auto it = frames_to_destroy_.begin(); it != frames_to_destroy_.end();) {
             if (*it && it->address() == addr)
                 it = frames_to_destroy_.erase(it);
@@ -530,6 +526,10 @@ public:
         h.destroy();
     }
 
+private: // `h` out of the queues and sets of the thread's other schedulers (Huly QB-1245). Defined at the end of this file.
+    static void scrub_elsewhere(CoroutineScheduler const *self, std::coroutine_handle<> h) noexcept;
+
+public:
     /**
      * @brief Scrub a handle from the scheduler's pending bookkeeping WITHOUT destroying it.
      *
@@ -986,7 +986,7 @@ public:
                 // waker queued in another live scheduler, current when it fired (Huly QB-1245) -- must not outlive the
                 // frame it names: that run_ready() would call done() on freed memory.
                 forget(handle);
-                forget_frame_if_current(handle);
+                scrub_elsewhere(this, handle);
                 QB_SCHED_TRACE("destroy_all_suspended destroying owned root handle=%p", (void *) addr);
                 handle.destroy();
             }
@@ -1358,7 +1358,7 @@ forget_frame_from(CoroutineScheduler *registered, std::coroutine_handle<> handle
  *        scheduler: one forget(), as before. A scheduler beyond the table's 16 is scrubbed only while it is current or
  *        destroying.
  */
-inline void
+QB_NOINLINE inline void // out of line: only a frame destroyed unfinished calls it, from every ~task
 forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
     CoroutineScheduler *const current = CoroutineScheduler::current_ptr();
     if (current)
@@ -1425,6 +1425,34 @@ private:
     std::coroutine_handle<> *slot_;
 };
 } // namespace detail
+/**
+ * Every other scheduler of the thread that may hold `h` forgets it: each live one of the table, and the current one and
+ * the one destroying its frames when the table has no slot for them (a thread with more than 16) -- both alive, so both
+ * reachable, as forget_frame_if_current() reaches them (Huly QB-1245). One read of the table.
+ */
+QB_NOINLINE inline void // out of line: run_ready()'s drain calls it on its foreign path only
+CoroutineScheduler::scrub_elsewhere(CoroutineScheduler const *self, std::coroutine_handle<> h) noexcept {
+    auto const scrub = [self, h](CoroutineScheduler *const other) noexcept {
+        if (other == nullptr || other == self)
+            return;
+        other->forget(h);
+    };
+    CoroutineScheduler *const        current       = current_ptr();
+    CoroutineScheduler *const        destroying    = detail::destroying_scheduler();
+    bool                             current_in    = false;
+    bool                             destroying_in = false;
+    detail::live_schedulers_t const &live          = detail::live_schedulers();
+    for (unsigned i = 0; i < live.count; ++i) {
+        current_in    = current_in || live.slot[i] == current;
+        destroying_in = destroying_in || live.slot[i] == destroying;
+        scrub(live.slot[i]);
+    }
+    if (!current_in)
+        scrub(current);
+    if (!destroying_in && destroying != current)
+        scrub(destroying);
+}
+
 } // namespace qb::io::async
 
 #endif // QB_IO_ASYNC_COROUTINE_SCHEDULER_H
