@@ -224,6 +224,20 @@ policy.
 
 ### Changed
 
+- **A channel's plain `send` / `recv` awaiters keep their ready and resume inlined whatever the unit's inlining budget
+  (Huly QB-1225).** `send_awaiter::await_ready` / `await_resume` and `recv_awaiter::await_ready` / `await_resume` carry
+  `QB_GNU_ALWAYS_INLINE`, a new macro of `qb/utility/branch_hints.h` beside `QB_MSVC_FORCEINLINE`: `[[gnu::always_inline]]
+  inline` under GCC and Clang, plain `inline` on MSVC, which inlines them on its own and refuses `__forceinline` into a
+  coroutine (C4714). Why: g++ spends one `inline-unit-growth` budget per translation unit, and a unit that also
+  instantiates the timed awaiters (`recv_for`, `send_for`, `select`) ran out of it on the four small members every message
+  passes through -- `recv_awaiter::await_ready`, most of `recv_awaiter::await_resume` and the throw half of
+  `send_awaiter::await_resume` out of line, called from every coroutine of the unit. Measured on g++ 14 (x86-64, TITAN,
+  PERF-REPORT-T6PRE.md) in the 8-cell bench unit of before `e84d2853`: 477 179 -> 422 089 instructions per
+  `BM_Channel_SendRecv/2048` iteration (-11.5 %, -27 a message), 4.0 to 5.1 % faster at 64, 512 and 2 048 messages in two
+  alignment families with the four out-of-line instances gone from the unit's object; the pipeline-only unit, where they
+  were inlined already, reads 430 065 -> 423 741 instructions and -0.6 to -0.8 % (no loss); the bench binaries' `.text`
+  moves by +792 and -348 bytes, `libqb-io` not at all. MSVC's code is unchanged by the macro. clang 19 and LLVM clang 22
+  accept the attribute on the class-template members without a diagnostic under `-Wall -Wextra -Wpedantic -Werror`.
 - **`qb::allocator::pipe` grows a null pipe to its initial size, not twice it (Huly QB-1248).** From the null state
   -- a moved-from pipe, and every copy, whose constructor starts from null -- `allocate_back()`'s slow path doubled
   `_factor` before it computed the first capacity, so the first write took 8192 elements where a default-constructed

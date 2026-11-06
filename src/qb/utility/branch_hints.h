@@ -137,4 +137,20 @@ unlikely(bool expr) noexcept {
 #define QB_MSVC_FORCEINLINE inline
 #endif
 
+/**
+ * @brief Inline everywhere, and FORCE it on GCC and Clang -- for a small hot member a large unit's budget would drop.
+ *
+ * GCC spends one `inline-unit-growth` budget per translation unit: a unit that also instantiates big templates
+ * (a channel's timed awaiters beside its plain `send` / `recv`, Huly QB-1225) runs out of it, and the four small
+ * members every message passes through -- `await_ready` / `await_resume` of the plain awaiters -- come out of
+ * line for every coroutine of the unit: +23 instructions a message (+11 %) on g++ 14 x86-64, while
+ * the same code in a smaller unit is inlined. `[[gnu::always_inline]]` takes those members out of the budget.
+ * MSVC inlines them on its own and refuses `__forceinline` into a coroutine (C4714): plain `inline` there.
+ */
+#if defined(__GNUC__) || defined(__clang__)
+#define QB_GNU_ALWAYS_INLINE [[gnu::always_inline]] inline
+#else
+#define QB_GNU_ALWAYS_INLINE inline
+#endif
+
 #endif /* QB_UTILS_BRANCH_HINTS_H */
