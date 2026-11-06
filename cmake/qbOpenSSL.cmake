@@ -19,13 +19,13 @@
 # qb Framework - qb's OpenSSL, and whether libngtcp2's can join it
 #
 # _qb_find_openssl() finds the OpenSSL qb links, searching again a path its own search found that is gone,
-# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major, or older than 3.0,
-# _qb_openssl_command() finds that OpenSSL's openssl command for the test certificates (a function), and
-# _qb_decide_quic(), once find_package(Ngtcp2) has run, decides whether the OpenSSL libngtcp2_crypto_ossl links and
-# qb's can share one process, and so whether QUIC is enabled. A file of its own so that a fixture drives them with
-# planted libraries (qb-io-test-unit-quic-openssl-verdict, Huly QB-1185, QB-1190); macros so that what they find and
-# read stays in the caller's scope -- qbDependencies.cmake's, where tests/io/unit/CMakeLists.txt hands it to
-# qb-io-test-unit-ngtcp2-openssl-listing.
+# _qb_check_openssl() stops the configure when its headers, libssl and libcrypto are not one major, older than 3.0, or
+# carry no version (BoringSSL's), _qb_openssl_command() finds that OpenSSL's openssl command for the test certificates
+# (a function), and _qb_decide_quic(), once find_package(Ngtcp2) has run, decides whether the OpenSSL
+# libngtcp2_crypto_ossl links and qb's can share one process, and so whether QUIC is enabled. A file of its own so that
+# a fixture drives them with planted libraries (qb-io-test-unit-quic-openssl-verdict, Huly QB-1185, QB-1190); macros so
+# that what they find and read stays in the caller's scope -- qbDependencies.cmake's, where tests/io/unit/CMakeLists.txt
+# hands it to qb-io-test-unit-ngtcp2-openssl-listing.
 # -----------------------------------------------------------------------------
 
 # FindNgtcp2.cmake's library reader, QUIC or not: _qb_check_openssl() reads qb's libssl and libcrypto with it. Its
@@ -259,6 +259,7 @@ macro(_qb_check_openssl)
             endif()
         endforeach()
     endif()
+    _qb_openssl_carries_version() # no version anywhere: refused (Huly QB-1262)
     set(_qb_openssl_said "") # the header's own reading, MAJOR.MINOR
     if(NOT "${_qb_openssl_said_number}" STREQUAL "")
         list(GET _qb_openssl_said_number 0 _qb_openssl_said_major)
@@ -287,8 +288,7 @@ macro(_qb_check_openssl)
     if(NOT "${_qb_openssl_shlib}" STREQUAL "")
         set(_qb_openssl_headers_major "${_qb_openssl_shlib}")
     endif()
-    if(WIN32)
-        # nothing is read on Windows
+    if(WIN32) # nothing is read on Windows
     elseif(NOT CMAKE_SYSTEM_NAME MATCHES "^(Darwin|Linux)$")
         string(CONCAT _qb_openssl_not_compared
                "OpenSSL majors not compared on ${CMAKE_SYSTEM_NAME}: a library's file name need not carry its "
@@ -652,3 +652,181 @@ macro(_qb_decide_quic)
         set(_QB_HAD_QUIC FALSE CACHE INTERNAL "")
     endif()
 endmacro()
+
+# _qb_openssl_carries_version() -- called by _qb_check_openssl(): an OpenSSL whose opensslv.h exists and carries no
+# version, FindOpenSSL reporting none either, is refused at the configure (Huly QB-1262). BoringSSL keeps its version in
+# base.h, its opensslv.h a stand-in that includes crypto.h: it configured with SSL on and failed at the compile -- no
+# EVP_MAC_fetch(), OpenSSL 3.0's API, in its evp.h (QB-1213's class). A version is any of OPENSSL_VERSION_NUMBER,
+# OPENSSL_VERSION_STR and OPENSSL_VERSION_MAJOR defined in opensslv.h or in a file it includes with a relative quoted
+# #include, two levels deep: Node's installed opensslv.h includes ./openssl_opensslv_asm.h (or _no-asm.h), which
+# includes the ./archs/<target>/.../opensslv.h that carries it (nodejs/node main, read 2026-11-06). Comments are not
+# read. A version found in an included file is held to the same minimum as opensslv.h's own (_qb_check_openssl() reads
+# only that file), and BoringSSL's or AWS-LC's marker (OPENSSL_IS_BORINGSSL, OPENSSL_IS_AWSLC) in a file read refuses
+# whatever version it says. Refused only when every file of that chain was read: one that cannot be read, an include
+# naming a file not there, an absolute one, or one deeper than two levels decides nothing -- the configure goes on, as
+# before, and a warning names the file. An angle include (BoringSSL's crypto.h includes <openssl/base.h>; a wrapper
+# may include its version file so) is the compiler's to find, not followed: a refusal names it. LibreSSL's
+# marker (LIBRESSL_VERSION_NUMBER) names it: refused by QB-1213's check instead. AWS-LC's opensslv.h keeps a copy of
+# base.h's OPENSSL_VERSION_NUMBER under #if 0, which FindOpenSSL and QB-1213's reading take as 1.1: refused for its age.
+# Refused, "had" is left as it was (_qb_openssl_refused()), as QB-1213's refusal leaves it.
+macro(_qb_openssl_carries_version)
+    if("${OPENSSL_VERSION}" STREQUAL "" AND NOT _qb_openssl_libressl)
+        file(GLOB _qb_openssl_opensslv "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h") # readable or not: EXISTS is not
+        if(_qb_openssl_opensslv OR EXISTS "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h") # GLOB misses one in a [ ] dir
+            _qb_openssl_carries_version_read()
+        endif()
+    endif()
+endmacro()
+macro(_qb_openssl_carries_version_read)
+    set(_qb_openssl_v_top "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
+    _qb_openssl_read_version("${_qb_openssl_v_top}" 0 _qb_openssl_v_found _qb_openssl_v_said _qb_openssl_v_marker
+                             _qb_openssl_v_unread _qb_openssl_v_read _qb_openssl_v_angles)
+    set(_qb_openssl_v_refusal "")
+    if(NOT "${_qb_openssl_v_marker}" STREQUAL "")
+        string(APPEND _qb_openssl_v_refusal "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later, and the one found "
+               "is not OpenSSL: ${_qb_openssl_v_marker}, read from ${_qb_openssl_v_top}. ")
+    elseif(NOT "${_qb_openssl_v_found}" STREQUAL "")
+        if(NOT "${_qb_openssl_v_said}" STREQUAL "" AND _qb_openssl_v_said VERSION_LESS _QB_OPENSSL_MINIMUM)
+            string(APPEND _qb_openssl_v_refusal "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later, and the one found "
+                   "is older: ${_qb_openssl_v_found} says ${_qb_openssl_v_said}, read from ${_qb_openssl_v_top}. ")
+        endif() # else an OpenSSL that says its version: read by the checks that follow
+    elseif(NOT "${_qb_openssl_v_unread}" STREQUAL "")
+        list(JOIN _qb_openssl_v_unread "; " _qb_openssl_v_unread_said)
+        string(CONCAT _qb_openssl_v_unread_said
+               "Whether this OpenSSL carries a version was not read: ${_qb_openssl_v_unread_said} (Huly QB-1262). "
+               "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later; one that carries none, as BoringSSL's opensslv.h "
+               "does, fails at the compile, on OpenSSL ${_QB_OPENSSL_MINIMUM}'s EVP_MAC API.")
+        qb_warning_message("${_qb_openssl_v_unread_said}")
+    else()
+        string(APPEND _qb_openssl_v_refusal "qb needs OpenSSL ${_QB_OPENSSL_MINIMUM} or later, and the one found "
+               "carries no version: ${_qb_openssl_v_top} defines none of OPENSSL_VERSION_NUMBER, OPENSSL_VERSION_STR "
+               "and OPENSSL_VERSION_MAJOR")
+        list(REMOVE_AT _qb_openssl_v_read 0) # opensslv.h itself
+        if(_qb_openssl_v_read)
+            list(JOIN _qb_openssl_v_read ", " _qb_openssl_v_included)
+            string(APPEND _qb_openssl_v_refusal ", nor does what it includes (${_qb_openssl_v_included})")
+        endif()
+        if(_qb_openssl_v_angles)
+            list(JOIN _qb_openssl_v_angles ", " _qb_openssl_v_angled)
+            string(APPEND _qb_openssl_v_refusal " -- its angle includes, the compiler's to find, not followed: "
+                   "${_qb_openssl_v_angled}")
+        endif()
+        string(APPEND _qb_openssl_v_refusal ", and FindOpenSSL reports none. BoringSSL keeps its in base.h and is not "
+               "supported, nor is AWS-LC: qb calls OpenSSL ${_QB_OPENSSL_MINIMUM}'s EVP_MAC API, which neither has. ")
+    endif()
+    if(NOT "${_qb_openssl_v_refusal}" STREQUAL "")
+        _qb_openssl_minimum_remedy(_qb_openssl_v_remedy)
+        string(APPEND _qb_openssl_v_refusal "(OPENSSL_INCLUDE_DIR ${OPENSSL_INCLUDE_DIR}, OPENSSL_SSL_LIBRARY "
+               "${OPENSSL_SSL_LIBRARY}, OPENSSL_CRYPTO_LIBRARY ${OPENSSL_CRYPTO_LIBRARY}; Huly QB-1262.) "
+               "${_qb_openssl_v_remedy}")
+        _qb_openssl_refused()
+        qb_error_message("${_qb_openssl_v_refusal}")
+    endif()
+endmacro()
+# _qb_openssl_read_version(<file> <depth> <found_var> <said_var> <marker_var> <unread_var> <read_var> <angles_var>): the
+# file, <file> or one it includes with a relative quoted #include down to depth 2, that defines a version (<found_var>,
+# empty when none does) and, when it is not <file> itself, that version as MAJOR.MINOR (<said_var>, empty when unread:
+# OpenSSL 3's OPENSSL_VERSION_NUMBER is an expression); BoringSSL's or AWS-LC's marker in a file read, said
+# (<marker_var>); the files read (<read_var>), those not read, each said (<unread_var>), and the angle includes seen
+# (<angles_var>). A file is read through `cmake -E cat`: file(STRINGS) stops the configure on one that cannot be read,
+# and if(EXISTS) is false for it (CMake 4.4 measured): file(GLOB) tells a file there. /* */ comments are removed first;
+# a // one hides no directive: only a line whose first character, blanks aside, is # is read.
+function(_qb_openssl_read_version file depth found_var said_var marker_var unread_var read_var angles_var)
+    set(_found "")
+    set(_said "")
+    set(_marker "")
+    set(_unread "")
+    set(_read "")
+    set(_angles "")
+    execute_process(COMMAND "${CMAKE_COMMAND}" -E cat "${file}" RESULT_VARIABLE _rc OUTPUT_VARIABLE _text ERROR_QUIET)
+    if(NOT _rc EQUAL 0)
+        list(APPEND _unread "${file} cannot be read")
+    else()
+        list(APPEND _read "${file}")
+        string(REPLACE ";" "," _text "${_text}") # one string, never a list
+        string(REPLACE "\r" "" _text "${_text}")
+        string(REGEX REPLACE "/\\*([^*]|\\*+[^*/])*\\*+/" " " _text "${_text}") # /* ... */, over lines too
+        set(_define "\n[ \t]*#[ \t]*define[ \t]+")
+        if("\n${_text}" MATCHES "${_define}(OPENSSL_IS_BORINGSSL|OPENSSL_IS_AWSLC)([ \t]|\n|$)")
+            if(CMAKE_MATCH_1 STREQUAL "OPENSSL_IS_BORINGSSL")
+                set(_marker "the header is BoringSSL's: ${file} defines OPENSSL_IS_BORINGSSL")
+            else()
+                set(_marker "the header is AWS-LC's: ${file} defines OPENSSL_IS_AWSLC")
+            endif()
+        elseif("\n${_text}" MATCHES "${_define}(OPENSSL_VERSION_(NUMBER|STR|MAJOR))[ \t]")
+            set(_found "${file}")
+            if(NOT depth EQUAL 0) # opensslv.h's own: QB-1213's reading
+                set(_hex "[0-9a-fA-F]")
+                if("\n${_text}" MATCHES "${_define}OPENSSL_VERSION_NUMBER[ \t]+0[xX](${_hex})(${_hex}${_hex})")
+                    math(EXPR _major "0x${CMAKE_MATCH_1}")
+                    math(EXPR _minor "0x${CMAKE_MATCH_2}")
+                    set(_said "${_major}.${_minor}")
+                elseif("\n${_text}" MATCHES "${_define}OPENSSL_VERSION_STR[ \t]+\"([0-9]+\\.[0-9]+)")
+                    set(_said "${CMAKE_MATCH_1}")
+                elseif("\n${_text}" MATCHES "${_define}OPENSSL_VERSION_MAJOR[ \t]+([0-9]+)")
+                    set(_said "${CMAKE_MATCH_1}.0")
+                endif()
+            endif()
+        endif()
+        string(REGEX MATCHALL "\n[ \t]*#[ \t]*include[ \t]*<[^>\n]+>" _angled "\n${_text}")
+        foreach(_include IN LISTS _angled)
+            string(REGEX REPLACE ".*(<[^>]+>)" "\\1" _include "${_include}")
+            list(APPEND _angles "${file} includes ${_include}")
+        endforeach()
+        string(REGEX MATCHALL "\n[ \t]*#[ \t]*include[ \t]*\"[^\"\n]+\"" _includes "\n${_text}")
+        get_filename_component(_dir "${file}" DIRECTORY)
+        foreach(_include IN LISTS _includes)
+            if(NOT "${_found}${_marker}" STREQUAL "")
+                break()
+            endif()
+            string(REGEX REPLACE ".*\"([^\"]+)\"" "\\1" _included "${_include}")
+            file(GLOB _there "${_dir}/${_included}")
+            if(IS_ABSOLUTE "${_included}")
+                list(APPEND _unread "${file} includes ${_included}, an absolute path not followed")
+            elseif(depth GREATER_EQUAL 2)
+                list(APPEND _unread "${file} includes ${_included}, deeper than the two levels followed")
+            elseif(NOT EXISTS "${_dir}/${_included}" AND NOT _there)
+                list(APPEND _unread "${file} includes ${_included}, which is not there")
+            else()
+                math(EXPR _deeper "${depth} + 1")
+                get_filename_component(_path "${_dir}/${_included}" ABSOLUTE)
+                _qb_openssl_read_version("${_path}" ${_deeper} _sub_found _sub_said _sub_marker _sub_unread _sub_read
+                                         _sub_angles)
+                list(APPEND _read ${_sub_read})
+                list(APPEND _angles ${_sub_angles})
+                if(NOT "${_sub_marker}" STREQUAL "")
+                    set(_marker "${_sub_marker}")
+                elseif(NOT "${_sub_found}" STREQUAL "")
+                    set(_found "${_sub_found}")
+                    set(_said "${_sub_said}")
+                else()
+                    list(APPEND _unread ${_sub_unread})
+                endif()
+            endif()
+        endforeach()
+    endif()
+    if(NOT "${_found}${_marker}" STREQUAL "")
+        set(_unread "") # a version, or a marker, found decides, whatever else was not read
+    endif()
+    foreach(_out found said marker unread read angles)
+        set(${${_out}_var} "${_${_out}}" PARENT_SCOPE)
+    endforeach()
+endfunction()
+# _qb_openssl_minimum_remedy(<out_var>): the remedy QB-1213's refusal prints for an OpenSSL older than qb's minimum, the
+# command on a line of its own: CMake prints it unwrapped, so copied as printed it is one command.
+function(_qb_openssl_minimum_remedy out_var)
+    if(WIN32) # FindOpenSSL caches the libraries under other names there: -U OPENSSL_SSL_LIBRARY clears nothing
+        string(CONCAT _remedy
+               "Point OPENSSL_ROOT_DIR at an OpenSSL ${_QB_OPENSSL_MINIMUM} or later with this one's entries "
+               "removed:\n  cmake -U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\" "
+               "-DOPENSSL_ROOT_DIR=<it> <build directory>\nFindOpenSSL caches the libraries here as LIB_EAY and "
+               "SSL_EAY, or MSVC's LIB_EAY_DEBUG/_RELEASE and SSL_EAY_DEBUG/_RELEASE, which removing "
+               "OPENSSL_SSL_LIBRARY does not reach. Or configure without TLS (-DQB_WITH_SSL=OFF)")
+    else()
+        string(CONCAT _remedy
+               "Point OPENSSL_ROOT_DIR at an OpenSSL ${_QB_OPENSSL_MINIMUM} or later with this one's three entries "
+               "removed:\n  cmake -U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY "
+               "-DOPENSSL_ROOT_DIR=<it> <build directory>\nor configure without TLS (-DQB_WITH_SSL=OFF)")
+    endif()
+    set(${out_var} "${_remedy}" PARENT_SCOPE)
+endfunction()
