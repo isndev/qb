@@ -219,9 +219,18 @@ function(consume label ssl ngtcp2 own want)
         set(_failures "${_failures}\n  ${label}: ${_wrong}\n    output: ${_flat}" PARENT_SCOPE)
     endif()
 endfunction()
-consume("libngtcp2 moved onto OpenSSL 4 after the install" 3 4 FALSE QUIC
+# A reading is compared with qb's release on a system whose library file names carry their release's major --
+# Darwin and Linux, as qbConfig.cmake.in says -- and only there is the side off qb's major known, its remedy alone
+# printed: the case names such a system rather than taking the host's. On Windows the readings are compared with each
+# other alone and both sides' remedies print, the OpenSSL one in the LIB_EAY form (the twin). Taking the host's, the
+# case went red on every Windows host (europa, five presets) while green on Linux and macOS.
+consume("libngtcp2 moved onto OpenSSL 4 after the install" 3 4 FALSE QUIC SYSTEM Linux
         MUST "links OpenSSL 4, and this project links the libssl of OpenSSL 3 " "Point Ngtcp2_ROOT at a libngtcp2 built against OpenSSL 3 "
         LINE "${_ngtcp2_remedy}" NOT "OPENSSL_ROOT_DIR=" "Ngtcp2_ROOT=<it> <build directory> .*Ngtcp2_ROOT=<it>")
+consume("libngtcp2 moved onto OpenSSL 4 after the install, on Windows" 3 4 FALSE QUIC WIN32
+        MUST "links OpenSSL 4, and this project links the libssl of OpenSSL 3 " "Point Ngtcp2_ROOT at a libngtcp2 built against OpenSSL 3 "
+             "Point OPENSSL_ROOT_DIR at an OpenSSL 3 with"
+        LINE "${_ngtcp2_remedy}" "${_ssl_remedy_windows}" NOT "Ngtcp2_ROOT=<it> <build directory> .*Ngtcp2_ROOT=<it>")
 consume("libngtcp2 and the consumer on the OpenSSL qb was built against" 3 3 FALSE FOUND)
 consume("a newer minor of the OpenSSL qb was built against" 3.6.1 3 FALSE FOUND)
 consume("components asked for, a dependency last" 3 3 FALSE FOUND COMPONENTS io core)
