@@ -470,16 +470,16 @@ public:
         std::variant<std::monostate, T, std::exception_ptr> result_;
 
         /**
-         * @brief Continuation handle for coroutine composition
-         *
-         * When this coroutine completes, this handle is resumed.
+         * @brief Continuation handle for coroutine composition: resumed when this coroutine completes.
          */
         std::coroutine_handle<> continuation_;
 
-        /**
-         * @brief Pointer to the scheduler managing this coroutine
-         */
+        /// Pointer to the scheduler managing this coroutine
         CoroutineScheduler *scheduler_ = nullptr;
+
+        /// While a coroutine that does not own this task awaits it (`co_await t` on an lvalue), the awaiter's link to
+        /// this promise, which the frame's destruction clears (Huly QB-1243; detail::borrowed_task_awaiter, below).
+        void **borrower_ = nullptr;
 
         /**
          * @brief Coroutine ID for debugging/tracing
@@ -591,10 +591,7 @@ public:
             result_.template emplace<1>(std::move(value));
         }
 
-        /**
-         * @brief Check if the coroutine has completed
-         * @return true if result is available (success or exception)
-         */
+        /// True once the coroutine has completed: its result is available (success or exception).
         [[nodiscard]] bool
         is_ready() const noexcept {
             return result_.index() != 0;
@@ -629,9 +626,12 @@ public:
             return std::get<2>(result_);
         }
 
-        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
+        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h),
+        /// and the link of a coroutine still waiting on it that does not own it (Huly QB-1243).
         QB_MSVC_FORCEINLINE ~promise_type() {
             detail::track_frame_destroyed(detail::handle_from_promise(*this).address());
+            if (borrower_) [[unlikely]]
+                *borrower_ = nullptr;
 #ifdef QB_DEBUG_COROUTINES
             QB_CORO_TRACE(coro_id_, "promise_destroyed");
 #endif
@@ -706,6 +706,11 @@ public:
     task(const task &)            = delete;
     task &operator=(const task &) = delete;
 
+    /// `co_await t` on a task the awaiting coroutine does not own -- an lvalue -- borrows it (Huly QB-1243, below).
+    auto operator co_await() & noexcept;
+    /// A temporary or `std::move(t)` is awaited through the members that follow, as it always was.
+    task &operator co_await() && noexcept;
+
     /**
      * @brief Awaitable: check if ready
      * @return true if coroutine is complete
@@ -720,15 +725,10 @@ public:
     }
 
     /**
-     * @brief Awaitable: suspend and set continuation
-     * @param caller The coroutine awaiting this task
-     * @return Handle to resume (symmetric transfer)
-     *
-     * Sets the continuation and returns this task's handle for symmetric transfer.
-     * The continuation will be resumed when this coroutine completes via final_suspend.
-     *
-     * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
-     * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
+     * @brief Awaitable: set the continuation and return this task's handle (symmetric transfer: no recursion)
+     * @param caller The coroutine awaiting this task, resumed when this coroutine completes (final_suspend)
+     * @return Handle to resume
+     * IMPLEMENTATION NOTE: defined inline to avoid a circular dependency with CoroutineScheduler.
      */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
@@ -827,9 +827,7 @@ class task<void> {
 public:
     using value_type = void;
 
-    /**
-     * @brief Promise type for task<void>
-     */
+    /// Promise type for task<void>
     struct promise_type {
         // Finding 2.A.9: pooled frame allocation (see detail::CoroutineFrameAllocator).
         QB_CORO_PROMISE_POOLED_NEW_DELETE()
@@ -839,15 +837,14 @@ public:
          */
         std::exception_ptr exception_;
 
-        /**
-         * @brief Continuation for coroutine composition
-         */
+        /// Continuation for coroutine composition
         std::coroutine_handle<> continuation_;
 
-        /**
-         * @brief Scheduler pointer
-         */
+        /// Scheduler pointer
         CoroutineScheduler *scheduler_ = nullptr;
+
+        /// While a coroutine that does not own this task awaits it: the awaiter's link to this promise (see task<T>).
+        void **borrower_ = nullptr;
 
         /**
          * @brief Completion flag
@@ -940,9 +937,12 @@ public:
             return exception_ != nullptr;
         }
 
-        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
+        /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h),
+        /// and the link of a coroutine still waiting on it that does not own it (Huly QB-1243).
         QB_MSVC_FORCEINLINE ~promise_type() {
             detail::track_frame_destroyed(detail::handle_from_promise(*this).address());
+            if (borrower_) [[unlikely]]
+                *borrower_ = nullptr;
 #ifdef QB_DEBUG_COROUTINES
             QB_CORO_TRACE(coro_id_, "promise_destroyed");
 #endif
@@ -991,6 +991,11 @@ public:
     task(const task &)            = delete;
     task &operator=(const task &) = delete;
 
+    /// `co_await t`, t an lvalue: a borrow (see task<T>, Huly QB-1243).
+    auto operator co_await() & noexcept;
+    /// A temporary or `std::move(t)`: awaited through the members below, as it always was.
+    task &operator co_await() && noexcept;
+
     [[nodiscard]] bool
     await_ready() const noexcept {
         if (!handle_)
@@ -1001,15 +1006,10 @@ public:
     }
 
     /**
-     * @brief Awaitable: suspend and set continuation
-     * @param caller The coroutine awaiting this task
-     * @return Handle to resume (symmetric transfer)
-     *
-     * Sets the continuation and returns this task's handle for symmetric transfer.
-     * The continuation will be resumed when this coroutine completes via final_suspend.
-     *
-     * IMPLEMENTATION NOTE: This is defined inline to avoid circular dependency
-     * with CoroutineScheduler. Symmetric transfer prevents stack overflow.
+     * @brief Awaitable: set the continuation and return this task's handle (symmetric transfer: no recursion)
+     * @param caller The coroutine awaiting this task, resumed when this coroutine completes (final_suspend)
+     * @return Handle to resume
+     * IMPLEMENTATION NOTE: defined inline to avoid a circular dependency with CoroutineScheduler.
      */
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> caller) noexcept {
@@ -1062,6 +1062,95 @@ public:
 private:
     handle_type handle_;
 };
+
+namespace detail {
+/**
+ * @brief What `co_await t` on a task LVALUE returns: the await of a task by a coroutine that does not own it -- a
+ *        member, a slot of a shared state, a variable of an outer scope (Huly QB-1243).
+ * @details A task awaited as a temporary (`co_await make()`) lives in the awaiting frame: destroying that frame
+ *          destroys the task, continuation and all. A task held elsewhere outlives an awaiting frame its scheduler
+ *          destroys -- `reset_coro_scheduler()`, `recycle_coro_scheduler()`, a `VirtualCore`'s end -- and its
+ *          continuation named the freed frame, which its completion resumed. This awaiter is a temporary of the
+ *          `co_await` expression, so it lives in the awaiting frame, and it links the two frames while it waits:
+ *          destroyed before the task completes, it clears the task's continuation (the task then finishes into
+ *          nothing and its owner destroys it, as before); the task's frame, destroyed first, cuts the link
+ *          (`promise_type::borrower_`). `co_await std::move(t)` is no borrow: `t` is awaited in place -- not moved
+ *          out of its holder -- through its own members, as before 3.4, so a coroutine that awaits a task it does not
+ *          own must name it as an lvalue. A task still unfinished must not be awaited again: a second await resumes it
+ *          where it is parked, as an await of a started task always did; one whose borrower was destroyed finishes into
+ *          nothing and is its owner's to destroy. Not copyable: a copy would share the link.
+ */
+template <typename Task>
+class borrowed_task_awaiter {
+public:
+    explicit borrowed_task_awaiter(Task &borrowed) noexcept
+        : task_(borrowed) {}
+    borrowed_task_awaiter(borrowed_task_awaiter const &)            = delete;
+    borrowed_task_awaiter(borrowed_task_awaiter &&)                 = delete;
+    borrowed_task_awaiter &operator=(borrowed_task_awaiter const &) = delete;
+    borrowed_task_awaiter &operator=(borrowed_task_awaiter &&)      = delete;
+
+    /// Destroyed while it waits -- its frame destroyed -- the task must not resume that frame; destroyed after the task
+    /// resumed it, at the end of the full-expression holding the `co_await`, the task's frame keeps no link to this one.
+    ~borrowed_task_awaiter() {
+        if (awaited_) {
+            auto *const promise = static_cast<typename Task::promise_type *>(awaited_);
+            if (promise->borrower_ == &awaited_) { // still this await's link, not one a later await took over
+                promise->continuation_ = nullptr;
+                promise->borrower_     = nullptr;
+            }
+        }
+    }
+
+    [[nodiscard]] bool
+    await_ready() const noexcept {
+        return task_.await_ready();
+    }
+
+    // awaiter-tracking: delegates to task::await_suspend, which records the suspension (its gated tail record)
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> caller) noexcept {
+        auto &promise     = promise_of(task_.handle());
+        awaited_          = &promise;
+        promise.borrower_ = &awaited_;
+        return task_.await_suspend(caller);
+    }
+
+    /// The task completed and resumed this frame. The link goes with this awaiter, at the end of the full-expression
+    /// holding the `co_await` -- the task's frame is still alive then, at its final suspension, unless its owner
+    /// destroyed it, which cut the link.
+    decltype(auto)
+    await_resume() {
+        return task_.await_resume();
+    }
+
+private:
+    Task &task_;
+    void *awaited_ = nullptr; ///< the awaited promise while this waits on it; nulled by that frame's destruction
+};
+} // namespace detail
+
+template <typename T>
+auto
+task<T>::operator co_await() & noexcept {
+    return detail::borrowed_task_awaiter<task<T>>{*this};
+}
+
+template <typename T>
+task<T> &
+task<T>::operator co_await() && noexcept {
+    return *this;
+}
+
+inline auto
+task<void>::operator co_await() & noexcept {
+    return detail::borrowed_task_awaiter<task<void>>{*this};
+}
+
+inline task<void> &
+task<void>::operator co_await() && noexcept {
+    return *this;
+}
 
 } // namespace qb::io::async
 

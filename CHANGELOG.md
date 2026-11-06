@@ -673,19 +673,18 @@ policy.
   The table holds 16 schedulers per thread:
   beyond that, an awaiter falls back on the current one, and a frame registered with one of the rest that is not
   current stays in its sets; and it is the thread's own, so a scheduler must die on the thread that built it. A handle
-  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Three limits remain, each
-  with its ticket: a chain that awaits a helper that spawns -- a combinator, a `coroutine_scope`, a timeout,
+  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Two limits remain, each with
+  its ticket: a chain that awaits a helper that spawns -- a combinator, a `coroutine_scope`, a timeout,
   `make_cancellable()`, `cancellable_sleep()`, `make_shared_task()` -- is not wholly its task's: the helpers are the
-  scheduler's, and the reset destroys them (Huly QB-1238); the other way round, a spawned coroutine that awaits a `task`
-  it does not own (`co_await` on one held elsewhere) leaves that task's frame with a continuation to the destroyed root
-  (Huly QB-1243); and the tcp connector's awaiters still fall back on their cached scheduler (Huly QB-1234). Witnessed
-  in `qb-io-test-unit-scheduler-lifecycle` for `sleep()`, `recv_for()`, `send_for()` and a socket wait -- each destroyed
-  once by its task, each woken in the next scheduler or with none bound -- for `recycle_coro_scheduler()`, for a
-  scheduler destroying its frames while another is current, whether they registered with it or with the current one, for
-  a frame registered with a live scheduler that is not current, for the live-scheduler table, for a temporary listener's
-  reset, with and without a scheduler of its own, and for a scheduler destroyed while current; and in
-  `qb-io-test-unit-scheduler-abandoned-frames` for its teardown; and in `qb-core-test-system-coroutine-basics` for an
-  actor that spawns after a reset on its core, and with its core's scheduler alive but unbound.
+  scheduler's, and the reset destroys them (Huly QB-1238); and the tcp connector's awaiters still fall back on their
+  cached scheduler (Huly QB-1234). Witnessed in `qb-io-test-unit-scheduler-lifecycle` for `sleep()`, `recv_for()`,
+  `send_for()` and a socket wait -- each destroyed once by its task, each woken in the next scheduler or with none bound
+  -- for `recycle_coro_scheduler()`, for a scheduler destroying its frames while another is current, whether they
+  registered with it or with the current one, for a frame registered with a live scheduler that is not current, for the
+  live-scheduler table, for a temporary listener's reset, with and without a scheduler of its own, and for a scheduler
+  destroyed while current; and in `qb-io-test-unit-scheduler-abandoned-frames` for its teardown; and in
+  `qb-core-test-system-coroutine-basics` for an actor that spawns after a reset on its core, and with its core's
+  scheduler alive but unbound.
 - **A `task` destroyed unfinished leaves the queue of every scheduler of its thread, not only the current one's (Huly
   QB-1245).** `~task`, and a move-assignment over an unfinished task, scrubbed the frame from the current scheduler --
   and, since QB-1220, from the one destroying its frames -- before freeing it. A waker queues a frame in whichever
@@ -704,6 +703,24 @@ policy.
   scheduler and its task destroyed under another, the same with none current, a timer armed under one scheduler and
   fired under another, a scheduler beyond the table -- its thread's 17th -- destroying its frames while another is
   current, and a spawned root woken under another live scheduler, then destroyed and cancelled by its own.
+- **A coroutine that awaits a `task` it does not own leaves it no continuation once destroyed (Huly QB-1243).**
+  `co_await t` on a task held elsewhere -- a member, a slot of a shared state, a variable of an outer scope -- set that
+  task's continuation to the awaiting frame, and nothing took it back: a spawned coroutine destroyed by its scheduler
+  while it waited -- `reset_coro_scheduler()`, `recycle_coro_scheduler()`, a `VirtualCore`'s end -- left the task naming
+  the freed frame, which the task's completion resumed (since QB-1220, which leaves such a task to its owner; before it,
+  the task's frame was destroyed twice). An lvalue await now goes through `task::operator co_await() &`, which returns a
+  borrow, `detail::borrowed_task_awaiter`, a temporary of the `co_await` expression, so it lives in the awaiting frame:
+  while it waits, the two frames are linked, the awaiting frame destroyed first clears the task's continuation -- the
+  task then finishes into nothing, for its owner to destroy -- and the task's frame destroyed first cuts the link in its
+  promise's destructor. A temporary or `std::move(t)` goes through `operator co_await() &&`, which returns the task
+  itself: awaited as before, no borrow -- `t` is not moved out of its holder, so a task held elsewhere is awaited as an
+  lvalue. The borrow's destructor touches the link only while it is still its own. The cost: an lvalue await stores two
+  pointers at its suspension and clears two at the end of the full-expression holding the `co_await`, and the awaiting
+  frame holds one pointer more for it; every task frame carries one pointer more and tests it at its destruction.
+  Witnessed in `qb-io-test-unit-scheduler-lifecycle`: a spawned coroutine awaiting a task parked on a channel, destroyed
+  by its scheduler, and one awaiting a task parked on a timer across the listener's recycle (each red under
+  AddressSanitizer: a heap-use-after-free at the task's completion); and two design guards of the link, a task destroyed
+  while a coroutine awaits it and a task outliving the coroutine it completed for.
 - **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
   clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
   the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them

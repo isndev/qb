@@ -2221,3 +2221,166 @@ TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInAnotherLiveSchedulerLeavesIt
     EXPECT_EQ(woken_under.pending_count(), 0u) << "the cancelled root is still queued in the scheduler that woke it";
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
+
+namespace scheduler_lifecycle_test {
+/// Bigger than the coroutine frame pool's classes: a frame holding one is freed by the allocator, which
+/// AddressSanitizer watches, so a resume or a write into it once freed is reported, not hidden by the pool.
+struct beyond_the_pool {
+    volatile char bytes[8192];
+};
+
+inline task<int>
+receive_value(channel<int> &ch) {
+    auto const got = co_await ch.recv();
+    co_return got ? *got : -1;
+}
+
+inline task<int>
+receive_value_in_a_big_frame(channel<int> &ch) {
+    beyond_the_pool pad{};
+    pad.bytes[0]   = 1;
+    auto const got = co_await ch.recv();
+    co_return got ? *got + pad.bytes[0] - 1 : -1;
+}
+
+inline task<void>
+receive_once_in_a_big_frame(channel<int> &ch) {
+    beyond_the_pool pad{};
+    pad.bytes[0] = 1;
+    (void) co_await ch.recv();
+    pad.bytes[1] = pad.bytes[0];
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A spawned coroutine awaiting a task it does not own -- `co_await held`, an lvalue -- destroyed by its scheduler
+ *       leaves that task no continuation to its freed frame (Huly QB-1243).
+ * @brief The scheduler destroys the root it owns; `held` is its owner's, parked on a channel. Its continuation still
+ *        named the destroyed root: the send completed `held`, whose final_suspend resumed the freed frame -- a
+ *        heap-use-after-free under AddressSanitizer, the root's frame being bigger than the pool's classes.
+ */
+TEST_F(CoroutineSchedulerTests, ASpawnedCoroutineAwaitingATaskItDoesNotOwnLeavesItNoContinuationOnceDestroyed) {
+    const long               baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>             ch;
+    CoroutineScheduler       standalone;
+    std::optional<task<int>> held;
+    int                      got = 0;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&standalone};
+        held.emplace(scheduler_lifecycle_test::receive_value(ch));
+        standalone.spawn([&held, &got]() -> task<void> {
+            scheduler_lifecycle_test::beyond_the_pool pad{};
+            pad.bytes[0] = 1;
+            got          = co_await *held; // an lvalue: this coroutine does not own the task
+            pad.bytes[1] = pad.bytes[0];
+        });
+        standalone.run_ready(); // the root starts `held`, which parks on the channel
+        ASSERT_FALSE(held->done());
+        standalone.destroy_all_suspended(); // the root goes; `held` is left to its owner
+        EXPECT_FALSE(detail::promise_of(held->handle()).continuation_) << "the task still names the destroyed root";
+        ASSERT_TRUE(ch.try_send(7)); // wakes `held`: its completion resumed the freed root
+        standalone.run_ready();
+        EXPECT_TRUE(held->done());
+    }
+    EXPECT_EQ(got, 0) << "the destroyed root ran on";
+    held.reset();
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test The same across the listener's recycle -- what a `VirtualCore` runs at its teardown -- with the borrowed task
+ *       parked on a timer: it wakes after the recycle and finishes without resuming the destroyed root (Huly QB-1243).
+ */
+TEST_F(CoroutineSchedulerTests, ACoroutineAwaitingATaskItDoesNotOwnLeavesItNoContinuationAcrossTheRecycle) {
+    const long                baseline  = detail::CoroutineFrameAllocator::live_frames;
+    const std::size_t         abandoned = abandoned_coroutine_frames_total();
+    std::optional<task<void>> held;
+    bool                      resumed = false;
+    held.emplace(scheduler_lifecycle_test::nap(5ms));
+    coro_scheduler().spawn([&held, &resumed]() -> task<void> {
+        scheduler_lifecycle_test::beyond_the_pool pad{};
+        pad.bytes[0] = 1;
+        co_await *held; // an lvalue: this coroutine does not own the task
+        resumed      = true;
+        pad.bytes[1] = pad.bytes[0];
+    });
+    coro_scheduler().run_ready(); // the root starts `held`, which parks on its timer
+    ASSERT_FALSE(held->done());
+    qb::io::async::listener::current.recycle_coro_scheduler();
+    EXPECT_FALSE(detail::promise_of(held->handle()).continuation_) << "the task still names the destroyed root";
+    EXPECT_TRUE(pump_until([&] { return held->done(); })) << "the borrowed task never finished";
+    EXPECT_FALSE(resumed) << "the destroyed root ran on";
+    held.reset();
+    EXPECT_EQ(abandoned_coroutine_frames_total(), abandoned);
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A borrowed task destroyed by its owner while a spawned coroutine awaits it leaves that coroutine nothing to
+ *       clear when its scheduler destroys it in turn (Huly QB-1243).
+ * @brief A design guard of the borrow: the awaiting coroutine's frame holds a link to the task's frame, which the
+ *        task's frame must cut when it goes first -- else the awaiting frame's destruction writes into the freed one.
+ */
+TEST_F(CoroutineSchedulerTests, ATaskDestroyedWhileACoroutineAwaitsItLeavesThatCoroutineNothingToClear) {
+    const long               baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>             ch;
+    CoroutineScheduler       standalone;
+    std::optional<task<int>> held;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&standalone};
+        held.emplace(scheduler_lifecycle_test::receive_value_in_a_big_frame(ch));
+        standalone.spawn([&held]() -> task<void> { (void) co_await *held; });
+        standalone.run_ready(); // `held` parks on the channel, awaited by the root
+        held.reset();           // its owner destroys it, unfinished: the root waits on nothing now
+        standalone.destroy_all_suspended();
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A borrowed task that outlives the coroutine it completed for -- the ordinary path -- keeps no link to that
+ *       coroutine's freed frame (Huly QB-1243).
+ * @brief A design guard of the borrow: the awaiting coroutine resumes, finishes and is freed; the task is destroyed by
+ *        its owner afterwards and must not write into the freed frame.
+ */
+TEST_F(CoroutineSchedulerTests, ABorrowedTaskOutlivingTheCoroutineItCompletedForKeepsNoLinkToIt) {
+    const long               baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>             ch;
+    CoroutineScheduler       standalone;
+    std::optional<task<int>> held;
+    int                      got = 0;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&standalone};
+        held.emplace(scheduler_lifecycle_test::receive_value(ch));
+        standalone.spawn([&held, &got]() -> task<void> {
+            scheduler_lifecycle_test::beyond_the_pool pad{};
+            pad.bytes[0] = 1;
+            got          = co_await *held + pad.bytes[0] - 1;
+        });
+        standalone.run_ready();
+        ASSERT_TRUE(ch.try_send(7));
+        for (int i = 0; i < 4 && standalone.has_work(); ++i)
+            standalone.run_ready(); // `held` completes, the root resumes, finishes and is freed
+        EXPECT_EQ(got, 7);
+        EXPECT_TRUE(held->done());
+        held.reset(); // after the root it completed for is gone
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/// @test The same for a `task<void>`, whose promise is its own type (Huly QB-1243).
+TEST_F(CoroutineSchedulerTests, AVoidTaskDestroyedWhileACoroutineAwaitsItLeavesThatCoroutineNothingToClear) {
+    const long                baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>              ch;
+    CoroutineScheduler        standalone;
+    std::optional<task<void>> held;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&standalone};
+        held.emplace(scheduler_lifecycle_test::receive_once_in_a_big_frame(ch));
+        standalone.spawn([&held]() -> task<void> { co_await *held; });
+        standalone.run_ready(); // `held` parks on the channel, awaited by the root
+        held.reset();           // its owner destroys it, unfinished
+        standalone.destroy_all_suspended();
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
