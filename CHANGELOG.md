@@ -447,20 +447,47 @@ policy.
   "SSL_EAY*"` for the two libraries, FindOpenSSL caching them there under those names -- in the same build directory,
   the command on a line of its own that CMake prints unwrapped, or `-DQB_WITH_SSL=OFF`. An error, not a build without
   TLS that nobody asked for, as for QB-1190's split cache; headers that old whose majors disagree keep their own
-  message, now naming the reading that was old. An OpenSSL so refused leaves what the build directory had as it was,
-  and so does the zlib its search found for a static one: one that never had an OpenSSL, the refused one removed
-  afterwards, goes on without TLS as if none was ever found; one that had an OpenSSL 3, which an update replaced by the
-  refused one, still stops on its loss. BoringSSL and AWS-LC, whose version is in `base.h`, not in the `opensslv.h`
-  read, pass as before (Huly QB-1262). `qb-io-test-unit-quic-openssl-verdict`: `openssl-1.1` and `libressl` now fail
-  the configure; new cases refuse a 1.1 or a 1.0.2 read by the header alone or by FindOpenSSL alone, LibreSSL by its
-  marker alone, an old split read by the header alone, an old OpenSSL where majors are not compared (FreeBSD) and on
-  Windows, and an OpenSSL refused then removed: one major or split in a build directory that had none, one major in one
-  that had an OpenSSL 3 and in one QB-1185's code configured; they pass 3.0 read either way and OpenSSL 3's own header,
-  whose `OPENSSL_VERSION_NUMBER` is an expression. The command a refusal prints is taken from its output and run as
-  printed, with nothing else, on the refused build directory -- off Windows to an OpenSSL 3 found and read again
-  there, on Windows too, MSVC's debug and release libraries included. `qb-io-test-unit-found-libraries`: a static
-  OpenSSL 1.1 refused leaves its zlib had or not as it was. INSTALL.md, `building.md`'s platform notes, README.md's
-  options table, `ssl_transport.md`, `cmake_dependencies.md` and `qb.llm.md` say the minimum.
+  message, now naming the reading that was old. An OpenSSL so refused leaves what the build directory had as it was, and
+  so does the zlib its search found for a static one: one that never had an OpenSSL, the refused one removed afterwards,
+  goes on without TLS as if none was ever found; one that had an OpenSSL 3, which an update replaced by the refused one,
+  still stops on its loss. BoringSSL, whose version is in `base.h`, not in the `opensslv.h` read, passed: QB-1262
+  refuses it (below); AWS-LC's `opensslv.h` keeps a 1.1 version under `#if 0`, which both readings take: refused for its
+  age. `qb-io-test-unit-quic-openssl-verdict`: `openssl-1.1` and `libressl` now fail the configure; new cases refuse a
+  1.1 or a 1.0.2 read by the header alone or by FindOpenSSL alone, LibreSSL by its marker alone, an old split read by
+  the header alone, an old OpenSSL where majors are not compared (FreeBSD) and on Windows, and an OpenSSL refused then
+  removed: one major or split in a build directory that had none, one major in one that had an OpenSSL 3 and in one
+  QB-1185's code configured; they pass 3.0 read either way and OpenSSL 3's own header, whose `OPENSSL_VERSION_NUMBER` is
+  an expression. The command a refusal prints is taken from its output and run as printed, with nothing else, on the
+  refused build directory -- off Windows to an OpenSSL 3 found and read again there, on Windows too, MSVC's debug and
+  release libraries included. `qb-io-test-unit-found-libraries`: a static OpenSSL 1.1 refused leaves its zlib had or not
+  as it was. INSTALL.md, `building.md`'s platform notes, README.md's options table, `ssl_transport.md`,
+  `cmake_dependencies.md` and `qb.llm.md` say the minimum.
+- **qb refuses at configure an OpenSSL whose `opensslv.h` carries no version, BoringSSL's, instead of failing at its
+  compile (Huly QB-1262).** BoringSSL keeps its version in `base.h`; its `opensslv.h` only includes `crypto.h`, so
+  FindOpenSSL reports no version and the header says none: QB-1213's two readings were empty, nothing was refused --
+  never a guess -- and the configure passed with SSL on, to fail at the compile on `EVP_MAC_fetch()`, which BoringSSL's
+  `evp.h` does not declare (measured on the train-5 reviewer's BoringSSL-shaped prefix: configure rc 0, `Found OpenSSL:
+  ` with no version). `_qb_check_openssl()` now also reads `OPENSSL_VERSION_NUMBER`, `OPENSSL_VERSION_STR` and
+  `OPENSSL_VERSION_MAJOR` in `opensslv.h` and in the files it includes with a relative quoted `#include`, two levels
+  deep, comments removed first -- Node's installed `opensslv.h` is two levels from the one that carries its version --
+  and, FindOpenSSL reporting none, refuses one in which none is found, naming the files read and the angle includes not
+  followed (BoringSSL's `<openssl/base.h>`, or a wrapper's `<openssl/opensslv-x86_64.h>`: the compiler's to find) and
+  printing QB-1213's remedy, the command on a line of its own; refused, what the build directory had is left as it was.
+  A version found in an included file is held to 3.0 as `opensslv.h`'s own is, and BoringSSL's or AWS-LC's marker
+  (`OPENSSL_IS_BORINGSSL`, `OPENSSL_IS_AWSLC`) in a file read refuses whatever version it says. `opensslv.h` is found by
+  `if(EXISTS)` or by a glob: the first is false for a file that cannot be read, the second lists none under a directory
+  whose name holds brackets. A file of that chain that cannot be read, an include not there, an absolute one or one
+  deeper than two levels decides nothing: the configure goes on, as before, and a warning names it. AWS-LC's
+  `opensslv.h` keeps `OPENSSL_VERSION_NUMBER 0x1010107f` under `#if 0`, which FindOpenSSL reports as 1.1.1g (measured,
+  CMake 4.4.5) and QB-1213's reading takes as 1.1: refused for its age. Witnessed in
+  `qb-io-test-unit-quic-openssl-verdict`: a BoringSSL-shaped header and an empty one refused with the remedy, the
+  printed command run as printed finding an OpenSSL 3, the refused one removed leaving a build directory that never had
+  one; refused too, an include and a define commented out, a 1.1 version and BoringSSL's marker found in an included
+  file, an angle wrapper (named), a BoringSSL header under a directory named with brackets, one on Windows (with its
+  remedy) and one over a cache split across majors (for its version, not as split); Node's two-level wrapper, a
+  one-level one, a version FindOpenSSL reports, `OPENSSL_VERSION_STR` alone and a real OpenSSL 3 header passing; an
+  include not there, too deep, absolute or unreadable, and an unreadable `opensslv.h`, passing with a warning that names
+  the file.
 - **An installed qb whose consumer finds OpenSSL, or a libngtcp2, on another major than qb's reports qb not found, with
   the remedy (Huly QB-1256).** The generated `qbConfig.cmake` warned on both, and went on: a qb built against OpenSSL 3
   then linked a libssl 4, across OpenSSL types in qb's public API (`SSL_CTX*` is in the signature set), and failed at

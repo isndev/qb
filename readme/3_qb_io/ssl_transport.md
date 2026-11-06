@@ -63,15 +63,21 @@ An OpenSSL whose headers, `libssl` and `libcrypto` are not one major stops the c
 Linux and macOS: FindOpenSSL caches the three apart, and a cache cleared in part -- one entry removed while
 `OPENSSL_ROOT_DIR` moved to another OpenSSL -- built a TLS that crashed (Huly QB-1190). The message names the three
 entries and their majors; remove all three from the cache, or configure with `--fresh`. qb needs OpenSSL 3.0 or later
-(`crypto.h` uses its `EVP_MAC` API), and an older one stops the configure on every platform, by the version FindOpenSSL
-reports or by the one its header says -- LibreSSL, by its marker, too: the message names the version, the paths and
-the remedy, another OpenSSL through `OPENSSL_ROOT_DIR` with the three entries removed (on Windows,
-`-U "LIB_EAY*" -U "SSL_EAY*"` for the two libraries: FindOpenSSL caches them there under those names), or
+(`crypto.h` uses its `EVP_MAC` API), and an older one stops the configure on every platform, by the version
+FindOpenSSL reports or by the one its header says -- LibreSSL, by its marker, too: the message names the version, the
+paths and the remedy, another OpenSSL through `OPENSSL_ROOT_DIR` with the three entries removed (on Windows, `-U
+"LIB_EAY*" -U "SSL_EAY*"` for the two libraries: FindOpenSSL caches them there under those names), or
 `-DQB_WITH_SSL=OFF` (Huly QB-1213); before, one whose majors agreed configured and failed at its compile. Headers that
 old whose majors disagree are refused for being too old, not as a cache cleared in part: a release that old may number
-its libraries apart from itself, as RHEL 7 names 1.0.2k's `libssl.so.10`.
+its libraries apart from itself, as RHEL 7 names 1.0.2k's `libssl.so.10`. One whose `opensslv.h` carries no version --
+none of `OPENSSL_VERSION_NUMBER`, `OPENSSL_VERSION_STR` and `OPENSSL_VERSION_MAJOR` there or in what it includes with
+a relative quoted `#include`, two levels deep, comments removed, FindOpenSSL reporting none either -- stops it the
+same way, with the same remedy, naming the angle includes it did not follow: BoringSSL's, which keeps its version in
+`base.h` and has no `EVP_MAC_fetch()` (Huly QB-1262). A version found in an included file is held to 3.0 too, and
+BoringSSL's or AWS-LC's marker in a file read refuses whatever version it says. A file of that chain that cannot be
+read decides nothing, and a warning names it.
 
-<!-- src: qb/cmake/qbOpenSSL.cmake:226-382 -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:226-382, :672-814 (_qb_openssl_carries_version, _qb_openssl_read_version) -->
 
 | Symbol | Meaning |
 | --- | --- |
