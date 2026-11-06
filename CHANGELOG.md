@@ -499,8 +499,9 @@ policy.
   `Ngtcp2_ROOT` at one built against it; or a rebuild. Only the major is compared, as before: a newer minor of qb's
   passes in silence. This project's OpenSSL libraries read off qb's major where its headers are on it (the QUIC
   verdict reads the libraries) are the same boundary and report qb not found too, libngtcp2 agreeing with them or not
-  -- on Darwin and Linux, where a library's file name carries its release's major, as qb's configure compares; on
-  another system the readings are compared with each other alone, and a conflict prints both sides' remedies.
+  -- on Darwin and Linux, where a library's file name carries its release's major, as qb's configure compares, and on
+  Windows, where OpenSSL names its DLLs by it (QB-1184, under Fixed); on another system the readings are compared with
+  each other alone, and a conflict prints both sides' remedies.
   `Ngtcp2_ROOT` reaches the search whatever the consumer's minimum: `qbConfig.cmake` sets CMP0074 in its own policy
   scope, before `find_dependency()` is defined. The consumer's module path is restored and `qbConfig.cmake`'s own
   variables unset (the component loader's were left before); the records of its searches stay in the cache.
@@ -1159,6 +1160,38 @@ policy.
   configure's inputs too, reports it. Nine rounds of independent review, the last finding no defect; 39 mutants of the
   fix, planted one at a time, each caught; on macOS arm64 (`cmake -S qb`, openssl@4): Release 255 registered / 255
   executed / 0 skipped, ASan+UBSan 256 / 256 / 0, TSan 255 / 255 / 0, no compiler warning, no sanitizer report.
+
+- **On Windows, a libngtcp2 whose OpenSSL helper imports another OpenSSL major than qb's disables QUIC at configure time,
+  as on Linux and macOS (Huly QB-1184).** QB-1179's reader read nothing under `WIN32`: a vcpkg triplet carries one
+  OpenSSL, but MSYS2's packages, or an installer's OpenSSL DLLs beside vcpkg's, can load `libssl-3-x64.dll` and
+  `libssl-4-x64.dll` into one process, the pair that crashed at the first QUIC handshake on macOS (QB-1175). The
+  library found there is an import library: `FindNgtcp2.cmake` now reads the DLL name it records -- MinGW's carries a
+  suffix its `.dll.a` lacks (`libngtcp2_crypto_ossl-0.dll`) -- in the `bin` directory beside its `lib` directory,
+  vcpkg's and MSYS2's layout, or beside it, and lists what that DLL imports with `objdump -p` where the toolchain names
+  one (MinGW's), else `dumpbin /DEPENDENTS` beside MSVC's linker or on `PATH`, else `llvm-objdump -p`; OpenSSL names its
+  DLLs `lib<name>-<major>[_<minor>][-<arch>].dll`, read in any case. qb's own side stays its headers' major there. Two
+  majors disable QUIC with the warning naming the import library and the DLL read, its remedy removing the entries
+  FindOpenSSL caches on Windows (`OPENSSL_INCLUDE_DIR`, `LIB_EAY*`, `SSL_EAY*`), and the helper's import library and DLL
+  are inputs of the configure there too. vcpkg keeps an empty verdict: on the root `release` preset (vcpkg's ngtcp2
+  1.23.0 on OpenSSL 3.6.3, MSVC 19.51) the helper's DLL reads OpenSSL 3, release and debug, and QUIC stays enabled,
+  silent. The build now plants, on Windows only, a libngtcp2_crypto_ossl stand-in importing a `libssl-4-x64.dll` and a
+  `libcrypto-4-x64.dll` it builds beside it, and one importing OpenSSL 3, named apart from their import libraries as
+  MinGW names them: on the base, `qb-io-test-unit-ngtcp2-openssl-listing` read nothing from them and
+  `qb-io-test-unit-quic-openssl-verdict`'s configure on the first kept QUIC on, silent, `QB_REQUIRE_FEATURES=ON`
+  passing; both now read OpenSSL 4, disable QUIC and fail the required configure, and the second rewritten onto
+  OpenSSL 4 re-runs the configure at the next build. Off Windows the same cases run on a Windows target
+  (`CMAKE_SYSTEM_NAME`), with the dumpbin and objdump listings, the tool order and the import-library layouts through
+  stand-ins; 24 mutants of the change, planted one at a time, each caught on Windows (MSVC) and on WSL2 (g++ 14).
+  Still not checked on Windows: qb's own libraries (a cache cleared in part), an import library whose DLL is in neither
+  place, a static triplet, which file of a DLL's name the loader takes at run time, and a DLL loaded by name at run
+  time. An installed qb's consumer reads the helper's DLL on Windows too, through the `FindNgtcp2.cmake` installed
+  beside `qbConfig.cmake`, and Windows joins Darwin and Linux among the systems whose readings are measured against
+  qb's major (QB-1256's rule): OpenSSL's own build names its DLLs by its release's major (`libssl-3-x64.dll`,
+  `libssl-1_1-x64.dll`), while a consumer's own libraries are not read there, its headers' major standing in, which
+  the OpenSSL-major check has held to qb's. A libngtcp2 off qb's major then gets its own remedy alone, where both
+  sides' were printed; `qb-io-test-unit-installed-quic-openssl` has a Windows consumer for it, which replaces the
+  Windows twin QB-1256's fix gave its case for a libngtcp2 moved onto OpenSSL 4 after the install (both remedies, the
+  rule this changes); that case keeps naming Linux.
 
 - **qb's configure stops when its OpenSSL headers, libssl and libcrypto are not one major, QUIC or not: a cache cleared
   in part configured and built a TLS that crashed (Huly QB-1190).** FindOpenSSL caches `OPENSSL_INCLUDE_DIR`,

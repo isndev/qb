@@ -5,8 +5,9 @@
 #   Ngtcp2_FOUND
 #   Ngtcp2_VERSION
 #   Ngtcp2_OPENSSL_MAJOR    the OpenSSL major libngtcp2_crypto_ossl links (3, 4, ...), read from the shared
-#                           library's own dependency list; empty for a static archive, on Windows, or when no
-#                           tool can read it (Huly QB-1179)
+#                           library's own dependency list -- on Windows the list of the DLL its import library names
+#                           (Huly QB-1184); empty for a static archive, an import library whose DLL is not found, or
+#                           when no tool can read it (Huly QB-1179)
 #   Ngtcp2_OPENSSL_LIBRARY  the libssl that list names, where it gives a path (Mach-O); empty otherwise
 #   Ngtcp2_OPENSSL_CRYPTO_MAJOR, Ngtcp2_OPENSSL_CRYPTO_LIBRARY
 #                           the same two for the libcrypto it links (Huly QB-1185)
@@ -28,12 +29,15 @@
 #
 
 # The OpenSSL library lib<name> -- libssl or libcrypto -- a dependency listing names: `otool -L` (Mach-O), `readelf -d`
-# or `objdump -p` (ELF), of a library that links it or of that library itself. The major its first lib<name> entry
-# carries in its file name (libssl.4.dylib, libcrypto.so.3; libssl.so.1.1 is 1) goes into <major_var>, and the path when
-# the listing gives one (Mach-O) into <path_var>; both empty when it names no versioned lib<name>. Read line by line,
-# and not as a CMake list, where an unbalanced '[' in a path would join lines: an ELF listing's NEEDED and SONAME
-# entries only, a Mach-O one's entries without their "(compatibility version ...)", so neither a heading (it names the
-# file read) nor a path with spaces misleads it.
+# or `objdump -p` (ELF), of a library that links it or of that library itself; `objdump -p` or `dumpbin /DEPENDENTS`
+# (PE), of a DLL that imports it (Huly QB-1184). The major its first lib<name> entry carries in its file name
+# (libssl.4.dylib, libcrypto.so.3, libssl-3-x64.dll; libssl.so.1.1 and libssl-1_1-x64.dll are 1) goes into <major_var>,
+# and the path when the listing gives one (Mach-O) into <path_var>; both empty when it names no versioned lib<name>.
+# Read line by line, and not as a CMake list, where an unbalanced '[' in a path would join lines: an ELF listing's
+# NEEDED and SONAME entries only, a Mach-O one's entries without their "(compatibility version ...)", a PE one's DLL
+# names -- a line of its own in dumpbin's list, after "DLL Name: " in objdump's import tables (LLVM's export table says
+# "DLL name:" of the DLL itself, which imports nothing), in any case, as Windows names files -- so neither a heading (it
+# names the file read) nor a path with spaces misleads it.
 function(_ngtcp2_openssl_in_listing listing name major_var path_var)
     set(_major "")
     set(_path "")
@@ -59,6 +63,12 @@ function(_ngtcp2_openssl_in_listing listing name major_var path_var)
             set(_path "${_entry}")
             break()
         endif()
+        string(REGEX REPLACE "^DLL Name: " "" _entry "${_entry}")
+        string(TOLOWER "${_entry}" _entry)
+        if("${_entry}" MATCHES "^lib${name}-([0-9]+)(_[0-9]+)*(-[a-z0-9]+)?\\.dll$")
+            set(_major "${CMAKE_MATCH_1}")
+            break()
+        endif()
     endwhile()
     set(${major_var} "${_major}" PARENT_SCOPE)
     set(${path_var} "${_path}" PARENT_SCOPE)
@@ -67,10 +77,27 @@ endfunction()
 # The file the dynamic loader opens for the shared library <library>, into <out_var>. A Mach-O binary records the install
 # name of the library it linked (`otool -D`) and dyld loads that file: Homebrew's search finds a Cellar path whose install
 # name is the opt/ link, so after an upgrade that keeps the old keg the two are different files, and the install name is
-# the one that runs. Elsewhere, and when the install name is not an absolute path to a file (@rpath), the library itself.
+# the one that runs. On Windows the library found is an import library (.lib, MinGW's .dll.a), which records the name
+# of the DLL a binary linked through it imports -- read from the import library itself, since MinGW's carries a suffix
+# its .dll.a lacks (libngtcp2_crypto_ossl-0.dll) -- and that DLL is the bin directory's beside its lib directory, where
+# vcpkg and MSYS2 install it (Huly QB-1184), or one beside the import library; a DLL given is itself. Elsewhere, when
+# the install name is not an absolute path to a file (@rpath), and for a static library, which names no DLL, or an
+# import library whose DLL is in neither place, the library itself.
 function(_ngtcp2_loaded_file library out_var)
     set(_loaded "${library}")
-    if(APPLE AND NOT WIN32 AND EXISTS "${library}" AND NOT "${library}" MATCHES "\\.a$")
+    string(TOLOWER "${library}" _lower)
+    if(WIN32 AND EXISTS "${library}" AND NOT IS_DIRECTORY "${library}" AND "${_lower}" MATCHES "\\.(lib|a)$")
+        file(STRINGS "${library}" _dll REGEX "^[A-Za-z0-9_.+-]+\\.[dD][lL][lL]$" LIMIT_COUNT 1)
+        if(NOT "${_dll}" STREQUAL "")
+            get_filename_component(_dir "${library}" DIRECTORY)
+            foreach(_candidate IN ITEMS "${_dir}/../bin/${_dll}" "${_dir}/${_dll}")
+                if(EXISTS "${_candidate}" AND NOT IS_DIRECTORY "${_candidate}")
+                    get_filename_component(_loaded "${_candidate}" ABSOLUTE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+    elseif(APPLE AND NOT WIN32 AND EXISTS "${library}" AND NOT "${library}" MATCHES "\\.a$")
         find_program(NGTCP2_OTOOL_EXECUTABLE otool)
         mark_as_advanced(NGTCP2_OTOOL_EXECUTABLE)
         if(NGTCP2_OTOOL_EXECUTABLE)
@@ -89,14 +116,48 @@ endfunction()
 
 # The OpenSSL the shared library <library> links -- or is, for a libssl or a libcrypto: the majors and paths of the
 # first libssl and libcrypto entries of the dependency list of the file the loader opens for it (_ngtcp2_loaded_file),
-# read with the platform's tool (`otool -L`; `readelf -d`, then `objdump -p` when readelf is absent or fails). A static
-# archive has no such list, Windows is not read (a vcpkg triplet carries one OpenSSL; MSYS2 or an installer's DLLs
-# beside it are not checked), and a missing or failing tool yields nothing: no answer, never a guess.
+# read with the platform's tool (`otool -L`; `readelf -d`, then `objdump -p` when readelf is absent or fails; on Windows
+# the DLLs that file imports, Huly QB-1184: `objdump -p` where the toolchain names one, MinGW's, then
+# `dumpbin /DEPENDENTS` -- beside the linker, MSVC's, or on PATH -- then `llvm-objdump -p`, beside clang-cl's lld-link
+# or on PATH, each when the one before is absent or fails). A static archive has no such list, an import library whose
+# DLL is not found gives none, and a missing or failing tool yields nothing: no answer, never a guess. On Windows that
+# is only the list of the DLLs a file imports: which file of that name the loader takes is not read (the executable's
+# directory first, where qb's tests get vcpkg's), and a DLL a library loads by name at run time is in no list.
 function(_ngtcp2_linked_openssl library ssl_major_var ssl_path_var crypto_major_var crypto_path_var)
     set(_listing "")
     set(_rc 1)
-    if(WIN32 OR "${library}" MATCHES "\\.(a|lib)$" OR NOT EXISTS "${library}")
+    set(_loaded "${library}")
+    if(WIN32)
+        _ngtcp2_loaded_file("${library}" _loaded)
+    endif()
+    string(TOLOWER "${_loaded}" _loaded_lower)
+    if("${_loaded_lower}" MATCHES "\\.(a|lib)$" OR NOT EXISTS "${_loaded}" OR IS_DIRECTORY "${_loaded}")
         # nothing to read
+    elseif(WIN32)
+        if(CMAKE_OBJDUMP)
+            execute_process(COMMAND "${CMAKE_OBJDUMP}" -p "${_loaded}"
+                            OUTPUT_VARIABLE _listing ERROR_QUIET RESULT_VARIABLE _rc)
+        endif()
+        set(_linker_dir "")
+        if(IS_ABSOLUTE "${CMAKE_LINKER}")
+            get_filename_component(_linker_dir "${CMAKE_LINKER}" DIRECTORY)
+        endif()
+        if(NOT _rc EQUAL 0)
+            find_program(NGTCP2_DUMPBIN_EXECUTABLE dumpbin HINTS "${_linker_dir}")
+            mark_as_advanced(NGTCP2_DUMPBIN_EXECUTABLE)
+            if(NGTCP2_DUMPBIN_EXECUTABLE)
+                execute_process(COMMAND "${NGTCP2_DUMPBIN_EXECUTABLE}" /NOLOGO /DEPENDENTS "${_loaded}"
+                                OUTPUT_VARIABLE _listing ERROR_QUIET RESULT_VARIABLE _rc)
+            endif()
+        endif()
+        if(NOT _rc EQUAL 0)
+            find_program(NGTCP2_LLVM_OBJDUMP_EXECUTABLE llvm-objdump HINTS "${_linker_dir}")
+            mark_as_advanced(NGTCP2_LLVM_OBJDUMP_EXECUTABLE)
+            if(NGTCP2_LLVM_OBJDUMP_EXECUTABLE)
+                execute_process(COMMAND "${NGTCP2_LLVM_OBJDUMP_EXECUTABLE}" -p "${_loaded}"
+                                OUTPUT_VARIABLE _listing ERROR_QUIET RESULT_VARIABLE _rc)
+            endif()
+        endif()
     elseif(APPLE)
         _ngtcp2_loaded_file("${library}" _loaded)
         find_program(NGTCP2_OTOOL_EXECUTABLE otool)

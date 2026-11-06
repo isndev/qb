@@ -35,14 +35,25 @@ was measured to work on macOS, but OpenSSL's ABI promise does not cover an objec
 The module reads the dependency lists of the helper and of qb's own `libssl` and `libcrypto` (`otool -L` on macOS,
 of the file the install name names -- `otool -D`, what a binary records and dyld loads, which after a Homebrew
 upgrade that kept the old keg is the new library, not the one found; `readelf -d` / `objdump -p` on ELF; static
-archives and Windows are not read -- MSYS2 or an installer's DLLs beside vcpkg's go unchecked: no answer, never a
-guess). A number that is not the release's major -- FreeBSD names OpenSSL 3's `libssl.so.30` -- is compared as it
+archives are not read: no answer, never a guess). On Windows the library found is an import library: the module
+reads the DLL name it records (MinGW's carries a suffix, `libngtcp2_crypto_ossl-0.dll`) and the DLLs that DLL
+imports, from the `bin` directory beside its `lib` directory -- vcpkg's and MSYS2's layout -- or beside the import
+library, with `objdump -p` where the toolchain names one (MinGW's), else `dumpbin /DEPENDENTS` beside MSVC's linker
+or on `PATH`, else `llvm-objdump -p`; OpenSSL names its DLLs by major (`libssl-3-x64.dll`, `libssl-4-x64.dll`), so
+MSYS2's packages, or an installer's OpenSSL beside vcpkg's, that would load two of them in one process disable QUIC
+there too, the warning naming the DLL read and the entries FindOpenSSL caches on Windows (`LIB_EAY*`, `SSL_EAY*`)
+(Huly QB-1184). What Windows does not check: qb's own side is its headers' major (MSVC's FindOpenSSL hands
+optimized/debug lists that name no one file, and a DLL's imports do not name the DLL itself), so a cache cleared in
+part is not seen there; an import library whose DLL is in neither place, or a static triplet, gives no answer; and
+which file of a DLL's name the loader takes at run time -- the executable's directory first, where qb's tests get
+vcpkg's -- is not read, nor a DLL loaded by name at run time. A number that is not the release's major -- FreeBSD names OpenSSL 3's `libssl.so.30` -- is compared as it
 reads, which is two majors beside a major taken from headers: such hosts are outside the platforms qb supports.
 `QB_REQUIRE_FEATURES=ON` makes two majors a configure error.
 
 The files read -- the libraries, the files they resolve to and their install names, and qb's `opensslv.h` -- are
-inputs of the configure, QUIC or not: a package update that rewrites one, moves the link that names one or removes
-it re-runs the check at the next `cmake --build` (Ninja, Makefiles). A path the search had found whose file is gone
+inputs of the configure, QUIC or not (on Windows, where qb's own libraries are not read, the helper's import library,
+the DLL it names and qb's `opensslv.h`, once the helper is found): a package update that rewrites one, moves the
+link that names one or removes it re-runs the check at the next `cmake --build` (Ninja, Makefiles). A path the search had found whose file is gone
 is searched again, pkg-config asked again; found nowhere else, the configure stops and names it -- even in `AUTO` --
 until a search finds it, its feature is turned off (`QB_WITH_QUIC=OFF` for libngtcp2, `QB_WITH_SSL=OFF` for
 OpenSSL) or the build directory starts afresh. A path set by hand or by a parent project (a superbuild names a library
@@ -58,7 +69,7 @@ QUIC compares again at `find_package(qb)` -- the libngtcp2 the consumer finds ag
 -- and two majors make qb not found, with the remedy: QUIC is compiled in, the consumer cannot turn it off (Huly QB-1183, QB-1256).
 
 <!-- src: qb/cmake/qbConfig.cmake:168-169 -->
-<!-- src: qb/cmake/qbDependencies.cmake:276-303, qb/cmake/qbOpenSSL.cmake:52-152, qb/cmake/qbOpenSSL.cmake:530-654 -->
+<!-- src: qb/cmake/qbDependencies.cmake:276-303, qb/cmake/qbOpenSSL.cmake:52-152, qb/cmake/qbOpenSSL.cmake:535-673 -->
 
 ```sh
 cmake -DQB_WITH_QUIC=ON ...
@@ -78,7 +89,7 @@ if (!qb::io::quic::available()) {
 ```
 
 > **Note for CI — `ON` does not fail the build.** A runner without libngtcp2 configured with `QB_WITH_QUIC=AUTO` disables QUIC silently; with `=ON` it prints a `message(WARNING)`, sets `QB_HAS_QUIC` false and carries on. The knob that turns a missing dependency into a `FATAL_ERROR` is **`-DQB_REQUIRE_FEATURES=ON`**. This matters more than it looks: a test declared `qb_add_executable(REQUIRES quic)` is not merely skipped when the capability is off, it is never registered — so the only symptom of a QUIC-less runner is a `ctest` count that is quietly smaller. Configure CI with `-DQB_WITH_QUIC=ON -DQB_REQUIRE_FEATURES=ON`, and assert the registered-test count.
-<!-- src: qb/cmake/qbOpenSSL.cmake:645-647 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
+<!-- src: qb/cmake/qbOpenSSL.cmake:664-666 (qb_feature_degraded), qb/cmake/qbConfig.cmake:566-575 (WARNING unless QB_REQUIRE_FEATURES), qb/cmake/qbFunctions.cmake:408-412 (REQUIRES quic unregisters the target) -->
 
 ## Concepts
 

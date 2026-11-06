@@ -360,15 +360,17 @@ if(@QB_HAS_QUIC@)
         # qb's OpenSSL major, or this project's headers' where qb's was not recorded: the side that is not on it is
         # the one to point elsewhere, both where neither is. This project's libraries off it, read where its headers
         # are on it (the OpenSSL-major check above read those), is the same ABI boundary, libngtcp2 agreeing or not.
-        # A library's file name carries its release's major on Darwin and Linux only, where qb's configure compares
-        # (a base system may number them apart): elsewhere the readings are compared with each other alone, and both
-        # sides' remedies printed.
+        # A library's file name carries its release's major on Darwin and Linux, where qb's configure compares, and on
+        # Windows, where OpenSSL's own build names its DLLs by it (libssl-3-x64.dll; Huly QB-1184: the helper's DLL is
+        # read there, this project's libraries are not, its headers' major standing in); a base system elsewhere may
+        # number them apart, and there the readings are compared with each other alone, and both sides' remedies
+        # printed.
         string(REGEX MATCH "^[0-9]+" _qb_have_built "@OPENSSL_VERSION@")
         if("${_qb_have_built}" STREQUAL "")
             set(_qb_have_built "${_qb_have_headers}")
         endif()
         set(_qb_have_numbered FALSE)
-        if(CMAKE_SYSTEM_NAME MATCHES "^(Darwin|Linux)$")
+        if(CMAKE_SYSTEM_NAME MATCHES "^(Darwin|Linux|Windows)$")
             set(_qb_have_numbered TRUE)
         endif()
         set(_qb_have_off FALSE)
@@ -397,7 +399,7 @@ if(@QB_HAS_QUIC@)
             set(_qb_have_remedy "")
             if(_qb_have_off OR NOT _qb_have_numbered)
                 set(_qb_have_entries "-U OPENSSL_INCLUDE_DIR -U OPENSSL_SSL_LIBRARY -U OPENSSL_CRYPTO_LIBRARY")
-                if(WIN32) # LIB_EAY and SSL_EAY there; unreached while FindNgtcp2 reads no library on Windows
+                if(WIN32) # LIB_EAY and SSL_EAY there (MSVC: _DEBUG, _RELEASE), for a Windows target not numbered
                     set(_qb_have_entries "-U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\"")
                 endif()
                 string(APPEND _qb_have_remedy "Point OPENSSL_ROOT_DIR at an OpenSSL ${_qb_have_built} with this "

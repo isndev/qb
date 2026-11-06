@@ -126,6 +126,13 @@ or the build directory starts afresh. With compression on, a zlib lost is built 
 search recorded are searched again: a build directory configured before QB-1185 (OpenSSL, libngtcp2) or QB-1192 (the
 others) keeps its paths until one `--fresh`.
 
+On Windows the OpenSSL libngtcp2's helper links is read from the DLL its import library names -- vcpkg's
+`bin/ngtcp2_crypto_ossl.dll`, MSYS2's `libngtcp2_crypto_ossl-0.dll` -- with `dumpbin /DEPENDENTS` (or the toolchain's
+`objdump -p`, or `llvm-objdump -p`) and compared with the major of qb's OpenSSL headers: MSYS2's packages, or an
+installer's OpenSSL beside vcpkg's, that would load `libssl-3-x64.dll` and `libssl-4-x64.dll` into one process
+disable QUIC with the same warning, whose remedy there removes `OPENSSL_INCLUDE_DIR`, `LIB_EAY*` and `SSL_EAY*` (Huly
+QB-1184). One vcpkg triplet carries one OpenSSL, and nothing is said.
+
 An OpenSSL older than 3.0 -- qb calls 3.0's `EVP_MAC` API -- stops the configure, naming the version found, its paths
 and the remedy: `OPENSSL_ROOT_DIR` at an OpenSSL 3.0 or later with the three entries removed (on Windows,
 `-U "LIB_EAY*" -U "SSL_EAY*"` for the two libraries: FindOpenSSL caches them there under those names), or

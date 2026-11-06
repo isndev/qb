@@ -297,6 +297,93 @@ configure_fixture(windows-remedy "${_build}" FAIL "-DQB_WITH_QUIC=OFF" "-DCMAKE_
 configure_fixture(windows-remedy "${_build}" OK "-U" "OPENSSL_INCLUDE_DIR" "-U" "OPENSSL_SSL_LIBRARY"
                   "-U" "OPENSSL_CRYPTO_LIBRARY" "-DOPENSSL_ROOT_DIR=/o3w" NOT "qb needs OpenSSL"
                   HAS "OPENSSL_INCLUDE_DIR=.*/o3w/include" "SSL_EAY=.*/o111w/lib/libssl\\.lib") # the old one's, kept
+# On Windows the helper is read from the DLL its import library names (Huly QB-1184): MSYS2's packages, or an
+# installer's OpenSSL beside vcpkg's, can load libssl-3-x64.dll and libssl-4-x64.dll in one process. A helper importing
+# OpenSSL 4 beside qb's OpenSSL 3 disables QUIC with a warning that names the import library and the DLL read, and the
+# entries FindOpenSSL caches there (LIB_EAY*, SSL_EAY*, not OPENSSL_SSL_LIBRARY); QB_REQUIRE_FEATURES=ON makes it an
+# error; one importing OpenSSL 3 says nothing, nor does one whose DLL is in neither place, which reads nothing. On
+# Windows the DLLs this build planted with its own linker, read with dumpbin (the toolchain's objdump first, where it
+# names one); elsewhere the same configure on a Windows target (CMAKE_SYSTEM_NAME), the import library planted as the
+# text it records and its DLL's imports printed by the stand-in tool as objdump.
+set(_pe_args "")
+set(_pe_tool_args "")
+if(WIN32)
+    if(CMAKE_LINKER)
+        list(APPEND _pe_tool_args "-DCMAKE_LINKER=${CMAKE_LINKER}")
+    endif()
+    if(CMAKE_OBJDUMP)
+        list(APPEND _pe_tool_args "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}")
+    endif()
+    string(REPLACE "|" ";" _planted_pe "${PLANTED_PE}")
+    foreach(_planted_entry IN LISTS _planted_pe)
+        if(_planted_entry MATCHES "^([0-9]+)=(.+)$")
+            set(_planted_${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+        endif()
+    endforeach()
+    if(NOT EXISTS "${_planted_4}" OR NOT EXISTS "${_planted_3}")
+        message(FATAL_ERROR "quic-openssl-verdict: a Windows build plants its DLLs for OpenSSL 4 and 3 (PLANTED_PE: "
+                            "'${PLANTED_PE}')")
+    endif()
+elseif(_posix)
+    set(_pe_tool_args "-DCMAKE_SYSTEM_NAME=Windows" "-DCMAKE_OBJDUMP=${_tool}")
+endif()
+# plant_pe(<case> <major>|NONE <out_var>): libngtcp2 under <case>/root, its helper an import library in lib/ whose DLL,
+# in bin/, imports OpenSSL <major> (NONE: no DLL), as the cache entries that find it, the import library in
+# <out_var>_LIB.
+function(plant_pe name major out_var)
+    plant_ngtcp2(${name} _entries)
+    set(_root "${WORK_DIR}/${name}/root")
+    if(WIN32) # the planted import library, its DLL beside it in bin/ unless NONE
+        set(_from "${_planted_${major}}")
+        if(major STREQUAL "NONE")
+            set(_from "${_planted_4}")
+        endif()
+        get_filename_component(_from_dir "${_from}" DIRECTORY)
+        file(COPY "${_from}" DESTINATION "${_root}/lib")
+        if(NOT major STREQUAL "NONE")
+            file(COPY "${_from_dir}/../bin/ngtcp2_crypto_ossl-0.dll" DESTINATION "${_root}/bin")
+        endif()
+        get_filename_component(_name "${_from}" NAME)
+        set(_lib "${_root}/lib/${_name}")
+    else()
+        set(_lib "${_root}/lib/ngtcp2_crypto_ossl.lib")
+        file(WRITE "${_lib}" "!<arch>\n__imp_ngtcp2_crypto_ossl\nngtcp2_crypto_ossl-0.dll\n")
+        if(NOT major STREQUAL "NONE")
+            file(WRITE "${_root}/bin/ngtcp2_crypto_ossl-0.dll" "ngtcp2.dll\nlibssl-${major}-x64.dll\nlibcrypto-${major}-x64.dll\n")
+        endif()
+    endif()
+    set(${out_var} ${_entries} "-DNGTCP2_CRYPTO_OSSL_LIBRARY=${_lib}" PARENT_SCOPE)
+    set(${out_var}_LIB "${_lib}" PARENT_SCOPE)
+endfunction()
+if(_pe_tool_args)
+    set(_cached_windows "keeps OPENSSL_INCLUDE_DIR cached, and the libraries as LIB_EAY\\* and SSL_EAY\\*: remove them \\(cmake -U OPENSSL_INCLUDE_DIR -U \"LIB_EAY\\*\" -U \"SSL_EAY\\*\"\\), or configure with --fresh")
+    plant_pe(windows-pe-majors 4 _pe)
+    escape("${_pe_LIB}" _pe_lib)
+    get_filename_component(_pe_root "${WORK_DIR}/windows-pe-majors/root" ABSOLUTE) # as the module names the DLL
+    escape("${_pe_root}" _pe_root)
+    configure_fixture(windows-pe-majors "${WORK_DIR}/windows-pe-majors/build" OK ${_pe} ${_unread} ${_pe_tool_args}
+                      "-DQB_REQUIRE_FEATURES=OFF"
+                      MUST "CMake Warning" "${_majors}"
+                           "libngtcp2 \\(${_pe_lib}, whose DLL ${_pe_root}/bin/ngtcp2_crypto_ossl-0\\.dll was read\\) links OpenSSL 4 and qb links OpenSSL 3 "
+                           "${_cached_windows}"
+                      NOT "${_required}" "remove all three"
+                      HAS "QB_HAS_QUIC=FALSE" HAS "VERDICT=MAJORS" HAS "COMPARED=TRUE" HAS "LIBRARIES=")
+    plant_pe(windows-pe-majors-required 4 _pe)
+    configure_fixture(windows-pe-majors-required "${WORK_DIR}/windows-pe-majors-required/build" FAIL ${_pe} ${_unread}
+                      ${_pe_tool_args} "-DQB_REQUIRE_FEATURES=ON"
+                      MUST "CMake Error" "${_required}" "${_majors}" "links OpenSSL 4 and qb links OpenSSL 3 ")
+    plant_pe(windows-pe-one-major 3 _pe)
+    configure_fixture(windows-pe-one-major "${WORK_DIR}/windows-pe-one-major/build" OK ${_pe} ${_unread} ${_pe_tool_args}
+                      "-DQB_REQUIRE_FEATURES=ON"
+                      NOT "CMake Warning" "OpenSSL majors"
+                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=" HAS "COMPARED=TRUE"
+                          HAS "LIBRARIES=Ngtcp2::ngtcp2.Ngtcp2::crypto_ossl")
+    plant_pe(windows-pe-no-dll NONE _pe)
+    configure_fixture(windows-pe-no-dll "${WORK_DIR}/windows-pe-no-dll/build" OK ${_pe} ${_unread} ${_pe_tool_args}
+                      "-DQB_REQUIRE_FEATURES=ON"
+                      NOT "CMake Warning" "OpenSSL majors"
+                      HAS "QB_HAS_QUIC=TRUE" HAS "VERDICT=" HAS "COMPARED=TRUE")
+endif()
 # Paths that never existed -- libraries a superbuild builds after this configure -- are kept, never searched again.
 plant_ngtcp2(not-yet-built _ngtcp2)
 set(_later "${WORK_DIR}/not-yet-built/later")
@@ -1110,6 +1197,44 @@ foreach(_generator IN LISTS _generators)
     build_fixture(${_name} "libngtcp2 back" 8 "" "NGTCP2=TRUE" ${_at_opt})
     build_fixture(${_name} "nothing changed since" 8 "")
 endforeach()
+# On Windows (Huly QB-1184) the helper's import library and the DLL it names are inputs of the configure too: the DLL
+# rebuilt in place onto OpenSSL 4 re-runs it at the next build, and so does an import library that now names another
+# DLL, as an update that renames one writes. Elsewhere on a Windows target, with the first generator found; on Windows
+# with this build's own, Ninja's, on the planted DLLs.
+set(_pe_rebuild FALSE)
+if(_pe_tool_args AND _posix AND _generators)
+    list(GET _generators 0 _generator)
+    use_generator("${_generator}")
+    set(_pe_rebuild TRUE)
+elseif(_pe_tool_args AND WIN32 AND GENERATOR STREQUAL "Ninja")
+    set(_pe_rebuild TRUE)
+endif()
+function(write_pe dll major) # <dll> rewritten, newer than the build, as a DLL that imports OpenSSL <major>
+    if(WIN32)
+        get_filename_component(_from "${_planted_${major}}" DIRECTORY)
+        file(COPY_FILE "${_from}/../bin/ngtcp2_crypto_ossl-0.dll" "${dll}")
+        file(TOUCH "${dll}")
+    else()
+        file(WRITE "${dll}" "ngtcp2.dll\nlibssl-${major}-x64.dll\nlibcrypto-${major}-x64.dll\n")
+    endif()
+endfunction()
+if(_pe_rebuild)
+    set(_name "windows-pe-rebuild")
+    set(_root "${WORK_DIR}/${_name}/root")
+    plant_pe(${_name} 3 _pe)
+    configure_fixture(${_name} "${WORK_DIR}/${_name}/build" OK ${_pe} ${_unread} ${_pe_tool_args}
+                      HAS "VERDICT=" "QB_HAS_QUIC=TRUE")
+    build_fixture(${_name} "nothing changed" 1 "")
+    after_configure(${_name})
+    write_pe("${_root}/bin/ngtcp2_crypto_ossl-0.dll" 4)
+    build_fixture(${_name} "its DLL rebuilt in place against OpenSSL 4" 2 MAJORS "QB_HAS_QUIC=FALSE")
+    build_fixture(${_name} "nothing changed since" 2 MAJORS)
+    after_configure(${_name})
+    write_pe("${_root}/bin/ngtcp2_crypto_ossl-1.dll" 3)
+    file(WRITE "${_pe_LIB}" "!<arch>\n__imp_ngtcp2_crypto_ossl\nngtcp2_crypto_ossl-1.dll\n")
+    build_fixture(${_name} "its import library naming another DLL, of OpenSSL 3" 3 "" "QB_HAS_QUIC=TRUE")
+    build_fixture(${_name} "nothing changed since" 3 "")
+endif()
 if(_generators)
     list(GET _generators 0 _generator)
     use_generator("${_generator}")
@@ -1688,7 +1813,9 @@ if(_failures)
     message(FATAL_ERROR "quic-openssl-verdict: ${_builds} builds, wrong ones:${_failures}")
 endif()
 string(REPLACE ";" ", " _generators_shown "${_generators}")
-if(NOT _generators)
+if(NOT _generators AND _pe_rebuild)
+    set(_generators_shown "${GENERATOR}, the Windows case only")
+elseif(NOT _generators)
     set(_generators_shown "none: nothing is read on this host")
 endif()
 message(STATUS "quic-openssl-verdict: ${_cases} configures and ${_builds} builds right (rebuilt with: "
