@@ -748,6 +748,17 @@ policy.
   Witnessed in `qb-io-test-system-tcp-connector-loopback` (`connect()`, `connect_with_socket()`) and
   `qb-io-test-system-tls-starttls-upgrade` (`starttls_connect()`): each red under AddressSanitizer on the code before
   it, a heap-use-after-free in the freed scheduler's sets.
+- **`qb/utility/abi.h` compiles without a warning under g++ on macOS: `QB_ABI_RETAIN` is applied on ELF only (Huly
+  QB-1271).** The macro was `__attribute__((retain))` wherever the compiler knew the attribute. GCC knows it on Mach-O
+  too, but honours it only on ELF and warns elsewhere -- "'retain' attribute ignored" on the fingerprint array -- so
+  every g++ consumer on macOS building with `-Werror` failed to compile anything that includes a qb header; Apple clang
+  is silent, and g++ on Linux is ELF. It now also requires `__ELF__`: on ELF `retain` (SHF_GNU_RETAIN) still keeps GNU
+  ld's `--gc-sections` from discarding the fingerprint before it resolves the references a mismatched configuration
+  lacks, and on Mach-O `used` already implies no_dead_strip. The same warning goes for MinGW and Cygwin GCC; a GCC on
+  ELF whose assembler predates binutils 2.36 still ignores `retain` with it, as before. Witnessed in
+  `qb-io-test-unit-abi-header-alone`, which pins the macro to `retain` on ELF and to nothing elsewhere -- red on the
+  code before it under Apple clang, whose `retain` it spelled on macOS too -- and whose only qb include is `abi.h`, so
+  under `QB_TESTS_WERROR` a g++ build of it off ELF fails on the warning.
 - **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
   clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
   the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them
