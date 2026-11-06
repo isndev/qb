@@ -299,6 +299,60 @@ qb_add_symbol_prefix_test(NAME qb-io-test-unit-embedded-loop-symbols TARGET qev
 # are passed too, and the test re-derives them. The target's APPLE, WIN32 and system name travel under names of their
 # own: script mode defines the host's, and keeps them. qb's libssl and libcrypto are not passed on Windows: never read
 # there, and MSVC's FindOpenSSL can make them optimized/debug lists.
+#
+# On Windows the helper is read from the DLL its import library names (Huly QB-1184), and this build plants real ones:
+# for OpenSSL 4 and 3, a libssl and a libcrypto named as OpenSSL names its DLLs (libssl-4-x64.dll), each exporting one
+# function, and a libngtcp2_crypto_ossl stand-in importing both, its DLL named apart from its import library as MinGW
+# names it (ngtcp2_crypto_ossl-0.dll beside lib/ngtcp2_crypto_ossl.lib), in a vcpkg-shaped bin/ and lib/ of a
+# directory of their own -- never beside a test executable, where the loader would take them. Built with the tests,
+# loaded by none: the listing test and quic-openssl-verdict read them (PLANTED_PE, <major>=<import library>|...).
+set(_qb_planted_pe "")
+if(WIN32)
+    get_property(_qb_planted_multi GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+    foreach(_qb_planted_major 4 3)
+        set(_qb_planted_dir "${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-openssl-planted/openssl${_qb_planted_major}")
+        set(_qb_planted_openssl "")
+        foreach(_qb_planted_name ssl crypto helper)
+            set(_qb_planted_target qb-io-test-unit-ngtcp2-openssl-planted-${_qb_planted_name}${_qb_planted_major})
+            if(_qb_planted_name STREQUAL "helper")
+                add_library(${_qb_planted_target} SHARED build-contracts/ngtcp2-openssl-listing/planted-helper.cpp)
+                target_link_libraries(${_qb_planted_target} PRIVATE ${_qb_planted_openssl})
+                set_target_properties(${_qb_planted_target} PROPERTIES RUNTIME_OUTPUT_NAME ngtcp2_crypto_ossl-0
+                                      ARCHIVE_OUTPUT_NAME ngtcp2_crypto_ossl)
+            else()
+                add_library(${_qb_planted_target} SHARED build-contracts/ngtcp2-openssl-listing/planted.cpp)
+                target_compile_definitions(${_qb_planted_target}
+                                           PRIVATE QB_PLANTED_EXPORT=qb_planted_lib${_qb_planted_name})
+                set_target_properties(${_qb_planted_target} PROPERTIES
+                                      OUTPUT_NAME lib${_qb_planted_name}-${_qb_planted_major}-x64)
+                list(APPEND _qb_planted_openssl ${_qb_planted_target})
+            endif()
+            set_target_properties(${_qb_planted_target} PROPERTIES PREFIX "" IMPORT_PREFIX ""
+                                  RUNTIME_OUTPUT_DIRECTORY "${_qb_planted_dir}/bin"
+                                  ARCHIVE_OUTPUT_DIRECTORY "${_qb_planted_dir}/lib"
+                                  LIBRARY_OUTPUT_DIRECTORY "${_qb_planted_dir}/lib")
+            if(_qb_planted_multi) # qbConfig.cmake's per-configuration directories win over the three above
+                foreach(_qb_planted_config IN LISTS CMAKE_CONFIGURATION_TYPES)
+                    string(TOUPPER "${_qb_planted_config}" _qb_planted_upper)
+                    set_target_properties(${_qb_planted_target} PROPERTIES
+                        RUNTIME_OUTPUT_DIRECTORY_${_qb_planted_upper} "${_qb_planted_dir}/${_qb_planted_config}/bin"
+                        ARCHIVE_OUTPUT_DIRECTORY_${_qb_planted_upper} "${_qb_planted_dir}/${_qb_planted_config}/lib"
+                        LIBRARY_OUTPUT_DIRECTORY_${_qb_planted_upper} "${_qb_planted_dir}/${_qb_planted_config}/lib")
+                endforeach()
+            endif()
+        endforeach()
+        list(APPEND _qb_planted_pe "${_qb_planted_major}=$<TARGET_LINKER_FILE:${_qb_planted_target}>")
+    endforeach()
+    list(JOIN _qb_planted_pe "|" _qb_planted_pe)
+    unset(_qb_planted_multi)
+    unset(_qb_planted_major)
+    unset(_qb_planted_dir)
+    unset(_qb_planted_openssl)
+    unset(_qb_planted_name)
+    unset(_qb_planted_target)
+    unset(_qb_planted_config)
+    unset(_qb_planted_upper)
+endif()
 set(_qb_listing_live "")
 if(Ngtcp2_FOUND AND DEFINED Ngtcp2_OPENSSL_MAJOR) # qb's own module found the helper: its block must have compared
     list(APPEND _qb_listing_live "-DQB_QUIC_FOUND_BY_QB=TRUE" "-DQB_QUIC_COMPARED=${_qb_quic_compared}")
@@ -310,15 +364,14 @@ if(_qb_quic_compared) # what the configure read, and the verdict it acted on
          "-DQB_QUIC_NGTCP2_CRYPTO_PATH=${Ngtcp2_OPENSSL_CRYPTO_LIBRARY}"
          "-DQB_QUIC_QB_MAJOR=${_qb_ssl_major}" "-DQB_QUIC_QB_PATH=${_qb_ssl_path}"
          "-DQB_QUIC_QB_CRYPTO_MAJOR=${_qb_crypto_major}" "-DQB_QUIC_QB_CRYPTO_PATH=${_qb_crypto_path}")
-    if(NOT WIN32)
-        list(JOIN _qb_quic_inputs "|" _qb_listing_inputs)
-        list(APPEND _qb_listing_live "-DQB_QUIC_INPUTS=${_qb_listing_inputs}")
-        unset(_qb_listing_inputs)
-    endif()
+    list(JOIN _qb_quic_inputs "|" _qb_listing_inputs)
+    list(APPEND _qb_listing_live "-DQB_QUIC_INPUTS=${_qb_listing_inputs}")
+    unset(_qb_listing_inputs)
 endif()
+list(APPEND _qb_listing_live "-DQB_OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}")
 if(NOT WIN32)
-    list(APPEND _qb_listing_live "-DQB_SSL_LIBRARY=${OPENSSL_SSL_LIBRARY}" "-DQB_CRYPTO_LIBRARY=${OPENSSL_CRYPTO_LIBRARY}"
-         "-DQB_OPENSSL_INCLUDE_DIR=${OPENSSL_INCLUDE_DIR}")
+    list(APPEND _qb_listing_live "-DQB_SSL_LIBRARY=${OPENSSL_SSL_LIBRARY}"
+         "-DQB_CRYPTO_LIBRARY=${OPENSSL_CRYPTO_LIBRARY}")
     if(DEFINED _qb_openssl_compared) # qb's OpenSSL check ran (SSL found): whether it compared, and what it read
         list(JOIN _qb_openssl_check_inputs "|" _qb_listing_inputs)
         list(APPEND _qb_listing_live "-DQB_OPENSSL_COMPARED=${_qb_openssl_compared}"
@@ -335,7 +388,8 @@ add_test(NAME qb-io-test-unit-ngtcp2-openssl-listing
                  ${_qb_listing_live}
                  "-DQB_OPENSSL_VERSION=${OPENSSL_VERSION}" "-DQB_HAS_SSL=${QB_HAS_SSL}" "-DQB_HAS_QUIC=${QB_HAS_QUIC}"
                  "-DQB_TARGET_APPLE=${APPLE}" "-DQB_TARGET_WIN32=${WIN32}" "-DQB_TARGET_SYSTEM=${CMAKE_SYSTEM_NAME}"
-                 "-DCMAKE_READELF=${CMAKE_READELF}" "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}"
+                 "-DCMAKE_READELF=${CMAKE_READELF}" "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}" "-DCMAKE_LINKER=${CMAKE_LINKER}"
+                 "-DPLANTED_PE=${_qb_planted_pe}"
                  "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/ngtcp2-openssl-listing"
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/ngtcp2-openssl-listing/check.cmake")
 set_tests_properties(qb-io-test-unit-ngtcp2-openssl-listing PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
@@ -348,7 +402,8 @@ set_tests_properties(qb-io-test-unit-ngtcp2-openssl-listing PROPERTIES LABELS "t
 set(_qb_quic_verdict_args
     "-DQB_CMAKE_MODULE_DIR=${QB_ROOT_DIR}/cmake" "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/quic-openssl-verdict"
     "-DGENERATOR=${CMAKE_GENERATOR}" "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}" "-DTOOLSET=${CMAKE_GENERATOR_TOOLSET}"
-    "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+    "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}" "-DPLANTED_PE=${_qb_planted_pe}" "-DCMAKE_LINKER=${CMAKE_LINKER}"
+    "-DCMAKE_OBJDUMP=${CMAKE_OBJDUMP}")
 add_test(NAME qb-io-test-unit-quic-openssl-verdict
          COMMAND "${CMAKE_COMMAND}" ${_qb_quic_verdict_args}
                  -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/quic-openssl-verdict/check.cmake")

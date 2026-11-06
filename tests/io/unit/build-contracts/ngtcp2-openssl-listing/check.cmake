@@ -147,6 +147,95 @@ expect_crypto("ELF look-alike" "  NEEDED               notlibcrypto.so.9" "" "")
 expect_crypto("Mach-O look-alike" "\t/opt/x/lib/libcrypto_extra.3.dylib (compatibility version 3.0.0)" "" "")
 expect_crypto("ELF, a libcrypto named by its path" " 0x0000000000000001 (NEEDED)             Shared library: [/opt/x/lib/libcrypto.so.3]"
               "3" "")
+# PE (Huly QB-1184): the DLLs a Windows binary imports, a name per line in `dumpbin /DEPENDENTS`, after "DLL Name: " in
+# `objdump -p`'s import tables, GNU's and LLVM's -- as each printed vcpkg's ngtcp2_crypto_ossl.dll (dumpbin 14.51 and
+# llvm-objdump 22, measured 2026-11-06; GNU's from binutils' format) -- with CRLF line ends, as dumpbin writes them.
+# OpenSSL names its DLLs lib<name>-<major>[_<minor>][-<arch>].dll, in any case: x64, arm64, x86 (no suffix), 1.1.
+set(_dumpbin "Microsoft (R) COFF/PE Dumper Version 14.51.36256.0\r
+Copyright (C) Microsoft Corporation.  All rights reserved.\r
+\r
+\r
+Dump of file D:\\vcpkg_installed\\x64-windows\\bin\\ngtcp2_crypto_ossl.dll\r
+\r
+File Type: DLL\r
+\r
+  Image has the following dependencies:\r
+\r
+    ngtcp2.dll\r
+    libssl-4-x64.dll\r
+    libcrypto-4-x64.dll\r
+    VCRUNTIME140.dll\r
+    api-ms-win-crt-runtime-l1-1-0.dll\r
+    KERNEL32.dll\r
+\r
+  Summary\r
+\r
+        1000 .data\r
+        6000 .text\r
+")
+expect("dumpbin, OpenSSL 4" "${_dumpbin}" "4" "")
+set(_expect_name crypto) # not expect_crypto(): a macro re-reads the backslashes of its arguments as escapes
+expect("dumpbin, OpenSSL 4" "${_dumpbin}" "4" "")
+set(_expect_name ssl)
+set(_gnu_objdump "The Import Tables (interpreted .idata section contents)
+ vma:            Hint    Time      Forward  DLL       First
+                 Table   Stamp     Chain     Name      Thunk
+ 0001e000\t0001e050 00000000 00000000 0001ea10 0001e1b8
+
+\tDLL Name: libngtcp2-16.dll
+\tvma:  Hint/Ord Member-Name Bound-To
+\t1e3a0\t  112  ngtcp2_conn_get_tls_native_handle
+
+ 0001e014\t0001e068 00000000 00000000 0001ea2c 0001e1d0
+
+\tDLL Name: libcrypto-3-x64.dll
+\tvma:  Hint/Ord Member-Name Bound-To
+\t1e3b8\t 1826  EVP_KDF_derive
+
+ 0001e028\t0001e080 00000000 00000000 0001ea48 0001e1e8
+
+\tDLL Name: libssl-3-x64.dll
+\tvma:  Hint/Ord Member-Name Bound-To
+\t1e3d0\t  529  SSL_set_quic_tls_cbs
+")
+expect("objdump (GNU), OpenSSL 3" "${_gnu_objdump}" "3" "")
+expect_crypto("objdump (GNU), OpenSSL 3" "${_gnu_objdump}" "3" "")
+set(_llvm_objdump "The Import Tables:
+  lookup 00009300 time 00000000 fwd 00000000 name 0000993e addr 00007208
+
+    DLL Name: libssl-3-x64.dll
+    Hint/Ord  Name
+         529  SSL_set_quic_tls_cbs
+  lookup 000091c8 time 00000000 fwd 00000000 name 00009c88 addr 000070d0
+
+    DLL Name: libcrypto-3-x64.dll
+    Hint/Ord  Name
+        4077  RAND_bytes
+
+Export Table:
+ DLL name: ngtcp2_crypto_ossl.dll
+ Ordinal base: 1")
+expect("llvm-objdump, OpenSSL 3" "${_llvm_objdump}" "3" "")
+expect_crypto("llvm-objdump, OpenSSL 3" "${_llvm_objdump}" "3" "")
+expect("PE, OpenSSL 1.1" "    libssl-1_1-x64.dll" "1" "")
+expect_crypto("PE, OpenSSL 1.1" "    libcrypto-1_1-x64.dll" "1" "")
+expect("PE, arm64" "    libssl-3-arm64.dll" "3" "")
+expect("PE, x86" "\tDLL Name: libssl-3.dll" "3" "")
+expect("PE, upper case" "    LIBSSL-4-X64.DLL" "4" "")
+# What must read as nothing: an unversioned DLL, look-alikes, a DLL's own name in LLVM's export table (it imports nothing
+# of that name), a heading that names a directory like a libssl, a libcrypto alone.
+expect("PE, unversioned" "    libssl.dll" "" "")
+expect("PE, look-alike" "    libsslkeylog-2.dll" "" "")
+expect("PE, look-alike before" "\tDLL Name: notlibssl-3-x64.dll" "" "")
+expect("PE, its own name exported" "Export Table:
+ DLL name: libssl-3-x64.dll" "" "")
+expect("PE, a decoy heading" "Dump of file C:\\libssl-9-x64.dll\\ngtcp2_crypto_ossl.dll\r
+\r
+    libssl-3-x64.dll\r
+" "3" "")
+expect("PE, libcrypto only" "    libcrypto-3-x64.dll" "" "")
+expect_crypto("PE, look-alike" "    libcryptopp-8.dll" "" "")
+expect_crypto("PE, libssl only" "    libssl-3-x64.dll" "" "")
 
 if(_failures)
     message(FATAL_ERROR "ngtcp2-openssl-listing: ${_cases} listings, wrong readings:${_failures}")
@@ -297,15 +386,234 @@ if(WORK_DIR AND NOT WIN32 AND EXISTS /bin/sh)
     read_loaded("no install name" "${WORK_DIR}/otool/Cellar/unnamed.dylib" 3)
     read_loaded("otool -D failing" "${WORK_DIR}/otool/Cellar/failing.dylib" 3)
 endif()
+# Windows (Huly QB-1184), as a Windows configure reads, whatever runs the test: the DLL an import library names -- read
+# from the import library, in the bin directory beside its lib directory first, else beside it -- through `objdump -p`
+# (CMAKE_OBJDUMP), then `dumpbin /DEPENDENTS`, then `llvm-objdump -p`, each when the one before is absent or fails.
+# Stand-ins that print, for their own flags only, the planted DLL's lines (DLL names) as their tool lists imports; a
+# planted import library is text holding the DLL name it records, which is what the module reads of a real one.
+function(read_pe label library objdump dumpbin llvm major)
+    set(WIN32 TRUE)
+    set(APPLE FALSE)
+    set(CMAKE_OBJDUMP "${objdump}")
+    foreach(_tool IN ITEMS "NGTCP2_DUMPBIN_EXECUTABLE|${dumpbin}" "NGTCP2_LLVM_OBJDUMP_EXECUTABLE|${llvm}")
+        string(REGEX REPLACE "[|].*$" "" _var "${_tool}")
+        string(REGEX REPLACE "^[^|]*[|]" "" _path "${_tool}")
+        if("${_path}" STREQUAL "")
+            unset(${_var}) # the module searches it, as a configure does
+        else()
+            set(${_var} "${_path}")
+        endif()
+    endforeach()
+    set(CMAKE_LINKER "${ARGN}")
+    _ngtcp2_linked_openssl("${library}" _major _path _crypto_major _crypto_path)
+    math(EXPR _n "${_tools} + 1")
+    set(_tools ${_n} PARENT_SCOPE)
+    if(NOT "${_major}" STREQUAL "${major}" OR NOT "${_crypto_major}" STREQUAL "${major}" OR NOT "${_path}" STREQUAL "")
+        set(_failures "${_failures}\n  ${label}: read libssl '${_major}' (${_path}) libcrypto '${_crypto_major}', expected "
+                      "'${major}'" PARENT_SCOPE)
+    endif()
+endfunction()
+if(WORK_DIR AND NOT WIN32 AND EXISTS /bin/sh)
+    set(_pe "${WORK_DIR}/pe")
+    file(MAKE_DIRECTORY "${_pe}/tools" "${_pe}/msvc")
+    set(_each "while IFS= read -r n; do printf")
+    file(WRITE "${_pe}/tools/objdump" "#!/bin/sh\n[ \"$1\" = -p ] || exit 2\n${_each} '\\tDLL Name: %s\\n' \"$n\"; done < \"$2\"\n")
+    file(WRITE "${_pe}/tools/llvm-objdump" "#!/bin/sh\n[ \"$1\" = -p ] || exit 2\necho 'The Import Tables:'\n"
+               "${_each} '    DLL Name: %s\\n' \"$n\"; done < \"$2\"\n")
+    file(WRITE "${_pe}/msvc/dumpbin" "#!/bin/sh\n[ \"$1\" = /NOLOGO ] && [ \"$2\" = /DEPENDENTS ] || exit 2\n"
+               "printf 'Dump of file %s\\r\\n\\r\\n  Image has the following dependencies:\\r\\n\\r\\n' \"$3\"\n"
+               "${_each} '    %s\\r\\n' \"$n\"; done < \"$3\"\n")
+    file(WRITE "${_pe}/tools/fails" "#!/bin/sh\necho '    libssl-7-x64.dll'\necho '    libcrypto-7-x64.dll'\nexit 1\n")
+    foreach(_tool "tools/objdump" "tools/llvm-objdump" "msvc/dumpbin" "tools/fails")
+        file(CHMOD "${_pe}/${_tool}" PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE)
+    endforeach()
+    set(_objdump "${_pe}/tools/objdump")
+    set(_dumpbin "${_pe}/msvc/dumpbin")
+    set(_llvm "${_pe}/tools/llvm-objdump")
+    set(_fails "${_pe}/tools/fails")
+    set(_absent "${_pe}/tools/absent")
+    function(plant_pe dll major) # a DLL whose imports name OpenSSL <major>'s libssl and libcrypto
+        get_filename_component(_dir "${dll}" DIRECTORY)
+        file(MAKE_DIRECTORY "${_dir}")
+        file(WRITE "${dll}" "ngtcp2.dll\nlibssl-${major}-x64.dll\nlibcrypto-${major}-x64.dll\nKERNEL32.dll\n")
+    endfunction()
+    function(plant_implib file dll) # an import library recording <dll>, among an archive's other strings
+        get_filename_component(_dir "${file}" DIRECTORY)
+        file(MAKE_DIRECTORY "${_dir}")
+        file(WRITE "${file}" "!<arch>\n/               -1                      0       490       `\n__imp_qb\n${dll}\n")
+    endfunction()
+    # vcpkg's layout: lib/<name>.lib names bin/<name>.dll.
+    plant_implib("${_pe}/vcpkg/lib/ngtcp2_crypto_ossl.lib" ngtcp2_crypto_ossl.dll)
+    plant_pe("${_pe}/vcpkg/bin/ngtcp2_crypto_ossl.dll" 3)
+    set(_lib "${_pe}/vcpkg/lib/ngtcp2_crypto_ossl.lib")
+    read_pe("PE, objdump" "${_lib}" "${_objdump}" "${_fails}" "${_fails}" 3)
+    read_pe("PE, objdump fails, then dumpbin" "${_lib}" "${_fails}" "${_dumpbin}" "${_fails}" 3)
+    read_pe("PE, objdump and dumpbin fail, then llvm-objdump" "${_lib}" "${_fails}" "${_fails}" "${_llvm}" 3)
+    read_pe("PE, no objdump, dumpbin" "${_lib}" "" "${_dumpbin}" "${_fails}" 3)
+    read_pe("PE, no objdump, no dumpbin, llvm-objdump" "${_lib}" "" "${_absent}" "${_llvm}" 3)
+    read_pe("PE, every tool fails" "${_lib}" "${_fails}" "${_fails}" "${_fails}" "")
+    read_pe("PE, no tool" "${_lib}" "" "${_absent}" "${_absent}" "")
+    read_pe("PE, the DLL given" "${_pe}/vcpkg/bin/ngtcp2_crypto_ossl.dll" "${_objdump}" "${_fails}" "${_fails}" 3)
+    # dumpbin beside the linker (MSVC's link.exe), found by the module itself.
+    read_pe("PE, dumpbin beside the linker" "${_lib}" "" "" "${_fails}" 3 "${_pe}/msvc/link.exe")
+    # MinGW's layout: lib/lib<name>.dll.a names bin/lib<name>-0.dll; a DLL named like the import library is not the one
+    # it records, and is never read.
+    plant_implib("${_pe}/msys2/lib/libngtcp2_crypto_ossl.dll.a" libngtcp2_crypto_ossl-0.dll)
+    plant_pe("${_pe}/msys2/bin/libngtcp2_crypto_ossl-0.dll" 4)
+    plant_pe("${_pe}/msys2/bin/libngtcp2_crypto_ossl.dll" 9)
+    read_pe("PE, MinGW's suffixed DLL" "${_pe}/msys2/lib/libngtcp2_crypto_ossl.dll.a" "${_objdump}" "" "" 4)
+    # bin/ first, then beside the import library; an upper-case extension is one too.
+    plant_implib("${_pe}/both/lib/x.lib" x.dll)
+    plant_pe("${_pe}/both/bin/x.dll" 3)
+    plant_pe("${_pe}/both/lib/x.dll" 9)
+    read_pe("PE, bin/ before beside" "${_pe}/both/lib/x.lib" "${_objdump}" "" "" 3)
+    plant_implib("${_pe}/beside/X.LIB" X.DLL)
+    plant_pe("${_pe}/beside/X.DLL" 4)
+    read_pe("PE, beside the import library" "${_pe}/beside/X.LIB" "${_objdump}" "" "" 4)
+    # No answer: a static library, which records no DLL (one named like it beside is not read), and an import library
+    # whose DLL is in neither place.
+    file(WRITE "${_pe}/static/lib/ngtcp2_crypto_ossl.lib" "!<arch>\n/               \nngtcp2_crypto_ossl.obj\n")
+    plant_pe("${_pe}/static/bin/ngtcp2_crypto_ossl.dll" 9)
+    read_pe("PE, a static library" "${_pe}/static/lib/ngtcp2_crypto_ossl.lib" "${_objdump}" "" "" "")
+    plant_implib("${_pe}/nodll/lib/ngtcp2_crypto_ossl.lib" ngtcp2_crypto_ossl.dll)
+    read_pe("PE, its DLL nowhere" "${_pe}/nodll/lib/ngtcp2_crypto_ossl.lib" "${_objdump}" "" "" "")
+endif()
 if(_failures)
     message(FATAL_ERROR "ngtcp2-openssl-listing: ${_tools} tool readings, wrong ones:${_failures}")
+endif()
+
+# The real thing, on Windows (Huly QB-1184): the DLLs this build planted with its own linker (tests/io/unit/
+# CMakeLists.txt) -- a libngtcp2_crypto_ossl stand-in importing a libssl and a libcrypto of OpenSSL 4, and one of
+# OpenSSL 3, each DLL named apart from its import library -- read from their import libraries as the configure reads
+# the real one, with the tools it finds, and their verdicts beside an OpenSSL 3 of qb's: two majors, then none. A
+# Windows build always plants them, and an MSVC linker always has dumpbin beside it: neither missing passes.
+set(_pe_tool "")
+if(WIN32)
+    if(CMAKE_OBJDUMP)
+        set(_pe_tool "${CMAKE_OBJDUMP}")
+    else()
+        set(_pe_linker_dir "")
+        if(IS_ABSOLUTE "${CMAKE_LINKER}")
+            get_filename_component(_pe_linker_dir "${CMAKE_LINKER}" DIRECTORY)
+        endif()
+        find_program(_pe_dumpbin dumpbin HINTS "${_pe_linker_dir}")
+        find_program(_pe_llvm_objdump llvm-objdump HINTS "${_pe_linker_dir}")
+        if(_pe_dumpbin)
+            set(_pe_tool "${_pe_dumpbin}")
+        elseif(_pe_llvm_objdump)
+            set(_pe_tool "${_pe_llvm_objdump}")
+        elseif("${CMAKE_LINKER}" MATCHES "(^|[/\\\\])link\\.exe$")
+            message(FATAL_ERROR "ngtcp2-openssl-listing: no dumpbin beside MSVC's linker ${CMAKE_LINKER}")
+        endif()
+    endif()
+endif()
+set(_planted 0)
+if(WIN32 AND "${PLANTED_PE}" STREQUAL "")
+    message(FATAL_ERROR "ngtcp2-openssl-listing: a Windows build plants its DLLs, none passed (PLANTED_PE)")
+endif()
+if(WIN32)
+    string(REPLACE "|" ";" _planted_pe "${PLANTED_PE}")
+    foreach(_planted_entry IN LISTS _planted_pe)
+        string(REGEX MATCH "^([0-9]+)=(.+)$" _planted_match "${_planted_entry}")
+        set(_planted_major "${CMAKE_MATCH_1}")
+        set(_planted_lib "${CMAKE_MATCH_2}")
+        if(NOT EXISTS "${_planted_lib}")
+            message(FATAL_ERROR "ngtcp2-openssl-listing: the planted ${_planted_lib} is not built")
+        endif()
+        _ngtcp2_loaded_file("${_planted_lib}" _planted_dll)
+        _ngtcp2_linked_openssl("${_planted_lib}" _major _path _crypto_major _crypto_path)
+        math(EXPR _planted "${_planted} + 1")
+        if(NOT "${_planted_dll}" MATCHES "/bin/ngtcp2_crypto_ossl-0\\.dll$")
+            string(APPEND _failures "\n  planted OpenSSL ${_planted_major}: ${_planted_lib} resolved to '${_planted_dll}', "
+                                    "not its DLL in bin/")
+        elseif(_pe_tool AND (NOT "${_major}" STREQUAL "${_planted_major}"
+                             OR NOT "${_crypto_major}" STREQUAL "${_planted_major}"))
+            string(APPEND _failures "\n  planted OpenSSL ${_planted_major}: ${_planted_dll} read libssl '${_major}' "
+                                    "libcrypto '${_crypto_major}' through ${_pe_tool}")
+        endif()
+        if(_pe_tool)
+            set(_planted_expected "")
+            if(NOT _planted_major STREQUAL "3")
+                set(_planted_expected MAJORS)
+            endif()
+            _ngtcp2_openssl_conflict("${_major}" "${_path}" "${_crypto_major}" "${_crypto_path}" 3 "" 3 "" FALSE
+                                     _planted_verdict)
+            if(NOT "${_planted_verdict}" STREQUAL "${_planted_expected}")
+                string(APPEND _failures "\n  planted OpenSSL ${_planted_major} beside qb's OpenSSL 3: verdict "
+                                        "'${_planted_verdict}', expected '${_planted_expected}'")
+            endif()
+        endif()
+    endforeach()
+    if(_pe_tool AND NOT CMAKE_OBJDUMP)
+        # The OpenSSL 4 one again: through each tool when the one before cannot run, CMAKE_OBJDUMP first where the
+        # toolchain names one (llvm-objdump stands in for MinGW's here, where it is found); and copied into the other
+        # layouts -- MinGW's .dll.a, an upper-case .LIB with its DLL beside it, a DLL in bin/ and another beside the
+        # import library, where bin/'s is the one read.
+        foreach(_planted_entry IN LISTS _planted_pe)
+            if(_planted_entry MATCHES "^([0-9]+)=(.+)$")
+                get_filename_component(_planted_dir "${CMAKE_MATCH_2}" DIRECTORY)
+                set(_planted_lib_${CMAKE_MATCH_1} "${CMAKE_MATCH_2}")
+                set(_planted_dll_${CMAKE_MATCH_1} "${_planted_dir}/../bin/ngtcp2_crypto_ossl-0.dll")
+            endif()
+        endforeach()
+        function(read_planted label library major objdump dumpbin llvm)
+            set(CMAKE_OBJDUMP "${objdump}")
+            set(NGTCP2_DUMPBIN_EXECUTABLE "${dumpbin}")
+            set(NGTCP2_LLVM_OBJDUMP_EXECUTABLE "${llvm}")
+            _ngtcp2_linked_openssl("${library}" _major _path _crypto_major _crypto_path)
+            math(EXPR _n "${_planted} + 1")
+            set(_planted ${_n} PARENT_SCOPE)
+            if(NOT "${_major}" STREQUAL "${major}" OR NOT "${_crypto_major}" STREQUAL "${major}")
+                set(_failures "${_failures}
+  planted OpenSSL ${major}, ${label}: read libssl '${_major}' "
+                              "libcrypto '${_crypto_major}'" PARENT_SCOPE)
+            endif()
+        endfunction()
+        set(_absent "${WORK_DIR}/no-such-tool.exe")
+        if(_pe_dumpbin)
+            read_planted("an objdump that cannot run, then dumpbin" "${_planted_lib_4}" 4 "${_absent}" "${_pe_dumpbin}"
+                         "${_absent}")
+        endif()
+        if(_pe_llvm_objdump)
+            read_planted("objdump first" "${_planted_lib_4}" 4 "${_pe_llvm_objdump}" "${_absent}" "${_absent}")
+            read_planted("no dumpbin, llvm-objdump" "${_planted_lib_4}" 4 "" "${_absent}" "${_pe_llvm_objdump}")
+        endif()
+        set(_layouts "${WORK_DIR}/pe-layouts")
+        file(REMOVE_RECURSE "${_layouts}")
+        foreach(_copy "${_planted_lib_4}|mingw/lib/libngtcp2_crypto_ossl.dll.a"
+                      "${_planted_dll_4}|mingw/bin/ngtcp2_crypto_ossl-0.dll"
+                      "${_planted_lib_4}|upper/NGTCP2_CRYPTO_OSSL.LIB" "${_planted_dll_4}|upper/ngtcp2_crypto_ossl-0.dll"
+                      "${_planted_lib_4}|both/lib/ngtcp2_crypto_ossl.lib" "${_planted_dll_4}|both/bin/ngtcp2_crypto_ossl-0.dll"
+                      "${_planted_dll_3}|both/lib/ngtcp2_crypto_ossl-0.dll")
+            string(REGEX REPLACE "[|].*$" "" _from "${_copy}")
+            string(REGEX REPLACE "^.*[|]" "${_layouts}/" _to "${_copy}")
+            get_filename_component(_to_dir "${_to}" DIRECTORY)
+            file(MAKE_DIRECTORY "${_to_dir}")
+            file(COPY_FILE "${_from}" "${_to}")
+        endforeach()
+        set(_found_tools "${_pe_dumpbin}" "${_pe_llvm_objdump}") # each, or "": not run
+        read_planted("MinGW's .dll.a" "${_layouts}/mingw/lib/libngtcp2_crypto_ossl.dll.a" 4 "" ${_found_tools})
+        read_planted("an upper-case .LIB, its DLL beside it" "${_layouts}/upper/NGTCP2_CRYPTO_OSSL.LIB" 4 ""
+                     ${_found_tools})
+        read_planted("bin/ before beside" "${_layouts}/both/lib/ngtcp2_crypto_ossl.lib" 4 "" ${_found_tools})
+    endif()
+    if(NOT _pe_tool)
+        message(STATUS "ngtcp2-openssl-listing: no objdump, dumpbin or llvm-objdump here: the planted DLLs are not read")
+    endif()
+endif()
+if(_failures)
+    message(FATAL_ERROR "ngtcp2-openssl-listing: ${_planted} planted DLL readings, wrong ones:${_failures}")
 endif()
 
 # qb's own libssl and libcrypto, read wherever the comparison could run: a file that is a versioned libssl or libcrypto
 # must read, whether or not this configure found libngtcp2, so an ELF reader that reads nothing fails on every lane with
 # a readelf.
 set(_tool_exists FALSE)
-if(APPLE)
+if(WIN32)
+    if(_pe_tool)
+        set(_tool_exists TRUE)
+    endif()
+elseif(APPLE)
     find_program(_otool otool)
     if(_otool)
         set(_tool_exists TRUE)
@@ -432,8 +740,41 @@ if(LIBRARY AND EXISTS "${LIBRARY}")
         set(_qb_shown "${QB_SSL_LIBRARY}, static")
     endif()
     set(_live_note "")
-    if(_tool_exists AND NOT LIBRARY MATCHES "\\.(a|lib)$"
-       AND ("${_live_major}" STREQUAL "" OR "${_live_crypto_major}" STREQUAL ""))
+    if(WIN32 AND _tool_exists)
+        # On Windows (Huly QB-1184), the same oracle on the DLL the import library names -- and, the vcpkg layout's
+        # DLL being in bin/ beside the import library under its name, one the module must have found.
+        _ngtcp2_loaded_file("${LIBRARY}" _live_dll)
+        get_filename_component(_live_dir "${LIBRARY}" DIRECTORY)
+        get_filename_component(_live_name "${LIBRARY}" NAME_WE)
+        if(EXISTS "${_live_dir}/../bin/${_live_name}.dll" AND NOT "${_live_dll}" MATCHES "\\.[dD][lL][lL]$")
+            message(FATAL_ERROR "ngtcp2-openssl-listing: ${_live_dir}/../bin/${_live_name}.dll is beside the import "
+                                "library ${LIBRARY}, and the module found no DLL for it")
+        endif()
+        if("${_live_dll}" MATCHES "\\.[dD][lL][lL]$"
+           AND ("${_live_major}" STREQUAL "" OR "${_live_crypto_major}" STREQUAL ""))
+            set(_raw_flags -p)
+            if("${_pe_tool}" MATCHES "[dD][uU][mM][pP][bB][iI][nN]")
+                set(_raw_flags /NOLOGO /DEPENDENTS)
+            endif()
+            execute_process(COMMAND "${_pe_tool}" ${_raw_flags} "${_live_dll}" OUTPUT_VARIABLE _raw ERROR_QUIET)
+            string(TOLOWER "${_raw}" _raw)
+            foreach(_name IN ITEMS ssl crypto)
+                if(_name STREQUAL "ssl")
+                    set(_read "${_live_major}")
+                else()
+                    set(_read "${_live_crypto_major}")
+                endif()
+                if("${_read}" STREQUAL "" AND "${_raw}" MATCHES "lib${_name}-[0-9]")
+                    message(FATAL_ERROR "ngtcp2-openssl-listing: ${_pe_tool}'s own listing of ${_live_dll} names a "
+                                        "lib${_name}, the module read none: its reader is broken on this host")
+                endif()
+            endforeach()
+        endif()
+        if("${_live_major}" STREQUAL "")
+            set(_live_note " -- it names no shared libssl: an OpenSSL linked into it is not seen")
+        endif()
+    elseif(_tool_exists AND NOT LIBRARY MATCHES "\\.(a|lib)$"
+           AND ("${_live_major}" STREQUAL "" OR "${_live_crypto_major}" STREQUAL ""))
         # An oracle of the test's own, not the module's reader: the tool's raw listing naming a libssl or a libcrypto the
         # module did not read is a reader that reads nothing -- with a static libssl in qb, nothing else would show it on
         # macOS.
@@ -515,10 +856,11 @@ if(LIBRARY AND EXISTS "${LIBRARY}")
     if(QB_HAS_QUIC AND "${_live_conflict}" STREQUAL "MAJORS")
         message(FATAL_ERROR "ngtcp2-openssl-listing: QUIC is enabled, yet ${_readings}")
     endif()
-    message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions and ${_tools} tool readings "
-                   "right; ${_readings}, verdict '${_live_conflict}', QUIC ${QB_HAS_QUIC}${_live_note}; qb's own "
-                   "OpenSSL read:${_qb_read}")
+    message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions, ${_tools} tool readings and "
+                   "${_planted} planted DLL readings right; ${_readings}, verdict '${_live_conflict}', QUIC "
+                   "${QB_HAS_QUIC}${_live_note}; qb's own OpenSSL read:${_qb_read}")
 else()
-    message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions and ${_tools} tool readings "
-                   "right; qb's own OpenSSL read:${_qb_read}; no libngtcp2 in this configure")
+    message(STATUS "ngtcp2-openssl-listing: ${_cases} listings, ${_decisions} decisions, ${_tools} tool readings and "
+                   "${_planted} planted DLL readings right; qb's own OpenSSL read:${_qb_read}; no libngtcp2 in this "
+                   "configure")
 endif()

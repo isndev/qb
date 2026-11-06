@@ -519,14 +519,19 @@ endfunction()
 # compares); two copies of one major -- a static libssl in qb, or two prefixes where Mach-O names them -- are reported
 # and kept. qb's own libssl and libcrypto are read the same way (their headers' major when nothing reads them), unless
 # a parent's FindNgtcp2 module won the search: only qb's module defines its readings (Ngtcp2_OPENSSL_MAJOR, empty when
-# it read nothing), and nothing is compared without them.
+# it read nothing), and nothing is compared without them. On Windows the helper is read from the DLL its import library
+# names (Huly QB-1184): MSYS2's packages, or an installer's OpenSSL beside vcpkg's, can put libssl-3-x64.dll and
+# libssl-4-x64.dll in one process; qb's own side is its headers' major there, the number OpenSSL names its DLLs with
+# (MSVC's FindOpenSSL hands optimized/debug lists, which name no one file, and a DLL's imports do not name the DLL
+# itself).
 #
 # The files read become inputs of the configure (CMAKE_CONFIGURE_DEPENDS): `cmake --build` re-runs it when a package
 # update rewrites one, removes one, or moves the link that names one (QB-1185), instead of keeping a verdict about
 # libraries that are no longer the ones a binary loads -- each library as found, the file it resolves to, on Mach-O the
-# install name dyld loads and its file, and qb's opensslv.h, whose major stands in for a library nothing reads --
-# whoever set them, as _qb_find_openssl() says; libngtcp2's core library and headers, only searched for, where its
-# search produced them. Only files that exist: a missing input re-runs every build.
+# install name dyld loads and its file, on Windows the DLL its import library names, and qb's opensslv.h, whose major
+# stands in for a library nothing reads -- whoever set them, as _qb_find_openssl() says; libngtcp2's core library and
+# headers, only searched for, where its search produced them. Only files that exist: a missing input re-runs every
+# build.
 macro(_qb_decide_quic)
     set(_qb_quic_conflict "")
     set(_qb_quic_inputs "")
@@ -551,42 +556,39 @@ macro(_qb_decide_quic)
                                  "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}" "${Ngtcp2_OPENSSL_CRYPTO_LIBRARY}"
                                  "${_qb_ssl_major}" "${_qb_ssl_path}" "${_qb_crypto_major}" "${_qb_crypto_path}"
                                  "${_qb_ssl_static}" _qb_quic_conflict)
-        if(NOT WIN32)
-            foreach(_qb_quic_read IN ITEMS "${NGTCP2_CRYPTO_OSSL_LIBRARY}" "${OPENSSL_SSL_LIBRARY}"
-                                           "${OPENSSL_CRYPTO_LIBRARY}")
-                if(IS_ABSOLUTE "${_qb_quic_read}" AND EXISTS "${_qb_quic_read}")
-                    _ngtcp2_loaded_file("${_qb_quic_read}" _qb_quic_loaded)
-                    file(REAL_PATH "${_qb_quic_read}" _qb_quic_read_real)
-                    file(REAL_PATH "${_qb_quic_loaded}" _qb_quic_loaded_real)
-                    list(APPEND _qb_quic_inputs "${_qb_quic_read}" "${_qb_quic_read_real}" "${_qb_quic_loaded}"
-                         "${_qb_quic_loaded_real}")
-                endif()
-            endforeach()
-            set(_qb_quic_read "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
-            if(IS_ABSOLUTE "${OPENSSL_INCLUDE_DIR}" AND EXISTS "${_qb_quic_read}")
+        foreach(_qb_quic_read IN ITEMS "${NGTCP2_CRYPTO_OSSL_LIBRARY}" "${OPENSSL_SSL_LIBRARY}"
+                                       "${OPENSSL_CRYPTO_LIBRARY}")
+            if(IS_ABSOLUTE "${_qb_quic_read}" AND EXISTS "${_qb_quic_read}")
+                _ngtcp2_loaded_file("${_qb_quic_read}" _qb_quic_loaded)
                 file(REAL_PATH "${_qb_quic_read}" _qb_quic_read_real)
-                list(APPEND _qb_quic_inputs "${_qb_quic_read}" "${_qb_quic_read_real}")
+                file(REAL_PATH "${_qb_quic_loaded}" _qb_quic_loaded_real)
+                list(APPEND _qb_quic_inputs "${_qb_quic_read}" "${_qb_quic_read_real}" "${_qb_quic_loaded}"
+                     "${_qb_quic_loaded_real}")
             endif()
-            # libngtcp2's core library and headers, where its search produced them: their removal re-runs the
-            # configure too, which searches them again (Huly QB-1192). qb's own _qb_held_file(): a parent's FindNgtcp2
-            # may have won the search, and FindNgtcp2.cmake's functions-only include defines no _ngtcp2_held_file().
-            foreach(_qb_quic_spec IN ITEMS "NGTCP2_LIBRARY|" "NGTCP2_INCLUDE_DIR|/ngtcp2/ngtcp2.h"
-                                           "NGTCP2_CRYPTO_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto.h"
-                                           "NGTCP2_CRYPTO_OSSL_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto_ossl.h")
-                string(REPLACE "|" ";" _qb_quic_spec "${_qb_quic_spec}")
-                list(GET _qb_quic_spec 0 _qb_quic_entry)
-                list(GET _qb_quic_spec 1 _qb_quic_probe)
-                _qb_held_file("$CACHE{${_qb_quic_entry}}" "${_qb_quic_probe}" _qb_quic_read)
-                if("$CACHE{${_qb_quic_entry}}" STREQUAL "$CACHE{_NGTCP2_FOUND_${_qb_quic_entry}}"
-                   AND IS_ABSOLUTE "${_qb_quic_read}" AND EXISTS "${_qb_quic_read}"
-                   AND NOT IS_DIRECTORY "${_qb_quic_read}")
-                    list(APPEND _qb_quic_inputs "${_qb_quic_read}")
-                endif()
-            endforeach()
-            if(_qb_quic_inputs)
-                list(REMOVE_DUPLICATES _qb_quic_inputs)
-                set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_qb_quic_inputs})
+        endforeach()
+        set(_qb_quic_read "${OPENSSL_INCLUDE_DIR}/openssl/opensslv.h")
+        if(IS_ABSOLUTE "${OPENSSL_INCLUDE_DIR}" AND EXISTS "${_qb_quic_read}")
+            file(REAL_PATH "${_qb_quic_read}" _qb_quic_read_real)
+            list(APPEND _qb_quic_inputs "${_qb_quic_read}" "${_qb_quic_read_real}")
+        endif()
+        # libngtcp2's core library and headers, where its search produced them: their removal re-runs the configure
+        # too, which searches them again (Huly QB-1192). qb's own _qb_held_file(): a parent's FindNgtcp2 may have won
+        # the search, and FindNgtcp2.cmake's functions-only include defines no _ngtcp2_held_file().
+        foreach(_qb_quic_spec IN ITEMS "NGTCP2_LIBRARY|" "NGTCP2_INCLUDE_DIR|/ngtcp2/ngtcp2.h"
+                                       "NGTCP2_CRYPTO_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto.h"
+                                       "NGTCP2_CRYPTO_OSSL_INCLUDE_DIR|/ngtcp2/ngtcp2_crypto_ossl.h")
+            string(REPLACE "|" ";" _qb_quic_spec "${_qb_quic_spec}")
+            list(GET _qb_quic_spec 0 _qb_quic_entry)
+            list(GET _qb_quic_spec 1 _qb_quic_probe)
+            _qb_held_file("$CACHE{${_qb_quic_entry}}" "${_qb_quic_probe}" _qb_quic_read)
+            if("$CACHE{${_qb_quic_entry}}" STREQUAL "$CACHE{_NGTCP2_FOUND_${_qb_quic_entry}}"
+               AND IS_ABSOLUTE "${_qb_quic_read}" AND EXISTS "${_qb_quic_read}" AND NOT IS_DIRECTORY "${_qb_quic_read}")
+                list(APPEND _qb_quic_inputs "${_qb_quic_read}")
             endif()
+        endforeach()
+        if(_qb_quic_inputs)
+            list(REMOVE_DUPLICATES _qb_quic_inputs)
+            set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_qb_quic_inputs})
         endif()
     endif()
     if(_qb_quic_conflict)
@@ -599,18 +601,35 @@ macro(_qb_decide_quic)
         endif()
         _qb_quic_openssl_side("${Ngtcp2_OPENSSL_MAJOR}" "${Ngtcp2_OPENSSL_LIBRARY}" "${Ngtcp2_OPENSSL_CRYPTO_MAJOR}"
                               "${Ngtcp2_OPENSSL_CRYPTO_LIBRARY}" _qb_ngtcp2_ssl)
-        _qb_quic_openssl_side("${_qb_ssl_major}" "${OPENSSL_SSL_LIBRARY}" "${_qb_crypto_major}"
-                              "${OPENSSL_CRYPTO_LIBRARY}" _qb_own_ssl)
+        # qb's libraries as FindOpenSSL gives them: MSVC's optimized/debug lists said as their files
+        foreach(_qb_quic_name IN ITEMS SSL CRYPTO)
+            set(_qb_quic_shown "${OPENSSL_${_qb_quic_name}_LIBRARY}")
+            list(FILTER _qb_quic_shown EXCLUDE REGEX "^(optimized|debug|general)$")
+            list(JOIN _qb_quic_shown ", " _qb_quic_${_qb_quic_name}_shown)
+        endforeach()
+        _qb_quic_openssl_side("${_qb_ssl_major}" "${_qb_quic_SSL_shown}" "${_qb_crypto_major}"
+                              "${_qb_quic_CRYPTO_shown}" _qb_own_ssl)
         if(_qb_ssl_static)
             string(APPEND _qb_own_ssl " statically")
             string(APPEND _qb_quic_remedy ", shared (OPENSSL_USE_STATIC_LIBS off),")
         endif()
+        set(_qb_quic_helper "${NGTCP2_CRYPTO_OSSL_LIBRARY}")
+        _ngtcp2_loaded_file("${NGTCP2_CRYPTO_OSSL_LIBRARY}" _qb_quic_loaded)
+        if(WIN32 AND NOT "${_qb_quic_loaded}" STREQUAL "${NGTCP2_CRYPTO_OSSL_LIBRARY}")
+            string(APPEND _qb_quic_helper ", whose DLL ${_qb_quic_loaded} was read") # Huly QB-1184
+        endif()
         string(CONCAT _qb_quic_pair
-               "libngtcp2 (${NGTCP2_CRYPTO_OSSL_LIBRARY}) links ${_qb_ngtcp2_ssl} and qb links ${_qb_own_ssl} "
+               "libngtcp2 (${_qb_quic_helper}) links ${_qb_ngtcp2_ssl} and qb links ${_qb_own_ssl} "
                "(headers ${OPENSSL_VERSION} in ${OPENSSL_INCLUDE_DIR})")
+        string(CONCAT _qb_quic_cached "OPENSSL_INCLUDE_DIR, OPENSSL_SSL_LIBRARY and OPENSSL_CRYPTO_LIBRARY cached: "
+                                      "remove all three")
+        if(WIN32) # FindOpenSSL caches the libraries there as LIB_EAY and SSL_EAY (MSVC: _DEBUG and _RELEASE)
+            string(CONCAT _qb_quic_cached "OPENSSL_INCLUDE_DIR cached, and the libraries as LIB_EAY* and SSL_EAY*: "
+                                          "remove them (cmake -U OPENSSL_INCLUDE_DIR -U \"LIB_EAY*\" -U \"SSL_EAY*\")")
+        endif()
         string(CONCAT _qb_quic_fix
-               "qb against ${_qb_quic_remedy} in a new build directory (an existing one keeps OPENSSL_INCLUDE_DIR, "
-               "OPENSSL_SSL_LIBRARY and OPENSSL_CRYPTO_LIBRARY cached: remove all three, or configure with --fresh)")
+               "qb against ${_qb_quic_remedy} in a new build directory (an existing one keeps ${_qb_quic_cached}, or "
+               "configure with --fresh)")
     endif()
     if(_qb_quic_conflict STREQUAL "COPIES")
         string(CONCAT _qb_quic_copies
