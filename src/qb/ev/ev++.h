@@ -277,7 +277,7 @@ struct loop_ref {
     }
 #endif
 
-    /* qev: the earliest timer deadline on the loop's clock, EV_TSTAMP_HUGE when none (see ev_timer_next) */
+    /* qev: the earliest deadline the loop holds, on its clock; EV_TSTAMP_HUGE when none (see ev_timer_next) */
     tstamp
     timer_next() const EV_NOEXCEPT {
         return ev_timer_next(EV_AX);

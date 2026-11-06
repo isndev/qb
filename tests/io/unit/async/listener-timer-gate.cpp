@@ -16,7 +16,10 @@
  * does not, is the negative control. A periodic is a deadline too, in a heap of its own that
  * `ev_timer_count_addr` does not count (`ev_periodic_count_addr` does): a loop holding nothing else
  * must still fire it, one beside a quiet socket on its deadline rather than at the next poll, and a
- * far one must still cost no loop pass (Huly QB-275).
+ * far one must still cost no loop pass (Huly QB-275) -- but the loop's own read of the wall clock,
+ * half a second after the last, which a periodic needs to follow a step of that clock and the loop
+ * names through `ev_timer_next`; and the realtime timerfd a periodic creates under
+ * `QB_EV_USE_TIMERFD` is the loop's own, not an fd that makes every pass poll (Huly QB-1277).
  *
  * Copyright (c) 2011-2026 qb - isndev (cpp.actor). All rights reserved.
  * Licensed under the Apache License, Version 2.0. See LICENSE for details.
@@ -136,9 +139,77 @@ TEST_F(ListenerTimerGate, APeriodicAloneFiresUnderNonBlockingPasses) {
 
 TEST_F(ListenerTimerGate, AFarPeriodicCostsNoLoopPass) {
     // The other half of QB-275: the periodic is judged like a timer, on its deadline, not by
-    // running the loop on every pass of a core that holds one.
+    // running the loop on every pass of a core that holds one. Its one other appointment is the
+    // loop's next read of the wall clock, half a second after the last (the case below, Huly
+    // QB-1277), which `ev_timer_next` names: no pass that ends before it runs the loop, and a
+    // thousand passes cross it once at most.
+    RawPeriodic  far_off(3600.); // not `far`: a Windows macro
+    const double wall_read = ev_timer_next(loop());
+    unsigned     runs      = 0;
+    unsigned     early     = 0; // loop runs by passes that ended before the wall-clock read
+    for (int i = 0; i < 1000; ++i) {
+        const unsigned before = iterations();
+        listener::current.run(EVRUN_NOWAIT);
+        const unsigned ran = iterations() - before;
+        runs += ran;
+        if (ev_clock_now() < wall_read)
+            early += ran;
+    }
+    EXPECT_EQ(early, 0u) << "with one far periodic, no non-blocking pass ran the loop before its wall-clock read";
+    EXPECT_LE(runs, 1u) << "a thousand non-blocking passes ran the loop once at most, for that read";
+    EXPECT_EQ(far_off.hits, 0);
+}
+
+TEST_F(ListenerTimerGate, APeriodicLetsTheLoopReadTheWallClockEveryHalfSecond) {
+    // A periodic is due on the WALL clock, so a step of that clock moves it, and the loop learns of the
+    // step by reading the wall clock again half a second (MIN_TIMEJUMP/2) after its last read, on a
+    // pass -- with a timerfd also from a poll that finds it readable. The gate ran the loop only for the
+    // periodic's own deadline: under non-blocking passes the loop never looked, and a periodic due in an
+    // hour still fired in an hour after the clock was set a day ahead -- in every build; with the timerfd,
+    // polled on every pass, the cost of Huly QB-1277 hid it. `ev_timer_next` now names the read as one
+    // more deadline, and the gate runs the loop for it as for a timer, judged on the loop's clock: never
+    // on a pass that ended before it, always on the first one that began after it -- a stalled host
+    // changes how late the read comes, never whether.
     RawPeriodic far_off(3600.); // not `far`: a Windows macro
-    EXPECT_EQ(loop_runs_over(1000), 0u) << "with one far periodic, a thousand non-blocking passes ran the loop zero times";
+    unsigned    reads  = 0;
+    unsigned    early  = 0; // loop runs by passes that ended before the read was due
+    unsigned    missed = 0; // passes that began past it and left the loop unrun
+    const auto  t0     = qb::mono_now();
+    while (reads < 2 && qb::mono_now() - t0 < 5s) {
+        const double   due   = ev_timer_next(loop());
+        const double   began = ev_clock_now();
+        const unsigned runs  = iterations();
+        listener::current.run(EVRUN_NOWAIT);
+        const double   ended = ev_clock_now();
+        const unsigned ran   = iterations() - runs;
+        if (ended < due)
+            early += ran;
+        if (began > due && ran == 0)
+            ++missed;
+        if (ran != 0) {
+            ++reads;
+            EXPECT_GT(ev_timer_next(loop()), due + 0.4) << "the read was made: the next one is half a second later";
+        }
+    }
+    EXPECT_EQ(reads, 2u) << "two reads of the wall clock under non-blocking passes, half a second apart";
+    EXPECT_EQ(early, 0u) << "no pass ran the loop before a read was due";
+    EXPECT_EQ(missed, 0u) << "no pass that began past a read left it unmade";
+    EXPECT_EQ(far_off.hits, 0);
+}
+
+TEST_F(ListenerTimerGate, ThePeriodicsTimerfdIsNotAnFdTheGatePolls) {
+    // Under QB_EV_USE_TIMERFD the first periodic creates the loop's realtime timerfd -- the fd that turns
+    // readable when the wall clock is set -- and it lives as long as the loop. It counted in
+    // `ev_io_count`, what the gate reads to decide on a poll, so from the first periodic on, every
+    // non-blocking pass polled and ran the loop, the periodic long stopped (Huly QB-1277; this file's
+    // far-timer, pending, wake and skip-stretch cases went red after any periodic case). It is the loop's
+    // own, like the wake pipe: not counted. Without the timerfd it holds trivially.
+    {
+        RawPeriodic far_off(3600.); // not `far`: a Windows macro
+        EXPECT_EQ(ev_io_count(loop()), 0u) << "the loop's own timerfd is not an fd the gate polls for";
+    }
+    RawTimer far_off(3600.);
+    EXPECT_EQ(loop_runs_over(1000), 0u) << "the periodic stopped, the timerfd still open: a far timer's passes skip the loop";
     EXPECT_EQ(far_off.hits, 0);
 }
 

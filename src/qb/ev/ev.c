@@ -4087,7 +4087,15 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
 
         ev_rt_now = ev_time();
         mn_now    = get_clock();
+#if EV_USE_MONOTONIC
+        /* qev (Huly QB-1277): ev_timer_next names the loop's next read of the wall clock, now_floor +
+         * MIN_TIMEJUMP/2, beside the periodics. Without a monotonic clock every pass reads the wall clock,
+         * there is no such read, and now_floor is never read: a floor no reading reaches keeps it out --
+         * so ev_timer_next tests no clock flag on every pass that asks it. */
+        now_floor = EV_WAKE_LOAD(&have_monotonic) ? mn_now : EV_TS_CONST(EV_TSTAMP_HUGE);
+#else
         now_floor = mn_now;
+#endif
         rtmn_diff = ev_rt_now - mn_now;
 #if EV_FEATURE_API
         invoke_cb = ev_invoke_pending;
@@ -4592,10 +4600,10 @@ ev_pending_count_addr(EV_P) EV_NOEXCEPT {
 
 /* The number of active ev_io watchers -- the loop's own count of what its backend poll has to
  * look at, and the reason ev_run skips that poll when it is zero and the wait would not block
- * (see the EVRUN_NOWAIT note at the poll). Internal watchers on real fds count too (the
- * timerfd, the signalfd); the loop's own evpipe behind signal and async watchers does not --
- * what it carries reaches the loop through flags, and counting it would re-enable the poll
- * for the life of any loop that ever started a signal or async watcher. */
+ * (see the EVRUN_NOWAIT note at the poll). The signalfd counts: what it carries arrives on that fd
+ * alone. The loop's own evpipe behind signal and async watchers does not -- what it carries
+ * reaches the loop through flags, and counting it would re-enable the poll for the life of any
+ * loop that ever started a signal or async watcher -- nor do the timerfds (io_is_loop_own). */
 unsigned int
 ev_io_count(EV_P) EV_NOEXCEPT {
     return iocnt > 0 ? (unsigned int) iocnt : 0u;
@@ -4643,7 +4651,12 @@ ev_periodic_count_addr(EV_P) EV_NOEXCEPT {
  * monotonic scale when periodics are compiled in. What an embedder compares a reading of its
  * own against before deciding that a non-blocking pass has nothing to fire: timers_reify fires
  * a timer only once the loop's time is strictly past its deadline, so a deadline before the
- * embedder's reading is due, one at or after it is not. */
+ * embedder's reading is due, one at or after it is not. While a periodic is active the loop has
+ * one more appointment, folded in here: its next read of the wall clock, MIN_TIMEJUMP/2 after the
+ * last (now_floor), where a pass sees a jump and reschedules the periodics. An embedder that ran
+ * the loop only for the deadlines above never let it look, and a periodic fired on the wall clock
+ * it had before a jump -- in every build, and with the timerfd as soon as a pass stopped polling
+ * that fd (io_is_loop_own, Huly QB-1277). */
 ev_tstamp
 ev_timer_next(EV_P) EV_NOEXCEPT {
     ev_tstamp at = timercnt ? ANHE_at(timers[HEAP0]) : EV_TS_CONST(EV_TSTAMP_HUGE);
@@ -4652,6 +4665,11 @@ ev_timer_next(EV_P) EV_NOEXCEPT {
         ev_tstamp pat = ANHE_at(periodics[HEAP0]) - ev_rt_now + mn_now;
         if (pat < at)
             at = pat;
+#if EV_USE_MONOTONIC
+        pat = now_floor + EV_TS_CONST(MIN_TIMEJUMP * .5); /* no read to name without a monotonic clock: loop_init */
+        if (pat < at)
+            at = pat;
+#endif
     }
 #endif
     return at;
@@ -5047,8 +5065,8 @@ ev_run(EV_P_ int flags) {
              * whose loop holds only timers (a request timeout, a retry, a sleep) otherwise
              * costs a bare epoll_wait / kevent / wepoll syscall on every pass, ~300-700 ns,
              * for the life of the timer. A blocking wait is kept: with no fd it IS the sleep.
-             * The timerfd and the signalfd are ev_io watchers and count; the loop's own evpipe
-             * does NOT (ev_io_start / ev_io_stop): a byte can land on it only while
+             * The signalfd is an ev_io watcher and counts; the loop's own evpipe and timerfds
+             * do NOT (io_is_loop_own). A byte can land on the evpipe only while
              * pipe_write_wanted is set, i.e. around a sleep, and what that byte carries -- a
              * signal, an async send -- is ALSO in sig_pending / async_pending, which the tail
              * below reads directly. So the evpipe re-enabling the poll for the life of the
@@ -5329,13 +5347,26 @@ ev_io_modify(EV_P_ ev_io *w, int events) EV_NOEXCEPT {
  * far timer measured 40.5 ns against epoll's 25.8, and qb's listener-timer-gate suite went red the
  * day the whole suite was run on that backend (Huly QB-81). A non-blocking pass needs no timerfd
  * (libev judges its timers on mn_now); a blocking one polls the backend regardless and submits
- * the timerfd's POLL_ADD before it sleeps, so the exclusion changes nothing there. */
+ * the timerfd's POLL_ADD before it sleeps, so the exclusion changes nothing there.
+ * The realtime timerfd behind periodics (EV_USE_TIMERFD) is the third. It turns readable when the
+ * wall clock is set, and the loop learns that without it: each pass's clock update reads the wall
+ * clock again MIN_TIMEJUMP/2 after its last read and reschedules the periodics on a jump
+ * (time_update, now_set_refresh), and ev_timer_next names that read to an embedder that skips
+ * passes. Counted, it made every loop that ever started a periodic -- the timerfd is created by the
+ * first and lives as long as the loop -- poll on every non-blocking pass, and qb's gate ran ev_run
+ * on each of them (Huly QB-1277). A blocking pass polls it as before: there it is what lets the
+ * sleep last MAX_BLOCKTIME2. The signalfd stays counted: what it carries reaches the loop through
+ * that fd alone. */
 inline_size int
 io_is_loop_own(EV_P_ ev_io *w) {
     if (w == &pipe_w)
         return 1;
 #if EV_USE_IOURING
     if (w == &iouring_tfd_w)
+        return 1;
+#endif
+#if EV_USE_TIMERFD
+    if (w == &timerfd_w)
         return 1;
 #endif
     return 0;

@@ -292,7 +292,7 @@ private:
     // quiet socket's owner pays: at most one interval plus a pass before its byte is seen;
     // what every other pass saves: the syscall. A blocking pass (`run_once_for`, `run(0)`)
     // always polls -- there the poll is the wake.
-    const int          *_io_count;              ///< `&iocnt` of `_loop`: the fds a poll would look at
+    const int          *_io_count;              ///< `&iocnt` of `_loop`: the fds a poll is for, the loop's own excluded (QB-1277)
     const unsigned int *_io_fed;                ///< `&iofed` of `_loop`: ready fds the backend reported so far
     unsigned int        _io_fed_seen    = 0;    ///< `*_io_fed` after the last non-blocking pass; a difference = hot
     std::uint64_t       _last_poll_tsc  = 0;    ///< `qb::tsc_ticks()` at the last backend poll of a non-blocking pass
@@ -328,7 +328,7 @@ private:
     /// Whether the earliest timer is due, on a real reading of the loop's clock -- made only when
     /// the counter-based estimate says the deadline is within reach (see the block above). A
     /// reading made here is kept for the loop (`_supply`). Called with a timer or a periodic active:
-    /// `ev_timer_next` reads both heaps (Huly QB-275).
+    /// `ev_timer_next` reads both heaps (Huly QB-275) and, with a periodic, the loop's next wall-clock read (QB-1277).
     [[nodiscard]] bool
     _timer_due(std::uint64_t const tsc) noexcept {
         const double next = _loop.timer_next();
