@@ -407,10 +407,10 @@ namespace detail {
  *          is parked (`CoroutineScheduler::cancel_spawned()`): its awaiters retract their claims, its destructors run,
  *          and nothing resumes it.
  *
- *          The worker constructs a `slot_guard` first in its body, from the `slot()` it was handed by value; the guard
+ *          The worker takes a `slot_guard` as its parameter, from `slot()`, and moves it into a local first; the guard
  *          clears the slot when the worker ends -- normally, before its `final_suspend` frees the frame, or destroyed
- *          while parked -- so the lease never hands `cancel_spawned()` the address of a freed frame, which another
- *          coroutine may already occupy. The slot is shared because either side may go first.
+ *          parked or before it ever ran -- so the lease never hands `cancel_spawned()` the address of a freed frame,
+ *          which another coroutine may already occupy. The slot is shared because either side may go first.
  *
  *          Same thread only, like the scheduler. The lease must not end from inside the worker itself (a callable the
  *          worker runs dropping the last handle): `cancel_spawned()` never destroys the running coroutine. With no
@@ -418,11 +418,18 @@ namespace detail {
  */
 class worker_lease {
 public:
-    /// The worker's end of the lease: a local constructed first in the worker's body, from the slot it was handed.
+    /// The worker's end of the lease: the worker's PARAMETER, built from `slot()` at the call, so it clears the slot
+    /// even when the frame is destroyed before it ever ran -- by `reset_coro_scheduler()` or `recycle_coro_scheduler()`
+    /// between the spawn and the first `run_ready()`, after which the lease's `end()` reclaimed whatever frame the pool
+    /// had placed at that address since (Huly QB-1238). The worker moves it into a local first in its body, so the slot
+    /// is cleared when the body ends, before `final_suspend` frees the frame. A moved-from guard clears nothing.
     class slot_guard {
     public:
-        explicit slot_guard(std::shared_ptr<std::coroutine_handle<>> slot) noexcept
+        slot_guard() noexcept = default;
+        slot_guard(std::shared_ptr<std::coroutine_handle<>> slot) noexcept // implicit: the worker's parameter, from slot()
             : _slot(std::move(slot)) {}
+        slot_guard(slot_guard &&other) noexcept
+            : _slot(std::move(other._slot)) {}
 
         slot_guard(const slot_guard &)            = delete;
         slot_guard &operator=(const slot_guard &) = delete;
@@ -444,7 +451,7 @@ public:
         end();
     }
 
-    /// The slot to hand the worker coroutine by value, for the `slot_guard` it constructs first.
+    /// The slot to hand the worker coroutine, as its `slot_guard` parameter.
     [[nodiscard]] const std::shared_ptr<std::coroutine_handle<>> &
     slot() const noexcept {
         return _slot;

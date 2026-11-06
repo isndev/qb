@@ -673,18 +673,15 @@ policy.
   The table holds 16 schedulers per thread:
   beyond that, an awaiter falls back on the current one, and a frame registered with one of the rest that is not
   current stays in its sets; and it is the thread's own, so a scheduler must die on the thread that built it. A handle
-  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Two limits remain, each with
-  its ticket: a chain that awaits a helper that spawns -- a combinator, a `coroutine_scope`, a timeout,
-  `make_cancellable()`, `cancellable_sleep()`, `make_shared_task()` -- is not wholly its task's: the helpers are the
-  scheduler's, and the reset destroys them (Huly QB-1238); and the tcp connector's awaiters still fall back on their
-  cached scheduler (Huly QB-1234). Witnessed in `qb-io-test-unit-scheduler-lifecycle` for `sleep()`, `recv_for()`,
-  `send_for()` and a socket wait -- each destroyed once by its task, each woken in the next scheduler or with none bound
-  -- for `recycle_coro_scheduler()`, for a scheduler destroying its frames while another is current, whether they
-  registered with it or with the current one, for a frame registered with a live scheduler that is not current, for the
-  live-scheduler table, for a temporary listener's reset, with and without a scheduler of its own, and for a scheduler
-  destroyed while current; and in `qb-io-test-unit-scheduler-abandoned-frames` for its teardown; and in
-  `qb-core-test-system-coroutine-basics` for an actor that spawns after a reset on its core, and with its core's
-  scheduler alive but unbound.
+  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. One limit remains, with its
+  ticket: the tcp connector's awaiters still fall back on their cached scheduler (Huly QB-1234). Witnessed in
+  `qb-io-test-unit-scheduler-lifecycle` for `sleep()`, `recv_for()`, `send_for()` and a socket wait -- each destroyed
+  once by its task, each woken in the next scheduler or with none bound -- for `recycle_coro_scheduler()`, for a
+  scheduler destroying its frames while another is current, whether they registered with it or with the current one, for
+  a frame registered with a live scheduler that is not current, for the live-scheduler table, for a temporary listener's
+  reset, with and without a scheduler of its own, and for a scheduler destroyed while current; and in
+  `qb-io-test-unit-scheduler-abandoned-frames` for its teardown; and in `qb-core-test-system-coroutine-basics` for an
+  actor that spawns after a reset on its core, and with its core's scheduler alive but unbound.
 - **A `task` destroyed unfinished leaves the queue of every scheduler of its thread, not only the current one's (Huly
   QB-1245).** `~task`, and a move-assignment over an unfinished task, scrubbed the frame from the current scheduler --
   and, since QB-1220, from the one destroying its frames -- before freeing it. A waker queues a frame in whichever
@@ -721,6 +718,26 @@ policy.
   by its scheduler, and one awaiting a task parked on a timer across the listener's recycle (each red under
   AddressSanitizer: a heap-use-after-free at the task's completion); and two design guards of the link, a task destroyed
   while a coroutine awaits it and a task outliving the coroutine it completed for.
+- **A task kept across a reset while it awaits a helper that spawns frames leaves that helper no handle to a frame the
+  reset destroyed (Huly QB-1238).** `when_all` and `when_any` (their branches), a timeout (its runner),
+  `make_cancellable()` (its runner), `cancellable_sleep()` and `with_deadline()` (their timers) and a scope's timed join
+  (its timer) spawn frames the scheduler owns and keep each one's handle in their shared state, to reclaim it with
+  `cancel_spawned()` if the awaiting coroutine goes first; a frame that completed cleared it, or a completion flag kept
+  the teardown from using it. A task driven by hand, kept across `reset_coro_scheduler()` or `recycle_coro_scheduler()`
+  while it awaited one of them, lost those frames to the reset with their handles still recorded, and when its owner
+  destroyed it the helper's teardown reclaimed whatever frame the frame pool had placed at those addresses since -- a
+  frame of an unrelated coroutine of the next scheduler, which then never finished. Each of those frames now holds its
+  helper's state as its parameter, `detail::spawned_state`, whose destruction clears the slot: whether the frame ran,
+  parked or never started. The detached workers of `make_pipeline()`, `async_stream::backpressure()` and `debounce()`
+  had the same defect through their lease (`detail::worker_lease`): the worker built its `slot_guard` first in its body,
+  so a worker the reset destroyed before it ever ran left its slot behind; the guard is now the worker's parameter.
+  Since QB-1243 the inner tasks those frames awaited keep no continuation to them either. The frames the reset destroyed
+  never resume such a task -- a timeout's own timer still fires and a cancelled token still resumes it; a
+  `make_shared_task()` and a scope's untimed join keep no handle -- and its owner destroys it safely. Witnessed in
+  `qb-io-test-unit-scheduler-lifecycle`, red on the code before it for each of the eleven helper frames: a second task
+  of the same shape, started after the reset in the blocks it freed, never finished, `when_all`'s branches also
+  destroyed before they ever ran, and a pipeline's worker and a backpressured stream's producer destroyed unstarted; and
+  two design guards, a shared task and a scope's untimed join.
 - **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
   clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
   the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them

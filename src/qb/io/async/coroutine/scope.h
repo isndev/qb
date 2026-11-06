@@ -583,7 +583,7 @@ public:
                 impl->join_all_waiter_slots.push_back(slot);
                 // Timer also holds the slot; reads *slot on expiry. spawn_tracked so the dtor can
                 // reclaim it the instant the join resolves first.
-                *timer_slot = coro_scheduler().spawn_tracked(join_all_timer(slot, timer_slot, timeout_ms));
+                *timer_slot = coro_scheduler().spawn_tracked(join_all_timer(slot, {timer_slot, *timer_slot}, timeout_ms));
             }
 
             bool
@@ -640,12 +640,12 @@ private:
      *
      * Reads the slot after the delay. If await_resume() already nulled it,
      * the join completed normally — no-op. If not, the timeout wins: wake the
-     * join_all_for awaiter.
-     *
-     * Parameters are stored by VALUE in the coroutine frame — no dangling refs.
+     * join_all_for awaiter. Parameters are stored by VALUE in the coroutine frame — no dangling refs; `timer_slot`
+     * clears itself when the frame goes, fired or not (Huly QB-1238).
      */
     static task<void>
-    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, std::shared_ptr<std::coroutine_handle<>> timer_slot, qb::duration delay) {
+    join_all_timer(std::shared_ptr<std::coroutine_handle<>> slot, detail::spawned_state<std::coroutine_handle<>> timer_slot,
+                   qb::duration delay) {
         co_await sleep(delay);
         QB_SCOPE_TRACE("join_all_timer fired");
         // Fired: this frame self-reclaims at final_suspend. Clear the tracked handle so a later

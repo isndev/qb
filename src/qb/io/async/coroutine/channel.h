@@ -1396,7 +1396,7 @@ make_pipeline(F f, size_t buffer_size = 10) {
 // dangles once make_pipeline returns, and the channels are co-owned for the worker's whole lifetime.
 template <typename T, typename U, typename F>
 task<void>
-pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out, std::shared_ptr<std::coroutine_handle<>> self = {}) {
+pipeline_worker(F fn, std::shared_ptr<channel<T>> in, std::shared_ptr<channel<U>> out, detail::worker_lease::slot_guard self = {}) {
     detail::worker_lease::slot_guard ends_the_slot{std::move(self)}; // first: clears the slot however this frame ends
     // Close `out` on EVERY exit: a transform (or a send) that throws ends the stream for the consumer, never strands it.
     try {

@@ -128,7 +128,7 @@ private:
 
     template <size_t I>
     static task<void>
-    run_one(std::shared_ptr<state_t> state) {
+    run_one(detail::spawned_state<state_t> state) {
         try {
             // A `task<void>` branch is awaited for its effect only; its monostate slot
             // stays value-initialised.
@@ -177,7 +177,7 @@ private:
     template <size_t... Is>
     void
     start_all(std::index_sequence<Is...>) {
-        ((_state->branch_handles[Is] = coro_scheduler().spawn_tracked(run_one<Is>(_state))), ...);
+        ((_state->branch_handles[Is] = coro_scheduler().spawn_tracked(run_one<Is>({_state, _state->branch_handles[Is]}))), ...);
     }
 
 public:
@@ -279,7 +279,7 @@ public:
         // spawn_tracked records each run_one handle so the dtor can reclaim losing branches.
         state->branch_handles.resize(n);
         for (size_t i = 0; i < n; ++i) {
-            state->branch_handles[i] = coro_scheduler().spawn_tracked(run_one(state, i, n));
+            state->branch_handles[i] = coro_scheduler().spawn_tracked(run_one({state, state->branch_handles[i]}, i, n));
         }
     }
 
@@ -321,7 +321,7 @@ private:
     }
 
     static task<void>
-    run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
+    run_one(detail::spawned_state<state_t> state, size_t i, size_t n) {
         try {
             if constexpr (std::is_void_v<T>)
                 co_await state->tasks[i]; // nothing to store — monostate slot stays as-is
@@ -522,7 +522,7 @@ private:
 
     template <size_t I>
     static task<void>
-    run_one(std::shared_ptr<state_t> state) {
+    run_one(detail::spawned_state<state_t> state) {
         using task_type  = std::tuple_element_t<I, std::tuple<Tasks...>>;
         using value_type = typename task_type::value_type;
         try {
@@ -556,7 +556,7 @@ private:
         // spawn_tracked records each run_one handle so losers can be reclaimed on win.
         // All branches are spawned (queued, not resumed) before any runs, so every slot
         // is populated before a winner can be decided.
-        ((_state->branch_handles[Is] = coro_scheduler().spawn_tracked(run_one<Is>(_state))), ...);
+        ((_state->branch_handles[Is] = coro_scheduler().spawn_tracked(run_one<Is>({_state, _state->branch_handles[Is]}))), ...);
     }
 
 public:
@@ -653,7 +653,7 @@ public:
         // can reclaim the losing branches. All are spawned before any runs.
         state->branch_handles.resize(n);
         for (size_t i = 0; i < n; ++i) {
-            state->branch_handles[i] = coro_scheduler().spawn_tracked(run_one(state, i, n));
+            state->branch_handles[i] = coro_scheduler().spawn_tracked(run_one({state, state->branch_handles[i]}, i, n));
         }
     }
 
@@ -695,7 +695,7 @@ private:
     }
 
     static task<void>
-    run_one(std::shared_ptr<state_t> state, size_t i, size_t n) {
+    run_one(detail::spawned_state<state_t> state, size_t i, size_t n) {
         (void) n;
         try {
             // `task<void>` has no value to box into the result's `std::any` — await it for
@@ -819,7 +819,7 @@ class timeout_awaiter {
     qb::duration             _timeout;
 
     static task<void>
-    run_task(std::shared_ptr<state_t> state) {
+    run_task(detail::spawned_state<state_t> state) {
         try {
             state->result.emplace(co_await state->inner_task); // emplace: a non-assignable T is valid
         } catch (...) {
@@ -901,7 +901,7 @@ public:
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation  = h;
-        _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
+        _state->runner_handle = coro_scheduler().spawn_tracked(run_task({_state, _state->runner_handle}));
         // Arm a single self-stopping ev_timer instead of spawning a `co_await sleep`
         // coroutine. `data` points at the raw state_t (kept alive by _state while the
         // timer can fire); ev_now_update refreshes libev's cached time so the timeout is
@@ -990,7 +990,7 @@ class timeout_awaiter<void> {
     qb::duration             _timeout;
 
     static task<void>
-    run_task(std::shared_ptr<state_t> state) {
+    run_task(detail::spawned_state<state_t> state) {
         try {
             co_await state->inner_task;
         } catch (...) {
@@ -1057,7 +1057,7 @@ public:
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation  = h;
-        _state->runner_handle = coro_scheduler().spawn_tracked(run_task(_state));
+        _state->runner_handle = coro_scheduler().spawn_tracked(run_task({_state, _state->runner_handle}));
         auto loop             = listener::current.loop();
         ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
