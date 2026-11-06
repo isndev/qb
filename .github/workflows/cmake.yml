@@ -104,6 +104,20 @@ jobs:
             build_type: Release
             cxx_standard: 20
 
+          # The loop's realtime timerfd (QB_EV_USE_TIMERFD, OFF by default, Linux only), which the first
+          # ev_periodic of a loop creates. No row built it, and in that build the loop counted it as an fd: from
+          # the first periodic on, every non-blocking pass of the loop polled and ran ev_run, the pass without
+          # the loop of Huly QB-190 lost, while every timer still fired on time (Huly QB-1277). The suite under
+          # the option; the benchmarks only compile the same loop again, so they are left out of this row.
+          - name: ubuntu-gcc-cxx20-release-timerfd
+            os: ubuntu-latest
+            c_compiler: gcc-14
+            cpp_compiler: g++-14
+            build_type: Release
+            cxx_standard: 20
+            ev_timerfd: 'ON'
+            benchmarks: 'OFF'
+
     steps:
       - uses: actions/checkout@v6
         with:
@@ -154,8 +168,10 @@ jobs:
             -DQB_CXX_STANDARD=${{ matrix.cxx_standard }}
             -DQB_BUILD_TESTS=ON
             -DQB_BUILD_EXAMPLES=ON
-            -DQB_BUILD_BENCHMARKS=ON
+            -DQB_BUILD_BENCHMARKS=${{ matrix.benchmarks || 'ON' }}
             -DQB_USE_SYSTEM_GTEST=ON
+            # OFF but on the timerfd row; the step after Configure asserts the generated loop header agrees.
+            -DQB_EV_USE_TIMERFD=${{ matrix.ev_timerfd || 'OFF' }}
             # The suite can otherwise pass with TLS tests silently unregistered when OpenSSL
             # is unavailable: QB_WITH_SSL defaults to ON but its historical fallback is OFF.
             # QUIC stays AUTO: an absent ngtcp2 OpenSSL helper does not fail this matrix (one on another major would).
@@ -203,6 +219,21 @@ jobs:
           fi
 
           cmake "${args[@]}"
+
+      # Both senses, so neither row passes vacuously: the timerfd row must have compiled the timerfd in (a
+      # Linux without <sys/timerfd.h> drops it without a word, and the row would test the default loop under
+      # its name), and every other row must not have (the default the option promises).
+      - name: Assert the loop's timerfd is what the row asked for
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          want='${{ matrix.ev_timerfd == 'ON' && '1' || '0' }}'
+          cfg="$(find "${{ steps.build.outputs.dir }}" -name ev_config.h -path '*/include/*' | head -1)"
+          [ -n "$cfg" ] || { echo '::error::no generated ev_config.h in the build tree'; exit 1; }
+          got="$(sed -n 's/^#define EV_USE_TIMERFD \([01]\)$/\1/p' "$cfg")"
+          echo "EV_USE_TIMERFD: requested ${want}, generated ${got:-absent} (${cfg})"
+          [ "$got" = "$want" ] || { echo "::error::EV_USE_TIMERFD is ${got:-absent}, the row asked for ${want}"; exit 1; }
 
       - name: Assert SSL requested and compiled in
         shell: bash

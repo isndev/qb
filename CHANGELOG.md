@@ -516,6 +516,31 @@ policy.
 
 ### Fixed
 
+- **A loop that has held an `ev_periodic` no longer polls and runs on every non-blocking pass under
+  `QB_EV_USE_TIMERFD=ON`, and a periodic sees a step of the wall clock under non-blocking passes in every build (Huly
+  QB-1277).** The first `ev_periodic` a loop starts creates the loop's realtime timerfd -- the descriptor that turns
+  readable when the wall clock is set -- and it lives as long as the loop. The loop counted it in `ev_io_count`, which
+  the gate of a non-blocking `listener::run()` reads to decide on a poll (`listener::_nowait_gate`), so from that
+  periodic on, stopped or not, every `run(EVRUN_NOWAIT)` polled the backend and ran `ev_run`: the pass without the loop
+  of QB-190 was lost on every core whose loop had held a periodic, in a program built with the option, while every
+  timer still fired on time. qev now keeps that timerfd out of the count, as it keeps its wake pipe and io_uring's
+  deadline timerfd (qev's CHANGELOG). Excluded alone, it would have taken with it what it was there for under a driver
+  that never blocks: the loop learns
+  of a step of the wall clock by reading that clock again half a second after its last read, on a pass, and the gate
+  ran the loop only for the periodic's own deadline -- so a periodic due in an hour, the clock set a day ahead, fired an
+  hour later rather than at once, as it already did in every build without the option. `ev_timer_next` now names that
+  read while a periodic is active, and the gate runs the loop for it as for any deadline: once per half second, with no
+  poll. Instructions per non-blocking pass (callgrind, the difference over 100 000 passes, g++ 14 Release, WSL2, base
+  -> fix): a far timer 113.0 -> 113.0 with the option off and on; a far periodic 117.0 -> 120.0 off and 408.5 -> 120.0
+  on, where the base's backend syscall on every pass comes on top, uncounted; a periodic stopped beside a far timer
+  408.1 -> 113.0 on; a quiet socket polled on every pass 408.6 -> 408.2 off, 408.4 -> 408.5 on. Proven by
+  `ListenerTimerGate.ThePeriodicsTimerfdIsNotAnFdTheGatePolls`,
+  `ListenerTimerGate.APeriodicLetsTheLoopReadTheWallClockEveryHalfSecond` and `ListenerTimerGate.AFarPeriodicCostsNoLoopPass`
+  (`qb-io-test-unit-listener-timer-gate`): with the option on, 8 of the binary's 14 cases red on the base (the three,
+  and five that a periodic case run before them in the same process left red), the second red without it. The
+  `cmake` lane gains a row that builds and tests qb with `QB_EV_USE_TIMERFD=ON`, `ubuntu-gcc-cxx20-release-timerfd`,
+  and a step that asserts on every row that the generated loop header carries what the row asked for.
+
 - **`CircuitBreaker::allow` counts a reading older than the one its cooldown runs from as no time elapsed (Huly
   QB-1237).** `allow(now_ns)` tested the cooldown as `now_ns - opened_at >= cooldown` on unsigned nanoseconds. A reading
   older than the one the cooldown runs from -- one clock, read in another order: a reading kept from before an
