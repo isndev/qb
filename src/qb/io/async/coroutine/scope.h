@@ -278,7 +278,7 @@ private:
         QB_SCOPE_TRACE("run_wrapped entry impl=%p active=%zu", (void *) impl.get(), impl->active_count);
         std::exception_ptr err;
         try {
-            co_await inner;
+            co_await std::move(inner); // the frame's own task: awaited in place, no borrow (Huly QB-1243)
         } catch (const cancelled_error &) {
             // A worker that unwinds via cancelled_error BECAUSE this scope was
             // cancelled is honouring a cooperative stop the caller themselves

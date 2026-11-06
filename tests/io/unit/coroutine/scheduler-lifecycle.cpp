@@ -2834,3 +2834,139 @@ TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInADestroyingSchedulerBeyondTh
     EXPECT_EQ(beyond.pending_count(), 0u) << "the cancelled root is still queued in the scheduler destroying its frames";
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
+
+namespace scheduler_lifecycle_test {
+/// A spawned root in a frame beyond the pool that parks until resumed by hand, then finishes.
+inline task<void>
+root_resumed_by_hand_in_a_big_frame() {
+    beyond_the_pool pad{};
+    pad.bytes[0] = 1;
+    co_await std::suspend_always{};
+    pad.bytes[1] = pad.bytes[0];
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A spawned root that finishes under another live scheduler leaves its owner no handle to the freed frame
+ *       (Huly QB-1243).
+ * @brief Its waker queued it in the scheduler current when it fired, which resumed it; it finished there, and its
+ *        destruction was deferred to that scheduler, the current one at its final suspension -- which freed it and
+ *        erased it from its OWN ownership set, not the owner's. The owner's next destroy_all_suspended() read done() of
+ *        the freed frame (a heap-use-after-free under AddressSanitizer, the frame being beyond the pool), and destroyed
+ *        it a second time if the pool had handed the block to a frame still running.
+ */
+TEST_F(CoroutineSchedulerTests, ASpawnedRootFinishedUnderAnotherSchedulerLeavesItsOwnerNoHandleToIt) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>       ch;
+    CoroutineScheduler owner;
+    CoroutineScheduler finished_under;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        owner.spawn(scheduler_lifecycle_test::receive_once_in_a_big_frame(ch));
+        owner.run_ready(); // the root parks on the channel
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&finished_under};
+        ASSERT_TRUE(ch.try_send(1)); // queued in `finished_under`
+        finished_under.run_ready();  // resumed, finished, freed by `finished_under`
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+    EXPECT_TRUE(owner.dump().empty()) << "the owner still counts a root another scheduler freed";
+    owner.destroy_all_suspended(); // read done() of the freed root
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A finished root still waiting in another scheduler's deferred destructions is destroyed once when its owner
+ *       cancels it (Huly QB-1243).
+ * @brief It finished outside any drain, resumed by hand while another scheduler was current (as an `ask` reply resumes a
+ *        frame inline), so its destruction waited in that scheduler's list; its owner's cancel_spawned() scrubbed only
+ *        its own list before freeing it, and the other scheduler's next drain freed it again.
+ */
+TEST_F(CoroutineSchedulerTests, AFinishedRootWaitingInAnotherSchedulersDeferredListIsDestroyedOnce) {
+    const long              baseline = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler      owner;
+    CoroutineScheduler      finished_under;
+    std::coroutine_handle<> root;
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        root = owner.spawn_tracked(scheduler_lifecycle_test::root_resumed_by_hand_in_a_big_frame());
+        owner.run_ready(); // the root parks
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&finished_under};
+        root.resume(); // finishes: its destruction deferred to `finished_under`, not yet drained
+        ASSERT_TRUE(root.done());
+    }
+    owner.cancel_spawned(root); // the owner reclaims it
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&finished_under};
+        finished_under.run_ready(); // the deferred destruction: a second free
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test The same through the other scheduler's teardown: a root it never drained, freed by its destructor's drain,
+ *       leaves its owner no handle to it either (Huly QB-1243).
+ */
+TEST_F(CoroutineSchedulerTests, ARootFreedByAnotherSchedulersTeardownLeavesItsOwnerNoHandleToIt) {
+    const long         baseline = detail::CoroutineFrameAllocator::live_frames;
+    CoroutineScheduler owner;
+    {
+        auto                    finished_under = std::make_unique<CoroutineScheduler>();
+        std::coroutine_handle<> root;
+        {
+            scheduler_lifecycle_test::scoped_current const bound{&owner};
+            root = owner.spawn_tracked(scheduler_lifecycle_test::root_resumed_by_hand_in_a_big_frame());
+            owner.run_ready();
+        }
+        {
+            scheduler_lifecycle_test::scoped_current const bound{finished_under.get()};
+            root.resume(); // finishes: deferred to `finished_under`
+        }
+        finished_under.reset(); // its teardown drain frees the root
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+    EXPECT_TRUE(owner.dump().empty()) << "the owner still counts a root another scheduler freed";
+    owner.destroy_all_suspended(); // read done() of the freed root
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+namespace scheduler_lifecycle_test {
+/// A spawned root that parks until resumed by hand and finishes; its frame, when it goes, has the guard cancel.
+inline task<void>
+finished_cancelling_on_destruction(cancels_on_destruction guard) {
+    co_await std::suspend_always{};
+    (void) guard;
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A teardown drain whose destruction of one finished root cancels another, still in its list, destroys each once
+ *       (Huly QB-1243).
+ * @brief The drain walked its deferred destructions with a range-for: the first root's frame, destroyed, had the
+ *        scheduler cancel the second, which erased it from that very list and freed it, and the loop read the moved
+ *        tail past the list's new end -- the second root, destroyed a second time. The drain now pops them one at a time,
+ *        as run_ready() does, so a destruction may erase, null or defer another. The second frame is beyond the pool.
+ */
+TEST_F(CoroutineSchedulerTests, ATeardownDrainWhoseDestructionCancelsAnotherFinishedRootDestroysEachOnce) {
+    const long baseline = detail::CoroutineFrameAllocator::live_frames;
+    {
+        auto                    doomed = std::make_unique<CoroutineScheduler>();
+        std::coroutine_handle<> first;
+        std::coroutine_handle<> second;
+        {
+            scheduler_lifecycle_test::scoped_current const bound{doomed.get()};
+            first  = doomed->spawn_tracked(scheduler_lifecycle_test::finished_cancelling_on_destruction({doomed.get(), &second}));
+            second = doomed->spawn_tracked(scheduler_lifecycle_test::root_resumed_by_hand_in_a_big_frame());
+            doomed->run_ready(); // both park
+            first.resume();      // each finishes: its destruction deferred, in this order
+            second.resume();
+            ASSERT_TRUE(first.done());
+            ASSERT_TRUE(second.done());
+        }
+        doomed.reset(); // the teardown drain
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline) << "a frame was freed twice, or never";
+}

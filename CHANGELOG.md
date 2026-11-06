@@ -719,11 +719,33 @@ policy.
   itself: awaited as before, no borrow -- `t` is not moved out of its holder, so a task held elsewhere is awaited as an
   lvalue. The borrow's destructor touches the link only while it is still its own. The cost: an lvalue await stores two
   pointers at its suspension and clears two at the end of the full-expression holding the `co_await`, and the awaiting
-  frame holds one pointer more for it; every task frame carries one pointer more and tests it at its destruction.
-  Witnessed in `qb-io-test-unit-scheduler-lifecycle`: a spawned coroutine awaiting a task parked on a channel, destroyed
-  by its scheduler, and one awaiting a task parked on a timer across the listener's recycle (each red under
-  AddressSanitizer: a heap-use-after-free at the task's completion); and two design guards of the link, a task destroyed
-  while a coroutine awaits it and a task outliving the coroutine it completed for.
+  frame holds one pointer more for it; every task frame carries one pointer more and tests it at its destruction. A
+  `coroutine_scope` child's wrapper awaits the task its own frame holds in place, `co_await std::move(inner)`: it
+  borrows nothing, the frame owning that task (the borrow there cost `Scope_ParallelMap/256` 3 % on the M4). Witnessed
+  in `qb-io-test-unit-scheduler-lifecycle`: a spawned coroutine awaiting a task parked on a channel, destroyed by its
+  scheduler, and one awaiting a task parked on a timer across the listener's recycle (each red under AddressSanitizer: a
+  heap-use-after-free at the task's completion); and two design guards of the link, a task destroyed while a coroutine
+  awaits it and a task outliving the coroutine it completed for.
+- **A spawned root that finishes under another live scheduler is freed once, and its owner keeps no handle to it (Huly
+  QB-1243).** A root completes where it was resumed -- by a waker that queued it in the scheduler current when it fired,
+  or by hand, as an `ask` reply resumes a frame inline -- and its destruction was deferred to the scheduler current at
+  its final suspension. That scheduler freed it and erased it from its own ownership set, not the owner's: the owner's
+  next `destroy_all_suspended()` (a reset, a recycle) read `done()` of the freed frame, and destroyed the coroutine the
+  frame pool had since placed in that block; and the owner's `cancel_spawned()` of a finished root still waiting in the
+  other scheduler's deferred destructions freed it, then that scheduler's drain freed it again. A drain that frees a
+  root it does not own now erases it from its owner's set, and a reclaim nulls it in the other schedulers' deferred
+  destructions -- both through `CoroutineScheduler::scrub_elsewhere()`, which reaches every live scheduler of the table
+  and the current and destroying ones beyond it (an owner beyond the table that is neither is not reached). A drain pays
+  for it only on that foreign path; a reclaim pays it each time, and with a second scheduler on the thread that is one
+  set erase and a walk of that scheduler's deferred list. The teardown drain now pops its deferred destructions one at a
+  time, as `run_ready()` does: it walked them with a range-for, and a destruction that cancelled another root of the
+  list -- a frame whose parameter or local reclaims one, as a helper's teardown does -- erased it under the loop, which
+  read past the list's new end and destroyed that root a second time. Witnessed in
+  `qb-io-test-unit-scheduler-lifecycle`, each red under AddressSanitizer on the code before it: a root finished under
+  another scheduler, then its owner's reset; the same freed by the other scheduler's teardown; a finished root waiting
+  in the other scheduler's list, cancelled by its owner; and a teardown drain whose destruction of one finished root
+  cancels another of its list (a container overflow under AddressSanitizer, one frame destroyed twice). The two reset
+  witnesses also find the owner's `dump()` empty, which reads no frame: red in every build.
 - **A task kept across a reset while it awaits a helper that spawns frames leaves that helper no handle to a frame the
   reset destroyed (Huly QB-1238).** `when_all` and `when_any` (their branches), a timeout (its runner),
   `make_cancellable()` (its runner), `cancellable_sleep()` and `with_deadline()` (their timers) and a scope's timed join
