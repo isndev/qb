@@ -31,7 +31,7 @@
 // coroutines; they are all on the same thread and never run concurrently.
 #include <qb/system/container/growable_ring.h>
 #include <qb/system/time.h>          // qb::duration
-#include <qb/utility/branch_hints.h> // QB_NOINLINE: the parked-sender hand-off stays out of the receivers' bodies
+#include <qb/utility/branch_hints.h> // QB_NOINLINE (the parked-sender hand-off), QB_GNU_ALWAYS_INLINE (the plain awaiters, QB-1225)
 #include <any>                       // std::any / std::any_cast — the type-erased slot in every waiter
 #include <array>                     // the select awaiter's liveness tokens, one per channel (Huly QB-273)
 #include <cassert>                   // the select registration's caller-error checks (Huly QB-273)
@@ -244,7 +244,7 @@ public:
         // We take the synchronous fast-path (await_ready returns true) so the
         // throw happens without an intermediate suspension — this mirrors
         // `try_send` which returns `false` on a closed channel (Finding 2.C.1).
-        [[nodiscard]] bool
+        [[nodiscard]] QB_GNU_ALWAYS_INLINE bool
         await_ready() {
             if (ch._closed) {
                 // Stay !_completed so await_resume throws channel_closed.
@@ -266,7 +266,7 @@ public:
             ch.link_sender(_entry);
         }
 
-        void
+        QB_GNU_ALWAYS_INLINE void
         await_resume() {
             // Delivered -- at once, or by the wake that resumed us (the value moved into the channel or straight to a
             // receiver then, Huly QB-272). Nothing of the channel is touched here: it may already be gone.
@@ -350,7 +350,7 @@ public:
                 ch.restore(std::move(*_result));
         }
 
-        [[nodiscard]] bool
+        [[nodiscard]] QB_GNU_ALWAYS_INLINE bool
         await_ready() {
             if (!ch._buffer.empty()) {
                 _result = std::move(ch._buffer.front());
@@ -381,12 +381,12 @@ public:
             }
         }
 
+        QB_GNU_ALWAYS_INLINE
         std::optional<T>
         await_resume() {
             _resumed = true; // consumed normally → the dtor must not re-buffer the moved-from _result
-            // The channel was destroyed while we were parked (close() scheduled this
-            // resume, ~channel then freed the channel): return nullopt — the documented
-            // "channel closed" result — without touching the freed channel.
+            // The channel was destroyed while we were parked (close() scheduled this resume, ~channel then freed the
+            // channel): return nullopt — the documented "channel closed" result — without touching the freed channel.
             if (!*_ch_alive)
                 return std::move(_result);
             // If woken by close() while data is still in the buffer, drain it.
