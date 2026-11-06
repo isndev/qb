@@ -4600,10 +4600,11 @@ ev_pending_count_addr(EV_P) EV_NOEXCEPT {
 
 /* The number of active ev_io watchers -- the loop's own count of what its backend poll has to
  * look at, and the reason ev_run skips that poll when it is zero and the wait would not block
- * (see the EVRUN_NOWAIT note at the poll). The signalfd counts: what it carries arrives on that fd
- * alone. The loop's own evpipe behind signal and async watchers does not -- what it carries
- * reaches the loop through flags, and counting it would re-enable the poll for the life of any
- * loop that ever started a signal or async watcher -- nor do the timerfds (io_is_loop_own). */
+ * (see the EVRUN_NOWAIT note at the poll). The signalfd counts, and the inotify fd while an
+ * ev_stat watches through it: what they carry arrives on that fd alone. The loop's own evpipe
+ * behind signal and async watchers does not -- what it carries reaches the loop through flags, and
+ * counting it would re-enable the poll for the life of any loop that ever started a signal or async
+ * watcher -- nor do the timerfds or linux aio's epoll fd (io_is_loop_own). */
 unsigned int
 ev_io_count(EV_P) EV_NOEXCEPT {
     return iocnt > 0 ? (unsigned int) iocnt : 0u;
@@ -5065,8 +5066,9 @@ ev_run(EV_P_ int flags) {
              * whose loop holds only timers (a request timeout, a retry, a sleep) otherwise
              * costs a bare epoll_wait / kevent / wepoll syscall on every pass, ~300-700 ns,
              * for the life of the timer. A blocking wait is kept: with no fd it IS the sleep.
-             * The signalfd is an ev_io watcher and counts; the loop's own evpipe and timerfds
-             * do NOT (io_is_loop_own). A byte can land on the evpipe only while
+             * The signalfd is an ev_io watcher and counts, as the inotify fd does while a path
+             * is watched; the loop's own evpipe, timerfds and linux aio's epoll fd do NOT
+             * (io_is_loop_own). A byte can land on the evpipe only while
              * pipe_write_wanted is set, i.e. around a sleep, and what that byte carries -- a
              * signal, an async send -- is ALSO in sig_pending / async_pending, which the tail
              * below reads directly. So the evpipe re-enabling the poll for the life of the
@@ -5356,7 +5358,12 @@ ev_io_modify(EV_P_ ev_io *w, int events) EV_NOEXCEPT {
  * first and lives as long as the loop -- poll on every non-blocking pass, and qb's gate ran ev_run
  * on each of them (Huly QB-1277). A blocking pass polls it as before: there it is what lets the
  * sleep last MAX_BLOCKTIME2. The signalfd stays counted: what it carries reaches the loop through
- * that fd alone. */
+ * that fd alone. So does the inotify fd, while an ev_stat holds a watch on it -- its changes arrive
+ * on that fd alone -- and it is stopped with the last watch (infy_sync).
+ * The linux aio backend's watcher on its own epoll fd is the fourth: that epoll set holds only the
+ * fds aio refused, each behind an ev_io counted -- or not -- on its own account, so the watcher adds
+ * no fd a poll is for. Counted, every non-blocking pass of that backend polled from loop_init on,
+ * the shape QB-81 removed from io_uring (Huly QB-1277). */
 inline_size int
 io_is_loop_own(EV_P_ ev_io *w) {
     if (w == &pipe_w)
@@ -5367,6 +5374,10 @@ io_is_loop_own(EV_P_ ev_io *w) {
 #endif
 #if EV_USE_TIMERFD
     if (w == &timerfd_w)
+        return 1;
+#endif
+#if EV_USE_LINUXAIO
+    if (w == &linuxaio_epoll_w)
         return 1;
 #endif
     return 0;
@@ -5897,6 +5908,36 @@ infy_wd(EV_P_ int slot, int wd, struct inotify_event *ev) {
     }
 }
 
+/* qev (Huly QB-1277): the inotify fd's watcher runs while an ev_stat holds a watch on it -- while
+ * fs_hash is not empty -- and only then: its changes reach the loop through that fd alone, so it
+ * must be polled then, and it counts in iocnt as an ev_io; but the fd lives as long as the loop,
+ * and started once for good, it kept every non-blocking pass of a loop that had ever watched a path
+ * polling after its last ev_stat stopped. Called where a watch may have come or gone -- after a
+ * start, a stop, a callback's re-add, a read of the fd, a fork -- never between a del and its add,
+ * so a watcher re-armed in place does not stop and restart it. Start and stop keep the unref that
+ * stops it keeping the loop alive. An event still queued for a removed watch -- the IN_IGNORED of
+ * the last one, at least -- is read when the watcher starts again and matches no ev_stat: infy_wd
+ * looks watchers up by wd, the kernel hands wds out cyclically, and a wd met again would only make
+ * infy_wd re-add and re-stat that watcher, which is what it does for any event. */
+inline_size void
+infy_sync(EV_P) {
+    int slot, watched = 0;
+
+    for (slot = 0; slot < (EV_INOTIFY_HASHSIZE); ++slot)
+        if (fs_hash[slot].head) {
+            watched = 1;
+            break;
+        }
+
+    if (watched && !ev_is_active(&fs_w)) {
+        ev_io_start(EV_A_ & fs_w);
+        ev_unref(EV_A); /* watcher should not keep loop alive */
+    } else if (!watched && ev_is_active(&fs_w)) {
+        ev_ref(EV_A);
+        ev_io_stop(EV_A_ & fs_w);
+    }
+}
+
 static void
 infy_cb(EV_P_ ev_io *w, int revents) {
     /* the kernel packs inotify_event records back-to-back and we index into the
@@ -5915,6 +5956,8 @@ infy_cb(EV_P_ ev_io *w, int revents) {
         infy_wd(EV_A_ ev->wd, ev->wd, ev);
         ofs += sizeof(struct inotify_event) + ev->len;
     }
+
+    infy_sync(EV_A); /* infy_wd re-adds a watch the kernel dropped, which can fail */
 }
 
 inline_size ecb_cold void
@@ -5952,9 +5995,7 @@ infy_init(EV_P) {
     if (fs_fd >= 0) {
         fd_intern(fs_fd);
         ev_io_init(&fs_w, infy_cb, fs_fd, EV_READ);
-        ev_set_priority(&fs_w, EV_MAXPRI);
-        ev_io_start(EV_A_ & fs_w);
-        ev_unref(EV_A);
+        ev_set_priority(&fs_w, EV_MAXPRI); /* started by infy_sync, once a watch exists */
     }
 }
 
@@ -5965,16 +6006,16 @@ infy_fork(EV_P) {
     if (fs_fd < 0)
         return;
 
-    ev_ref(EV_A);
-    ev_io_stop(EV_A_ & fs_w);
+    if (ev_is_active(&fs_w)) {
+        ev_ref(EV_A);
+        ev_io_stop(EV_A_ & fs_w);
+    }
     close(fs_fd);
     fs_fd = infy_newfd();
 
     if (fs_fd >= 0) {
         fd_intern(fs_fd);
-        ev_io_set(&fs_w, fs_fd, EV_READ);
-        ev_io_start(EV_A_ & fs_w);
-        ev_unref(EV_A);
+        ev_io_set(&fs_w, fs_fd, EV_READ); /* started by infy_sync below, once a watch is re-added */
     }
 
     for (slot = 0; slot < (EV_INOTIFY_HASHSIZE); ++slot) {
@@ -5999,6 +6040,9 @@ infy_fork(EV_P) {
             }
         }
     }
+
+    if (fs_fd >= 0)
+        infy_sync(EV_A);
 }
 
 #endif
@@ -6043,6 +6087,7 @@ stat_timer_cb(EV_P_ ev_timer *w_, int revents) {
         if (fs_fd >= 0) {
             infy_del(EV_A_ w);
             infy_add(EV_A_ w);
+            infy_sync(EV_A);
             ev_stat_stat(EV_A_ w); /* avoid race... */
         }
 #endif
@@ -6067,9 +6112,10 @@ ev_stat_start(EV_P_ ev_stat *w) EV_NOEXCEPT {
 #if EV_USE_INOTIFY
     infy_init(EV_A);
 
-    if (fs_fd >= 0)
+    if (fs_fd >= 0) {
         infy_add(EV_A_ w);
-    else
+        infy_sync(EV_A);
+    } else
 #endif
     {
         ev_timer_again(EV_A_ & w->timer);
@@ -6091,6 +6137,8 @@ ev_stat_stop(EV_P_ ev_stat *w) EV_NOEXCEPT {
 
 #if EV_USE_INOTIFY
     infy_del(EV_A_ w);
+    if (fs_fd >= 0)
+        infy_sync(EV_A);
 #endif
 
     if (ev_is_active(&w->timer)) {

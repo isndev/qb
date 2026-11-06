@@ -722,7 +722,7 @@ ev_is_default_loop (void) EV_NOEXCEPT
      * per priority, whose sum is ev_pending_count. Owner thread only, like any loop read. */
     EV_API_DECL const int *ev_active_count_addr(EV_P) EV_NOEXCEPT;
     EV_API_DECL const int *ev_pending_count_addr(EV_P) EV_NOEXCEPT; /* EV_NUMPRI entries */
-    EV_API_DECL unsigned int ev_io_count(EV_P) EV_NOEXCEPT; /* active ev_io watchers, the loop's own wake pipe and timerfds excluded; 0 = ev_run skips a non-blocking poll */
+    EV_API_DECL unsigned int ev_io_count(EV_P) EV_NOEXCEPT; /* active ev_io watchers, the loop's own wake pipe, timerfds and aio epoll fd excluded; 0 = ev_run skips a non-blocking poll */
     EV_API_DECL const int *ev_io_count_addr(EV_P) EV_NOEXCEPT; /* the same count, read inline; valid until ev_loop_destroy */
     EV_API_DECL const unsigned int *ev_io_fed_addr(EV_P) EV_NOEXCEPT; /* ready fds the backend reported so far (grows, wraps), read inline: an io cadence stays hot on it */
     EV_API_DECL const int *ev_timer_count_addr(EV_P) EV_NOEXCEPT; /* qev: active ev_timer watchers, read inline */
