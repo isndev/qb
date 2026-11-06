@@ -79,6 +79,11 @@ void fail_next_random_fills(std::size_t count);
 // A native server listener's Retry secret: generated and usable / every byte zero.
 bool retry_secret_ready(backend &server);
 bool retry_secret_zeroed(backend &server);
+// The CONNECTION_CLOSE `peer` received -- a server listener: its first connection's -- as {ngtcp2_ccerr_type, error
+// code}: type 0 is a transport close, 1 an application one; {-1, 0} when it has no connection (Huly QB-1275).
+std::pair<int, std::uint64_t> received_close(backend &peer);
+// A native server answers an ALPN offer it shares nothing with by NOACK, letting the handshake complete without one.
+void answer_alpn_with_noack_for_server(bool on);
 } // namespace qb::io::quic::test
 #endif
 

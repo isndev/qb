@@ -798,6 +798,24 @@ policy.
   `qb-io-test-unit-abi-header-alone`, which pins the macro to `retain` on ELF and to nothing elsewhere -- red on the
   code before it under Apple clang, whose `retain` it spelled on macOS too -- and whose only qb include is `abi.h`, so
   under `QB_TESTS_WERROR` a g++ build of it off ELF fails on the warning.
+- **A QUIC connection qb closes on a stream queue overrun or an ALPN refusal tells its peer why, with a code from the
+  right space (Huly QB-1275).** A stream TX queue that overran `max_pending_stream_frames` or `max_pending_stream_bytes`
+  closed with an application close carrying `disconnect_reason::buffer_overflow` cast to an integer -- past the varint
+  range, so the clamp sent code 0 -- and the client's handshake check of the negotiated ALPN closed with an application
+  close too, which a Handshake packet carries as APPLICATION_ERROR 0x0c (RFC 9000 §10.2.3), written from inside ngtcp2's
+  `handshake_completed` callback, which ngtcp2 forbids. A server sharing no ALPN with its client answered without one
+  (`SSL_TLSEXT_ERR_NOACK`) and left the client to notice. A stream queue overrun now closes with a transport
+  INTERNAL_ERROR (0x1); a server sharing no ALPN refuses inside the handshake with the TLS alert
+  `no_application_protocol`, CRYPTO_ERROR 0x178 as RFC 9001 §8.1 requires, and a client whose server selected none
+  closes with the same alert, its check setting it and failing the callback so the read that returns writes the close. A
+  failure of the TLS stack, or of a qb callback, closes with the alert raised, else with INTERNAL_ERROR -- never the
+  PROTOCOL_VIOLATION ngtcp2 infers. Each side of a refusal reports `handshake_failed`: a received close that carries a
+  TLS alert reads so, any other received close as `application_close`, as before. The datagram path's and the writer's
+  failures still close locally only. Witnessed in `qb-io-test-system-quic-handshake`, each red on the code before it, by
+  the CONNECTION_CLOSE the peer received and the reason each side reported: a stream queue overrun by
+  `max_pending_stream_frames = 1` and by `max_pending_stream_bytes = 8`, a server sharing no ALPN, a server that
+  selected none; and a positive control, a shared ALPN negotiated and carried by both connected events, no close
+  received.
 - **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
   clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
   the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them
