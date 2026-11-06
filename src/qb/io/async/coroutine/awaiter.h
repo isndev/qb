@@ -190,7 +190,7 @@ struct awaiter_base {
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
      * of qb-io already does — see async/listener.h:1128, "every waker in qb-io defers through
-     * `schedule_via_current`". This one was an exception; the tcp connector's still is (Huly QB-1234).
+     * `schedule_via_current`". This one was an exception, and so were the tcp connector's until 3.4 (Huly QB-1234).
      *
      * The cached pointer is followed only while that scheduler lives (Huly QB-1220): a task driven by hand
      * can keep this frame across `listener::reset_coro_scheduler()`, which destroys it. The unregistration

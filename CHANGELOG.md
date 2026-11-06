@@ -673,8 +673,7 @@ policy.
   The table holds 16 schedulers per thread:
   beyond that, an awaiter falls back on the current one, and a frame registered with one of the rest that is not
   current stays in its sets; and it is the thread's own, so a scheduler must die on the thread that built it. A handle
-  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. One limit remains, with its
-  ticket: the tcp connector's awaiters still fall back on their cached scheduler (Huly QB-1234). Witnessed in
+  `detach()`ed from its task and dropped is leaked by whoever dropped it, as with no reset. Witnessed in
   `qb-io-test-unit-scheduler-lifecycle` for `sleep()`, `recv_for()`, `send_for()` and a socket wait -- each destroyed
   once by its task, each woken in the next scheduler or with none bound -- for `recycle_coro_scheduler()`, for a
   scheduler destroying its frames while another is current, whether they registered with it or with the current one, for
@@ -738,6 +737,17 @@ policy.
   of the same shape, started after the reset in the blocks it freed, never finished, `when_all`'s branches also
   destroyed before they ever ran, and a pipeline's worker and a backpressured stream's producer destroyed unstarted; and
   two design guards, a shared task and a scope's untimed join.
+- **A connect driven by hand and kept across a reset resumes through the scheduler current at its completion, not the
+  one the reset freed (Huly QB-1234).** The awaiters of `tcp::connect()`, `tcp::connect_with_socket()` and
+  `tcp::starttls_connect()` cached the scheduler current at their suspension and resumed through it when none was
+  current at the completion. A task that awaited one of them without being spawned, kept across
+  `reset_coro_scheduler()`, saw its connect complete -- the connect's event survives the reset -- with none bound, and
+  its awaiter queued it in the freed scheduler. They now resume through `schedule_via_current()`, which binds the loop's
+  scheduler if none is: the rule every other waker of qb-io follows (`awaiter_base` and the channels' timed waits since
+  QB-1220). No scheduler is cached any more; the suspension still binds the thread's own if none is, as it did.
+  Witnessed in `qb-io-test-system-tcp-connector-loopback` (`connect()`, `connect_with_socket()`) and
+  `qb-io-test-system-tls-starttls-upgrade` (`starttls_connect()`): each red under AddressSanitizer on the code before
+  it, a heap-use-after-free in the freed scheduler's sets.
 - **qb-core measures an async `onInit()`'s activation deadline and a `Supervisor`'s restart window on the monotonic
   clock (Huly QB-1199).** The activation deadline read the wall clock (`qb::wall_now()`) and the window `Actor::time()`,
   the core's sample of it, so a step of the time of day -- an NTP step, a `settimeofday`, a manual change -- moved them

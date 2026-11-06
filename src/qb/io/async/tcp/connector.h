@@ -937,11 +937,11 @@ class connect_awaiter {
     static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
 
     struct state_t {
-        std::optional<Socket_>               result;
-        std::coroutine_handle<>              handle{};
-        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
-        bool                                 ready{false};
-        bool                                 active{true};
+        std::optional<Socket_>  result;
+        std::coroutine_handle<> handle{};
+        // (no scheduler cached for the resume: Huly QB-1234)
+        bool ready{false};
+        bool active{true};
     };
 
     uri                           _remote;
@@ -984,10 +984,10 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        _state->handle    = h;
-        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
-        if (!_state->scheduler)
-            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
+        _state->handle = h;
+        // The thread's scheduler is bound here if none is, as it always was; none is kept for the resume,
+        // which goes through the one current at the completion (Huly QB-1234).
+        (void) ::qb::io::async::CoroutineScheduler::current();
 
         auto state      = _state;
         auto on_connect = [state](Socket_ &&socket) {
@@ -997,16 +997,16 @@ public:
                 state->result = std::move(socket);
             }
             state->ready = true;
-            // Resolve the scheduler NOW, not at suspend time: the cached one may be the
-            // thread-local fallback this awaiter built when nothing was bound yet, which
-            // `listener::run()` never pumps. See the long note on
-            // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
-            // callback runs on the loop thread, so the current scheduler is the pumped one.
-            if (auto *target =
-                    ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr() : state->scheduler;
-                target && state->handle) {
-                target->schedule_resume(state->handle);
-            }
+            // Resume through the scheduler current NOW, binding the loop's if none is (Huly QB-1234). The
+            // awaiter cached the one current at its suspension and resumed through it when none was current
+            // here; but a connect driven by hand -- never spawned -- can be kept across
+            // `listener::reset_coro_scheduler()`, which destroys that scheduler, and the connect's event
+            // survives the reset: the resume wrote into the freed scheduler. See the long note on
+            // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h): this callback runs on the
+            // loop thread, so the current scheduler is the pumped one.
+            // A completion after the awaiter resumed or went is dropped above (`active` false, `handle` null).
+            if (state->handle)
+                ::qb::io::async::schedule_via_current(state->handle);
         };
         if (_listed)
             ::qb::io::async::tcp::connect<Socket_>(std::move(_endpoints), std::move(_host), std::move(on_connect), _timeout, _verify_peer);
@@ -1075,11 +1075,11 @@ class connect_with_socket_awaiter {
     static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
 
     struct state_t {
-        std::optional<Socket_>               result;
-        std::coroutine_handle<>              handle{};
-        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
-        bool                                 ready{false};
-        bool                                 active{true};
+        std::optional<Socket_>  result;
+        std::coroutine_handle<> handle{};
+        // (no scheduler cached for the resume: Huly QB-1234)
+        bool ready{false};
+        bool active{true};
     };
 
     Socket_                  _socket;
@@ -1107,10 +1107,10 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        _state->handle    = h;
-        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
-        if (!_state->scheduler)
-            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
+        _state->handle = h;
+        // The thread's scheduler is bound here if none is, as it always was; none is kept for the resume,
+        // which goes through the one current at the completion (Huly QB-1234).
+        (void) ::qb::io::async::CoroutineScheduler::current();
 
         auto state = _state;
         ::qb::io::async::tcp::connect<Socket_>(
@@ -1122,16 +1122,16 @@ public:
                     state->result = std::move(socket);
                 }
                 state->ready = true;
-                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
-                // thread-local fallback this awaiter built when nothing was bound yet, which
-                // `listener::run()` never pumps. See the long note on
-                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
-                // callback runs on the loop thread, so the current scheduler is the pumped one.
-                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
-                                                                                      : state->scheduler;
-                    target && state->handle) {
-                    target->schedule_resume(state->handle);
-                }
+                // Resume through the scheduler current NOW, binding the loop's if none is (Huly QB-1234). The
+                // awaiter cached the one current at its suspension and resumed through it when none was current
+                // here; but a connect driven by hand -- never spawned -- can be kept across
+                // `listener::reset_coro_scheduler()`, which destroys that scheduler, and the connect's event
+                // survives the reset: the resume wrote into the freed scheduler. See the long note on
+                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h): this callback runs on the
+                // loop thread, so the current scheduler is the pumped one.
+                // A completion after the awaiter resumed or went is dropped above (`active` false, `handle` null).
+                if (state->handle)
+                    ::qb::io::async::schedule_via_current(state->handle);
             },
             _timeout);
     }
@@ -1177,11 +1177,11 @@ class starttls_connect_awaiter {
     static constexpr char const *qb_suspension_kind = "connect"; ///< suspension tracking (coroutine/tracking.h)
 
     struct state_t {
-        std::optional<Socket_>               result;
-        std::coroutine_handle<>              handle{};
-        ::qb::io::async::CoroutineScheduler *scheduler{nullptr};
-        bool                                 ready{false};
-        bool                                 active{true};
+        std::optional<Socket_>  result;
+        std::coroutine_handle<> handle{};
+        // (no scheduler cached for the resume: Huly QB-1234)
+        bool ready{false};
+        bool active{true};
     };
 
     uri                      _remote;
@@ -1209,10 +1209,10 @@ public:
     void
     await_suspend(std::coroutine_handle<> h) {
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
-        _state->handle    = h;
-        _state->scheduler = ::qb::io::async::CoroutineScheduler::current_ptr();
-        if (!_state->scheduler)
-            _state->scheduler = &::qb::io::async::CoroutineScheduler::current();
+        _state->handle = h;
+        // The thread's scheduler is bound here if none is, as it always was; none is kept for the resume,
+        // which goes through the one current at the completion (Huly QB-1234).
+        (void) ::qb::io::async::CoroutineScheduler::current();
 
         auto state = _state;
         ::qb::io::async::tcp::starttls_connect<Socket_, Negotiator_>(
@@ -1223,16 +1223,16 @@ public:
                 if (socket.is_open())
                     state->result = std::move(socket);
                 state->ready = true;
-                // Resolve the scheduler NOW, not at suspend time: the cached one may be the
-                // thread-local fallback this awaiter built when nothing was bound yet, which
-                // `listener::run()` never pumps. See the long note on
-                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h) — this
-                // callback runs on the loop thread, so the current scheduler is the pumped one.
-                if (auto *target = ::qb::io::async::CoroutineScheduler::current_ptr() ? ::qb::io::async::CoroutineScheduler::current_ptr()
-                                                                                      : state->scheduler;
-                    target && state->handle) {
-                    target->schedule_resume(state->handle);
-                }
+                // Resume through the scheduler current NOW, binding the loop's if none is (Huly QB-1234). The
+                // awaiter cached the one current at its suspension and resumed through it when none was current
+                // here; but a connect driven by hand -- never spawned -- can be kept across
+                // `listener::reset_coro_scheduler()`, which destroys that scheduler, and the connect's event
+                // survives the reset: the resume wrote into the freed scheduler. See the long note on
+                // `awaiter_base::on_event_ready` (qb/io/async/coroutine/awaiter.h): this callback runs on the
+                // loop thread, so the current scheduler is the pumped one.
+                // A completion after the awaiter resumed or went is dropped above (`active` false, `handle` null).
+                if (state->handle)
+                    ::qb::io::async::schedule_via_current(state->handle);
             },
             _timeout, _verify_peer);
     }

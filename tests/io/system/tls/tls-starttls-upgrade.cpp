@@ -336,3 +336,34 @@ TEST(TlsStarttlsUpgrade, PendingHandshakeWaitsForTheServerWithoutSpinning) {
     listener.disconnect();
     qb::io::async::listener::current.clear();
 }
+
+// A STARTTLS connect driven by hand -- never spawned -- kept across `reset_coro_scheduler()`, which destroys the
+// scheduler current at its suspension, completes while none is bound: its awaiter resumed it through the scheduler it
+// had cached, freed (a heap-use-after-free under AddressSanitizer); it resumes through the loop's (Huly QB-1234).
+TEST(TlsStarttlsUpgrade, AHandDrivenStarttlsConnectKeptAcrossTheResetResumesWithNoSchedulerBound) {
+    ASSERT_TRUE(require_ssl_files()) << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+
+    qb::io::async::init();
+    std::atomic<bool>    stop{false};
+    starttls_mock_server server('S', stop);
+    ASSERT_NE(server.port(), 0);
+    const qb::io::uri remote{"tcp://127.0.0.1:" + std::to_string(server.port())};
+
+    bool       secure = false;
+    auto const body   = [&]() -> qb::io::async::task<void> {
+        auto sock = co_await qb::io::async::tcp::starttls_connect<qb::io::transport::stcp, test_starttls_negotiator>(remote, 5s, false);
+        secure    = sock.has_value() && sock->is_open() && sock->handshake_complete();
+    };
+    {
+        qb::io::async::task<void> parked = body();
+        (void) qb::io::async::coro_scheduler();
+        parked.handle().resume(); // the connect starts; its awaiter suspends under the thread's scheduler
+        ASSERT_FALSE(parked.handle().done()) << "the connect completed before the reset: nothing to witness";
+        qb::io::async::listener::current.reset_coro_scheduler(); // destroys that scheduler, binds none
+        ASSERT_EQ(qb::io::async::CoroutineScheduler::current_ptr(), nullptr);
+        EXPECT_TRUE(pump_until([&] { return parked.handle().done(); }, 5s)) << "the connect kept across the reset never resumed";
+    }
+    EXPECT_TRUE(secure) << "the STARTTLS connect kept across the reset did not reach a completed TLS handshake";
+    server.shutdown();
+    qb::io::async::listener::current.clear();
+}

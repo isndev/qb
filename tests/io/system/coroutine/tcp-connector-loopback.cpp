@@ -689,3 +689,69 @@ TEST_F(TcpConnectorLoopbackTest, ExplicitTransportCoroutineConnectResolvesToTheC
     EXPECT_TRUE(connected);
     EXPECT_TRUE(accepted.load());
 }
+
+namespace tcp_connector_loopback_test {
+/// A listening loopback socket nobody accepts from: the kernel completes a connect to it from its backlog.
+struct backlog_listener {
+    qb::io::tcp::listener listener;
+    unsigned short        port = 0;
+    backlog_listener() {
+        EXPECT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+        port = listener.local_endpoint().port();
+    }
+    ~backlog_listener() {
+        listener.disconnect();
+        listener.close();
+    }
+};
+
+inline task<void>
+connect_once(unsigned short port, std::atomic<bool> *connected) {
+    auto socket = co_await qb::io::async::tcp::connect(qb::io::uri{tcp_uri(port)}, 1s);
+    connected->store(socket.has_value() && socket->is_open());
+    if (socket)
+        socket->close();
+}
+
+inline task<void>
+connect_once_with_socket(unsigned short port, std::atomic<bool> *connected) {
+    qb::io::tcp::socket existing;
+    if (existing.init(AF_INET) != qb::io::SocketStatus::Done)
+        co_return;
+    auto socket = co_await qb::io::async::tcp::connect_with_socket(std::move(existing), qb::io::uri{tcp_uri(port)}, 1s);
+    connected->store(socket.has_value() && socket->is_open());
+    if (socket)
+        socket->close();
+}
+
+/**
+ * Huly QB-1234. A connect driven by hand -- never spawned -- kept across `reset_coro_scheduler()`, which destroys the
+ * scheduler current at its suspension, completes while none is bound: its awaiter resumed it through the scheduler it
+ * cached at the suspension, freed (a heap-use-after-free under AddressSanitizer); it resumes through the loop's.
+ */
+inline void
+expect_a_kept_connect_resumes_with_no_scheduler_bound(task<void> (*connect)(unsigned short, std::atomic<bool> *)) {
+    backlog_listener  server;
+    std::atomic<bool> connected{false};
+    {
+        task<void> parked = connect(server.port, &connected);
+        (void) coro_scheduler();
+        parked.handle().resume(); // the connect starts; its awaiter suspends under the thread's scheduler
+        ASSERT_FALSE(parked.handle().done()) << "the connect completed before the reset: nothing to witness";
+        qb::io::async::listener::current.reset_coro_scheduler(); // destroys that scheduler, binds none
+        ASSERT_EQ(CoroutineScheduler::current_ptr(), nullptr);
+        EXPECT_TRUE(pump_until([&] { return parked.handle().done(); })) << "the connect kept across the reset never resumed";
+    }
+    EXPECT_TRUE(connected.load());
+}
+} // namespace tcp_connector_loopback_test
+
+/// @test `tcp::connect()` driven by hand, kept across the reset, resumes with no scheduler bound (Huly QB-1234).
+TEST_F(TcpConnectorLoopbackTest, AHandDrivenConnectKeptAcrossTheResetResumesWithNoSchedulerBound) {
+    tcp_connector_loopback_test::expect_a_kept_connect_resumes_with_no_scheduler_bound(&tcp_connector_loopback_test::connect_once);
+}
+
+/// @test `tcp::connect_with_socket()`, the same (Huly QB-1234).
+TEST_F(TcpConnectorLoopbackTest, AHandDrivenConnectWithSocketKeptAcrossTheResetResumesWithNoSchedulerBound) {
+    tcp_connector_loopback_test::expect_a_kept_connect_resumes_with_no_scheduler_bound(&tcp_connector_loopback_test::connect_once_with_socket);
+}
