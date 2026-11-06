@@ -456,3 +456,42 @@ TEST(PipeAllocatorContract, ReorderInvalidatesEarlierPointersWithoutFreeingTheBu
     EXPECT_NE(before, p.begin()) << "reorder moved the live bytes: a pointer captured before it "
                                     "now aliases stale/other data inside a still-live allocation";
 }
+
+/**
+ * @test From the null state -- a moved-from pipe, a copy of an empty one -- the first growth is the initial size
+ *       (4096 elements), as a default-constructed pipe holds; it was twice that, because the growth loop doubled
+ *       `_factor` before it computed the first capacity (Huly QB-1248). Past the first step the loop still doubles,
+ *       and a pipe that had a buffer grows exactly as before.
+ */
+TEST(PipeAllocatorGrowth, TheFirstGrowthFromTheNullStateIsTheInitialSize) {
+    const std::size_t initial = qb::allocator::pipe<char>{}.capacity();
+    ASSERT_EQ(initial, 4096u) << "the default constructor reserves the initial size (the eager contract)";
+
+    qb::allocator::pipe<char> moved_from;
+    moved_from.put("x", 1);
+    qb::allocator::pipe<char> owner(std::move(moved_from));
+    ASSERT_EQ(moved_from.capacity(), 0u) << "a moved-from pipe is null";
+    (void) moved_from.allocate_back(16);
+    EXPECT_EQ(moved_from.capacity(), initial) << "a moved-from pipe's first growth";
+
+    const qb::allocator::pipe<char> empty; // a default pipe: 4096 reserved, no element
+    qb::allocator::pipe<char>       empty_copy(empty);
+    ASSERT_EQ(empty_copy.capacity(), 0u);
+    (void) empty_copy.allocate_back(initial);
+    EXPECT_EQ(empty_copy.capacity(), initial) << "exactly the initial size fits the first step";
+
+    qb::allocator::pipe<char> ten;
+    ten.put("0123456789", 10);
+    const qb::allocator::pipe<char> copy(ten);
+    EXPECT_EQ(copy.capacity(), initial) << "a copy of ten bytes takes the initial size, not twice it";
+    EXPECT_EQ(copy.view(), "0123456789");
+
+    qb::allocator::pipe<char> past;
+    qb::allocator::pipe<char> sink(std::move(past));
+    (void) past.allocate_back(initial + 1);
+    EXPECT_EQ(past.capacity(), 2 * initial) << "past the first step the loop doubles";
+
+    qb::allocator::pipe<char> grown;
+    (void) grown.allocate_back(initial + 1);
+    EXPECT_EQ(grown.capacity(), 2 * initial) << "a pipe that had a buffer grows as before";
+}
