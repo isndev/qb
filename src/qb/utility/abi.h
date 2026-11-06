@@ -274,7 +274,7 @@
 #if __has_attribute(used)
 #define QB_ABI_USED __attribute__((used))
 #endif
-#if __has_attribute(retain)
+#if __has_attribute(retain) && defined(__ELF__) // ELF only: GCC honours it nowhere else, and warns (Huly QB-1271)
 #define QB_ABI_RETAIN __attribute__((retain))
 #endif
 #endif

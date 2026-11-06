@@ -427,3 +427,6 @@ set_tests_properties(qb-io-test-unit-installed-quic-openssl PROPERTIES LABELS "t
 # reconnect contract (Huly QB-126): the vocabulary every connection-keeping client shares, and the
 # backoff arithmetic of qb::io::reconnect_policy that qbm-redis and qbm-http alias.
 qb_add_test(MODULE qb-io TIER unit NAME reconnect-contract SOURCES core/reconnect-contract.cpp DEPENDS ${PROJECT_NAME})
+# abi.h alone (Huly QB-1271): it pins QB_ABI_RETAIN to ELF, the check CI runs; and it is the header's only qb include,
+# so under QB_TESTS_WERROR the warning g++ raised off ELF ("'retain' attribute ignored") fails a g++ build of it.
+qb_add_test(MODULE qb-io TIER unit NAME abi-header-alone SOURCES core/abi-header-alone.cpp DEPENDS ${PROJECT_NAME})
