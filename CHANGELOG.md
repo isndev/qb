@@ -693,12 +693,19 @@ policy.
   `VirtualCore`'s -- it costs one more thread-local read, on the path of a frame destroyed unfinished only (`when_any`'s
   losers, cancellations). A spawned root its scheduler destroys -- `destroy_all_suspended()`, `cancel_spawned()`, the
   reclaim of every helper -- never goes through `~task`, and only its own scheduler's queues were scrubbed: both now
-  scrub it the same way, at the price of a second pass over the scheduler that already scrubbed it -- two set lookups
-  that find nothing and three thread-local reads per reclaimed frame, a `when_any` loser's or a timeout's, cancellable
-  operation's or deadline's reclaim. Witnessed in `qb-io-test-unit-scheduler-lifecycle`: a channel wake queued under one
-  scheduler and its task destroyed under another, the same with none current, a timer armed under one scheduler and
-  fired under another, a scheduler beyond the table -- its thread's 17th -- destroying its frames while another is
-  current, and a spawned root woken under another live scheduler, then destroyed and cancelled by its own.
+  scrub it from every other scheduler of the thread that may hold it, as `~task` does -- every live one of the table,
+  and the current one and the one destroying its frames beyond it -- in one pass over the table: three thread-local
+  reads per reclaimed frame, a `when_any` loser's or a timeout's, cancellable operation's or deadline's reclaim, and
+  with one scheduler per thread nothing more. Both scrubs run out of line (`QB_NOINLINE`): their table walk sits on cold
+  paths -- a frame destroyed unfinished, a reclaim, a drain's foreign root -- and inlined into every `~task` and into
+  `run_ready()` it slowed paths that never run it (`Stream_MapCollect/512` +3.5 % on the M4, the regression gate's
+  `Scope_ParallelMap` and `Stream_FilterMapReduce` cells past their thresholds). Witnessed in
+  `qb-io-test-unit-scheduler-lifecycle`: a channel wake queued under one scheduler and its task destroyed under another,
+  the same with none current, a timer armed under one scheduler and fired under another, a scheduler beyond the table --
+  its thread's 17th -- destroying its frames while another is current, a spawned root woken under another live
+  scheduler, then destroyed and cancelled by its own, and the same root queued in the current scheduler beyond the
+  table, destroyed and cancelled by its owner, or in a scheduler beyond the table, cancelled by its owner from inside
+  that scheduler's reset.
 - **A coroutine that awaits a `task` it does not own leaves it no continuation once destroyed (Huly QB-1243).**
   `co_await t` on a task held elsewhere -- a member, a slot of a shared state, a variable of an outer scope -- set that
   task's continuation to the awaiting frame, and nothing took it back: a spawned coroutine destroyed by its scheduler

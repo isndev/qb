@@ -2701,3 +2701,136 @@ TEST_F(CoroutineSchedulerTests, ABackpressuredStreamWhoseProducerTheResetDestroy
     consumer = task<void>{};
     EXPECT_TRUE(pump_until([&] { return detail::CoroutineFrameAllocator::live_frames == baseline; })) << "a frame outlived both streams";
 }
+
+namespace scheduler_lifecycle_test {
+/// Has `owner` cancel `*root` when it goes: a coroutine holding one -- a local, or its parameter -- reclaims another
+/// root from inside its own destruction, as a helper's teardown does.
+struct cancels_on_destruction {
+    CoroutineScheduler      *owner;
+    std::coroutine_handle<> *root;
+    cancels_on_destruction(CoroutineScheduler *o, std::coroutine_handle<> *r) noexcept
+        : owner(o)
+        , root(r) {}
+    cancels_on_destruction(cancels_on_destruction &&other) noexcept
+        : owner(std::exchange(other.owner, nullptr))
+        , root(other.root) {}
+    cancels_on_destruction &operator=(cancels_on_destruction &&) = delete;
+    ~cancels_on_destruction() {
+        if (owner && *root)
+            owner->cancel_spawned(std::exchange(*root, {}));
+    }
+};
+
+/// A spawned root that parks until destroyed, then has `owner` cancel `*root`.
+inline task<void>
+parked_cancelling_on_destruction(CoroutineScheduler *owner, std::coroutine_handle<> *root) {
+    cancels_on_destruction const guard{owner, root};
+    co_await std::suspend_always{};
+}
+
+/// The thread's live table filled: the 16 schedulers it holds, the first of them known live.
+inline std::vector<std::unique_ptr<CoroutineScheduler>>
+fill_the_table() {
+    std::vector<std::unique_ptr<CoroutineScheduler>> fillers;
+    for (int i = 0; i < 16; ++i)
+        fillers.push_back(std::make_unique<CoroutineScheduler>());
+    return fillers;
+}
+} // namespace scheduler_lifecycle_test
+
+/**
+ * @test A spawned root queued in the current scheduler, one beyond the live table, leaves that queue when its owner
+ *       destroys it (Huly QB-1245).
+ * @brief The root's channel woke it while `beyond` -- its thread's 17th scheduler, which the table has no slot for -- was
+ *        current, and `beyond` is still current when the owner's reset destroys it: only a scrub of the current
+ *        scheduler reaches that queue. The base reached it through forget_frame_if_current(); the reclaim's own pass over
+ *        the table did not (a regression the focused review of QB-1245's optimisation found).
+ */
+TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInACurrentSchedulerBeyondTheTableLeavesItWhenItsOwnerDestroysIt) {
+    const long          baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>        ch;
+    auto const          fillers = scheduler_lifecycle_test::fill_the_table();
+    CoroutineScheduler &owner   = *fillers.front();
+    CoroutineScheduler  beyond;
+    ASSERT_TRUE(detail::is_live_scheduler(&owner));
+    ASSERT_FALSE(detail::is_live_scheduler(&beyond)) << "the table has room: this case needs a scheduler beyond it";
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        owner.spawn(scheduler_lifecycle_test::receive_once(ch));
+        owner.run_ready(); // the root parks on the channel
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&beyond};
+        ASSERT_TRUE(ch.try_send(1)); // wakes it: queued in `beyond`, the current scheduler
+        ASSERT_EQ(beyond.pending_count(), 1u);
+        owner.destroy_all_suspended(); // `beyond` still current
+    }
+    EXPECT_EQ(beyond.pending_count(), 0u) << "the destroyed root is still queued in the current scheduler";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/// @test The same through the owner's `cancel_spawned()` (Huly QB-1245).
+TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInACurrentSchedulerBeyondTheTableLeavesItWhenItsOwnerCancelsIt) {
+    const long              baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>            ch;
+    auto const              fillers = scheduler_lifecycle_test::fill_the_table();
+    CoroutineScheduler     &owner   = *fillers.front();
+    CoroutineScheduler      beyond;
+    std::coroutine_handle<> root;
+    ASSERT_TRUE(detail::is_live_scheduler(&owner));
+    ASSERT_FALSE(detail::is_live_scheduler(&beyond)) << "the table has room: this case needs a scheduler beyond it";
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        root = owner.spawn_tracked(scheduler_lifecycle_test::receive_once(ch));
+        owner.run_ready();
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&beyond};
+        ASSERT_TRUE(ch.try_send(1));
+        ASSERT_EQ(beyond.pending_count(), 1u);
+        owner.cancel_spawned(root);
+    }
+    EXPECT_EQ(beyond.pending_count(), 0u) << "the cancelled root is still queued in the current scheduler";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
+
+/**
+ * @test A spawned root queued in a scheduler beyond the live table leaves that queue when its owner cancels it from
+ *       inside that scheduler's reset (Huly QB-1245).
+ * @brief `beyond` destroys its parked root, whose destruction has the owner cancel a root `beyond` had queued: `beyond`
+ *        is neither current nor in the table, only the destroying scheduler -- which a reclaim's scrub must reach as
+ *        forget_frame_if_current() does.
+ */
+TEST_F(CoroutineSchedulerTests, ASpawnedRootQueuedInADestroyingSchedulerBeyondTheTableLeavesItWhenItsOwnerCancelsIt) {
+    const long              baseline = detail::CoroutineFrameAllocator::live_frames;
+    channel<int>            ch;
+    auto const              fillers   = scheduler_lifecycle_test::fill_the_table();
+    CoroutineScheduler     &owner     = *fillers.front();
+    CoroutineScheduler     &bystander = *fillers.back();
+    CoroutineScheduler      beyond;
+    std::coroutine_handle<> root;
+    ASSERT_TRUE(detail::is_live_scheduler(&owner));
+    ASSERT_FALSE(detail::is_live_scheduler(&beyond)) << "the table has room: this case needs a scheduler beyond it";
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&beyond};
+        beyond.spawn(scheduler_lifecycle_test::parked_cancelling_on_destruction(&owner, &root));
+        beyond.run_ready(); // parks until `beyond` destroys it
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&owner};
+        root = owner.spawn_tracked(scheduler_lifecycle_test::receive_once(ch));
+        owner.run_ready(); // parks on the channel
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&beyond};
+        ASSERT_TRUE(ch.try_send(1)); // queued in `beyond`
+        ASSERT_EQ(beyond.pending_count(), 1u);
+    }
+    {
+        scheduler_lifecycle_test::scoped_current const bound{&bystander};
+        beyond.destroy_all_suspended(); // its root goes, and has the owner cancel `root`
+    }
+    ASSERT_FALSE(root) << "the owner did not cancel the root";
+    EXPECT_EQ(beyond.pending_count(), 0u) << "the cancelled root is still queued in the scheduler destroying its frames";
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
+}
