@@ -374,11 +374,11 @@ public:
             _end += size;
             return _data + nb_item;
         } else {
-            std::size_t new_capacity;
+            std::size_t new_capacity = 0; // from the null state (moved from, copied empty) the first growth is _SIZE (QB-1248)
             do {
                 if (unlikely(_factor >= (std::size_t{1} << (sizeof(std::size_t) * 4))))
                     throw std::bad_alloc();
-                _factor <<= 1u;
+                _factor <<= (new_capacity != 0u || _capacity != 0u) ? 1u : 0u; // it was 2 * _SIZE: doubled before the first step
                 new_capacity = _factor * _SIZE;
             } while (new_capacity > nb_item && new_capacity - nb_item < size);
 
