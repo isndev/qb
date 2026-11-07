@@ -65,8 +65,8 @@ preset: `dev`, `release`, `sanitize`, `sanitize-thread`, `coverage`, `feature-ga
 `relwithdebinfo` all build **zero** benchmarks. `coverage` is not an exception that switches them off —
 it only restates the `OFF` it already inherited. The single preset that turns them back on is
 `benchmarks` (`qb-dev/CMakePresets.json:130-138`; on x86-64 GCC/Clang it also assembles every TU with its
-branches kept off the 32-byte boundaries, `QB_DEV_BENCH_JCC_PADDING`, a root option the superproject's
-`dev/bench/README.md` explains). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
+branches kept off the 32-byte boundaries and every function aligned to 64 bytes, `QB_DEV_BENCH_JCC_PADDING`,
+a root option the superproject's `dev/bench/README.md` explains). `-DQB_BUILD_BENCHMARKS=ON` on the configure line
 also works, because a command-line `-D` overrides a preset's `cacheVariables`; and in a preset-free
 superproject configure `-DQB_BUILD_BENCHMARKS=OFF` is honoured as well — that is what the missing
 `FORCE` buys, and it is exactly what `QB_BUILD_TESTS` and `QB_BUILD_EXAMPLES` do **not** grant you.
