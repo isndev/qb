@@ -180,8 +180,8 @@ inline std::uint64_t
 conn_get_max_data_left(const ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_max_data_left2(conn);
 }
-constexpr auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert2;
-constexpr auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr2;
+const auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert2; // not constexpr: a DLL import has no constant address
+const auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr2;
 #else
 inline std::size_t
 conn_get_scid(ngtcp2_conn *conn, ngtcp2_cid *dest) noexcept {
@@ -195,8 +195,8 @@ inline std::uint64_t
 conn_get_max_data_left(ngtcp2_conn *conn) noexcept {
     return ngtcp2_conn_get_max_data_left(conn);
 }
-constexpr auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert;
-constexpr auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr;
+const auto conn_get_tls_alert = &ngtcp2_conn_get_tls_alert; // not constexpr: a DLL import has no constant address
+const auto conn_get_ccerr     = &ngtcp2_conn_get_ccerr;
 #endif
 using enum disconnect_reason;                                        // the close paths below name the reasons unqualified
 disconnect_reason received_close_reason(ngtcp2_conn *conn) noexcept; // the end of the file (Huly QB-1275)
