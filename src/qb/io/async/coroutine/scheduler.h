@@ -1349,6 +1349,28 @@ forget_frame_from(CoroutineScheduler *registered, std::coroutine_handle<> handle
         sched->forget(handle);
 }
 
+namespace detail {
+/**
+ * @brief The body of forget_frame_if_current(), below, kept out of line (Huly QB-1245): every ~task and every async
+ *        generator's destructor holds a call to it, run only for a frame destroyed unfinished, and inlined, its table
+ *        walk slowed paths that never run it. The attribute sits on this definition, which nothing declares ahead:
+ *        g++ refuses `noinline` on a function an earlier declaration made `inline` (`-Wattributes`, an error under
+ *        `-Werror`), and forget_frame_if_current() must stay declared `inline` in task.h.
+ */
+QB_NOINLINE inline void
+forget_frame_on_every_scheduler(std::coroutine_handle<> handle) noexcept {
+    CoroutineScheduler *const current = CoroutineScheduler::current_ptr();
+    if (current)
+        current->forget(handle);
+    live_schedulers_t const &live = live_schedulers();
+    for (unsigned i = 0; i < live.count; ++i)
+        if (live.slot[i] != current)
+            live.slot[i]->forget(handle);
+    if (CoroutineScheduler *const destroying = destroying_scheduler(); destroying && destroying != current && !is_live_scheduler(destroying))
+        destroying->forget(handle);
+}
+} // namespace detail
+
 /**
  * @brief Scrub a coroutine handle from every scheduler of this thread before its frame is freed: the current one, every
  *        other live one, and the one destroying its frames (Huly QB-1220, QB-1245). Declared in task.h, called from
@@ -1356,20 +1378,11 @@ forget_frame_from(CoroutineScheduler *registered, std::coroutine_handle<> handle
  *        in-flight and suspended sets, so a waker that already queued it -- in whichever scheduler was current then --
  *        cannot leave a handle for a later run_ready() or teardown drain (a use-after-free). A thread usually has one
  *        scheduler: one forget(), as before. A scheduler beyond the table's 16 is scrubbed only while it is current or
- *        destroying.
+ *        destroying. The body runs out of line, in detail::forget_frame_on_every_scheduler().
  */
-QB_NOINLINE inline void // out of line: only a frame destroyed unfinished calls it, from every ~task
+inline void
 forget_frame_if_current(std::coroutine_handle<> handle) noexcept {
-    CoroutineScheduler *const current = CoroutineScheduler::current_ptr();
-    if (current)
-        current->forget(handle);
-    detail::live_schedulers_t const &live = detail::live_schedulers();
-    for (unsigned i = 0; i < live.count; ++i)
-        if (live.slot[i] != current)
-            live.slot[i]->forget(handle);
-    if (CoroutineScheduler *const destroying = detail::destroying_scheduler();
-        destroying && destroying != current && !detail::is_live_scheduler(destroying))
-        destroying->forget(handle);
+    detail::forget_frame_on_every_scheduler(handle);
 }
 
 namespace detail {
