@@ -374,7 +374,7 @@ public:
             _end += size;
             return _data + nb_item;
         } else {
-            std::size_t new_capacity = 0; // from the null state (moved from, copied empty) the first growth is _SIZE (QB-1248)
+            std::size_t new_capacity = 0; // from the null state (moved from, any copy) the first growth is _SIZE (QB-1248)
             do {
                 if (unlikely(_factor >= (std::size_t{1} << (sizeof(std::size_t) * 4))))
                     throw std::bad_alloc();

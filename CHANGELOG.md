@@ -225,11 +225,14 @@ policy.
 ### Changed
 
 - **`qb::allocator::pipe` grows a null pipe to its initial size, not twice it (Huly QB-1248).** From the null state
-  -- a moved-from pipe, a copy of an empty one -- `allocate_back()`'s slow path doubled `_factor` before it computed
-  the first capacity, so the first write took 8192 elements where a default-constructed pipe holds 4096: every
-  chunked body qbm-http's HTTP/1.1 parser read on a kept connection, into a buffer it moves into each message, cost 8
-  KiB (8440 bytes a chunked request of five octets, 4344 now). The first step is the initial size now; past it the
-  loop doubles as before, and the fast path and the eager default constructor are unchanged.
+  -- a moved-from pipe, and every copy, whose constructor starts from null -- `allocate_back()`'s slow path doubled
+  `_factor` before it computed the first capacity, so the first write took 8192 elements where a default-constructed
+  pipe holds 4096: a copy of a pipe of up to 4096 elements took 8192, and so did every chunked body qbm-http's
+  HTTP/1.1 parser read on a kept connection, into a buffer it moves into each message (8440 bytes a chunked request
+  of five octets, 4344 now). The first step is the initial size now; past it the loop doubles as before, and the fast
+  path and the eager default constructor are unchanged. A null pipe filled in steps past 4096 elements reallocates
+  once more on the way (4096, then 8192, copying what it holds, at most 4096 elements), as a default-constructed pipe
+  always did.
 
 - **An icase map folds a key the caller gives up where it is, instead of copying it first (Huly QB-1216).**
   `qb::string_to_lower::convert()` had overloads for a string literal, a `const std::string &` and a `std::string_view`, so
