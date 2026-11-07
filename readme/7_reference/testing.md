@@ -107,7 +107,7 @@ To build and run the suite instrumented, configure with a sanitizer preset rathe
 
 ## Running the tests
 
-`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:74`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
+`enable_testing()` is invoked once at the repository root (`qb-dev/CMakeLists.txt:136`), not inside qb, so CTest discovers the whole tree. There are two ways to run tests.
 
 ### With CTest
 
