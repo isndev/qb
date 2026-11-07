@@ -61,6 +61,7 @@
 
 #include <gtest/gtest.h>
 #include <qb/io/async/coroutine.h>
+#include <qb/utility/branch_hints.h> // QB_NOINLINE: heap_framed()
 
 #include "../../shared/coroutine_test_support.h"
 
@@ -1471,6 +1472,23 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedScrubsOwnedRootFromDeferredDe
     EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, baseline);
 }
 
+namespace scheduler_lifecycle_test {
+/**
+ * @brief The task `make()` returns, its frame allocated whatever the compiler (Huly QB-1245).
+ *
+ * The witnesses below count frames through detail::CoroutineFrameAllocator, so the frame they count must be
+ * allocated. A compiler may elide the frame of a task created and destroyed in one function into that function's own
+ * frame (clang's CoroElide): clang-cl 22 did, for the recv_for and send_for witnesses, once ~task was small enough to
+ * inline -- the reset then destroyed nothing, and the count read one frame short. Created here, out of line, the task
+ * leaves the function that called the coroutine, and no compiler can elide its frame.
+ */
+template <typename Make>
+QB_NOINLINE auto
+heap_framed(Make const &make) {
+    return make();
+}
+} // namespace scheduler_lifecycle_test
+
 /**
  * @test destroy_all_suspended() leaves a frame it does not own to the task that owns it
  * @brief A frame registered as suspended on a watcher but NOT owned by the scheduler (never
@@ -1500,7 +1518,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedLeavesANonOwnedFrameToItsTask
         fired_ptr->store(true); // must NEVER fire — frame destroyed while parked
     };
     {
-        auto parked = parked_fn();
+        auto parked = scheduler_lifecycle_test::heap_framed(parked_fn);
         auto h      = parked.handle();
         ASSERT_TRUE(h);
         h.resume(); // run body to the sleep awaiter -> register_suspended (NOT owned)
@@ -1578,7 +1596,7 @@ TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenSleepToTheTaskThatOwnsIt) 
         resumed = true;
     };
     {
-        task<void> parked = body();
+        task<void> parked = scheduler_lifecycle_test::heap_framed(body);
         (void) coro_scheduler();
         parked.handle().resume(); // runs to the sleep: registered with the listener's scheduler, never spawned
         ASSERT_EQ(coro_scheduler().active_count(), 1u);
@@ -1653,7 +1671,7 @@ TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenRecvForToTheTaskThatOwnsIt
         resumed  = true;
     };
     {
-        task<void> parked = body();
+        task<void> parked = scheduler_lifecycle_test::heap_framed(body);
         (void) coro_scheduler();
         parked.handle().resume(); // parks in recv_for: its watchdog armed, the inner frame registered
         ASSERT_EQ(coro_scheduler().active_count(), 1u);
@@ -1704,7 +1722,7 @@ TEST_F(CoroutineSchedulerTests, ResetLeavesAHandDrivenSendForToTheTaskThatOwnsIt
         resumed = true;
     };
     {
-        task<void> parked = body();
+        task<void> parked = scheduler_lifecycle_test::heap_framed(body);
         (void) coro_scheduler();
         parked.handle().resume(); // parks in send_for: its watchdog armed, the inner frame registered
         ASSERT_EQ(coro_scheduler().active_count(), 1u);
@@ -1759,8 +1777,8 @@ TEST_F(CoroutineSchedulerTests, AHandDrivenSocketWaitKeptAcrossTheResetBelongsTo
         resumed = true;
     };
     {
-        task<void> woken  = body();
-        task<void> parked = body();
+        task<void> woken  = scheduler_lifecycle_test::heap_framed(body);
+        task<void> parked = scheduler_lifecycle_test::heap_framed(body);
         (void) coro_scheduler();
         woken.handle().resume();
         parked.handle().resume();
@@ -1862,7 +1880,7 @@ TEST_F(CoroutineSchedulerTests, RecycleLeavesAHandDrivenSleepToTheTaskThatOwnsIt
         resumed = true;
     };
     {
-        task<void> parked = body();
+        task<void> parked = scheduler_lifecycle_test::heap_framed(body);
         auto      &sched  = coro_scheduler();
         parked.handle().resume();
         ASSERT_EQ(sched.active_count(), 1u);
