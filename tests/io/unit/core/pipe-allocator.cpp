@@ -458,7 +458,7 @@ TEST(PipeAllocatorContract, ReorderInvalidatesEarlierPointersWithoutFreeingTheBu
 }
 
 /**
- * @test From the null state -- a moved-from pipe, a copy of an empty one -- the first growth is the initial size
+ * @test From the null state -- a moved-from pipe, and any copy, whose constructor starts from null -- the first growth is the initial size
  *       (4096 elements), as a default-constructed pipe holds; it was twice that, because the growth loop doubled
  *       `_factor` before it computed the first capacity (Huly QB-1248). Past the first step the loop still doubles,
  *       and a pipe that had a buffer grows exactly as before.
@@ -494,4 +494,10 @@ TEST(PipeAllocatorGrowth, TheFirstGrowthFromTheNullStateIsTheInitialSize) {
     qb::allocator::pipe<char> grown;
     (void) grown.allocate_back(initial + 1);
     EXPECT_EQ(grown.capacity(), 2 * initial) << "a pipe that had a buffer grows as before";
+
+    qb::allocator::pipe<char> shifted; // a full buffer with a short freed head: grown, not compacted to the same size
+    (void) shifted.allocate_back(initial);
+    shifted.free_front(1000);
+    (void) shifted.allocate_back(500);
+    EXPECT_EQ(shifted.capacity(), 2 * initial) << "a pipe that had a buffer doubles on its first step";
 }
