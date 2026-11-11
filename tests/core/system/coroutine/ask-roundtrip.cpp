@@ -42,8 +42,8 @@
  *     race: the reply is in flight from core 1 when the asker's core-0 timeout fires.
  *
  * Every in-coroutine / in-handler effect is mirrored to a file-scope atomic asserted AFTER `join()`
- * (no pass-if-never-run). Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine
- * suites (cross-core asks leave a fixed, benign teardown residual).
+ * (no pass-if-never-run). LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite, and
+ * reports no teardown residual of a cross-core ask (Huly QB-1246).
  */
 
 #include <atomic>

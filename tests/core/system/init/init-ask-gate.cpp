@@ -29,7 +29,7 @@
  * pins the frame-reclamation invariant: an in-init ask must reclaim the onInit frame, the ask awaiter,
  * and its timer (the worker's thread_local `live_frames` returns to its captured baseline).
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

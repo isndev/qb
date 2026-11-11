@@ -28,7 +28,7 @@
  * tier=system. Every in-actor observation (valid/ready, stash-served, timeout result) is mirrored to
  * a post-`join()` atomic so a never-scheduled parent cannot pass the test vacuously.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

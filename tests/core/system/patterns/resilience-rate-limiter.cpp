@@ -26,7 +26,7 @@
  * In-actor results are mirrored to atomics whose "ran" flag is asserted true after join() so a
  * never-scheduled coroutine cannot pass the test vacuously.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

@@ -39,7 +39,7 @@
  * that is deterministic (a pass count, a wall-clock ceiling an order of magnitude above the event),
  * never a measurement of speed.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

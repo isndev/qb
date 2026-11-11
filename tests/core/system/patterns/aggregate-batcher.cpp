@@ -32,7 +32,7 @@
  * oracle. The window length is the SUT itself, not an ordering oracle, with a generous ctest
  * timeout as the only wall-clock backstop.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

@@ -29,7 +29,7 @@
  * (`destroyed == true && completed_naturally == false`) — rather than a fragile wall-clock bound.
  * For these three cases a generous ctest TIMEOUT is the only backstop, no tight `EXPECT_LT(elapsed, ...)`; the park witness below has one.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

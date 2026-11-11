@@ -283,9 +283,10 @@ struct GuaranteedLogger {};
  * thread that keeps logging faster than the writer holds exit in that drain, as before. qb fork (Huly QB-1246): in a
  * child of fork() that does not exec, a logger its parent created -- whose writer thread runs in the parent -- is
  * stopped without a join, its queue and its file left as copied, and never taken back; the child holds its parent's
- * loggers beside its own. Call initialize() in the child before it logs: a line logged into an inherited logger is
- * never written, stays in memory, and can block for ever if the fork caught the parent's writer, or another of its
- * logging threads, inside the queue's lock; initialize() itself waits for ever if the fork caught another of the
+ * loggers beside its own, with all they hold -- the parent's writer thread owns no memory, so LeakSanitizer finds
+ * nothing of it lost in the child. Call initialize() in the child before it logs: a line logged into an inherited
+ * logger is never written, stays in memory, and can block for ever if the fork caught the parent's writer, or another
+ * of its logging threads, inside the queue's lock; initialize() itself waits for ever if the fork caught another of the
  * parent's threads inside initialize() or log_file_opened(). A child of vfork() must _exit().
  */
 void initialize(GuaranteedLogger gl, std::filesystem::path const &log_file_path, uint32_t log_file_roll_size_mb);

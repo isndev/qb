@@ -25,10 +25,10 @@
  *                               the qb event layer byte-relocates events (no ctor/dtor on the
  *                               relocation), so the only ctor is the placement-new at push and the
  *                               only dtor is the framework disposer — `live != 0` after the engine
- *                               drains means an event payload leaked. The suite runs under
- *                               ASAN detect_leaks=0, so LeakSanitizer would NOT catch the leak;
- *                               this counter does, and ASan still catches any double-free of the
- *                               heap `data`.
+ *                               drains means an event payload leaked. The counter is the leak
+ *                               oracle in every build: LeakSanitizer runs only in an ASan build on
+ *                               Linux (Huly QB-1246). ASan still catches any double-free of
+ *                               the heap `data`.
  *   - `Tick`                  — a trivial int-carrying probe event (stash/replay ordering tests).
  *   - `Cfg` / `CfgService`    — the `Request<int>` exchange + one-shot responder used by every
  *                               in-init `ask*` test (`answer` returns `key * 10`).
@@ -73,8 +73,8 @@ struct ScopedDeadline {
 // ---------------------------------------------------------------------------
 // A `push`'d event with a heap payload + a strict construction/destruction
 // balance counter. `live` returns to 0 iff every constructed instance is destroyed.
-// (See file header for why this is the only leak oracle that works under
-// ASAN detect_leaks=0.)
+// (See file header for why this is the leak oracle in every build, under
+// LeakSanitizer or not.)
 // ---------------------------------------------------------------------------
 struct PayloadEvent : public qb::Event {
     // `inline` so the single counter is shared across every TU that includes this header
