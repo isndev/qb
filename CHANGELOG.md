@@ -9,6 +9,17 @@ policy.
 
 ### Added
 
+- **A TCP session reads and sets its transport's write-buffer cap: `max_write_buffer_size()` and
+  `set_max_write_buffer_size()` on `qb::io::async::tcp::client` (Huly QB-86).** The session -- what
+  `qb::io::use<S>::tcp::client` and its TLS form build on, the server-associated and the standalone form alike --
+  holds its transport as a private base and re-exposed `in()`, `out()` and `transport()` from it, not the two
+  accessors of `qb::io::stream`. Neither the session nor a protocol over it could read the cap `publish()` enforces by
+  disconnecting the peer (`disconnect_reason::buffer_overflow`, `QB_MAX_WRITE_BUFFER_SIZE` by default) or set another:
+  qbm-http's HTTP/2 protocol bounded a streamed flush by qb-io's default instead, and a test that needed a small cap
+  hid the getter in its derived session. Both are public now, as they are on the QUIC stream and the UDP transport; a
+  member of the same name a derived session declares hides them, as before. A session that lowers the cap gets its
+  `publish()` held to it at once -- below what is already queued, the next `publish()` disconnects. A transport given to
+  `tcp::client` provides both names, as `qb::io::stream`, the base of every shipped transport, does.
 - **`qb::deadline_at(qb::mono_time)`: a `qb::deadline` built from an instant of the monotonic clock (Huly QB-1199).**
   The typed spelling of `deadline{...}`: `qb::deadline_at(qb::mono_now() + 2s)`, `qb::deadline_at(qb::mono_time::max())`
   for a deadline never met, an instant before the clock's epoch for one already past. Why `at_ns` is no longer a date:

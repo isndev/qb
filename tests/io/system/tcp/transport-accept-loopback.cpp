@@ -458,17 +458,9 @@ public:
     using Protocol = qb::protocol::text::command<HookSession>;
 
     std::function<void()> on_extracted; // runs once
-    std::size_t           write_cap = QB_MAX_WRITE_BUFFER_SIZE;
 
     explicit HookSession(IOServer &server)
         : client(server) {}
-
-    // publish() reads the cap through the derived session (the transport's own setter is not public on
-    // a tcp::client session).
-    [[nodiscard]] std::size_t
-    max_write_buffer_size() const noexcept {
-        return write_cap;
-    }
 
     void
     on(Protocol::message &&) {}
@@ -630,12 +622,71 @@ TEST(IoHandler, BroadcastAdmitsEveryArgumentAgainstTheWriteBufferCap) {
     {
         OneClient client(server.transport().local_endpoint().port());
         ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
-        auto session       = server.sessions().begin()->second;
-        session->write_cap = 6u;
+        auto session = server.sessions().begin()->second;
+        session->set_max_write_buffer_size(6u); // the session's own cap (Huly QB-86)
 
         server.stream(std::string("abcd"), std::string("efgh")); // the SECOND argument crosses the cap
         EXPECT_LE(session->out().size(), 6u) << "the cap holds for every argument of the broadcast";
         EXPECT_EQ(session->disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+    }
+    drain_after_clients();
+}
+
+namespace transport_accept_loopback_test {
+
+/// Whether a session reads and sets its transport's write-buffer cap (Huly QB-86). A trait, so that the witness
+/// below builds where the session does not expose it -- and fails there.
+template <typename S, typename = void>
+struct exposes_write_cap : std::false_type {};
+template <typename S>
+struct exposes_write_cap<S, std::void_t<decltype(std::declval<S const &>().max_write_buffer_size()),
+                                        decltype(std::declval<S &>().set_max_write_buffer_size(std::size_t{}))>> : std::true_type {};
+
+/// A standalone tcp client -- no server, the form an outgoing connection takes: the other specialization of tcp::client.
+class StandaloneClient : public qb::io::use<StandaloneClient>::tcp::client<> {
+public:
+    using Protocol = void;
+};
+
+} // namespace transport_accept_loopback_test
+
+// A tcp session reads and sets the write-buffer cap of its transport -- the one publish() enforces by disconnecting
+// (Huly QB-86): a protocol over the session reads the cap the session really has (HTTP/2's streamed flush stops at
+// the socket's room under it), and a session lowers its own. Neither was possible: the transport is a private base of
+// the session, its two accessors were out of reach, and HTTP/2 read qb-io's default.
+TEST(IoHandler, ASessionReadsAndSetsItsTransportsWriteBufferCap) {
+    EXPECT_TRUE(transport_accept_loopback_test::exposes_write_cap<HookSession>::value)
+        << "a tcp session cannot read or set its transport's write-buffer cap";
+    EXPECT_TRUE(transport_accept_loopback_test::exposes_write_cap<transport_accept_loopback_test::StandaloneClient>::value)
+        << "nor can a standalone tcp client";
+    qb::io::async::init();
+    {
+        transport_accept_loopback_test::StandaloneClient standalone; // never connected: its cap alone
+        [](auto &c) {
+            if constexpr (transport_accept_loopback_test::exposes_write_cap<std::remove_cvref_t<decltype(c)>>::value) {
+                EXPECT_EQ(c.max_write_buffer_size(), static_cast<std::size_t>(QB_MAX_WRITE_BUFFER_SIZE));
+                c.set_max_write_buffer_size(42u);
+                EXPECT_EQ(c.max_write_buffer_size(), 42u);
+            }
+        }(standalone);
+    }
+    HookServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    server.start();
+    {
+        OneClient client(server.transport().local_endpoint().port());
+        ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
+        auto session = server.sessions().begin()->second;
+        [](auto &s) { // generic, so that the branch a session without the accessors cannot take is never instantiated
+            if constexpr (transport_accept_loopback_test::exposes_write_cap<std::remove_cvref_t<decltype(s)>>::value) {
+                EXPECT_EQ(s.max_write_buffer_size(), static_cast<std::size_t>(QB_MAX_WRITE_BUFFER_SIZE)) << "the default";
+                s.set_max_write_buffer_size(6u);
+                EXPECT_EQ(s.max_write_buffer_size(), 6u);
+                s << std::string("abcd") << std::string("efgh"); // the second operand crosses the cap the session set
+                EXPECT_LE(s.out().size(), 6u) << "publish() enforces the cap the session set";
+                EXPECT_EQ(s.disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+            }
+        }(*session);
     }
     drain_after_clients();
 }
