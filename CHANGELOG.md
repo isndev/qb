@@ -538,6 +538,15 @@ policy.
   the next major, the configure stopped on that report -- its only error, naming each major and libngtcp2 by the path
   found, with the side's remedy printed on its own line and not the other side's -- where it expected the warning.
   INSTALL.md, `quic_transport.md`, `qb.llm.md` and QB-1201's notes say so.
+- **qb's `sanitize` lane runs LeakSanitizer (Huly QB-1246).** Its `ASAN_OPTIONS` set `detect_leaks=1`, Linux's own
+  default: it had been 0 since 2026-06-17, with no reason recorded, and the reasons test headers gave later -- a
+  coroutine frame pool not drained at thread exit (it is since 2026-06-26), cross-core asks leaving a fixed teardown
+  residual -- are not what the suite shows. Under the lane's preset (`sanitize`: Debug, ASan + UBSan) with clang 19
+  and g++ 14, LeakSanitizer's only report in the whole standalone suite was the forked child's of
+  `qb-io-test-system-logger-fork-exit`, fixed under Fixed. With it off, the lane could not fail a test whose witness
+  is a leak report, such as QB-324's address list, QB-354's zlib state or `ssl-context-value`'s contexts. The
+  thirty-one test files whose comments said their suite runs with leak detection off now say what holds, line for
+  line, and so do the patterns library page and the testing reference.
 
 ### Fixed
 
@@ -816,6 +825,25 @@ policy.
   in `qb-io-test-system-logger-fork-exit` -- a child that exits, one that logs and then exits, and one that calls
   `init()` three times, each killed after 10 s if it hangs -- with the parent's file holding each of its lines once
   and none of the child's.
+- **A child of `fork()` loses nothing its parent's logger thread held, which LeakSanitizer reported at the child's
+  exit (Huly QB-1246, reopened).** `fork()` copies the calling thread only, and the parent's writer thread held two
+  allocations alone: the state `std::thread` allocates for the function it runs, which the running thread owns (in a
+  child LeakSanitizer reached it only through its own record of that thread's start argument, until the first thread
+  the child started took the parent writer's handle and replaced the record), and the heap buffer of the record it
+  last wrote when the record outgrew its own buffer, held by a local of the writer's loop. In a child neither had an
+  owner: LeakSanitizer reported the thread state (32 bytes with libstdc++) in a child that calls
+  `qb::io::log::init()`, the record's buffer in any child forked after a long line, and the child exited 1. The
+  writer thread now owns no memory: on POSIX nanolog starts it with `pthread_create`, the logger itself as its
+  argument, and the record it writes is a member of the logger, which a child keeps reachable; Windows, which has no
+  `fork()`, keeps `std::thread`. A child that stops its parent's logger forgets the thread by clearing a flag, where
+  a fresh `std::thread` was constructed over the copied one. The parent sees no change: the writer's start and join
+  throw `std::system_error` on failure as `std::thread` did, a start over a writer never joined and an exception out
+  of the writer still end the program, and a stopped logger keeps no record's buffer, as the writer's own line did
+  not outlive it. Witnessed in `qb-io-test-system-logger-fork-exit` under LeakSanitizer, whose parent now forks
+  right after a line longer than a record's own buffer: its three cases red on the base (the long record's 512 bytes
+  in every child, the thread state's 32 bytes in the child that calls `init()`) and green after, with clang 19 and
+  g++ 14. The writer back on `std::thread` makes the third case red, its record back on the writer's stack all
+  three, and QB-1246's own mutant -- every logger owned here -- still fails both QB-1246 witnesses.
 - **A task driven by hand and kept across `reset_coro_scheduler()` is destroyed once, by its task (Huly QB-1220).**
   `destroy_all_suspended()` -- which `listener::reset_coro_scheduler()`, `recycle_coro_scheduler()` and so every
   `VirtualCore` teardown run -- destroyed every frame registered as suspended, the spawned ones and the ones a `task`

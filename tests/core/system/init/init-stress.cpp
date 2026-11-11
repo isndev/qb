@@ -25,7 +25,7 @@
  * activation or a silently dropped actor fails loudly. The stash-overflow case asserts the victim
  * was actually destroyed (the overflow forced a real failure), not merely that the engine survived.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

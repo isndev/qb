@@ -38,10 +38,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 #include <queue>
 #include <stdexcept>
 #include <string>
+#include <system_error> // qb fork (Huly QB-1246): the writer thread's start and join errors
 #include <thread>
 #include <tuple>
 #ifndef _WIN32
-#include <pthread.h> // qb fork (Huly QB-1246): pthread_atfork
+#include <pthread.h> // qb fork (Huly QB-1246): pthread_atfork, and the writer thread
 #endif
 
 #ifndef NANOLOG_TEST_HOOK
@@ -638,7 +639,8 @@ public:
         , m_file_opened(m_file_writer->is_open())                  // qb fork (Huly QB-1207): through the pointer
         , m_ring_items(ring_buffer_items(ngl.ring_buffer_size_mb)) // qb fork (Huly QB-1207)
         , m_writer_generation(current_fork_generation())           // qb fork (Huly QB-1246)
-        , m_thread(&NanoLogger::pop, this) {
+        , m_writer_line(LogLevel::INFO, nullptr, nullptr, 0) {     // qb fork (Huly QB-1246)
+        start_writer();                                            // qb fork (Huly QB-1246): was m_thread's initialiser
         m_state.store(State::READY, std::memory_order_release);
     }
 
@@ -646,10 +648,11 @@ public:
         : m_state(State::INIT)
         , m_buffer_base(new QueueBuffer())
         , m_file_writer(std::make_unique<FileWriter>(log_file_path, std::max(1u, log_file_roll_size_mb))) // qb fork (Huly QB-1207)
-        , m_file_opened(m_file_writer->is_open())        // qb fork (Huly QB-1207): through the pointer
-        , m_ring_items(0)                                // qb fork (Huly QB-1207)
-        , m_writer_generation(current_fork_generation()) // qb fork (Huly QB-1246)
-        , m_thread(&NanoLogger::pop, this) {
+        , m_file_opened(m_file_writer->is_open())              // qb fork (Huly QB-1207): through the pointer
+        , m_ring_items(0)                                      // qb fork (Huly QB-1207)
+        , m_writer_generation(current_fork_generation())       // qb fork (Huly QB-1246)
+        , m_writer_line(LogLevel::INFO, nullptr, nullptr, 0) { // qb fork (Huly QB-1246)
+        start_writer();                                        // qb fork (Huly QB-1246): was m_thread's initialiser
         m_state.store(State::READY, std::memory_order_release);
     }
 
@@ -662,7 +665,9 @@ public:
 
     ~NanoLogger() {
         // qb fork (Huly QB-1207): a logger initialize() created is never destroyed; one built directly is. qb fork (Huly
-        // QB-1246): destroyed in a child of fork(), its members still flush and close the copy of its parent's writer.
+        // QB-1246): destroyed in a child of fork(), its members still flush and close the copy of its parent's writer,
+        // and free the copy of its writer's record -- consistent only if the fork did not catch that writer inside a
+        // record, which no inherited logger survives either (see initialize(), nanolog.h).
         stop();
     }
 
@@ -677,21 +682,19 @@ public:
     void
     stop() {
         m_state.store(State::SHUTDOWN);
+#ifndef _WIN32 // qb fork (Huly QB-1246): no fork() on Windows, where every logger is owned here
         if (!owned_here()) {
             // qb fork (Huly QB-1246): a child of fork() stops a logger of its parent -- at its exit, or replacing it.
             // The writer thread is the parent's, absent here: it is forgotten, never joined -- a join of a thread this
-            // process does not have is undefined (libc++ on macOS refuses it, and the child died of std::terminate).
-            // The queue and the file writer are left as copied -- the parent writes them -- so the child neither
-            // drains the parent's records nor flushes the parent's buffered bytes.
-            // qb fork (Huly QB-1246): a fresh std::thread built over the copied one ends that object's lifetime without
-            // its destructor, whose only effect on a joinable thread would be std::terminate ([basic.life]/5). Not
-            // detach(): pthread_detach on a thread this process does not have is the same undefined call as the join.
-            new (&m_thread) std::thread();
+            // process does not have is undefined (libc++ on macOS refuses it, and the child died of std::terminate),
+            // and so is a pthread_detach. The queue and the file writer are left as copied -- the parent writes them
+            // -- so the child neither drains the parent's records nor flushes the parent's buffered bytes.
+            m_writer_started = false;
             return;
         }
+#endif
         NANOLOG_TEST_HOOK(stopping, 0); // the exit test releases the writer here: it sees SHUTDOWN, only the drain is left
-        if (m_thread.joinable())
-            m_thread.join();
+        join_writer();                  // qb fork (Huly QB-1246)
         m_file_writer.reset();
     }
 
@@ -705,7 +708,7 @@ public:
         m_state.store(State::INIT, std::memory_order_relaxed);
         m_writer_generation = current_fork_generation(); // qb fork (Huly QB-1246): the new writer's generation
         try {
-            m_thread = std::thread(&NanoLogger::pop, this); // waits for READY, below
+            start_writer(); // waits for READY, below -- qb fork (Huly QB-1246): through start_writer()
         } catch (...) {
             m_state.store(State::SHUTDOWN, std::memory_order_relaxed);
             throw;
@@ -736,7 +739,7 @@ public:
         while (m_state.load(std::memory_order_acquire) == State::INIT)
             std::this_thread::sleep_for(std::chrono::microseconds(50));
 
-        NanoLogLine logline(LogLevel::INFO, nullptr, nullptr, 0);
+        NanoLogLine &logline = m_writer_line; // qb fork (Huly QB-1246): the logger's (see m_writer_line)
 
         while (m_state.load() == State::READY) {
             if (m_buffer_base->try_pop(logline)) {
@@ -751,10 +754,54 @@ public:
         while (m_buffer_base->try_pop(logline)) {
             m_file_writer->write(logline); // qb fork (Huly QB-1207): through the pointer restart() replaces
         }
+        // qb fork (Huly QB-1246): a stopped logger keeps no record's buffer, as when the record was pop()'s own.
+        logline = NanoLogLine(LogLevel::INFO, nullptr, nullptr, 0);
     }
 
 private:
     enum class State { INIT, READY, SHUTDOWN };
+
+    // qb fork (Huly QB-1246): starts pop() on the writer thread, or throws std::system_error as std::thread does.
+    void
+    start_writer() {
+#ifdef _WIN32
+        m_thread = std::thread(&NanoLogger::pop, this);
+#else
+        if (m_writer_started)
+            std::terminate(); // a writer never joined, as std::thread's assignment over a joinable thread does
+        int const error = ::pthread_create(&m_thread, nullptr, &NanoLogger::run_writer, this);
+        if (error != 0)
+            throw std::system_error(error, std::generic_category(), "nanolog: the writer thread did not start");
+        m_writer_started = true;
+#endif
+    }
+
+    // qb fork (Huly QB-1246): joins the writer thread this process started, or throws std::system_error as
+    // std::thread::join does.
+    void
+    join_writer() {
+#ifdef _WIN32
+        if (m_thread.joinable())
+            m_thread.join();
+#else
+        if (!m_writer_started)
+            return;
+        int const error = ::pthread_join(m_thread, nullptr);
+        if (error != 0)
+            throw std::system_error(error, std::generic_category(), "nanolog: the writer thread was not joined");
+        m_writer_started = false;
+#endif
+    }
+
+#ifndef _WIN32
+    // qb fork (Huly QB-1246): the writer thread's entry; an exception out of pop() ends the program, as it did under
+    // std::thread.
+    static void *
+    run_writer(void *logger) noexcept {
+        static_cast<NanoLogger *>(logger)->pop();
+        return nullptr;
+    }
+#endif
 
     std::atomic<State>          m_state;
     std::unique_ptr<BufferBase> m_buffer_base;
@@ -763,7 +810,22 @@ private:
     bool              m_file_opened;       // after m_file_writer, before m_thread: initialisation order matters
     std::size_t const m_ring_items;        // qb fork (Huly QB-1207)
     unsigned long     m_writer_generation; // qb fork (Huly QB-1246): the fork generation of the writer thread
-    std::thread       m_thread;
+    // qb fork (Huly QB-1246): the writer thread owns no memory; the logger does. fork() copies the calling thread only,
+    // so in a child whatever only the parent's writer pointed to has no owner left, and LeakSanitizer reported it at
+    // the child's exit: the record that writer last wrote when it had outgrown the record's own buffer (a local of pop()
+    // held its heap buffer), and the state std::thread allocates for the function it runs (the running thread owns it;
+    // in a child, LeakSanitizer reached it only through its own record of that thread's start argument, until the first
+    // thread the child started took the parent writer's handle -- the C library reuses its cached stack -- and replaced
+    // that record). The record is this member, and on POSIX the writer is started by pthread_create with the logger
+    // itself as its argument: nothing is allocated for it. An inherited logger, which a child keeps reachable, points to
+    // all of it. Windows has no fork(): std::thread.
+    NanoLogLine m_writer_line; // the writer thread's alone, between its start and its join; freed with the logger
+#ifdef _WIN32
+    std::thread m_thread;
+#else
+    pthread_t m_thread{};
+    bool      m_writer_started = false; // a writer this process started and has not joined
+#endif
 
 public:
     // qb fork (Huly QB-1207): initialize()'s bookkeeping, touched under its lock only.

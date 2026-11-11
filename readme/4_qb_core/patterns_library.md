@@ -80,8 +80,9 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:298-302`).
-- **Run all pattern tests under `ASAN_OPTIONS=detect_leaks=0`** — cross-core asks leave a fixed,
-  benign teardown residual (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
+- **No teardown residual.** A cross-core ask leaves nothing for LeakSanitizer to report: qb's
+  pattern tests run with it on in the `sanitize` lane (3.4, Huly QB-1246), where this page used to
+  advise running them with leak detection off (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
 
 ---
 

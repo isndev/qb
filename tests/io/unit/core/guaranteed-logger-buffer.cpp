@@ -670,7 +670,7 @@ TEST(GuaranteedLoggerReplacementDeathTest, AtExitTheLoggerFileIsCompleteAndALate
 // the published one it inherited, then exit().
 void
 destroy_log_and_exit(nanolog::NanoLogger *direct) {
-    delete direct; // its writer is the parent's: a std::thread destroyed joinable would terminate
+    delete direct; // its writer is the parent's, absent here: the delete must neither join it nor terminate
     NANO_LOG(nanolog::LogLevel::INFO) << "logged by the forked child";
     std::exit(0);
 }
@@ -683,7 +683,7 @@ destroy_log_and_exit(nanolog::NanoLogger *direct) {
  *        child that reaches it exits 4. The parent's writer is idle when the child is forked
  *        (its line is in the file), so the fork meets no line being written (Huly QB-1193). The child writes nothing
  *        into its parent's file, and the parent's logger still writes its own lines. The child also destroys a logger
- *        its parent built directly, never published, whose std::thread must not be destroyed joinable there.
+ *        its parent built directly, never published, whose writer thread, absent there, it must not join.
  */
 TEST(GuaranteedLoggerForkDeathTest, AForkedChildExitsWithoutJoiningItsParentsWriter) {
     std::string const style = GTEST_FLAG_GET(death_test_style);

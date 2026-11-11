@@ -34,7 +34,7 @@
  * still land on zero live payloads. That is what makes the bug unbounded rather than a one-off — a
  * service that asks for its configuration during `onInit()` leaks once per actor it spawns.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

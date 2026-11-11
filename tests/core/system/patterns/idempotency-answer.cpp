@@ -25,7 +25,7 @@
  * after join(), so a never-scheduled asker cannot pass vacuously. The asker stops the engine the
  * instant both round-trips complete (event-driven, no wall-clock offset).
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

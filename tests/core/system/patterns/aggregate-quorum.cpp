@@ -27,7 +27,7 @@
  * exception flag. Shutdown is event-driven (the asker stops the engine when ask_quorum resolves) or,
  * for the cancel test, the moment cancellation is observed.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

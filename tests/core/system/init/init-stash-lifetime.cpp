@@ -17,8 +17,8 @@
  * counter in every constructor and decrements it in its destructor, so `live == 0` after the engine
  * drains iff every constructed instance was destroyed. The qb event layer byte-relocates events
  * (no ctor/dtor on the relocation), so the only ctor is the placement-new at push and the only dtor
- * is the framework disposer; a non-zero `live` is a real leak. This suite runs under
- * ASAN_OPTIONS=detect_leaks=0, so LeakSanitizer would NOT catch the leak — the counter does — and
+ * is the framework disposer; a non-zero `live` is a real leak. The counter is the leak oracle in
+ * every build -- LeakSanitizer runs only in an ASan build on Linux (Huly QB-1246) -- and
  * ASan still catches any double-free of the heap `data`.
  *
  * Five paths, each must zero the counter:
@@ -31,7 +31,7 @@
  * tier=system (real engine, real deferred-destroy + stash machinery). The success path also keeps
  * its FIFO-order and only-after-active teeth, each mirrored to a post-`join()` atomic.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

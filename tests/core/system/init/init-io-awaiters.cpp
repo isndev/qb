@@ -50,7 +50,7 @@
  * bounds a fully wedged init. The pre-fix zero, negative and inline cases each timed out
  * under a separate three-second process watchdog; the positive/sync/standalone controls passed.
  *
- * tier=system. Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the coroutine suites.
+ * tier=system. LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

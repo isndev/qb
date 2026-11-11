@@ -30,8 +30,8 @@
  * All `tier=system` (real `qb::Main`, real event loop, deferred-destroy machinery). Every in-actor
  * side-effect is mirrored to a post-`join()` atomic so a never-scheduled actor cannot pass vacuously.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites (the coroutine
- * frame pool is deliberately not drained at thread exit).
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite: the coroutine frame pool is
+ * drained at thread exit (task.h's BucketPool), and nothing is reported (Huly QB-1246).
  */
 
 #include <atomic>

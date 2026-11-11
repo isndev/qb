@@ -40,7 +40,7 @@
  * Every in-actor `EXPECT_*` / count is paired with a post-`join()` `ran` guard so a
  * never-scheduled actor cannot make a test pass vacuously.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

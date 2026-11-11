@@ -42,7 +42,7 @@
  * Two independent oracles per case: in-actor side-effects are mirrored to a global `std::atomic`
  * asserted after `join()`, so a never-scheduled actor cannot pass vacuously.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>
