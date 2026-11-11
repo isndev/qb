@@ -530,6 +530,80 @@ policy.
 
 ### Fixed
 
+- **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
+  `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a
+  WebSocket `on(message)` or `on(ping)`, an HTTP/1.1 `on(request)`), or from anything those call, it destroyed every
+  protocol the component owned on the spot -- while the read loop was still inside the active one's `onMessage()`.
+  The modules' protocols touch their own state after their handler returns: qbm-http's WebSocket decoder resets its
+  message and frame after a data frame and writes the Pong after a Ping, its HTTP/1.1 server and client reset their
+  message, qbm-redis's protocol walks its pending replies. So a handler that cleared read and wrote freed memory --
+  ASan: heap-use-after-free, a write in the WebSocket `Message::reset()` and one in the decoder's control-frame path.
+  qb's own framers end their `onMessage()` on the handler call: a clear from their handlers was not reached. The read loop's own comments called
+  the call a supported case, while `reset_for_reconnect()` said never to call it from a handler "as it destroys the
+  protocol that is running"; the two now state one rule.
+  - **What changes for a user: WHEN a cleared protocol's destructor runs.** From the read loop's dispatch, `clear_protocols()` (and
+    `reset_for_reconnect()`, which calls it) still detaches every protocol at once -- `protocol()` is the `NoProtocol`
+    sentinel when it returns, nothing more is read for them, a protocol switched in afterwards is the active one --
+    but destroys them once the read pass has returned: for `async::io` and `async::input` right after the message
+    loop, before the output flush, `dispose()` and `on(event::disconnected&&)`; for `buffered_io` (QUIC streams) at
+    the end of `process_input()`, before its `pending_read` / `eof` hooks. So a cleared protocol's destructor now runs
+    after the rest of the handler that cleared it and of its own `onMessage()` (a WebSocket Ping whose handler
+    cleared still gets its Pong), after the constructor of a protocol switched in after the clear, and after that
+    protocol has parsed what the same read already buffered; its memory is held until the pass ends. It runs with the
+    component's dispatch flag set, as inside the call before, so its `disconnect_now()` defers as from a handler; a
+    destructor of one that ends the active protocol ends the session at its next I/O event, as a clear outside a
+    dispatch does. Outside the read loop's dispatch the protocols are destroyed before the call returns, as before --
+    an `onMessage()` a protocol runs itself (the HTTP/1.1 end-of-stream flush from `on(event::disconnected&&)`)
+    and a handler that zeroed the flag with `start()` or `reset_io_state()` before clearing included; `switch_protocol()`
+    still destroys nothing. Every clear, at once or deferred, now ends its protocols one at a time, front to back (the
+    order they were switched in; libc++'s `vector::clear()` destroyed them back to front), each out of the list
+    before its destructor runs, the sentinel already active: a destructor's `switch_protocol()` installs a
+    protocol that is kept and its `clear_protocols()` joins the clear under way -- at once, the destructor used to
+    run inside `std::vector::clear()`, writing into the vector being cleared, and the sentinel then replaced what it
+    installed. The maintainer chose this over keeping the old timing and fixing each
+    shipped protocol (which left users' protocols exposed) or refusing the call from a handler.
+  - **Every caller, and whether it can run inside its own object's dispatch.** qb: `io::reset_for_reconnect()`, no
+    caller in qb. qbm-http: the HTTP/2 client's connect (`2/client.cpp`), which waits for the previous transport's
+    `on(event::disconnected&&)` -- no; the WebSocket client's launch (`ws/ws.h`), held until its disconnected dispatch
+    has returned -- no. qbm-pgsql: `install_link_()` (`pgsql.h`), from a connect attempt or an adopted transport, a
+    coroutine resumed outside the connection's dispatch -- no. qbm-redis: `install_link_()` (`redis.h`), from an
+    attempt or `setup_connection()`, which refuses while a connection is up -- no; it also zeroes the dispatch flag
+    (`reset_io_state()`) after the clear, which the protocol list covers anyway: retired protocols mean a dispatch is
+    on the stack, so a second clear retires too. qb-examples: `06-modules/ws/02-chat-client.cpp`, from an actor event
+    while disconnected -- no. All keep the immediate destruction. `reset_for_reconnect()` stays forbidden from a
+    handler, for its buffers: the dispatch frees the message's bytes from the `in()` it empties.
+  - **Cost: nothing per message.** The owner is `qb::io::async::detail::protocol_list` (`protocol.h`): a clear during
+    a dispatch records how many protocols it retired, without allocating; the read pass tests that count once and
+    destroys out of line (`QB_NOINLINE`), one at a time, each out of the list before its destructor runs.
+    Each component grows by 8 bytes. A/B on an M4 (macOS arm64), qb 4401d31d against this change, each side with
+    its own libraries, three byte-identical copies, six rounds in a seeded order, one quiet window: the
+    `buffered_io` read loop (`BM_Framing_ReadFrameDrain/frames:64/payload_bytes:16`) -0.75 %, the `io` read loop
+    over TCP (`BM_Tcp_LoopbackEcho/batch:64`) -0.03 %, an HTTP/1.1 request through the server
+    (`BM_Http1_AccessLogWarm/format:0`) +1.21 % against an A/A spread of 1.7-2.2 % (two of the three copies at the
+    control's level), and the WebSocket decoder, which runs no changed code (`BM_WS_DecodeMaskedText/bytes:16`
+    +0.29 %, `BM_WS_DecodePingAutoPong/bytes:0` +0.67 %): no difference this instrument resolves.
+  - **Proof.** Witnesses red on 4401d31d under ASan+UBSan, every one a heap-use-after-free: a handler that clears,
+    disconnects then clears, or clears then switches, on `io` (`qb-io-test-system-async-bases-framing`), `input`
+    and `buffered_io` (`qb-io-test-unit-buffered-io-session`), and a WebSocket server session clearing from
+    `on(message)` -- a WRITE in `Message::reset()` -- and from `on(ping)` -- a WRITE in the control-frame path
+    (`qbm-http-test-system-ws-framing-edge`, in qbm-http). Green with the fix, as are the cases that pin what did not
+    change (a clear outside a dispatch, a switch from a handler) and the new ones: every exit of `process_input()`,
+    a retired protocol's destructor that switches or clears, a clear outside a dispatch whose destructor switches,
+    and `protocol_list` itself (`ProtocolList.*`). The WebSocket witnesses also count a framer destroyed inside the
+    handler and assert the Pong, so they fail without a sanitizer. Twelve mutants, after the unmutated tree passed:
+    eleven caught (destroy at once again; retire and never destroy; leak; end every protocol, the switched-in one
+    too; erase them in one call; no dispatch flag while they end; a clear that does not join; no end at the read
+    loop's call site; none in `buffered_io`; the sentinel after the list; the one-call `std::vector::clear()` outside
+    a dispatch), and one equivalent -- ending them right after `onMessage()` returns, per message, is as safe,
+    nothing of a protocol running past its `onMessage()`; the end of the pass is where it costs nothing per message.
+    LeakSanitizer is not available on arm64 macOS: the leak mutant is caught by the tests' destruction counts.
+    qb standalone, Release, `QB_TESTS_WERROR=ON`: 265 units, 0 warnings; 265 registered, 265 executed, 0 skipped.
+    The qb-io binaries above with every qbm-http WebSocket, HTTP/1.1 and HTTP/2-client binary and the qbm-pgsql
+    and qbm-redis binaries that reconnect, Release with `QB_TESTS_WERROR=ON`, ASan+UBSan and TSan: 43 registered,
+    42 executed, 1 skipped (a redis Unix-socket test without a socket), 0 failures, 0 sanitizer reports in each --
+    three live redis binaries set aside, whose cases wait on a server-side `BLPOP` timeout the host's redis-server
+    never ends (`redis-cli blpop k 1` still blocked after 5 s).
+
 - **A loop that has held an `ev_periodic` no longer polls and runs on every non-blocking pass under
   `QB_EV_USE_TIMERFD=ON`, and a periodic sees a step of the wall clock under non-blocking passes in every build (Huly
   QB-1277).** The first `ev_periodic` a loop starts creates the loop's realtime timerfd -- the descriptor that turns

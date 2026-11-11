@@ -33,16 +33,16 @@ namespace qb::io::async {
  */
 template <typename _Derived>
 class buffered_io {
-    IProtocol                              *_protocol = no_protocol(); // never null: NoProtocol sentinel until switch_protocol()
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list;
-    bool                                    _on_message         = false;
-    bool                                    _is_disposed        = false;
-    int                                     _reason             = 0;
-    int                                     _system_error       = 0;
-    std::size_t                             _max_message_size   = QB_MAX_MESSAGE_SIZE;
-    std::size_t                             _bytes_read         = 0;
-    std::size_t                             _bytes_written      = 0;
-    std::size_t                             _messages_processed = 0;
+    IProtocol            *_protocol = no_protocol(); // never null: NoProtocol sentinel until switch_protocol()
+    detail::protocol_list _protocol_list;            // a clear during a dispatch retires, the dispatch's end destroys (QB-1278)
+    bool                  _on_message         = false;
+    bool                  _is_disposed        = false;
+    int                   _reason             = 0;
+    int                   _system_error       = 0;
+    std::size_t           _max_message_size   = QB_MAX_MESSAGE_SIZE;
+    std::size_t           _bytes_read         = 0;
+    std::size_t           _bytes_written      = 0;
+    std::size_t           _messages_processed = 0;
 
     [[nodiscard]] _Derived &
     derived() noexcept {
@@ -77,9 +77,9 @@ public:
 
     void
     clear_protocols() {
-        _protocol_list.clear();
-        _protocol_list.shrink_to_fit();
-        _protocol = no_protocol(); // never null → "no protocol" handled via ok()/the sentinel
+        // From process_input()'s dispatch they end once it has returned: one may be running under the caller (QB-1278).
+        _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
+        _protocol_list.clear(_on_message);
     }
 
     [[nodiscard]] IProtocol *
@@ -255,15 +255,15 @@ public:
                 _protocol->not_ok();
                 _system_error = 0;
                 _reason       = -2;
-                _on_message   = false;
+                end_dispatch();
                 return false;
             }
 
             // Snapshot the protocol pointer AND its should_flush() before onMessage():
-            // onMessage() may switch_protocol() or clear_protocols(), either of which can
-            // leave `protocol` dangling. should_flush() is a per-protocol invariant (no
-            // setter is ever called), so capturing the OLD protocol's value now is
-            // equivalent and removes every post-onMessage deref of `protocol`.
+            // onMessage() may switch_protocol() or clear_protocols() (retired: destroyed by
+            // end_dispatch() once this pass is over, QB-1278). should_flush() is a
+            // per-protocol invariant (no setter is ever called), so capturing the OLD
+            // protocol's value now is equivalent and removes every post-onMessage deref.
             auto      *protocol         = _protocol;
             const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
@@ -272,7 +272,7 @@ public:
             if (unlikely(_reason)) {
                 if (likely(old_should_flush))
                     derived().flush(ret);
-                _on_message = false;
+                end_dispatch();
                 return derived().pendingWrite() > 0;
             }
 
@@ -282,19 +282,19 @@ public:
                 if (likely(old_should_flush))
                     derived().flush(ret);
                 if (derived().pendingWrite() > 0) {
-                    _on_message = false;
+                    end_dispatch();
                     return true;
                 }
                 _system_error = 0;
                 _reason       = -1;
-                _on_message   = false;
+                end_dispatch();
                 return false;
             }
 
             if (likely(old_should_flush))
                 derived().flush(ret);
         }
-        _on_message = false;
+        end_dispatch();
 
         if constexpr (qb::has_on<_Derived, event::pending_read> || qb::has_on<_Derived, event::eof>) {
             const auto pending = derived().pendingRead();
@@ -352,6 +352,14 @@ public:
     }
 
 protected:
+    /// The dispatch is over: the protocols a clear_protocols() retired in it end now, with the dispatch flag still set
+    /// (what their destructors saw when the clear destroyed at once -- Huly QB-1278); then the flag clears.
+    void
+    end_dispatch() noexcept {
+        (void) _protocol_list.end_dispatch(true, _on_message);
+        _on_message = false;
+    }
+
     void
     reset_buffered_io_state() noexcept {
         _on_message   = false;

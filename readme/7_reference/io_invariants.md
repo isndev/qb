@@ -321,24 +321,26 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
 `src/qb/io/protocol/**` depends on it.
 
 - `getMessageSize()` is expected to be a **pure query**
-  (`src/qb/io/async/protocol.h:87-91`). The stream layer may call it many
+  (`src/qb/io/async/protocol.h:91-95`). The stream layer may call it many
   times per byte of input; an implementation must not mutate parser state,
   decrement a credit counter, or emit semantically meaningful side effects.
   Base protocols keep a resumable scan offset so re-invocation does not rescan
   from the start.
 - It returns `IProtocol::kNoMessage` (`== 0`) when more input is needed, or the
   exact byte count of the next complete frame otherwise
-  (`src/qb/io/async/protocol.h:58`, `:105`). Consumption happens when
+  (`src/qb/io/async/protocol.h:62`, `:109`). Consumption happens when
   `onMessage(size)` is called with that size.
 - A protocol signals an unrecoverable framing or parse error by calling
   `not_ok()`; the I/O component then closes the connection, and the protocol
-  cannot be recovered (`src/qb/io/async/protocol.h:183-185`).
+  cannot be recovered (`src/qb/io/async/protocol.h:187-189`).
 - `set_should_flush(bool)` controls whether the input buffer is flushed after
-  each message (`src/qb/io/async/protocol.h:202-205`). `process_messages`
+  each message (`src/qb/io/async/protocol.h:206-209`). `process_messages`
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
-  upgrade) and leave the old protocol dangling — the flush must use the old
-  protocol's policy (`src/qb/io/async/io.h:1371-1372`).
+  upgrade) or `clear_protocols()` — the flush must use the old protocol's policy
+  (`src/qb/io/async/io.h:1371-1372`). A protocol cleared there is destroyed once
+  the read pass has returned, never under its own `onMessage()`
+  (`src/qb/io/async/io.h:1514`; since 3.4, Huly QB-1278).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer

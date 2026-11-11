@@ -917,6 +917,15 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
   installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2362-2391, :2895-2902, :3339-3343)_
+- **`clear_protocols()` from the read loop's dispatch** (a protocol's `onMessage()`, the handler it hands the message
+  to, anything they call) detaches every protocol at once — `protocol()` is the `NoProtocol` sentinel, a protocol
+  switched in afterwards is the active one — and destroys them once that dispatch has returned, not under the
+  `onMessage()` the read loop runs (unless the handler zeroed the flag with `start()`/`reset_io_state()` first);
+  outside it, it destroys them before it returns. Before 3.4 it destroyed on the spot, a use-after-free in the
+  protocols that touch their state after their handler (qbm-http's WebSocket and HTTP/1.1, qbm-redis's; Huly QB-1278).
+  Either way they end one at a time, front to back, the sentinel already active: a destructor's `switch_protocol()`
+  is kept, its `clear_protocols()` joins. `reset_for_reconnect()`
+  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2295-2297, :3135, :3330-3331; protocol.h:397-415)_
 - **A standalone io's `dispose()` ends its transport** (Huly QB-1060): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):

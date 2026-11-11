@@ -1937,3 +1937,298 @@ TEST(AsyncIoBaseDeathTest, StartFromInsideDisposeIsRefused) {
         "io::start.. from inside dispose");
 }
 #endif
+
+// =====================================================================================================
+// clear_protocols() from inside a dispatch (Huly QB-1278). The read loop calls the protocol's onMessage();
+// the protocol hands the frame to its io -- the session's handler -- and touches itself after the handler
+// returned, as the WebSocket decoder writes its frame state. A handler that called clear_protocols() ended
+// that protocol under its own onMessage(): it then wrote freed memory.
+// =====================================================================================================
+namespace {
+
+/// What a DispatchingProtocol saw of its own lifetime. Lives outside it, so it can be read once it is gone.
+struct ProtocolLifetime {
+    bool        in_dispatch           = false; ///< the protocol's onMessage() is on the stack
+    std::size_t destroyed             = 0u;    ///< its destructor ran
+    std::size_t destroyed_in_dispatch = 0u;    ///< its destructor ran while its onMessage() was still running
+    std::size_t frames_after_handler  = 0u;    ///< the protocol's own count, written after its handler returned
+    bool        destructor_armed      = true;  ///< the destructor's callback may run (never into a component being destroyed)
+};
+
+/// Disarms a DispatchingProtocol's destructor callback when the test's scope ends, before the session it would call into.
+struct DisarmOnExit {
+    ProtocolLifetime &life;
+    ~DisarmOnExit() {
+        life.destructor_armed = false;
+    }
+};
+
+/// Four-byte frames, each handed to `handler(io)`; the protocol writes its own state after the handler.
+template <typename Io>
+class DispatchingProtocol : public qb::io::async::AProtocol<Io> {
+public:
+    using handler_t = void (*)(Io &);
+
+private:
+    ProtocolLifetime &_life;
+    handler_t         _handler;
+    handler_t         _on_destroy;
+    std::size_t       _frames = 0u;
+
+public:
+    DispatchingProtocol(Io &io, ProtocolLifetime &life, handler_t handler, handler_t on_destroy = nullptr) noexcept
+        : qb::io::async::AProtocol<Io>(io)
+        , _life(life)
+        , _handler(handler)
+        , _on_destroy(on_destroy) {}
+
+    ~DispatchingProtocol() override {
+        ++_life.destroyed;
+        if (_life.in_dispatch)
+            ++_life.destroyed_in_dispatch;
+        if (_on_destroy && _life.destructor_armed)
+            _on_destroy(this->_io); // a destructor that calls back into its io, as the read loop ends it
+    }
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return this->_io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        auto &life       = _life;
+        life.in_dispatch = true;
+        this->_io.messages.emplace_back(this->_io.in().begin(), size);
+        _handler(this->_io);
+        ++_frames; // the protocol's own state, after its handler: freed memory if the handler ended it
+        life.frames_after_handler = _frames;
+        life.in_dispatch          = false;
+    }
+
+    void
+    reset() noexcept final {
+        _frames = 0u;
+    }
+};
+
+template <typename Io>
+void
+clear_in_handler(Io &io) {
+    io.base().clear_protocols();
+}
+
+template <typename Io>
+void
+disconnect_and_clear_in_handler(Io &io) {
+    io.base().disconnect();
+    io.base().clear_protocols();
+}
+
+void
+clear_then_switch_in_handler(PipeDuplexProbe &io) {
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+}
+
+void
+switch_in_handler(PipeDuplexProbe &io) {
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+}
+
+template <typename Io>
+void
+no_handler(Io &) {}
+
+ProtocolLifetime g_switched_in_life; // the protocol clear_then_switch_counted_in_handler() switches in
+
+void
+clear_then_switch_counted_in_handler(PipeDuplexProbe &io) {
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(io, g_switched_in_life, &no_handler<PipeDuplexProbe>);
+}
+
+} // namespace
+
+TEST_F(AsyncIoBaseTest, DuplexClearProtocolsFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_in_handler<PipeDuplexProbe>),
+                  nullptr);
+        session.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        ASSERT_TRUE(pass_until([&] { return session.disconnected_events > 0u; }, "the session ends once it has no protocol"));
+
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+        EXPECT_EQ(life.frames_after_handler, 1u) << "the protocol finished its onMessage() after the handler cleared it";
+        EXPECT_EQ(life.destroyed, 1u) << "the cleared protocol is destroyed once the dispatch has returned";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+        EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+        EXPECT_EQ(session.last_disconnect_reason, -1) << "no protocol left: a protocol error, as before";
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexDisconnectThenClearFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life,
+                                                                                       &disconnect_and_clear_in_handler<PipeDuplexProbe>),
+                  nullptr);
+        session.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        ASSERT_TRUE(pass_until([&] { return session.disconnected_events > 0u; }, "the session ends on its handler's disconnect()"));
+
+        EXPECT_EQ(life.frames_after_handler, 1u);
+        EXPECT_EQ(life.destroyed, 1u);
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+        EXPECT_EQ(session.last_disconnect_reason, 1) << "the handler's disconnect() names the reason";
+    }
+    EXPECT_EQ(life.destroyed, 1u);
+}
+
+TEST_F(AsyncIoBaseTest, DuplexClearThenSwitchFromAHandlerKeepsTheNewProtocolAndEndsTheOld) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeDuplexProbe  session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_then_switch_in_handler), nullptr);
+    session.base().start();
+    ASSERT_TRUE(deliver(pair, "abcdefgh")); // the second frame is the new protocol's, in this read or the next
+    ASSERT_TRUE(pass_until([&] { return session.messages.size() >= 2u; }, "the new protocol reads the second frame"));
+    ASSERT_TRUE(pass_until([&] { return life.destroyed > 0u; }, "the cleared protocol ends once its dispatch has returned"));
+    ASSERT_TRUE(deliver(pair, "ijkl")); // a read after the pass that ended the old protocol: the new one is still there
+    ASSERT_TRUE(pass_until([&] { return session.messages.size() >= 3u; }, "the new protocol reads the frame of a later read"));
+
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd", "efgh", "ijkl"}));
+    EXPECT_EQ(life.frames_after_handler, 1u);
+    EXPECT_EQ(life.destroyed, 1u) << "the cleared protocol is destroyed once its dispatch has returned";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_NE(session.base().protocol(), qb::io::async::no_protocol()) << "the protocol switched in after the clear is kept";
+    EXPECT_EQ(session.disconnected_events, 0u);
+    EXPECT_TRUE(session.base().is_connected());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexARetiredProtocolsDestructorMaySwitchTheNextProtocolIn) {
+    // The read loop ends the retired protocol after its dispatch returned, while the protocol the handler switched
+    // in is live beside it: the destructor's own switch_protocol() must find the list consistent, and is kept.
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeDuplexProbe  session{pair.probe};
+    DisarmOnExit     disarm{life}; // a failed ASSERT returns: the session must not run the callback while it dies
+    ASSERT_NE(
+        session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_then_switch_in_handler, &switch_in_handler),
+        nullptr);
+    session.base().start();
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    ASSERT_TRUE(pass_until([&] { return life.destroyed > 0u; }, "the cleared protocol ends once its dispatch has returned"));
+    auto *const switched_in_by_the_destructor = session.base().protocol();
+    ASSERT_TRUE(deliver(pair, "efgh"));
+    ASSERT_TRUE(pass_until([&] { return session.messages.size() >= 2u; }, "the protocol the destructor switched in reads the next frame"));
+
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd", "efgh"}));
+    EXPECT_EQ(life.destroyed, 1u);
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_NE(switched_in_by_the_destructor, qb::io::async::no_protocol());
+    EXPECT_EQ(session.base().protocol(), switched_in_by_the_destructor) << "the destructor's switch_protocol() is the active one";
+    EXPECT_EQ(session.disconnected_events, 0u);
+    EXPECT_TRUE(session.base().is_connected());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexARetiredProtocolsDestructorThatClearsEndsTheProtocolSwitchedInAfterTheClear) {
+    // The retired protocol ends with the dispatch flag set: its clear_protocols() joins the clear under way and
+    // ends the protocol the handler switched in, in the same pass.
+    ProtocolLifetime life;
+    g_switched_in_life   = {};
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    DisarmOnExit    disarm{life}; // a failed ASSERT returns: the session must not run the callback while it dies
+    ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_then_switch_counted_in_handler,
+                                                                                   &clear_in_handler<PipeDuplexProbe>),
+              nullptr);
+    session.base().start();
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    ASSERT_TRUE(pass_until([&] { return life.destroyed > 0u; }, "the cleared protocol ends once its dispatch has returned"));
+
+    EXPECT_EQ(life.destroyed, 1u);
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_EQ(g_switched_in_life.destroyed, 1u) << "the destructor's clear ended the switched-in protocol in the same pass";
+    EXPECT_EQ(g_switched_in_life.destroyed_in_dispatch, 0u);
+    EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexADestructorRunByAClearOutsideADispatchMaySwitchTheNextProtocolIn) {
+    // Outside a dispatch the clear ends its protocols at once, one at a time, the sentinel already active: the
+    // destructor's switch_protocol() is the active protocol when the clear returns.
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeDuplexProbe  session{pair.probe};
+    DisarmOnExit     disarm{life}; // a failed ASSERT returns: the session must not run the callback while it dies
+    ASSERT_NE(
+        session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &no_handler<PipeDuplexProbe>, &switch_in_handler),
+        nullptr);
+    session.base().clear_protocols();
+
+    EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, destroyed before clear_protocols() returns";
+    EXPECT_NE(session.base().protocol(), qb::io::async::no_protocol()) << "the destructor's switch_protocol() is kept";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexSwitchFromAHandlerKeepsTheOldProtocolUntilTheSessionEnds) {
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &switch_in_handler), nullptr);
+        session.base().start();
+        ASSERT_TRUE(deliver(pair, "abcdefgh"));
+        ASSERT_TRUE(pass_until([&] { return session.messages.size() >= 2u; }, "the new protocol reads the second frame"));
+
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd", "efgh"}));
+        EXPECT_EQ(life.destroyed, 0u) << "switch_protocol() ends no protocol: the old one is owned until a clear or the end";
+        EXPECT_TRUE(session.base().is_connected());
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "the session's end destroys it";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u);
+}
+
+TEST_F(AsyncIoBaseTest, DuplexClearProtocolsOutsideADispatchEndsTheProtocolsAtOnce) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeDuplexProbe  session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &no_handler<PipeDuplexProbe>), nullptr);
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().clear_protocols();
+    EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
+    EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+}
+
+TEST_F(AsyncIoBaseTest, InputClearProtocolsFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    ProtocolLifetime life;
+    {
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        ASSERT_NE(input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &clear_in_handler<PipeInputProbe>), nullptr);
+        input.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        ASSERT_TRUE(pass_until([&] { return input.disconnected_events > 0u; }, "the input ends once it has no protocol"));
+
+        EXPECT_EQ(input.messages, (std::vector<std::string>{"abcd"}));
+        EXPECT_EQ(life.frames_after_handler, 1u);
+        EXPECT_EQ(life.destroyed, 1u);
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+        EXPECT_EQ(input.base().protocol(), qb::io::async::no_protocol());
+    }
+    EXPECT_EQ(life.destroyed, 1u);
+}
+
+TEST_F(AsyncIoBaseTest, InputClearProtocolsOutsideADispatchEndsTheProtocolsAtOnce) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeInputProbe   input{pair.probe};
+    ASSERT_NE(input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &no_handler<PipeInputProbe>), nullptr);
+    input.base().clear_protocols();
+    EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
+}

@@ -858,16 +858,16 @@ private:
  */
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
-    using base_t         = base<input<_Derived>, event::io>;
-    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
-    bool        _on_message         = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
-    bool        _is_disposed        = false; /**< Internal flag to ensure `dispose()` is called only once. */
-    int         _reason             = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
-    int         _system_error       = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
-    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
+    using base_t                    = base<input<_Derived>, event::io>;
+    IProtocol            *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    detail::protocol_list _protocol_list;            /**< Owned protocols; one a dispatch cleared ends once it has returned (QB-1278). */
+    bool                  _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
+    bool                  _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
+    int                   _reason      = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
+    int                   _system_error = 0;    /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
 
 public:
     using base_io_t                        = input<_Derived>; /**< Base I/O type alias for CRTP. */
@@ -901,7 +901,7 @@ public:
 
     /**
      * @brief Destructor.
-     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
+     * @details RAII: `_protocol_list` destroys every protocol it owns, those a dispatch retired included.
      *          The base class destructor handles unregistering the `event::io` watcher.
      */
     ~input() noexcept = default;
@@ -922,8 +922,8 @@ public:
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
      *
-     * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
-     *       `clear_protocols()` is called or when the component is destroyed.
+     * @note **Memory Management:** The protocol instance is owned by this component and is deleted by
+     *       `clear_protocols()` -- once the dispatch has returned when called from one (QB-1278) -- or with the component.
      */
     template <typename _Protocol, typename... _Args>
     _Protocol *
@@ -939,14 +939,14 @@ public:
     }
 
     /**
-     * @brief Clears all owned protocol instances.
-     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
+     * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
+     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
      */
     void
     clear_protocols() {
-        _protocol_list.clear();
-        _protocol_list.shrink_to_fit();
-        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
+        _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
+        _protocol_list.clear(_on_message);
     }
 
     [[nodiscard]] IProtocol *
@@ -1364,8 +1364,8 @@ private:
             // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
             // The OLD protocol's should_flush() must be used for flush(), not the new one.
             // Snapshot should_flush() here as well: onMessage() may not only switch the
-            // protocol but also drop the old one from the protocol list (clear_protocols()),
-            // which would leave `protocol` dangling. should_flush() is a per-protocol
+            // protocol but also end the old one (clear_protocols(): retired, it is destroyed
+            // once this read pass returns -- QB-1278). should_flush() is a per-protocol
             // invariant (no setter is ever called after construction), so reading it now
             // is equivalent to reading it after and removes every post-onMessage deref.
             auto      *protocol         = this->_protocol;
@@ -1510,8 +1510,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-
-            if (!process_messages())
+            // The protocols a clear retired during the dispatch end here, once it has returned (QB-1278).
+            if (!_protocol_list.end_dispatch(process_messages(), _on_message))
                 goto error;
 
             Derived.eof();
@@ -2114,19 +2114,19 @@ protected:
  */
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
-    using base_t         = base<io<_Derived>, event::io>;
-    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
-    bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
-    bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */
-    bool                                    _lingering    = false; /**< A delivered close_after_deliver() waits for its peer. */
-    bool                                    _linger_spent = false; /**< The linger bound elapsed: the next dispatch ends it. */
-    int                                     _reason       = 0;     /**< Disconnection reason code. */
-    int                                     _system_error = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
-    std::size_t _bytes_written      = 0;                   /**< Total number of bytes written to the transport. */
-    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
+    using base_t                    = base<io<_Derived>, event::io>;
+    IProtocol            *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    detail::protocol_list _protocol_list;            /**< Owned protocols; one a dispatch cleared ends once it has returned (QB-1278). */
+    bool                  _on_message   = false;     /**< Internal flag for re-entrance protection in `on(event::io&)`. */
+    bool                  _is_disposed  = false;     /**< Internal flag for `dispose()` idempotency. */
+    bool                  _lingering    = false;     /**< A delivered close_after_deliver() waits for its peer. */
+    bool                  _linger_spent = false;     /**< The linger bound elapsed: the next dispatch ends it. */
+    int                   _reason       = 0;         /**< Disconnection reason code. */
+    int                   _system_error = 0;         /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _bytes_written          = 0;                   /**< Total number of bytes written to the transport. */
+    std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
 
     /**
      * @brief The bound of a lingering close (Huly QB-1089): armed when a server session's close_after_deliver()
@@ -2250,7 +2250,7 @@ public:
 
     /**
      * @brief Destructor.
-     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
+     * @details RAII: `_protocol_list` destroys every protocol it owns, those a dispatch retired included.
      */
     ~io() noexcept = default;
 
@@ -2270,8 +2270,8 @@ public:
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
      *
-     * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
-     *       `clear_protocols()` is called or when the component is destroyed.
+     * @note **Memory Management:** The protocol instance is owned by this component and is deleted by
+     *       `clear_protocols()` -- once the dispatch has returned when called from one (QB-1278) -- or with the component.
      */
     template <typename _Protocol, typename... _Args>
     _Protocol *
@@ -2287,14 +2287,14 @@ public:
     }
 
     /**
-     * @brief Clears all owned protocol instances.
-     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
+     * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
+     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
      */
     void
     clear_protocols() {
-        _protocol_list.clear();
-        _protocol_list.shrink_to_fit();
-        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
+        _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
+        _protocol_list.clear(_on_message);
     }
 
     [[nodiscard]] IProtocol *
@@ -2936,7 +2936,7 @@ private:
             }
             // Snapshot the protocol pointer AND its should_flush() before onMessage():
             // onMessage() may switch_protocol() (handshake → upgrade) or even
-            // clear_protocols(), either of which can leave `protocol` dangling. The OLD
+            // clear_protocols() (retired: destroyed once this read pass returns, QB-1278). The OLD
             // protocol's should_flush() governs flushing the bytes of THIS message, and
             // should_flush() is a per-protocol invariant (no setter is ever called), so
             // capturing it now is equivalent and removes every post-onMessage deref.
@@ -3131,8 +3131,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-
-            if (!process_messages())
+            // The protocols a clear retired during the dispatch end here, once it has returned (QB-1278).
+            if (!_protocol_list.end_dispatch(process_messages(), _on_message))
                 goto error;
 
             Derived.eof();
@@ -3328,7 +3328,7 @@ protected:
      *          next connection is being set up has nothing to tear down (Huly QB-202).
      *
      *          Call it where the next connection is set up, before its transport is installed -- never
-     *          from inside a protocol's handler, as it destroys the protocol that is running.
+     *          from inside a protocol's handler: the dispatch then frees the message's bytes from the `in()` it emptied.
      *
      * @note A client that serializes requests straight into `out()` and lets a failing callback
      *       re-issue one during the disconnect (qbm-redis) cannot clear `out()` at reconnect -- the
