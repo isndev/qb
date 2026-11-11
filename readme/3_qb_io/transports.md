@@ -83,7 +83,7 @@ A server-associated TCP session's `ip() const` returns `std::string` by value. I
 uses `socket::peer_ip()`: the first successful IP lookup is formatted and retained by the socket, so repeated
 reads reuse it. A transport that does not provide a compatible `peer_ip()` keeps the existing
 `peer_endpoint().ip()` fallback. `port()` and `peer_endpoint()` still perform their ordinary queries.
-<!-- src: qb/src/qb/io/async/tcp/client.h:151-165 (ip and port), qb/src/qb/io/system/sys__socket.cpp:1099-1118 (peer_ip and invalidate_peer_ip) -->
+<!-- src: qb/src/qb/io/async/tcp/client.h:153-167 (ip and port), qb/src/qb/io/system/sys__socket.cpp:1099-1118 (peer_ip and invalidate_peer_ip) -->
 
 The cache is empty until an IP is successfully requested. An unconnected socket or a non-IP peer returns
 an empty string without allocating or remembering a cache entry, so a failed lookup before connection
@@ -130,9 +130,9 @@ The fix is the same in every composition, and it is a **destructor body**, becau
     this->_async_event.stop();
 }
 ```
-<!-- src: qb/src/qb/io/async/tcp/client.h:233-235 -->
+<!-- src: qb/src/qb/io/async/tcp/client.h:237-239 -->
 
-Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:107-109`, `:233-235`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:107-109`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
+Every combination in the tree carries it, each with the reasoning written next to it: `tcp::client` in both its server-associated and standalone forms (`src/qb/io/async/tcp/client.h:109-111`, `:237-239`), `udp::server` (`src/qb/io/async/udp/server.h:74-76`), and the acceptor, whose `_Prot` base owns the *listening* socket and whose destructor stops `_async_event` for the same reason (`src/qb/io/async/tcp/acceptor.h:107-109`). Stopping an already-stopped or never-started watcher is a no-op, so the call is unconditional.
 
 **If you write your own composition of an `async::io`/`input`/`output` base with a transport, you owe it that destructor.** Nothing in the type system asks for it. Server-associated sessions are the most exposed case, because `dispose()` deliberately does *not* stop their watcher — the server owns that lifecycle — so without the destructor the watcher routinely outlives its fd (`src/qb/io/async/io.h:3269-3271`).
 
@@ -191,7 +191,7 @@ The three stream templates live in `qb/io/stream.h`. Each is parameterized by th
 
 `stream::write()` calls `this->_in.write(...)`, so a bidirectional stream sends through the same socket it reads from. Reading and writing both go through buffers, so partial reads and partial writes are handled by the stream, not by your code.
 
-Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components.
+Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components. A TCP session -- `qb::io::async::tcp::client`, what `use<S>::tcp::client` and its TLS form build on -- holds its transport as a private base and re-exposes `max_write_buffer_size()` and `set_max_write_buffer_size()` with `in()` and `out()`, so a session reads and sets its own write cap, and a protocol over it reads the cap it really has (Huly QB-86: a session could reach neither).
 
 The cap is enforced at two different layers, and they behave differently, so it is worth knowing which one you are calling:
 
@@ -203,7 +203,7 @@ The cap is enforced at two different layers, and they behave differently, so it 
 
 The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2801-2813`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:3126-3129`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
 
-<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :500 (set_max_write_buffer_size) -->
+<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :500 (set_max_write_buffer_size), qb/src/qb/io/async/tcp/client.h:58,60 (the session's re-exports) -->
 
 ### TCP socket: `qb::io::tcp::socket`
 

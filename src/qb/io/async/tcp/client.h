@@ -55,7 +55,9 @@ public:
     using base_io_t         = io<_Derived>;                           /**< Base I/O type */
     using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
     using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::max_write_buffer_size;                          /**< Import the write-buffer cap publish() enforces (Huly QB-86) */
     using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::set_max_write_buffer_size;                      /**< Import its setter: a session sets its own (Huly QB-86) */
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 
@@ -193,7 +195,9 @@ public:
     using base_io_t         = io<_Derived>;                           /**< Base I/O type */
     using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
     using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::max_write_buffer_size;                          /**< Import the write-buffer cap publish() enforces (Huly QB-86) */
     using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::set_max_write_buffer_size;                      /**< Import its setter: a session sets its own (Huly QB-86) */
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 

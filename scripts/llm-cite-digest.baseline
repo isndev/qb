@@ -136,7 +136,7 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:90-97	1482ebff2622	// Connecti
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:99-136	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:330-341	aabe4f0252c0	assign_quic_ids(*session, connection_id, stream_id);
-llm/qb.llm.api.md	src/qb/io/async/tcp/client.h:151-165	85d04f79627d	[[nodiscard]] inline std::string
+llm/qb.llm.api.md	src/qb/io/async/tcp/client.h:153-167	85d04f79627d	[[nodiscard]] inline std::string
 llm/qb.llm.api.md	src/qb/io/async/tcp/connector.h:530-561	e46c3f0bc182	run() try {
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1122-1123	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1324-1332	f4b8ced2987a	if (written == 0) {
@@ -299,7 +299,7 @@ llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2320-2336	8436d11ac4ed	detail::ActorId
 llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:398-406	a1c4380f4ec5	/// Per-peer RTT estimate; id zero names a client's connection or a s...
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
-llm/qb.llm.md	src/qb/io/async/tcp/client.h:151-165	85d04f79627d	[[nodiscard]] inline std::string
+llm/qb.llm.md	src/qb/io/async/tcp/client.h:153-167	85d04f79627d	[[nodiscard]] inline std::string
 llm/qb.llm.md	src/qb/io/quic.cpp:1122-1123	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.md	src/qb/io/quic.cpp:1324-1332	f4b8ced2987a	if (written == 0) {
 llm/qb.llm.md	src/qb/io/quic.cpp:1343-1349	218294b6cd09	if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
