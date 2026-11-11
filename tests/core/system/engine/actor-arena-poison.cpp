@@ -20,6 +20,17 @@
  * read is the sanitizer's report and the process dies; without the poisoning it reads the free-list
  * word and the process ends normally -- which is what the death test refuses ("failed to die"),
  * and what the tree read before this file existed (proven by disabling the poisoning once).
+ *
+ * The member is read through a pointer to it (`g_doomed->*Doomed::payload()`), not by a member call
+ * (`g_doomed->payload()`, until Huly QB-1246): the same dangling actor pointer, the same load of the
+ * reaped actor's bytes, but no check of the object's dynamic type. Under UBSan's `vptr` check a member
+ * call on a polymorphic class first reads the vptr, outside AddressSanitizer (clang marks that load
+ * `!nosanitize`), finds the free-list word the arena wrote over it, and reports an "invalid vptr" --
+ * poisoned or not -- and `-fno-sanitize-recover` ends the process before the member load the poisoning
+ * would report. clang 19 puts `vptr` in `-fsanitize=undefined`, so the test died of the wrong report
+ * there; clang 22 no longer does, and g++ 14, which does, checks its vptr load with AddressSanitizer
+ * first. A pointer to a data member has no dynamic-type check on any of them: only the poisoning can
+ * report this read, so a block handed back unpoisoned still fails the test ("failed to die").
  */
 
 #include <gtest/gtest.h>
@@ -45,9 +56,12 @@ public:
     Doomed() {
         g_doomed = this;
     }
-    [[nodiscard]] int
-    payload() const noexcept {
-        return _payload; // a member read: the load the sanitizer must report once the block is free
+    using int_member = int Doomed::*;
+    /// The member the watcher reads through the dangling pointer: a load of the actor's bytes, the one
+    /// the sanitizer must report once the block is free (the file comment says why not a member call).
+    [[nodiscard]] static constexpr int_member
+    payload() noexcept {
+        return &Doomed::_payload;
     }
     qb::io::async::task<bool>
     onInit() override {
@@ -61,8 +75,8 @@ public:
     qb::io::async::task<bool>
     onInit() override {
         spawn([](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
-            co_await ctx.sleep(std::chrono::milliseconds{50}); // well past the reap of the doomed actor
-            volatile int const v = g_doomed->payload();        // the use-after-free
+            co_await ctx.sleep(std::chrono::milliseconds{50});   // well past the reap of the doomed actor
+            volatile int const v = g_doomed->*Doomed::payload(); // the use-after-free
             (void) v;
             ctx.push<qb::KillEvent>(); // not reached under ASan; ends the engine when nothing reported the read
         });
