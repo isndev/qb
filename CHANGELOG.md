@@ -846,16 +846,17 @@ policy.
   three, and QB-1246's own mutant -- every logger owned here -- still fails both QB-1246 witnesses.
 - **`qb-core-test-system-actor-arena-poison` passes on clang 19 and still fails when the arena does not poison a
   reaped actor (Huly QB-1246).** Its watcher read the reaped actor through the dangling pointer by a member call,
-  `g_doomed->payload()`. Under UBSan's `vptr` check a member call on a polymorphic class first reads the object's
-  vptr outside AddressSanitizer -- clang marks that load `!nosanitize` -- finds the free-list link the arena wrote
-  over it and reports an invalid vptr, and `-fno-sanitize-recover` ended the process on that report instead of the
-  use-after-poison the test expects. clang 19's `-fsanitize=undefined` includes `vptr`, so qb's own `sanitize`
-  preset was red with Debian's default clang; clang 22's no longer does (read from its driver's expansion and the
-  member call's IR), and g++ 14's checks its vptr load with AddressSanitizer first, so the lane and g++ were green.
-  The read now goes through a pointer to the data member, `g_doomed->*Doomed::payload()`: the same dangling actor
-  pointer and the same load, with no dynamic-type check under any of the three, so only the poisoning can report it.
-  Measured on clang 19 and g++ 14: green 3 of 3; with the poisoning removed from `thread_arena::deallocate`, red 3
-  of 3 ("failed to die") -- while the member call, poisoning removed, still died of UBSan's invalid vptr on both, so
+  `g_doomed->payload()`. Under UBSan's `vptr` check a member call or a member access on a polymorphic class first
+  reads the object's vptr outside AddressSanitizer -- clang marks that load `!nosanitize` -- finds one that names no
+  `Doomed` any more (the destructors reset it, the arena's free-list link overwrites it) and reports it, and
+  `-fno-sanitize-recover` ended the process on that report instead of the use-after-poison the test expects. clang
+  19's `-fsanitize=undefined` includes `vptr`, so qb's own `sanitize` preset was red with Debian's default clang;
+  clang 22's no longer does (read from its driver's expansion and the member call's IR), and g++ 14's checks its
+  vptr load with AddressSanitizer first, so the lane and g++ were green. The read now goes through a pointer to the
+  data member, `g_doomed->*Doomed::payload_member()`: the same dangling actor pointer and the same load, with no
+  dynamic-type check under any of the three (clang 22 read in its IR), so only the poisoning can report it. Measured
+  on clang 19 and g++ 14: green 3 of 3; with the poisoning removed from `thread_arena::deallocate`, red 3 of 3
+  ("failed to die") -- while the member call, poisoning removed, still died of UBSan's invalid vptr on both, so
   accepting that message would have let the test pass with no poisoning at all.
 - **A task driven by hand and kept across `reset_coro_scheduler()` is destroyed once, by its task (Huly QB-1220).**
   `destroy_all_suspended()` -- which `listener::reset_coro_scheduler()`, `recycle_coro_scheduler()` and so every
