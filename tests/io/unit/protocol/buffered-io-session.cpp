@@ -948,6 +948,17 @@ public:
 
 using protocol_list = qb::io::async::detail::protocol_list;
 
+// The component's side of end_dispatch(): its protocol list and its dispatch flag, both reached as its members.
+struct ListOwner {
+    protocol_list list;
+    bool          in_dispatch = false; // the read loop has returned: its flag is clear
+};
+
+bool
+end_dispatch(ListOwner &owner, bool result) noexcept {
+    return owner.list.end_dispatch<&ListOwner::list, &ListOwner::in_dispatch>(result, owner);
+}
+
 } // namespace
 
 TEST(ProtocolList, ARetiredProtocolEndsWithTheListWhenNoDispatchEndsIt) {
@@ -962,17 +973,18 @@ TEST(ProtocolList, ARetiredProtocolEndsWithTheListWhenNoDispatchEndsIt) {
 }
 
 TEST(ProtocolList, RetiredProtocolsEndWithTheDispatchFlagSetThenTheFlagIsRestored) {
-    EndingRecord  record;
-    bool          in_dispatch = false; // the read loop has returned: its flag is clear
-    protocol_list list;
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
     list.push_back(std::make_unique<EndingProtocol>(record, &in_dispatch));
     list.clear(true);
 
-    EXPECT_FALSE(list.end_dispatch(false, in_dispatch)) << "the dispatch's verdict passes through";
+    EXPECT_FALSE(end_dispatch(owner, false)) << "the dispatch's verdict passes through";
     EXPECT_EQ(record.destroyed, 1u);
     EXPECT_TRUE(record.flag_when_destroyed) << "the destructor ends under the dispatch flag, as when the clear destroyed at once";
     EXPECT_FALSE(in_dispatch) << "the flag is the read loop's again";
-    EXPECT_TRUE(list.end_dispatch(true, in_dispatch));
+    EXPECT_TRUE(end_dispatch(owner, true));
     EXPECT_EQ(record.destroyed, 1u) << "nothing retired, nothing ends";
 }
 
@@ -980,8 +992,9 @@ TEST(ProtocolList, ADestructorRunByAClearOutsideADispatchMaySwitchOrClear) {
     // A clear outside a dispatch ends its protocols one at a time too: a destructor's push_back is kept, a
     // destructor's clear joins the clear under way (it used to run inside vector::clear()).
     EndingRecord   switching, next, clearing, live;
-    bool           in_dispatch = false;
-    protocol_list  list;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
     ArmEndingHooks armed; // disarms the hooks before `list` dies
     list.push_back(std::make_unique<EndingProtocol>(switching, &in_dispatch, [&] { list.push_back(std::make_unique<EndingProtocol>(next)); }));
     list.clear(false);
@@ -995,7 +1008,7 @@ TEST(ProtocolList, ADestructorRunByAClearOutsideADispatchMaySwitchOrClear) {
     EXPECT_EQ(next.destroyed, 1u);
     EXPECT_EQ(clearing.destroyed, 1u);
     EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear joined the one under way";
-    EXPECT_TRUE(list.end_dispatch(true, in_dispatch));
+    EXPECT_TRUE(end_dispatch(owner, true));
 }
 
 TEST(ProtocolList, AClearOutsideADispatchEndsEveryProtocolAtOnce) {
@@ -1011,29 +1024,30 @@ TEST(ProtocolList, AClearOutsideADispatchEndsEveryProtocolAtOnce) {
 TEST(ProtocolList, AClearThatFindsRetiredProtocolsRetiresToo) {
     // Retired entries mean a dispatch is on the stack, even when the dispatch flag was lost under it (a
     // reset_io_state() from a handler): the running protocol must not be destroyed by a second clear.
-    EndingRecord  running, switched_in;
-    bool          in_dispatch = false;
-    protocol_list list;
+    EndingRecord   running, switched_in;
+    ListOwner      owner;
+    protocol_list &list = owner.list;
     list.push_back(std::make_unique<EndingProtocol>(running));
     list.clear(true);
     list.push_back(std::make_unique<EndingProtocol>(switched_in));
     list.clear(false);
     EXPECT_EQ(running.destroyed, 0u);
     EXPECT_EQ(switched_in.destroyed, 0u);
-    (void) list.end_dispatch(true, in_dispatch);
+    (void) end_dispatch(owner, true);
     EXPECT_EQ(running.destroyed, 1u);
     EXPECT_EQ(switched_in.destroyed, 1u);
 }
 
 TEST(ProtocolList, ARetiredProtocolsDestructorMaySwitchTheNextOneIn) {
     EndingRecord   retired, live, next;
-    bool           in_dispatch = false;
-    protocol_list  list;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
     ArmEndingHooks armed; // disarms the hooks before `list` dies
     list.push_back(std::make_unique<EndingProtocol>(retired, &in_dispatch, [&] { list.push_back(std::make_unique<EndingProtocol>(next)); }));
     list.clear(true);
     list.push_back(std::make_unique<EndingProtocol>(live)); // switched in after the clear, by the handler
-    (void) list.end_dispatch(true, in_dispatch);
+    (void) end_dispatch(owner, true);
 
     EXPECT_EQ(retired.destroyed, 1u);
     EXPECT_EQ(live.destroyed, 0u) << "switched in after the clear: kept";
@@ -1045,13 +1059,14 @@ TEST(ProtocolList, ARetiredProtocolsDestructorMaySwitchTheNextOneIn) {
 
 TEST(ProtocolList, ARetiredProtocolsDestructorThatClearsEndsEveryProtocolInTheSameCall) {
     EndingRecord   retired, live;
-    bool           in_dispatch = false;
-    protocol_list  list;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
     ArmEndingHooks armed; // disarms the hooks before `list` dies
     list.push_back(std::make_unique<EndingProtocol>(retired, &in_dispatch, [&] { list.clear(in_dispatch); }));
     list.clear(true);
     list.push_back(std::make_unique<EndingProtocol>(live, &in_dispatch));
-    (void) list.end_dispatch(true, in_dispatch);
+    (void) end_dispatch(owner, true);
 
     EXPECT_EQ(retired.destroyed, 1u);
     EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear retired it, and the same call ended it";

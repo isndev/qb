@@ -1510,8 +1510,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-            // The protocols a clear retired during the dispatch end here, once it has returned (QB-1278).
-            if (!_protocol_list.end_dispatch(process_messages(), _on_message))
+            // Retired protocols end once the dispatch has returned (QB-1278); the dispatch first, in a statement of its own.
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&input::_protocol_list, &input::_on_message>(alive, *this))
                 goto error;
 
             Derived.eof();
@@ -3131,8 +3131,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-            // The protocols a clear retired during the dispatch end here, once it has returned (QB-1278).
-            if (!_protocol_list.end_dispatch(process_messages(), _on_message))
+            // Retired protocols end once the dispatch has returned (QB-1278); the dispatch first, in a statement of its own.
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&io::_protocol_list, &io::_on_message>(alive, *this))
                 goto error;
 
             Derived.eof();

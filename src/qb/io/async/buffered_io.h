@@ -356,7 +356,7 @@ protected:
     /// (what their destructors saw when the clear destroyed at once -- Huly QB-1278); then the flag clears.
     void
     end_dispatch() noexcept {
-        (void) _protocol_list.end_dispatch(true, _on_message);
+        (void) _protocol_list.end_dispatch<&buffered_io::_protocol_list, &buffered_io::_on_message>(true, *this);
         _on_message = false;
     }
 

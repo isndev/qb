@@ -925,7 +925,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   protocols that touch their state after their handler (qbm-http's WebSocket and HTTP/1.1, qbm-redis's; Huly QB-1278).
   Either way they end one at a time, front to back, the sentinel already active: a destructor's `switch_protocol()`
   is kept, its `clear_protocols()` joins. `reset_for_reconnect()`
-  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2295-2297, :3135, :3330-3331; protocol.h:397-415)_
+  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2295-2297, :3135, :3330-3331; protocol.h:397-419)_
 - **A standalone io's `dispose()` ends its transport** (Huly QB-1060): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):

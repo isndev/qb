@@ -572,37 +572,44 @@ policy.
     on the stack, so a second clear retires too. qb-examples: `06-modules/ws/02-chat-client.cpp`, from an actor event
     while disconnected -- no. All keep the immediate destruction. `reset_for_reconnect()` stays forbidden from a
     handler, for its buffers: the dispatch frees the message's bytes from the `in()` it empties.
-  - **Cost: nothing per message.** The owner is `qb::io::async::detail::protocol_list` (`protocol.h`): a clear during
-    a dispatch records how many protocols it retired, without allocating; the read pass tests that count once and
-    destroys out of line (`QB_NOINLINE`), one at a time, each out of the list before its destructor runs.
-    Each component grows by 8 bytes. A/B on an M4 (macOS arm64), qb 4401d31d against this change, each side with
-    its own libraries, three byte-identical copies, six rounds in a seeded order, one quiet window: the
-    `buffered_io` read loop (`BM_Framing_ReadFrameDrain/frames:64/payload_bytes:16`) -0.75 %, the `io` read loop
-    over TCP (`BM_Tcp_LoopbackEcho/batch:64`) -0.03 %, an HTTP/1.1 request through the server
-    (`BM_Http1_AccessLogWarm/format:0`) +1.21 % against an A/A spread of 1.7-2.2 % (two of the three copies at the
-    control's level), and the WebSocket decoder, which runs no changed code (`BM_WS_DecodeMaskedText/bytes:16`
-    +0.29 %, `BM_WS_DecodePingAutoPong/bytes:0` +0.67 %): no difference this instrument resolves.
+  - **Cost: one load and one branch per read pass, nothing per message.** The owner is
+    `qb::io::async::detail::protocol_list` (`protocol.h`): a clear during a dispatch records how many protocols it
+    retired, without allocating; the read pass tests that count once and, when it is not zero, calls out of line
+    (`QB_NOINLINE`) a function that takes the component alone -- the list and the dispatch flag are template
+    arguments, member pointers -- so the pass computes nothing for it and keeps its registers. Compiled against
+    4401d31d, the TCP echo server's `invoke()` (its read pass with the message loop inlined) gains `ldr` + `cbnz` and
+    nothing else with Apple clang 21 and with g++ 16 on arm64, `cmpq` + `jne` with Apple clang on x86-64: the same
+    registers saved, the message loop instruction for instruction. Each component grows by 8 bytes. A/B on an M4
+    (macOS arm64), qb 4401d31d against this change, each side with its own libraries, three byte-identical copies,
+    six rounds in a seeded order, two quiet windows (each cell inside one): the `buffered_io` read loop
+    (`BM_Framing_ReadFrameDrain/frames:64/payload_bytes:16`) -2.25 % (A/A spread 0.49 % / 1.68 %), the `io` read loop
+    over TCP (`BM_Tcp_LoopbackEcho/batch:64`) +0.66 % -- both sides bimodal, the same 22-23 us mode and a 29-31 us one
+    that five runs of 18 fall into on the old side and three on the new --, an HTTP/1.1 request through the server
+    (`BM_Http1_AccessLogWarm/format:0`) -1.28 % (A/A 1.33 % / 0.58 %), and the WebSocket decoder, which runs no changed
+    code (`BM_WS_DecodeMaskedText/bytes:16` -0.59 %, `BM_WS_DecodePingAutoPong/bytes:0` -0.60 %): no slowdown this
+    instrument resolves.
   - **Proof.** Witnesses red on 4401d31d under ASan+UBSan, every one a heap-use-after-free: a handler that clears,
     disconnects then clears, or clears then switches, on `io` (`qb-io-test-system-async-bases-framing`), `input`
     and `buffered_io` (`qb-io-test-unit-buffered-io-session`), and a WebSocket server session clearing from
     `on(message)` -- a WRITE in `Message::reset()` -- and from `on(ping)` -- a WRITE in the control-frame path
     (`qbm-http-test-system-ws-framing-edge`, in qbm-http). Green with the fix, as are the cases that pin what did not
     change (a clear outside a dispatch, a switch from a handler) and the new ones: every exit of `process_input()`,
-    a retired protocol's destructor that switches or clears, a clear outside a dispatch whose destructor switches,
-    and `protocol_list` itself (`ProtocolList.*`). The WebSocket witnesses also count a framer destroyed inside the
-    handler and assert the Pong, so they fail without a sanitizer. Twelve mutants, after the unmutated tree passed:
-    eleven caught (destroy at once again; retire and never destroy; leak; end every protocol, the switched-in one
+    a retired protocol's destructor that switches, clears, or calls `disconnect_now()` (the teardown is left to the
+    event it fed, not run under the read pass), a clear outside a dispatch whose destructor switches, and
+    `protocol_list` itself (`ProtocolList.*`). The WebSocket witnesses also count a framer destroyed inside the
+    handler and assert the Pong, so they fail without a sanitizer. Thirteen mutants, after the unmutated tree passed:
+    twelve caught (destroy at once again; retire and never destroy; leak; end every protocol, the switched-in one
     too; erase them in one call; no dispatch flag while they end; a clear that does not join; no end at the read
     loop's call site; none in `buffered_io`; the sentinel after the list; the one-call `std::vector::clear()` outside
-    a dispatch), and one equivalent -- ending them right after `onMessage()` returns, per message, is as safe,
-    nothing of a protocol running past its `onMessage()`; the end of the pass is where it costs nothing per message.
-    LeakSanitizer is not available on arm64 macOS: the leak mutant is caught by the tests' destruction counts.
+    a dispatch; the `io` call site naming another member as its dispatch flag), and one equivalent -- ending them
+    right after `onMessage()` returns, per message, is as safe, nothing of a protocol running past its `onMessage()`;
+    the end of the pass is where it costs nothing per message. LeakSanitizer is not available on arm64 macOS: the
+    leak mutant is caught by the tests' destruction counts, and by LeakSanitizer on its own on glibc.
     qb standalone, Release, `QB_TESTS_WERROR=ON`: 265 units, 0 warnings; 265 registered, 265 executed, 0 skipped.
     The qb-io binaries above with every qbm-http WebSocket, HTTP/1.1 and HTTP/2-client binary and the qbm-pgsql
-    and qbm-redis binaries that reconnect, Release with `QB_TESTS_WERROR=ON`, ASan+UBSan and TSan: 43 registered,
-    42 executed, 1 skipped (a redis Unix-socket test without a socket), 0 failures, 0 sanitizer reports in each --
-    three live redis binaries set aside, whose cases wait on a server-side `BLPOP` timeout the host's redis-server
-    never ends (`redis-cli blpop k 1` still blocked after 5 s).
+    and qbm-redis binaries that reconnect, Release with `QB_TESTS_WERROR=ON` (114 units, 0 warnings), ASan+UBSan and
+    TSan: 46 registered, 45 executed, 1 skipped (a redis Unix-socket test without a socket), 0 failures, 0 sanitizer
+    reports in each.
 
 - **A loop that has held an `ev_periodic` no longer polls and runs on every non-blocking pass under
   `QB_EV_USE_TIMERFD=ON`, and a periodic sees a step of the wall clock under non-blocking passes in every build (Huly

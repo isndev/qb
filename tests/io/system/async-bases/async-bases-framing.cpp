@@ -2048,6 +2048,14 @@ clear_then_switch_counted_in_handler(PipeDuplexProbe &io) {
     (void) io.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(io, g_switched_in_life, &no_handler<PipeDuplexProbe>);
 }
 
+std::size_t g_disconnects_seen_by_the_destructor = ~std::size_t{0}; // what disconnect_now_in_destructor() saw once its call returned
+
+void
+disconnect_now_in_destructor(PipeDuplexProbe &io) {
+    io.disconnect_now_for_test(77);
+    g_disconnects_seen_by_the_destructor = io.disconnected_events;
+}
+
 } // namespace
 
 TEST_F(AsyncIoBaseTest, DuplexClearProtocolsFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
@@ -2158,6 +2166,28 @@ TEST_F(AsyncIoBaseTest, DuplexARetiredProtocolsDestructorThatClearsEndsTheProtoc
     EXPECT_EQ(g_switched_in_life.destroyed, 1u) << "the destructor's clear ended the switched-in protocol in the same pass";
     EXPECT_EQ(g_switched_in_life.destroyed_in_dispatch, 0u);
     EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexARetiredProtocolsDestructorThatDisconnectsNowLeavesTheTeardownToTheEventItFed) {
+    // The retired protocol ends under the io's dispatch flag, as it did when the clear destroyed it inside the
+    // handler: its disconnect_now() feeds the event and leaves the teardown to it, never dispose() under the pass.
+    ProtocolLifetime life;
+    g_disconnects_seen_by_the_destructor = ~std::size_t{0};
+    auto            pair                 = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    DisarmOnExit    disarm{life}; // a failed ASSERT returns: the session must not run the callback while it dies
+    ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_in_handler<PipeDuplexProbe>,
+                                                                                   &disconnect_now_in_destructor),
+              nullptr);
+    session.base().start();
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    ASSERT_TRUE(pass_until([&] { return session.disconnected_events > 0u; }, "the session ends once its protocol is gone"));
+
+    EXPECT_EQ(life.destroyed, 1u);
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_EQ(g_disconnects_seen_by_the_destructor, 0u) << "disconnect_now() ran dispose() inside the destructor, under the read pass";
+    EXPECT_EQ(session.disconnected_events, 1u);
+    EXPECT_EQ(session.last_disconnect_reason, 77) << "the destructor's disconnect_now() is the reason the teardown reports";
 }
 
 TEST_F(AsyncIoBaseTest, DuplexADestructorRunByAClearOutsideADispatchMaySwitchTheNextProtocolIn) {

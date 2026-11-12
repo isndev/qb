@@ -406,11 +406,15 @@ class protocol_list {
             _owned.shrink_to_fit();
     }
 
-    QB_NOINLINE void
-    end_retired(bool &in_dispatch) noexcept {
-        const bool outer = in_dispatch;
-        in_dispatch      = true;
-        destroy_ending();
+    // The cold half of end_dispatch(), out of line: it takes the owner alone and returns nothing, and reaches the list
+    // and the flag through the owner's members, so the read pass computes nothing for it and keeps its registers.
+    template <auto List, auto Flag, typename Owner>
+    QB_NOINLINE static void
+    end_retired(Owner &owner) noexcept {
+        bool      &in_dispatch = owner.*Flag;
+        const bool outer       = in_dispatch;
+        in_dispatch            = true;
+        (owner.*List).destroy_ending();
         in_dispatch = outer;
     }
 
@@ -436,12 +440,14 @@ public:
         destroy_ending();
     }
 
-    /// Ends the protocols retired during the dispatch that just returned, `in_dispatch` (the component's dispatch flag)
-    /// set while they end; passes `result` through.
+    /// Ends the protocols retired during the dispatch that just returned, `owner.*Flag` (the component's dispatch flag)
+    /// set while they end; passes `result` through. `owner.*List` is this list. The read pass pays one load and one
+    /// branch for it, nothing else (Huly QB-1278).
+    template <auto List, auto Flag, typename Owner>
     [[nodiscard]] bool
-    end_dispatch(bool result, bool &in_dispatch) noexcept {
-        if (unlikely(_ending != 0u))
-            end_retired(in_dispatch);
+    end_dispatch(bool result, Owner &owner) noexcept {
+        if (_ending != 0u) [[unlikely]] // the attribute: through qb::unlikely(), clang laid the cold call out inline
+            end_retired<List, Flag>(owner);
         return result;
     }
 };
