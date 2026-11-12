@@ -205,6 +205,70 @@ TEST_F(CloseAfterPeer, APeerThatFillsThePipeAndStopsIsReadToItsEnd) {
     EXPECT_EQ(closing(), 0u);
 }
 
+// A STANDALONE object's close_after_deliver() ends in dispose(), like its disconnect(): no server keeps it for a linger
+// on the io itself, so once its output is delivered its descriptor goes to the loop and the close takes the closer's
+// byte budget. (A server SESSION's close_after_deliver() lingers on the io, bounded in time alone: the upload it
+// answers early may be larger than any budget -- session-close-after-peer.cpp.) Against a peer that never stops
+// writing, the object's close is cut at the budget, not at its linger() of 20 s; against a peer that had bytes on
+// their way and stops when it reads our EOF, the peer reads our last bytes, then EOF -- no reset, which on Windows
+// would have destroyed them -- and the close ends when the peer closes.
+TEST_F(CloseAfterPeer, AStandaloneObjectsCloseAfterDeliverIsCutAtTheByteBudgetNotAtItsLinger) {
+    const std::size_t budget = qb::io::async::detail::closing_socket_byte_budget();
+    {
+        SCOPED_TRACE("a peer that never stops writing");
+        Client client;
+        Pair   pair;
+        ASSERT_NO_FATAL_FAILURE(connect_pair(client, pair));
+        client.set_linger(20s);
+        client.publish(LAST);
+        client.close_after_deliver();
+        ASSERT_TRUE(pump_until_disposed(client)) << "a standalone object's close_after_deliver() did not dispose once its output was delivered";
+        EXPECT_FALSE(client.transport().is_open()) << "the object kept the descriptor: it lingers on the io itself, as a session does";
+        ASSERT_EQ(closing(), 1u) << "the peer is still open: one socket is closing after it";
+
+        const Flood flood = write_without_reading(pair.peer, 10000ms);
+        EXPECT_TRUE(flood.write_failed) << "a peer that never stops writing was read past the budget, towards linger(): " << flood.accepted
+                                        << " octets accepted in 10 s";
+        EXPECT_GE(flood.accepted, budget) << "the peer was cut before the budget";
+        EXPECT_LE(flood.accepted, budget + (std::size_t{16} << 20)) << "far more than the budget and the socket buffers was taken";
+        EXPECT_TRUE(pump_while_not([] { return closing() == 0u; }));
+    }
+    {
+        SCOPED_TRACE("a peer that stops when it reads our EOF");
+        Client client;
+        Pair   pair;
+        ASSERT_NO_FATAL_FAILURE(connect_pair(client, pair));
+        client.set_linger(20s);
+        client.publish(LAST);
+        client.close_after_deliver();
+        ASSERT_TRUE(pump_until_disposed(client));
+        // The peer has bytes on their way when it meets our close: written with no loop pass of ours, far under the
+        // budget. A close with them unread would be a reset, and on Windows the peer would lose our last bytes.
+        pair.peer.set_nonblocking(true);
+        const std::vector<char> chunk(64 * 1024, 'p');
+        std::size_t             sent = 0;
+        for (int blocked = 0; blocked < 50 && sent < (std::size_t{1} << 20);) {
+            const int n = pair.peer.write(chunk.data(), chunk.size());
+            if (n > 0) {
+                sent += static_cast<std::size_t>(n);
+                blocked = 0;
+            } else {
+                ASSERT_TRUE(n == 0 || qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
+                    << "the peer's writes failed before any loop pass";
+                ++blocked;
+                std::this_thread::sleep_for(1ms);
+            }
+        }
+        ASSERT_GT(sent, 4096u) << "the pipe took nothing";
+        const Read got = read_all(pair.peer, 2000ms); // pumps the loop: it reads and drops what the peer sent
+        EXPECT_EQ(got.received, LAST) << "the peer did not read the object's last bytes (it had sent " << sent << " octets)";
+        EXPECT_EQ(got.end, "EOF") << "the peer did not read a clean end after them";
+        EXPECT_EQ(closing(), 1u) << "the peer has not closed: the loop still holds the descriptor, within linger()";
+        pair.peer.close();
+        EXPECT_TRUE(pump_while_not([] { return closing() == 0u; })) << "the peer closed: the close must end at once, not at linger()";
+    }
+}
+
 // The common case: the peer closes when it reads our EOF. Nothing may wait for the bound.
 TEST_F(CloseAfterPeer, APeerThatClosesOnOurEofEndsTheCloseAtOnce) {
     Client client;
