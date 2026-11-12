@@ -619,7 +619,7 @@ private:
     ev::async _wake;
     ev::timer _park_cap;
     bool      _wake_armed      = false;
-    bool      _scheduler_dying = false; ///< `reset_coro_scheduler()` is destroying the scheduler: a nested reset is a no-op
+    bool      _scheduler_dying = false; ///< a reset or a `recycle()` is busy with its frames: a nested one is a no-op
 
     // ---- The pass without the loop, its fields (see the block above `_timer_due`). Declared LAST
     //      on purpose: `has_work()` reads `_deferred` and `_coro_scheduler` on every pass of every
@@ -1141,7 +1141,10 @@ public:
         for (unsigned pass = 0;;) {
             clear();
             QB_LISTENER_TRACE("~listener() about to reset _coro_scheduler");
-            reset_coro_scheduler(); // leaves no scheduler: one a destructor asks for meanwhile is the dying one
+            // Leaves no scheduler: one a destructor asks for meanwhile is the dying one. Not `reset_coro_scheduler()`:
+            // the listener goes whatever is executing, and a scheduler one of whose coroutines is abandons by itself.
+            if (_coro_scheduler && !_scheduler_dying)
+                _destroy_coro_scheduler();
             if (!_registered_head && _deferred.empty()) [[likely]]
                 break;
             if (++pass == kMaxTeardownPasses) [[unlikely]] { // sixteen passes did not end it
@@ -1702,8 +1705,22 @@ public:
     recycle_coro_scheduler() {
         if (detail::is_gone_thread_listener(this)) [[unlikely]]
             return;
-        if (_coro_scheduler)
-            _coro_scheduler->recycle();
+        if (_scheduler_dying || !_coro_scheduler)
+            return;
+        // A coroutine local it destroys may ask for a reset from its destructor: served, it freed the scheduler under
+        // its own `recycle()`. It finds the scheduler busy with its own frames, as during a reset, and does nothing.
+        struct Busy {
+            bool &flag;
+            explicit Busy(bool &f) noexcept
+                : flag(f) {
+                flag = true;
+            }
+            ~Busy() {
+                flag = false;
+            }
+        };
+        const Busy busy{_scheduler_dying};
+        _coro_scheduler->recycle();
     }
 
     /**
@@ -1711,6 +1728,12 @@ public:
      *        then the scheduler, and clears the thread-local current pointer if it names that scheduler -- another
      *        listener's stays bound; a frame it does not own -- a task driven by hand -- is its task's (Huly QB-1220).
      * The next call to coro_scheduler() will create a new scheduler. Use in test TearDown.
+     * @note Asked while one of that scheduler's coroutines is executing -- from a coroutine body its drain resumed,
+     *       or one qb-core resumed inline -- it does NOTHING and says so on one line on `stderr`. Under a drain the
+     *       reset freed the scheduler under its own `run_ready()`, which went on reading it; under an inline resume
+     *       it abandoned every coroutine the scheduler owned, the asking one's root included (Huly QB-1246). The
+     *       scheduler lives on; leave the coroutine first. Asked from a destructor that a reset or a `recycle()` is
+     *       running, it does nothing either, silently: the scheduler is already busy with its own frames.
      */
     inline void
     reset_coro_scheduler() {
@@ -1719,6 +1742,18 @@ public:
         QB_LISTENER_TRACE("reset_coro_scheduler() begin has_scheduler=%d", _coro_scheduler != nullptr);
         if (!_coro_scheduler || _scheduler_dying)
             return;
+        if (detail::resuming_one_of_its_own(*_coro_scheduler)) [[unlikely]] {
+            detail::report_refused_scheduler_reset(_coro_scheduler.get());
+            return;
+        }
+        _destroy_coro_scheduler();
+    }
+
+private:
+    // The scheduler's destruction, unasked: what `reset_coro_scheduler()` does once it may, and what `~listener`
+    // does whatever is executing.
+    void
+    _destroy_coro_scheduler() {
         // Destroyed while it is still this listener's scheduler, still bound, still named by the thread's record:
         // what its coroutines' destructors wake, spawn or clean up finds IT -- and is destroyed with it, by its
         // own teardown passes -- instead of a scheduler built in its place half-way through. Its destructor
@@ -1734,6 +1769,7 @@ public:
         QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
 
+public:
     /**
      * @brief Time this loop's watcher dispatch: the callbacks one libev iteration runs -- sockets,
      *        timers, signals, the cross-thread wake -- each iteration one span, into

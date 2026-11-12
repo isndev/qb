@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1875-1878`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1911-1914`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -102,7 +102,7 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1895`).
+  (`src/qb/io/async/listener.h:1931`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
   `run_for()` (`src/qb/io/async/coroutine/utils.h:294`, `:228`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
@@ -111,7 +111,7 @@ registry, or as a member — never relocate them.
   (`src/qb/io/async/coroutine/utils.h:297`, `:229`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself makes a
   nested drain a no-op: it resumes nothing and returns `0`
-  (`src/qb/io/async/coroutine/scheduler.h:889-891`). That is what the member
+  (`src/qb/io/async/coroutine/scheduler.h:895-897`). That is what the member
   `listener::run()` meets when it is nested inside a drain — the library
   drains `Redis::await()` and `Transaction::await()` run one from a coroutine
   body: the pass runs its watchers and deferred callbacks and leaves the
@@ -128,7 +128,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1958-1961`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1994-1997`).
 
 ---
 
@@ -361,7 +361,7 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:204-208`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:209-213`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
 - A thread's scheduler is its `listener::current` loop's, created on first use:
@@ -370,7 +370,7 @@ with I/O lifetime are:
   is bound, so a waiter queued before anything bound a scheduler is drained by
   that loop. `schedule_via_current()` used to assert in debug and drop the
   handle in release, and `current()` to create a private scheduler no loop pumped
-  (`src/qb/io/async/coroutine/scheduler.h:1003-1007`, `:1348-1358`).
+  (`src/qb/io/async/coroutine/scheduler.h:1009-1013`, `:1354-1364`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -389,11 +389,11 @@ with I/O lifetime are:
   QB-1246).
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
   even if the original `task` object is destroyed
-  (`src/qb/io/async/coroutine/scheduler.h:594-609`). Pass a callable to `spawn`
+  (`src/qb/io/async/coroutine/scheduler.h:600-615`). Pass a callable to `spawn`
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`src/qb/io/async/coroutine/scheduler.h:748-754`).
+  (`src/qb/io/async/coroutine/scheduler.h:754-760`).
 
 ---
 

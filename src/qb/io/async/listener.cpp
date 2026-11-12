@@ -76,4 +76,18 @@ detail::refuse_after_thread_loop(char const *const request) noexcept {
     std::terminate();
 }
 
+// The one line of a `listener::reset_coro_scheduler()` asked while one of that scheduler's coroutines is executing.
+// `fputs`, like the named stop above: a reset is asked from anywhere, a static destructor included.
+void
+detail::report_refused_scheduler_reset(void const *const scheduler) noexcept {
+    char line[320];
+    std::snprintf(line, sizeof line,
+                  "WARNING: qb listener::reset_coro_scheduler() was asked from inside one of its scheduler's own "
+                  "coroutines (scheduler %p) -- IGNORED, nothing is reset: one of them is executing. Leave the "
+                  "coroutine before its scheduler is reset\n",
+                  scheduler);
+    std::fputs(line, stderr);
+    std::fflush(stderr);
+}
+
 } // namespace qb::io::async

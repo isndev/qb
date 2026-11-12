@@ -546,7 +546,7 @@ policy.
   missed every root parked on an awaiter that registers nothing. It now abandons -- destroying nothing, parked,
   queued and completed frames alike -- when it is destroyed after its thread's `listener::current` (static storage,
   a thread_local built before the listener), on another thread than the one that built it, from inside one of its
-  own coroutines, or still owns coroutines after the sixteenth pass (those only). The WARNING line on `qb::io::cerr` names the
+  own coroutines, or still owns coroutines after the sixteenth pass (those only). The WARNING line on stderr names the
   order, and `abandoned_coroutine_frames_total()` -- the name is kept -- counts the coroutines the scheduler owned
   and could not destroy, a root once whatever it awaits. `report_abandoned_coroutine_frames()` takes the order as a
   third argument (`coroutine_abandon_reason`). `recycle()` and `destroy_all_suspended()` do nothing in those
@@ -610,7 +610,7 @@ policy.
 - **`~listener` ends with nothing registered and no scheduler (Huly QB-1246).** It ran `clear()`, then destroyed the
   scheduler's coroutines, once: what those destructions registered -- an `async::callback` posted by a coroutine
   local's destructor -- stayed on a loop about to be destroyed, never destroyed, its descriptor held until the
-  process ended. It now repeats both, sixteen passes at most, and `reset_coro_scheduler()` destroys the scheduler
+  process ended. It now repeats both, sixteen passes at most, and the scheduler is destroyed
   while it is still the listener's, so what its coroutines' destructors spawn or wake is destroyed with it.
 - **qev: `ev_loop_destroy` detaches every watcher still started on the loop (Huly QB-1246).** qb's copy of the loop
   and qev change together (22 files byte-identical). A watcher left on a destroyed loop reads inactive and not
@@ -1652,6 +1652,23 @@ policy.
 - **The select backend passes no null pointer to `memcpy` while no descriptor is watched (Huly QB-1246).**
   UndefinedBehaviorSanitizer stopped every program at its first loop pass under `QB_EV_BACKEND=select`
   (`ev_select.c`). qb's per-backend lane runs epoll and io_uring, so no lane saw it.
+- **`listener::reset_coro_scheduler()` asked from one of the scheduler's own coroutines does nothing and says so (Huly
+  QB-1246).** Called from a coroutine body its scheduler's drain resumed, it deleted the scheduler under its own
+  `run_ready()`, which went on reading it: a heap-use-after-free, in every release that has the function. Called from
+  a coroutine qb-core resumed inline -- an `ask` continuation, an actor's `onInit()` -- it abandoned every coroutine
+  the scheduler owned, its own root included. It now leaves the scheduler in place and prints one line on stderr
+  (`listener::reset_coro_scheduler() was asked from inside one of its scheduler's own coroutines ... IGNORED`); reset
+  it once the coroutine has returned. Asked from a coroutine local's destructor while `recycle_coro_scheduler()` --
+  the end of a `VirtualCore` -- was destroying that coroutine, it freed the scheduler under its own `recycle()`; it
+  does nothing there either, silently, as it already did inside a reset. `~listener` still ends its scheduler whatever
+  is executing, which is how `exit()` in a coroutine body abandons. Witnesses:
+  `qb-io-test-unit-scheduler-teardown-orders`, a child process for the first and in process for the recycle.
+- **The line of an abandoned scheduler is written straight to stderr (Huly QB-1246).** It went through
+  `qb::io::cerr()`, whose mutex has static storage, then `std::cerr`; since this train the line is printed above all
+  among the destructors of the objects with static storage -- a scheduler destroyed after its thread's loop -- where
+  neither is sure to be there any more. It is one preformatted line written with `fputs`, in every order, as the
+  named stop is: no lock of qb's, no C++ stream, no allocation. A program that swapped `std::cerr`'s buffer no longer captures
+  that line; the process's stderr carries it.
 
 ### Documentation
 

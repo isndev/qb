@@ -423,7 +423,7 @@ The correct primitive for "continue **after the current event handler returns**,
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:1949 (qb::io::async::defer), :1410 (listener::defer)
+// src: qb/src/qb/io/async/listener.h:1985 (qb::io::async::defer), :1413 (listener::defer)
 // This connection is owned by std::shared_ptr and derives from
 // std::enable_shared_from_this<Connection>.
 void on(event::disconnected const &) {

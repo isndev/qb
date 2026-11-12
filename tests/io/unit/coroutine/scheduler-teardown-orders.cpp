@@ -34,6 +34,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <future>
+#include <iostream>
+#include <streambuf>
 #include <thread>
 #include <utility>
 
@@ -266,6 +268,78 @@ destroy_all_suspended_is_asked_after_the_loop() {
     sched.run_ready();
     CoroutineScheduler::set_current(nullptr);
     std::exit(3); // the thread-locals, then the statics: the judge decides the exit code
+}
+
+// ---- The abandon line does not go through std::cerr ----------------------------------------------------------------
+
+/// Takes what it is given and prints nothing: once `std::cerr` writes into it, a line that goes through `std::cerr`
+/// -- `qb::io::cerr()` does -- never reaches the process's stderr.
+struct swallowing_buf final : std::streambuf {
+    int_type
+    overflow(int_type const c) override {
+        return traits_type::not_eof(c);
+    }
+    std::streamsize
+    xsputn(char const *, std::streamsize const n) override {
+        return n;
+    }
+};
+
+/// The order of `two_static_schedulers_outlive_the_loop()`, one scheduler, with `std::cerr` swallowed first.
+[[noreturn]] void
+a_static_scheduler_outlives_the_loop_with_cerr_swallowed() {
+    listener::current.clear();
+    g_tally0 = abandoned_coroutine_frames_total();
+    std::atexit(judge_two_schedulers);   // BEFORE the statics below: it runs after their destructors
+    std::cerr.rdbuf(new swallowing_buf); // never restored, never freed: it outlives every destructor of the process
+    static channel<int>       ch;
+    static CoroutineScheduler sched;
+    CoroutineScheduler::set_current(&sched);
+    sched.spawn(recv_for_ever(ch));
+    sched.spawn(park_registered_for_ever());
+    sched.run_ready();
+    CoroutineScheduler::set_current(nullptr);
+    std::exit(3); // the thread-locals, then the statics: the judge decides the exit code
+}
+
+// ---- reset_coro_scheduler() asked from one of the scheduler's own coroutines ---------------------------------------
+
+int g_reached_the_reset = 0; ///< the coroutine came back from `reset_coro_scheduler()`
+int g_still_current     = 0; ///< ... and the scheduler was still the thread's current one there
+int g_finished          = 0; ///< ... and it came back from the await after it
+
+/// Resets the thread's scheduler from its own body -- under the drain that resumed it -- then awaits again.
+task<void>
+resets_its_scheduler_then_awaits(channel<int> &ch) {
+    counted_local             local;
+    CoroutineScheduler *const mine = CoroutineScheduler::current_ptr();
+    listener::current.reset_coro_scheduler();
+    ++g_reached_the_reset;
+    // Not an address compared after the fact -- a scheduler built in its place may reuse it: a reset that was served
+    // unbound the current scheduler.
+    g_still_current = mine != nullptr && CoroutineScheduler::current_ptr() == mine ? 1 : 0;
+    (void) co_await ch.recv(); // on the scheduler that must still be there
+    ++g_finished;
+}
+
+/// The thread's scheduler, asked to reset itself by a coroutine it is resuming.
+[[noreturn]] void
+a_coroutine_resets_the_scheduler_that_resumed_it() {
+    listener::current.clear();
+    static channel<int> ch; // outlives the frames: the child ends in `std::_Exit`
+    CoroutineScheduler &sched = listener::current.coro_scheduler();
+    g_tally0                  = abandoned_coroutine_frames_total();
+    sched.spawn(resets_its_scheduler_then_awaits(ch));
+    (void) sched.run_ready(); // the coroutine runs to its await: the reset is asked under this drain
+    const bool same = listener::current.has_coro_scheduler() && &listener::current.coro_scheduler() == &sched;
+    (void) ch.try_send(1);
+    if (same)
+        (void) sched.run_ready(); // the coroutine ends: its frame is destroyed, its local with it
+    std::fprintf(stderr,
+                 "judge: back from the reset %d, the scheduler still current %d and the listener's %d, the coroutine finished %d, "
+                 "coroutine locals destroyed %d (1 expected), tally moved by %zu (0 expected)\n",
+                 g_reached_the_reset, g_still_current, same ? 1 : 0, g_finished, g_locals_destroyed, tally_moved());
+    end_child(g_reached_the_reset == 1 && g_still_current == 1 && same && g_finished == 1 && g_locals_destroyed == 1 && tally_moved() == 0);
 }
 
 #if !defined(_WIN32)
@@ -735,6 +809,32 @@ TEST(SchedulerTeardownOrdersDeathTest, DestroyAllSuspendedAskedAfterTheLoopDestr
     EXPECT_EXIT(destroy_all_suspended_is_asked_after_the_loop(), ::testing::ExitedWithCode(0), "destroyed AFTER its thread's event loop");
 }
 
+/**
+ * @test The abandon line is written to the process's stderr without going through `std::cerr`: with `std::cerr`
+ *       swallowed for the rest of the process, a scheduler destroyed after its thread's loop still says so there,
+ *       among the destructors of the objects with static storage. Until the fix the line went through
+ *       `qb::io::cerr()` -- a mutex with static storage, then `std::cerr` -- and was swallowed: the child printed its
+ *       verdict and no line.
+ */
+TEST(SchedulerTeardownOrdersDeathTest, TheAbandonLineReachesStderrWithoutGoingThroughCerr) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(a_static_scheduler_outlives_the_loop_with_cerr_swallowed(), ::testing::ExitedWithCode(0),
+                "destroyed AFTER its thread's event loop");
+}
+
+/**
+ * @test `listener::reset_coro_scheduler()` asked by a coroutine the scheduler is resuming -- its own drain is on the
+ *       stack -- does nothing and says so on one line: the scheduler is the same object afterwards, the coroutine
+ *       awaits again on it, is resumed and ends, and nothing is abandoned. Until the fix the reset freed the
+ *       scheduler under its own `run_ready()`, which went on reading it: a heap-use-after-free under
+ *       AddressSanitizer, and no line in any build.
+ */
+TEST(SchedulerTeardownOrdersDeathTest, AResetAskedByACoroutineTheSchedulerIsResumingDoesNothingAndSaysSo) {
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_EXIT(a_coroutine_resets_the_scheduler_that_resumed_it(), ::testing::ExitedWithCode(0),
+                "reset_coro_scheduler\\(\\) was asked from inside one of its scheduler's own coroutines");
+}
+
 #if !defined(_WIN32)
 /**
  * @test T2, the thread_local order (Linux and macOS: MSVC builds every thread's `listener::current` at the thread's
@@ -881,6 +981,39 @@ TEST(SchedulerTeardownOrdersDeathTest, NeverRunCoroutinesWhoseParametersRespawnE
     GTEST_FLAG_SET(death_test_style, "threadsafe");
     EXPECT_EXIT(never_run_coroutines_respawn_on_the_scheduler_being_reset(), ::testing::ExitedWithCode(0),
                 "destroyed while its coroutines' destructors kept spawning on it");
+}
+
+/**
+ * @test The same local destroyed by `listener::recycle_coro_scheduler()` -- what a `VirtualCore` runs at its end: the
+ *       reset its destructor asks for finds the scheduler busy with its own frames and does nothing; the recycle
+ *       completes, the scheduler is still the listener's and the current one, and a reset asked afterwards is
+ *       served. Until the fix the nested reset freed the scheduler under its own `recycle()`: a heap-use-after-free
+ *       under AddressSanitizer; in a Release build the freed scheduler is read in silence and the listener is left
+ *       without one.
+ */
+TEST(SchedulerTeardownOrders, AResetFromInsideARecycleDoesNothing) {
+    listener::current.clear();
+    g_resets_returned        = 0;
+    g_nested_reset_locals    = 0;
+    const std::size_t tally0 = abandoned_coroutine_frames_total();
+    g_nested_reset_live0     = detail::CoroutineFrameAllocator::live_frames;
+    {
+        channel<int> ch; // outlives the frame parked on it
+        coro_scheduler().spawn(parked_resetting(ch));
+        (void) coro_scheduler().run_ready(); // parks on recv()
+        ASSERT_EQ(g_nested_reset_locals, 0) << "the coroutine did not park";
+        CoroutineScheduler *const sched = &coro_scheduler();
+        listener::current.recycle_coro_scheduler(); // destroys the frame, whose local asks for a reset
+        EXPECT_EQ(g_nested_reset_locals, 1) << "the frame was not destroyed exactly once";
+        EXPECT_EQ(g_resets_returned, 1) << "the nested reset did not return";
+        EXPECT_TRUE(listener::current.has_coro_scheduler()) << "the reset asked from inside the recycle was served";
+        EXPECT_EQ(CoroutineScheduler::current_ptr(), sched) << "the recycled scheduler is no longer the current one";
+    }
+    EXPECT_EQ(detail::CoroutineFrameAllocator::live_frames, g_nested_reset_live0) << "a frame was left behind";
+    EXPECT_EQ(abandoned_coroutine_frames_total(), tally0) << "the recycle reported an abandon";
+    listener::current.reset_coro_scheduler(); // asked from outside any teardown: served
+    EXPECT_FALSE(listener::current.has_coro_scheduler());
+    listener::current.clear();
 }
 
 /**

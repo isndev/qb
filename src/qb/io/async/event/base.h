@@ -141,6 +141,12 @@ namespace event {
  * corresponding libev event watcher (e.g. `ev::io`, `ev::timer`) and holds a pointer
  * to the `IRegisteredKernelEvent` interface for dispatching.
  *
+ * @note After its thread's `listener::current` is destroyed, an event -- and the io object, the timer or the
+ *       timeout that owns it -- may only be DESTROYED, never used: its destructor finds a watcher the loop detached
+ *       and touches nothing, but starting or restarting it there (`setTimeout()` from the destructor of an object
+ *       with static storage) reads the loop that is gone. No door guards that: a test on every watcher start would
+ *       be paid by every timer of every program (Huly QB-1246).
+ *
  * @tparam _EV_EVENT The libev event watcher type (e.g. `ev::io`, `ev::timer`) being wrapped.
  */
 template <typename _EV_EVENT>
