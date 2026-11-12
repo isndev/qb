@@ -274,7 +274,10 @@ registry, or as a member — never relocate them.
   16 MiB of each (`src/qb/io/async/lingering_close.cpp:58`); a TCP
   connect or an `accept()` the system refuses for lack of descriptors closes
   them all at once and is made again
-  (`src/qb/io/async/lingering_close.cpp:228-234`).
+  (`src/qb/io/async/lingering_close.cpp:228-234`) — except an `accept()`
+  on macOS, where the system has already closed the connection it
+  refused: its error is returned, and the next connection finds the
+  descriptors.
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
   (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody

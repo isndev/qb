@@ -67,6 +67,17 @@ namespace close_after_peer_posix_test {
 
 using namespace qb::io::test::close_after_peer;
 
+/// Whether a connection an accept() refused for lack of descriptors is still in the backlog afterwards. Linux keeps
+/// it; XNU takes it off the queue before it allocates the descriptor and closes it when that fails (accept_nocancel(),
+/// bsd/kern/uipc_syscalls.c). qb-io accepts again only where it stays (tcp/listener.cpp): the two accept cases
+/// below assert what each system does, and fail on one that does the other.
+constexpr bool kRefusedConnectionStaysQueued =
+#if defined(__APPLE__)
+    false;
+#else
+    true;
+#endif
+
 /// The descriptors this process has open, by number (`/dev/fd`: Linux and macOS), the listing's own left out.
 std::vector<int>
 open_descriptor_numbers() {
@@ -368,23 +379,43 @@ TEST_F(CloseAfterPeerPosix, AnAcceptorAtTheDescriptorLimitTakesTheDescriptorsOfT
     qb::io::tcp::socket waiting; // connected by the system, in the acceptor's backlog: no loop pass has run since
     ASSERT_EQ(waiting.connect_v4("127.0.0.1", port), qb::io::SocketStatus::Done);
 
-    int passes = 0;
+    int                 passes         = 0;
+    std::size_t         closing_after  = 99;
+    bool                next_connected = false;
+    qb::io::tcp::socket next; // where the system drops the refused connection: the one made after it
     {
         const DescriptorLimit limit(static_cast<rlim_t>(highest_descriptor() + 1 + 8));
         ASSERT_TRUE(limit.set()) << "could not lower the descriptor limit";
         const Hogs hogs;
         ASSERT_EQ(hogs.error(), EMFILE) << "the descriptor table was not filled";
         const auto deadline = steady::now() + 2s;
-        while (server.session_count() == 1u && steady::now() < deadline) {
+        // Until the acceptor has taken the connection -- or, where the system dropped it, has released its closing sockets.
+        while (server.session_count() == 1u && (kRefusedConnectionStaysQueued || closing() != 0u) && steady::now() < deadline) {
             qb::io::async::run(EVRUN_NOWAIT);
             ++passes;
             std::this_thread::sleep_for(1ms);
         }
+        closing_after = closing();
+        if (!kRefusedConnectionStaysQueued) {
+            // The descriptors the closing sockets gave back serve the next connection, still at the limit.
+            next_connected       = next.connect_v4("127.0.0.1", port) == qb::io::SocketStatus::Done;
+            const auto next_wait = steady::now() + 2s;
+            while (next_connected && server.session_count() == 1u && steady::now() < next_wait) {
+                qb::io::async::run(EVRUN_NOWAIT);
+                std::this_thread::sleep_for(1ms);
+            }
+        }
     }
-    EXPECT_EQ(server.session_count(), 2u) << "the acceptor did not accept within 2 s at the descriptor limit (" << passes
-                                          << " loop passes): it waits for the closes' bound";
-    EXPECT_LE(passes, 10) << "the connection waiting in the backlog took " << passes << " loop passes";
-    EXPECT_EQ(closing(), 0u) << "the closing sockets were not all closed for the accept";
+    EXPECT_EQ(closing_after, 0u) << "the closing sockets were not all closed for the accept";
+    EXPECT_LE(passes, 10) << "the acceptor took " << passes << " loop passes to answer the shortage";
+    if (kRefusedConnectionStaysQueued) {
+        EXPECT_EQ(server.session_count(), 2u) << "the acceptor did not accept within 2 s at the descriptor limit (" << passes
+                                              << " loop passes): it waits for the closes' bound";
+    } else {
+        EXPECT_NE(read_all(waiting, 2000ms, false).end, "open") << "the connection the system refused was not ended by it";
+        EXPECT_TRUE(next_connected) << "no descriptor for the next connection: the closing sockets kept theirs";
+        EXPECT_EQ(server.session_count(), 2u) << "the connection made after the refused one was not accepted at the descriptor limit";
+    }
 }
 
 // The same for the blocking form, accept() with no argument: a connection waiting in the backlog of a plain listener is
@@ -398,19 +429,39 @@ TEST_F(CloseAfterPeerPosix, ABlockingAcceptAtTheDescriptorLimitTakesTheDescripto
 
     qb::io::tcp::socket waiting; // connected by the system, in the listener's backlog
     ASSERT_EQ(waiting.connect_v4("127.0.0.1", listener.local_endpoint().port()), qb::io::SocketStatus::Done);
-    qb::io::tcp::socket accepted;
-    int                 error = 0;
+    qb::io::tcp::socket accepted, next, accepted_next;
+    int                 error          = 0;
+    std::size_t         closing_after  = 99;
+    bool                next_connected = false;
     {
         const DescriptorLimit limit(static_cast<rlim_t>(highest_descriptor() + 1 + 8));
         ASSERT_TRUE(limit.set()) << "could not lower the descriptor limit";
         const Hogs hogs;
         ASSERT_EQ(hogs.error(), EMFILE) << "the descriptor table was not filled";
-        accepted = listener.accept();
-        error    = errno;
+        accepted      = listener.accept();
+        error         = errno;
+        closing_after = closing();
+        if (!kRefusedConnectionStaysQueued && !accepted.is_open()) {
+            // The system dropped `waiting`: the accept reported the shortage, and the descriptors the closing sockets
+            // gave back serve the next connection, still at the limit. (Made only once the first accept has
+            // returned: an accept made again there would wait for this very connection.)
+            next_connected = next.connect_v4("127.0.0.1", listener.local_endpoint().port()) == qb::io::SocketStatus::Done;
+            if (next_connected)
+                accepted_next = listener.accept();
+        }
     }
-    EXPECT_TRUE(accepted.is_open()) << "an accept at the descriptor limit failed (errno " << error
-                                    << "): the closing sockets kept their descriptors";
-    EXPECT_EQ(closing(), 0u) << "the closing sockets were not all closed for the accept";
+    EXPECT_EQ(closing_after, 0u) << "the closing sockets were not all closed for the accept";
+    if (kRefusedConnectionStaysQueued) {
+        EXPECT_TRUE(accepted.is_open()) << "an accept at the descriptor limit failed (errno " << error
+                                        << "): the closing sockets kept their descriptors";
+    } else {
+        EXPECT_FALSE(accepted.is_open()) << "this system kept the refused connection in the backlog: qb-io must accept it again here";
+        EXPECT_TRUE(qb::io::async::detail::out_of_descriptors(error))
+            << "the refused accept did not report the shortage (errno " << error << ")";
+        EXPECT_NE(read_all(waiting, 2000ms, false).end, "open") << "the connection the system refused was not ended by it";
+        EXPECT_TRUE(next_connected) << "no descriptor for the next connection: the closing sockets kept theirs";
+        EXPECT_TRUE(accepted_next.is_open()) << "the connection made after the refused one was not accepted at the descriptor limit";
+    }
 }
 
 // What "the system has no descriptor left" reads as: the process's limit and the system's, and nothing else.

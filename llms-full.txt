@@ -972,7 +972,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
   loop: a thread that stops running it keeps the descriptor until a pass, `listener::clear()` or its end. At most 64
   per loop (one more closes the oldest), 16 MiB read per socket (a standalone object's `close_after_deliver()` included); a TCP connect or `accept()` refused for lack of
-  descriptors (`EMFILE`, `ENFILE`) closes them all and is made again. A TLS socket detaches its `SSL` object from the
+  descriptors (`EMFILE`, `ENFILE`) closes them all and is made again (not an `accept()` on macOS, which has dropped
+  the refused connection: its error is returned). A TLS socket detaches its `SSL` object from the
   descriptor it gives away: a `write()` on the transport afterwards fails. To let a peer that is STILL SENDING read
   your last bytes, a session calls `close_after_deliver()` (time-bounded only); `disconnect()` is the abort.
   _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1048-1052)_

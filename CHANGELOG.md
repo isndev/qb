@@ -279,7 +279,9 @@ policy.
   -- what a peer may have had on its way when it reads the EOF: the two socket buffers; measured, a budget of 1 MiB
   resets a peer that had only filled the pipe and stopped.
   When the system refuses a descriptor to a TCP connect or an `accept()` (`EMFILE`, `ENFILE`), the thread's closing
-  sockets are closed at once, oldest first, and the call is made again.
+  sockets are closed at once, oldest first, and the call is made again -- an `accept()` only where the refused
+  connection is still in the backlog (Linux, Windows): macOS has taken it off the queue and closed it by then, so
+  there the failure is returned as it came, and the next connection finds the descriptors.
   Unchanged: an object destroyed while still connected closes at once; an acceptor keeps its listening socket and its
   port; a datagram object keeps its socket; a session that lingered through `close_after_deliver()` is closed when
   that linger ends, with no second wait. TLS still sends no close_notify.
