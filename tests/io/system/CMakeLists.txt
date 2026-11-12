@@ -310,3 +310,8 @@ if (QB_IO_EV_TEST_BACKENDS)
     endforeach ()
     qb_status_message("Per-backend ev test matrix ENABLED: [${QB_IO_EV_TEST_BACKENDS}]")
 endif ()
+# SCRATCH (QB-1270 item 3, the converged close design): the witnesses of the three studies, for the macOS run only.
+qb_add_test(MODULE qb-io TIER system NAME dc-close-witness SOURCES tcp/dc-close-witness.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME ch-close-witness SOURCES tcp/ch-close-witness.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+qb_add_test(MODULE qb-io TIER system NAME cv-close-witness SOURCES tcp/cv-close-witness.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+qb_add_test(MODULE qb-io TIER system NAME cv-session-witness SOURCES tcp/cv-session-witness.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)

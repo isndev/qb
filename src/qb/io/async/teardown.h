@@ -26,10 +26,13 @@
 #include <exception>
 #include <type_traits>
 #include <utility>
-#include <qb/io.h>                    /* QB_LOG_WARN */
-#include <qb/io/system/sys__socket.h> /* qb::io::invalid_socket, QB_SD_SEND, ::shutdown */
-#include <qb/utility/branch_hints.h>  /* QB_NOINLINE, QB_COLD */
-#include <qb/utility/type_traits.h>   /* qb::has_disconnect */
+#include <qb/io.h>                          /* QB_LOG_WARN */
+#include <qb/io/async/event/disconnected.h> /* event::disconnect_reason */
+#include <qb/io/async/lingering_close.h>    /* detail::close_after_peer, detail::default_linger */
+#include <qb/io/system/sys__socket.h>       /* qb::io::invalid_socket, QB_SD_SEND, ::shutdown */
+#include <qb/system/time.h>                 /* qb::duration */
+#include <qb/utility/branch_hints.h>        /* QB_NOINLINE, QB_COLD */
+#include <qb/utility/type_traits.h>         /* qb::has_disconnect */
 
 namespace qb::io::async::detail {
 
@@ -65,10 +68,33 @@ run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexcept {
     }
 }
 
+/// The bound that says "this transport is not closed after its peer": a datagram transport, kept as it is.
+inline constexpr qb::duration keep_descriptor{-1};
+
 /**
- * @brief End the transport of a standalone io object's connection, once its watcher is stopped.
+ * @brief The bound of the close of a connection its own side ended (`end_transport`'s `linger`).
+ * @param datagram Whether the transport is a datagram one (`detail::resets_input_per_read`): there is no stream to
+ *                 end, the descriptor is kept as before.
+ * @param reason   The reason the io object ended the connection with. One of the io's own size guards --
+ *                 `message_too_large`, `buffer_overflow` -- closes at once: nothing was said that a reset could
+ *                 destroy, the peer is the one that sent too much or reads too little, and reading it for the bound
+ *                 would serve the flood the guard just refused.
+ * @param linger   The object's own bound (`io<>::linger()`), `default_linger` for one that has none.
+ */
+[[nodiscard]] constexpr qb::duration
+close_bound(bool datagram, int reason, qb::duration linger) noexcept {
+    if (datagram)
+        return keep_descriptor;
+    if (reason == static_cast<int>(event::disconnect_reason::message_too_large)
+        || reason == static_cast<int>(event::disconnect_reason::buffer_overflow))
+        return qb::duration::zero();
+    return linger;
+}
+
+/**
+ * @brief End the transport of an io object's connection, once its watcher is stopped.
  * @details A standalone object -- a client, an acceptor: no server owns it -- keeps its transport for as long
- *          as it lives, and its `dispose()` stopped the watcher and left the transport as it was: after a
+ *          as it lives, and before 3.3 its `dispose()` stopped the watcher and left the transport as it was: after a
  *          `disconnect()`, a framing error or the peer's EOF the connection stayed open until the object
  *          connected again or was destroyed. The peer of a `disconnect()` never saw EOF, so a server kept the
  *          connection and the work it routed for it alive, and a client whose peer hung up stayed in CLOSE_WAIT
@@ -82,22 +108,35 @@ run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexcept {
  *            outright: `disconnect()` when it has one, as `stream::close()` does (the TLS socket clears its
  *            connected state there), then `close()`, which releases the descriptor.
  *          - This object: `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()`.
- *            Only the sending side is shut down: the peer reads EOF once everything queued has left, and
- *            nothing is reset. Closing here would reset a peer whose bytes are still unread: its next send
- *            fails, and on Windows it also drops what it received and has not read yet -- the tail of the very
- *            reply `close_after_deliver()` promised. The descriptor stays with the object, as it did, until its
- *            destruction or its next connection's transport releases it. A listening socket has no sending
- *            side: an acceptor keeps its port until then.
+ *            Closing here would reset a peer whose bytes are still unread: its next send fails, and on Windows it
+ *            also drops what it received and has not read yet -- the tail of the very reply
+ *            `close_after_deliver()` promised. Keeping the half-closed descriptor in the object, as 3.3 did, left
+ *            a peer that kept writing blocked for ever and only postponed the reset to the object's destruction
+ *            or its next connection (Huly QB-1270). So the descriptor leaves the object: a connected stream
+ *            socket goes to the thread's loop, which shuts its sending side down -- the peer reads EOF once
+ *            everything queued has left -- reads and drops what the peer still sends, and closes it on the peer's
+ *            EOF, a socket error, `linger`, or the closer's byte budget (`detail::close_after_peer`). The
+ *            transport is closed for the object from here on (`is_open()` is false, as after a peer-ended
+ *            connection), which is free, destroyed or connected again at once. A `linger` of zero closes at once.
+ *            A listening socket has no sending side and is not handed over: an acceptor keeps its port until its
+ *            destruction. A datagram transport (`keep_descriptor`) and a transport that cannot give its
+ *            descriptor away are shut down for sending and kept, as before.
+ *
+ *          `dispose()` of a server session calls it too, for a session that ended its own connection with nothing
+ *          left to write (`io<>::dispose()`): the server releases the session at once and the loop closes the
+ *          descriptor after the peer, instead of the session's destructor closing it with input unread.
  *
  *          Both are no-ops on a closed socket, so a hook that closes the transport again does nothing. A
  *          transport whose handle is not a socket is not shut down; one without `close()` is not closed.
  *          Out of line and cold, like the hooks around it.
  * @param transport     The object's transport (`Derived.transport()`).
  * @param ended_by_peer Whether the peer's EOF or a socket error ended the connection, rather than this object.
+ * @param linger        For a connection this object ended: how long the loop waits for the peer before it closes
+ *                      (`detail::close_bound`); zero closes at once, `keep_descriptor` keeps the descriptor.
  */
 template <typename Transport>
 QB_NOINLINE QB_COLD void
-end_transport(Transport &transport, bool ended_by_peer) noexcept {
+end_transport(Transport &transport, bool ended_by_peer, qb::duration linger) noexcept {
     if (ended_by_peer) {
         if constexpr (qb::has_disconnect<Transport>)
             static_cast<void>(transport.disconnect());
@@ -110,8 +149,26 @@ end_transport(Transport &transport, bool ended_by_peer) noexcept {
                       { transport.native_handle() } -> std::same_as<handle_type>;
                   }) {
         const handle_type handle = transport.native_handle();
-        if (handle != qb::io::invalid_socket)
+        if (handle == qb::io::invalid_socket)
+            return;
+        // Not a listening socket (`accept()`), and not a transport that cannot give its descriptor away.
+        if constexpr (requires { transport.release_handle(); } && !requires { transport.accept(); }) {
+            if (linger < qb::duration::zero()) {
+                static_cast<void>(::shutdown(handle, QB_SD_SEND)); // kept: the FIN leaves after what is queued
+                return;
+            }
+            // The transport lets go of the descriptor first (a TLS socket detaches its SSL object from it there),
+            // then is closed as the peer-ended path closes it: it finds no descriptor, and the object keeps nothing
+            // that names a number the loop will close and the system hand out again.
+            const handle_type released = transport.release_handle();
+            if constexpr (qb::has_disconnect<Transport>)
+                static_cast<void>(transport.disconnect());
+            if constexpr (requires { transport.close(); })
+                transport.close();
+            close_after_peer(released, linger);
+        } else {
             static_cast<void>(::shutdown(handle, QB_SD_SEND)); // the FIN leaves after what is queued
+        }
     }
 }
 

@@ -262,3 +262,6 @@ qb_add_test(MODULE qb-core TIER system NAME metrics-scrape SOURCES engine/metric
 if(NOT WIN32 AND NOT (APPLE AND QB_BUILD_SHARED_LIBS) AND NOT " ${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_CXX_FLAGS} " MATCHES "static-libstdc|static-libc\\+\\+| -static ")
     qb_add_test(MODULE qb-core TIER system NAME delay-clock SOURCES engine/delay-clock.cpp DEPENDS ${PROJECT_NAME} LABELS init patterns serial)
 endif()
+# SCRATCH (QB-1270 item 3, the converged close design): the actor witnesses, for the macOS run only.
+qb_add_test(MODULE qb-core TIER system NAME dc-actor-witness SOURCES engine/dc-actor-witness.cpp DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-core TIER system NAME ch-actor-witness SOURCES engine/ch-actor-witness.cpp DEPENDS ${PROJECT_NAME})

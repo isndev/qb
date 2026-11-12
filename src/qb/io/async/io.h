@@ -1570,7 +1570,8 @@ protected:
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            detail::end_transport(Derived.transport(), ended_by_peer,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, detail::default_linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -2082,7 +2083,8 @@ protected:
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            detail::end_transport(Derived.transport(), ended_by_peer,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, detail::default_linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -2159,9 +2161,9 @@ class io : public base<io<_Derived>, event::io> {
      *        is unread, which TCP turns into a reset, and a reset can destroy the delivered bytes before the
      *        peer reads them (Windows drops data received and not yet read).
      * @return False when there is nothing to linger for -- a disconnect() since (the `eos` hook may have called
-     *         it), a linger() of zero, a standalone object (its dispose() half-closes and keeps the descriptor,
-     *         `detail::end_transport`), a datagram transport, a socket already gone or reset -- and the caller
-     *         disposes at once, as before.
+     *         it), a linger() of zero, a standalone object (its dispose() gives the descriptor to the loop, which
+     *         closes it after the peer: `detail::end_transport`), a datagram transport, a socket already gone or
+     *         reset -- and the caller disposes at once, as before.
      */
     QB_NOINLINE QB_COLD bool
     begin_linger() noexcept {
@@ -2325,7 +2327,8 @@ public:
      *       `on(event::disconnected&&)` either: on a standalone client `dispose()` stops the watcher as soon as that
      *       handler returns. Both are debug assertions. Clear what the previous connection left with
      *       `reset_for_reconnect()` before installing the next transport (Huly QB-202): `dispose()` has ended the
-     *       previous one -- closed, or shut down for sending (Huly QB-1060).
+     *       previous one -- closed, or handed to the loop that closes it after its peer (Huly QB-1060, QB-1270): the
+     *       object holds no descriptor of the previous connection, and the next one never waits for it.
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
@@ -2722,11 +2725,12 @@ public:
      *            which TCP turns into a reset, and a reset can destroy what was just delivered before the
      *            peer reads it: on Windows it drops data received and not yet read, and everywhere the
      *            peer's next send fails. `set_linger(qb::duration::zero())` restores the immediate close.
-     *          - any other object disposes at once; its transport is half-closed and kept (Huly QB-1060).
+     *          - any other object disposes at once, and its descriptor is closed after the peer all the same: by
+     *            its thread's loop, within linger() (`detail::end_transport`, Huly QB-1270).
      *
      *          `disconnect()` stays an abort: called before or during the linger, it disposes at the next
-     *          dispatch. A TLS session is half-closed at the TCP level, as `detail::end_transport` does:
-     *          no close_notify is sent first.
+     *          dispatch, with what is still queued dropped. A TLS session is half-closed at the TCP level, as
+     *          `detail::end_transport` does: no close_notify is sent first.
      */
     void
     close_after_deliver() noexcept {
@@ -2737,11 +2741,14 @@ public:
     }
 
     /**
-     * @brief Sets the bound of a lingering close: how long a server session that called
-     *        close_after_deliver() waits, once its output is delivered, for its peer to close (Huly QB-1089).
-     * @param bound The longest wait; zero or less closes at once when the output is delivered, as before 3.3.
-     *        The default is 2 s. Set it before close_after_deliver() delivers: a linger in progress keeps
-     *        the bound it began with.
+     * @brief Sets the bound of a close after the peer: how long a server session that called
+     *        close_after_deliver() waits, once its output is delivered, for its peer to close (Huly QB-1089),
+     *        and how long the loop waits for the peer before it closes the descriptor of a connection this
+     *        object ended itself -- a standalone object's, and a session's whose disconnect() found nothing
+     *        left to write (`dispose()`, Huly QB-1270).
+     * @param bound The longest wait; zero or less closes at once -- when the output is delivered, as before
+     *        3.3, and in `dispose()` -- which resets a peer whose bytes are unread. The default is 2 s. Set it
+     *        before the connection ends: a close in progress keeps the bound it began with.
      */
     void
     set_linger(qb::duration bound) noexcept {
@@ -3210,25 +3217,35 @@ protected:
      * @note **Important: Difference between server-associated and standalone clients:**
      *       - **Server-associated clients** (`has_server = true`): Created via `accept()` on a server.
      *         The server manages the lifecycle, so we notify it via `server().disconnected(id())`
-     *         and let the server handle watcher cleanup. No explicit `stop()` is needed here.
+     *         and let the server handle watcher cleanup. A session that ended its own connection with
+     *         everything it had queued written first gives its descriptor to the loop, which closes it after
+     *         the peer within linger() (`detail::end_transport`; its watcher is stopped for that): the session
+     *         is released at once all the same, and its destructor no longer closes a socket whose input is
+     *         unread (Huly QB-1270). Not after a lingering `close_after_deliver()`, not with output still
+     *         queued, not for a size guard, not with a linger() of zero: those close with the session.
      *       - **Standalone clients** (`has_server = false`): Created via `connect()` for outgoing connections.
      *         These manage their own lifecycle, so we explicitly call `_async_event.stop()` to prevent
      *         further events from being processed after disconnection, then end the transport the connection
      *         ended with (`detail::end_transport`), before calling `event::dispose`. It is closed outright when
      *         the peer's EOF or a socket error ended the connection. When this object ended it -- `disconnect()`,
-     *         a framing error, a size guard, the end of `close_after_deliver()` -- only its sending side is shut
-     *         down: the peer reads EOF once everything queued has left and nothing is reset, and the descriptor
-     *         stays until the object's destruction or its next transport. Before 3.3 the transport was left as
-     *         it was: the peer of a `disconnect()` never saw EOF, and a client whose peer hung up stayed in
-     *         CLOSE_WAIT (Huly QB-1060). `on(event::disconnected&&)` still sees the transport as the connection
-     *         left it; one installed from inside that hook is the one ended -- install the next connection's
-     *         after `dispose()` has returned.
+     *         a framing error, the end of `close_after_deliver()` -- the descriptor leaves the object for its
+     *         thread's loop, which shuts the sending side down -- the peer reads EOF once everything queued has
+     *         left, and nothing is reset -- reads and drops what the peer still sends, and closes on its EOF, a
+     *         socket error or linger(); a size guard, or a linger() of zero, closes at once. Either way
+     *         `transport().is_open()` is false from here on, and `on(event::dispose&&)` reads no peer from it:
+     *         read the peer in `on(event::disconnected&&)`. In 3.3 the half-closed descriptor stayed in the
+     *         object until its destruction or its next transport: a peer that kept writing blocked for ever, and
+     *         that later close could reset away what the object had just sent (Huly QB-1270). Before 3.3 the
+     *         transport was left as it was: the peer of a `disconnect()` never saw EOF, and a client whose peer
+     *         hung up stayed in CLOSE_WAIT (Huly QB-1060). `on(event::disconnected&&)` still sees the transport
+     *         as the connection left it; one installed from inside that hook is the one ended -- install the
+     *         next connection's after `dispose()` has returned.
      *
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. The sequence is:
      *       1. `on(event::disconnected&&)` is called if implemented, allowing the actor to handle the disconnection
      *          (e.g., attempt reconnection, notify other actors, or call `kill()` if termination is required).
-     *       2. A standalone client's watcher is stopped and its transport ended (closed, or shut down for sending).
+     *       2. A standalone client's watcher is stopped and its transport ended (closed, or handed to the loop).
      *       3. `on(event::dispose&&)` is called if implemented, providing a final cleanup hook before destruction.
      *       4. The base class destructor unregisters the event watcher from the listener.
      *       Actors should implement `on(event::disconnected&&)` to handle connection loss gracefully.
@@ -3252,6 +3269,8 @@ protected:
         // still ok mean the peer's EOF or a socket error did -- close_after_deliver() ends with a protocol
         // that is not ok (Huly QB-1060).
         [[maybe_unused]] const bool ended_by_peer = !_reason && this->_protocol->ok();
+        // Whether a lingering close_after_deliver() was under way: that connection has had its wait for the peer.
+        [[maybe_unused]] const bool lingered = _lingering;
         end_linger(); // its bound, whatever ended it: the peer, the bound, a disconnect() (Huly QB-1089)
 
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
@@ -3267,6 +3286,24 @@ protected:
         }
 
         if constexpr (_Derived::has_server) {
+            // A session that ended its own connection with everything it had to say written: the server releases
+            // it at once, as before, and its descriptor goes to the loop, which closes it after the peer
+            // (detail::end_transport) -- the session's destructor would close it with the peer's bytes unread, a
+            // reset that on Windows destroys what the peer has not read yet (Huly QB-1270). Not a session that
+            // already waited for its peer (a lingering close_after_deliver(), whatever ended it), not one with
+            // output still queued (it is dropped with the session, as before: a peer that does not read cannot hold
+            // anything), and not when the bound says "at once": set_linger(zero), or a size guard (close_bound).
+            // The watcher is stopped first, as for a standalone object: a session someone still holds must not
+            // watch a number the loop will close and the system hand out again.
+            if constexpr (detail::has_socket_transport<_Derived> && !detail::resets_input_per_read<_Derived>) {
+                if (!ended_by_peer && !lingered && Derived.pendingWrite() == 0) {
+                    const qb::duration bound = detail::close_bound(false, _reason, _linger);
+                    if (bound > qb::duration::zero()) {
+                        this->_async_event.stop();
+                        detail::end_transport(Derived.transport(), false, bound);
+                    }
+                }
+            }
             // Server-associated client: server manages lifecycle, just notify it
             Derived.server().disconnected(Derived.id());
         } else {
@@ -3274,8 +3311,10 @@ protected:
             // This is critical for clients created via connect() to avoid processing events after disconnect
             this->_async_event.stop(); // Stop the watcher to prevent further events
             // ...then end the transport the connection ended with: nothing else would until the object
-            // connects again or dies, and the peer would never see EOF (Huly QB-1060).
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            // connects again or dies, and the peer would never see EOF (Huly QB-1060). A connection this object
+            // ended leaves it for the loop, which closes it after the peer within linger() (Huly QB-1270).
+            detail::end_transport(Derived.transport(), ended_by_peer,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, _linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
