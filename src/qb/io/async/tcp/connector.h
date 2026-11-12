@@ -213,7 +213,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
      *          is torn down (`listener::clear()` / `~listener`) while a connect is still in
      *          flight, clear() invokes this to break the self-hold that would otherwise orphan
      *          the connector, its captured completion callback, and the half-open socket fd.
-     *          The watcher is already detached by clear(); unregisterEvent frees its wrapper via
+     *          The watcher is already detached by clear(); listener::release() frees its wrapper via
      *          the `_detached_by_clear` path, and dropping the self-ref reclaims the connector.
      * @private
      */
@@ -221,7 +221,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
     on_listener_teardown(void *p) noexcept {
         auto *self = static_cast<connector *>(p);
         if (self->io_iface_ != nullptr) {
-            listener::current.unregisterEvent(self->io_iface_);
+            listener::release(self->io_iface_);
             self->io_iface_ = nullptr; // null before the connector is destroyed below
         }
         self->self_hold_.reset(); // last strong ref -> reclaim the connector + its callback
@@ -291,7 +291,7 @@ class connector : public std::enable_shared_from_this<connector<Socket_, Func_, 
         deadline_armed_           = true;
         const qb::duration remain = deadline_ - qb::mono_now();
         if (remain <= qb::duration::zero()) { // past already when the attempt arms it (Huly QB-1200): it fails now, from the loop
-            listener::current.unregisterEvent(std::exchange(io_iface_, nullptr)); // no completion can follow the deadline's
+            listener::release(std::exchange(io_iface_, nullptr)); // no completion can follow the deadline's
             return deliver_failure_deferred();
         }
         qb::io::async::callback(
@@ -553,7 +553,7 @@ public:
         completed_         = true;
         ++attempt_; // already-created weak attempt timers must not deliver later
         if (auto *interface = std::exchange(io_iface_, nullptr))
-            listener::current.unregisterEvent(interface);
+            listener::release(interface);
         // Also clean up after a throwing inline completion. A socket moved to
         // that completion is empty here and must remain owned by its recipient.
         socket_.disconnect();
@@ -584,7 +584,7 @@ public:
             }
             switch (finalize_transport_connect()) {
                 case finalize_result::done:
-                    listener::current.unregisterEvent(event._interface);
+                    listener::release(event._interface);
                     io_iface_ = nullptr;
                     if (!mark_completed_once())
                         return;
@@ -599,7 +599,7 @@ public:
             }
             // Past the TCP connect (the TLS handshake): final -- the next address would present the same server.
             socket_.disconnect();
-            listener::current.unregisterEvent(event._interface);
+            listener::release(event._interface);
             io_iface_ = nullptr;
             if (!mark_completed_once())
                 return;
@@ -609,7 +609,7 @@ public:
         }
 
         // The TCP connect failed: the next address, if there is one.
-        listener::current.unregisterEvent(event._interface);
+        listener::release(event._interface);
         io_iface_ = nullptr;
         QB_LOG_DEBUG("Async connect to " << host_ << " (address " << next_ << "/" << endpoints_.size() << ") failed err=" << err);
         start_next();
@@ -623,7 +623,7 @@ public:
     on_deadline() {
         ++attempt_; // an attempt timer still pending finds another generation
         if (io_iface_) {
-            listener::current.unregisterEvent(io_iface_);
+            listener::release(io_iface_);
             io_iface_ = nullptr;
         }
         socket_.disconnect();
@@ -644,7 +644,7 @@ public:
         if (generation != attempt_ || completed_)
             return;
         if (io_iface_) {
-            listener::current.unregisterEvent(io_iface_);
+            listener::release(io_iface_);
             io_iface_ = nullptr;
         }
         QB_LOG_DEBUG("Async connect to " << host_ << " (address " << next_ << "/" << endpoints_.size()
@@ -674,7 +674,7 @@ public:
     /// failure -> an empty/closed socket). Mirrors the classic on()/on_deadline().
     void
     finish_starttls(event::io const &event, bool ok) {
-        listener::current.unregisterEvent(event._interface);
+        listener::release(event._interface);
         io_iface_ = nullptr;
         if (!ok)
             socket_.disconnect();
@@ -690,7 +690,7 @@ public:
         if (!(event._revents & (EV_READ | EV_WRITE)) || socket_.template get_optval<int>(SOL_SOCKET, SO_ERROR, err)
             || (err && err != EISCONN)) {
             if (sphase_ == sphase::connecting) { // the TCP connect itself failed: the next address, if any
-                listener::current.unregisterEvent(event._interface);
+                listener::release(event._interface);
                 io_iface_ = nullptr;
                 QB_LOG_DEBUG("STARTTLS connect to " << host_ << " failed err=" << err);
                 start_next();

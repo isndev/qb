@@ -645,7 +645,7 @@ ask_self_arrival(std::uint64_t const id, ask_slot &slot, Event &resp) noexcept {
 
 ev::loop_ref
 ask_loop() noexcept {
-    return qb::io::async::listener::current.loop();
+    return qb::io::async::detail::thread_listener_loop(); // the thread's record: no thread_local with a destructor on the way
 }
 
 void

@@ -81,7 +81,7 @@ class ActorHandle; // Forward for Actor::addRefActor (RefActorHandle is an alias
  * through the actor registry (`qb::default_events_t`), registering them costs five pointer stores, so this is an
  * opt-out from the SUBSCRIPTIONS (an actor nobody can ping, kill or signal), no longer a measurable saving.
  * @warning **Register `qb::SignalEvent`, not `qb::KillEvent`.** `Main::stop()`, SIGINT and SIGTERM reach an actor ONLY
- * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1693-1695`); nothing in the engine ever sends a `KillEvent`.
+ * as a `SignalEvent` (synthesised per core, `VirtualCore.cpp:1698-1700`); nothing in the engine ever sends a `KillEvent`.
  * MEASURED: registering only `KillEvent` — what this note used to advise — leaves `Main::join()` hanging forever.
  */
 struct no_default_events_t {
@@ -2122,8 +2122,12 @@ private:
         me->slot.done = true;
         me->outcome   = kind::ok;
         me->result.emplace(std::move(static_cast<E &>(resp)));
-        if (const auto h = me->cont; h) // bound in await_suspend, before any reply can be routed
-            h.resume();                 // `me` may be gone when this returns: see above
+        if (const auto h = me->cont; h) { // bound in await_suspend, before any reply can be routed
+            // No drain is on the stack: the mark says a coroutine of this thread is executing, so a teardown reached
+            // from it -- `exit()` in its body -- destroys no frame under it (Huly QB-1246).
+            qb::io::async::detail::inline_resume_scope resuming;
+            h.resume(); // `me` may be gone when this returns: see above
+        }
     }
 
     static void

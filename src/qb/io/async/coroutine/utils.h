@@ -99,9 +99,8 @@ namespace qb::io::async {
  */
 inline timer_awaiter
 sleep(qb::duration duration) {
-    // Use the listener's event loop, not the default loop
-    // This ensures timers work with listener::current.run()
-    return timer_awaiter{duration, listener::current.loop()};
+    // The thread's listener's event loop -- the one listener::current.run() pumps -- never libev's default loop
+    return timer_awaiter{duration, detail::thread_listener_loop()};
 }
 
 /**
@@ -126,13 +125,13 @@ sleep(qb::duration duration) {
 inline socket_awaiter
 wait_readable(int fd) {
     // Use the listener's event loop for consistency with sleep()
-    return socket_awaiter{fd, EV_READ, listener::current.loop()};
+    return socket_awaiter{fd, EV_READ, detail::thread_listener_loop()};
 }
 
 #if defined(_WIN32)
 inline socket_awaiter
 wait_readable(uintptr_t handle) {
-    return socket_awaiter{handle, EV_READ, listener::current.loop()};
+    return socket_awaiter{handle, EV_READ, detail::thread_listener_loop()};
 }
 #endif
 
@@ -157,13 +156,13 @@ wait_readable(uintptr_t handle) {
 inline socket_awaiter
 wait_writable(int fd) {
     // Use the listener's event loop for consistency with sleep()
-    return socket_awaiter{fd, EV_WRITE, listener::current.loop()};
+    return socket_awaiter{fd, EV_WRITE, detail::thread_listener_loop()};
 }
 
 #if defined(_WIN32)
 inline socket_awaiter
 wait_writable(uintptr_t handle) {
-    return socket_awaiter{handle, EV_WRITE, listener::current.loop()};
+    return socket_awaiter{handle, EV_WRITE, detail::thread_listener_loop()};
 }
 #endif
 
@@ -179,13 +178,13 @@ wait_writable(uintptr_t handle) {
  */
 inline socket_awaiter
 wait_for_io(int fd, int events) {
-    return socket_awaiter{fd, events, listener::current.loop()};
+    return socket_awaiter{fd, events, detail::thread_listener_loop()};
 }
 
 #if defined(_WIN32)
 inline socket_awaiter
 wait_for_io(uintptr_t handle, int events) {
-    return socket_awaiter{handle, events, listener::current.loop()};
+    return socket_awaiter{handle, events, detail::thread_listener_loop()};
 }
 #endif
 
@@ -210,8 +209,10 @@ wait_for_io(uintptr_t handle, int events) {
  */
 inline CoroutineScheduler &
 coro_scheduler() {
-    // Always use the listener's scheduler to ensure consistency
-    // This creates the scheduler on first access and sets it as current
+    // The thread's listener's scheduler, always. The thread's record names it while it exists; the listener is
+    // asked only to create it (and bind it as current) -- or to refuse, once the thread's loop is gone.
+    if (CoroutineScheduler *const sched = detail::thread_loop().scheduler) [[likely]]
+        return *sched;
     return listener::current.coro_scheduler();
 }
 
@@ -466,8 +467,8 @@ public:
     /// Destroys the worker wherever it waits, unless it has already ended. Idempotent.
     void
     end() noexcept {
-        if (auto h = std::exchange(*_slot, {}); h && listener::current.has_coro_scheduler())
-            coro_scheduler().cancel_spawned(h);
+        if (auto h = std::exchange(*_slot, {}))
+            detail::cleanup_cancel_spawned(h);
     }
 
 private:

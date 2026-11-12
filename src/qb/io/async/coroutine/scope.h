@@ -564,7 +564,7 @@ public:
                 if (slot)
                     *slot = {};
                 if (timer_slot && *timer_slot)
-                    coro_scheduler().cancel_spawned(std::exchange(*timer_slot, {}));
+                    detail::cleanup_cancel_spawned(std::exchange(*timer_slot, {}));
             }
 
             [[nodiscard]] bool

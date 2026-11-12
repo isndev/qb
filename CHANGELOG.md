@@ -548,6 +548,87 @@ policy.
   thirty-one test files whose comments said their suite runs with leak detection off now say what holds, line for
   line, and so do the patterns library page and the testing reference.
 
+- **A `CoroutineScheduler` destroys the coroutines it owns when it is destroyed, and abandons them only in the
+  orders where it cannot (Huly QB-1246).** Each spawned root goes with its chain down to the awaiter parked on a
+  watcher, whose destructor stops it, then the frames queued and the frames completed, sixteen passes at most. It is
+  what `~listener`, `reset_coro_scheduler()`, `recycle()` and a `VirtualCore`'s teardown always did. A scheduler
+  owned directly abandoned its parked coroutines instead (Finding 2.B.8): 20 of 21 awaiter families leaked, the 21st
+  (a root parked on a mutex) ran on after its owner, and the tally counted frames the scheduler did not own while it
+  missed every root parked on an awaiter that registers nothing. It now abandons -- destroying nothing, parked,
+  queued and completed frames alike -- when it is destroyed after its thread's `listener::current` (static storage,
+  a thread_local built before the listener), on another thread than the one that built it, from inside one of its
+  own coroutines, or still owns coroutines after the sixteenth pass (those only). The WARNING line on `qb::io::cerr` names the
+  order, and `abandoned_coroutine_frames_total()` -- the name is kept -- counts the coroutines the scheduler owned
+  and could not destroy, a root once whatever it awaits. `report_abandoned_coroutine_frames()` takes the order as a
+  third argument (`coroutine_abandon_reason`). `recycle()` and `destroy_all_suspended()` do nothing in those
+  orders. Two cases of `qb-io-test-unit-scheduler-abandoned-frames` pinned the old tally and are rewritten; the
+  refused orders are pinned by `qb-io-test-unit-scheduler-teardown-orders`, each in a child process.
+- **`std::exit()` from inside a coroutine destroys no coroutine (Huly QB-1246).** `exit()` in a coroutine body ends
+  the thread's listener from inside one of its scheduler's coroutines. The teardown destroyed every coroutine the
+  scheduler owned, the one that was executing included: a heap-use-after-free in `~channel`, or the executing
+  frame's locals destroyed under it. The scheduler now abandons them all and says `FROM INSIDE one of its own
+  coroutines`: no coroutine local is destroyed, the exiting coroutine's or another's, as for `exit()` in a nested
+  call. It holds under a `run_ready()` drain and where qb-core resumes a coroutine inline -- an `ask` reply and an
+  actor's `onInit()`, both marked for the time of the resume (+9 instructions per `ask` reply, callgrind, g++ 14 at
+  -O3: +0.5 % to +0.7 % of a same-core round trip). No coroutine is RESUMED either: the passes the listener's
+  teardown runs to let its watchers go pump the loop alone while that mark is set -- a whole pass resumed the
+  coroutines queued behind the exiting one, and each that finished destroyed its locals in the middle of the exit.
+  A coroutine resumed by hand from user code is not seen.
+- **After a thread's `listener::current` is destroyed, what reaches it is dropped, answered "nothing" or stopped on
+  one named line (Huly QB-1246).** The destructors of objects with static storage, and of thread_locals built before
+  the listener, run after it. A per-thread record that outlives the listener now decides, for every member. A
+  hand-over is dropped: a wake, a module's completion, a completed frame, a cleanup, `defer()`, the registration an
+  io object releases. A query answers "nothing". A request that needs the loop or the scheduler -- a coroutine
+  resumed there that suspends, yields or spawns, `coro_scheduler()`, `listener::current.loop()`, `registerEvent()`
+  (a new io object, an `async::callback`), `arm_wake()`, `run_once_for()`, the free `async::run()` family -- stops
+  the process on `qb: <request> was requested after that thread's event loop (listener::current) was destroyed --
+  nothing can run on that thread any more`. Until now these read the destroyed listener and its freed loop: SIGSEGV
+  in `ev_now_update`, `0xC0000005` on Windows, or a scheduler rebuilt inside the destroyed object. `run()`,
+  `has_work()` and `nb_invoked_event()` carry no test, since a core calls them on every pass; in an AddressSanitizer
+  build the thread's listener is poisoned once its destructor has completed, so the sanitize lane reports a late
+  touch of them (`qb-io-test-unit-listener-after-loop` holds the control, on clang, MSVC and g++ at -O0).
+- **`listener::current` builds its event loop on the first use that needs one (Huly QB-1246).** MSVC constructs
+  every thread_local of a module at each thread's start: every thread of a Windows process built a
+  `listener::current` -- an event loop, its wepoll port, a 200 µs calibration of the CPU counter -- whether it used
+  qb or not. The thread's listener is now constructed without its loop, and builds it when an event is registered,
+  a coroutine sleeps or waits on a socket, or `loop()`, `arm_wake()`, `run_once_for()`, `backend()`,
+  `set_io_poll_interval()` or `set_dispatch_timing()` is called. A thread that uses nothing of qb builds no loop, on
+  any platform. `has_work()`, `run()`, `defer()` and `clear()` need none, and ask nothing about the loop's
+  existence: the counters they read answer zero until it exists. `listener::current` is still a static data member, and a `listener` built
+  by hand still builds its loop in its constructor. Callgrind, g++ 14 at -O3, the calibration's spin left out: a
+  thread that only asks its listener whether it has work costs 17 820 instructions less (the loop it no longer
+  builds), a thread that uses nothing of qb costs what it did, and the first use that needs the loop costs about
+  800 more than it did -- the loop built by a call instead of the initialiser, +0.4 % of that thread's life, where
+  the cell reads 260 against itself. A loop that cannot be created still throws `ev::bad_loop`, from the member that needed it; from a
+  `noexcept` one -- `backend()`, `set_io_poll_interval()`, `set_dispatch_timing()`, qb-core's `ask` -- that is
+  `std::terminate()`.
+- **The thread's record is the fast path to its scheduler and its loop (Huly QB-1246).** `coro_scheduler()`,
+  `sleep()`, the `wait_*()` family, the timed channel operations, the timeouts and `ask` read them on that record
+  instead of going through the thread_local listener and its initialisation guard. Callgrind, g++ 14 at -O3, against
+  the base: `coro_scheduler()` 40 -> 20 instructions, a `sleep()` awaiter built 76 -> 63, a yield 282 -> 234,
+  `SpawnImmediate/1000` -12.6 %, `SendForAfterRecvForHistory/1024` -7.6 %, `TimedOpsWonEarly/512` -5.0 %,
+  `SpawnThroughput/1000` -2.3 %, `SelectFanIn/256` -1.6 %; a core's pass is unchanged (`run()` 56 -> 56,
+  `has_work()` 49 -> 49). `flat_ptr_set::insert()` and `erase()` are forced inline on GCC and Clang for it: the
+  teardown's new callers had taken them out of line on the resume path. What costs more: a scheduler's own life +36
+  instructions (+57 with a spawn), a loop destroyed +493 and 31 per watcher still on it (teardown only),
+  `registerEvent()` + `unregisterEvent()` +12 for the pair (the door, the loop's test, the wrapper's flag read
+  first), `ChildTokenChurn/1024` +0.35 % (two instructions per child, in the benchmark's own coroutine).
+- **`listener::release()` is how an io object gives its registration back (Huly QB-1246).** `io::async::base`, the
+  QUIC endpoint and the tcp connector called `listener::current.unregisterEvent()`, which read the listener before
+  it looked at the wrapper. `release()`, static, frees a wrapper `clear()` detached without reaching a listener --
+  its owner may be destroyed after the listener that held it -- and unregisters any other from the thread's
+  listener. `unregisterEvent()` reads the wrapper's flag first too.
+- **`~listener` ends with nothing registered and no scheduler (Huly QB-1246).** It ran `clear()`, then destroyed the
+  scheduler's coroutines, once: what those destructions registered -- an `async::callback` posted by a coroutine
+  local's destructor -- stayed on a loop about to be destroyed, never destroyed, its descriptor held until the
+  process ended. It now repeats both, sixteen passes at most, and `reset_coro_scheduler()` destroys the scheduler
+  while it is still the listener's, so what its coroutines' destructors spawn or wake is destroyed with it.
+- **qev: `ev_loop_destroy` detaches every watcher still started on the loop (Huly QB-1246).** qb's copy of the loop
+  and qev change together (22 files byte-identical). A watcher left on a destroyed loop reads inactive and not
+  pending, a late stop returns at once, and a signal the loop watched is back to its default action. The loop now
+  writes to those watchers, so a raw watcher that is started when its loop is destroyed must still be allocated then:
+  free it after the loop, or stop it first. Nothing in qb, the modules or the examples frees one started (audited).
+
 ### Fixed
 
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
@@ -1636,6 +1717,33 @@ policy.
   without SSE2 (qb's CI lane `ubuntu-arm64-gcc-cxx20-release`). That path holds exactly one bucket, so the copy is
   now that bucket's constant size with no test, asserted in debug builds. x86-64 builds are unchanged, instruction
   for instruction.
+
+- **A wake delivered after the thread's loop is destroyed no longer rebuilds a scheduler inside the destroyed
+  listener (a regression of 3.3.0, Huly QB-1246).** A `channel` with static storage and a parked waiter is closed by
+  its destructor after the main thread's `listener::current`. Its wake found no scheduler bound and, since 3.3.0
+  (QB-271), bound the listener's: `coro_scheduler()` on a destroyed object, a scheduler built there and bound as the
+  thread's current one, the frame queued in it for ever. 3.2.1 dropped that wake. It is dropped again, on the
+  thread's record, and so is every hand-over made there.
+- **A coroutine frame, an io object or a raw watcher destroyed after its loop no longer stops its watcher on freed
+  memory (Huly QB-1246).** A `task` with static storage parked on `sleep()`, `wait_readable()`, `recv_for()`,
+  `send_for()`, `coro_with_timeout()`, `when_any()`, `when_all()`, `make_cancellable()` or `with_deadline()` was
+  destroyed after the main thread's listener: a heap-use-after-free in `ev_timer_stop` or `ev_io_stop` under
+  AddressSanitizer, SIGSEGV at exit in a g++ Release build for the socket wait, an access violation at exit on
+  Windows for the timeout. So was a frame parked on a temporary `listener`'s loop and destroyed after that
+  listener. The loop detaches its watchers when it is destroyed, and the timeout awaiters stop their timer on the
+  loop they armed instead of asking the listener for it.
+- **A closure that posts or defers again from its own destructor no longer keeps a thread from exiting (Huly
+  QB-1246).** `clear()` destroyed the loop-owned handlers while any was registered, and dropped the deferred
+  callbacks while any was queued: a callback whose closure's destructor posted another `async::callback`, or
+  deferred again, kept either loop running for ever -- at `clear()`, and at the thread's exit. The owners it
+  destroys are budgeted (sixteen times what was registered when the drain began) and the deferred drop takes sixteen
+  turns; past them a handler is detached with its owner left alive, and a deferred callback is given up, never run.
+  A coroutine that never ran and whose parameter's destructor spawns another one is bounded the same way by the
+  scheduler's passes, and a `reset_coro_scheduler()` called from inside the teardown it runs does nothing, where it
+  freed the scheduler under its own destructor.
+- **The select backend passes no null pointer to `memcpy` while no descriptor is watched (Huly QB-1246).**
+  UndefinedBehaviorSanitizer stopped every program at its first loop pass under `QB_EV_BACKEND=select`
+  (`ev_select.c`). qb's per-backend lane runs epoll and io_uring, so no lane saw it.
 
 ### Documentation
 

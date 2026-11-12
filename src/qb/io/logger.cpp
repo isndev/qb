@@ -146,14 +146,36 @@ std::atomic<std::size_t> g_abandoned_coroutine_frames{0};
 // QB_WITH_LOGGING -- the very silence Huly QB-84 removes), and the number kept where a test or an
 // operator can read it back after the frames are gone.
 void
-qb::io::async::report_abandoned_coroutine_frames(std::size_t const count, void const *const scheduler) noexcept {
+qb::io::async::report_abandoned_coroutine_frames(std::size_t const count, void const *const scheduler,
+                                                 coroutine_abandon_reason const why) noexcept {
     g_abandoned_coroutine_frames.fetch_add(count, std::memory_order_relaxed);
+    // The order it was destroyed in, and why its coroutines could not be destroyed in that order.
+    char const *order  = "AFTER its thread's event loop (listener::current)";
+    char const *reason = "the loop they waited on is gone and nothing can run on that thread any more. Destroy a "
+                         "scheduler before its thread's listener";
+    switch (why) {
+        case coroutine_abandon_reason::loop_gone:
+            break;
+        case coroutine_abandon_reason::draining:
+            order  = "FROM INSIDE one of its own coroutines";
+            reason = "one of them is executing. Leave the coroutine before its scheduler goes (exit() in a coroutine "
+                     "body ends its thread's listener from inside it)";
+            break;
+        case coroutine_abandon_reason::foreign_thread:
+            order  = "ON ANOTHER THREAD than the one that built it";
+            reason = "they wait on that thread's loop, which may be running. Destroy a scheduler on the thread that "
+                     "built it (exit() on another thread destroys the ones with static storage there)";
+            break;
+        case coroutine_abandon_reason::respawning:
+            order  = "while its coroutines' destructors kept spawning on it";
+            reason = "each teardown pass left it new ones. A coroutine local's destructor must not spawn on, and "
+                     "pump, a scheduler that is being destroyed";
+            break;
+    }
     try {
-        qb::io::cerr() << "WARNING: qb coroutine scheduler " << scheduler << " destroyed with " << count
-                       << " suspended coroutine frame(s) still parked on a watcher or a wait list -- ABANDONED, not "
-                          "destroyed (their watchers still reference them). Stop the event loop before destroying its "
-                          "scheduler. Process total so far: "
-                       << g_abandoned_coroutine_frames.load(std::memory_order_relaxed) << std::endl;
+        qb::io::cerr() << "WARNING: qb coroutine scheduler " << scheduler << " destroyed " << order << " with " << count
+                       << " coroutine(s) it owns -- ABANDONED, not destroyed: " << reason
+                       << ". Process total so far: " << g_abandoned_coroutine_frames.load(std::memory_order_relaxed) << std::endl;
     } catch (...) {
         // Reporting must never become the failure.
     }

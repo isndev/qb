@@ -148,12 +148,12 @@ protected:
         if (_io_event) {
             auto *iface = _io_event->_interface;
             _io_event   = nullptr;
-            listener::current.unregisterEvent(iface);
+            listener::release(iface);
         }
         if (_timer_event) {
             auto *iface  = _timer_event->_interface;
             _timer_event = nullptr;
-            listener::current.unregisterEvent(iface);
+            listener::release(iface);
         }
     }
 

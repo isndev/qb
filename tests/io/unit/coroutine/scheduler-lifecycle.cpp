@@ -1544,7 +1544,7 @@ TEST_F(CoroutineSchedulerTests, DestroyAllSuspendedLeavesANonOwnedFrameToItsTask
 
 /**
  * @test current_scheduler_ptr() mirrors CoroutineScheduler::current_ptr()
- * @brief The free helper used by awaiters to fetch the TLS scheduler (scheduler.h:1166-1169).
+ * @brief The free helper used by awaiters to fetch the TLS scheduler (scheduler.h:1326-1329).
  *        It must return the exact same pointer as the static accessor — non-null while a
  *        listener scheduler is installed, and null after a reset.
  */

@@ -15,7 +15,7 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 | Spelling | Parks on | Declared |
 |---|---|---|
 | `co_await sleep(qb::duration)` | a `ev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
-| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
+| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:126`, `:157`, `:180` |
 | `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:1040` |
 | `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:1266` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:627` |
@@ -73,7 +73,7 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 `event::signal<Sig>` wraps a libev `ev::sig` watcher (`src/qb/io/async/event/signal.h:82`) and is delivered like any other event: register it, implement `on(event::signal<SIGINT>&)`. There is no `co_await wait_signal(SIGINT)`.
 
-Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1691-1724`). That is the supported path, and it is an actor-tier concern.
+Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1696-1729`). That is the supported path, and it is an actor-tier concern.
 
 ## File I/O is watched metadata plus a blocking read
 

@@ -125,13 +125,20 @@ TEST_F(ListenerHasWork, RawLibevTimerTheListenerNeverCountedIsStillWork) {
     ev_timer         t;
     ev_timer_init(&t, [](struct ev_loop *, ev_timer *w, int) { ++*static_cast<std::atomic<int> *>(w->data); }, 0.001, 0.0);
     t.data = &fired;
+    // Stopped on every way out, a failed assertion included: the loop writes to a watcher still started on it when
+    // it is destroyed (Huly QB-1246), and this one lives on the stack.
+    struct stop_on_exit {
+        ev_timer &watcher;
+        ~stop_on_exit() {
+            ev_timer_stop(raw_loop(), &watcher);
+        }
+    } const stopped{t};
     ev_timer_start(raw_loop(), &t);
     EXPECT_EQ(listener::current.size(), 0u) << "the listener does not know about it";
     EXPECT_TRUE(listener::current.has_work()) << "the loop does";
     ASSERT_TRUE(drain());
     EXPECT_EQ(fired.load(), 1);
     EXPECT_FALSE(listener::current.has_work()) << "a fired one-shot is no longer active";
-    ev_timer_stop(raw_loop(), &t);
 }
 
 TEST_F(ListenerHasWork, DeferredCallbackIsWorkUntilDrained) {

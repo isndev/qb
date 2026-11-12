@@ -131,16 +131,24 @@ select_poll(EV_P_ ev_tstamp timeout) {
         EV_RELEASE_CB;
         EV_TV_SET(tv, timeout);
 
-        memcpy(vec_ro, vec_ri, fd_setsize);
-        memcpy(vec_wo, vec_wi, fd_setsize);
+        /* qev (Huly QB-1246): no fd was ever watched -- the four vectors are still null and their size is 0. memcpy's
+         * pointers must be valid even for a size of 0 (the undefined-behaviour sanitizer stopped every program at
+         * its first pass on this backend); select() below takes the null sets with nfds 0, a plain timed wait. */
+        if (ecb_expect_true(fd_setsize)) {
+            memcpy(vec_ro, vec_ri, fd_setsize);
+            memcpy(vec_wo, vec_wi, fd_setsize);
+#ifdef _WIN32
+            memcpy(vec_eo, vec_wi, fd_setsize); /* the except set of the select() below */
+#endif
+        }
 
 #ifdef _WIN32
         /* pass in the write set as except set.
          * the idea behind this is to work around a windows bug that causes
          * errors to be reported as an exception and not by setting
          * the writable bit. this is so uncontrollably lame.
+         * (the copy is made above, with the other two.)
          */
-        memcpy(vec_eo, vec_wi, fd_setsize);
         res = select(vec_max * NFDBITS, (fd_set *) vec_ro, (fd_set *) vec_wo, (fd_set *) vec_eo, &tv);
 #elif EV_SELECT_USE_FD_SET
         {
