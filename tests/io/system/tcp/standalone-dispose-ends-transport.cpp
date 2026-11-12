@@ -15,8 +15,10 @@
  * `on(event::dispose&&)`, the one hook that may free the object. When the peer's EOF or a socket error ended
  * the connection it is closed outright. When this object ended it, its sending side is shut down: the peer
  * reads EOF after everything queued, and nothing is reset -- a close would reset a peer whose bytes are still
- * unread: its next send fails, and on Windows it also drops what it has not read yet. A hook that closes the
- * transport again closes nothing else. The bases' own cases (input, output, io over a borrowed socket) are in
+ * unread: its next send fails, and on Windows it also drops what it has not read yet. The descriptor no longer
+ * stays in the object, half-closed, as it did in 3.3: it goes to the thread's loop, which closes it after the
+ * peer (Huly QB-1270; that half of the contract is in close-after-peer.cpp). A hook that closes the transport
+ * again closes nothing else. The bases' own cases (input, output, io over a borrowed socket) are in
  * async-bases-framing.cpp.
  *
  * @author qb - C++ Actor Framework

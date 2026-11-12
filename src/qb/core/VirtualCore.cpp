@@ -171,10 +171,10 @@ VirtualCore::~VirtualCore() noexcept {
         _rx_len = 0;
     }
 
-    // A continuation queued by the teardown above (an actor or payload destructor that wakes a
-    // coroutine) lands in this loop's scheduler (bound lazily if none was). Destroy it with this
-    // core: under start(false) the thread outlives the engine, and the next engine on it must
-    // not inherit a frame of this one.
+    // What the teardown above left on this loop goes with the core (under start(false) the thread outlives the engine): a coroutine a
+    // destructor queued, never run; a socket or a timer one left after the clear() at the top (Huly QB-1270); then what that clear left queued.
+    listener.recycle_coro_scheduler();
+    listener.clear();
     listener.recycle_coro_scheduler();
     // Main owns the initializer until after its worker joins. Return all generations only
     // after actor/frame/user destruction; startup failures also retire abandoned promises.

@@ -239,7 +239,7 @@ public:
     [[nodiscard]] SSL *ssl_handle() const noexcept;
 };
 ```
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-977 -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:361-992 -->
 
 Key behaviors verified in the header:
 
@@ -290,7 +290,7 @@ Key behaviors verified in the header:
   (`WANT_READ` / `WANT_WRITE`) or the handshake is still in progress. That is the inverse of
   `tcp::socket::read`, which also reports peer close as `-1` but leaves the system error at zero. The header's `@return` block says
   otherwise and is wrong.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1059-1064 (orderly shutdown returns -1), :1069-1071 (WANT_* returns 0), :1076 (handshake in progress returns 0) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1067-1072 (orderly shutdown returns -1), :1077-1079 (WANT_* returns 0), :1084 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted
   application data internally, generic streaming code should use `transport::stcp`, which
   handles `SSL_pending()` for you (see [The stcp transport](#the-stcp-transport)).
@@ -352,7 +352,7 @@ handle and are silent no-ops without one, which is the trap on this table:
 
 `disable_session_resumption()` and `set_session()` are mutually exclusive when deferred; the last call wins.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1376-1382 (set_verify_callback needs a handle), :1384-1390 (set_verify_depth), :1364 (sni deferred), :1373 (alpn deferred), :1202-1203 (resumption deferred, drops the session), :1221 (ocsp deferred), :1333-1334 (session deferred), :1195 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:801 (disable_session_resumption), :815 (request_ocsp_stapling), :849 (set_session), :872 (set_sni_hostname), :884 (set_alpn_protocols), :894 (set_verify_callback), :902 (set_verify_depth), :923 (set_insecure) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1384-1390 (set_verify_callback needs a handle), :1392-1398 (set_verify_depth), :1372 (sni deferred), :1381 (alpn deferred), :1210-1211 (resumption deferred, drops the session), :1229 (ocsp deferred), :1341-1342 (session deferred), :1203 (the two SSL_OP flags); qb/src/qb/io/tcp/ssl/socket.h:816 (disable_session_resumption), :830 (request_ocsp_stapling), :864 (set_session), :887 (set_sni_hostname), :899 (set_alpn_protocols), :909 (set_verify_callback), :917 (set_verify_depth), :938 (set_insecure) -->
 
 #### Introspection and sessions
 
@@ -362,13 +362,13 @@ After a successful handshake the socket exposes `get_negotiated_cipher_suite()`,
 connected flag and return nothing before that. `get_last_ssl_error_string()` does **not**:
 it needs only an `SSL` handle, which is what makes it the accessor to reach for after a
 *failed* handshake.
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1116 (cipher suite gates on _connected), :1148, :1157, :1166, :1228, :1179-1181 (error string gates only on the handle) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1124 (cipher suite gates on _connected), :1156, :1165, :1174, :1236, :1187-1189 (error string gates only on the handle) -->
 
 `get_session()` returns a `qb::io::ssl::Session` for client-side resumption. The caller
 owns it and must release it with `qb::io::ssl::free_session()`. Setting a session does not
 guarantee resumption — the server must agree.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:757-782 (introspection), :824 (peer chain), :836 (get_session), :333 (free_session) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:772-797 (introspection), :839 (peer chain), :851 (get_session), :333 (free_session) -->
 
 ### `qb::io::tcp::ssl::listener`
 
@@ -675,7 +675,7 @@ if (SocketStatus::Done != client.transport().connect_v4("api.example.com", 443))
 empty, and the Unix-domain entry points. Those are the connections where the chain is
 validated but the **name is not**, so set it explicitly before connecting — or pass the
 hostname to the overload that takes one.
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:937-938 (the cached SNI is overwritten with the connect hostname), :810-816 (connect_in), :767-785 (connect(endpoints, hostname)), :859-870 (connect(uri) supplies u.host()); qb/src/qb/io/tcp/ssl/socket.h:547 (the endpoint overload's empty default), :872 (set_sni_hostname) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:937-938 (the cached SNI is overwritten with the connect hostname), :810-816 (connect_in), :767-785 (connect(endpoints, hostname)), :859-870 (connect(uri) supplies u.host()); qb/src/qb/io/tcp/ssl/socket.h:547 (the endpoint overload's empty default), :887 (set_sni_hostname) -->
 
 ## Generating a test certificate
 

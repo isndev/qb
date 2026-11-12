@@ -22,6 +22,8 @@
  * @ingroup IO
  */
 
+#include <utility>
+#include <qb/io/async/lingering_close.h> /* async::detail::out_of_descriptors, release_closing_sockets */
 #include <qb/io/tcp/listener.h>
 
 namespace qb::io::tcp {
@@ -64,7 +66,12 @@ listener::listen_un(std::filesystem::path const &path) noexcept {
 
 socket
 listener::accept() const noexcept {
-    return {io::socket::accept()};
+    io::socket accepted = io::socket::accept();
+    // As accept(tcp::socket &) below: a connection refused for lack of descriptors is accepted again once this
+    // thread's loop has closed the sockets it was closing after their peer.
+    if (!accepted.is_open() && async::detail::out_of_descriptors(io::socket::get_last_errno()) && async::detail::release_closing_sockets() != 0)
+        accepted = io::socket::accept();
+    return {std::move(accepted)};
 }
 
 int
@@ -72,6 +79,11 @@ listener::accept(tcp::socket &sock) const noexcept {
     socket_type nt_sock = qb::io::inet::invalid_socket;
 
     auto ret = io::socket::accept_n(nt_sock);
+    // No descriptor left for the connection waiting in the backlog. The sockets this thread's loop is closing after
+    // their peer hold some, as a courtesy to those peers: they are closed at once, oldest first, and the accept is
+    // made again -- an acceptor that only retried would spin on a readable listener until their bound (Huly QB-1270).
+    if (async::detail::out_of_descriptors(ret) && async::detail::release_closing_sockets() != 0)
+        ret = io::socket::accept_n(nt_sock);
     if (!ret) {
         sock = nt_sock;
         sock.set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);

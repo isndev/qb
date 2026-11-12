@@ -1044,6 +1044,14 @@ socket::disconnect() noexcept {
     return tcp::socket::disconnect();
 }
 
+socket_type
+socket::release_handle() noexcept {
+    if (_ssl_handle)
+        SSL_set_bio(_ssl_handle.get(), nullptr, nullptr); // frees the socket BIO; BIO_NOCLOSE: the descriptor stays open
+    _connected = false;
+    return tcp::socket::release_handle();
+}
+
 int
 socket::read(void *data, std::size_t size) noexcept {
     if (!_ssl_handle)

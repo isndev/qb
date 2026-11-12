@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <qb/io/async/lingering_close.h> /* async::detail::out_of_descriptors, release_closing_sockets */
 #include <qb/io/tcp/socket.h>
 
 namespace qb::io::tcp {
@@ -55,11 +56,16 @@ socket::operator=(io::socket &&sock) noexcept {
 
 int
 socket::init(int af) noexcept {
-    if (io::socket::open(af, SOCK_STREAM, 0)) {
-        set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
-        return 0;
+    if (!io::socket::open(af, SOCK_STREAM, 0)) {
+        // No descriptor left for this socket. The sockets this thread's loop is closing after their peer hold some,
+        // as a courtesy to those peers: they are closed at once, oldest first, and the socket is asked for again --
+        // the loop's cap must never cost the process a descriptor it needs (Huly QB-1270).
+        if (!async::detail::out_of_descriptors(io::socket::get_last_errno()) || async::detail::release_closing_sockets() == 0
+            || !io::socket::open(af, SOCK_STREAM, 0))
+            return -1;
     }
-    return -1;
+    set_optval<int>(IPPROTO_TCP, TCP_NODELAY, 1);
+    return 0;
 }
 
 int

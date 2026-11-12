@@ -710,6 +710,21 @@ public:
     int disconnect() noexcept;
 
     /**
+     * @brief Give the descriptor away: the caller, or what it hands it to, closes it.
+     * @return The descriptor; this socket holds none afterwards.
+     * @details The `SSL` object is detached from the descriptor first -- its socket BIO is freed (`BIO_NOCLOSE`: the
+     *          descriptor stays open) -- and the connected state cleared. The inherited `tcp::socket::release_handle()`
+     *          would leave a healthy `SSL` object bound to a number this socket no longer owns: once that number is
+     *          closed and handed out again, a `write()` on this socket completes the "handshake" it already had and
+     *          writes a TLS record of the ended connection into an unrelated one (Huly QB-1270). A `read()` or
+     *          `write()` after this fails; the `SSL` object itself is released by the destructor or the next
+     *          `init()`, as after `disconnect()`. qb-io calls it when the io object that owns this socket ends its
+     *          own connection (`async::detail::end_transport`): the thread's loop then closes the descriptor after
+     *          the peer, reading the socket raw.
+     */
+    socket_type release_handle() noexcept;
+
+    /**
      * @brief Read decrypted data from the secure SSL/TLS socket.
      * @param data Pointer to the buffer where decrypted data will be stored.
      * @param size Maximum number of bytes to read into the buffer.
