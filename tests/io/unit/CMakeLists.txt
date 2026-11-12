@@ -147,6 +147,18 @@ qb_add_test(MODULE qb-io TIER unit NAME listener-io-cadence SOURCES async/listen
 # Its timing verdicts are read pass by pass on the loop's own clock, no longer as a 2 ms lateness bound on the test's
 # (3.3 ms under ASan in a parallel ctest; Huly QB-975), so it needs no serial slot.
 qb_add_test(MODULE qb-io TIER unit NAME listener-timer-gate SOURCES async/listener-timer-gate.cpp DEPENDS ${PROJECT_NAME})
+# The thread's listener and its loop at the ends of their life (Huly QB-1246). listener-lazy-loop: `listener::current`
+# builds its loop on the first use that needs one, and a thread that uses nothing of qb builds none (MSVC constructs
+# every thread_local of a module at each thread's start). listener-teardown-drain: `~listener` ends with nothing
+# registered and no scheduler, whatever its own teardown registers or spawns, in sixteen passes at most.
+# listener-after-loop: what reaches `listener::current` after its destructor -- from the destructor of an object with
+# static storage, each case in a child process -- is dropped, answered "nothing" or stopped on the named line, and a
+# coroutine frame destroyed there stops no watcher on a freed loop. loop-destroy-detaches: the loop itself, on every
+# backend this build has -- `ev_loop_destroy` leaves none of its watchers started or pending.
+qb_add_test(MODULE qb-io TIER unit NAME listener-lazy-loop      SOURCES async/listener-lazy-loop.cpp      DEPENDS ${PROJECT_NAME})
+qb_add_test(MODULE qb-io TIER unit NAME listener-teardown-drain SOURCES async/listener-teardown-drain.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME listener-after-loop     SOURCES async/listener-after-loop.cpp     DEPENDS ${PROJECT_NAME} LABELS coroutine)
+qb_add_test(MODULE qb-io TIER unit NAME loop-destroy-detaches   SOURCES async/loop-destroy-detaches.cpp   DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME quic-adapter           SOURCES quic/quic-adapter.cpp          DEPENDS ${PROJECT_NAME} LABELS quic)
 
 # --- coroutine (pure: scheduler/awaiter/generator/channel/sync/combinator/scope/etc.) ---
@@ -154,6 +166,10 @@ qb_add_test(MODULE qb-io TIER unit NAME scheduler-lifecycle         SOURCES coro
 qb_add_test(MODULE qb-io TIER unit NAME awaiter-protocol            SOURCES coroutine/awaiter-protocol.cpp            DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME over-aligned-promise        SOURCES coroutine/over-aligned-promise.cpp        DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME scheduler-abandoned-frames  SOURCES coroutine/scheduler-abandoned-frames.cpp  DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# scheduler-teardown-orders pins the orders in which a scheduler destroys NOTHING (Huly QB-1246): after its thread's
+# loop, on another thread, from inside one of its own coroutines (`exit()` in a coroutine body), and past sixteen
+# passes of respawning destructors -- each in a child process, since an abandoned coroutine is a leak by design.
+qb_add_test(MODULE qb-io TIER unit NAME scheduler-teardown-orders   SOURCES coroutine/scheduler-teardown-orders.cpp   DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME exception-propagation       SOURCES coroutine/exception-propagation.cpp       DEPENDS ${PROJECT_NAME} LABELS coroutine)
 # The counterpart of exception-propagation: the DETACHED path, where nothing awaits the frame so
 # nothing can rethrow, and the exception used to be destroyed with the promise in silence.

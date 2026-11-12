@@ -19,20 +19,20 @@ llm/qb.llm.api.md	Actor.h:1542-1542	b86d140aa14a	void spawn(std::string_view nam
 llm/qb.llm.api.md	Actor.h:1546-1546	f39703789923	void spawn_detached(std::string_view name, Func &&func) const;
 llm/qb.llm.api.md	Actor.h:1548-1564	fdcc13b19f97	/**
 llm/qb.llm.api.md	Actor.h:1713-1722	dadd4620b634	class CoroContext {
-llm/qb.llm.api.md	Actor.h:2168-2275	bb1e47a5f85b	struct activation_awaiter {
-llm/qb.llm.api.md	Actor.h:2294-2405	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.api.md	Actor.h:2325-2329	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
-llm/qb.llm.api.md	Actor.h:2401-2404	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.api.md	Actor.h:2413-2416	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.api.md	Actor.h:2490-2499	5522188c5d2b	static qb::io::async::task<bool>
-llm/qb.llm.api.md	Actor.h:2518-2538	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.api.md	Actor.h:2529-2535	fa70d7763fca	/**
-llm/qb.llm.api.md	Actor.h:2537-2541	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
-llm/qb.llm.api.md	Actor.h:2567-2571	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
-llm/qb.llm.api.md	Actor.h:2572-2577	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
-llm/qb.llm.api.md	Actor.h:2601-2602	7a029450b670	template <typename _Actor>
-llm/qb.llm.api.md	Actor.h:2922-2922	a0e051d59cc7	using coro_context = CoroContext;
-llm/qb.llm.api.md	Actor.h:2930-2930	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
+llm/qb.llm.api.md	Actor.h:2172-2279	bb1e47a5f85b	struct activation_awaiter {
+llm/qb.llm.api.md	Actor.h:2298-2409	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.api.md	Actor.h:2329-2333	1ad81f0d146b	[[nodiscard]] qb::io::async::cancellation_token
+llm/qb.llm.api.md	Actor.h:2405-2408	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.api.md	Actor.h:2417-2420	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.api.md	Actor.h:2494-2503	5522188c5d2b	static qb::io::async::task<bool>
+llm/qb.llm.api.md	Actor.h:2522-2542	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.api.md	Actor.h:2533-2539	fa70d7763fca	/**
+llm/qb.llm.api.md	Actor.h:2541-2545	c554c7d881fd	/** @brief True iff the actor is resolved and active (== `get() != nu...
+llm/qb.llm.api.md	Actor.h:2571-2575	3581b76cd645	ready_async(ScopedCoroContext ctx, qb::duration timeout = std::chrono...
+llm/qb.llm.api.md	Actor.h:2576-2581	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.api.md	Actor.h:2605-2606	7a029450b670	template <typename _Actor>
+llm/qb.llm.api.md	Actor.h:2926-2926	a0e051d59cc7	using coro_context = CoroContext;
+llm/qb.llm.api.md	Actor.h:2934-2934	bd93422ca84b	using scoped_coro_context = ScopedCoroContext;
 llm/qb.llm.api.md	Actor.h:517-533	3a24e13e66c4	/**
 llm/qb.llm.api.md	Actor.h:563-584	c0770292de14	static void *
 llm/qb.llm.api.md	Actor.h:782-802	6d433ed7aa37	/**
@@ -49,17 +49,17 @@ llm/qb.llm.api.md	TestKit.h:369-615	9b9d3b703fa3	template <typename... Events>
 llm/qb.llm.api.md	TestKit.h:630-652	432a6fe8379d	template <typename E>
 llm/qb.llm.api.md	TestKit.h:666-684	e22db8bd4b3c	template <typename E>
 llm/qb.llm.api.md	TestKit.h:694-759	3fe3c1ec6629	class TestKit {
-llm/qb.llm.api.md	VirtualCore.cpp:1073-1075	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.api.md	VirtualCore.cpp:1400-1415	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
-llm/qb.llm.api.md	VirtualCore.cpp:1729-1731	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
-llm/qb.llm.api.md	VirtualCore.cpp:1815-1824	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
-llm/qb.llm.api.md	VirtualCore.cpp:1839-1843	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.api.md	VirtualCore.cpp:1847-1854	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
-llm/qb.llm.api.md	VirtualCore.cpp:1872-1878	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
-llm/qb.llm.api.md	VirtualCore.cpp:1898-1917	73311f4ebccc	void
-llm/qb.llm.api.md	VirtualCore.cpp:1919-1929	5c14683bf048	void
+llm/qb.llm.api.md	VirtualCore.cpp:1078-1080	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.api.md	VirtualCore.cpp:1405-1420	c58223a2a288	const bool        service = id.slot() > ActorId::ServiceBand;
+llm/qb.llm.api.md	VirtualCore.cpp:1734-1736	ebc51736721c	VirtualCore::__dead_letter__(Event const &event, DeadLetterReason con...
+llm/qb.llm.api.md	VirtualCore.cpp:1820-1829	7d4ae705cc27	// Death watch (Huly QB-51): cold, at the end of the file -- reached ...
+llm/qb.llm.api.md	VirtualCore.cpp:1844-1848	e7abeff6305d	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.api.md	VirtualCore.cpp:1852-1859	822f6bd59be9	auto &mine = _engine.watchers_of(_engine._core_set.resolve(core))[_re...
+llm/qb.llm.api.md	VirtualCore.cpp:1877-1883	e0bd3673e38a	VirtualCore::__register_watch__(ActorId const target, ActorId const w...
+llm/qb.llm.api.md	VirtualCore.cpp:1903-1922	73311f4ebccc	void
+llm/qb.llm.api.md	VirtualCore.cpp:1924-1934	5c14683bf048	void
 llm/qb.llm.api.md	VirtualCore.cpp:674-718	4af0dfc264b3	// Snapshot identities, not pointers: a previous onInit may destroy a...
-llm/qb.llm.api.md	VirtualCore.cpp:878-899	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
+llm/qb.llm.api.md	VirtualCore.cpp:883-904	816b2d8fcd16	if (dying || act.cancelling || !ok || actor == nullptr) {
 llm/qb.llm.api.md	VirtualCore.h:1209-1231	4f679e59b3c4	_ServiceActor *
 llm/qb.llm.api.md	VirtualCore.h:1459-1473	090b760196e5	template <typename _Actor>
 llm/qb.llm.api.md	VirtualCore.h:1693-1695	61c0b8a45ff7	Actor::spawn_detached(std::string_view name, Func &&func) const {
@@ -74,7 +74,7 @@ llm/qb.llm.api.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine o
 llm/qb.llm.api.md	coroutine/cancellation.h:189-206	46df22c06e52	struct child_state final : state {
 llm/qb.llm.api.md	coroutine/cancellation.h:520-541	e827eda2278d	inline cancellation_token
 llm/qb.llm.api.md	coroutine/cancellation.h:830-830	ffff25485ea6	state->result.emplace(co_await state->inner_task);
-llm/qb.llm.api.md	coroutine/utils.h:388-388	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.api.md	coroutine/utils.h:389-389	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.api.md	crypto.h:1055-1055	9613fb7d2235	static std::vector<unsigned char> x25519_key_exchange(const std::vect...
 llm/qb.llm.api.md	crypto.h:1067-1067	d0e7c7fb5535	static std::vector<unsigned char> x25519_key_exchange(const std::stri...
 llm/qb.llm.api.md	crypto.h:1093-1110	1893285b514b	static std::string encrypt_with_metadata(const std::vector<unsigned c...
@@ -82,7 +82,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1556-1569	31584ba4b550	inline void
+llm/qb.llm.api.md	listener.h:1894-1910	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
 llm/qb.llm.api.md	metrics.h:175-175	4fec3c2dbb3e	class family {
@@ -102,14 +102,14 @@ llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : p
 llm/qb.llm.api.md	offload.h:302-302	fec5045b6b24	offload(F &&fn, Args &&...args) {
 llm/qb.llm.api.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.api.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
-llm/qb.llm.api.md	scheduler.h:309-309	9764932307e8	struct parked_coroutine {
-llm/qb.llm.api.md	scheduler.h:611-611	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.api.md	scheduler.h:618-618	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
-llm/qb.llm.api.md	scheduler.h:633-633	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.api.md	scheduler.h:637-637	8cd772062a6b	suspension_tracking() noexcept {
-llm/qb.llm.api.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.api.md	scheduler.h:651-651	1acc0272cc17	void dump(std::ostream &os) const;
-llm/qb.llm.api.md	scheduler.h:826-829	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	scheduler.h:395-395	9764932307e8	struct parked_coroutine {
+llm/qb.llm.api.md	scheduler.h:762-762	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.api.md	scheduler.h:769-769	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
+llm/qb.llm.api.md	scheduler.h:784-784	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.api.md	scheduler.h:788-788	8cd772062a6b	suspension_tracking() noexcept {
+llm/qb.llm.api.md	scheduler.h:798-798	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.api.md	scheduler.h:802-802	1acc0272cc17	void dump(std::ostream &os) const;
+llm/qb.llm.api.md	scheduler.h:977-980	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	spawn.h:125-133	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
 llm/qb.llm.api.md	spawn.h:145-180	253a72a055f9	class Spawner : public qb::ServiceActor<Spawner> {
 llm/qb.llm.api.md	spawn.h:233-252	e9b74f792d7f	template <class A, class... Args>
@@ -119,8 +119,8 @@ llm/qb.llm.api.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint
 llm/qb.llm.api.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.api.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.api.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1963-1996	9effe2d193b3	void
-llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2320-2336	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:1968-2001	9effe2d193b3	void
+llm/qb.llm.api.md	src/qb/core/VirtualCore.cpp:2325-2341	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.api.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:222-255	9554d137f47e	drain_backend_packets() {
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:346-360	e6a54fbc82e3	if (_credit_packets_pending && _backend) {
@@ -137,7 +137,7 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:99-136	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:330-341	aabe4f0252c0	assign_quic_ids(*session, connection_id, stream_id);
 llm/qb.llm.api.md	src/qb/io/async/tcp/client.h:151-165	85d04f79627d	[[nodiscard]] inline std::string
-llm/qb.llm.api.md	src/qb/io/async/tcp/connector.h:530-561	e46c3f0bc182	run() try {
+llm/qb.llm.api.md	src/qb/io/async/tcp/connector.h:530-561	97ec305f77d3	run() try {
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1122-1123	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1324-1332	f4b8ced2987a	if (written == 0) {
 llm/qb.llm.api.md	src/qb/io/quic.cpp:1343-1349	218294b6cd09	if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
@@ -162,7 +162,7 @@ llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:415-440	c921a75d78cd	// Synchron
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:749-753	fa4f2498297e	template <typename Fill>
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:967-971	2c64ca2d9e32	template <typename Fill>
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
-llm/qb.llm.api.md	task.h:758-773	f2192a619a48	await_resume() {
+llm/qb.llm.api.md	task.h:767-782	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
@@ -183,12 +183,12 @@ llm/qb.llm.md	Actor.h:1532-1532	f9f0e3c13c7d	void spawn(Func &&func) const;
 llm/qb.llm.md	Actor.h:1542-1542	b86d140aa14a	void spawn(std::string_view name, Func &&func) const;
 llm/qb.llm.md	Actor.h:1548-1564	fdcc13b19f97	/**
 llm/qb.llm.md	Actor.h:1708-1714	7df8f4e2778e	* Provides a restricted interface for coroutines to interact with
-llm/qb.llm.md	Actor.h:2294-2405	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
-llm/qb.llm.md	Actor.h:2374-2404	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
-llm/qb.llm.md	Actor.h:2401-2404	4ce144bc7795	offload(F &&fn, Args &&...args) const {
-llm/qb.llm.md	Actor.h:2413-2416	d1b41f340749	inline ScopedCoroContext
-llm/qb.llm.md	Actor.h:2518-2538	512fb3c0c4ce	[[nodiscard]] ActorId
-llm/qb.llm.md	Actor.h:2572-2577	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
+llm/qb.llm.md	Actor.h:2298-2409	4b7f179a5d2d	class ScopedCoroContext : public CoroContext {
+llm/qb.llm.md	Actor.h:2378-2408	b58dae224f2c	* @brief `qb::io::async::offload(fn, args...)` scoped to the actor: r...
+llm/qb.llm.md	Actor.h:2405-2408	4ce144bc7795	offload(F &&fn, Args &&...args) const {
+llm/qb.llm.md	Actor.h:2417-2420	d1b41f340749	inline ScopedCoroContext
+llm/qb.llm.md	Actor.h:2522-2542	512fb3c0c4ce	[[nodiscard]] ActorId
+llm/qb.llm.md	Actor.h:2576-2581	c49cb9aa9d68	/** @brief `get()` asserted ready in debug builds (deref-when-ready). */
 llm/qb.llm.md	Actor.h:517-540	36939744466b	/**
 llm/qb.llm.md	Actor.h:563-584	c0770292de14	static void *
 llm/qb.llm.md	Actor.h:782-802	6d433ed7aa37	/**
@@ -203,30 +203,30 @@ llm/qb.llm.md	Main.cpp:704-706	74f8f97adb96	} else if (core_factory.empty()) {
 llm/qb.llm.md	Main.cpp:936-938	0f521c2df42b	Main::core(CoreId const index) {
 llm/qb.llm.md	Main.h:319-336	27e40ca75c18	CoreInitializer &setLatency(qb::duration latency = qb::duration::zero...
 llm/qb.llm.md	Pipe.h:148-163	4ddfc7959391	* @warning **noexcept + allocation.** This method is `noexcept`, yet ...
-llm/qb.llm.md	VirtualCore.cpp:1073-1075	7796660a5f5b	if (killed) [[unlikely]] {
-llm/qb.llm.md	VirtualCore.cpp:1224-1247	7547315e7512	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1396-1415	e56ce31e4af5	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
-llm/qb.llm.md	VirtualCore.cpp:1482-1497	27e395b7dc18	VirtualCore::send(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1650-1657	9419691a00a7	VirtualCore::time() const noexcept {
-llm/qb.llm.md	VirtualCore.cpp:1839-1854	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
-llm/qb.llm.md	VirtualCore.cpp:1898-1928	a67fb186c7ff	void
-llm/qb.llm.md	VirtualCore.cpp:1964-1996	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
-llm/qb.llm.md	VirtualCore.cpp:2189-2193	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
-llm/qb.llm.md	VirtualCore.cpp:722-730	dda6174d86c3	// `task` starts suspended: resume once to reach the first `co_await`...
-llm/qb.llm.md	VirtualCore.cpp:887-899	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
+llm/qb.llm.md	VirtualCore.cpp:1078-1080	7796660a5f5b	if (killed) [[unlikely]] {
+llm/qb.llm.md	VirtualCore.cpp:1229-1252	7547315e7512	VirtualCore::initActor(Actor &actor, bool const doInit) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1401-1420	e56ce31e4af5	// Detach the owning unique_ptr before calling user ~Actor(). A destr...
+llm/qb.llm.md	VirtualCore.cpp:1487-1502	27e395b7dc18	VirtualCore::send(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1655-1662	9419691a00a7	VirtualCore::time() const noexcept {
+llm/qb.llm.md	VirtualCore.cpp:1844-1859	0ff1677660c2	if (!_engine._core_set.raw().contains(core)) {
+llm/qb.llm.md	VirtualCore.cpp:1903-1933	a67fb186c7ff	void
+llm/qb.llm.md	VirtualCore.cpp:1969-2001	dfd5fc5e25ee	VirtualCore::__on_actor_down__(ActorId const id, DownReason const rea...
+llm/qb.llm.md	VirtualCore.cpp:2194-2198	c8c59098d539	VirtualCore::__send_unpublished__(Event const &event) noexcept {
+llm/qb.llm.md	VirtualCore.cpp:722-735	bb6d481dee8a	// `task` starts suspended: resume once to reach the first `co_await`...
+llm/qb.llm.md	VirtualCore.cpp:892-904	515372bffd2b	__dead_letter__(*ev, DeadLetterReason::init_failed);
 llm/qb.llm.md	VirtualCore.h:1020-1032	ecd24d637833	* @brief Get the current cached time for this VirtualCore's processin...
 llm/qb.llm.md	VirtualCore.h:1209-1231	4f679e59b3c4	_ServiceActor *
 llm/qb.llm.md	VirtualCore.h:1643-1652	1de53ea4e457	actor_coro_wrapper(Func func, CoroContext ctx, coro_census_ref counte...
 llm/qb.llm.md	VirtualCore.h:1664-1674	987a5a9d759b	actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
 llm/qb.llm.md	VirtualCore.h:1691-1702	095ce8f5dddd	template <typename Func>
 llm/qb.llm.md	async/io.h:108-109	bc5b8adc7b00	base()
-llm/qb.llm.md	async/io.h:117-121	4ab46a163948	~base() {
+llm/qb.llm.md	async/io.h:117-121	d6470b3638a4	~base() {
 llm/qb.llm.md	async/io.h:88-93	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
-llm/qb.llm.md	async/listener.h:74-86	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
+llm/qb.llm.md	async/listener.h:87-99	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
 llm/qb.llm.md	channel.h:1526-1526	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
 llm/qb.llm.md	channel.h:229-229	2f5606bfe61b	send_awaiter(const send_awaiter &)            = delete;
-llm/qb.llm.md	combinators.h:191-191	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
+llm/qb.llm.md	combinators.h:193-193	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
 llm/qb.llm.md	combinators.h:66-66	2e37ad078057	* @details `when_all`, `when_any`, `race` and `coro_with_timeout` sto...
 llm/qb.llm.md	compression.h:39-41	eb5735552e9f	#ifndef QB_HAS_COMPRESSION
 llm/qb.llm.md	config.h:175-175	1f710e001db3	#define QB_MAX_MESSAGE_SIZE static_cast<std::size_t>(100 * 1024 * 102...
@@ -236,10 +236,10 @@ llm/qb.llm.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine outli
 llm/qb.llm.md	coroutine/cancellation.h:1262-1262	733ec14c540c	with_deadline_owned(task<T> operation, std::chrono::steady_clock::tim...
 llm/qb.llm.md	coroutine/cancellation.h:189-212	9fb6c087ede8	struct child_state final : state {
 llm/qb.llm.md	coroutine/cancellation.h:314-328	2c207f4373a0	// Every still-linked public hook is noexcept and is dispatched before
-llm/qb.llm.md	coroutine/scheduler.h:850-854	26fa5d69b282	current() {
-llm/qb.llm.md	coroutine/utils.h:227-227	c6608bac00ef	run_for(qb::duration duration) {
-llm/qb.llm.md	coroutine/utils.h:293-293	49516cd6ffac	run_sync(Awaitable &&awaitable)
-llm/qb.llm.md	coroutine/utils.h:388-388	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.md	coroutine/scheduler.h:1003-1007	26fa5d69b282	current() {
+llm/qb.llm.md	coroutine/utils.h:228-228	c6608bac00ef	run_for(qb::duration duration) {
+llm/qb.llm.md	coroutine/utils.h:294-294	49516cd6ffac	run_sync(Awaitable &&awaitable)
+llm/qb.llm.md	coroutine/utils.h:389-389	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.md	crypto.h:105-116	51e14a279751	template <typename Step>
 llm/qb.llm.md	crypto.h:122-127	d1e0d208ae9b	inline int
 llm/qb.llm.md	crypto.h:33-44	0e90de8e08fe	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
@@ -261,10 +261,10 @@ llm/qb.llm.md	io.h:3339-3343	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:379-415	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
 llm/qb.llm.md	io.h:384-424	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:635-638	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1541-1553	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1556-1569	31584ba4b550	inline void
-llm/qb.llm.md	listener.h:1608-1608	cc6b74b785e4	defer(_Func &&func) {
-llm/qb.llm.md	listener.h:1641-1641	d3424619f351	run_until(bool const &status) {
+llm/qb.llm.md	listener.h:1874-1886	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1894-1910	d9f67615fd6a	inline void
+llm/qb.llm.md	listener.h:1949-1949	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:1982-1982	d3424619f351	run_until(bool const &status) {
 llm/qb.llm.md	metrics.h:208-208	7a5b17981653	class snapshot {
 llm/qb.llm.md	metrics.h:283-283	c90dbf2c7516	void describe_dispatch(snapshot &snap, qb::TimingStats const &stats, ...
 llm/qb.llm.md	metrics_registry.h:178-178	33a57aecca79	class Registry final : public detail::basic_registry<detail::registry...
@@ -281,17 +281,16 @@ llm/qb.llm.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.md	request.h:267-267	caff73e28888	qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its ...
 llm/qb.llm.md	resilience.h:468-468	322b61e18000	qb::io::async::pin_frame_copy(req);                                  ...
-llm/qb.llm.md	scheduler.h:309-309	9764932307e8	struct parked_coroutine {
-llm/qb.llm.md	scheduler.h:339-359	c96fefd341a2	* Drains and destroys all coroutines in the ready queue only. Coroutines
-llm/qb.llm.md	scheduler.h:574-603	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
-llm/qb.llm.md	scheduler.h:611-611	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.md	scheduler.h:633-633	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.md	scheduler.h:647-647	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.md	scheduler.h:395-395	9764932307e8	struct parked_coroutine {
+llm/qb.llm.md	scheduler.h:725-754	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	scheduler.h:762-762	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.md	scheduler.h:784-784	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.md	scheduler.h:798-798	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
 llm/qb.llm.md	src/qb/core/ActorId.h:704-710	690a03a23553	std::size_t
-llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2320-2336	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
+llm/qb.llm.md	src/qb/core/VirtualCore.cpp:2325-2341	8436d11ac4ed	detail::ActorIdPool::release_slow(ActorId const id) noexcept {
 llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorIdPool {
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:398-406	a1c4380f4ec5	/// Per-peer RTT estimate; id zero names a client's connection or a s...
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...

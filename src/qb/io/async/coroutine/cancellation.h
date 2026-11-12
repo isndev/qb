@@ -752,9 +752,9 @@ public:
                 // scrub the inner frame from the scheduler queues, then drop the inner task — exact
                 // order of the on_cancel path.
                 if (state->runner_handle)
-                    coro_scheduler().cancel_spawned(std::exchange(state->runner_handle, {}));
+                    detail::cleanup_cancel_spawned(std::exchange(state->runner_handle, {}));
                 if (auto ih = state->inner_task.handle())
-                    coro_scheduler().forget(ih);
+                    detail::cleanup_forget(ih);
                 state->inner_task = task<T>{};
             }
         }
@@ -785,13 +785,13 @@ public:
                         // (so inner_task's continuation_ — which points at the runner
                         // frame — can never be used), THEN drop the inner task frame.
                         if (s->runner_handle)
-                            coro_scheduler().cancel_spawned(std::exchange(s->runner_handle, {}));
+                            detail::cleanup_cancel_spawned(std::exchange(s->runner_handle, {}));
                         // Scrub the inner frame from the scheduler queues before its
                         // task<T> owner frees it: if the inner op's own watcher fired in
                         // this same tick it is already queued, and destroying it via the
                         // dtor would leave a dangling handle for run_ready() to pop (UAF).
                         if (auto ih = s->inner_task.handle())
-                            coro_scheduler().forget(ih);
+                            detail::cleanup_forget(ih);
                         s->inner_task = task<T>{};
                         if (s->continuation)
                             schedule_via_current(s->continuation);
@@ -900,9 +900,9 @@ public:
                 state->task_done    = true;
                 state->continuation = {};
                 if (state->runner_handle)
-                    coro_scheduler().cancel_spawned(std::exchange(state->runner_handle, {}));
+                    detail::cleanup_cancel_spawned(std::exchange(state->runner_handle, {}));
                 if (auto ih = state->inner_task.handle())
-                    coro_scheduler().forget(ih);
+                    detail::cleanup_forget(ih);
                 state->inner_task = task<void>{};
             }
         }
@@ -927,12 +927,12 @@ public:
                     if (!s->task_done) {
                         s->task_done = true;
                         if (s->runner_handle)
-                            coro_scheduler().cancel_spawned(std::exchange(s->runner_handle, {}));
+                            detail::cleanup_cancel_spawned(std::exchange(s->runner_handle, {}));
                         // Scrub the inner frame from the scheduler queues before its
                         // task<void> owner frees it (same-tick watcher-fired UAF guard;
                         // see the non-void specialization).
                         if (auto ih = s->inner_task.handle())
-                            coro_scheduler().forget(ih);
+                            detail::cleanup_forget(ih);
                         s->inner_task = task<void>{};
                         if (s->continuation)
                             schedule_via_current(s->continuation);
@@ -1060,7 +1060,7 @@ struct cancellable_sleep_awaiter {
         // with_deadline_timeout_awaiter; cancel_spawned is a no-op once the timer already fired
         // (timer_task clears timer_handle then, so a reused address is never mistakenly reclaimed).
         if (state && state->timer_handle)
-            coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
+            detail::cleanup_cancel_spawned(std::exchange(state->timer_handle, {}));
     }
 
     [[nodiscard]] bool
@@ -1084,7 +1084,7 @@ struct cancellable_sleep_awaiter {
                 // frame leaks until the timer fires, or for the rest of the thread's
                 // life on a core whose listener is never torn down (Main::start(false)).
                 if (s->timer_handle)
-                    coro_scheduler().cancel_spawned(std::exchange(s->timer_handle, {}));
+                    detail::cleanup_cancel_spawned(std::exchange(s->timer_handle, {}));
                 schedule_via_current(s->handle);
             }
         });
@@ -1177,7 +1177,7 @@ struct with_deadline_timeout_awaiter {
         // no-op once the timer has fired (its frame is no longer owned and timer_handle was
         // cleared in deadline_timer_task), so the normal timeout/cancel paths are unaffected.
         if (state && state->timer_handle)
-            coro_scheduler().cancel_spawned(std::exchange(state->timer_handle, {}));
+            detail::cleanup_cancel_spawned(std::exchange(state->timer_handle, {}));
     }
 
     [[nodiscard]] bool
@@ -1201,7 +1201,7 @@ struct with_deadline_timeout_awaiter {
                 // Cancel resolved the wait: tear the detached timer down now rather than
                 // leaving it parked on the full remaining-until-deadline sleep.
                 if (s->timer_handle)
-                    coro_scheduler().cancel_spawned(std::exchange(s->timer_handle, {}));
+                    detail::cleanup_cancel_spawned(std::exchange(s->timer_handle, {}));
                 schedule_via_current(s->handle);
             }
         });

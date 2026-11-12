@@ -112,13 +112,13 @@ protected:
      * @brief Destructor that unregisters the event watcher.
      * @details Stops the event watcher and unregisters it from the listener to prevent dangling references
      *          and ensure proper cleanup of libev resources.
-     *          Specifically, it calls `_async_event.stop()` and then `listener::current.unregisterEvent(_async_event._interface)`.
+     *          Specifically, it calls `_async_event.stop()` and then `listener::release(_async_event._interface)`.
      */
     ~base() {
         // std::cout << "handle=" << _async_event.fd
         //           << " disposed async.stop()" << std::endl;
         _async_event.stop();
-        listener::current.unregisterEvent(_async_event._interface);
+        listener::release(_async_event._interface); // frees a wrapper clear() detached without reaching a listener
     }
 };
 

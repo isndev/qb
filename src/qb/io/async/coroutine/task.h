@@ -146,20 +146,29 @@ inline void forget_frame_if_current(std::coroutine_handle<>) noexcept;
 // `qb::io::async::coro_scheduler().spawn(t)`, has no such wrapper, and is what this covers.
 void report_detached_coroutine_exception(std::exception_ptr ep) noexcept;
 
-// Defined OUT OF LINE in qb/io/logger.cpp too, for the same reasons. Called from
-// `~CoroutineScheduler` when it tears down with `count` frames still SUSPENDED -- parked on a
-// watcher or a wait list -- which it deliberately abandons rather than destroys (Finding 2.B.8:
-// their watchers still reference them, and destroying a frame under a live loop is worse than
-// leaking it). Until 3.2 that was a `fprintf` behind `#ifndef NDEBUG`: in every release build a
-// service that recreated listeners accumulated frames with no message and no number (Huly QB-84).
-// It adds `count` to the process-wide tally below and prints ONE line on `qb::io::cerr`, in every
-// build. Reaching it is a lifecycle misuse -- stop the loop before destroying its scheduler --
-// so it is never on a hot path.
-void report_abandoned_coroutine_frames(std::size_t count, void const *scheduler) noexcept;
+/// Why a `CoroutineScheduler` being destroyed left the coroutines it owns undestroyed: the orders in which
+/// destroying them would run code that cannot run. See `~CoroutineScheduler`.
+enum class coroutine_abandon_reason : unsigned char {
+    loop_gone,      ///< destroyed after its thread's `listener::current`: the loop its coroutines waited on is gone
+    draining,       ///< destroyed from inside one of its own coroutines (`exit()` in a coroutine body): one is executing
+    foreign_thread, ///< destroyed on another thread than the one that built it: its coroutines wait on that thread's loop
+    respawning,     ///< its coroutines' destructors kept spawning on it, teardown pass after teardown pass
+};
 
-/// The number of suspended coroutine frames abandoned at scheduler teardown since the process
-/// started, every thread included: what an operator or a test reads to know a lifecycle went
-/// wrong somewhere, since the frames themselves are gone (Huly QB-84).
+// Defined OUT OF LINE in qb/io/logger.cpp too, for the same reasons. Called from
+// `~CoroutineScheduler` when it leaves `count` coroutines it OWNS undestroyed -- the spawned roots,
+// each with its chain -- for the reason `why` names. A scheduler destroys what it owns; these are
+// the orders in which it cannot (Finding 2.B.8 abandoned in every order until 3.4, Huly QB-1246).
+// It adds `count` to the process-wide tally below and prints ONE line on `qb::io::cerr`, in every
+// build (Huly QB-84: until 3.2 a `fprintf` behind `#ifndef NDEBUG`). Reaching it is a lifecycle
+// misuse -- destroy a scheduler before its thread's listener, on its own thread, and not from one
+// of its own coroutines -- so it is never on a hot path.
+void report_abandoned_coroutine_frames(std::size_t count, void const *scheduler, coroutine_abandon_reason why) noexcept;
+
+/// The number of coroutines a scheduler owned and could not destroy when it was destroyed, since the
+/// process started, every thread included: what an operator or a test reads to know a lifecycle went
+/// wrong somewhere, since the frames themselves are unreachable (Huly QB-84). A coroutine, not a frame:
+/// a root is counted once, whatever chain it awaits, and a frame a task driven by hand owns is never counted.
 [[nodiscard]] std::size_t abandoned_coroutine_frames_total() noexcept;
 
 // ============================================================================

@@ -181,15 +181,15 @@ struct awaiter_base {
      * directly and never `spawn()`s it, so no scheduler was bound yet, `CoroutineScheduler::current()`
      * built a thread-local FALLBACK and we cached that -- and then `__begin_activation__` called
      * `listener::current.coro_scheduler()`, whose first call `set_current()`s the LISTENER's
-     * scheduler (async/listener.h:1408). `listener::run()` pumps only `_coro_scheduler`
-     * (async/listener.h:1152-1153), so a resume queued into the orphaned fallback was never drained: the
+     * scheduler (async/listener.h:1678). `listener::run()` pumps only `_coro_scheduler`
+     * (async/listener.h:1390-1391), so a resume queued into the orphaned fallback was never drained: the
      * awaited operation succeeded and the coroutine never woke. `current()` now binds the
-     * listener's scheduler on that cold path (scheduler.h:850-854), so the two are one object there
+     * listener's scheduler on that cold path (scheduler.h:1003-1007), so the two are one object there
      * too; resolving at resume time stays the rule.
      *
      * Resolving at resume time is correct because this runs in a libev callback on the loop
      * thread, where the current scheduler IS the one that loop pumps. It is also what the rest
-     * of qb-io already does — see async/listener.h:1128, "every waker in qb-io defers through
+     * of qb-io already does — see async/listener.h:1366, "every waker in qb-io defers through
      * `schedule_via_current`". This one was an exception, and so were the tcp connector's until 3.4 (Huly QB-1234).
      *
      * The cached pointer is followed only while that scheduler lives (Huly QB-1220): a task driven by hand

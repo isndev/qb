@@ -23,6 +23,8 @@
  * @ingroup IO
  */
 
+#include <cstdio>
+#include <exception>
 #include <qb/io/async/listener.h>
 
 namespace qb::io::async {
@@ -45,11 +47,33 @@ namespace qb::io::async {
 // `coro_scheduler()` binds only the scheduler it creates; binding here as well covers a thread
 // whose loop scheduler exists but was unbound (`set_current(nullptr)`), which would otherwise
 // take this cold path on every call.
+//
+// Never on a listener whose destructor has run (Huly QB-1246). A wake and a completed frame's hand-over are
+// dropped before they get here (`schedule_via_current()`, `defer_frame_destruction()`); what is left is coroutine
+// code RUNNING on a thread whose loop is destroyed and asking to suspend, to yield or to spawn.
 CoroutineScheduler &
 detail::bind_thread_scheduler() {
+    if (detail::thread_loop_gone()) [[unlikely]]
+        detail::refuse_after_thread_loop("its thread's scheduler (a coroutine suspending, yielding or spawning)");
     auto &sched = listener::current.coro_scheduler();
     CoroutineScheduler::set_current(&sched);
     return sched;
+}
+
+// The named stop of every request made after the thread's `listener::current` is destroyed. Written to `stderr`
+// with `fputs`, not through `qb::io::cerr()`: it runs among the destructors of the objects with static storage and
+// is the last thing the process says, so it takes no lock and builds no stream. Until 3.4 these requests read the
+// destroyed listener and reached its freed loop -- a crash in `ev_now_update`, or a scheduler rebuilt inside the
+// destroyed object.
+void
+detail::refuse_after_thread_loop(char const *const request) noexcept {
+    std::fputs("qb: ", stderr);
+    std::fputs(request, stderr);
+    std::fputs(" was requested after that thread's event loop (listener::current) was destroyed -- nothing can run "
+               "on that thread any more\n",
+               stderr);
+    std::fflush(stderr);
+    std::terminate();
 }
 
 } // namespace qb::io::async
