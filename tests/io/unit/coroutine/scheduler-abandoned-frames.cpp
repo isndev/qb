@@ -5,7 +5,7 @@
  *        no tally; a frame a task driven by hand owns is that task's, and is never reported (Huly QB-84, QB-1246).
  *
  * Until 3.4 the destructor abandoned every suspended frame (Finding 2.B.8: "their watchers still reference them"):
- * one line on `qb::io::cerr`, the frame counted in `abandoned_coroutine_frames_total()`, and the frame leaked --
+ * one line on the standard error, the frame counted in `abandoned_coroutine_frames_total()`, and the frame leaked --
  * its locals never destroyed, its chain never freed, a mutex waiter left queued to run on under whichever
  * scheduler drained the mutex next. The destruction of a frame stops its watchers (each awaiter's destructor
  * does), so that reason held for one order only: a scheduler destroyed after its thread's loop. That order and

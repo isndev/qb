@@ -380,7 +380,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
 
 A coroutine that never resumes says nothing by itself. `CoroutineScheduler::dump()` lists the coroutines
 parked on THIS thread — the roots it owns, by the name given at spawn, and, with suspension tracking on,
-what each one waits on, for how long, and the coroutine it awaits — longest waits first. _(scheduler.h:798)_
+what each one waits on, for how long, and the coroutine it awaits — longest waits first. _(scheduler.h:804)_
 
 ```cpp
 // on the thread that runs the coroutines (a VirtualCore thread: inside a handler, onInit, a coroutine)
@@ -393,11 +393,11 @@ sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
 - **Off costs one branch.** Every awaiter of qb and of the modules records in `await_suspend` — first, or, a
   task's and a generator's, last, just before the transfer: while no thread tracks, names or not, it is one load of
   a process-wide count and one branch — no thread-local access, no clock, nothing in the frame. On, a suspension
-  records its kind and the CPU counter. _(scheduler.h:784)_
+  records its kind and the CPU counter. _(scheduler.h:790)_
 - **A name is given at spawn** — `spawn("name", fn)`, `spawn_detached("name", fn)`, the scheduler's
   `spawn(name, task)` — and lives as long as the frame; an unnamed spawn stores nothing. While a named coroutine
   lives, every frame destruction on its thread pays one name lookup and on another thread one thread-local read;
-  suspensions pay nothing for names. _(Actor.h:1542, scheduler.h:762)_
+  suspensions pay nothing for names. _(Actor.h:1542, scheduler.h:768)_
 - **An awaitable of your own labels itself**: `qb::io::async::track_suspension(h, "my queue")` first in its
   `await_suspend`. One that does not leaves the coroutine with the record of its PREVIOUS wait, ageing.
   `scripts/check-awaiter-tracking.py` holds every awaiter of qb and of the modules to it. _(tracking.h:208)_
@@ -408,7 +408,7 @@ sched.dump(std::cerr); // "fetch-price" 0x… task 2.1 s -> 0x… ask 2.1 s
   name. `scripts/check-awaiter-copy.py` holds every awaiter of qb and of the modules to it. _(channel.h:229)_
 - A `parked_coroutine` gives `frame`, `name`, `kind` (`"sleep"`, `"io"`, `"ask"`, `"mutex"`, `"task"`, … —
   `"watcher"` for a coroutine parked on a loop watcher with no record), `age`, `waits_on` (the awaited
-  coroutine, for `"task"` and `"generator next"`) and `root`. Call `dump()` on the scheduler's thread; it allocates. _(scheduler.h:395)_
+  coroutine, for `"task"` and `"generator next"`) and `root`. Call `dump()` on the scheduler's thread; it allocates. _(scheduler.h:400)_
 
 ### Network actors via `qb::io::use<>`
 
@@ -676,7 +676,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   failure removes the actor; a pre-start id is only a reservation. Gate use on readiness, not id validity.
   No scheduler is bound for that first resume: a `sleep(0)` or an inline callback that queues during
   it binds the loop's own on a cold path, so it lands on the loop's ready drain.
-  _(Actor.cpp:669-684; VirtualCore.cpp:722-735, :892-904, :1229-1252; coroutine/scheduler.h:1003-1007)_
+  _(Actor.cpp:669-684; VirtualCore.cpp:722-735, :892-904, :1229-1252; coroutine/scheduler.h:1009-1013)_
 - **An `offload` callable runs on a pool thread, not on the loop.** Capturing `this`, an actor member,
   a qb-io object or a reference into the loop's state is a data race with the loop that owns it; hand
   the call values and take its result back by `co_await`. A running call cannot be interrupted, and a
@@ -836,20 +836,20 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   object on the same thread whose `listener::current` it bound to. _(async/listener.h:87-99; async/io.h:88-93, :108-109, :117-121)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
-  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1894-1910; mixin.h:63-71)_
+  drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1930-1946; mixin.h:63-71)_
 - **The standalone drivers park, they do not sleep.** `run_until`, `run_sync` and `run_for` park a pass that
   did nothing in the loop's own backend: io readiness or a timer ends the park at poll latency, and the 1 ms
   cap only bounds a wait nothing ends (they used to sleep blind — 50 µs, 1 ms, 1 ms — and a sub-millisecond
   sleep is served at the millisecond on Windows, so a reply sat unread for 1–2.5 ms). The `status` of
   `run_until` is read unsynchronised: flip it on the loop thread, from a handler, a callback or a coroutine
-  the loop runs — never from another thread. _(listener.h:1982; coroutine/utils.h:228, :294)_
+  the loop runs — never from another thread. _(listener.h:2018; coroutine/utils.h:228, :294)_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
-  them. _(listener.h:1874-1886)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:384-424)_ _(listener.h:1949)_
+  them. _(listener.h:1910-1922)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:384-424)_ _(listener.h:1985)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
-  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:725-754)_
+  without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:731-760)_
 - **A coroutine scheduler destroys the coroutines it owns when it is destroyed** (sixteen passes at most), and
   abandons them -- destroying nothing, one WARNING line that names the order, the count in
   `abandoned_coroutine_frames_total()` -- only after its thread's `listener::current`, on another thread than its own,

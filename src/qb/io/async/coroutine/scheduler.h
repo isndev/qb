@@ -137,6 +137,10 @@ is_gone_thread_listener(void const *listener) noexcept {
 /// `detail::cleanup_scheduler()`, `listener::release()`, `listener::defer()`).
 [[noreturn]] void refuse_after_thread_loop(char const *request) noexcept;
 
+/// The one line of a `listener::reset_coro_scheduler()` that cannot be served -- asked while one of that scheduler's
+/// coroutines is executing. Written to `stderr` with `fputs`, as the named stop is.
+void report_refused_scheduler_reset(void const *scheduler) noexcept;
+
 /**
  * @brief For its lifetime, a coroutine of this thread is being resumed OUTSIDE a `run_ready()` drain: inline, by the
  *        handler that routed its `ask` reply (`ask_awaiter::deliver_thunk`) or by the core, for an `onInit()`.
@@ -161,6 +165,7 @@ QB_ABI_ANCHOR inline CoroutineScheduler *&destroying_scheduler() noexcept;
 QB_ABI_ANCHOR inline void                 track_live_scheduler(CoroutineScheduler *scheduler, bool alive) noexcept;
 QB_ABI_ANCHOR inline bool                 is_live_scheduler(CoroutineScheduler const *scheduler) noexcept;
 QB_ABI_ANCHOR inline bool                 built_on_this_thread(CoroutineScheduler const *scheduler) noexcept;
+[[nodiscard]] inline bool                 resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept;
 } // namespace detail
 
 /**
@@ -428,7 +433,7 @@ public:
      * pumped it). A frame it does not own (a task driven by hand) is its task's.
      *
      * Three orders are refused, and then it destroys NOTHING -- parked, queued and completed frames alike: the
-     * coroutines it owns are counted in `abandoned_coroutine_frames_total()` and one line on `qb::io::cerr` says
+     * coroutines it owns are counted in `abandoned_coroutine_frames_total()` and one line on `stderr` says
      * which order it was (Huly QB-84):
      *   - destroyed AFTER its thread's `listener::current` (static storage, a thread_local built before the
      *     listener): the loop its coroutines waited on is gone, and no destructor of a coroutine local is run
@@ -481,7 +486,7 @@ private:
     // or the current one's. A scheduler that is neither (one the resumed coroutine built for itself) is not
     // concerned. The second half is the rule of every scheduler qb-core spawns on, not a proof: which scheduler owns
     // the frame an inline resume runs is not recorded (it would cost every reply), so a coroutine spawned by hand on
-    // a third scheduler is not seen, and a CURRENT scheduler destroyed inside such a resume abandons what it owns.
+    // a third scheduler is not seen, and a CURRENT one destroyed inside such a resume abandons, or refuses a reset.
     [[nodiscard]] bool
     resuming_one_of_its_own() const noexcept {
         if (in_run_ready_)
@@ -489,6 +494,7 @@ private:
         detail::thread_loop_t const &thread = detail::thread_loop();
         return thread.inline_resumes != 0 && (thread.scheduler == this || current_ == this);
     }
+    friend bool detail::resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept;
 
     // The orders in which this scheduler must not destroy the coroutines it owns (see the destructor); `why` is
     // written only when the answer is yes.
@@ -1533,6 +1539,13 @@ track_live_scheduler(CoroutineScheduler *scheduler, bool alive) noexcept {
         live.slot[live.count++] = scheduler;
     else if (alive)
         live.overflowed = true;
+}
+
+// One of `scheduler`'s coroutines is executing -- its drain is on the stack, or qb-core is resuming one inline: what
+// the listener asks before it resets its scheduler.
+inline bool
+resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept {
+    return scheduler.resuming_one_of_its_own();
 }
 
 // Whether `scheduler` was built on the calling thread: it is in this thread's table from its constructor to the end

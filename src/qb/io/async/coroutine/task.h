@@ -159,7 +159,7 @@ enum class coroutine_abandon_reason : unsigned char {
 // `~CoroutineScheduler` when it leaves `count` coroutines it OWNS undestroyed -- the spawned roots,
 // each with its chain -- for the reason `why` names. A scheduler destroys what it owns; these are
 // the orders in which it cannot (Finding 2.B.8 abandoned in every order until 3.4, Huly QB-1246).
-// It adds `count` to the process-wide tally below and prints ONE line on `qb::io::cerr`, in every
+// It adds `count` to the process-wide tally below and prints ONE line on `stderr` (`fputs`), in every
 // build (Huly QB-84: until 3.2 a `fprintf` behind `#ifndef NDEBUG`). Reaching it is a lifecycle
 // misuse -- destroy a scheduler before its thread's listener, on its own thread, and not from one
 // of its own coroutines -- so it is never on a hot path.

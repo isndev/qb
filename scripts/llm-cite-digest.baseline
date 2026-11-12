@@ -82,7 +82,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1894-1910	d9f67615fd6a	inline void
+llm/qb.llm.api.md	listener.h:1930-1946	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
 llm/qb.llm.api.md	metrics.h:175-175	4fec3c2dbb3e	class family {
@@ -102,14 +102,14 @@ llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : p
 llm/qb.llm.api.md	offload.h:302-302	fec5045b6b24	offload(F &&fn, Args &&...args) {
 llm/qb.llm.api.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.api.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
-llm/qb.llm.api.md	scheduler.h:395-395	9764932307e8	struct parked_coroutine {
-llm/qb.llm.api.md	scheduler.h:762-762	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.api.md	scheduler.h:769-769	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
-llm/qb.llm.api.md	scheduler.h:784-784	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.api.md	scheduler.h:788-788	8cd772062a6b	suspension_tracking() noexcept {
-llm/qb.llm.api.md	scheduler.h:798-798	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.api.md	scheduler.h:802-802	1acc0272cc17	void dump(std::ostream &os) const;
-llm/qb.llm.api.md	scheduler.h:977-980	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	scheduler.h:400-400	9764932307e8	struct parked_coroutine {
+llm/qb.llm.api.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.api.md	scheduler.h:775-775	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
+llm/qb.llm.api.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.api.md	scheduler.h:794-794	8cd772062a6b	suspension_tracking() noexcept {
+llm/qb.llm.api.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.api.md	scheduler.h:808-808	1acc0272cc17	void dump(std::ostream &os) const;
+llm/qb.llm.api.md	scheduler.h:983-986	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	spawn.h:125-133	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
 llm/qb.llm.api.md	spawn.h:145-180	253a72a055f9	class Spawner : public qb::ServiceActor<Spawner> {
 llm/qb.llm.api.md	spawn.h:233-252	e9b74f792d7f	template <class A, class... Args>
@@ -236,7 +236,7 @@ llm/qb.llm.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine outli
 llm/qb.llm.md	coroutine/cancellation.h:1262-1262	733ec14c540c	with_deadline_owned(task<T> operation, std::chrono::steady_clock::tim...
 llm/qb.llm.md	coroutine/cancellation.h:189-212	9fb6c087ede8	struct child_state final : state {
 llm/qb.llm.md	coroutine/cancellation.h:314-328	2c207f4373a0	// Every still-linked public hook is noexcept and is dispatched before
-llm/qb.llm.md	coroutine/scheduler.h:1003-1007	26fa5d69b282	current() {
+llm/qb.llm.md	coroutine/scheduler.h:1009-1013	26fa5d69b282	current() {
 llm/qb.llm.md	coroutine/utils.h:228-228	c6608bac00ef	run_for(qb::duration duration) {
 llm/qb.llm.md	coroutine/utils.h:294-294	49516cd6ffac	run_sync(Awaitable &&awaitable)
 llm/qb.llm.md	coroutine/utils.h:389-389	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
@@ -264,10 +264,10 @@ llm/qb.llm.md	io.h:3339-3343	13b349c0b5e9	reset_for_reconnect() {
 llm/qb.llm.md	io.h:379-415	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
 llm/qb.llm.md	io.h:384-424	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
 llm/qb.llm.md	io.h:635-638	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
-llm/qb.llm.md	listener.h:1874-1886	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1894-1910	d9f67615fd6a	inline void
-llm/qb.llm.md	listener.h:1949-1949	cc6b74b785e4	defer(_Func &&func) {
-llm/qb.llm.md	listener.h:1982-1982	d3424619f351	run_until(bool const &status) {
+llm/qb.llm.md	listener.h:1910-1922	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1930-1946	d9f67615fd6a	inline void
+llm/qb.llm.md	listener.h:1985-1985	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:2018-2018	d3424619f351	run_until(bool const &status) {
 llm/qb.llm.md	metrics.h:208-208	7a5b17981653	class snapshot {
 llm/qb.llm.md	metrics.h:283-283	c90dbf2c7516	void describe_dispatch(snapshot &snap, qb::TimingStats const &stats, ...
 llm/qb.llm.md	metrics_registry.h:178-178	33a57aecca79	class Registry final : public detail::basic_registry<detail::registry...
@@ -285,11 +285,11 @@ llm/qb.llm.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.md	request.h:267-267	caff73e28888	qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its ...
 llm/qb.llm.md	resilience.h:468-468	322b61e18000	qb::io::async::pin_frame_copy(req);                                  ...
-llm/qb.llm.md	scheduler.h:395-395	9764932307e8	struct parked_coroutine {
-llm/qb.llm.md	scheduler.h:725-754	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
-llm/qb.llm.md	scheduler.h:762-762	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.md	scheduler.h:784-784	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.md	scheduler.h:798-798	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.md	scheduler.h:400-400	9764932307e8	struct parked_coroutine {
+llm/qb.llm.md	scheduler.h:731-760	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t

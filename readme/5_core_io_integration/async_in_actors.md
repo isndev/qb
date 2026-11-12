@@ -120,7 +120,7 @@ spawn([this](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 });
 ```
 
-`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and, when none is, bind that accessor's as current — none exists yet, or a `reset_coro_scheduler()` left none (3.4, Huly QB-1220: the actor kept the scheduler it had cached, which the reset destroyed, or one it found unbound) — so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1570-1572,1613-1614; qb/src/qb/io/async/listener.h:1661,1666-1680; qb/src/qb/core/Actor.cpp:780-803; qb/src/qb/io/async/coroutine/scheduler.h:1003-1007 -->
+`Actor::has_active_coroutines()` and `active_coroutine_count()` report whether suspended coroutines are still outstanding — useful before deciding to `kill()`. The coroutine scheduler is owned by the core's `listener`, one per `VirtualCore`, but it is **not** built when the listener is: `listener::coro_scheduler()` creates it on first access. `spawn` / `spawn_detached` bind to whichever scheduler is current on the calling thread and, when none is, bind that accessor's as current — none exists yet, or a `reset_coro_scheduler()` left none (3.4, Huly QB-1220: the actor kept the scheduler it had cached, which the reset destroyed, or one it found unbound) — so both require no setup beyond running inside the engine. <!-- src: qb/src/qb/core/Actor.h:1570-1572,1613-1614; qb/src/qb/io/async/listener.h:1664,1669-1683; qb/src/qb/core/Actor.cpp:780-803; qb/src/qb/io/async/coroutine/scheduler.h:1009-1013 -->
 
 What a `kill()` does to a coroutine that is already parked is on [Writing actors](../4_qb_core/actor.md#killed-while-parked) (the actor-lifecycle half) and [C++20 coroutines](../3_qb_io/coroutines.md#safe-integration-with-qbactor) (which awaiters are cancellation-aware).
 
@@ -135,7 +135,7 @@ namespace qb::io::async {
     void defer(_Func &&func);          // tail of this loop turn — never re-entrant
 }
 ```
-<!-- src: qb/src/qb/io/async/listener.h:1949 (async::defer); qb/src/qb/io/async/listener.h:1428 (listener::defer) -->
+<!-- src: qb/src/qb/io/async/listener.h:1985 (async::defer); qb/src/qb/io/async/listener.h:1431 (listener::defer) -->
 
 Captured state is released when the callback fires or when the loop is torn down, whichever comes first, so a `shared_ptr` capture is leak-free. Same-thread only. `defer()` does **not** keep the actor alive: the same capture-lifetime rule applies as for a delayed `callback`. A check through a captured raw `this` cannot make either closure safe.
 
