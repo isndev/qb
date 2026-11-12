@@ -349,7 +349,7 @@ auto h = co_await ctx.offload([](std::uint64_t x) { return x * 63641362238467930
   its coroutine form run `getaddrinfo` before the first `connect` syscall, then try the addresses in order,
   each within its share of the deadline (`tcp::connect_attempt_budget`); a TLS failure on an address that
   answered is final. For a name whose lookup may be slow, resolve on the pool and connect over the list —
-  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1063; tcp/socket.cpp:103-110)_
+  `host` is the name TLS presents and verifies. _(tcp/connector.h:138-144, :1063; tcp/socket.cpp:109-116)_
 - **`qb::io::uri` retains scheme case, but default ports do not depend on it.** `hTtP://host/`
   and `HtTpS://host/` resolve to 80 and 443 when no port is written; a written port wins, and an
   unregistered scheme has no implicit port (`u_port() == 0`). _(uri.cpp:1145-1184; uri.h:590-600)_
@@ -878,7 +878,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:923`.
+  `socket::set_insecure()` is declared at `ssl/socket.h:938`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -916,25 +916,46 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2362-2391, :2895-2902, :3339-3343)_
-- **A standalone io's `dispose()` ends its transport** (Huly QB-1060): once the watcher is stopped, after
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2377-2406, :2923-2930, :3407-3411)_
+- **A standalone io's `dispose()` ends its transport** (Huly QB-1060, QB-1270): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
-  no CLOSE_WAIT socket. When the object ended it (`disconnect()`, a framing error, a size guard, the end of
-  `close_after_deliver()`) only its sending side is shut down: the peer reads EOF after everything queued and
-  nothing is reset (a close resets a peer whose bytes are unread: its next send fails, and Windows drops its unread
-  tail); the descriptor
-  stays until the object dies or its next transport replaces it, and an acceptor keeps its port. Closing it
-  again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
-  returned. A server's session is torn down by its server. _(io.h:3254, :3275-3278; teardown.h:100-116)_
+  no CLOSE_WAIT socket. When the object ended it (`disconnect()`, a framing error, the end of
+  `close_after_deliver()`) its descriptor LEAVES it for the thread's loop, which sends the FIN (the peer reads EOF
+  after everything queued, nothing is reset), reads and drops what the peer still sends, and closes on the peer's
+  EOF, a socket error, `linger()` (2 s; `set_linger(qb::duration)`) or 16 MiB dropped. So `transport().is_open()` is
+  false from `dispose()` on — `on(event::dispose&&)` reads no peer: read it in `on(event::disconnected&&)` — and the
+  object is destroyed or reconnected at once. A size guard (`message_too_large`, `buffer_overflow`) and a
+  `linger()` of zero close at once; an acceptor keeps its socket and port, a datagram object its socket. Closing the
+  transport again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
+  returned. In 3.3 the half-closed descriptor stayed in the object: a peer that kept writing blocked for ever.
+  _(io.h:3299, :3341-3346; teardown.h:143-177, :89-95)_
+- **A socket the loop is closing after its peer is that thread's** (Huly QB-1270): a blocking `async::run()` returns
+  when the last one is gone — up to `linger()` later against a silent peer, at once when the peer closes or
+  `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
+  loop: a thread that stops running it keeps the descriptor until a pass, `listener::clear()` or its end. At most 64
+  per loop (one more closes the oldest), 16 MiB read per socket (a standalone object's `close_after_deliver()` included); a TCP connect or `accept()` refused for lack of
+  descriptors (`EMFILE`, `ENFILE`) closes them all and is made again. A TLS socket detaches its `SSL` object from the
+  descriptor it gives away: a `write()` on the transport afterwards fails. To let a peer that is STILL SENDING read
+  your last bytes, a session calls `close_after_deliver()` (time-bounded only); `disconnect()` is the abort.
+  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1048-1052)_
+- **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
+  after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
+  — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to
+  the loop: a peer still sending reads the session's last bytes, not a reset. With output still QUEUED the socket
+  closes with the session and what was queued is dropped (resources win over delivery; `close_after_deliver()` is the
+  path that waits); so does a session a size guard ended, one that lingered, one with `linger()` zero. The server's
+  `disconnected(id)` override finds a handed-over session's transport closed: read the peer in `on(event::disconnected&&)`.
+  _(io.h:3317-3336)_
 - **A server's session closes after its peer** (Huly QB-1089): once its `close_after_deliver()` output is
-  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2167-2191, from :3067),
-  then reads and drops what the peer still sends (`linger_read()`, io.h:2198-2208, from :3167-3171) until the peer
+  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2175-2199, from :3095),
+  then reads and drops what the peer still sends (`linger_read()`, io.h:2212-2222, from :3195-3199) until the peer
   closes, the socket fails, or `linger()` elapses (2 s; `set_linger(qb::duration)`, zero closes at once); only then
   does `dispose()` run. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`
   still aborts at once; a server's teardown destroys a lingering session without waiting; `extractSession()` takes
-  one out of it (`cancel_linger()`, io_handler.h:287-288). No change for a standalone io.
+  one out of it (`cancel_linger()`, io_handler.h:287-288). Bounded in time alone: it is what lets a peer that
+  is still sending read the answer.
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,
@@ -943,7 +964,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **A teardown hook that throws is contained, and the teardown still completes.** `dispose()` runs
   `on(event::disconnected&&)` and `on(event::dispose&&)` through `detail::run_teardown_hook`: the exception is logged
   (WARN, with `what()`), then the watcher is stopped or the session handed back to its server. Throwing from them
-  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:58)_
+  signals nothing; an acceptor without its own `on(event::disconnected&&)` logs a CRIT line (Huly QB-256). _(teardown.h:61)_
 - **Server bind is exclusive on Windows.** `socket::pserve` sets `SO_EXCLUSIVEADDRUSE` on Windows (`#ifdef _WIN32`)
   so an in-use bind fails fast with `WSAEADDRINUSE` and no other process can hijack/shadow the port; POSIX keeps
   `SO_REUSEADDR` (TIME_WAIT rebind). _(sys__socket.cpp:286-303)_

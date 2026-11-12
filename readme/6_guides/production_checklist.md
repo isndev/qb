@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :904-923 (set_insecure / secure-by-default doc), :929 (verify_peer) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:371 (_verify_peer = true), :919-938 (set_insecure / secure-by-default doc), :944 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -110,7 +110,7 @@ These functions take `std::filesystem::path` arguments (certificate, key, CA fil
 
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:763 (cipher suite), :769 (tls version), :775 (alpn), :824 (peer cert chain) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:778 (cipher suite), :784 (tls version), :790 (alpn), :839 (peer cert chain) -->
 
 ### Windows server bind: exclusive, not reusable
 
@@ -134,7 +134,7 @@ qb caps inbound work per connection to resist oversized-message denial of servic
 
 Every protocol-driven I/O component carries a `_max_message_size`, initialized to `QB_MAX_MESSAGE_SIZE` (**100 MB** by default — note that a stale doc comment on `max_message_size()` in `qb/io/async/io.h` says 10 MB; the macro definition in `config.h` is the source of truth). A frame larger than the limit marks the protocol invalid and disconnects with reason `-2` ("message too large").
 
-<!-- src: qb/src/qb/io/config.h:174-176 (QB_MAX_MESSAGE_SIZE = 100MB), qb/src/qb/io/async/io.h:557,868,2126 (_max_message_size members), :1356-1359,:2930-2933 (reason -2, message too large) -->
+<!-- src: qb/src/qb/io/config.h:174-176 (QB_MAX_MESSAGE_SIZE = 100MB), qb/src/qb/io/async/io.h:557,868,2134 (_max_message_size members), :1356-1359,:2958-2961 (reason -2, message too large) -->
 
 100 MB is generous for most services. Lower it per component to match the largest legitimate message you accept:
 
@@ -145,7 +145,7 @@ this->set_max_message_size(1 * 1024 * 1024);
 
 You can read the active limit back with `max_message_size()`. Setting it too low rejects legitimate traffic; too high re-opens the DoS surface — size it to the workload.
 
-<!-- src: qb/src/qb/io/async/io.h:1123-1126 (max_message_size), :1150-1151 (set_max_message_size); the second copy lives on the bidirectional base, :2556-2558, :2587-2588 -->
+<!-- src: qb/src/qb/io/async/io.h:1123-1126 (max_message_size), :1150-1151 (set_max_message_size); the second copy lives on the bidirectional base, :2571-2573, :2602-2603 -->
 
 The framework also defines input/output buffer ceilings in the same header for the same reason; see [config.h](../../src/qb/io/config.h) for `QB_MAX_MESSAGE_SIZE` and the buffer-limit macros, all overridable at compile time with `-D`.
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1356-1359,2930-2933 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:763,769,782 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1356-1359,2958-2961 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:778,784,797 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:170 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

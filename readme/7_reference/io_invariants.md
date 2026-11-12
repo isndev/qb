@@ -225,52 +225,91 @@ registry, or as a member — never relocate them.
   (`0`) code is generated automatically on kernel EOF
   (`src/qb/io/async/io.h:1315`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1549-1552`). It fires `on(event::disconnected)` if the
-  derived class implements it; for a server-owned object it then notifies
-  `server().disconnected(id())`, otherwise it stops the watcher, ends the
-  transport and fires `on(event::dispose)`.
+  (`src/qb/io/async/io.h:1550-1553`). It fires `on(event::disconnected)` if the
+  derived class implements it; for a server-owned object it then stops the
+  watcher and notifies `server().disconnected(id())`, otherwise it stops the
+  watcher, ends the transport and fires `on(event::dispose)`.
 - A standalone object's `dispose()` **ends its transport** once the watcher is
-  stopped (`src/qb/io/async/io.h:3275-3278`), after `on(event::disconnected)`
+  stopped (`src/qb/io/async/io.h:3341-3346`), after `on(event::disconnected)`
   — which still sees it as the connection left it — and before
   `on(event::dispose)`, the one hook that may free the object
-  (`src/qb/io/async/teardown.h:100-116`). Who ended the connection is read
-  before the hooks run (`src/qb/io/async/io.h:3254`): no reason of the
+  (`src/qb/io/async/teardown.h:143-177`). Who ended the connection is read
+  before the hooks run (`src/qb/io/async/io.h:3299`): no reason of the
   object's and a protocol still ok mean the peer's EOF or a socket error did,
   and the transport is closed — `disconnect()` when it has one, then
   `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
-  When the object ended it (`disconnect()`, a framing error, a size guard,
-  the end of `close_after_deliver()`), only the sending side is shut down:
-  the peer reads EOF once everything queued has left, and nothing is reset.
-  A close there would reset a peer whose bytes are still unread: its next
-  send fails, and on Windows it also drops what it received and has not
-  read yet — the tail of the reply `close_after_deliver()` promised. The descriptor then
-  stays with the object until its destruction or its next transport; a
-  listening socket has no sending side, so an acceptor keeps its port until
-  then. Before 3.3 the transport was left as it was: the peer of a
-  `disconnect()` never saw EOF (Huly QB-1060). Closing it again from a hook
-  is harmless; a transport installed from inside `on(event::disconnected)`
-  is the one ended, so the next connection's is installed once `dispose()`
-  has returned.
+  When the object ended it (`disconnect()`, a framing error, the end of
+  `close_after_deliver()`), the descriptor **leaves the object for its
+  thread's loop** (`src/qb/io/async/teardown.h:143-177`): the loop
+  shuts the sending side down — the peer reads EOF once everything queued
+  has left, and nothing is reset — reads and drops what the peer still
+  sends, and closes on the first of the peer's EOF, a socket error,
+  `linger()` (2 s by default) or 16 MiB dropped
+  (`src/qb/io/async/lingering_close.cpp:190-214`). A close there would
+  reset a peer whose bytes are still unread: its next send fails, and on
+  Windows it also drops what it received and has not read yet. The
+  transport is closed for the object from `dispose()` on —
+  `transport().is_open()` is false in `on(event::dispose)`, which reads no
+  peer from it — so the object is destroyed or connected again at once; a
+  TLS socket detaches its `SSL` object from the descriptor it gives away
+  (`src/qb/io/tcp/ssl/socket.cpp:1048-1052`). A size guard of the io
+  (`message_too_large`, `buffer_overflow`) and a `linger()` of zero close at
+  once (`src/qb/io/async/teardown.h:89-95`); a listening socket has no
+  sending side, so an acceptor keeps its socket and its port, and a
+  datagram object keeps its socket. In 3.3 the half-closed descriptor
+  stayed in the object until its destruction or its next transport: a peer
+  that kept writing blocked for ever (Huly QB-1270). Before 3.3 the
+  transport was left as it was: the peer of a `disconnect()` never saw EOF
+  (Huly QB-1060). Closing it again from a hook is harmless; a transport
+  installed from inside `on(event::disconnected)` is the one ended, so the
+  next connection's is installed once `dispose()` has returned.
+- A socket the loop is **closing after its peer** is that thread's: a read
+  watcher and a timer of its loop. A blocking `async::run()` returns when
+  the last one is gone — `linger()` later against a peer that stays silent,
+  at once when the peer closes or `linger()` is zero; the bound runs on the
+  loop, so a thread that stops running it keeps the descriptor until one
+  pass, `listener::clear()` or the thread's end. A loop holds at most 64 of
+  them — one more closes the oldest at once
+  (`src/qb/io/async/lingering_close.cpp:46`) — and reads at most
+  16 MiB of each (`src/qb/io/async/lingering_close.cpp:58`); a TCP
+  connect or an `accept()` the system refuses for lack of descriptors closes
+  them all at once and is made again
+  (`src/qb/io/async/lingering_close.cpp:219-225`).
+- A **server session** is released by its server whoever ended the
+  connection, its watcher stopped first
+  (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody
+  still holds — `server.session(id)` is a `shared_ptr` — was dispatched on
+  every loop pass until it was let go. One that ended its own connection
+  (`disconnect()`, a framing error) with everything it had queued written
+  also gives its descriptor to the loop, as a standalone object does, so
+  its peer reads its last bytes instead of a reset (Huly QB-1270) -- before
+  the server is told: a `disconnected(id)` override that looks the session
+  up finds its transport closed and no peer. Not a session that
+  lingered through `close_after_deliver()`, not one a size guard ended, not
+  with a `linger()` of zero, and not one with output still queued: those
+  close with the session, and what was queued is dropped with it — the
+  bound on resources wins over delivery there; `close_after_deliver()` is
+  the path that waits.
 - A session a server accepted **closes after its peer** when its
   `close_after_deliver()` has delivered everything (Huly QB-1089): after
   `event::eos` the write path begins a lingering close
-  (`src/qb/io/async/io.h:3067`) instead of disposing — the sending side is shut
+  (`src/qb/io/async/io.h:3095`) instead of disposing — the sending side is shut
   down, the input is reset and only reads are watched
-  (`src/qb/io/async/io.h:2167-2191`); every later dispatch that reads or
-  writes nothing drops what arrived (`src/qb/io/async/io.h:3167-3171`,
-  `:2198-2208`) until the peer's EOF, a socket error or the bound —
+  (`src/qb/io/async/io.h:2175-2199`); every later dispatch that reads or
+  writes nothing drops what arrived (`src/qb/io/async/io.h:3195-3199`,
+  `:2212-2222`) until the peer's EOF, a socket error or the bound —
   `linger()`, 2 s by default, `set_linger()` — ends it at the error label,
   which disposes as for any graceful close. The bound's timer only flags the
-  expiry and feeds the watcher (`src/qb/io/async/io.h:2212-2215`): the
+  expiry and feeds the watcher (`src/qb/io/async/io.h:2226-2229`): the
   session, which owns the timer, is never disposed from under it. `dispose()`
-  releases the timer whatever ended the linger (`src/qb/io/async/io.h:3255`),
+  releases the timer whatever ended the linger (`src/qb/io/async/io.h:3302`),
   `disconnect()` still aborts at once, a server's teardown destroys a lingering
   session with no wait, and `extractSession()` takes one out of it
   (`src/qb/io/async/io_handler.h:287-288`). Closing at once closed a socket
   with unread input: the reset failed the peer's send, and on Windows dropped
   the answer it had received and not read.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
-  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:58`), which
+  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:61`), which
   contains what they throw and logs it (WARN, with `what()`), so the steps
   after them always run: the watcher is stopped, or the session handed back to
   its server. A throw used to skip them. The listener contained it, so nothing

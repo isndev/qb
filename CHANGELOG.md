@@ -9,6 +9,12 @@ policy.
 
 ### Added
 
+- **`qb::io::tcp::ssl::socket::release_handle()` gives a TLS socket's descriptor away with its `SSL` object detached
+  from it (Huly QB-1270).** `socket_type release_handle() noexcept` hides the one inherited from `tcp::socket`: the
+  socket BIO is freed first (the descriptor stays open) and the connected state cleared, so nothing the socket still
+  holds names a descriptor it no longer owns; a `read()` or a `write()` afterwards fails. qb-io calls it when the io
+  object that owns the socket ends its own connection and the loop takes the descriptor (the defect it closes is
+  under Fixed).
 - **A TCP session reads and sets its transport's write-buffer cap: `max_write_buffer_size()` and
   `set_max_write_buffer_size()` on `qb::io::async::tcp::client` (Huly QB-86).** The session -- what
   `qb::io::use<S>::tcp::client` and its TLS form build on, the server-associated and the standalone form alike --
@@ -235,6 +241,51 @@ policy.
 
 ### Changed
 
+- **A standalone qb-io stream object that ends its own connection gives its descriptor to its thread's loop, which
+  closes it after the peer: its `transport().is_open()` is false from `dispose()` on, and `set_linger()` bounds that
+  close (Huly QB-1270).** So does a server session that ends its own connection with nothing left to write. What a
+  program can observe, point by point (the defect this replaces is under Fixed; an acceptor and a datagram object keep
+  their socket, and a session that is not handed over keeps its transport until it is destroyed).
+  `on(event::disconnected&&)` and `on(event::dispose&&)` run when they ran: in the pass that tears the connection
+  down. Inside `on(event::dispose&&)`, after a connection the object ended itself, the transport is closed -- no
+  handle, no peer endpoint -- as it always was after a connection the peer ended; in 3.3 it was the half-closed
+  socket. Read the peer in `on(event::disconnected&&)`. A server's `disconnected(id)` override that looks a session up
+  finds the same for a session whose descriptor went to the loop.
+  `set_linger()` is no longer a server-session knob alone. For a standalone object it is how long the loop keeps the
+  descriptor after `dispose()`, waiting for the peer to close: 2 s by default; zero or less closes inside `dispose()`,
+  a reset if the peer's bytes are unread (`input<>` and `output<>` carry no bound of their own: 2 s). For a session it
+  still bounds the linger of `close_after_deliver()`, which is unchanged and bounded in time alone -- it is the call
+  that lets a peer that is still sending read the reply -- and it now also bounds the loop's close after a
+  `disconnect()`, or a framing error, that found everything written. `disconnect()` stays the abort: the session is
+  released at the next dispatch, what it had queued is dropped with it and its socket closed at once (an error reply
+  behind output the peer has not taken is not delivered: the bound on resources wins over delivery there).
+  A program that blocks in `async::run()` until its loop is empty returns when its last closing socket is gone: at
+  once when the peer closes on the EOF or `linger()` is zero, `linger()` later against a peer that stays silent
+  (2 s with the default). An engine never waits: its cores stop and
+  their sockets close with them -- a core now clears its loop once more when its last actor is destroyed, so what an
+  actor's destructor left there -- a closing socket, a timer, a deferred callback, a watcher -- goes with the core
+  under `start(false)` too, where it stayed in the caller's loop; a coroutine such a destructor queued is destroyed
+  first, never run. The bound
+  runs on the loop: a thread that stops running its loop keeps the descriptor until the loop runs a pass, is cleared
+  or the thread ends.
+  A connection qb-io's own size guards end (`message_too_large`, `buffer_overflow`), or that is disconnected with one
+  of those reasons, is closed at once -- a client's in `dispose()`, a session's with the session, as before: nothing
+  was said that a reset could destroy, and reading the peer for the bound would serve the flood the guard refused.
+  Two limits a program cannot set: a loop holds at most 64 closing sockets -- one more closes the oldest at once --
+  and reads about 16 MiB of each (the count is checked after each pass of up to 64 KiB) before it closes it at once
+  -- what a peer may have had on its way when it reads the EOF: the two socket buffers; measured, a budget of 1 MiB
+  resets a peer that had only filled the pipe and stopped.
+  When the system refuses a descriptor to a TCP connect or an `accept()` (`EMFILE`, `ENFILE`), the thread's closing
+  sockets are closed at once, oldest first, and the call is made again.
+  Unchanged: an object destroyed while still connected closes at once; an acceptor keeps its listening socket and its
+  port; a datagram object keeps its socket; a session that lingered through `close_after_deliver()` is closed when
+  that linger ends, with no second wait. TLS still sends no close_notify.
+  The examples corpus runs as it did (107 programs on Linux, 106 on Windows, each judged on its ending and its
+  printed lines; no program's wall time moved by more than two runs of one tree differ by). Instructions per unit
+  (callgrind, g++ 14, the difference method; nothing timed): the read and write path of a loopback echo is level; a
+  connect and an own-ended close whose peer closes on the EOF costs about 2 000 instructions more (5 752 to 7 751),
+  one whose peer had already closed about 280, a server-session churn about 1 600 (10 419 to 12 032), and an engine
+  built and torn down about 130 (0.04 % of one that spawns a hundred coroutines).
 - **A channel's plain `send` / `recv` awaiters keep their ready and resume inlined whatever the unit's inlining budget
   (Huly QB-1225).** `send_awaiter::await_ready` / `await_resume` and `recv_awaiter::await_ready` / `await_resume` carry
   `QB_GNU_ALWAYS_INLINE`, a new macro of `qb/utility/branch_hints.h` beside `QB_MSVC_FORCEINLINE`: `[[gnu::always_inline]]
@@ -541,6 +592,49 @@ policy.
 
 ### Fixed
 
+- **A connection a standalone qb-io object ended itself no longer leaves a peer that keeps writing blocked for ever,
+  and the object's last bytes are no longer reset away when it is destroyed or connects again (Huly QB-1270, after
+  QB-1060).** Since 3.3 a standalone object -- every client: no server owns it -- that ended its own connection
+  (`disconnect()`, a framing error, a size guard, the end of `close_after_deliver()`) shut its sending side down and
+  kept the half-closed descriptor until it was destroyed or its next connection replaced it. Nothing read that socket
+  any more. A peer that went on writing filled the two socket buffers -- 2 721 280 octets over a Linux loopback,
+  327 680 on Windows -- and then blocked, with no error, for as long as the object lived; and the close that came at
+  last, with the peer's bytes unread, was a reset, which on Windows destroys what the peer has received and not read
+  yet: the object's own last bytes, an HTTP/2 GOAWAY, lost at its destruction or its reconnection. Every client built
+  on `async::tcp::client` had it (qbm-http's HTTP/1.1, HTTP/2 and WebSocket clients, qbm-redis, qbm-pgsql). `dispose()`
+  now gives the descriptor to the thread's loop (`detail::end_transport`, `detail::close_after_peer`,
+  `qb/io/async/lingering_close.h`), which shuts the sending side down -- the peer reads everything queued, then EOF
+  -- reads and drops what the peer still sends, and closes on the first of the peer's EOF, a socket error,
+  `linger()` or 16 MiB dropped; the object holds nothing of the connection and is destroyed or reconnected at once.
+  What is readable is read in the call, so a peer that had already closed costs no watcher and no allocation; a node
+  that cannot be allocated closes at once and leaves nothing registered; a closing socket is read once more before its
+  final close -- the bound, the cap, the loop cleared -- so that octets still in this side's send queue are delivered,
+  not dropped by a close with input unread: all but the one the byte budget ends, which is the peer to reset.
+  Proven by `qb-io-test-system-close-after-peer` (23 cases), `-loop` (6), `-tls` (4), `-alloc` (2) and
+  `-posix` (7: a descriptor limit, AF_UNIX; POSIX only): the cases that witness the defect are red on the base, the
+  others pin what did not change (an object destroyed while connected, an acceptor, a datagram object).
+  `close-after-peer`, `-loop`, `-tls`, `-posix` and the session binary were run under epoll, io_uring, poll and
+  select, their fixtures asserting the backend `QB_EV_BACKEND` asked for, and all but `-posix` with MSVC on Windows;
+  the per-backend matrix of the `cmake` lane (epoll and io_uring on Linux) gains `close-after-peer`, `-loop` and
+  `session-close-after-peer`.
+- **A server session that ends its own connection with nothing left to write no longer resets a peer that was still
+  sending (Huly QB-1270).** A
+  session `disconnect()`ed with everything it had queued written was released by its server at once and its
+  destructor closed the socket with the peer's bytes unread: a reset, and on Windows the peer never read the
+  session's last bytes (qbm-http's HTTP/2 server sends its error GOAWAY so: a Windows client that was still sending
+  read none). The session is still released at once; its descriptor now goes to the loop, as a standalone object's
+  does, when nothing is left to write, the session did not already linger, no size guard ended it and its
+  `linger()` is positive. Proven by `qb-io-test-system-session-close-after-peer`.
+- **A disposed server session that something still holds is no longer dispatched on every loop pass (Huly QB-1270).**
+  `server.session(id)` is a `shared_ptr`: a session kept after its dispose had a started watcher on a descriptor that
+  stayed readable, and the loop called the dead session on every pass until it was let go (200 dispatches in 200 idle
+  passes). `io<>`, `input<>` and `output<>` stop a session's watcher in `dispose()`, whoever ended the connection.
+- **A TLS socket that gives its descriptor away detaches its `SSL` object from it (Huly QB-1270).**
+  `ssl::socket::release_handle()` (new, see Added) frees the socket BIO -- the descriptor stays open -- and clears the
+  connected state before the inherited release. The inherited one left a healthy `SSL` object bound to a number the
+  socket no longer owned: once that number was closed and handed out again, a `write()` on the socket completed the
+  handshake it already had and wrote a TLS record of the ended connection into the unrelated connection that now had
+  the number (measured on Linux and Windows: 27 octets). Proven by `qb-io-test-system-close-after-peer-tls`.
 - **A loop that has held an `ev_periodic` no longer polls and runs on every non-blocking pass under
   `QB_EV_USE_TIMERFD=ON`, and a periodic sees a step of the wall clock under non-blocking passes in every build (Huly
   QB-1277).** The first `ev_periodic` a loop starts creates the loop's realtime timerfd -- the descriptor that turns

@@ -53,7 +53,7 @@ Two caveats that the acceptor component handles for you and this loop does not: 
 
 ## A session has no `co_await read()`
 
-Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:3089`), are framed by the active protocol in `process_messages()` (`:2914`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
+Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:3117`), are framed by the active protocol in `process_messages()` (`:2942`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
 
 The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:627-709`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
 
@@ -92,11 +92,11 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 `qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1497-1540`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
-That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:776-780`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:90-100`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
+That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:776-780`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:96-106`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
 
 There is no asynchronous resolver in the tree, so the honest options are:
 
-- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:262`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
+- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:268`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
 - Resolve on the offload pool, then connect to the addresses it returns, with the same fallback -- the lookup blocks a pool thread, not the loop:
 
   ```cpp

@@ -101,10 +101,10 @@ public:
      * full rationale: `_Transport` is a sibling base listed after `io<_Derived>`,
      * so it is destroyed first (closing the fd) — the watcher must therefore be
      * stopped here, in the destructor body, before any base is torn down.
-     * Server-associated sessions are especially exposed because `dispose()` does
-     * not stop their watcher (the server owns the lifecycle), so without this the
-     * watcher would routinely outlive its fd. Stopping an already-stopped (or
-     * never-started) watcher is a no-op.
+     * Server-associated sessions are especially exposed: one destroyed while still connected --
+     * its server torn down under it -- has had no `dispose()` to stop its watcher, which would
+     * outlive its fd (`dispose()` stops a session's watcher since 3.4, Huly QB-1270). Stopping
+     * an already-stopped (or never-started) watcher is a no-op.
      */
     ~client() {
         this->_async_event.stop();

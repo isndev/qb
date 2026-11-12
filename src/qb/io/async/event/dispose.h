@@ -42,8 +42,8 @@ namespace qb::io::async::event {
  *       This allows actors to perform final cleanup of I/O-related resources. The sequence is:
  *       1. `on(event::disconnected&&)` is called (if connection was active)
  *       2. The watcher is stopped and the transport ended: closed when the peer's EOF or a socket
- *          error ended the connection, shut down for sending when this side did, so that its peer
- *          reads EOF (Huly QB-1060)
+ *          error ended it; when this side ended a stream connection, its descriptor given to the loop,
+ *          which closes it after the peer (Huly QB-1270); a listening or a datagram socket is kept
  *       3. `on(event::dispose&&)` is called (final cleanup hook; closing the transport here is safe,
  *          and a no-op when it is closed already)
  *       4. I/O component destructor runs (unregisters from listener)

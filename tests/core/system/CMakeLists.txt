@@ -46,6 +46,10 @@ qb_add_test(MODULE qb-core TIER system NAME core-io-poll-interval SOURCES engine
 # whole latency; its two push cases bring up a second VirtualCore, and its CPU-time assertion
 # (parked, not polling) is meaningless on a loaded host, so it is both serial and multicore.
 qb_add_test(MODULE qb-core TIER system NAME core-park-wake   SOURCES engine/core-park-wake.cpp   DEPENDS ${PROJECT_NAME} LABELS serial requires-multicore)
+# actor-close-after-peer pins what a core's loop does with the descriptor of a connection an actor ended itself and
+# died with (Huly QB-1270): an engine never waits for it, a core that lives on keeps it until the peer closes, a core
+# that stops closes it before join() returns, and a destructor's close in a stopped core leaves nothing behind.
+qb_add_test(MODULE qb-core TIER system NAME actor-close-after-peer SOURCES engine/actor-close-after-peer.cpp DEPENDS ${PROJECT_NAME})
 # engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
 # temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
 # behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with
