@@ -253,7 +253,10 @@ policy.
   finds the same for a session whose descriptor went to the loop.
   `set_linger()` is no longer a server-session knob alone. For a standalone object it is how long the loop keeps the
   descriptor after `dispose()`, waiting for the peer to close: 2 s by default; zero or less closes inside `dispose()`,
-  a reset if the peer's bytes are unread (`input<>` and `output<>` carry no bound of their own: 2 s). For a session it
+  a reset if the peer's bytes are unread (`input<>` and `output<>` carry no bound of their own: 2 s). Its
+  `close_after_deliver()` ends the same way once its output is delivered -- no server keeps it for a linger of its
+  own -- so that close is the loop's too and takes the 16 MiB below: a peer that never stops writing is cut there,
+  not at `linger()` (`CloseAfterPeer.AStandaloneObjectsCloseAfterDeliverIsCutAtTheByteBudgetNotAtItsLinger`). For a session it
   still bounds the linger of `close_after_deliver()`, which is unchanged and bounded in time alone -- it is the call
   that lets a peer that is still sending read the reply -- and it now also bounds the loop's close after a
   `disconnect()`, or a framing error, that found everything written. `disconnect()` stays the abort: the session is
@@ -781,7 +784,7 @@ policy.
   that cannot be allocated closes at once and leaves nothing registered; a closing socket is read once more before its
   final close -- the bound, the cap, the loop cleared -- so that octets still in this side's send queue are delivered,
   not dropped by a close with input unread: all but the one the byte budget ends, which is the peer to reset.
-  Proven by `qb-io-test-system-close-after-peer` (23 cases), `-loop` (6), `-tls` (4), `-alloc` (2) and
+  Proven by `qb-io-test-system-close-after-peer` (24 cases), `-loop` (6), `-tls` (4), `-alloc` (2) and
   `-posix` (7: a descriptor limit, AF_UNIX; POSIX only): the cases that witness the defect are red on the base, the
   others pin what did not change (an object destroyed while connected, an acceptor, a datagram object).
   `close-after-peer`, `-loop`, `-tls`, `-posix` and the session binary were run under epoll, io_uring, poll and
