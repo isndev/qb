@@ -301,8 +301,8 @@ protected:
 
     void
     SetUp() override {
-        qb::io::async::init();
-        qb::io::async::run(EVRUN_NOWAIT); // the loop's own descriptors exist from here on
+        (void) qb::io::async::listener::current.loop(); // built on first use (Huly QB-1246): asked for before the count
+        qb::io::async::run(EVRUN_NOWAIT);               // the loop's own descriptors exist from here on
         expect_the_backend_asked_for();
         descriptors_at_start = open_descriptors();
     }

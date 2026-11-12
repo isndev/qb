@@ -2059,6 +2059,20 @@ tsc_per_ns(listener const &loop) noexcept {
     loop._require_loop("the counter's calibration of listener::current"); // calibrated where the loop is built
     return loop._tsc_per_ns;
 }
+
+/// INTERNAL (Huly QB-1246): feeds `revents` to an io object's own watcher, so that its loop's next dispatch runs the
+/// object's handler -- how `disconnect()` asks for its teardown. DROPPED once the thread's loop is gone: an object
+/// with static storage that disconnects from its destructor (a module's client does) runs after its thread's
+/// `listener::current`; nothing will dispatch its watcher again, and the loop the event would be queued on is freed
+/// memory -- until 3.4 a write into it at every such exit. The caller sets its own state first: `disconnect_now()`
+/// then completes the teardown in the call, and a plain `disconnect()` leaves the transport to the object's
+/// destructor, as for an object destroyed while connected.
+template <typename _Watcher>
+inline void
+feed_own_watcher(_Watcher &watcher, int const revents) noexcept {
+    if (!thread_loop_gone()) [[likely]]
+        watcher.feed_event(revents);
+}
 } // namespace detail
 
 } // namespace qb::io::async

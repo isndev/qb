@@ -126,7 +126,7 @@ public:
         try {
             _timer = &listener::current.registerEvent<event::timer>(*this);
         } catch (...) {
-            listener::current.unregisterEvent(_io->_interface);
+            listener::release(_io->_interface);
             throw;
         }
         // From here nothing throws.
@@ -145,11 +145,12 @@ public:
     closing_socket &operator=(closing_socket const &) = delete;
 
     ~closing_socket() {
-        // The watchers first: libev must not watch a descriptor closed under it.
+        // The watchers first: libev must not watch a descriptor closed under it. Released as every owner releases its
+        // registration (Huly QB-1246): `clear()` destroys this node with its two wrappers already detached.
         _io->stop();
         _timer->stop();
-        listener::current.unregisterEvent(_io->_interface);
-        listener::current.unregisterEvent(_timer->_interface);
+        listener::release(_io->_interface);
+        listener::release(_timer->_interface);
         (_older ? _older->_newer : closing.oldest) = _newer;
         (_newer ? _newer->_older : closing.newest) = _older;
         --closing.count;
@@ -204,6 +205,14 @@ close_after_peer(::socket_type socket, qb::duration bound) noexcept {
     std::size_t dropped = 0;
     if (drop_input(socket, 8, dropped) == drained::ended) {
         ::QB_CLOSESOCKET(socket); // the peer had closed already: nothing to wait for, nothing allocated
+        return;
+    }
+    // The thread's loop is gone: an object with static storage that ends its connection in its destructor, after its
+    // thread's listener (Huly QB-1246). Nothing will run a watcher again, and to register one is a request the
+    // listener stops the process for. The FIN is queued behind what was written and what was readable is read:
+    // closing now is the most a process that is ending can do for its peer -- a cleanup, done in the call.
+    if (thread_loop_gone()) [[unlikely]] {
+        ::QB_CLOSESOCKET(socket);
         return;
     }
     if (closing.count >= sockets_cap)

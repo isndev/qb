@@ -245,7 +245,7 @@ registry, or as a member — never relocate them.
   has left, and nothing is reset — reads and drops what the peer still
   sends, and closes on the first of the peer's EOF, a socket error,
   `linger()` (2 s by default) or 16 MiB dropped
-  (`src/qb/io/async/lingering_close.cpp:190-214`). A close there would
+  (`src/qb/io/async/lingering_close.cpp:191-223`). A close there would
   reset a peer whose bytes are still unread: its next send fails, and on
   Windows it also drops what it received and has not read yet. The
   transport is closed for the object from `dispose()` on —
@@ -274,7 +274,7 @@ registry, or as a member — never relocate them.
   16 MiB of each (`src/qb/io/async/lingering_close.cpp:58`); a TCP
   connect or an `accept()` the system refuses for lack of descriptors closes
   them all at once and is made again
-  (`src/qb/io/async/lingering_close.cpp:219-225`).
+  (`src/qb/io/async/lingering_close.cpp:228-234`).
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
   (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody

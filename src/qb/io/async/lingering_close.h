@@ -37,13 +37,13 @@ inline constexpr qb::duration default_linger = std::chrono::seconds(2);
  * @details For a connection THIS side ended. The sending side is shut down (the peer reads everything queued, then
  *          EOF), what the peer still sends is read and dropped, and the descriptor is closed on the first of: the
  *          peer's EOF, a socket error, `bound`, or `closing_socket_byte_budget()` octets dropped. The caller keeps
- *          nothing: the object that owned the socket is free, or connects again, at once. What is readable now is
- *          dropped in the call: a peer that has already closed costs no allocation and no watcher. Otherwise one
- *          loop-owned node (a read watcher and the bound's timer) holds the descriptor; at most
- *          `closing_sockets_cap()` of them exist on a loop -- one more closes the oldest at once -- and
- *          `listener::clear()` and the listener's destruction close what is left. The bound runs on the loop: a
- *          thread that stops running its loop keeps the descriptor until the loop runs again, is cleared or dies.
- *          Never throws: when the node cannot be made the socket is closed at once.
+ *          nothing: its owner is free, or connects again, at once. What is readable is dropped in the call: a peer that
+ *          has already closed costs no allocation and no watcher. Otherwise one loop-owned node (a read watcher and the
+ *          bound's timer) holds the descriptor; at most `closing_sockets_cap()` of them exist on a loop -- one more
+ *          closes the oldest at once -- and `listener::clear()` and the listener's destruction close what is left. The
+ *          bound runs on the loop: a thread that stops running its loop keeps the descriptor until the loop runs again,
+ *          is cleared or dies. Never throws: when the node cannot be made, or once the thread's loop is gone (a static
+ *          object ending its connection after its thread's listener), the socket is closed in the call.
  *
  *          This is the close of `disconnect()`, the abort: the peer is read so that what this side had already
  *          sent is not reset away, and no further than the byte budget -- a peer that goes on sending is reset. To

@@ -142,10 +142,13 @@ namespace event {
  * to the `IRegisteredKernelEvent` interface for dispatching.
  *
  * @note After its thread's `listener::current` is destroyed, an event -- and the io object, the timer or the
- *       timeout that owns it -- may only be DESTROYED, never used: its destructor finds a watcher the loop detached
- *       and touches nothing, but starting or restarting it there (`setTimeout()` from the destructor of an object
- *       with static storage) reads the loop that is gone. No door guards that: a test on every watcher start would
- *       be paid by every timer of every program (Huly QB-1246).
+ *       timeout that owns it -- may only be DESTROYED or DISCONNECTED, never used otherwise. Its destructor finds a
+ *       watcher the loop detached and touches nothing. `disconnect()` and `disconnect_now()` -- what the destructor
+ *       of a module's client calls, so what a client with static storage runs at exit -- feed no event there
+ *       (`detail::feed_own_watcher`), and the connection `disconnect_now()` ends is closed in the call. But starting
+ *       or restarting a watcher there (`start()`, `setTimeout()` from the destructor of an object with static
+ *       storage) reads the loop that is gone. No door guards that: a test on every watcher start would be paid by
+ *       every timer of every program (Huly QB-1246).
  *
  * @tparam _EV_EVENT The libev event watcher type (e.g. `ev::io`, `ev::timer`) being wrapped.
  */

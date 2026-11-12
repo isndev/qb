@@ -259,6 +259,11 @@ qb_add_test(MODULE qb-io TIER system NAME close-after-peer-loop SOURCES tcp/clos
 # A TLS socket that gives its descriptor away detaches its SSL object from it: a write on the transport afterwards
 # reaches nothing, where it wrote a TLS record of the ended connection into whichever socket took the number (Huly QB-1270).
 qb_add_test(MODULE qb-io TIER system NAME close-after-peer-tls SOURCES tcp/close-after-peer-tls.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+# Where the close after the peer meets the end of a thread's loop (Huly QB-1270 with QB-1246): a connection a coroutine
+# frame ends while its thread's listener is destroyed is closed by that teardown, one an object with static storage
+# ends after it is closed in the call (a child process), one handed over on a thread with no loop builds it, and
+# clear() closes as many closing sockets as a loop may hold.
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer-teardown SOURCES tcp/close-after-peer-teardown.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 # Each of the three allocations of a closing socket's node fails in turn: closed at once, nothing left registered.
 # Alone in its binary: it replaces the global allocation functions (Huly QB-1270).
 qb_add_test(MODULE qb-io TIER system NAME close-after-peer-alloc SOURCES tcp/close-after-peer-alloc.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)

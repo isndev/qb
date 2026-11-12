@@ -1105,7 +1105,7 @@ public:
         // wake a plain sleep(), so the worker tree is still parked at reset).
         //
         // Nothing owned and nothing parked -- every engine teardown after a clean run -- is nothing
-        // to do: return before building the snapshot (`recycle()` runs this twice per `~VirtualCore`;
+        // to do: return before building the snapshot (`recycle()` runs this three times per `~VirtualCore`;
         // the vectors and the scans were the whole of its +5 % on MSVC spawn-1000).
         if (owned_frames_.empty() && suspended_coroutines_.empty())
             return;

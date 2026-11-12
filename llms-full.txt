@@ -874,7 +874,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module completion, a cleanup, a `defer()` and `listener::release()` are dropped; a coroutine frame or an io object
   destroyed there stops nothing on the freed loop; a request that needs the loop or the scheduler -- suspend, yield,
   spawn, `coro_scheduler()`, `listener::current.loop()`, `registerEvent`, `async::run()` -- stops the process on one
-  named line. Do not resume a coroutine from a static destructor. _(listener.h, the note on `current`)_
+  named line. Do not resume a coroutine from a static destructor. An io object there may be destroyed or
+  disconnected, nothing else: `disconnect()` feeds no event to the freed loop and `disconnect_now()` closes the
+  connection in the call (what the destructor of a client with static storage runs at exit); starting or restarting
+  a watcher (`start()`, `setTimeout()`) is not guarded. _(listener.h, the note on `current`; event/base.h)_
 - **`listener::current` builds its loop on the first use that needs one;** a thread that uses nothing of qb builds
   none. _(listener.h, `_require_loop`)_
 - **Time model is `std::chrono`-only on public signatures.** All timeouts/TTL/intervals/delays take

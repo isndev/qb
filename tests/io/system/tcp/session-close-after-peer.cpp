@@ -145,9 +145,9 @@ protected:
 
     void
     SetUp() override {
-        qb::io::async::init();
-        // The loop's backend opens a descriptor of its own on its first run (epoll's, on Linux) and keeps it for the
-        // life of the process: the count is taken after it, whichever case runs first.
+        // listener::current builds its loop on first use (Huly QB-1246): ask for it. The backend's own descriptors
+        // (epoll's on Linux, the wake's on the first run) live as long as the process: the count is taken after them.
+        (void) qb::io::async::listener::current.loop();
         qb::io::async::run(EVRUN_NOWAIT);
         expect_the_backend_asked_for(); // QB_EV_BACKEND, when it pins one: a run on another backend proves nothing of it
         descriptors_before = open_descriptors();

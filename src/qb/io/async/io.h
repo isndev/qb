@@ -1313,7 +1313,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**
@@ -1960,7 +1960,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**
@@ -2889,7 +2889,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**

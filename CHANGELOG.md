@@ -433,7 +433,7 @@ policy.
   x86 census was): `qb-vs-others`' `ask-any-scatter` probe over seven families -- no cell robustly slower in any,
   the medians of the family ratios 0.984-1.002 (`same` N = 1, 2, 4, 8; `cross` N = 1, 2, 4); `dev/bench` over
   six families -- `BM_Ask_RoundTrip_SameCore` -3.1 % in every family, `CrossCore` moving with the build both ways
-  around parity (median 0.996), the scatters level. On x86 (the pilot's census, seven g++ and MSVC families)
+  around parity (median 0.996), the scatters level. On x86 (a census of seven g++ and MSVC families)
   neutral or better in every cell. The ticket's other two trims stay out: `obsolete` inlined on the hot miss gained
   no robust time and leaned slower in two cells on x86; `await_suspend` forced inline was placement there and
   MSVC refuses it (C4714). Proven by five new `qb-core-test-unit-actor-id` cases -- a bound entry released while
@@ -809,6 +809,24 @@ policy.
   socket no longer owned: once that number was closed and handed out again, a `write()` on the socket completed the
   handshake it already had and wrote a TLS record of the ended connection into the unrelated connection that now had
   the number (measured on Linux and Windows: 27 octets). Proven by `qb-io-test-system-close-after-peer-tls`.
+- **An io object that disconnects after its thread's loop is gone no longer writes into the freed loop, and the
+  connection it ends is closed in the call (Huly QB-1246 with QB-1270).** `disconnect()` asks for its teardown by
+  feeding an event to the object's watcher; fed after the thread's `listener::current` was destroyed, the event was
+  queued on the loop that listener had freed -- a write into freed memory, silent in a release build. The destructor
+  of a module's client calls `disconnect()` (qbm-http's HTTP/1.1 and HTTP/2 clients, qbm-redis's node pool), so a
+  client with static storage did it at every process exit. The event is now dropped there
+  (`detail::feed_own_watcher`, `listener.h`); `disconnect_now()` still completes the teardown in the call, and the
+  connection it ends is closed in the call -- the FIN, what is readable read, the descriptor closed -- instead of
+  being handed to the loop (`detail::close_after_peer`), where registering its watcher is a request the listener
+  stops the process for. Starting or restarting a watcher after the loop stays outside the contract (`event::base`'s
+  note). Proven by `qb-io-test-system-close-after-peer-teardown` (4 cases), which also pins where the close after
+  the peer meets the listener's own teardown: a connection a coroutine frame ends while its thread's listener is
+  destroyed is closed by that teardown (the second pass of `~listener`), a close handed over on a thread whose loop
+  was never built builds it, and `clear()` closes as many closing sockets as a loop may hold. Mutants, the unmutated
+  tree green before and after: no early return in `close_after_peer()` (the child stops on the named line, in a
+  release and in a sanitized build), the event fed after the loop (heap-use-after-free under AddressSanitizer; a
+  release build is silent, so the sanitize lane is the witness), one pass in `~listener` (the descriptor stays open;
+  LeakSanitizer reports the node), a closing socket that does not close its descriptor (three cases).
 - **A loop that has held an `ev_periodic` no longer polls and runs on every non-blocking pass under
   `QB_EV_USE_TIMERFD=ON`, and a periodic sees a step of the wall clock under non-blocking passes in every build (Huly
   QB-1277).** The first `ev_periodic` a loop starts creates the loop's realtime timerfd -- the descriptor that turns
