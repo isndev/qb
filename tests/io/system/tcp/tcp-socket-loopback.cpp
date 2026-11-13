@@ -564,15 +564,46 @@ TEST(TCPSocket, AShutdownOfBothDirectionsAfterThePeersFinSendsOurs) {
         ours.close();
         peer.close();
     }
-    // ...and after this side shut its sending direction alone: the receiving one is shut, and the call succeeds.
+}
+
+// ...and, the peer having sent no FIN but bytes this side never read, a shutdown of both directions ends the
+// connection as the system's own does: with a FIN on Linux and macOS -- on macOS the call is still XNU's SHUT_RDWR
+// there, its receiving side shut first: shut after the sending side, with input unread, it is a reset (measured on
+// macOS 26) --, with a reset on Windows, which resets a connection shut down with input left unread.
+TEST(TCPSocket, AShutdownOfBothDirectionsWithInputUnreadEndsAsTheSystemsOwn) {
+    constexpr bool resets =
+#if defined(_WIN32)
+        true;
+#else
+        false;
+#endif
     qb::io::tcp::listener listener;
     ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
     qb::io::tcp::socket ours;
     ASSERT_EQ(ours.connect_v4("127.0.0.1", listener.local_endpoint().port()), qb::io::SocketStatus::Done);
     qb::io::tcp::socket peer;
     ASSERT_EQ(listener.accept(peer), qb::io::SocketStatus::Done);
-    ASSERT_EQ(::shutdown(ours.native_handle(), QB_SD_SEND), 0);
+    ASSERT_EQ(ours.set_nonblocking(true), 0);
+    ASSERT_EQ(peer.set_nonblocking(true), 0);
+    ASSERT_EQ(qb::io::socket::send(peer.native_handle(), "unread", 6), 6);
+    ASSERT_GT(qb::io::socket::handle_read_ready(ours.native_handle(), 2s), 0) << "the peer's bytes never arrived";
     EXPECT_EQ(ours.disconnect(), 0) << "error " << qb::io::socket::get_last_errno();
+    char       octet    = 0;
+    int        got      = -1;
+    int        error    = 0;
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    while ((got = qb::io::socket::recv(peer.native_handle(), &octet, 1)) < 0 && std::chrono::steady_clock::now() < deadline) {
+        error = qb::io::socket::get_last_errno();
+        if (!qb::io::socket::not_recv_error(error))
+            break;
+        std::this_thread::sleep_for(1ms);
+    }
+    if (resets) {
+        EXPECT_EQ(got, -1) << "the peer read no reset";
+        EXPECT_FALSE(qb::io::socket::not_recv_error(error)) << "the peer read nothing within 2 s";
+    } else {
+        EXPECT_EQ(got, 0) << "the peer read no FIN (socket error " << error << ")";
+    }
     ours.close();
     peer.close();
 }

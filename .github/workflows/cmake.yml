@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "suite (the candidate's every test, both builds) or witness (the witness targets alone)"
+        description: "suite (the candidate's every test, both builds), witness (the witness targets alone) or mutants"
         required: false
         default: suite
       base:
@@ -21,7 +21,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: cmake-${{ github.ref }}
+  group: cmake-${{ github.ref }}-${{ inputs.scope }}
   cancel-in-progress: true
 
 jobs:
@@ -41,7 +41,17 @@ jobs:
           brew list --versions openssl@3 openssl@4 libngtcp2
 
       - name: The oracle
+        if: inputs.scope != 'mutants'
         run: bash diag/macos-oracle.sh "${{ runner.temp }}/oracle" "${{ inputs.scope || 'suite' }}" "${{ inputs.base }}"
+
+      - name: The mutants (openssl@4)
+        if: inputs.scope == 'mutants'
+        run: |
+          p="$(brew --prefix openssl@4)"
+          mkdir -p "${{ runner.temp }}/oracle"
+          env -u CMAKE_PREFIX_PATH -u PKG_CONFIG_PATH -u OPENSSL_EXECUTABLE PKG_CONFIG_PATH="$p/lib/pkgconfig"             cmake -S . -B build-mutants -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang               -DCMAKE_CXX_COMPILER=clang++ -DQB_CXX_STANDARD=20 -DQB_BUILD_TESTS=ON -DQB_BUILD_EXAMPLES=OFF               -DQB_BUILD_BENCHMARKS=OFF -DQB_USE_SYSTEM_GTEST=ON -DQB_WITH_SSL=ON -DQB_REQUIRE_FEATURES=ON               -DQB_WITH_QUIC=OFF -DQB_ENABLE_NATIVE_ARCH=OFF -DOPENSSL_ROOT_DIR="$p" -DOPENSSL_EXECUTABLE="$p/bin/openssl"               -DCMAKE_PREFIX_PATH="$p;$(brew --prefix);$(brew --prefix zlib)" > "${{ runner.temp }}/oracle/mutants-configure.log" 2>&1
+          grep 'Found OpenSSL' "${{ runner.temp }}/oracle/mutants-configure.log"
+          python3 diag/macos-mutants.py "${{ runner.temp }}/oracle" build-mutants | tee "${{ runner.temp }}/oracle/mutants.txt"
 
       - name: Logs
         if: always()

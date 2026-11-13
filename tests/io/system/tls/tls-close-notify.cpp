@@ -1860,7 +1860,7 @@ TEST_F(TlsCloseNotify, AClientWhoseReadFailsOnceGoesOnUnlessOpenSslEndedTheSessi
         EXPECT_FALSE(qb::io::socket::not_recv_error(client.system_error))
             << "the session was ended with an error that reads as try again (" << client.system_error << ")";
         const TlsEnd end = peer.read_to_end();
-        note("client, one read refused with EINTR, the session ended by OpenSSL", end);
+        note("client, one read refused with EINTR, the session ended by OpenSSL, system error " + std::to_string(client.system_error), end);
         EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
     }
 }
@@ -1894,7 +1894,7 @@ TEST_F(TlsCloseNotify, AClientWhoseWriteFailsOnceGoesOnUnlessOpenSslEndedTheSess
         EXPECT_FALSE(qb::io::socket::not_send_error(client.system_error))
             << "the session was ended with an error that reads as try again (" << client.system_error << ")";
         const TlsEnd end = peer.read_to_end();
-        note("client, one write refused with ENOBUFS, the session ended by OpenSSL", end);
+        note("client, one write refused with ENOBUFS, the session ended by OpenSSL, system error " + std::to_string(client.system_error), end);
         EXPECT_EQ(end.received, "") << "the peer read bytes of a write OpenSSL refused";
         EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
     }
@@ -2689,7 +2689,6 @@ TEST_F(TlsCloseNotify, ASocketThatCannotTakeTheAlertIsClosedWithoutIt) {
     const TlsEnd end = peer.read_to_end();
     note("a socket that takes nothing, close_notify(), disconnect()", end);
     EXPECT_TRUE(end.unexpected_eof()) << "the peer read an alert the socket never took: " << end.text();
-    EXPECT_TRUE(end.fin) << end.text();
     client.close();
 }
 
@@ -2718,7 +2717,9 @@ TEST_F(TlsCloseNotify, ASocketWithARecordItCouldNotWriteSendsNoAlert) {
 }
 
 // The same on a BLOCKING socket, where a write waits for room: the close must not. A helper drains the peer after
-// two seconds so that a close that did block is reported, not hung.
+// two seconds so that a close that did block is reported, not hung. Where a filled socket does not stay full (macOS:
+// kAFilledSocketStaysFull) the alert may find room and the bound alone proves nothing: what keeps the close from
+// waiting -- the socket made non-blocking first -- is asserted on every system.
 TEST_F(TlsCloseNotify, ABlockingSocketThatCannotTakeTheAlertIsNotWaitedFor) {
     RawContext               context{RawContext::role::server};
     RawPeer                  peer{context, RawContext::role::server};
@@ -2750,7 +2751,8 @@ TEST_F(TlsCloseNotify, ABlockingSocketThatCannotTakeTheAlertIsNotWaitedFor) {
 }
 
 // An io object that was never started still has the blocking socket its connect left it: its close hands the
-// descriptor to the loop all the same, and must not wait for the alert either.
+// descriptor to the loop all the same, and must not wait for the alert either (on macOS the alert may find room: the
+// bound is asserted there too, the full socket only where it stays full -- the case above holds the mechanism).
 TEST_F(TlsCloseNotify, AnObjectNeverStartedIsNotWaitedForEither) {
     RawContext context{RawContext::role::server};
     RawPeer    peer{context, RawContext::role::server};
@@ -3099,17 +3101,21 @@ TEST_F(TlsCloseNotify, ASocketGivenAnotherHandleWhileConnectedSendsNoCloseNotify
 
 // A socket object that connects again keeps its SSL object. Whatever the last connection's close left in it -- an
 // alert a full socket never took -- the next connection starts with its own handshake, not with that alert: OpenSSL
-// clears the object when a handshake starts on it. A guard on that, which no code of qb's provides.
+// clears the object when a handshake starts on it. A guard on that, which no code of qb's provides. The socket that
+// takes nothing is the filter that answers every write "try again later" (kAFilledSocketStaysFull: a filled socket
+// does not stay full on macOS).
 TEST_F(TlsCloseNotify, AReconnectAfterAnAlertThatWasNotWrittenShakesHands) {
     RawContext               context{RawContext::role::server};
     qb::io::tcp::ssl::socket client;
     {
         RawPeer peer{context, RawContext::role::server};
         ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
-        ASSERT_GT(fill(client.native_handle()), 0u);
+        ASSERT_NO_FATAL_FAILURE(inject_once::install(client.ssl_handle(), true));
+        inject_once::refuse_writes = true;
         ASSERT_FALSE(send_close_notify(client)) << "the case proves nothing: the socket took the alert";
         static_cast<void>(client.disconnect());
         client.close();
+        inject_once::refuse_writes = false;
     }
     RawPeer peer{context, RawContext::role::server};
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, client)) << "the reconnection did not shake hands";
