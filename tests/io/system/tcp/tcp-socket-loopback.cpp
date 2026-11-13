@@ -533,6 +533,50 @@ TEST(TCPSocket, ReadReportsPeerCloseWithoutStaleErrno) {
                   });
 }
 
+// A shutdown of both directions sends this side's FIN whatever the peer did first. XNU shuts the receiving side first
+// and refused SHUT_RDWR with ENOTCONN, shutting nothing, once the peer's FIN had arrived -- read or not: the peer then
+// waited for a FIN until the descriptor was closed (measured on macOS 26, Huly QB-1270). disconnect() is that shutdown.
+TEST(TCPSocket, AShutdownOfBothDirectionsAfterThePeersFinSendsOurs) {
+    for (const bool read_the_fin : {true, false}) {
+        SCOPED_TRACE(read_the_fin ? "the peer's FIN read" : "the peer's FIN arrived, unread");
+        qb::io::tcp::listener listener;
+        ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+        qb::io::tcp::socket ours;
+        ASSERT_EQ(ours.connect_v4("127.0.0.1", listener.local_endpoint().port()), qb::io::SocketStatus::Done);
+        qb::io::tcp::socket peer;
+        ASSERT_EQ(listener.accept(peer), qb::io::SocketStatus::Done);
+        ASSERT_EQ(ours.set_nonblocking(true), 0);
+        ASSERT_EQ(peer.set_nonblocking(true), 0);
+        ASSERT_EQ(::shutdown(peer.native_handle(), QB_SD_SEND), 0);
+        ASSERT_GT(qb::io::socket::handle_read_ready(ours.native_handle(), 2s), 0) << "the peer's FIN never arrived";
+        if (read_the_fin) {
+            char octet = 0;
+            ASSERT_EQ(ours.read(&octet, 1), -1);
+            ASSERT_EQ(qb::io::socket::get_last_errno(), 0) << "the read met no EOF";
+        }
+        EXPECT_EQ(ours.disconnect(), 0) << "error " << qb::io::socket::get_last_errno();
+        char       octet    = 0;
+        int        got      = -1;
+        const auto deadline = std::chrono::steady_clock::now() + 2s;
+        while ((got = qb::io::socket::recv(peer.native_handle(), &octet, 1)) < 0 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(1ms);
+        EXPECT_EQ(got, 0) << "the peer read no FIN: this side's sending direction was not shut down";
+        ours.close();
+        peer.close();
+    }
+    // ...and after this side shut its sending direction alone: the receiving one is shut, and the call succeeds.
+    qb::io::tcp::listener listener;
+    ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    qb::io::tcp::socket ours;
+    ASSERT_EQ(ours.connect_v4("127.0.0.1", listener.local_endpoint().port()), qb::io::SocketStatus::Done);
+    qb::io::tcp::socket peer;
+    ASSERT_EQ(listener.accept(peer), qb::io::SocketStatus::Done);
+    ASSERT_EQ(::shutdown(ours.native_handle(), QB_SD_SEND), 0);
+    EXPECT_EQ(ours.disconnect(), 0) << "error " << qb::io::socket::get_last_errno();
+    ours.close();
+    peer.close();
+}
+
 // ===========================================================================
 // Low-level portable qb::io::socket wrapper
 // ===========================================================================

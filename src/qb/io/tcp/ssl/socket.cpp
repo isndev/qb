@@ -521,11 +521,14 @@ namespace qb::io::tcp::ssl {
 
 namespace {
 
-// The error of a write on a socket whose sending side is shut down, for a write OpenSSL refuses for the same reason.
+// The error of a write on a socket whose sending side is shut down, for a write OpenSSL refuses for the same reason; and
+// the error of a connection this side aborted, for a read OpenSSL refuses because it ended the session itself.
 #if defined(_WIN32)
 constexpr int tls_write_after_shutdown = WSAESHUTDOWN;
+constexpr int tls_read_after_abort     = WSAECONNABORTED;
 #else
 constexpr int tls_write_after_shutdown = EPIPE;
+constexpr int tls_read_after_abort     = ECONNABORTED;
 #endif
 
 bool
@@ -1170,6 +1173,12 @@ socket::read(void *data, std::size_t size) noexcept {
                     quiet_shutdown();
                 return -1;
             default:
+                // OpenSSL refuses a read without a system call once it has ended the session -- OpenSSL 4 ends it on
+                // every socket error, an EINTR the io layer reads again after included (measured: 4.1.0) -- and the
+                // thread's last socket error is then an earlier call's. A "try again" there would be read again for
+                // ever on a descriptor that stays readable: it is replaced, as after a write OpenSSL refuses.
+                if (err == SSL_ERROR_SSL && qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                    qb::io::socket::set_last_errno(tls_read_after_abort);
                 return -1;
         }
     }
@@ -1206,11 +1215,11 @@ socket::write(const void *data, std::size_t size) noexcept {
                         quiet_shutdown();
                     return -1;
                 default:
-                    // OpenSSL refuses a write after this side's close_notify -- a lingering session that is
-                    // published to -- before it makes any system call or clears the system error: the thread's last
-                    // socket error is an earlier call's. A would-block there reads as "try again" to the io layer,
-                    // for ever on a socket that stays writable: it is replaced by the error of a write after a
-                    // shutdown, which is what the socket answered before 3.4 (Huly QB-1270).
+                    // OpenSSL refuses a write after this side's close_notify -- a lingering session that is published
+                    // to -- or once it has ended the session (OpenSSL 4 does on any socket error), before it makes a
+                    // system call or clears the system error: the thread's last socket error is an earlier call's. A
+                    // "try again" there would be written again for ever on a socket that stays writable: it is replaced
+                    // by the error of a write after a shutdown, what the socket answered before 3.4 (Huly QB-1270).
                     if (err == SSL_ERROR_SSL && qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                         qb::io::socket::set_last_errno(tls_write_after_shutdown);
                     return -1;

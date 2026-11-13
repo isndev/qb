@@ -610,6 +610,68 @@ peer_ended(int how, const char *label) {
     line(name, text);
 }
 
+// 8. The errno a call OpenSSL refuses leaves behind: a "try again" code is set before the call, as an earlier call of
+// the thread may have left one, and read after it.
+std::string
+preset_call(SSL *ssl, bool write, int preset) {
+    char buf[1] = {'z'};
+    ERR_clear_error();
+    errno           = preset;
+    const int ret   = write ? SSL_write(ssl, buf, 1) : SSL_read(ssl, buf, 1);
+    const int error = errno;
+    return answer((std::string(write ? "SSL_write" : "SSL_read") + " with errno preset " + std::to_string(preset)).c_str(), ssl, ret, error);
+}
+
+void
+stale_errno_after_fatal(const char *label, bool by_reset) {
+    const std::string name = std::string("stale-errno-after-") + label;
+    Tls               t;
+    if (!t.open(0)) {
+        line(name, "setup failed");
+        return;
+    }
+    if (by_reset) {
+        reset(t.b);
+        t.b       = -1;
+        int error = 0;
+        std::this_thread::sleep_for(50ms);
+        const int ret = read_until_not_want(t.c, error);
+        line(name, answer("the reset: SSL_read", t.c, ret, error));
+    } else {
+        inject::install(t.c, true);
+        inject::fail_write = ENOBUFS;
+        ERR_clear_error();
+        errno           = 0;
+        const int ret   = SSL_write(t.c, "LAST", 4);
+        const int error = errno;
+        line(name, answer("the injected ENOBUFS: SSL_write", t.c, ret, error));
+    }
+    for (const int preset : {EAGAIN, EINTR}) {
+        line(name, preset_call(t.c, false, preset));
+        line(name, preset_call(t.c, true, preset));
+    }
+}
+
+// A record the client cannot read arrives while the thread's last error is a would-block, as the io layer's previous
+// read left it: what the failing SSL_read leaves.
+void
+stale_errno_on_bad_record(const char *label, std::string const &bytes) {
+    const std::string name = std::string("stale-errno-bad-record-") + label;
+    Tls               t;
+    if (!t.open(0)) {
+        line(name, "setup failed");
+        return;
+    }
+    line(name, preset_call(t.c, false, 0) + " (nothing to read yet)");
+    ::send(t.b, bytes.data(), bytes.size(), 0);
+    std::this_thread::sleep_for(20ms);
+    line(name, preset_call(t.c, false, EAGAIN));
+    line(name, preset_call(t.c, false, EAGAIN) + " (again)");
+    ::shutdown(t.b, SHUT_WR);
+    std::this_thread::sleep_for(20ms);
+    line(name, preset_call(t.c, false, EAGAIN) + " (after the peer's FIN)");
+}
+
 } // namespace
 
 int
@@ -652,5 +714,12 @@ main(int argc, char **argv) {
     }
     full_buffer("autotuned-room-200ms", false, 200ms);
     full_buffer("fixed-room-200ms", true, 200ms);
+
+    stale_errno_after_fatal("reset", true);
+    stale_errno_after_fatal("enobufs", false);
+    stale_errno_on_bad_record("garbage", std::string(64, '\x7f'));
+    std::string bad_mac = {'\x17', '\x03', '\x03', '\x00', '\x20'};
+    bad_mac += std::string(32, '\x5a');
+    stale_errno_on_bad_record("bad-mac", bad_mac);
     return 0;
 }

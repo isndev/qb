@@ -2,16 +2,20 @@ name: cmake
 
 # SCRATCH, never to merge (Huly QB-1270 part 3): this branch replaces qb's cmake workflow with ONE job on the
 # macOS image the lane runs, which measures where the close_notify witness went red with OpenSSL 4.1 --
-# diag/macos-oracle.sh: the system, OpenSSL's own documentation for both majors, a probe of OpenSSL and the
-# kernel alone, then qb built against openssl@4 and against openssl@3 and its suite run.
+# diag/macos-oracle.sh: the system, a probe of OpenSSL and the kernel alone, then qb built against openssl@4 and
+# against openssl@3: the tree as committed (the candidate), and its tests over the base's src/ (the red run).
 
 on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "suite (every test, both builds) or witness (the witness target alone)"
+        description: "suite (the candidate's every test, both builds) or witness (the witness targets alone)"
         required: false
         default: suite
+      base:
+        description: "the commit whose src/ the red run builds (empty: no red run)"
+        required: false
+        default: d46e21b29f2e7b14b52092a4dcc9da6d6c90b9ee
 
 permissions:
   contents: read
@@ -24,9 +28,11 @@ jobs:
   macos-oracle:
     name: macos-tls-oracle
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies as the lane does, and openssl@3 beside it
         run: |
@@ -35,7 +41,7 @@ jobs:
           brew list --versions openssl@3 openssl@4 libngtcp2
 
       - name: The oracle
-        run: bash diag/macos-oracle.sh "${{ runner.temp }}/oracle" "${{ inputs.scope || 'suite' }}"
+        run: bash diag/macos-oracle.sh "${{ runner.temp }}/oracle" "${{ inputs.scope || 'suite' }}" "${{ inputs.base }}"
 
       - name: Logs
         if: always()

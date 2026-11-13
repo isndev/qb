@@ -764,14 +764,21 @@ count_write_attempts(SSL *ssl) {
  * @brief A filter BIO over a socket BIO that fails the next write, or read, once with a system error the caller
  *        names: what a socket that refuses one call does. It sets no retry flag, so OpenSSL reports the call as
  *        `SSL_ERROR_SYSCALL` -- as it does for `ENOBUFS` from a real socket, which its socket BIO does not retry.
+ *        Or it answers every write "try again later", the retry flag set: what a socket BIO answers for a send
+ *        buffer that takes nothing (`EWOULDBLOCK`), on every system and at every moment.
  */
 namespace inject_once {
-int fail_write = 0; ///< The system error the next write fails with, once; 0: none.
-int fail_read  = 0; ///< The same for the next read.
+int  fail_write    = 0;     ///< The system error the next write fails with, once; 0: none.
+int  fail_read     = 0;     ///< The same for the next read.
+bool refuse_writes = false; ///< Every write would block, until cleared.
 
 int
 write(BIO *bio, const char *in, int size) {
     BIO_clear_retry_flags(bio);
+    if (refuse_writes) {
+        BIO_set_retry_write(bio);
+        return -1;
+    }
     if (const int error = std::exchange(fail_write, 0)) {
         qb::io::socket::set_last_errno(error);
         return -1;
@@ -872,6 +879,31 @@ struct SigpipeCount {
 };
 #endif
 
+/**
+ * @brief Whether OpenSSL ends the TLS session on every socket error it reports (`SSL_ERROR_SYSCALL`), the ones qb-io
+ *        makes the call again after included.
+ * @details OpenSSL 4 does: from the failing call on its state is "error" (`SSL_in_init()` is 1) and every call fails
+ *          with `SSL_ERROR_SSL` and no system call -- measured, 4.1.0 on macOS: a reset met by a read or a write, an
+ *          `ENOBUFS` or `EINTR` write, an `EINTR` read. OpenSSL 3 keeps the session as it was, and a call made again
+ *          goes on (3.5.7 on Linux, 3.5.9 on macOS, 3.6.3 on Windows). Both document the error as fatal
+ *          (`SSL_get_error(3)`: "no further I/O operations should be performed on the connection"); 4 holds to it.
+ *          Read at run time: the library the binary runs with decides, not the headers it was built with.
+ */
+const bool kSocketErrorEndsTheSession = OPENSSL_version_major() >= 4;
+
+/**
+ * @brief Whether a socket filled to the octet, its peer reading nothing, still takes nothing a moment later.
+ * @details Linux and Windows keep it full. macOS does not: its receive-buffer autotuning opens room within
+ *          microseconds to milliseconds of the fill, and a 24-octet alert written right after it was taken 4 times
+ *          in 12 with OpenSSL 4.1.0 (and the socket took 131 101 octets more within 200 ms of a fill with 3.5.9).
+ */
+constexpr bool kAFilledSocketStaysFull =
+#if defined(__APPLE__)
+    false;
+#else
+    true;
+#endif
+
 void first_connection(RawPeer &peer, qb::io::tcp::ssl::socket &client, qb::io::ssl::Session &session);
 
 class TlsCloseNotify : public CleanLoop {
@@ -886,7 +918,10 @@ protected:
     void
     SetUp() override {
         CleanLoop::SetUp();
-        g_state = &state;
+        g_state                    = &state;
+        inject_once::fail_write    = 0;
+        inject_once::fail_read     = 0;
+        inject_once::refuse_writes = false;
         ASSERT_TRUE(qb::io::test::require_ssl_files());
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         port = listener.local_endpoint().port();
@@ -1627,9 +1662,11 @@ TEST_F(TlsCloseNotify, AnAnswerToAPeerThatClosedAtOnceCostsNothing) {
     }
 }
 
-// The peer RESETS the connection: OpenSSL reads a socket error (SSL_ERROR_SYSCALL), not an end of its stream, and
-// keeps the session as it was -- but no alert may follow on a connection that is gone: nothing is written into it,
-// and no SIGPIPE is raised. By a client, a session and the socket alone, the reset met by a read or by a write.
+// The peer RESETS the connection: OpenSSL reads a socket error (SSL_ERROR_SYSCALL), not an end of its stream. OpenSSL 3
+// keeps the session as it was, OpenSSL 4 ends it there (kSocketErrorEndsTheSession) -- either way no alert may follow
+// on a connection that is gone: nothing is written into it, and no SIGPIPE is raised. By a client, a session and the
+// socket alone, the reset met by a read or by a write. The socket alone asserts which of the two OpenSSL did: with 3
+// what stops the alert is the end the socket recorded when it met the reset, with 4 it is OpenSSL's own state.
 TEST_F(TlsCloseNotify, AClientWhosePeerResetTheConnectionWritesNothingIntoIt) {
     for (const int version : {0, TLS1_2_VERSION}) {
         RawContext context{RawContext::role::server, version};
@@ -1685,7 +1722,9 @@ TEST_F(TlsCloseNotify, ASocketThatReadAResetWritesNothingMore) {
         ASSERT_EQ(got, -1) << "the socket never read the reset";
         EXPECT_FALSE(qb::io::socket::not_recv_error(error)) << "the case proves nothing: the read met no socket error";
         EXPECT_NE(error, 0) << "the read's socket error was not left for its caller";
-        EXPECT_EQ(SSL_in_init(client.ssl_handle()), 0) << "the case proves nothing: OpenSSL took the reset for a fatal error";
+        EXPECT_EQ(SSL_in_init(client.ssl_handle()), kSocketErrorEndsTheSession ? 1 : 0)
+            << (kSocketErrorEndsTheSession ? "OpenSSL 4 kept a session it ends on a socket error"
+                                           : "the case proves nothing: OpenSSL took the reset for a fatal error");
         EXPECT_FALSE(send_close_notify(client)) << "an alert was attempted after a reset";
         static_cast<void>(client.disconnect());
         EXPECT_EQ(g_write_attempts, 0u) << "something was written into a connection its peer reset";
@@ -1695,10 +1734,13 @@ TEST_F(TlsCloseNotify, ASocketThatReadAResetWritesNothingMore) {
     }
 }
 
-// A socket error the io layer reads as "try again" is not a reset: the io layer makes the call again, and the session
-// must go on. ENOBUFS on a write is one -- OpenSSL's socket BIO reports it as SSL_ERROR_SYSCALL, qb-io writes again
-// (socket::not_send_error()) -- and the stream ends whole after the retry.
-TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesDoesNotEndTheSession) {
+// A socket error the io layer reads as "try again" is not a reset: the io layer makes the call again. ENOBUFS on a
+// write is one -- OpenSSL's socket BIO reports it as SSL_ERROR_SYSCALL, qb-io writes again (socket::not_send_error()).
+// Whether the session goes on is OpenSSL's to say. OpenSSL 3 takes the write made again, and the stream ends whole.
+// OpenSSL 4 ended the session on the error (kSocketErrorEndsTheSession): the write made again fails, with an error that
+// does not read as "try again" -- the io layer ends the session instead of writing again for ever -- and nothing more is
+// written into it, no alert either: the peer reads the stream cut.
+TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesGoesOnUnlessOpenSslEndedTheSession) {
     RawContext               context{RawContext::role::server};
     RawPeer                  peer{context, RawContext::role::server};
     qb::io::tcp::ssl::socket client;
@@ -1709,19 +1751,39 @@ TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesDoesNotEndTheSession) {
     ASSERT_EQ(client.write(LAST.data(), LAST.size()), -1) << "the case proves nothing: the write did not fail";
     const int error = qb::io::socket::get_last_errno();
     ASSERT_TRUE(qb::io::socket::not_send_error(error)) << "the case proves nothing: the io layer would not write again (" << error << ")";
+    EXPECT_EQ(SSL_in_init(client.ssl_handle()), kSocketErrorEndsTheSession ? 1 : 0)
+        << (kSocketErrorEndsTheSession ? "OpenSSL 4 kept a session it ends on a socket error"
+                                       : "OpenSSL 3 ended the session on a socket error");
     ERR_clear_error();
-    EXPECT_EQ(client.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the write the io layer makes again failed";
-    EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
-    static_cast<void>(client.disconnect());
-    const TlsEnd end = peer.read_to_end();
-    note("ssl::socket: one write refused with ENOBUFS, written again, disconnect()", end);
-    EXPECT_CLEAN_END(end, LAST);
+    ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
+    if (!kSocketErrorEndsTheSession) {
+        EXPECT_EQ(client.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the write the io layer makes again failed";
+        EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
+        static_cast<void>(client.disconnect());
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: one write refused with ENOBUFS, written again, disconnect()", end);
+        EXPECT_CLEAN_END(end, LAST);
+    } else {
+        EXPECT_EQ(client.write(LAST.data(), LAST.size()), -1) << "a write was taken into a session OpenSSL ended";
+        EXPECT_FALSE(qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
+            << "the write made again failed with an error that reads as try again (" << qb::io::socket::get_last_errno()
+            << "): the io layer would write again for ever";
+        EXPECT_FALSE(send_close_notify(client)) << "an alert was reported into a session OpenSSL ended";
+        static_cast<void>(client.disconnect());
+        EXPECT_EQ(g_write_attempts, 0u) << "something was written into a session OpenSSL ended";
+        EXPECT_EQ(ERR_peek_error(), 0ul);
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: one write refused with ENOBUFS, the session ended by OpenSSL, disconnect()", end);
+        EXPECT_EQ(end.received, "") << "the peer read bytes of a write OpenSSL refused";
+        EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
+    }
     client.close();
 }
 
 // ...and so is an EINTR OpenSSL reports on a read (its socket BIO retries one itself: this is the contract of the
-// layer, kept the same both ways).
-TEST_F(TlsCloseNotify, AReadErrorTheIoLayerRetriesDoesNotEndTheSession) {
+// layer, kept the same both ways). With OpenSSL 4 the read made again fails at once, and its error must not read as
+// "try again" either: the descriptor stays readable, so the io layer would read again for ever.
+TEST_F(TlsCloseNotify, AReadErrorTheIoLayerRetriesGoesOnUnlessOpenSslEndedTheSession) {
     RawContext               context{RawContext::role::server};
     RawPeer                  peer{context, RawContext::role::server};
     qb::io::tcp::ssl::socket client;
@@ -1734,18 +1796,108 @@ TEST_F(TlsCloseNotify, AReadErrorTheIoLayerRetriesDoesNotEndTheSession) {
     ASSERT_EQ(client.read(&octet, 1), -1) << "the case proves nothing: the read did not fail";
     const int error = qb::io::socket::get_last_errno();
     ASSERT_TRUE(qb::io::socket::not_recv_error(error)) << "the case proves nothing: the io layer would not read again (" << error << ")";
+    EXPECT_EQ(SSL_in_init(client.ssl_handle()), kSocketErrorEndsTheSession ? 1 : 0)
+        << (kSocketErrorEndsTheSession ? "OpenSSL 4 kept a session it ends on a socket error"
+                                       : "OpenSSL 3 ended the session on a socket error");
     int        got      = 0;
     const auto deadline = steady::now() + 5s;
     while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
         std::this_thread::sleep_for(1ms);
-    EXPECT_EQ(got, 1) << "the read the io layer makes again failed";
-    EXPECT_EQ(octet, 'y');
-    EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
-    static_cast<void>(client.disconnect());
-    const TlsEnd end = peer.read_to_end();
-    note("ssl::socket: one read refused with EINTR, read again, disconnect()", end);
-    EXPECT_CLEAN_END(end, "");
+    if (!kSocketErrorEndsTheSession) {
+        EXPECT_EQ(got, 1) << "the read the io layer makes again failed";
+        EXPECT_EQ(octet, 'y');
+        EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
+        static_cast<void>(client.disconnect());
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: one read refused with EINTR, read again, disconnect()", end);
+        EXPECT_CLEAN_END(end, "");
+    } else {
+        EXPECT_EQ(got, -1) << "a read was answered from a session OpenSSL ended";
+        EXPECT_FALSE(qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+            << "the read made again failed with an error that reads as try again (" << qb::io::socket::get_last_errno()
+            << "): the io layer would read again for ever";
+        ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
+        EXPECT_FALSE(send_close_notify(client)) << "an alert was reported into a session OpenSSL ended";
+        static_cast<void>(client.disconnect());
+        EXPECT_EQ(g_write_attempts, 0u) << "something was written into a session OpenSSL ended";
+        EXPECT_EQ(ERR_peek_error(), 0ul);
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: one read refused with EINTR, the session ended by OpenSSL, disconnect()", end);
+        EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
+    }
     client.close();
+}
+
+// The same through the io layer, where "try again" decides whether a session is ever released: a client whose read
+// fails once with an error the io layer reads again after. OpenSSL 3: the read made again delivers the message and the
+// session goes on. OpenSSL 4: the session is over, and the client is released at once -- its descriptor stays readable
+// (the peer's bytes are still in it), so a failure that read as "try again" would be read again on every loop pass.
+TEST_F(TlsCloseNotify, AClientWhoseReadFailsOnceGoesOnUnlessOpenSslEndedTheSession) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    TlsClient  client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms); // the client reads what the handshake left for it (TLS 1.3: the session tickets)
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.transport().ssl_handle(), false));
+    inject_once::fail_read = EINTR;
+    ASSERT_TRUE(peer.write("hello\n"));
+    const auto before = steady::now();
+    if (!kSocketErrorEndsTheSession) {
+        ASSERT_TRUE(pump_while_not([&] { return client.messages == 1u; })) << "the message after the read made again was never delivered";
+        EXPECT_EQ(inject_once::fail_read, 0) << "the case proves nothing: no read failed";
+        EXPECT_EQ(client.disconnected_events, 0u) << "a read the io layer makes again ended the session";
+        client.disconnect();
+        ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+        const TlsEnd end = peer.read_to_end();
+        EXPECT_CLEAN_END(end, "");
+    } else {
+        EXPECT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }, 3000ms))
+            << "the client was never released: its read is made again and again";
+        EXPECT_LT(ms_since(before), 1000.0) << "the client was held " << ms_since(before) << " ms";
+        EXPECT_EQ(inject_once::fail_read, 0) << "the case proves nothing: no read failed";
+        EXPECT_EQ(client.messages, 0u);
+        EXPECT_FALSE(qb::io::socket::not_recv_error(client.system_error))
+            << "the session was ended with an error that reads as try again (" << client.system_error << ")";
+        const TlsEnd end = peer.read_to_end();
+        note("client, one read refused with EINTR, the session ended by OpenSSL", end);
+        EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
+    }
+}
+
+// ...and whose write fails once (ENOBUFS): OpenSSL 3 writes it again and the peer reads it; OpenSSL 4 ended the session,
+// and the client is released at once, nothing written, the peer reading the stream cut.
+TEST_F(TlsCloseNotify, AClientWhoseWriteFailsOnceGoesOnUnlessOpenSslEndedTheSession) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    TlsClient  client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.transport().ssl_handle(), true));
+    inject_once::fail_write = ENOBUFS;
+    const auto before       = steady::now();
+    client.publish(LAST);
+    if (!kSocketErrorEndsTheSession) {
+        ASSERT_TRUE(pump_while_not([&] { return client.queued() == 0u; })) << "the write made again never left";
+        EXPECT_EQ(inject_once::fail_write, 0) << "the case proves nothing: no write failed";
+        EXPECT_EQ(client.disconnected_events, 0u) << "a write the io layer makes again ended the session";
+        client.disconnect();
+        ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+        const TlsEnd end = peer.read_to_end();
+        EXPECT_CLEAN_END(end, LAST);
+    } else {
+        EXPECT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }, 3000ms))
+            << "the client was never released: its write is made again and again";
+        EXPECT_LT(ms_since(before), 1000.0) << "the client was held " << ms_since(before) << " ms";
+        EXPECT_EQ(inject_once::fail_write, 0) << "the case proves nothing: no write failed";
+        EXPECT_FALSE(qb::io::socket::not_send_error(client.system_error))
+            << "the session was ended with an error that reads as try again (" << client.system_error << ")";
+        const TlsEnd end = peer.read_to_end();
+        note("client, one write refused with ENOBUFS, the session ended by OpenSSL", end);
+        EXPECT_EQ(end.received, "") << "the peer read bytes of a write OpenSSL refused";
+        EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was ended as a whole stream: " << end.text();
+    }
 }
 
 // The reset met by a write: the write fails (and, unless the process ignores it, raises SIGPIPE itself, as any write
@@ -1762,7 +1914,9 @@ TEST_F(TlsCloseNotify, ASocketThatWroteIntoAResetWritesNothingMore) {
     while ((got = client.write(LAST.data(), LAST.size())) >= 0 && steady::now() < deadline)
         std::this_thread::sleep_for(5ms); // a write the system took before the reset arrived
     ASSERT_EQ(got, -1) << "the socket never refused a write after its peer reset the connection";
-    EXPECT_EQ(SSL_in_init(client.ssl_handle()), 0) << "the case proves nothing: OpenSSL took the reset for a fatal error";
+    EXPECT_EQ(SSL_in_init(client.ssl_handle()), kSocketErrorEndsTheSession ? 1 : 0)
+        << (kSocketErrorEndsTheSession ? "OpenSSL 4 kept a session it ends on a socket error"
+                                       : "the case proves nothing: OpenSSL took the reset for a fatal error");
     ERR_clear_error(); // what the failed write left there is the write's: the close must add nothing
     ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
     const SigpipeCount sigpipes;
@@ -2488,19 +2642,54 @@ TEST_F(TlsCloseNotify, CloseNotifyLeavesABlockingSocketBlocking) {
     client.close();
 }
 
-// A socket that cannot take the alert: the close goes on without it, at once, and leaves no error behind.
-TEST_F(TlsCloseNotify, ASocketThatCannotTakeTheAlertIsClosedWithoutIt) {
+// A socket filled to the octet: the close goes on at once, with the alert only if the socket took it, and leaves no
+// error behind. Where a filled socket stays full (kAFilledSocketStaysFull: Linux, Windows) it takes nothing and the
+// close goes on without the alert; on macOS the kernel may have made room by then, and the answer must say which it was.
+TEST_F(TlsCloseNotify, AFilledSocketIsClosedAtOnceWithTheAlertOnlyIfItTookIt) {
     RawContext               context{RawContext::role::server};
     RawPeer                  peer{context, RawContext::role::server};
     qb::io::tcp::ssl::socket client;
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
     ASSERT_GT(fill(client.native_handle()), 0u);
+    const auto written = BIO_number_written(SSL_get_wbio(client.ssl_handle()));
     ERR_clear_error();
-    EXPECT_FALSE(send_close_notify(client)) << "an alert was written into a socket that takes nothing";
+    const bool sent = send_close_notify(client);
+    const auto took = BIO_number_written(SSL_get_wbio(client.ssl_handle())) - written;
+    EXPECT_EQ(sent, took != 0) << "close_notify() answered " << sent << " where the socket took " << took << " octets";
+    if (kAFilledSocketStaysFull) {
+        EXPECT_FALSE(sent) << "an alert was written into a socket that takes nothing";
+    }
+    EXPECT_EQ(ERR_peek_error(), 0u) << "the alert left an entry in the thread's OpenSSL error queue";
+    const auto before = steady::now();
+    EXPECT_EQ(client.disconnect(), 0);
+    EXPECT_LT(ms_since(before), 1000.0) << "the close waited for a socket that takes nothing";
+    client.close();
+}
+
+// ...and, on every system, a socket that takes nothing at the moment of the alert: what a socket BIO answers for a full
+// send buffer -- "try again later" -- answered to every write. The close goes on without the alert, at once, with no
+// error left behind, and the peer reads the end of the connection with no close_notify.
+TEST_F(TlsCloseNotify, ASocketThatCannotTakeTheAlertIsClosedWithoutIt) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.ssl_handle(), true));
+    ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
+    inject_once::refuse_writes = true;
+    ERR_clear_error();
+    EXPECT_FALSE(send_close_notify(client)) << "an alert was reported written into a socket that takes nothing";
+    EXPECT_EQ(g_write_attempts, 1u) << "the alert was not attempted once: " << g_write_attempts;
     EXPECT_EQ(ERR_peek_error(), 0u) << "the alert that was not written left an entry in the thread's OpenSSL error queue";
     const auto before = steady::now();
     EXPECT_EQ(client.disconnect(), 0);
     EXPECT_LT(ms_since(before), 1000.0) << "the close waited for a socket that takes nothing";
+    EXPECT_EQ(g_write_attempts, 1u) << "the close attempted the alert again";
+    const TlsEnd end = peer.read_to_end();
+    note("a socket that takes nothing, close_notify(), disconnect()", end);
+    EXPECT_TRUE(end.unexpected_eof()) << "the peer read an alert the socket never took: " << end.text();
+    EXPECT_TRUE(end.fin) << end.text();
     client.close();
 }
 
@@ -2555,6 +2744,8 @@ TEST_F(TlsCloseNotify, ABlockingSocketThatCannotTakeTheAlertIsNotWaitedFor) {
     closed.store(true);
     rescue.join();
     EXPECT_LT(took, 1000.0) << "disconnect() waited " << took << " ms for a blocking socket to take the alert";
+    // What keeps it from waiting, whether or not the kernel made room meanwhile (kAFilledSocketStaysFull).
+    EXPECT_EQ(client.test_nonblocking(), 1) << "disconnect() attempted the alert on a blocking socket";
     client.close();
 }
 
