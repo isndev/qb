@@ -532,6 +532,14 @@ constexpr int tls_write_after_shutdown = EPIPE;
 constexpr int tls_session_aborted      = ECONNABORTED;
 #endif
 
+// Whether OpenSSL ended the session: its error state, which SSL_state_string() names "SSLERR" (OpenSSL 4 enters it on
+// a socket error a receive or a write of application data met; OpenSSL 3 never does on one -- Huly QB-1270).
+bool
+ended_by_openssl(SSL *ssl) noexcept {
+    const char *state = SSL_state_string(ssl);
+    return state && std::string_view(state) == "SSLERR";
+}
+
 bool
 apply_sni_hostname(SSL *ssl_handle, const std::string &hostname) noexcept {
     return hostname.empty() || SSL_set_tlsext_host_name(ssl_handle, hostname.c_str()) == 1;
@@ -628,6 +636,7 @@ socket::release_ssl_() noexcept {
         _connected        = false;
         _read_wants_write = false;
         _write_wants_read = false;
+        _handshake_retry  = false;
     }
 }
 
@@ -650,6 +659,7 @@ socket::operator=(socket &&rhs) noexcept {
     _stream_cut                 = rhs._stream_cut;
     _read_wants_write           = rhs._read_wants_write;
     _write_wants_read           = rhs._write_wants_read;
+    _handshake_retry            = rhs._handshake_retry;
     _pending_sni_hostname       = std::move(rhs._pending_sni_hostname);
     _pending_alpn_protocols     = std::move(rhs._pending_alpn_protocols);
     _pending_session            = std::move(rhs._pending_session);
@@ -672,6 +682,7 @@ socket::init(SSL *handle) noexcept {
     _stream_cut       = false; // another SSL object, another stream
     _read_wants_write = false;
     _write_wants_read = false;
+    _handshake_retry  = false;
     if (_ssl_handle)
         apply_pending_client_settings();
 }
@@ -765,13 +776,26 @@ socket::handCheck() noexcept {
     // benign WANT_READ/WANT_WRITE into SSL_ERROR_SSL and tear down a healthy
     // handshake. Clear it first.
     ERR_clear_error();
-    auto ret = SSL_do_handshake(ssl_handle());
+    _handshake_retry = false;
+    auto ret         = SSL_do_handshake(ssl_handle());
     if (ret != 1) {
         auto err = SSL_get_error(ssl_handle(), ret);
         switch (err) {
             case SSL_ERROR_WANT_WRITE:
             case SSL_ERROR_WANT_READ:
                 return 0;
+            case SSL_ERROR_SYSCALL:
+                // A socket error the io layer tries again after (ENOBUFS, an EINTR from a BIO that fails a call with it),
+                // where OpenSSL keeps the handshake: the step is made again when the socket can take a write -- this
+                // side's flight is what such an error meets, and on a writable socket the step is made at once
+                // (handshake_wants_write(); a read's, as read() says). Taken for a reset, it ended a connection OpenSSL
+                // let go on (Huly QB-1270). Where OpenSSL ended it, as below.
+                if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno()) && !ended_by_openssl(ssl_handle())) {
+                    _handshake_retry = true;
+                    qb::io::socket::set_last_errno(EWOULDBLOCK);
+                    return 0;
+                }
+                [[fallthrough]];
             default:
                 disconnect();
                 return -1;
@@ -1023,8 +1047,9 @@ socket::handshake_status() noexcept {
 
 bool
 socket::handshake_wants_write() const noexcept {
-    // The rwstate SSL_do_handshake left in handCheck(): SSL_get_error() derives WANT_WRITE from it on a socket BIO.
-    return _ssl_handle && SSL_want_write(_ssl_handle.get());
+    // The rwstate SSL_do_handshake left in handCheck(): SSL_get_error() derives WANT_WRITE from it on a socket BIO. And a
+    // socket error handCheck() kept: made again when the socket can take a write (Huly QB-1270).
+    return _ssl_handle && (_handshake_retry || SSL_want_write(_ssl_handle.get()));
 }
 
 bool
@@ -1137,7 +1162,10 @@ socket_type
 socket::release_handle() noexcept {
     if (_ssl_handle)
         SSL_set_bio(_ssl_handle.get(), nullptr, nullptr); // frees the socket BIO; BIO_NOCLOSE: the descriptor stays open
-    _connected = false;
+    _connected        = false;
+    _read_wants_write = false;
+    _write_wants_read = false;
+    _handshake_retry  = false;
     return tcp::socket::release_handle();
 }
 
@@ -1185,14 +1213,15 @@ socket::read(void *data, std::size_t size) noexcept {
                     quiet_shutdown();
                     return -1;
                 }
-                if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR") {
+                if (ended_by_openssl(ssl_handle())) {
                     qb::io::socket::set_last_errno(tls_session_aborted);
                     return -1;
                 }
-                // Kept: the error may have met the read's own handshake write -- ENOBUFS can only have --, and OpenSSL
-                // does not say which (from 3.2 its record layer clears SSL_want_write() on such an error): the read is
-                // made again when the socket can take a write, at once on a socket that can. ENOBUFS taken for a reset
-                // ended a connection OpenSSL let go on.
+                // Kept: the error may have met the read's own handshake write or its receive (a receive can fail with
+                // WSAENOBUFS too), and OpenSSL does not say which -- from 3.2 its record layer clears SSL_want_write() on
+                // such an error: the read is made again when the socket can take a write, at once on a socket that can.
+                // An error that persists is made again as the write path makes a write again after it. ENOBUFS taken for
+                // a reset ended a connection OpenSSL let go on.
                 break;
             default:
                 // OpenSSL refuses a read without a system call once it has ended the session -- with OpenSSL 4 after
@@ -1202,7 +1231,7 @@ socket::read(void *data, std::size_t size) noexcept {
                     qb::io::socket::set_last_errno(tls_session_aborted);
                 return -1;
         }
-    } else if (ret != 0 || !SSL_want_write(ssl_handle())) {
+    } else if (ret != 0 || !handshake_wants_write()) {
         _read_wants_write = false;
         return ret; // handCheck(): -1, a handshake error; 0, a handshake step in progress that waits for the peer
     }
@@ -1249,7 +1278,7 @@ socket::write(const void *data, std::size_t size) noexcept {
                     // stream goes on where OpenSSL lets it, or is reported aborted where OpenSSL ended the session.
                     if (!qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                         quiet_shutdown();
-                    else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")
+                    else if (ended_by_openssl(ssl_handle()))
                         qb::io::socket::set_last_errno(tls_session_aborted);
                     return -1;
                 default:
@@ -1266,7 +1295,7 @@ socket::write(const void *data, std::size_t size) noexcept {
     } else if (ret == 0) {
         // A handshake still in progress (handCheck() 0): what its step waits for -- the peer's next message, or room
         // in the socket for this side's.
-        _write_wants_read = !SSL_want_write(ssl_handle());
+        _write_wants_read = !handshake_wants_write();
     }
     return ret;
 }

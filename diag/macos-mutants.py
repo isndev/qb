@@ -21,19 +21,19 @@ READ_TAIL = ('    _read_wants_write = true;\n'
              '    qb::io::socket::set_last_errno(EWOULDBLOCK);\n'
              '    return -1;\n'
              '}\n')
-HS_GATE = '    } else if (ret != 0 || !SSL_want_write(ssl_handle())) {\n'
+HS_GATE = '    } else if (ret != 0 || !handshake_wants_write()) {\n'
 WANT_WRITE = '            case SSL_ERROR_WANT_WRITE:\n                break; // the read must write first'
 SYS_GATE = '                if (!qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {\n                    quiet_shutdown();\n'
-SYS_ERR = ('                if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR") {\n'
+SYS_ERR = ('                if (ended_by_openssl(ssl_handle())) {\n'
            '                    qb::io::socket::set_last_errno(tls_session_aborted);\n'
            '                    return -1;\n'
            '                }\n'
            '                // Kept:')
-SYS_KEPT = '                // ended a connection OpenSSL let go on.\n                break;\n'
+SYS_KEPT = '                // a reset ended a connection OpenSSL let go on.\n                break;\n'
 CLEAR = '        _read_wants_write = false; // anything but data from here on'
 W_WANT_WRITE = '                case SSL_ERROR_WANT_WRITE:\n                    _write_wants_read = false;\n'
 W_WANT_READ = '                    _write_wants_read = true;\n                    return 0;\n'
-W_HS = '        _write_wants_read = !SSL_want_write(ssl_handle());\n'
+W_HS = '        _write_wants_read = !handshake_wants_write();\n'
 
 ARM = ('                    if constexpr (detail::tls_io<_Derived>) {\n'
        '                        if (Derived.transport().read_wants_write())\n'
@@ -48,19 +48,34 @@ IN_AFTER = ('    read_after_write() noexcept {\n'
             '        this->_async_event.feed_event(EV_READ);\n'
             '    }\n')
 WATCH_FN = '    watch_write_for_read() noexcept {\n'
+WATCH_IO = WATCH_FN + '        if (!(this->_async_event.events & EV_WRITE))\n            this->_async_event.set(EV_WRITE);\n'
 WATCH = WATCH_FN + '        this->_async_event.set(EV_WRITE);\n'
 HW_TEST = '        if (unlikely(raw_ret < (detail::tls_io<_Derived> ? 1 : 0))) {\n'
-TOOK_GUARD = '        if (_reason || !_protocol->ok())\n            return false;\n        if (!Derived.pendingWrite()) {\n'
-TOOK_EMPTY = ('            if (!Derived.transport().read_wants_write())\n'
-              '                return false;\n'
-              '            this->_async_event.set(EV_READ);\n'
+TOOK_ARM = ('            if (this->_async_event.events & EV_READ) {\n'
+            '                if (Derived.transport().read_wants_write())\n'
+            '                    this->_async_event.feed_event(EV_READ);\n'
+            '                return false;\n'
+            '            }\n')
+TOOK_GUARD = '            if (_reason || !_protocol->ok())\n                return false;\n            this->_async_event.set(EV_READ);\n'
+TOOK_EMPTY = ('            this->_async_event.set(EV_READ);\n'
               '            this->_async_event.feed_event(EV_READ);\n'
               '            return true;\n')
 TOOK_PEER = ('        if (!Derived.transport().write_wants_read())\n'
              '            return false;\n'
              '        this->_async_event.set(EV_READ);\n')
 REARM = ('                if ((this->_async_event.events & (EV_READ | EV_WRITE)) != (EV_READ | EV_WRITE))\n'
-         '                    this->_async_event.set(EV_READ | EV_WRITE);\n')
+         '                    rearm_queued_output();\n')
+REARM_FN = '        const int want = _protocol->ok() ? EV_READ | EV_WRITE : EV_WRITE;\n'
+RTW = ('            if (unlikely(!(this->_async_event.events & EV_READ)))\n'
+       '                arm_write_while_read_waits();\n')
+ARM_WHILE = '        if (_protocol->ok())\n            this->_async_event.set(EV_READ | EV_WRITE);\n'
+START_EV = ('            if (Derived.transport().read_wants_write())\n'
+            '                return EV_WRITE;\n')
+RTR_IO = '                if ((this->_async_event.events & EV_WRITE) && _protocol->ok())\n                    return;\n'
+RTR_IN = '                if ((this->_async_event.events & EV_WRITE) && this->_async_event.is_active())\n                    return;\n'
+HS_KEEP = ('                if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno()) && !ended_by_openssl(ssl_handle())) {\n'
+           '                    _handshake_retry = true;\n')
+HS_FLAG = '    return _ssl_handle && (_handshake_retry || SSL_want_write(_ssl_handle.get()));\n'
 OUT_TEST = '                if (unlikely(ret < (detail::tls_io<_Derived> ? 1 : 0))) {\n'
 OUT_WAIT = ('                        if (ret == 0 && Derived.pendingWrite() && Derived.transport().write_wants_read()) {\n'
             '                            wait_read_for_write();\n')
@@ -103,10 +118,12 @@ MUTANTS = {
     # ---- io.h: input<> and io<> read passes -------------------------------------------------------------------------
     'I01': ('input<>: its read pass never watches writability for a read', IOH, ARM, '', 2, 0),
     'I01b': ('io<>: its read pass never watches writability for a read', IOH, ARM, '', 2, 1),
-    'I02': ('input<>: readability watched too (a read that waits to write)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ | EV_WRITE);\n', 2, 0),
-    'I02b': ('io<>: readability watched too (a read that waits to write)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ | EV_WRITE);\n', 2, 1),
-    'I03': ('input<>: readability alone watched (nothing armed)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ);\n', 2, 0),
-    'I03b': ('io<>: readability alone watched (nothing armed)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ);\n', 2, 1),
+    'I02': ('input<>: readability watched too (a read that waits to write)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ | EV_WRITE);\n', 1),
+    'I02b': ('io<>: readability watched too (a read that waits to write)', IOH, WATCH_IO,
+             WATCH_FN + '        if (!(this->_async_event.events & EV_WRITE))\n            this->_async_event.set(EV_READ | EV_WRITE);\n', 1),
+    'I03': ('input<>: readability alone watched (nothing armed)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ);\n', 1),
+    'I03b': ('io<>: readability alone watched (nothing armed)', IOH, WATCH_IO,
+             WATCH_FN + '        if (!(this->_async_event.events & EV_WRITE))\n            this->_async_event.set(EV_READ);\n', 1),
     'I04': ('input<>: the writability a read asked for falls to the error path', IOH, IN_HOOK, '', 1),
     'I05': ('input<>: the read not made again when writability came', IOH, IN_AFTER,
             IN_AFTER.replace('        this->_async_event.feed_event(EV_READ);\n', ''), 1),
@@ -114,15 +131,30 @@ MUTANTS = {
             '        if (unlikely(raw_ret < 0)) {\n', 1),
     'I07': ('io<>: the read not made again when the writability it asked for came', IOH, TOOK_EMPTY,
             TOOK_EMPTY.replace('            this->_async_event.feed_event(EV_READ);\n', ''), 1),
-    'I08': ('io<>: every empty write pass makes a read, asked for or not', IOH, TOOK_EMPTY,
-            TOOK_EMPTY.replace('            if (!Derived.transport().read_wants_write())\n                return false;\n', ''), 1),
+    'I08': ('io<>: an empty arm (readability watched) taken for the read\'s writability: no eos', IOH, TOOK_ARM,
+            TOOK_ARM.replace('            if (this->_async_event.events & EV_READ) {\n', '            if (false) {\n'), 1),
+    'I08b': ('io<>: an empty arm does not read again for a read that waits to write', IOH, TOOK_ARM,
+             TOOK_ARM.replace('                if (Derived.transport().read_wants_write())\n                    this->_async_event.feed_event(EV_READ);\n', ''), 1),
     'I09': ('io<>: a connection being ended or drained is treated as any other', IOH, TOOK_GUARD,
-            '        if (!Derived.pendingWrite()) {\n', 1),
+            '            this->_async_event.set(EV_READ);\n', 1),
     'I10': ('io<>: a write waiting for the peer keeps writability watched', IOH, TOOK_PEER,
             TOOK_PEER.replace('        this->_async_event.set(EV_READ);\n', ''), 1),
     'I11': ('io<>: a write pass that leaves output queued watches nothing more', IOH, REARM, '', 1),
     'I12': ('io<>: a write pass that leaves output queued adds writability alone (readability not watched again)', IOH, REARM,
             '                    this->ready_to_write();\n', 1),
+    'I13': ('io<>: the drain\'s writability alone not kept by the re-arm (QB-294)', IOH, REARM_FN,
+            '        const int want = EV_READ | EV_WRITE;\n', 1),
+    'I14': ('io<>: an empty arm made while the read waits to write is not marked', IOH, RTW, '', 1),
+    'I15': ('io<>: an arm while the read waits to write marks writability alone', IOH, ARM_WHILE,
+            '        if (_protocol->ok())\n            this->_async_event.set(EV_WRITE);\n', 1),
+    'I16': ('io<>: a start() during a read\'s wait watches readability', IOH, START_EV, '', 2, 1),
+    'I16b': ('input<>: a start() during a read\'s wait watches readability', IOH, START_EV, '', 2, 0),
+    'I17': ('io<>: ready_to_read() during a read\'s wait watches readability again', IOH, RTR_IO, '', 1),
+    'I17b': ('input<>: ready_to_read() during a read\'s wait restarts on readability', IOH, RTR_IN, '', 1),
+    'H01': ('a handshake step\'s try-again socket error ends the connection, as before', SSL, HS_KEEP,
+            HS_KEEP.replace('if (qb::io::socket::not_send_error', 'if (false && qb::io::socket::not_send_error'), 1),
+    'H02': ('a handshake step kept on a socket error does not wait for writability', SSL, HS_FLAG,
+            '    return _ssl_handle && SSL_want_write(_ssl_handle.get());\n', 1),
     # ---- io.h: output<> ---------------------------------------------------------------------------------------------
     'O01': ('output<>: a TLS write that took nothing not looked at (< 0 as before)', IOH, OUT_TEST,
             '                if (unlikely(ret < 0)) {\n', 1),

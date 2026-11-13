@@ -371,6 +371,7 @@ class QB_API socket : public tcp::socket {
     bool _pending_request_ocsp       = false; /**< Deferred request_ocsp_stapling(true): applied when the SSL is minted at connect. */
     bool _read_wants_write           = false; /**< `read_wants_write()`: the read that answered -1 must write first. */
     bool _write_wants_read           = false; /**< `write_wants_read()`: the write that answered 0 waits for the peer. */
+    bool _handshake_retry            = false; /**< handCheck() kept a socket error: `handshake_wants_write()`. */
     bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
                                  by set_insecure(). */
     qb::io::ssl::Context
@@ -684,7 +685,11 @@ public:
      * @details Meaningful after `handshake_status()` returned 0, which is when an event loop re-arms the descriptor:
      *          watch `EV_WRITE` for true and `EV_READ` for false, never both -- a connected socket is always
      *          writable, so a write watch on a handshake that waits to read wakes the loop on every pass until the
-     *          peer answers (Huly QB-301). It reads the state OpenSSL keeps (`SSL_want_write`); no I/O.
+     *          peer answers (Huly QB-301). It reads the state OpenSSL keeps (`SSL_want_write`); no I/O. True as well
+     *          after a step met a socket error a call is made again after (`ENOBUFS`, an `EINTR` from a BIO that fails
+     *          a call with it) and OpenSSL kept the handshake: `handshake_status()` answered 0, not -1, and the step is
+     *          made again when the socket can take a write -- until 3.4 such an error ended the connection (Huly
+     *          QB-1270).
      */
     [[nodiscard]] bool handshake_wants_write() const noexcept;
 
