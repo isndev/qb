@@ -1,78 +1,81 @@
 name: coverage
 
-# The one workflow deliberately NOT extended to `develop` pull requests.
-#
-# Every other workflow renders a verdict a reviewer can act on -- it compiles, the suite passes,
-# ASan/TSan are clean, the install is consumable -- so running it before merge is what makes the
-# PR mean something. This one renders no verdict: it builds instrumented, generates lcov +
-# Cobertura, uploads them as artifacts, and exits 0 regardless of what the numbers say. There is
-# no threshold gate to fail. On a PR that costs the most expensive job in the battery (a full
-# instrumented build plus the whole suite) to produce a report nobody blocks a merge on.
-#
-# Nothing is lost by holding it: `push: [main, develop]` below still runs it on every push to
-# develop, so the coverage trend for the development line is exactly as complete as before.
-# Add `develop` here the day a coverage threshold actually gates the merge.
+# SCRATCH, never to merge (QB-200 shape, 2026-11-13): qb's coverage lane SEGFAULTs in
+# qb-io-test-unit-over-aligned-promise on ubuntu-latest = Ubuntu 26.04, whose g++-14 is 14.3.0 -- on develop
+# (4401d31df) and on int/340-t7 alike, green on 24.04's 14.2.0 (run 42844596263). This job builds that one test in
+# several configurations, runs each, and runs a crash under gdb: the backtrace, the registers, the instructions at the
+# fault, so that a compiler defect and a qb defect can be told apart. Every configuration's verdict is printed.
+
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
+    inputs:
+      variants:
+        description: "space-separated: cov14 dbg14 cov14nocov o1 dbg15 dbgclang asan14"
+        required: false
+        default: "cov14 dbg14 dbg15 dbgclang asan14"
 
 permissions:
   contents: read
 
-concurrency:
-  group: coverage-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  coverage:
+  diag:
+    name: over-aligned-promise-gcc-oracle
     runs-on: ubuntu-latest
-
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Install dependencies
+      - name: Install dependencies as the coverage lane does, gdb and g++-15 beside them
         run: |
           ./scripts/ci-install-linux-dependencies.sh --profile coverage
-          gcc-14 --version
+          sudo apt-get install -y gdb g++-15 || sudo apt-get install -y gdb
+          mkdir -p "${RUNNER_TEMP}/oracle"
+          { cat /etc/os-release | head -3; gcc-14 --version | head -1; g++-15 --version 2>/dev/null | head -1; clang++-22 --version 2>/dev/null | head -1; gdb --version | head -1; git rev-parse HEAD; } | tee "${RUNNER_TEMP}/oracle/host.txt"
 
-      - name: Configure
-        run: >
-          cmake --preset coverage -G Ninja
-          -DCMAKE_C_COMPILER=gcc-14
-          -DCMAKE_CXX_COMPILER=g++-14
-          -DQB_CXX_STANDARD=20
-          -DQB_BUILD_EXAMPLES=OFF
-          -DQB_USE_SYSTEM_GTEST=ON
-          -DQB_ENABLE_NATIVE_ARCH=OFF
-          -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON
-          -DGCOV_PATH="${GCOV_PATH}"
-          -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE}"
+      - name: Build and run each variant
+        run: |
+          set -uo pipefail
+          o="${RUNNER_TEMP}/oracle"
+          t=qb-io-test-unit-over-aligned-promise
+          common=(-G Ninja -DQB_CXX_STANDARD=20 -DQB_BUILD_EXAMPLES=OFF -DQB_BUILD_BENCHMARKS=OFF -DQB_USE_SYSTEM_GTEST=ON
+                  -DQB_ENABLE_NATIVE_ARCH=OFF -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE:-}")
+          for v in ${{ inputs.variants }}; do
+            case "$v" in
+              cov14)      args=(--preset coverage -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DGCOV_PATH="${GCOV_PATH:-}") ;;
+              dbg14)      args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14) ;;
+              o1)         args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-O1 -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14) ;;
+              dbg15)      args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15) ;;
+              dbgclang)   args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-22 -DCMAKE_CXX_COMPILER=clang++-22) ;;
+              asan14)     args=(-DCMAKE_BUILD_TYPE=Debug -DQB_SANITIZE=address,undefined -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14) ;;
+              *) echo "unknown variant $v"; continue ;;
+            esac
+            b="build-$v"
+            if [ "${args[0]}" = "--preset" ]; then
+              cmake "${args[@]}" "${common[@]}" -B "$b" > "$o/$v-configure.log" 2>&1
+            else
+              cmake -S . -B "$b" "${args[@]}" "${common[@]}" > "$o/$v-configure.log" 2>&1
+            fi
+            echo "$v: configure $?" | tee -a "$o/verdicts.txt"
+            cmake --build "$b" --target "$t" > "$o/$v-build.log" 2>&1; echo "$v: build $?" | tee -a "$o/verdicts.txt"
+            bin="$(find "$b" -type f -name "$t" -perm -u+x | head -1)"
+            [ -n "$bin" ] || { echo "$v: no binary" | tee -a "$o/verdicts.txt"; continue; }
+            (cd "$(dirname "$bin")" && timeout 120 "./$t") > "$o/$v-run.log" 2>&1; rc=$?
+            echo "$v: run exit $rc" | tee -a "$o/verdicts.txt"; tail -4 "$o/$v-run.log"
+            if [ $rc -ne 0 ]; then
+              (cd "$(dirname "$bin")" && gdb -batch -ex run -ex bt -ex 'info registers rip rsp rbp rdi rsi rax' \
+                 -ex 'x/16i $pc-32' -ex 'frame 1' -ex 'info frame' "./$t") > "$o/$v-gdb.log" 2>&1
+              sed -n '/received signal/,$p' "$o/$v-gdb.log" | head -60
+              objdump -d --no-show-raw-insn -C "$bin" > "$o/$v-objdump.txt" 2>/dev/null || true
+            fi
+          done
+          echo "== verdicts"; cat "$o/verdicts.txt"
 
-      - name: Build
-        run: cmake --build --preset coverage --parallel "$(nproc)"
-
-      - name: Generate lcov report
-        run: cmake --build build/coverage --target qb-coverage --parallel "$(nproc)"
-
-      - name: Generate Cobertura XML
-        run: cmake --build build/coverage --target qb-coverage-xml --parallel "$(nproc)"
-
-      # The report is read within days of the push; the lane's verdict is the instrumented build
-      # and the two report targets above, so a refused upload (the organisation's artifact storage
-      # quota, once) is a warning on the run, not a red lane.
-      - name: Upload coverage artifacts
-        continue-on-error: true
+      - name: Logs
+        if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: qb-coverage
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            build/coverage/qb-coverage/
-            build/coverage/qb-coverage.info
-            build/coverage/qb-coverage-xml.xml
+          name: gcc-oracle-${{ github.run_id }}
+          path: ${{ runner.temp }}/oracle
+          retention-days: 14
