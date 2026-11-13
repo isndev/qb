@@ -130,8 +130,8 @@ llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:440-462	b17271a5fe0b	bool
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:489-519	a328c72b2a01	bool
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:587-604	02bfb66ca66d	reset_stream(std::uint64_t connection_id, std::uint64_t stream_id, st...
-llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:639-655	4ab8631529bf	void
-llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:707-717	f0b271cda9ec	stream
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:651-679	f1e7cdcc542d	void
+llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:731-741	f0b271cda9ec	stream
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:90-97	1482ebff2622	// Connection id 0 is "the" connection. A client's backend takes it a...
 llm/qb.llm.api.md	src/qb/io/async/quic/endpoint.h:99-136	abd73efa0440	void
 llm/qb.llm.api.md	src/qb/io/async/quic/io_handler.h:309-315	658e4f548571	admit_session(std::uint64_t connection_id, std::uint64_t stream_id) {
