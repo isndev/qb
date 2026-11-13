@@ -759,23 +759,37 @@ policy.
 - **A generator's frame is aligned for what it holds: `generator<T>` and `async_generator<T>` take cache-line-aligned
   blocks, as `task<T>` does (Huly QB-1246).** C++20 does not align a coroutine frame for what it holds: the frame is
   placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block when there
-  is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its widest member
-  (MSVC realigns it itself). `task<T>`'s promise takes cache-line-aligned blocks from
+  is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its most strictly
+  aligned member (MSVC realigns it itself). `task<T>`'s promise takes cache-line-aligned blocks from
   `detail::CoroutineFrameAllocator`; the generators' promises had no `operator new`. So a `generator<E>` or an
   `async_generator<E>` of a `qb::Event` -- every event is cache-line aligned -- had its promise, and a generator body
   that kept an `alignas(64)` local across `co_yield` had that local, at 16, 32 or 48 mod 64: undefined behaviour, and a
   segmentation fault wherever aligned vector moves are emitted (an AVX target: `-march=native`, the `release-native`
-  preset, a distribution whose compilers target x86-64-v3). `async_generator<T>`, resumed by its loop's scheduler as a
-  task is, now takes `task<T>`'s pool. `generator<T>` takes the aligned `::operator new` instead: it is a plain value a
-  program may destroy on another thread, and the pool keeps per-thread free lists -- with it, 20 000 generators made on
-  one thread and destroyed on another left about 2.5 MiB more in the destroying thread's list at every round, never
-  given back (measured with g++ 14). The limit is the cache line, as for `task<T>`: nothing aligns a frame further.
+  preset, a distribution whose compilers target x86-64-v3).
+  - **`async_generator<T>`** is resumed by its loop's scheduler, as a task is, and takes `task<T>`'s pool with a task's
+    rules: its frame is made and destroyed on its loop's thread (one destroyed on another goes to that thread's free
+    list), it now counts in the pool's `live_frames`, and AddressSanitizer sees it reused rather than freed. One made,
+    awaited once and destroyed costs 468 instructions where `malloc` cost 555 (callgrind, g++ 14 Release, glibc 2.41).
+  - **`generator<T>`** is a plain value a program may move to another thread and destroy there, so it takes neither the
+    pool, whose per-thread free lists kept such a frame until the destroying thread exited -- 20 000 generators made on
+    one thread and destroyed on another left about 2.5 MiB more there at every round (measured) -- nor the aligned
+    `::operator new`, which glibc serves off its fast path: 296 instructions a generator made, advanced once and
+    destroyed, against 216 with `malloc`. Its `operator new` takes an ordinary block `frame_alignment()` bytes larger
+    and places the frame at its first aligned address past the word that keeps the block's own, as MSVC's
+    `_aligned_malloc` does: 218 instructions. `frame_alignment()` is the cache line, or the promise's own alignment
+    when that is stricter, so a `generator<T>` of a value aligned past the cache line has its promise aligned too (MSVC
+    does not compile a generator of a `T` aligned to 128: `yield_value` takes its `T` by value, error C2719).
+    Nothing else goes past the cache line: a local aligned further, or such a promise in an `async_generator` or a
+    `task`, is not guaranteed its alignment on GCC, clang and clang-cl.
   - **Witness.** `qb-io-test-unit-over-aligned-promise` keeps 64 frames of each kind alive at once, a small heap block
     between each two, and reads every promise and local address through a volatile (the residue of a typed pointer
     to an over-aligned object may be folded to 0). On the base, 46 to 50 of 64 promises and 92 to 98 of 128 local
     addresses were off the 64-byte boundary with g++ 14 and clang 19 (Release) and clang-cl 22; MSVC 19.51 aligned
-    every frame, before and after. Green on all four. `GeneratorSync.AFrameMadeOnOneThreadAndDestroyedOnAnotherBelongsToNeither`
-    holds `generator<T>` off the pool: neither thread's pool count moves.
+    every frame, before and after. Green on all four, and so is
+    `OverAlignedPromise.GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise` wherever it compiles (not MSVC:
+    an `alignas(128)` value, 33 of 64 promises off the 128-byte boundary when the frame takes the cache line only).
+    `GeneratorSync.AFrameMadeOnOneThreadAndDestroyedOnAnotherBelongsToNeither` holds `generator<T>` off the pool:
+    neither thread's pool count moves.
   - **The coverage lane's red was this test's own probe.** Its `probe_task` promise is `alignas(64)` and had no
     `operator new` either. GitHub's Ubuntu 26.04 image installs the distribution's x86-64-v3 variant, whose gcc-14 and
     gcc-15 are configured `--with-arch-64=x86-64-v3`: AVX2 by default, which qb's Release flags pin away

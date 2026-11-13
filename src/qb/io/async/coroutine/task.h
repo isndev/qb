@@ -213,7 +213,7 @@ public:
     // and C++20 does not align a frame for it: GCC, clang and clang-cl lay the frame out from the address this
     // operator new returns (MSVC realigns it), and ::operator new guarantees 16 B -- the Event at 16, 32 or 48 mod 64,
     // UB and a SIGSEGV wherever aligned vector moves are emitted. task<T> and async_generator<T> rely on these blocks,
-    // generator<T> on kAlign; nothing aligns a frame past kAlign. Use the canonical cache-line constant
+    // generator<T> on kAlign (or its promise's alignment past it); nothing else goes past kAlign. Use the canonical cache-line constant
     // (overridable via KNOWN_L1_CACHE_LINE_SIZE) rather than a magic 64 so the pool
     // always tracks the platform's true line size / the alignment Events are built with.
     static constexpr std::size_t kAlign     = QB_LOCKFREE_CACHELINE_BYTES;

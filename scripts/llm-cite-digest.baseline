@@ -82,10 +82,11 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	generator.h:105-105	3afa8eb31568	promise_type() noexcept = default;
-llm/qb.llm.api.md	generator.h:318-318	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
-llm/qb.llm.api.md	generator.h:326-326	3afa8eb31568	promise_type() noexcept = default;
-llm/qb.llm.api.md	generator.h:89-89	cbf342ea7cd4	operator new(std::size_t size) {
+llm/qb.llm.api.md	generator.h:120-120	3afa8eb31568	promise_type() noexcept = default;
+llm/qb.llm.api.md	generator.h:334-334	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
+llm/qb.llm.api.md	generator.h:342-342	3afa8eb31568	promise_type() noexcept = default;
+llm/qb.llm.api.md	generator.h:94-94	09bccb7c2dbd	frame_alignment() noexcept {
+llm/qb.llm.api.md	generator.h:99-99	cbf342ea7cd4	operator new(std::size_t size) {
 llm/qb.llm.api.md	listener.h:1930-1946	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
@@ -255,8 +256,8 @@ llm/qb.llm.md	ev++.h:780-780	ff2366882bf0	set(const char *path, ev_tstamp interv
 llm/qb.llm.md	file.h:115-115	b1f6c4d76864	explicit file(std::filesystem::path const &fname, int flags = O_RDWR)...
 llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &fname, int flags = O_RDWR, int ...
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
-llm/qb.llm.md	generator.h:318-318	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
-llm/qb.llm.md	generator.h:89-89	cbf342ea7cd4	operator new(std::size_t size) {
+llm/qb.llm.md	generator.h:334-334	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
+llm/qb.llm.md	generator.h:99-99	cbf342ea7cd4	operator new(std::size_t size) {
 llm/qb.llm.md	io.h:2175-2199	d340160ee45f	begin_linger() noexcept {
 llm/qb.llm.md	io.h:2184-2184	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
 llm/qb.llm.md	io.h:2212-2222	6d0e06e8f52b	linger_read(event::io const &event) noexcept {

@@ -22,7 +22,8 @@
  * behaviour, and a SIGSEGV wherever the compiler emits an aligned vector move (any AVX target -- this file's own
  * probe died so, in its promise's constructor, under the g++ 14 of an x86-64-v3 Ubuntu). MSVC 19.51 realigns the
  * frame itself. qb's coroutine types therefore take cache-line-aligned blocks: `task<T>` and `async_generator<T>` from
- * `detail::CoroutineFrameAllocator`, `generator<T>` from the aligned `::operator new`. The cases below create many
+ * `detail::CoroutineFrameAllocator`, `generator<T>` an `::operator new` block it realigns (to its promise's alignment
+ * when that is past the cache line). The cases below create many
  * frames at once, a small block between each two, so that an allocator that lays consecutive blocks out in order (glibc's
  * and the Windows heap, measured) cannot hand all of them out 64-aligned by luck -- a size-class allocator may -- and
  * read every address through a volatile, which the optimiser cannot fold to "aligned" the way it may fold the residue
@@ -218,6 +219,27 @@ wide_values(std::uint64_t const seed) {
     co_yield w;
 }
 
+/// Past the cache line: a value aligned to two of them, which only `generator<T>`'s own operator new honours (it takes
+/// the promise's alignment when that is past the cache line; the pool does not go past it). MSVC refuses a by-value
+/// parameter aligned past 64 (C2719) and `yield_value` takes its `T` by value, so a generator of such a `T` does not
+/// compile there at all, and neither does this case; clang-cl compiles and runs it.
+#if !defined(_MSC_VER) || defined(__clang__)
+#define OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE 1
+struct alignas(128) Wider {
+    std::uint64_t words[16]{};
+};
+static_assert(alignof(generator<Wider>::promise_type) == 128);
+
+generator<Wider>
+wider_values(std::uint64_t const seed) {
+    Wider w;
+    w.words[0] = seed;
+    co_yield w;
+}
+#else
+#define OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE 0
+#endif
+
 /// A generator of an ordinary value whose BODY holds a Wide across two `co_yield`s; it yields the local's address.
 generator<std::uintptr_t>
 wide_local_addresses(std::uint64_t const seed) {
@@ -362,6 +384,32 @@ TEST_F(OverAlignedPromise, GeneratorOfAWideValueHasAnAlignedPromise) {
     }
     EXPECT_TRUE(all_aligned(census, kFrames, alignof(generator<Wide>::promise_type)));
 }
+
+/**
+ * @test A `generator<Wider>` -- a promise aligned past the cache line -- has its promise at that alignment, frame
+ *       after frame: `generator<T>`'s frame takes the promise's alignment when it exceeds the cache line.
+ */
+#if OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE
+TEST_F(OverAlignedPromise, GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise) {
+    std::vector<generator<Wider>> gens;
+    spacers                       between;
+    gens.reserve(kFrames);
+    between.reserve(kFrames);
+    for (std::uint64_t i = 0; i < kFrames; ++i) {
+        gens.push_back(wider_values(i));
+        between.push_back(std::make_unique<std::uint64_t>(i));
+    }
+    alignment_census census;
+    for (std::uint64_t i = 0; i < kFrames; ++i) {
+        auto it = gens[i].begin();
+        ASSERT_NE(it, gens[i].end());
+        Wider const &held = *it; // a reference into the promise, not a copy
+        EXPECT_EQ(held.words[0], i);
+        census.record(opaque_address(&held), alignof(generator<Wider>::promise_type));
+    }
+    EXPECT_TRUE(all_aligned(census, kFrames, alignof(generator<Wider>::promise_type)));
+}
+#endif
 
 /**
  * @test A generator of an ordinary value whose body keeps an `alignas(64)` local across `co_yield` has that local at
