@@ -424,6 +424,26 @@ struct value_slot<void> {
 template <typename T>
 using value_slot_t = typename value_slot<T>::type;
 
+/**
+ * @brief Whether a promise takes the operand of `co_return` / `co_yield` by reference rather than by value.
+ *
+ * By value everywhere a compiler accepts the parameter: every operand shape then means what a by-value parameter
+ * makes it mean. By reference (a `T const &` and a `T &&` overload) only where it does not: MSVC refuses a by-value
+ * parameter whose type is aligned past 64 (error C2719), so before this a `task<T>`, `generator<T>` or
+ * `async_generator<T>` of such a `T` did not compile there (Huly QB-1246). Measured with MSVC 19.51 on x64: a
+ * by-value parameter aligned to 8, 16, 32 or 64 accepted, to 128 or 256 refused, for a free function and a member of
+ * a class template alike. arm64 Windows is inferred, not measured (no arm64 toolchain on the measuring host); 32-bit
+ * targets are not qb's. clang-cl accepts the by-value parameter, so cl and clang-cl declare different members for such
+ * a `T`: a program must not link objects of the two that use one such `T` in a promise.
+ */
+#if defined(_MSC_VER) && !defined(__clang__)
+template <typename T>
+inline constexpr bool operand_by_reference = alignof(T) > 64;
+#else
+template <typename T>
+inline constexpr bool operand_by_reference = false;
+#endif
+
 } // namespace detail
 
 // schedule_via_current is defined in scheduler.h - include after this file
@@ -630,12 +650,43 @@ public:
         }
 
         /**
-         * @brief Store the return value
+         * @brief Store the return value: the operand of `co_return`, taken as a by-value parameter takes it
          * @param value The value to return
+         *
+         * A member template only so that its parameter type is formed when it is chosen: MSVC raises C2719 on the
+         * declaration of a by-value parameter aligned past 64 even when a constraint removes the overload. Where MSVC
+         * would refuse it (detail::operand_by_reference), the two overloads below take the operand instead.
+         */
+        template <typename U = T>
+        requires(!detail::operand_by_reference<U>)
+        void
+        return_value(std::type_identity_t<U> value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+            result_.template emplace<1>(std::move(value));
+        }
+
+        /**
+         * @brief Store the return value, on MSVC for a T aligned past 64: an rvalue, an implicitly moved local, a
+         *        braced list or a value converted to T -- moved in (a const rvalue takes the overload below)
+         *
+         * The noexcept of each call is what a by-value parameter gives it: the move's.
          */
         void
-        return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return_value(T &&value) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires(detail::operand_by_reference<T>)
+        {
             result_.template emplace<1>(std::move(value));
+        }
+
+        /**
+         * @brief Store the return value, on MSVC for a T aligned past 64: an lvalue or a const rvalue -- copied in
+         *
+         * The noexcept of each call is what a by-value parameter gives it: the copy's and the move's.
+         */
+        void
+        return_value(T const &value) noexcept(std::is_nothrow_copy_constructible_v<T> && std::is_nothrow_move_constructible_v<T>)
+        requires(detail::operand_by_reference<T>)
+        {
+            result_.template emplace<1>(value);
         }
 
         /// True once the coroutine has completed: its result is available (success or exception).

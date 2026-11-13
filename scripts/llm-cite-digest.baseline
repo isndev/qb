@@ -82,11 +82,13 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	generator.h:113-113	3afa8eb31568	promise_type() noexcept = default;
-llm/qb.llm.api.md	generator.h:327-327	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
-llm/qb.llm.api.md	generator.h:335-335	3afa8eb31568	promise_type() noexcept = default;
-llm/qb.llm.api.md	generator.h:92-92	09bccb7c2dbd	frame_alignment() noexcept {
-llm/qb.llm.api.md	generator.h:97-97	cbf342ea7cd4	operator new(std::size_t size) {
+llm/qb.llm.api.md	generator.h:114-114	3afa8eb31568	promise_type() noexcept = default;
+llm/qb.llm.api.md	generator.h:145-145	882d0e02a5aa	yield_value(std::type_identity_t<U> value) {
+llm/qb.llm.api.md	generator.h:348-348	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
+llm/qb.llm.api.md	generator.h:356-356	3afa8eb31568	promise_type() noexcept = default;
+llm/qb.llm.api.md	generator.h:412-412	882d0e02a5aa	yield_value(std::type_identity_t<U> value) {
+llm/qb.llm.api.md	generator.h:93-93	09bccb7c2dbd	frame_alignment() noexcept {
+llm/qb.llm.api.md	generator.h:98-98	cbf342ea7cd4	operator new(std::size_t size) {
 llm/qb.llm.api.md	listener.h:1930-1946	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
@@ -167,7 +169,11 @@ llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:415-440	c921a75d78cd	// Synchron
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:749-753	fa4f2498297e	template <typename Fill>
 llm/qb.llm.api.md	src/qb/system/lockfree/spsc.h:967-971	2c64ca2d9e32	template <typename Fill>
 llm/qb.llm.api.md	supervisor.h:51-60	c5b1177ea278	/**
-llm/qb.llm.api.md	task.h:805-820	f2192a619a48	await_resume() {
+llm/qb.llm.api.md	task.h:441-441	fdb8314331cd	inline constexpr bool operand_by_reference = alignof(T) > 64;
+llm/qb.llm.api.md	task.h:663-663	30ef91fffb3c	return_value(std::type_identity_t<U> value) noexcept(std::is_nothrow_...
+llm/qb.llm.api.md	task.h:674-674	54cb61305239	return_value(T &&value) noexcept(std::is_nothrow_move_constructible_v...
+llm/qb.llm.api.md	task.h:686-686	a9d4cd8280c6	return_value(T const &value) noexcept(std::is_nothrow_copy_constructi...
+llm/qb.llm.api.md	task.h:856-871	f2192a619a48	await_resume() {
 llm/qb.llm.api.md	thread_arena.h:94-216	ea8135f03b7e	class thread_arena {
 llm/qb.llm.api.md	tracking.cpp:330-412	8adad8be0d3f	std::vector<parked_coroutine>
 llm/qb.llm.api.md	tracking.h:208-208	11314daa4143	track_suspension(std::coroutine_handle<> h, char const *kind) noexcept {
@@ -256,8 +262,8 @@ llm/qb.llm.md	ev++.h:780-780	ff2366882bf0	set(const char *path, ev_tstamp interv
 llm/qb.llm.md	file.h:115-115	b1f6c4d76864	explicit file(std::filesystem::path const &fname, int flags = O_RDWR)...
 llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &fname, int flags = O_RDWR, int ...
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
-llm/qb.llm.md	generator.h:327-327	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
-llm/qb.llm.md	generator.h:97-97	cbf342ea7cd4	operator new(std::size_t size) {
+llm/qb.llm.md	generator.h:348-348	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
+llm/qb.llm.md	generator.h:98-98	cbf342ea7cd4	operator new(std::size_t size) {
 llm/qb.llm.md	io.h:2175-2199	d340160ee45f	begin_linger() noexcept {
 llm/qb.llm.md	io.h:2184-2184	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
 llm/qb.llm.md	io.h:2212-2222	6d0e06e8f52b	linger_read(event::io const &event) noexcept {

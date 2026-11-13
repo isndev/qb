@@ -29,6 +29,18 @@
  * read every address through a volatile, which the optimiser cannot fold to "aligned" the way it may fold the residue
  * of a typed pointer.
  *
+ * The third part is the OPERAND of `co_yield` / `co_return` when it is aligned past the cache line. The three promise
+ * types take it as a by-value parameter takes it (promise-operands.cpp holds what that means), and MSVC refuses a
+ * by-value parameter aligned past 64 (error C2719): there -- only there -- they take such an operand by reference, so
+ * that a generator or a task of it compiles at all. The cases read, on every compiler, an lvalue copied once and an
+ * rvalue never, the same lvalue yielded twice copied then move-assigned, a move-only value and a braced aggregate
+ * taken; and what a program observes differently on MSVC, each asserted per compiler: a forwarding constructor a
+ * non-const lvalue no longer reaches, an explicit move constructor used (a copy fewer), a move-assignment that swaps
+ * handing the previous value back to the operand. (A `T` whose copy constructor takes `T &`, and an rvalue of a type
+ * converting to `T` through conversion functions qualified by value category, do not compile there.) They read through
+ * a consumer coroutine whose own frame is aligned past the cache line, driven to its end without a scheduler: a
+ * pool-block frame is aligned to 64 only, and a compiler may keep a local in the frame whatever its lifetime.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,6 +64,8 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -219,12 +233,10 @@ wide_values(std::uint64_t const seed) {
     co_yield w;
 }
 
-/// Past the cache line: a value aligned to two of them, which only `generator<T>`'s own operator new honours (it takes
-/// the promise's alignment when that is past the cache line; the pool does not go past it). MSVC refuses a by-value
-/// parameter aligned past 64 (C2719) and `yield_value` takes its `T` by value, so a generator of such a `T` does not
-/// compile there at all, and neither does this case; clang-cl compiles and runs it.
-#if !defined(_MSC_VER) || defined(__clang__)
-#define OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE 1
+/// Past the cache line: a value aligned to two of them. `generator<T>`'s frame takes the promise's alignment past the
+/// cache line, and so do the pooled promise types' (a realigned block instead of a pool block). MSVC compiles all three:
+/// it refuses a by-value parameter aligned past 64 (C2719), and there -- only there -- their yield_value and
+/// return_value take the operand by reference (detail::operand_by_reference); none of these cases compiled there before.
 struct alignas(128) Wider {
     std::uint64_t words[16]{};
 };
@@ -256,9 +268,6 @@ wider_values_async(std::uint64_t const seed, std::uintptr_t *promise_at) {
     w.words[0] = seed;
     co_yield w;
 }
-#else
-#define OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE 0
-#endif
 
 /// A generator of an ordinary value whose BODY holds a Wide across two `co_yield`s; it yields the local's address.
 generator<std::uintptr_t>
@@ -287,6 +296,396 @@ wide_local_addresses_async(std::uint64_t const seed) {
     co_yield opaque_address(&local);
     local.words[1] = seed;
     co_yield opaque_address(&local);
+}
+
+// ---- operands aligned past the cache line -------------------------------------------------------------------------
+
+/// Counts its copies; aligned to two cache lines.
+struct alignas(128) Counted128 {
+    static inline int copies = 0;
+    std::uint64_t     value  = 0;
+
+    Counted128() = default;
+    explicit Counted128(std::uint64_t v)
+        : value(v) {}
+    Counted128(Counted128 const &o)
+        : value(o.value) {
+        ++copies;
+    }
+    Counted128(Counted128 &&o) noexcept
+        : value(o.value) {
+        o.value = 0;
+    }
+    Counted128 &
+    operator=(Counted128 const &o) {
+        value = o.value;
+        ++copies;
+        return *this;
+    }
+    Counted128 &
+    operator=(Counted128 &&o) noexcept {
+        value   = o.value;
+        o.value = 0;
+        return *this;
+    }
+};
+
+/// A move-only value aligned to two cache lines.
+struct alignas(128) MoveOnly128 {
+    std::unique_ptr<int> p;
+};
+
+/// An aggregate aligned to two cache lines, for a braced operand.
+struct alignas(128) Pair128 {
+    int         a = 0;
+    std::string b;
+};
+
+/// An unconstrained forwarding constructor, aligned to two cache lines: a by-value parameter initialised from a
+/// non-const lvalue runs it (an exact match); a `T const &` operand -- MSVC's -- is copied.
+struct alignas(128) Forwarding128 {
+    int v = 0;
+    explicit Forwarding128(int x)
+        : v(x) {}
+    Forwarding128(Forwarding128 const &o)
+        : v(o.v) {}
+    Forwarding128(Forwarding128 &&o) noexcept
+        : v(o.v) {}
+    template <typename U, typename = std::enable_if_t<!std::is_integral_v<std::remove_cvref_t<U>>>>
+    Forwarding128(U &&u)
+        : v(u.v + 1000) {}
+    Forwarding128 &
+    operator=(Forwarding128 &&o) noexcept {
+        v = o.v;
+        return *this;
+    }
+    Forwarding128 &
+    operator=(Forwarding128 const &o) {
+        v = o.v;
+        return *this;
+    }
+};
+#if defined(_MSC_VER) && !defined(__clang__)
+constexpr bool kByReference = true; ///< MSVC: the operand of a `T` aligned past 64 is a reference
+#else
+constexpr bool kByReference = false; ///< a by-value parameter
+#endif
+constexpr int kForwarded = kByReference ? 0 : 1000; ///< the copy constructor, or the forwarding one
+
+/// What the special members of the logged shapes below did, in order: `C` a copy, `M` a move, `c` a copy-assignment,
+/// `m` a move-assignment.
+std::string log128;
+
+/// Logs its special members; aligned to two cache lines.
+struct alignas(128) Logged128 {
+    int v = 0;
+    explicit Logged128(int x)
+        : v(x) {}
+    Logged128(Logged128 const &o)
+        : v(o.v) {
+        log128 += "C";
+    }
+    Logged128(Logged128 &&o) noexcept
+        : v(o.v) {
+        log128 += "M";
+    }
+    Logged128 &
+    operator=(Logged128 const &o) {
+        v = o.v;
+        log128 += "c";
+        return *this;
+    }
+    Logged128 &
+    operator=(Logged128 &&o) noexcept {
+        v = o.v;
+        log128 += "m";
+        return *this;
+    }
+};
+
+/// An explicit move constructor, aligned to two cache lines: a by-value parameter is copy-initialised, which never
+/// calls it (a copy); MSVC's `T &&` operand is moved from directly.
+struct alignas(128) ExplicitMove128 {
+    int v = 0;
+    explicit ExplicitMove128(int x)
+        : v(x) {}
+    ExplicitMove128(ExplicitMove128 const &o)
+        : v(o.v) {
+        log128 += "C";
+    }
+    explicit ExplicitMove128(ExplicitMove128 &&o) noexcept
+        : v(o.v) {
+        log128 += "M";
+    }
+    ExplicitMove128 &
+    operator=(ExplicitMove128 &&o) noexcept {
+        v = o.v;
+        log128 += "m";
+        return *this;
+    }
+    ExplicitMove128 &
+    operator=(ExplicitMove128 const &o) {
+        v = o.v;
+        log128 += "c";
+        return *this;
+    }
+};
+
+/// A move-assignment that swaps, aligned to two cache lines: a by-value operand is the parameter, which takes the
+/// previous value away with it; MSVC's `T &&` operand is the yielded object itself, which gets the previous value back.
+struct alignas(128) Swapping128 {
+    std::vector<int> d;
+    Swapping128() = default;
+    explicit Swapping128(int x)
+        : d{x} {}
+    Swapping128(Swapping128 const &)            = default;
+    Swapping128(Swapping128 &&) noexcept        = default;
+    Swapping128 &operator=(Swapping128 const &) = default;
+    Swapping128 &
+    operator=(Swapping128 &&o) noexcept {
+        d.swap(o.d);
+        return *this;
+    }
+};
+
+/// A copy that cannot throw and a move that can, aligned to two cache lines.
+struct alignas(128) ThrowingMove128 {
+    ThrowingMove128() = default;
+    ThrowingMove128(ThrowingMove128 const &) noexcept {}
+    ThrowingMove128(ThrowingMove128 &&) noexcept(false) {}
+    ThrowingMove128 &operator=(ThrowingMove128 const &) = default;
+};
+
+// The noexcept of each call is the one a by-value parameter gives -- its initialisation is part of the call -- on MSVC,
+// where the operand is a reference, as everywhere else: an lvalue call throws where the copy or the move can, an
+// rvalue call where the move can.
+using counted128_promise       = task<Counted128>::promise_type;
+using throwing_move128_promise = task<ThrowingMove128>::promise_type;
+static_assert(noexcept(std::declval<counted128_promise &>().return_value(std::declval<Counted128 &&>())));
+static_assert(!noexcept(std::declval<counted128_promise &>().return_value(std::declval<Counted128 const &>())));
+static_assert(!noexcept(std::declval<counted128_promise &>().return_value(std::declval<Counted128 &>())));
+static_assert(!noexcept(std::declval<throwing_move128_promise &>().return_value(std::declval<ThrowingMove128 &&>())));
+static_assert(!noexcept(std::declval<throwing_move128_promise &>().return_value(std::declval<ThrowingMove128 const &>())));
+static_assert(!noexcept(std::declval<throwing_move128_promise &>().return_value(std::declval<ThrowingMove128 &>())));
+
+generator<Counted128>
+g128_lvalue(Counted128 const *src) {
+    co_yield *src;
+}
+generator<Counted128>
+g128_rvalues() {
+    Counted128 c{2};
+    co_yield std::move(c);
+    co_yield Counted128{3};
+}
+async_generator<Counted128>
+a128_lvalue(Counted128 const *src) {
+    co_yield *src;
+}
+async_generator<Counted128>
+a128_rvalues() {
+    Counted128 c{2};
+    co_yield std::move(c);
+    co_yield Counted128{3};
+}
+task<Counted128>
+t128_lvalue(Counted128 const *src) {
+    co_return *src;
+}
+task<Counted128>
+t128_local() {
+    Counted128 c{4};
+    co_return c; // implicitly moved
+}
+task<Counted128>
+t128_prvalue() {
+    co_return Counted128{5};
+}
+
+generator<MoveOnly128>
+g128_move_only() {
+    MoveOnly128 m{std::make_unique<int>(6)};
+    co_yield std::move(m);
+    co_yield MoveOnly128{std::make_unique<int>(7)};
+}
+async_generator<MoveOnly128>
+a128_move_only() {
+    MoveOnly128 m{std::make_unique<int>(6)};
+    co_yield std::move(m);
+    co_yield MoveOnly128{std::make_unique<int>(7)};
+}
+task<MoveOnly128>
+t128_move_only() {
+    MoveOnly128 m{std::make_unique<int>(8)};
+    co_return m; // a move-only local, implicitly moved
+}
+
+generator<Pair128>
+g128_braced() {
+    co_yield {1, "one"};
+}
+async_generator<Pair128>
+a128_braced() {
+    co_yield {2, "two"};
+}
+task<Pair128>
+t128_braced() {
+    co_return {3, "three"};
+}
+
+generator<Forwarding128>
+g128_forwarding(Forwarding128 *p) {
+    co_yield *p; // a non-const lvalue
+}
+async_generator<Forwarding128>
+a128_forwarding(Forwarding128 *p) {
+    co_yield *p;
+}
+task<Forwarding128>
+t128_forwarding(Forwarding128 &r) {
+    co_return r; // a reference parameter: an lvalue
+}
+
+generator<Logged128>
+g128_logged_twice(Logged128 const *src) {
+    co_yield *src;
+    co_yield *src; // the held value is assigned
+}
+async_generator<Logged128>
+a128_logged_twice(Logged128 const *src) {
+    co_yield *src;
+    co_yield *src;
+}
+generator<ExplicitMove128>
+g128_explicit_move() {
+    ExplicitMove128 x{11};
+    co_yield std::move(x);
+}
+task<ExplicitMove128>
+t128_explicit_move() {
+    ExplicitMove128 x{13};
+    co_return x; // implicitly moved
+}
+generator<Swapping128>
+g128_swapping(std::vector<int> *after) {
+    Swapping128 x{1};
+    co_yield std::move(x);
+    x.d = {2};
+    co_yield std::move(x);
+    *after = x.d;
+}
+
+/// What a consumer read; aligned to two cache lines, so the frame of a coroutine returning one is too, and the values
+/// aligned past the cache line it holds while it reads sit at their alignment.
+struct alignas(128) Observed128 {
+    std::vector<long long>   values;
+    std::vector<int>         copies;
+    std::vector<std::string> strings;
+};
+static_assert(alignof(task<Observed128>::promise_type) == 128);
+
+task<Observed128>
+consume_counted128(Counted128 const *src) {
+    Observed128 o;
+    Counted128::copies = 0;
+    {
+        auto g = a128_lvalue(src);
+        while (auto v = co_await g.next())
+            o.values.push_back(static_cast<long long>(v->value));
+    }
+    o.copies.push_back(Counted128::copies);
+    Counted128::copies = 0;
+    {
+        auto g = a128_rvalues();
+        while (auto v = co_await g.next())
+            o.values.push_back(static_cast<long long>(v->value));
+    }
+    o.copies.push_back(Counted128::copies);
+    Counted128::copies = 0;
+    o.values.push_back(static_cast<long long>((co_await t128_lvalue(src)).value));
+    o.copies.push_back(Counted128::copies);
+    Counted128::copies = 0;
+    o.values.push_back(static_cast<long long>((co_await t128_local()).value));
+    o.values.push_back(static_cast<long long>((co_await t128_prvalue()).value));
+    o.copies.push_back(Counted128::copies);
+    co_return o;
+}
+
+task<Observed128>
+consume_move_only_and_braced128() {
+    Observed128 o;
+    {
+        auto g = a128_move_only();
+        while (auto v = co_await g.next())
+            o.values.push_back(v->p ? *v->p : -1);
+    }
+    {
+        MoveOnly128 const m = co_await t128_move_only();
+        o.values.push_back(m.p ? *m.p : -1);
+    }
+    {
+        auto g = a128_braced();
+        while (auto v = co_await g.next()) {
+            o.values.push_back(v->a);
+            o.strings.push_back(v->b);
+        }
+    }
+    {
+        Pair128 const r = co_await t128_braced();
+        o.values.push_back(r.a);
+        o.strings.push_back(r.b);
+    }
+    co_return o;
+}
+
+task<Observed128>
+consume_forwarding128(Forwarding128 *p) {
+    Observed128 o;
+    {
+        auto g = a128_forwarding(p);
+        while (auto v = co_await g.next())
+            o.values.push_back(v->v);
+    }
+    o.values.push_back((co_await t128_forwarding(*p)).v);
+    co_return o;
+}
+
+task<Observed128>
+consume_logged128(Logged128 const *src) {
+    Observed128 o;
+    log128.clear();
+    {
+        auto g = a128_logged_twice(src);
+        while (auto v = co_await g.next()) {
+            o.values.push_back(v->v);
+            o.strings.push_back(log128);
+            log128.clear();
+        }
+    }
+    co_return o;
+}
+
+task<Observed128>
+consume_explicit_move128() {
+    Observed128 o;
+    log128.clear();
+    o.values.push_back((co_await t128_explicit_move()).v);
+    o.strings.push_back(log128);
+    co_return o;
+}
+
+/// Runs a task that never waits on the loop to its end, without a scheduler, and reads its value where the promise
+/// keeps it; null when it did not end with a value.
+template <typename T>
+T const *
+run_to_end(task<T> const &t) {
+    auto const h = t.handle();
+    if (!h)
+        return nullptr;
+    h.resume();
+    if (!h.done() || detail::promise_of(h).has_exception())
+        return nullptr;
+    return &detail::promise_of(h).value();
 }
 
 class OverAlignedPromise : public ::testing::Test {
@@ -409,7 +808,6 @@ TEST_F(OverAlignedPromise, GeneratorOfAWideValueHasAnAlignedPromise) {
  * @test A `generator<Wider>` -- a promise aligned past the cache line -- has its promise at that alignment, frame
  *       after frame: `generator<T>`'s frame takes the promise's alignment when it exceeds the cache line.
  */
-#if OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE
 TEST_F(OverAlignedPromise, GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise) {
     std::vector<generator<Wider>> gens;
     spacers                       between;
@@ -517,7 +915,6 @@ TEST_F(OverAlignedPromise, AsyncGeneratorOfAValueAlignedPastTheCacheLineHasAnAli
         census.record(a, alignof(async_generator<Wider>::promise_type));
     EXPECT_TRUE(all_aligned(census, kFrames, alignof(async_generator<Wider>::promise_type)));
 }
-#endif
 
 /**
  * @test A generator of an ordinary value whose body keeps an `alignas(64)` local across `co_yield` has that local at
@@ -625,4 +1022,130 @@ TEST_F(OverAlignedPromise, AsyncGeneratorBodyKeepsAWideLocalAligned) {
     for (auto const a : locals)
         census.record(a, alignof(Wide));
     EXPECT_TRUE(all_aligned(census, 2 * kFrames, alignof(Wide)));
+}
+
+// ---- operands aligned past the cache line -------------------------------------------------------------------------
+
+/**
+ * @test An operand aligned past the cache line is copied once from an lvalue and never from an rvalue, by the three
+ *       promise types: by value, or on MSVC by reference.
+ */
+TEST_F(OverAlignedPromise, AnOperandAlignedPastTheCacheLineIsCopiedOnceFromAnLvalueNeverFromAnRvalue) {
+    Counted128 const           src{1};
+    std::vector<std::uint64_t> seen;
+    Counted128::copies = 0;
+    for (auto const &x : g128_lvalue(&src))
+        seen.push_back(x.value);
+    EXPECT_EQ(Counted128::copies, 1);
+    Counted128::copies = 0;
+    for (auto const &x : g128_rvalues())
+        seen.push_back(x.value);
+    EXPECT_EQ(Counted128::copies, 0);
+    EXPECT_EQ(seen, (std::vector<std::uint64_t>{1, 2, 3}));
+    EXPECT_EQ(src.value, 1u);
+
+    auto const               consumer = consume_counted128(&src);
+    Observed128 const *const o        = run_to_end(consumer);
+    ASSERT_NE(o, nullptr) << "the consumer did not end with a value";
+    EXPECT_EQ(o->values, (std::vector<long long>{1, 2, 3, 1, 4, 5}));
+    EXPECT_EQ(o->copies, (std::vector<int>{1, 0, 1, 0})) << "async lvalue, async rvalues, task lvalue, task rvalues";
+    EXPECT_EQ(src.value, 1u);
+}
+
+/**
+ * @test A move-only operand and a braced aggregate aligned past the cache line are taken by the three promise types.
+ */
+TEST_F(OverAlignedPromise, AMoveOnlyOrBracedOperandAlignedPastTheCacheLineIsTaken) {
+    std::vector<int> moved;
+    for (auto const &x : g128_move_only())
+        moved.push_back(x.p ? *x.p : -1);
+    EXPECT_EQ(moved, (std::vector<int>{6, 7}));
+    std::vector<std::string> braced;
+    for (auto const &x : g128_braced())
+        braced.push_back(std::to_string(x.a) + x.b);
+    EXPECT_EQ(braced, (std::vector<std::string>{"1one"}));
+
+    auto const               consumer = consume_move_only_and_braced128();
+    Observed128 const *const o        = run_to_end(consumer);
+    ASSERT_NE(o, nullptr) << "the consumer did not end with a value";
+    EXPECT_EQ(o->values, (std::vector<long long>{6, 7, 8, 2, 3}));
+    EXPECT_EQ(o->strings, (std::vector<std::string>{"two", "three"}));
+}
+
+/**
+ * @test What MSVC's reference changes, one: a non-const lvalue of a `T` aligned past the cache line with an
+ *       unconstrained forwarding constructor runs that constructor where the operand is a by-value parameter, and is
+ *       copied on MSVC, where it is a `T const &`.
+ */
+TEST_F(OverAlignedPromise, AnLvalueAlignedPastTheCacheLineIsABindingOnlyOnMsvc) {
+    Forwarding128 src{8};
+    int           seen = 0;
+    for (auto const &x : g128_forwarding(&src))
+        seen = x.v;
+    EXPECT_EQ(seen, 8 + kForwarded);
+
+    auto const               consumer = consume_forwarding128(&src);
+    Observed128 const *const o        = run_to_end(consumer);
+    ASSERT_NE(o, nullptr) << "the consumer did not end with a value";
+    EXPECT_EQ(o->values, (std::vector<long long>{8 + kForwarded, 8 + kForwarded}));
+}
+
+/**
+ * @test The same lvalue aligned past the cache line, yielded twice, is copied then moved into the held value, then
+ *       copied then move-assigned to it -- what a by-value parameter does, and MSVC's `T const &` overload too (it
+ *       copies into a temporary first: assigned from the lvalue, the held value would be copy-assigned).
+ */
+TEST_F(OverAlignedPromise, TheSameLvalueAlignedPastTheCacheLineYieldedTwiceIsCopiedThenMoved) {
+    Logged128 const          src{5};
+    std::vector<std::string> logs;
+    log128.clear();
+    for (auto const &x : g128_logged_twice(&src)) {
+        EXPECT_EQ(x.v, 5);
+        logs.push_back(log128);
+        log128.clear();
+    }
+    EXPECT_EQ(logs, (std::vector<std::string>{"CM", "Cm"}));
+
+    auto const               consumer = consume_logged128(&src);
+    Observed128 const *const o        = run_to_end(consumer);
+    ASSERT_NE(o, nullptr) << "the consumer did not end with a value";
+    EXPECT_EQ(o->values, (std::vector<long long>{5, 5}));
+    // each yield, then next(), which moves the held value out
+    EXPECT_EQ(o->strings, (std::vector<std::string>{"CMM", "CmM"}));
+}
+
+/**
+ * @test What MSVC's reference changes, two: an explicit move constructor of a `T` aligned past the cache line is never
+ *       called for a by-value parameter (copy-initialised: a copy), and is on MSVC, where the operand is a `T &&` -- a
+ *       copy fewer.
+ */
+TEST_F(OverAlignedPromise, AnExplicitMoveConstructorAlignedPastTheCacheLineIsUsedOnlyOnMsvc) {
+    log128.clear();
+    for (auto const &x : g128_explicit_move())
+        EXPECT_EQ(x.v, 11);
+    EXPECT_EQ(log128, kByReference ? "M" : "CM");
+
+    auto const               consumer = consume_explicit_move128();
+    Observed128 const *const o        = run_to_end(consumer);
+    ASSERT_NE(o, nullptr) << "the consumer did not end with a value";
+    EXPECT_EQ(o->values, (std::vector<long long>{13}));
+    // into the parameter (a copy, by value only), into the promise, out by await_resume (copy-initialised: a copy)
+    EXPECT_EQ(o->strings, (std::vector<std::string>{kByReference ? "MC" : "CMC"}));
+}
+
+/**
+ * @test What MSVC's reference changes, three: a move-assignment that swaps, of a `T` aligned past the cache line, hands
+ *       the previous value to the parameter that dies with it where the operand is a by-value parameter, and back to the
+ *       operand itself on MSVC, where it is a `T &&`.
+ */
+TEST_F(OverAlignedPromise, ASwappingMoveAssignmentAlignedPastTheCacheLineSwapsWithTheOperandOnlyOnMsvc) {
+    std::vector<int>              after{-9};
+    std::vector<std::vector<int>> seen;
+    for (auto const &x : g128_swapping(&after))
+        seen.push_back(x.d);
+    EXPECT_EQ(seen, (std::vector<std::vector<int>>{{1}, {2}}));
+    if (kByReference)
+        EXPECT_EQ(after, (std::vector<int>{1})) << "the operand did not get the previous value back";
+    else
+        EXPECT_NE(after, (std::vector<int>{1})) << "the operand of the second co_yield got the previous value back";
 }

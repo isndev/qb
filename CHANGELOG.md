@@ -787,17 +787,16 @@ policy.
     `task<Ev128>` made, awaited and destroyed costs 366 instructions with the realigned block, 444 with the aligned
     `::operator new`, and cost 276 with the pool block that misaligned it; at or below the line the change is
     `if constexpr`'s other branch, and a program of `task<int>`, `task<std::string>` and a 64-aligned `task<T>` builds
-    to the same machine code, every function (g++ 14), and the same MSVC 19.51 listing. MSVC does not compile any of
-    the three for a `T` aligned to 128 (`yield_value` and `return_value` take their `T` by value: error C2719). What
-    no allocator can align is a frame local aligned past its promise's alignment: `operator new(size)` is not told it,
-    and GCC, clang and clang-cl give it no more than the frame's base.
+    to the same machine code, every function (g++ 14), and the same MSVC 19.51 listing. (MSVC compiles the three for
+    such a `T` since the entry below.) What no allocator can align is a frame local aligned past its promise's
+    alignment: `operator new(size)` is not told it, and GCC, clang and clang-cl give it no more than the frame's base.
   - **Witness.** `qb-io-test-unit-over-aligned-promise` keeps 64 frames of each kind alive at once, a small heap block
     between each two, and reads every promise and local address through a volatile (the residue of a typed pointer
     to an over-aligned object may be folded to 0). On the base, 46 to 50 of 64 promises and 92 to 98 of 128 local
     addresses were off the 64-byte boundary with g++ 14 and clang 19 (Release) and clang-cl 22; MSVC 19.51 aligned
     every frame, before and after. Green on all four, and so is
-    `OverAlignedPromise.GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise` wherever it compiles (not MSVC:
-    an `alignas(128)` value, 33 of 64 promises off the 128-byte boundary when the frame takes the cache line only).
+    `OverAlignedPromise.GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise` (an `alignas(128)` value: 33 of
+    64 promises off the 128-byte boundary when the frame takes the cache line only; on MSVC since the entry below).
     `GeneratorSync.AFrameMadeOnOneThreadAndDestroyedOnAnotherBelongsToNeither` holds `generator<T>` off the pool:
     neither thread's pool count moves.
   - **The coverage lane's red was this test's own probe.** Its `probe_task` promise is `alignas(64)` and had no
@@ -826,6 +825,43 @@ policy.
     `CoroutineExceptionTests.AnExceptionPtrArgumentIsNotAStoredException` (`qb-io-test-unit-exception-propagation`):
     free coroutines, since a lambda's closure object comes first among its promise's arguments. Red on the base with
     g++ 14, clang 19 and clang-cl 22; green on MSVC 19.51 before and after.
+
+- **MSVC compiles a `task<T>`, a `generator<T>` or an `async_generator<T>` of a `T` aligned past 64 (Huly QB-1246).**
+  MSVC refuses a by-value parameter whose type is aligned past 64 (error C2719; measured with MSVC 19.51 on x64: 8, 16,
+  32 and 64 accepted, 128 and 256 refused, for a free function and a member of a class template alike), and the three
+  promise types took the operand of `co_return` and `co_yield` as one, so none of them compiled there for such a `T`.
+  They still take it by value wherever a compiler accepts the parameter. Only on MSVC, for a `T` aligned past 64
+  (`detail::operand_by_reference<T>`), a `T const &` overload takes an lvalue (and a const rvalue) and a `T &&` one the
+  rest: an lvalue copied once and an rvalue never, a move-only `T` and a braced aggregate taken, each call as `noexcept`
+  as the by-value parameter made it. The by-value `yield_value` / `return_value` is a member template whose parameter
+  type is formed only when it is chosen: MSVC raises C2719 on the declaration of the parameter, even when a constraint
+  removes the overload. For every other `T` and compiler what `co_return` and `co_yield` do did not change (only a
+  program naming `promise_type::return_value` or `yield_value` itself sees a member template): a program of `task<int>`,
+  `task<std::string>`, a 64-aligned `task<T>`, `generator<int>` and `async_generator<std::string>` builds to the same
+  machine code, every function (g++ 14, -O3), and MSVC 19.51's listing differs only in manglings, label numbers, the
+  header's path in a string and an unreferenced copy of the new `yielded()` helper. Taking every operand by reference
+  instead was built and withdrawn: it refused a volatile scalar, a `T` whose copy constructor takes `T &` and a type
+  with ref-qualified conversions to `T const &` and to `T &&`, and changed what a forwarding constructor, an explicit
+  move constructor, a move-assignment that swaps, a one-element brace of a `T` with an initializer_list constructor
+  (g++, clang-cl) and the `noexcept` of a call whose move can throw do. On MSVC a `T` aligned past 64, of which nothing
+  compiled before, meets five of these: a non-const lvalue reaches its copy constructor rather than an unconstrained
+  forwarding one; an explicit move constructor is used, a copy fewer; a move-assignment that swaps hands the previous
+  value back to the operand; and a copy constructor taking `T &`, or an rvalue converting to `T` through conversion
+  functions qualified by value category, does not compile; an xvalue or a const local is also moved once less. qb's
+  other templates that take a `T` by value -- `shared_task<T>`, `channel<T>`, `single_generator`, `iota`, `range`,
+  `repeat`, `repeat_n`, and stream.h's `single`, `repeat_value` and `timer` -- still refuse such a `T` on MSVC. arm64
+  Windows is inferred from x64, not measured.
+  - **Witness.** Over the by-value headers MSVC 19.51 does not compile `qb-io-test-unit-over-aligned-promise` (C2719 at
+    `generator<T>::promise_type::yield_value`, `task<T>::promise_type::return_value` and
+    `async_generator<T>::promise_type::yield_value`); over these it compiles and passes, its three `alignas(128)` frame
+    cases no longer kept off MSVC, and six operand cases across the three promise types: an lvalue copied once and an
+    rvalue never, the same lvalue yielded twice copied then move-assigned, a move-only value and a braced aggregate, and
+    -- asserted per compiler -- the forwarding constructor, the explicit move constructor and the swapping
+    move-assignment above, with the `noexcept` of each call asserted. `qb-io-test-unit-promise-operands` holds the
+    by-value meaning: every operand shape, the eight above among them -- the brace, on which the compilers disagree,
+    held to what a by-value parameter is on each -- green over both headers on g++ 14, clang 19, clang-cl 22 and MSVC
+    19.51. The by-reference headers fail it: three shapes and the `noexcept` asserts refused to compile, then four
+    shapes red at run time on g++ 14, three on clang 19.
 
 - **A QUIC endpoint kept in static storage no longer writes into its thread's freed event loop at process exit:
   `close()` no longer arms its timer (Huly QB-1246).** `qb::io::async::quic::endpoint::close()` asked the backend to close, sent

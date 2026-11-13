@@ -30,7 +30,8 @@
 #include <exception>
 #include <memory> // std::shared_ptr — async_generator::_alive and next_awaiter shared ownership
 #include <optional>
-#include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
+#include <type_traits> // std::type_identity_t — yield_value's by-value operand
+#include <vector>      // std::vector — collect_to_vector()/map_to_vector() below return one
 
 /** Set QB_DEBUG_AGEN=1 (compile flag or before the include) to enable
  *  async_generator trace prints that show the yield/next/suspend flow. */
@@ -134,8 +135,28 @@ public:
         void
         return_void() {}
 
+        // The operand of co_yield, taken as a by-value parameter takes it. A member template only so that its parameter
+        // type is formed when it is chosen (MSVC raises C2719 on the declaration of a by-value parameter aligned past
+        // 64 even when a constraint removes the overload); where MSVC would refuse it, the two overloads below take the
+        // operand instead -- an lvalue copied, then move-assigned, as the parameter did (Huly QB-1246).
+        template <typename U = T>
+        requires(!detail::operand_by_reference<U>)
         std::suspend_always
-        yield_value(T value) {
+        yield_value(std::type_identity_t<U> value) {
+            current_value = std::move(value);
+            return {};
+        }
+        std::suspend_always
+        yield_value(T const &value)
+        requires(detail::operand_by_reference<T>)
+        {
+            current_value = T(value);
+            return {};
+        }
+        std::suspend_always
+        yield_value(T &&value)
+        requires(detail::operand_by_reference<T>)
+        {
             current_value = std::move(value);
             return {};
         }
@@ -381,28 +402,55 @@ public:
          * (for_each / collect_to_vector etc.) inline instead of going through
          * the scheduler.  Previously returned std::suspend_always which
          * left both the generator AND the consumer permanently suspended.
+         *
+         * The operand is taken as a by-value parameter takes it; on MSVC for a T aligned past 64, by the two overloads
+         * below, for the reason generator<T>::promise_type gives (Huly QB-1246).
          */
+        template <typename U = T>
+        requires(!detail::operand_by_reference<U>)
         auto
-        yield_value(T value) {
+        yield_value(std::type_identity_t<U> value) {
             current_value = std::move(value);
+            return yielded();
+        }
+        auto
+        yield_value(T const &value)
+        requires(detail::operand_by_reference<T>)
+        {
+            current_value = T(value);
+            return yielded();
+        }
+        auto
+        yield_value(T &&value)
+        requires(detail::operand_by_reference<T>)
+        {
+            current_value = std::move(value);
+            return yielded();
+        }
+
+    private:
+        /// What a co_yield awaits: the transfer to the consumer (yield_value above).
+        struct yield_awaiter {
+            std::coroutine_handle<> cont;
+            bool
+            await_ready() const noexcept {
+                return false;
+            }
+            std::coroutine_handle<>
+            await_suspend(std::coroutine_handle<> producer) noexcept {
+                const std::coroutine_handle<> next = cont ? cont : std::noop_coroutine();
+                // suspension tracking: recorded last, on the cold branch (coroutine/tracking.h, track_then)
+                if (::qb::io::async::detail::tracking_on()) [[unlikely]]
+                    return ::qb::io::async::detail::track_then(producer.address(), "generator yield", nullptr, next);
+                return next;
+            }
+            void
+            await_resume() noexcept {}
+        };
+
+        yield_awaiter
+        yielded() const noexcept {
             QB_AGEN_TRACE("yield_value value ready, transferring to continuation=%p", continuation ? (void *) continuation.address() : nullptr);
-            struct yield_awaiter {
-                std::coroutine_handle<> cont;
-                bool
-                await_ready() const noexcept {
-                    return false;
-                }
-                std::coroutine_handle<>
-                await_suspend(std::coroutine_handle<> producer) noexcept {
-                    const std::coroutine_handle<> next = cont ? cont : std::noop_coroutine();
-                    // suspension tracking: recorded last, on the cold branch (coroutine/tracking.h, track_then)
-                    if (::qb::io::async::detail::tracking_on()) [[unlikely]]
-                        return ::qb::io::async::detail::track_then(producer.address(), "generator yield", nullptr, next);
-                    return next;
-                }
-                void
-                await_resume() noexcept {}
-            };
             return yield_awaiter{continuation};
         }
     };
