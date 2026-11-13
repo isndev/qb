@@ -369,6 +369,9 @@ class QB_API socket : public tcp::socket {
     }; /**< Session to resume, held (own ref) until the SSL is minted at connect. */
     bool _pending_disable_resumption = false; /**< Deferred disable_session_resumption(): applied when the SSL is minted at connect. */
     bool _pending_request_ocsp       = false; /**< Deferred request_ocsp_stapling(true): applied when the SSL is minted at connect. */
+    bool _read_wants_write           = false; /**< `read_wants_write()`: the read that answered -1 must write first. */
+    bool _write_wants_read           = false; /**< `write_wants_read()`: the write that answered 0 waits for the peer. */
+    bool _handshake_retry            = false; /**< handCheck() kept a socket error: `handshake_wants_write()`. */
     bool _verify_peer = true; /**< Secure-by-default: verify the server certificate chain + hostname on the auto-created client context. Cleared
                                  by set_insecure(). */
     qb::io::ssl::Context
@@ -672,7 +675,8 @@ public:
     /**
      * @brief Progress the TLS handshake and report its precise state.
      * @return 1 when the TLS handshake is complete, 0 when OpenSSL needs more
-     *         socket readiness (WANT_READ/WANT_WRITE), -1 on fatal error.
+     *         socket readiness (WANT_READ/WANT_WRITE, or since 3.4 a socket error it keeps the
+     *         handshake after: `handshake_wants_write()`), -1 on fatal error.
      */
     int handshake_status() noexcept;
 
@@ -682,7 +686,13 @@ public:
      * @details Meaningful after `handshake_status()` returned 0, which is when an event loop re-arms the descriptor:
      *          watch `EV_WRITE` for true and `EV_READ` for false, never both -- a connected socket is always
      *          writable, so a write watch on a handshake that waits to read wakes the loop on every pass until the
-     *          peer answers (Huly QB-301). It reads the state OpenSSL keeps (`SSL_want_write`); no I/O.
+     *          peer answers (Huly QB-301). It reads the state OpenSSL keeps (`SSL_want_write`); no I/O. True as well
+     *          after a step met a socket error a call is made again after (`ENOBUFS`, an `EINTR` from a BIO that fails
+     *          a call with it) and OpenSSL kept the handshake: `handshake_status()` answered 0, not -1, and the step is
+     *          made again when the socket can take a write -- until 3.4 such an error ended the connection (Huly
+     *          QB-1270). An error that persists is met again on every such pass, as a write is made again after it:
+     *          the async connectors stop at their deadline, and one given no timeout does not stop. A blocking
+     *          `connect()` has no pass to make it again: such an error fails it, as before.
      */
     [[nodiscard]] bool handshake_wants_write() const noexcept;
 
@@ -690,6 +700,56 @@ public:
      * @brief Whether the TLS handshake has completed successfully.
      */
     [[nodiscard]] bool handshake_complete() const noexcept;
+
+    /**
+     * @brief Whether the `read()` that just answered -1 with a would-block must WRITE before it can read: it is made
+     *        again when the socket can take a write, not when it is readable (Huly QB-1270).
+     * @details A read writes when a handshake message answers what it read -- a TLS 1.2 client's ClientHello answering
+     *          its server's HelloRequest, a server's answer to a renegotiation its context allows the client, a TLS 1.3
+     *          client's Certificate and Finished answering a post-handshake CertificateRequest, a server's own
+     *          handshake flight --, and the socket may not take it now: OpenSSL then reports `SSL_ERROR_WANT_WRITE`, or
+     *          a socket error that write met and it lets the session go on after (`ENOBUFS`, an `EINTR` from a BIO that
+     *          fails a write with it; it does not say whether such an error met the read's own write or its receive,
+     *          and a read made again on a writable socket is made at once). The peer usually waits for that message
+     *          before it sends anything more: a read made again on readability alone waits for ever. Meaningful right
+     *          after `read()` answered -1, as `handshake_wants_write()` is after `handshake_status()` answered 0: the
+     *          io objects read it there, watch writability too, and read again when it comes. A TLS 1.3 KeyUpdate the
+     *          peer requests is answered by this side's next `write()`, never by a read (OpenSSL's choice; measured).
+     */
+    [[nodiscard]] bool
+    read_wants_write() const noexcept {
+        return _read_wants_write;
+    }
+
+    /**
+     * @brief Whether the `write()` that just answered 0 waits for the PEER: OpenSSL must read a handshake message
+     *        before it writes anything (`SSL_ERROR_WANT_READ` -- a renegotiation, a handshake still in progress), and
+     *        a write made again when the socket is writable takes nothing (Huly QB-1270).
+     * @details False when it waits for room in the socket (`SSL_ERROR_WANT_WRITE`). Meaningful right after `write()`
+     *          answered 0: the io objects read it there and stop watching writability -- a connected socket stays
+     *          writable, and the loop was woken on every pass until the peer answered --; the read that takes the
+     *          peer's message makes the write again.
+     */
+    [[nodiscard]] bool
+    write_wants_read() const noexcept {
+        return _write_wants_read;
+    }
+
+    /**
+     * @brief Whether a handshake is under way on this connection after its first one completed -- a TLS 1.2
+     *        renegotiation, a TLS 1.3 post-handshake message being taken or answered (Huly QB-1270).
+     * @details OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone: an
+     *          `SSL_write()` made then drives the handshake too, and the connection ends when the peer's next record is
+     *          application data -- a TLS 1.2 server may send it behind its HelloRequest (measured with OpenSSL 3.5).
+     *          `io<>` and the server sessions let their read drive such a handshake and write what is queued once it
+     *          completes -- not while `close_after_deliver()` drains, their read pass off, nor `output<>`, which never
+     *          reads: their write still drives it --; a hand-driven socket that reads does the same. OpenSSL's
+     *          `SSL_in_init()` once connected: no I/O.
+     */
+    [[nodiscard]] bool
+    rehandshaking() const noexcept {
+        return _connected && _ssl_handle && SSL_in_init(_ssl_handle.get()) == 1;
+    }
 
     /**
      * @brief Initiate a non-blocking SSL/TLS connection to a remote URI.
@@ -833,18 +893,23 @@ public:
      * @brief Read decrypted data from the secure SSL/TLS socket.
      * @param data Pointer to the buffer where decrypted data will be stored.
      * @param size Maximum number of bytes to read into the buffer.
-     * @return Number of bytes actually read and decrypted; 0 when nothing can be read yet (`SSL_ERROR_WANT_READ`,
-     *         `SSL_ERROR_WANT_WRITE`, a handshake still in progress); -1 on the peer's `close_notify` and on an error --
+     * @return Number of bytes actually read and decrypted; 0 when nothing can be read yet (`SSL_ERROR_WANT_READ`, a
+     *         handshake still in progress that waits for the peer); -1 with a would-block (`EWOULDBLOCK`) when the read
+     *         must WRITE first and the socket cannot take that write now -- `read_wants_write()` is then true: read
+     *         again when the socket can take a write (Huly QB-1270); -1 on the peer's `close_notify` and on an error --
      *         never with a would-block an earlier call left (OpenSSL refused the read: `ECONNABORTED` then).
-     * @details Internally calls `SSL_read()`. A socket error the io layer does not read as "try again" (a reset:
+     * @details Internally calls `SSL_read()`. A socket error the io layer does not try again after (a reset:
      *          `SSL_ERROR_SYSCALL`, after which OpenSSL forbids `SSL_shutdown()`) records this side's end of the
      *          session without the alert, as `quiet_shutdown()` does: nothing more is written into that connection
-     *          (Huly QB-1270) -- with OpenSSL 4 nothing needs recording, OpenSSL ended the session itself. One it reads
-     *          as "try again" (an `EINTR` from a BIO that fails a read with it) is left to the caller, which reads
-     *          again, where OpenSSL lets the session go on (OpenSSL 3 does, and OpenSSL 4 when the error met a
-     *          handshake message's write, a renegotiation's ClientHello); where OpenSSL ended it -- OpenSSL 4 does when
-     *          the error met the receive, renegotiating or not -- the read reports the session aborted instead:
-     *          `ECONNABORTED` (`WSAECONNABORTED` on Windows), an error nobody reads again after (measured: 4.1.0).
+     *          (Huly QB-1270) -- with OpenSSL 4 nothing needs recording, OpenSSL ended the session itself. One it tries
+     *          again after (`ENOBUFS`, an `EINTR` from a BIO that fails a call with it), where OpenSSL lets the session
+     *          go on (OpenSSL 3 does, and OpenSSL 4 when the error met a handshake message's write, a renegotiation's
+     *          ClientHello), is reported as the read that must write first: OpenSSL does not say whether it met the
+     *          read's own handshake write or its receive, and a read made again on a writable socket is made at once
+     *          -- before 3.4 an `ENOBUFS` there ended the connection, and the other errors waited for readability.
+     *          Where OpenSSL ended the session -- OpenSSL 4 does when the error met the receive, renegotiating or not --
+     *          the read reports it aborted instead: `ECONNABORTED` (`WSAECONNABORTED` on Windows), an error nobody
+     *          reads again after (measured: 4.1.0).
      */
     int read(void *data, std::size_t size) noexcept;
 
@@ -853,7 +918,9 @@ public:
      * @param data Pointer to the plaintext data to be encrypted and sent.
      * @param size Number of bytes to send from the `data` buffer.
      * @return Number of bytes successfully encrypted and written to the SSL/TLS layer.
-     *         This can be less than `size` if the SSL/TLS layer cannot accept all data immediately.
+     *         This can be less than `size` if the SSL/TLS layer cannot accept all data immediately; 0 when it takes
+     *         nothing now -- `write_wants_read()` says whether it waits for the peer's next message or for room in the
+     *         socket (Huly QB-1270).
      *         Returns a negative value on error.
      * @details Internally calls `SSL_write()`. A socket error the io layer does not write again after (a reset:
      *          `SSL_ERROR_SYSCALL`) records this side's end of the session without the alert, as after `read()`'s.

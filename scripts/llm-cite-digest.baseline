@@ -224,9 +224,9 @@ llm/qb.llm.md	VirtualCore.h:1209-1231	4f679e59b3c4	_ServiceActor *
 llm/qb.llm.md	VirtualCore.h:1643-1652	1de53ea4e457	actor_coro_wrapper(Func func, CoroContext ctx, coro_census_ref counte...
 llm/qb.llm.md	VirtualCore.h:1664-1674	987a5a9d759b	actor_scoped_coro_wrapper(Func func, Ctx ctx, coro_census_ref counter) {
 llm/qb.llm.md	VirtualCore.h:1691-1702	095ce8f5dddd	template <typename Func>
-llm/qb.llm.md	async/io.h:108-109	bc5b8adc7b00	base()
-llm/qb.llm.md	async/io.h:117-121	d6470b3638a4	~base() {
-llm/qb.llm.md	async/io.h:88-93	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
+llm/qb.llm.md	async/io.h:106-111	18d9d27368e4	* @note **Thread Safety:** Instances of classes derived from `base` a...
+llm/qb.llm.md	async/io.h:126-127	bc5b8adc7b00	base()
+llm/qb.llm.md	async/io.h:135-139	d6470b3638a4	~base() {
 llm/qb.llm.md	async/listener.h:87-99	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
 llm/qb.llm.md	channel.h:1526-1526	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
@@ -258,24 +258,33 @@ llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
 llm/qb.llm.md	generator.h:327-327	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
 llm/qb.llm.md	generator.h:97-97	cbf342ea7cd4	operator new(std::size_t size) {
-llm/qb.llm.md	io.h:2175-2199	d340160ee45f	begin_linger() noexcept {
-llm/qb.llm.md	io.h:2184-2184	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
-llm/qb.llm.md	io.h:2212-2222	31df185b7966	linger_read(event::io const &event) noexcept {
-llm/qb.llm.md	io.h:2309-2311	eeb80e56aede	clear_protocols() {
-llm/qb.llm.md	io.h:2377-2406	f5f46d847237	start() noexcept {
-llm/qb.llm.md	io.h:2923-2930	ceb8704b7ca9	disconnect_now(int reason = static_cast<int>(event::disconnect_reason...
-llm/qb.llm.md	io.h:3095-3095	5727fb5c89bd	return begin_linger();
-llm/qb.llm.md	io.h:3163-3163	a5087061f699	if (const bool alive = process_messages(); !_protocol_list.end_dispat...
-llm/qb.llm.md	io.h:3195-3199	7125e5014727	if (_lingering) {
-llm/qb.llm.md	io.h:3299-3299	caa6004094df	[[maybe_unused]] const bool ended_by_peer = !_reason && this->_protoc...
-llm/qb.llm.md	io.h:3301-3301	2bdabcec9298	[[maybe_unused]] const bool lingered = _lingering, complete = Derived...
-llm/qb.llm.md	io.h:3317-3336	9960ff92de2a	// The watcher of a disposed session is stopped here, whoever ended t...
-llm/qb.llm.md	io.h:3341-3346	4286ef7e7be2	this->_async_event.stop(); // Stop the watcher to prevent further events
-llm/qb.llm.md	io.h:3398-3399	1d5ba9591555	*          Call it where the next connection is set up, before its tr...
-llm/qb.llm.md	io.h:3407-3411	13b349c0b5e9	reset_for_reconnect() {
-llm/qb.llm.md	io.h:379-415	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
-llm/qb.llm.md	io.h:384-424	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
-llm/qb.llm.md	io.h:635-638	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
+llm/qb.llm.md	io.h:2288-2312	d340160ee45f	begin_linger() noexcept {
+llm/qb.llm.md	io.h:2297-2297	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
+llm/qb.llm.md	io.h:2325-2335	31df185b7966	linger_read(event::io const &event) noexcept {
+llm/qb.llm.md	io.h:2363-2370	9ee103cf0118	watch_write_for_read() noexcept {
+llm/qb.llm.md	io.h:2384-2390	82beb343f5aa	start_events() noexcept {
+llm/qb.llm.md	io.h:2428-2432	126c1772ad87	tls_held_flushed() noexcept {
+llm/qb.llm.md	io.h:2449-2467	6f4ecf9af34e	tls_took_nothing() noexcept {
+llm/qb.llm.md	io.h:2539-2541	eeb80e56aede	clear_protocols() {
+llm/qb.llm.md	io.h:2607-2639	1c5f732a41d6	start() noexcept {
+llm/qb.llm.md	io.h:2636-2637	798b36a6a7a1	// A TLS read that waited to write when the object was stopped waits ...
+llm/qb.llm.md	io.h:2647-2653	02ed0dcc2012	if constexpr (detail::tls_io<_Derived>) {
+llm/qb.llm.md	io.h:2693-2694	00bb073d41db	if (unlikely(!(this->_async_event.events & EV_READ)))
+llm/qb.llm.md	io.h:3169-3176	ceb8704b7ca9	disconnect_now(int reason = static_cast<int>(event::disconnect_reason...
+llm/qb.llm.md	io.h:3358-3358	5727fb5c89bd	return begin_linger();
+llm/qb.llm.md	io.h:3428-3429	6a43e3339803	if (Derived.transport().read_wants_write())
+llm/qb.llm.md	io.h:3446-3446	a5087061f699	if (const bool alive = process_messages(); !_protocol_list.end_dispat...
+llm/qb.llm.md	io.h:3473-3476	8c1c73659379	if (Derived.pendingWrite() && Derived.transport().rehandshaking() && ...
+llm/qb.llm.md	io.h:3487-3491	7125e5014727	if (_lingering) {
+llm/qb.llm.md	io.h:3591-3591	caa6004094df	[[maybe_unused]] const bool ended_by_peer = !_reason && this->_protoc...
+llm/qb.llm.md	io.h:3593-3593	2bdabcec9298	[[maybe_unused]] const bool lingered = _lingering, complete = Derived...
+llm/qb.llm.md	io.h:3609-3628	9960ff92de2a	// The watcher of a disposed session is stopped here, whoever ended t...
+llm/qb.llm.md	io.h:3633-3638	4286ef7e7be2	this->_async_event.stop(); // Stop the watcher to prevent further events
+llm/qb.llm.md	io.h:3690-3691	1d5ba9591555	*          Call it where the next connection is set up, before its tr...
+llm/qb.llm.md	io.h:3699-3703	13b349c0b5e9	reset_for_reconnect() {
+llm/qb.llm.md	io.h:397-433	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
+llm/qb.llm.md	io.h:402-442	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
+llm/qb.llm.md	io.h:653-656	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
 llm/qb.llm.md	lingering_close.cpp:46-46	3fb443641aec	constexpr std::size_t sockets_cap = 64;
 llm/qb.llm.md	lingering_close.cpp:58-58	7f93e02c4e88	constexpr std::size_t byte_budget = std::size_t{16} << 20;
 llm/qb.llm.md	lingering_close.h:56-56	a746dcd44a4e	void close_after_peer(::socket_type socket, qb::duration bound) noexc...
@@ -306,7 +315,7 @@ llm/qb.llm.md	scheduler.h:731-760	2673fad18211	* @brief Spawn a callable (lambda
 llm/qb.llm.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
 llm/qb.llm.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
 llm/qb.llm.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.md	socket.cpp:1131-1135	02a7d2fb6943	socket::release_handle() noexcept {
+llm/qb.llm.md	socket.cpp:1170-1177	6710cfd699de	socket::release_handle() noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
@@ -335,11 +344,18 @@ llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw 
 llm/qb.llm.md	ssl/context.h:237-248	8f8ec340851e	/**
 llm/qb.llm.md	ssl/listener.cpp:215-215	2f35dcaa0759	listener::set_supported_alpn_protocols(const std::vector<std::string>...
 llm/qb.llm.md	ssl/listener.h:118-146	568219875e9c	/**
-llm/qb.llm.md	ssl/socket.cpp:1072-1106	08a9095c1f60	socket::end_session_(session_end how) noexcept {
-llm/qb.llm.md	ssl/socket.cpp:1109-1113	2d52e403e97d	socket::disconnect() noexcept {
-llm/qb.llm.md	ssl/socket.h:1057-1057	0e2c7a135bf8	void set_insecure() noexcept;
-llm/qb.llm.md	ssl/socket.h:505-539	206b0d649699	/**
-llm/qb.llm.md	ssl/socket.h:687-687	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
+llm/qb.llm.md	ssl/socket.cpp:1111-1145	08a9095c1f60	socket::end_session_(session_end how) noexcept {
+llm/qb.llm.md	ssl/socket.cpp:1148-1152	2d52e403e97d	socket::disconnect() noexcept {
+llm/qb.llm.md	ssl/socket.cpp:1242-1253	ca5297345bc3	} else if (ret != 0 || !handshake_wants_write()) {
+llm/qb.llm.md	ssl/socket.cpp:1278-1282	058d1b21221c	case SSL_ERROR_WANT_READ:
+llm/qb.llm.md	ssl/socket.cpp:787-798	3518c9d2deba	case SSL_ERROR_SYSCALL:
+llm/qb.llm.md	ssl/socket.cpp:889-896	775d7a774364	if (handshake == 0 && _handshake_retry) {
+llm/qb.llm.md	ssl/socket.h:1124-1124	0e2c7a135bf8	void set_insecure() noexcept;
+llm/qb.llm.md	ssl/socket.h:508-542	206b0d649699	/**
+llm/qb.llm.md	ssl/socket.h:697-697	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
+llm/qb.llm.md	ssl/socket.h:719-722	f0075d7662c2	[[nodiscard]] bool
+llm/qb.llm.md	ssl/socket.h:733-736	e6a56e220d1b	[[nodiscard]] bool
+llm/qb.llm.md	ssl/socket.h:749-752	ee26a904fc92	[[nodiscard]] bool
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
 llm/qb.llm.md	ssl/socket.h:96-96	c1d7b0697db7	SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesys...
 llm/qb.llm.md	string.h:289-289	f11444169765	_size = static_cast<size_type>(std::min(size, static_cast<std::size_t...

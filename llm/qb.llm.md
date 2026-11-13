@@ -374,7 +374,32 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
   on a handshake that waits to read spins a level-triggered loop until the peer answers (Huly QB-301).
-  _(ssl/socket.h:687; tcp/connector.h:328)_
+  _(ssl/socket.h:697; tcp/connector.h:328)_
+- **A TLS read that must write first, a TLS write that waits for the peer: the io objects wait for what OpenSSL waits
+  for (3.4, Huly QB-1270).** A handshake met mid-connection -- a renegotiation (a TLS 1.2 client answering its
+  server's HelloRequest, a server answering a client's ClientHello its context allows), a client certificate asked for
+  after a TLS 1.3 handshake, a server's own flight, which its first reads drive -- makes `SSL_read()` write and
+  `SSL_write()` wait for the peer's next message. `ssl::socket::read()` then answers -1 with a would-block and
+  `read_wants_write()` true when the socket refused that write (an `ENOBUFS` it met included: the session goes on
+  where OpenSSL keeps it); `write()` answers 0 and `write_wants_read()` true when OpenSSL waits for the peer; a
+  handshake step that meets such an error (a server's flight, a ClientHello) is kept too -- `handshake_status()` 0,
+  `handshake_wants_write()` true; a blocking `connect()` still fails on it. `io<>`, `input<>`, `output<>` and the
+  sessions watch writability ALONE for that read -- readability beside it, with input queued behind the peer's message,
+  woke the loop on every pass -- and readability alone for that write, the read pass writing again. A handshake under
+  way after the first (`rehandshaking()`: `SSL_in_init()` once connected) is driven by `io<>`'s read and output waits
+  for its end (not during a `close_after_deliver()` drain, its read pass off, nor on `output<>`: their write still
+  drives it): OpenSSL takes the peer's application data then from `SSL_read()` alone, and a write made during a
+  renegotiation whose server sent data behind its HelloRequest ended the connection; a renegotiation OpenSSL deferred
+  behind a record it held for a full socket is started by a read `io<>` makes once that record has left (through 3.3
+  it never started: the loop waited for readability). An empty arm made before or during the wait
+  (`ready_to_write()`, `publish()` with no operand) still earns its `eos`; the read's writability earns none. A read
+  dispatched for input the session held (QB-86's read cap) waits the same way, nothing is fed after a read that must
+  write first, and `start()` / `ready_to_read()` keep writability alone during the wait (`io<>`'s `ready_to_read()`
+  while its protocol is in place). A hand-driven socket does the same. Through 3.3 a read that had to write waited for
+  readability: the peer, waiting for that message, sent nothing more and the connection stalled until a timeout (an
+  `ENOBUFS` there ended it); a write waiting for the peer kept writability watched and the loop dispatched it on every
+  pass. A TLS 1.3 KeyUpdate the peer requests is answered by the next `write()`, never by a read.
+  _(ssl/socket.h:719-722, :733-736, :749-752; ssl/socket.cpp:1242-1253, :1278-1282, :787-798, :889-896; io.h:3428-3429, :2363-2370, :2449-2467, :2693-2694, :3473-3476, :2428-2432, :2636-2637, :2647-2653)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -639,7 +664,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Blocking work** — `callback(fn)` calls `fn` inline; `callback(fn, delay > 0)` runs it later on
   the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
   `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
-  option only when placed on a different core and returning the result by event. _(io.h:379-415;
+  option only when placed on a different core and returning the result by event. _(io.h:397-433;
   Actor.h:2378-2408; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
@@ -841,7 +866,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   A `DownEvent` whose type the watcher did not register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1401-1420, :1844-1859, :1903-1933, :1969-2001)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:87-99; async/io.h:88-93, :108-109, :117-121)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:87-99; async/io.h:106-111, :126-127, :135-139)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
   drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:1955-1971; mixin.h:63-71)_
@@ -854,7 +879,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:1935-1947)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:384-424)_ _(listener.h:2010)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:402-442)_ _(listener.h:2010)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:731-760)_
@@ -904,8 +929,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:505-539, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:1057`.
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:508-542, :84, :96)_
+  `socket::set_insecure()` is declared at `ssl/socket.h:1124`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -937,13 +962,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:635-638; ev++.h:780)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:653-656; ev++.h:780)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2377-2406, :2923-2930, :3407-3411)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2607-2639, :2384-2390, :3169-3176, :3699-3703)_
 - **`clear_protocols()` from the read loop's dispatch** (a protocol's `onMessage()`, the handler it hands the message
   to, anything they call) detaches every protocol at once — `protocol()` is the `NoProtocol` sentinel, a protocol
   switched in afterwards is the active one — and destroys them once that dispatch has returned, not under the
@@ -952,7 +977,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   protocols that touch their state after their handler (qbm-http's WebSocket and HTTP/1.1, qbm-redis's; Huly QB-1278).
   Either way they end one at a time, front to back, the sentinel already active: a destructor's `switch_protocol()`
   is kept, its `clear_protocols()` joins. `reset_for_reconnect()`
-  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2309-2311, :3163, :3398-3399; protocol.h:397-419)_
+  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2539-2541, :3446, :3690-3691; protocol.h:397-419)_
 - **A standalone io's `dispose()` ends its transport** (Huly QB-1060, QB-1270): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
@@ -965,7 +990,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `linger()` of zero close at once; an acceptor keeps its socket and port, a datagram object its socket. Closing the
   transport again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
   returned. In 3.3 the half-closed descriptor stayed in the object: a peer that kept writing blocked for ever.
-  _(io.h:3299, :3341-3346; teardown.h:227-272, :89-95)_
+  _(io.h:3591, :3633-3638; teardown.h:227-272, :89-95)_
 - **A socket the loop is closing after its peer is that thread's** (Huly QB-1270): a blocking `async::run()` returns
   when the last one is gone — up to `linger()` later against a silent peer, at once when the peer closes or
   `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
@@ -975,7 +1000,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the refused connection: its error is returned). A TLS socket detaches its `SSL` object from the
   descriptor it gives away: a `write()` on the transport afterwards fails. To let a peer that is STILL SENDING read
   your last bytes, a session calls `close_after_deliver()` (time-bounded only); `disconnect()` is the abort.
-  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1131-1135)_
+  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1170-1177)_
 - **A TLS connection this side ends sends `close_notify` before the FIN and never waits for the peer's** (3.4,
   Huly QB-1270): one alert, one write on a non-blocking socket, on every own-ended close whose output was written --
   a standalone object's `dispose()` (before the descriptor goes to the loop), a session's `disconnect()`, its
@@ -1002,7 +1027,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   session without it; a session saved with `get_session()` resumes after either side closed (it did not once its
   connection was closed, through 3.3). Kernel TLS: never enabled by qb; with it the loop would not read the
   descriptor raw -- close at once (`set_linger(qb::duration::zero())`).
-  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2184, :3301; ssl/socket.cpp:1072-1106, :1109-1113)_
+  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2297, :3593; ssl/socket.cpp:1111-1145, :1148-1152)_
 - **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
   after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
   — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to
@@ -1010,10 +1035,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   closes with the session and what was queued is dropped (resources win over delivery; `close_after_deliver()` is the
   path that waits); so does a session a size guard ended, one that lingered, one with `linger()` zero. The server's
   `disconnected(id)` override finds a handed-over session's transport closed: read the peer in `on(event::disconnected&&)`.
-  _(io.h:3317-3336)_
+  _(io.h:3609-3628)_
 - **A server's session closes after its peer** (Huly QB-1089): once its `close_after_deliver()` output is
-  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2175-2199, from :3095),
-  then reads and drops what the peer still sends (`linger_read()`, io.h:2212-2222, from :3195-3199) until the peer
+  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2288-2312, from :3358),
+  then reads and drops what the peer still sends (`linger_read()`, io.h:2325-2335, from :3487-3491) until the peer
   closes, the socket fails, or `linger()` elapses (2 s; `set_linger(qb::duration)`, zero closes at once); only then
   does `dispose()` run. A session whose read cap is 0 drains nothing: its linger ends at the peer's next octet. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`

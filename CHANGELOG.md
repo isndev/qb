@@ -26,6 +26,18 @@ policy.
   holds names a descriptor it no longer owns; a `read()` or a `write()` afterwards fails. qb-io calls it when the io
   object that owns the socket ends its own connection and the loop takes the descriptor (the defect it closes is
   under Fixed).
+- **`qb::io::tcp::ssl::socket::read_wants_write()`, `write_wants_read()` and `rehandshaking()`: the direction a TLS read
+  or write waits for when it is not its own, and a handshake under way after the first (Huly QB-1270).** `[[nodiscard]]
+  bool read_wants_write() const noexcept` is true after a `read()` that answered `-1` with a would-block because it must
+  write first -- a handshake message answering what it read, a server's handshake flight -- and the socket could not
+  take that write: read again when the socket can take a write. `[[nodiscard]] bool write_wants_read() const noexcept`
+  is true after a `write()` that answered `0` because OpenSSL waits for the peer's next handshake message: write again
+  once a read has taken it. Each is meaningful right after that answer, as `handshake_wants_write()` is after
+  `handshake_status()` answered `0`: a flag the call left, read with no I/O and no OpenSSL call. `[[nodiscard]] bool
+  rehandshaking() const noexcept` is true while a handshake is under way on a connection whose first one completed -- a
+  TLS 1.2 renegotiation, a TLS 1.3 post-handshake message being taken or answered --: OpenSSL's `SSL_in_init()` once
+  connected, no I/O. OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone. The io
+  objects watch what the three say (the defects they close are under Fixed); a socket driven by hand does the same.
 - **A TCP session reads and sets its transport's write-buffer cap: `max_write_buffer_size()` and
   `set_max_write_buffer_size()` on `qb::io::async::tcp::client` (Huly QB-86).** The session -- what
   `qb::io::use<S>::tcp::client` and its TLS form build on, the server-associated and the standalone form alike --
@@ -1018,6 +1030,81 @@ policy.
   red with OpenSSL 4.1.0 without the change and green with it; a write failed once while a KeyUpdate is answered and
   a read whose renegotiation ClientHello fails (the session goes on with both majors); the resets met by a read and by
   a write.
+- **A TLS read that must write first no longer waits for readability: a renegotiation, a client certificate asked for
+  after the handshake or a server's handshake flight its socket could not take at once no longer stalls the connection,
+  and an `ENOBUFS` that write meets no longer ends it (Huly QB-1270).** `SSL_read()` writes when a handshake message
+  answers what it read -- a TLS 1.2 client's ClientHello answering its server's HelloRequest, a server's answer to a
+  renegotiation its context allows the client (`SSL_OP_ALLOW_CLIENT_RENEGOTIATION`), a TLS 1.3 client's Certificate and
+  Finished answering a CertificateRequest sent after the handshake (`SSL_set_post_handshake_auth()`) -- and a server's
+  first reads write its handshake flight. When the socket could not take that write, `ssl::socket::read()` answered `0`,
+  "nothing yet", and every io object waited for readability: the peer, waiting for that message, sent nothing more, and
+  the connection stalled until a timeout ended it. A socket error OpenSSL lets the session go on after did no better: an
+  `ENOBUFS` that write met was taken for a reset and ended the connection, as one a handshake step met in `handCheck()`
+  did -- a server's flight, a client's ClientHello --; an `EINTR` a BIO failed it with was made again on readability
+  alone, the same stall. `read()` now answers `-1` with a would-block and `read_wants_write()` (new, see Added) is true;
+  a handshake step that meets such an error is kept -- `handshake_status()` answers `0` and `handshake_wants_write()`
+  true -- and made again when the socket can take a write; a blocking `connect()`, which has no later pass to make it
+  again, still fails on it. Where OpenSSL ended the session on the error (OpenSSL 4, its error state) the read still
+  reports it aborted. The io objects that read -- `io<>`, `input<>`, the server sessions -- watch writability alone for
+  that read, and read again when it comes: OpenSSL reads nothing before that write leaves, and readability watched
+  beside it -- input queued behind the peer's message -- woke the loop on every pass (measured 200 dispatches in 200
+  passes, with output queued before, output published, or an empty arm made before or during the wait alike). The other
+  direction had the mirror defect: `SSL_write()` takes nothing while such a handshake waits for the peer's next message,
+  and `write()` answered `0` with writability still watched on a socket that stays writable -- the loop dispatched the
+  object on every pass until the peer answered (200 in 200: output queued during a renegotiation, a session's greeting
+  queued before the client's Finished, an `output<>` object's write). `write_wants_read()` (new) is true after such a
+  `0`; the io objects -- `output<>` included -- then watch readability alone, and the pass that follows the peer's
+  message writes again. An empty write arm made before or during the wait (`ready_to_write()`, `publish()` with no
+  operand) still earns its `eos`, and the read's writability earns none. Not such a write: a TLS 1.3 KeyUpdate the peer
+  requests is answered by this side's next write, never by its read (OpenSSL's choice, measured with OpenSSL 3.5, 3.6
+  and 4.1), and nothing waits for it. A TLS 1.2 renegotiation whose server sends data behind its HelloRequest, and one
+  OpenSSL defers behind a record a full socket refused, are the next two entries.
+  - **Witness.** `qb-io-test-system-tls-read-wants-write`, 39 cases: the read's write refused once by a BIO in front of
+    the socket's, failed once with `ENOBUFS` or `EINTR`, its receive failed once with `ENOBUFS`, or refused for as long
+    as a REALLY full socket reports no room (a peer that reads none of a fill larger than its window), through `io<>`,
+    `input<>`, a server session and `output<>`, and a read reached through input the session held (a read cap below a
+    record). With qb-io as it was, 33 of them red on Linux (OpenSSL 3.5.7), on Windows (3.6.3) and on macOS with 3.5.9,
+    the same 33, and 32 on macOS with 4.1.0, which ends the session itself on the `ENOBUFS` a write of application data
+    meets (no record is held after it); green with the change on all four. The cases that pass on the base pin what did
+    not change: a KeyUpdate answered by the next write, everything queued during a renegotiation delivered, an
+    `output<>` handshake flight refused once, a read that waited to write reading again while output waits, an empty
+    arm's `eos`, a blocking `connect()` that fails on its ClientHello's `ENOBUFS`.
+  - **Cost.** Plain TCP: nothing on its read and write passes -- callgrind counts a TCP echo round trip at 3 957
+    instructions and a 64 KiB bulk round at 356 513 before and after, and no function's own count moves (g++ 14 -O3, the
+    difference method, three rounds); an `io<>` stores two more flags when it is constructed. A TLS read of data costs
+    nothing more either: in a cell whose client only reads -- its line written on the socket itself -- the client's
+    dispatch and `ssl::socket::read()` count the same instructions, function by function. A TLS write pass with output
+    queued asks OpenSSL whether a handshake is under way (`SSL_in_init()`, 9 instructions in libssl) and tests the
+    held-record mark: +55 instructions an echo round trip (+0.20 %: 18 in libssl for two more calls, 37 in qb's two
+    dispatches that write), +245 a 64 KiB bulk round (+0.03 %: `SSL_in_init()` 45, qb's dispatch 104, and 96 in
+    `memcpy()`, which copies at other alignments -- the same calls in both builds).
+  - **For the tests.** `tests/io/shared/tls_wrapping_bio.h` is a BIO in FRONT of the socket BIO an `SSL` object reads
+    and writes through, never chained under it with `BIO_push()`: OpenSSL before 3.5.6 leaks a transport BIO chained
+    so (openssl/openssl#30458, reproduced with 3.5.0 under LeakSanitizer). qb installs no such chain;
+    `qb-io-test-system-tls-close-notify`'s `inject_once` uses the wrapper too.
+- **A TLS client that answers data its server sent behind a HelloRequest no longer ends the connection (Huly QB-1270).**
+  A TLS 1.2 server may send application data after its HelloRequest, before it reads the client's ClientHello, and
+  OpenSSL takes such data during the renegotiation from `SSL_read()` alone. An io object that answered the first such
+  record queued its answer, and its write pass called `SSL_write()` during the renegotiation, which drives the handshake
+  too: with a second record behind the first, the connection ended -- no error reported to the object (reason 0, system
+  error 0), its answer never delivered (measured with OpenSSL 3.5.7 on Linux, 3.6.3 on Windows, 3.5.9 and 4.1.0 on
+  macOS). `io<>` and the server sessions now let their read drive a handshake under way after the first
+  (`rehandshaking()`, new, see Added) and write what they queued once it completes -- no later than OpenSSL's own write
+  would: it writes no application data before the handshake ends. `output<>`, which never reads, still drives the
+  handshake with its write, and so does a `close_after_deliver()` drain, whose read pass is off: there the connection
+  still ends when the peer's next record is application data (measured with OpenSSL 3.5.7, as before). Witness:
+  `AClientAnswersDataItsServerSentBehindAHelloRequest` in `qb-io-test-system-tls-read-wants-write`, red with qb-io as it
+  was, green with the change.
+- **A TLS 1.2 renegotiation its server asks for while the client's socket is full no longer stalls once the socket
+  drains (Huly QB-1270).** OpenSSL defers a renegotiation behind a record it holds unwritten -- a HelloRequest read
+  while the socket could not take the client's last record -- and starts it at its next read or write with nothing left
+  to write. The write that sent that record was the io object's last: it then waited for readability, and the server,
+  waiting for the ClientHello, sent nothing more (measured with OpenSSL 3.5.7: the record and the client's answers
+  delivered, the renegotiation still pending after 5 s). `io<>` and the server sessions make a read once a record
+  OpenSSL held -- for a full socket, or after a socket error a write is made again after -- has left: it starts the
+  renegotiation, which the read then drives (previous entry); one that finds nothing costs an `SSL_read()` whose
+  `recv()` would block, and a dispatch. Witness: `ARenegotiationBehindAHalfWrittenRecordCompletes` in
+  `qb-io-test-system-tls-read-wants-write`, red with qb-io as it was, green with the change.
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
   `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a
   WebSocket `on(message)` or `on(ping)`, an HTTP/1.1 `on(request)`), or from anything those call, it destroyed every
