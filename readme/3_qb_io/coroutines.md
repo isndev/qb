@@ -411,7 +411,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await select(a, b, ...)` | every channel's list of select registrations (one node per channel in the awaiter), through `channel_select_awaiter` (`channel.h:1449`) | the first channel with data or a close |
 | `co_await sem.acquire()` (no token) / `mtx.lock()` / `rw.lock_read()` / `lock_write()` — only when the permit or lock is NOT free: a free one is taken without suspending | the primitive's own waiter deque — `acquire_awaiter` (`sync.h:102`), `lock_awaiter` (`:465`), `read_lock_awaiter` (`:707`), `write_lock_awaiter` (`:763`) | a `release()` / `unlock()`, which hands the permit or lock over (FIFO) before resuming the waiter |
 | `co_await b.arrive_and_wait()` / `ev.wait()` / `latch.wait()` | the primitive's waiter list — `arrive_awaiter` (`sync.h:1033`) and the two `wait_awaiter`s (`:1192`, `:1395`) | the final arrival / `set()` / the count reaching zero |
-| `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:424`) | the generator's next `co_yield` |
+| `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:472`) | the generator's next `co_yield` |
 | `co_await stream.collect()` and every other terminal | an ordinary `task` over the source | the source |
 | `co_await with_retry(f, policy)` | `f()`, and `sleep(delay)` between attempts (`retry.h:273`, `:321`, `:379`) | `f()` or the backoff timer — **the backoff is a plain `sleep`, not `cancellable_sleep`** |
 
@@ -676,7 +676,7 @@ One property is worth relying on: **`take(gen, n)` pulls exactly `min(n, size(ge
 more.** The limit is tested before the source is resumed. Over `iota` an extra pull would cost nothing,
 which is exactly why the opposite behaviour survived for so long; over a source whose body reads a row, a
 token or a socket byte, that pull is a side effect nobody asked for.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :112 (await_transform deleted), :535 (collect_to_vector lvalue), :562 (collect_to_vector rvalue), :588 (from_range), :629 (from_iterator), :644 (iota), range/repeat (:661/:676) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:79 (generator), :151 (await_transform deleted), :583 (collect_to_vector lvalue), :610 (collect_to_vector rvalue), :636 (from_range), :677 (from_iterator), :692 (iota), range/repeat (:709/:724) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -700,7 +700,14 @@ auto total = co_await reduce(read_lines("f"), std::size_t{0},
 ```
 
 `reduce(gen, init, reducer)` takes the seed before the reducer.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:289 (async_generator), :802 (take), :816 (skip), :841 (map, lazy), :852 (filter, lazy), :875 (for_each), :905 (reduce: init then reducer), :923 (collect_to_vector), :949 (map_to_vector, eager), :968 (filter_to_vector, eager) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:328 (async_generator), :850 (take), :864 (skip), :889 (map, lazy), :900 (filter, lazy), :923 (for_each), :953 (reduce: init then reducer), :971 (collect_to_vector), :997 (map_to_vector, eager), :1016 (filter_to_vector, eager) -->
+
+#### Frames and promises
+
+A generator's frame is aligned to the cache line, as a task's is (3.4). C++20 does not align a coroutine frame for what it holds: the frame is placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block when there is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its most strictly aligned member; MSVC realigns it itself. Until 3.4 the generators had no `operator new`, so a `generator<E>` of a `qb::Event` -- every event is cache-line aligned -- had its promise, and a body that kept an `alignas(64)` local across `co_yield` had that local, at 16, 32 or 48 mod 64 on those three compilers (measured with g++ 14, clang 19 and clang-cl 22; MSVC 19.51 aligned every frame): undefined behaviour, and a segmentation fault wherever aligned vector moves are emitted -- an AVX target, `-march=native` or an x86-64-v3 distribution's default. Where the block comes from follows who owns the frame. An `async_generator<T>` is resumed by its loop's scheduler, as a task is, so it takes `task<T>`'s pool, `detail::CoroutineFrameAllocator`, and keeps a task's rules: its frame is made and destroyed on its loop's thread (one destroyed on another goes to that thread's free list), counts in the pool's `live_frames`, and AddressSanitizer sees it reused, never freed. A `generator<T>` is a plain value, which a program may move to another thread and destroy there, so it takes neither the pool -- whose per-thread free lists kept a frame freed on another thread until that thread exited -- nor the aligned `::operator new`, which glibc serves off its fast path (296 instructions a generator made, advanced once and destroyed, against 216 with `malloc`; callgrind, g++ 14 Release, glibc 2.41): its `operator new` takes an ordinary block `frame_alignment()` bytes larger and places the frame at its first aligned address past the word that keeps the block's own (218 instructions). That alignment is the cache line (`kAlign`), or the promise's own when it is stricter: a `generator<T>` of a value aligned past the cache line has its promise aligned (on GCC, clang and clang-cl -- MSVC does not compile a generator of a `T` aligned to 128, error C2719, since `yield_value` takes its `T` by value). Nothing else goes past the cache line: a local aligned further, or such a promise in an `async_generator` or a `task`, is not guaranteed its alignment on GCC, clang and clang-cl. A coroutine type of your own whose promise or locals are over-aligned needs an `operator new` that returns blocks aligned for them.
+
+The promise is built empty, whatever the coroutine's arguments, so `next()` returns what the body yields. A coroutine's promise is initialised from the coroutine's arguments whenever that is viable, and until 3.4 both promise types were aggregates, which C++20's parenthesized aggregate initialisation made viable on GCC, clang and clang-cl whenever the arguments, in order, could initialise the promise's first members: a generator whose one argument converts to `T` started with that argument as its value, and `next()` returned it without running the body -- `single_generator(42)` gave 42 twice, `iota(5)` began 5, 5, 6 -- and an `std::exception_ptr` argument after it was rethrown by the first `next()`, for both generators. A range-for never showed the first: `begin()` always runs the body to its first `co_yield`. `task<void>`'s promise had the same shape, its first member the stored exception: a `task<void>` coroutine whose first argument is an `std::exception_ptr` -- an error handler -- was awaited as if it had thrown that exception, and its body never ran.
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:94 (frame_alignment, generator), :99 (operator new, generator), :120 (promise_type, generator), :334 (QB_CORO_PROMISE_POOLED_NEW_DELETE, async_generator), :342 (promise_type, async_generator); qb/src/qb/io/async/coroutine/task.h:210 (CoroutineFrameAllocator), :219 (kAlign), :871 (promise_type, task<void>) -->
 
 ## Async streams
 
@@ -993,10 +1000,10 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 | `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:94`, `awaiter.h:210` |
 | `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:43` |
 | `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:57-58` |
-| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:35-37` |
+| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:37-39` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
-<!-- src: qb/src/qb/io/async/coroutine/{task.h:94, awaiter.h:210, scope.h:43, scheduler.h:57-58, generator.h:35-37} -->
+<!-- src: qb/src/qb/io/async/coroutine/{task.h:94, awaiter.h:210, scope.h:43, scheduler.h:57-58, generator.h:37-39} -->
 
 ## Header reference
 

@@ -7,8 +7,8 @@
  * out of a promise, and on GCC, Clang with libstdc++/libc++ and MSVC with its own STL they are
  * right. clang-cl with the MSVC STL is the exception, and qb is exactly the shape that trips it:
  * the STL implements both as `__builtin_coro_promise(ptr, 0, ...)` -- an alignment of ZERO, which
- * MSVC's own compiler ignores because it lays the promise out at offset 16 of the frame whatever
- * its `alignas` (silently under-aligning it) -- while clang lays a promise out at
+ * MSVC's own compiler ignores because it lays the promise out at offset 16 of the handle whatever
+ * its `alignas` (and places the handle so that the promise is aligned: 19.51) -- while clang lays a promise out at
  * `alignTo(16, alignof(P))`, and, told 0, computes the handle at `promise - 16`. For a promise
  * whose alignment is 16 or less the two agree. For `alignas(64)` the handle lands 48 bytes into
  * the frame, `resume()` calls whatever bytes sit there, and the program dies -- at -O0 as at -O2.

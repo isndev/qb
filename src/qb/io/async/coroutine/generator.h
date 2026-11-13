@@ -26,9 +26,11 @@
 #include "task.h" // task<void> — for_each()/collect_to_vector() below return one
 #include <cassert>
 #include <coroutine>
+#include <cstdint> // std::uintptr_t — generator<T> realigns its frame
 #include <cstdio>
 #include <exception>
 #include <memory> // std::shared_ptr — async_generator::_alive and next_awaiter shared ownership
+#include <new>    // ::operator new — generator<T>'s frame
 #include <optional>
 #include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 
@@ -77,8 +79,45 @@ template <typename T>
 class generator {
 public:
     struct promise_type {
+        // The frame is aligned to the cache line, as task<T>'s are, or to the promise's own alignment past it. C++20
+        // does not align a coroutine frame for what it holds: without this operator new the frame is
+        // ::operator new(size)'s 16-aligned block, and GCC, clang and clang-cl lay it out as if it were aligned for its
+        // most strictly aligned member -- a generator of a qb::Event, or a body holding an alignas(64) local across
+        // co_yield, had that object at 16, 32 or 48 mod 64 (Huly QB-1246). Not task<T>'s pool: a generator<T> is a
+        // plain value a program may destroy on another thread, and the pool's free lists are per thread -- a frame
+        // destroyed elsewhere stayed in that thread's list until it exited. Not the aligned ::operator new either,
+        // which glibc serves off its fast path: a generator made, advanced once and destroyed cost 296 instructions
+        // with it, 216 with malloc (callgrind, g++ 14 Release, glibc 2.41). Instead an ordinary block `alignment` bytes
+        // larger, the frame at its first aligned address past the word that keeps the block's own address (MSVC's
+        // _aligned_malloc does the same): 218 instructions.
+        static constexpr std::size_t
+        frame_alignment() noexcept {
+            return alignof(promise_type) > detail::CoroutineFrameAllocator::kAlign ? alignof(promise_type)
+                                                                                   : detail::CoroutineFrameAllocator::kAlign;
+        }
+        static void *
+        operator new(std::size_t size) {
+            constexpr std::size_t alignment = frame_alignment();
+            auto *const           block     = static_cast<char *>(::operator new(size + alignment));
+            auto *const           frame     = block + (alignment - (reinterpret_cast<std::uintptr_t>(block) & (alignment - 1)));
+            // block is at least 8-aligned, so the step is 8 to `alignment` bytes: room for the word below the frame
+            reinterpret_cast<void **>(frame)[-1] = block; // what operator delete frees
+            return frame;
+        }
+        static void
+        operator delete(void *frame) noexcept {
+            ::operator delete(static_cast<void **>(frame)[-1]);
+        }
+
         std::optional<T>   current_value;
         std::exception_ptr exception;
+
+        // Declared, so that the promise is not an AGGREGATE. A coroutine's promise is built from the coroutine's
+        // arguments whenever that initialisation is viable, and since C++20 a parenthesized aggregate
+        // initialisation is: GCC, clang and clang-cl built `one(7)`'s promise with current_value = 7, and an
+        // exception_ptr argument in second place became the stored exception -- next() returned the argument before
+        // the body ran, single_generator(42) yielded 42 twice, iota(5) yielded 5 twice (Huly QB-1246).
+        promise_type() noexcept = default;
 
         auto
         get_return_object() {
@@ -289,9 +328,18 @@ template <typename T>
 class async_generator {
 public:
     struct promise_type {
+        // A cache-line-aligned frame, for the reason generator<T>::promise_type gives, from task<T>'s pool: an async
+        // generator is resumed by its loop's scheduler, as a task is, and like a task's its frame is to be made and
+        // destroyed on that loop's thread -- one destroyed on another goes to that thread's free list (Huly QB-1246).
+        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+
         std::optional<T>        current_value;
         std::exception_ptr      exception;
         std::coroutine_handle<> continuation;
+
+        /// Not an aggregate, for the reason generator<T>::promise_type gives: an exception_ptr argument in second
+        /// place became the stored exception, and next() threw it before the first value (Huly QB-1246).
+        promise_type() noexcept = default;
 
         /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
         QB_MSVC_FORCEINLINE ~promise_type() {
