@@ -12,7 +12,7 @@
  * @brief An exception escaping a DETACHED coroutine is reported, not silently dropped.
  *
  * `exception-propagation.cpp` covers the OWNED case: a `task<T>` someone awaits stores the
- * exception in its promise and `await_resume()` rethrows it (task.h:812-813). This file covers
+ * exception in its promise and `await_resume()` rethrows it (task.h:863-864). This file covers
  * the case with no owner — `qb::io::async::coro_scheduler().spawn(t)` — where that rethrow
  * never runs, because nothing awaits the frame.
  *
