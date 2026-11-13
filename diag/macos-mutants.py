@@ -55,8 +55,8 @@ HW_TEST = '        if (unlikely(raw_ret < (detail::tls_io<_Derived> ? 1 : 0))) {
 TOOK_FIRST = ('            if ((this->_async_event.events & EV_READ) || _reason || !_protocol->ok())\n'
               '                return false;\n')
 TOOK_FEED = ('            this->_async_event.feed_event(EV_READ);\n'
-             '            const bool asked = _tls_arm;')
-TOOK_RET = '            _tls_arm         = false;\n            return !asked;\n'
+             '            return !_tls_arm;')
+TOOK_RET = '            return !_tls_arm; // an empty arm made meanwhile earns its eos'
 TOOK_PEER = ('            return false;\n'
              '        }\n'
              '        this->_async_event.set(EV_READ);\n')
@@ -145,12 +145,11 @@ MUTANTS = {
     'I06': ('io<>: a TLS write pass that took nothing not looked at (< 0 as before)', IOH, HW_TEST,
             '        if (unlikely(raw_ret < 0)) {\n', 1),
     'I07': ('io<>: the read not made again when the writability it asked for came', IOH, TOOK_FEED,
-            '            const bool asked = _tls_arm;', 1),
+            '            return !_tls_arm;', 1),
     'I07b': ('io<>: an empty arm made while the read waited earns no eos', IOH, TOOK_RET,
-             '            _tls_arm         = false;\n            return asked || true;\n', 1),
+             '            return true; // an empty arm made meanwhile earns its eos', 1),
     'I07c': ('io<>: the read\'s writability earns an eos', IOH, TOOK_RET,
-             '            _tls_arm         = false;\n            return asked && false;\n', 1),
-    'I07d': ('io<>: the arm kept aside not cleared once answered', IOH, TOOK_RET, '            return !asked;\n', 1),
+             '            return false; // an empty arm made meanwhile earns its eos', 1),
     'I08': ('io<>: an empty arm (readability watched) taken for the read\'s writability', IOH, TOOK_FIRST,
             '            if (_reason || !_protocol->ok())\n                return false;\n', 1),
     'I08c': ('io<>: the read\'s mark, not the watcher, tells the read\'s writability from an empty arm', IOH, TOOK_FIRST,

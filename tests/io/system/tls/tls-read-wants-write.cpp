@@ -400,6 +400,12 @@ public:
         ++eos;
     }
 
+    std::size_t eofs = 0; ///< `eof` events: read passes that left nothing unread, the ones that found nothing included.
+    void
+    on(qb::io::async::event::eof &&) {
+        ++eofs;
+    }
+
     /// What the object's watcher watches now.
     [[nodiscard]] int
     watching() const noexcept {
@@ -1131,6 +1137,7 @@ TEST_F(TlsReadWantsWrite, AClientAnswersARenegotiationOnceItsFullSocketDrains) {
     client.start();
     pump(20ms);
     ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    const std::size_t eos = client.eos; // the fill's: one per kFill published (more than one on XNU)
     ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
     refuse::while_full = true; // the ClientHello: refused while the socket reports no room, until the peer reads
     ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
@@ -1153,7 +1160,7 @@ TEST_F(TlsReadWantsWrite, AClientAnswersARenegotiationOnceItsFullSocketDrains) {
               << kBound.count() << " ms, watching " << spell(client.watching()) << '\n';
     ASSERT_EQ(peer.received.size(), filled) << "the peer could not read what it was sent";
     ASSERT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
-    EXPECT_EQ(client.eos, 1u) << "one eos, the fill's: none for the writability that was the read's";
+    EXPECT_EQ(client.eos, eos) << "an eos for the writability that was the read's";
     ASSERT_TRUE(peer.write("ping\n"));
     EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + 5; })) << "the client's answer never arrived";
 }
@@ -1235,6 +1242,45 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteBesideAnEmptyArmDoesNotWakeTheLoo
     read_waits_while_writability_is_asked("an empty arm during the wait", [](PingClient &) {}, [](PingClient &client) { client.publish(); });
 }
 
+// ...and a stop() and a start() with output queued: start() arms writability alone, as the wait did.
+TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteBesideOutputQueuedThroughARestartDoesNotWakeTheLoop) {
+    read_waits_while_writability_is_asked(
+        "output queued, the client stopped and started again", [](PingClient &client) { client.publish(std::string(kBulk, 'b')); },
+        [](PingClient &client) {
+            client.stop();
+            client.start();
+        });
+}
+
+// close_after_deliver() made while a read waits to write, nothing queued: the writability that comes is the end of the
+// delivery -- its eos, and the close -- never the read's (the read pass is off once the protocol is done).
+TEST_F(TlsReadWantsWrite, ACloseAfterDeliverMadeWhileAReadWaitsToWriteEarnsItsEos) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::while_full = true;
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    pump(50ms);
+    ASSERT_GE(refuse::attempts, 1u) << "the case proves nothing: the read wrote no ClientHello";
+    ASSERT_EQ(client.watching(), EV_WRITE) << "the case proves nothing: the read does not wait to write";
+    const std::size_t eos = client.eos;
+    client.close_after_deliver();
+    const bool ended = peer.pump_until([&] { return client.disconnected != 0u; });
+    std::cout << "[ MEASURED ] close_after_deliver() while a read waits to write (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): " << (ended ? "ended" : "NOT ended") << ", eos " << client.eos - eos << ", reason " << client.reason << ", system error "
+              << client.system_error << '\n';
+    EXPECT_TRUE(ended) << "the connection did not end once its delivery was done";
+    EXPECT_EQ(client.eos, eos + 1) << "the end of the delivery earned no eos";
+}
+
 // Once the write a read waited for has left, the reads go on, output still queued or not: a write pass that leaves
 // output queued watches readability again. TLS 1.3: the client's Certificate, refused while its socket is full, leaves
 // with the client's next write, which goes on with its own output; the peer, which reads only the fill, then sends.
@@ -1291,6 +1337,7 @@ TEST_F(TlsReadWantsWrite, AnEmptyArmAfterAReadThatWaitedToWriteEarnsItsEos) {
     pump(20ms);
     ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
     refuse::would_block = 1;
+    SSL_set_num_tickets(peer.ssl, 0); // no ticket after the client's Certificate: the read that took the data is the last
     SSL_set_verify(peer.ssl, SSL_VERIFY_PEER, [](int, X509_STORE_CTX *) { return 1; });
     ASSERT_EQ(SSL_verify_client_post_handshake(peer.ssl), 1);
     ERR_clear_error();
@@ -1335,6 +1382,17 @@ TEST_F(TlsReadWantsWrite, AnEmptyArmMadeWhileAReadWaitsToWriteEarnsItsEos) {
     EXPECT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
     EXPECT_EQ(client.eos, eos + 1) << "the empty arm made during the wait was not answered by one eos";
     EXPECT_EQ(client.disconnected, 0u);
+    // Answered once: a later wait to write -- a second renegotiation, its ClientHello refused once -- earns no eos.
+    refuse::while_full  = false;
+    refuse::would_block = 1;
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's second HelloRequest was not sent";
+    EXPECT_TRUE(peer.pump_until([&] { return SSL_renegotiate_pending(peer.ssl) == 0 || peer.failed != SSL_ERROR_NONE; }))
+        << "the second renegotiation never completed";
+    ASSERT_EQ(refuse::would_block, 0) << "the case proves nothing: the second ClientHello was not refused";
+    pump(20ms);
+    EXPECT_EQ(client.eos, eos + 1) << "the read's writability earned an eos: the arm answered before was still kept";
 }
 
 // A client stopped and started again while its read waits to write keeps waiting for writability, not readability.
@@ -1642,6 +1700,14 @@ TEST_F(TlsReadWantsWrite, ARenegotiationBehindAHalfWrittenRecordCompletes) {
     EXPECT_EQ(peer.failed, SSL_ERROR_NONE);
     EXPECT_EQ(peer.received, expected) << "the record or the answers did not arrive";
     EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0) << "the renegotiation never completed";
+    // One read followed the record OpenSSL held; the writes after it make none.
+    const std::size_t eofs = client.eofs;
+    for (int i = 0; i < 5; ++i) {
+        client.publish(std::string("x\n"));
+        ASSERT_TRUE(peer.pump_until([&] { return peer.received.size() == expected.size() + 2 * (i + 1); })) << "a write never arrived";
+    }
+    pump(20ms);
+    EXPECT_EQ(client.eofs, eofs) << "the writes after the held record made reads";
 }
 
 // ...and the same record held after a socket error a write is made again after (ENOBUFS, every write meeting it until

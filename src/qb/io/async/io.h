@@ -2447,9 +2447,7 @@ class io : public base<io<_Derived>, event::io> {
                 return false;
             this->_async_event.set(EV_READ);
             this->_async_event.feed_event(EV_READ);
-            const bool asked = _tls_arm; // an empty arm made meanwhile earns its eos, the read's writability none
-            _tls_arm         = false;
-            return !asked;
+            return !_tls_arm; // an empty arm made meanwhile earns its eos (cleared with it), the read's writability none
         }
         if (!Derived.transport().write_wants_read()) {
             _tls_held = true; // the write that sends it makes a read follow: tls_held_flushed()
