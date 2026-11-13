@@ -880,14 +880,16 @@ struct SigpipeCount {
 #endif
 
 /**
- * @brief Whether OpenSSL ends the TLS session on every socket error it reports (`SSL_ERROR_SYSCALL`), the ones qb-io
- *        makes the call again after included.
- * @details OpenSSL 4 does: from the failing call on its state is "error" (`SSL_in_init()` is 1) and every call fails
- *          with `SSL_ERROR_SSL` and no system call -- measured, 4.1.0 on macOS: a reset met by a read or a write, an
- *          `ENOBUFS` or `EINTR` write, an `EINTR` read. OpenSSL 3 keeps the session as it was, and a call made again
+ * @brief Whether OpenSSL ends an established TLS session on a socket error (`SSL_ERROR_SYSCALL`) met by a read or by a
+ *        write of application data, the ones qb-io makes the call again after included.
+ * @details OpenSSL 4 does: from the failing call on it is in its error state (`in_error_state()`, `SSL_in_init()` 1)
+ *          and every call fails with `SSL_ERROR_SSL` and no system call -- measured, 4.1.0 on macOS: a reset met by a
+ *          read or a write, an `ENOBUFS` or `EINTR` write, an `EINTR` read, a read in a TLS 1.2 renegotiation. Not a
+ *          write that sends a KeyUpdate answer first: that session goes on with OpenSSL 4 too
+ *          (`AWriteErrorWhileAKeyUpdateIsAnsweredGoesOn`). OpenSSL 3 keeps the session on them, and a call made again
  *          goes on (3.5.7 on Linux, 3.5.9 on macOS, 3.6.3 on Windows). Both document the error as fatal
- *          (`SSL_get_error(3)`: "no further I/O operations should be performed on the connection"); 4 holds to it.
- *          Read at run time: the library the binary runs with decides, not the headers it was built with.
+ *          (`SSL_get_error(3)`: "no further I/O operations should be performed on the connection"). Read at run time:
+ *          the library the binary runs with decides, not the headers it was built with.
  */
 const bool kSocketErrorEndsTheSession = OPENSSL_version_major() >= 4;
 
@@ -1839,9 +1841,9 @@ TEST_F(TlsCloseNotify, AWriteErrorWhileAKeyUpdateIsAnsweredGoesOn) {
 
 // ...and a read, while a renegotiation the peer asked for is answered (TLS 1.2): the client's read sent its ClientHello
 // and waits in init for the ServerHello when a socket error the io layer reads again after meets it. Whether that ends
-// the session is OpenSSL's state to say (OpenSSL 3 keeps it: measured, 3.5.7 and 3.6.3), and the socket follows it: a
-// session kept goes on -- the read made again completes the renegotiation and the stream ends whole --, a session ended
-// is reported aborted and the peer reads it cut. Which one OpenSSL 4 does is printed.
+// the session is OpenSSL's state to say (measured: OpenSSL 3 keeps it, 3.5.7, 3.5.9 and 3.6.3; OpenSSL 4.1.0 ends it),
+// and the socket follows it: a session kept goes on -- the read made again completes the renegotiation and the stream
+// ends whole --, a session ended is reported aborted and the peer reads it cut. Which one the library did is printed.
 TEST_F(TlsCloseNotify, AReadErrorWhileARenegotiationIsAnsweredFollowsOpenSsl) {
     RawContext               context{RawContext::role::server, TLS1_2_VERSION};
     RawPeer                  peer{context, RawContext::role::server};

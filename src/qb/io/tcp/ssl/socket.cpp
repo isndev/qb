@@ -1168,11 +1168,11 @@ socket::read(void *data, std::size_t size) noexcept {
             case SSL_ERROR_SYSCALL:
                 // A socket error -- a reset: OpenSSL forbids SSL_shutdown() on the connection from here, so this
                 // side's end is recorded without the alert, which nobody would read (Huly QB-1270). Not one the io
-                // layer reads as "try again" (not_recv_error()): the stream goes on, where OpenSSL lets it. An idle
-                // OpenSSL 4 session ends on it -- OpenSSL's error state, which SSL_state_string() names "SSLERR" --,
-                // and a read made again would fail with an earlier call's error: reported aborted instead. Not while a
-                // handshake message is in flight (in init: a KeyUpdate answer goes on with OpenSSL 4 too; measured,
-                // 4.1.0), nor ever with OpenSSL 3, which keeps the session. Otherwise the error is left for the caller.
+                // layer reads as "try again" (not_recv_error()): the stream goes on, where OpenSSL lets it. OpenSSL 4
+                // ends the session on it (measured, 4.1.0: in a renegotiation too) -- its error state, which
+                // SSL_state_string() names "SSLERR" --, and a read made again would fail with an earlier call's error:
+                // reported aborted instead. OpenSSL's state is the judge, not its version: OpenSSL 3 keeps the session,
+                // and so does OpenSSL 4 where a write answered a KeyUpdate. Otherwise the error is left for the caller.
                 if (!qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
                     quiet_shutdown();
                 else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")
