@@ -249,6 +249,16 @@ policy.
   order, 8 rounds, a quiet host, macOS arm64): `origin_form("/health")` 12.8 to 9.5 ns, `origin_form` of
   `/api/v1/users?name=alice` 147.1 to 136.5, the constructor on a 43-byte URI 175.5 to 167.7; the per-byte test pins
   the table to `is_path_character()` and `is_request_path_character()` for each reading.
+- **`scripts/check-header-linkage.py` refuses a `thread_local` static member read before its inline definition
+  (THREAD-WRAP, Huly QB-1246).** A `thread_local` static data member declared in its class and defined `inline` after
+  it -- `listener::current`, whose type is its class -- may not be named in code between the class's opening brace and
+  that definition: a member defined in the class body, a nested class or a template written above. On Darwin clang
+  gives the variable's thread wrapper the linkage of the declaration the translation unit's first reference names, so a
+  reference from the class emits it strong, and two such units in one link are a duplicate symbol: `listener::release()`,
+  written in the class during this cycle, made five qbm-http test binaries fail to link on macOS under TSan, and the
+  runner's ld warned on every build. A class template and an unevaluated operand (`sizeof`, `decltype`, `noexcept`,
+  `alignof`) are not reported: their wrapper is never strong. `--min-thread-wraps N` refuses a pass that paired fewer
+  members, and the format-check lane passes `1`.
 
 ### Changed
 

@@ -1272,7 +1272,15 @@ public:
      *          the list. Any other is unregistered from the thread's listener, as
      *          `listener::current.unregisterEvent()` does. Until 3.4 every owner called that member, which read
      *          the destroyed listener first (Huly QB-1246).
-     * @note Defined after `listener::current`'s definition, never in this class: see there.
+     * @note DEFINED after `listener::current`'s definition, below the class, and never in it: its body reads
+     *       `current`, and a body written in the class names the variable through its in-class declaration, which
+     *       is not `inline`. On Darwin, clang then emits the variable's thread wrapper STRONG (`external`) in every
+     *       translation unit whose first reference to it is this one, and two such units in one link are a
+     *       duplicate `thread-local wrapper routine for qb::io::async::listener::current` (ld's warning on the macOS
+     *       runner, a link error on a developer's Mac, five qbm-http test binaries when it was written here).
+     *       Written after the definition it names the inline one, and the wrapper is `weak_odr hidden`, as it
+     *       always is on Linux (the MSVC ABI has none). The rule is at that definition, and
+     *       `scripts/check-header-linkage.py` (THREAD-WRAP) refuses the shape.
      */
     static void release(IRegisteredKernelEvent *kevent);
 
@@ -1848,8 +1856,8 @@ private:
  *       the same reason. Storage that must be unique per process belongs in the header.
  *
  * @note **Nothing above this definition may name `current` in code** -- no member defined in the
- *       class body, no template written before this line (Huly QB-1246). On Darwin a `thread_local`
- *       with a dynamic initialiser is reached through a *replaceable* thread wrapper (`_ZTW`), and
+ *       class body, no template written before this line (Huly QB-1246). On Darwin a `thread_local`,
+ *       whatever its initialiser, is reached through a *replaceable* thread wrapper (`_ZTW`), and
  *       clang gives that wrapper the linkage of the declaration the translation unit's first emitted
  *       reference names: a reference written above names the in-class declaration, which is not
  *       `inline`, and emits the wrapper `external` (strong); one written below names this definition
@@ -1857,7 +1865,7 @@ private:
  *       one link whose first reference came from above are a duplicate `thread-local wrapper routine
  *       for qb::io::async::listener::current`: a warning of the runner image's ld, a link error on a
  *       developer's Mac (measured with clang 19 `-target arm64-apple-macos14` and Apple clang 21 on
- *       the macOS runner; on Linux and Windows the wrapper is `weak_odr` in every case). That is why
+ *       the macOS runner; on Linux it is `weak_odr` in every case, and the MSVC ABI has none). That is why
  *       `release()` is defined below; `scripts/check-header-linkage.py` (THREAD-WRAP) refuses the shape.
  */
 namespace detail {
@@ -1892,10 +1900,7 @@ inline detail::listener_poisoner::~listener_poisoner() noexcept {
 }
 #endif
 
-// Defined here, after `listener::current`, and never in the class: a body written in the class names `current` through
-// its in-class declaration, and on Darwin that emits the variable's thread wrapper STRONG in every translation unit whose
-// first reference it is -- a duplicate symbol between two of them (the note on the definition above). Written here it
-// names the inline definition, and the wrapper is `weak_odr hidden` as on every other platform.
+// After `listener::current`'s definition, never in the class: the note on its declaration, and on the definition above.
 inline void
 listener::release(IRegisteredKernelEvent *kevent) {
     if (!kevent)

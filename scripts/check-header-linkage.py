@@ -70,8 +70,9 @@ measured (Huly QB-1246):
              19 `-target arm64-apple-macos14 -S -emit-llvm` per shape and with Apple clang 21 `nm -m`
              on the runner: a static member, a non-static one, `this->`, a nested class, a template
              written before the definition -- all `external`; the same bodies after it -- `weak_odr
-             hidden`; x86_64-linux-gnu -- `weak_odr hidden` in every case (the wrapper is not
-             replaceable there, so Linux and Windows never see it). Two shapes are not reported,
+             hidden`; x86_64-linux-gnu and MinGW -- `weak_odr hidden` in every case (the wrapper is
+             not replaceable there), and the MSVC ABI (cl, clang-cl) has no thread wrapper at all, so
+             Linux and Windows never see it. Two shapes are not reported,
              because their wrapper is not strong, measured the same way: a member of a class
              TEMPLATE (the variable is a template instantiation, the wrapper `weak_odr` either way),
              and an UNEVALUATED operand (`sizeof`, `alignof`, `decltype`, `noexcept`: no reference is
@@ -111,12 +112,18 @@ This is a scope-aware scanner over comment/string/preprocessor-masked text, not 
     unexpanded token soup.
   * Preprocessor lines are blanked, so a definition inside `#if 0` is still reported.
 
-All four are false NEGATIVES except the last. THREAD-WRAP adds its own, by the same bias:
+All four are false NEGATIVES except the last. THREAD-WRAP adds four of its own:
 
-  * A definition in ANOTHER header than the class is not paired: the rule reads one header at
-    a time, and `listener::current` is declared and defined in listener.h.
-  * `obj.member` and `ptr->member` count as references whatever `obj` is (a static member read
-    through an object IS one; the scanner cannot type `obj`), and `Other::member` does not.
+  * A definition in ANOTHER header than the class is not paired (a false negative): the rule
+    reads one header at a time, and `listener::current` is declared and defined in listener.h.
+  * `Other::member` is another entity, so an alias of the class (`using L = listener;
+    L::current`) and a derived class (`Derived::current`) are not read either (false negatives).
+  * The class's name is the last word of its head before the base clause, so a macro written
+    AFTER the name (`class X SOME_MACRO {`) is taken for it and the member never pairs (a false
+    negative; qb writes its macros before the name: `class QB_API name`).
+  * `obj.member` and `ptr->member` count as references whatever `obj` is -- a static member read
+    through an object IS one, and the scanner cannot type `obj` -- and so does a local of the
+    member's name (false POSITIVES: name the local otherwise, or move the code below).
 
 The bias is deliberate: this check is the
 cheap, always-on half. The exact half is scripts/check-installed-headers.sh, which compiles
@@ -129,7 +136,8 @@ ESCAPE HATCH
 
 on the reported line or the line above. The reason is mandatory; a bare
 `header-linkage: allow` is itself an error, so an exemption always carries an argument
-someone had to write down.
+someone had to write down. It covers THREAD-WRAP too: the reason must then say why that
+reference cannot be the first a Darwin translation unit emits.
 
 ANTI-VACUOUS FLOORS
 -------------------
@@ -213,6 +221,9 @@ INLINE_WORD = re.compile(r"\binline\b")
 # The operators whose operand is unevaluated: a name inside them emits no reference, so no wrapper (measured).
 UNEVALUATED_OPEN = re.compile(r"\b(sizeof|alignof|__alignof__|decltype|noexcept)\s*$")
 CLASS_HEAD_WORDS = {"class", "struct", "union", "final", "enum"}
+ACCESS_PREFIX = re.compile(r"^(?:(?:public|protected|private)\s*:\s*)+")
+# A standard attribute after a declarator (`cur [[maybe_unused]]`) is blanked, never read as its name.
+TRAILING_ATTRIBUTE = re.compile(r"\[\[.*?\]\]")
 
 
 def mask(src: str) -> str:
@@ -350,8 +361,9 @@ def classify_open(head: str) -> str:
 def class_head(head: str) -> tuple[str | None, bool]:
     """The name a class head declares and whether it is a TEMPLATE's:
     `template <typename T> class QB_API name final : public base<T>` -> ("name", True).
-    An explicit specialization (`template <>`) declares a class, not a template."""
-    h = norm(head)
+    An explicit specialization (`template <>`) declares a class, not a template. A nested class's
+    head may open on the access specifiers before it (`public: template <...> struct inner`)."""
+    h = ACCESS_PREFIX.sub("", norm(head))
     templated = False
     if TEMPLATE_ANGLE.match(h):
         templated = not EMPTY_TEMPLATE.match(h)
@@ -390,14 +402,16 @@ def unevaluated_spans(masked: str, lo: int, hi: int) -> list[tuple[int, int]]:
 
 def thread_wrap_findings(masked: str, members, definitions) -> tuple[list, int]:
     """THREAD-WRAP over one header. `members`: (class, member, window start, declaration's name
-    offset) of each in-class non-inline thread_local static data member; `definitions`: (head text,
+    offset) of each in-class non-inline thread_local static data member; `definitions`: (declarator,
     first-token offset) of each namespace-scope `inline thread_local` definition. Returns the
     references (offset, class, member, definition offset) named before the definition, and the
     number of pairs found."""
     refs, pairs = [], 0
     for cls, name, lo, decl_at in members:
-        target = re.compile(rf"\b{re.escape(cls)}\s*(?:<[^;{{}}]*?>)?\s*::\s*{re.escape(name)}\b")
-        hi = next((at for text, at in definitions if at > lo and target.search(text)), None)
+        # The definition's DECLARATOR must be `cls::name`, at the end of what stands before its initialiser: a
+        # definition whose type or initialiser merely names `cls::name` is another variable's.
+        target = re.compile(rf"\b{re.escape(cls)}\s*(?:<[^;{{}}]*?>)?\s*::\s*{re.escape(name)}\s*(?:\[[^\]]*\]\s*)?$")
+        hi = next((at for declarator, at in definitions if at > lo and target.search(declarator)), None)
         if hi is None:
             continue  # not defined inline in this header: no wrapper of this header's making
         pairs += 1
@@ -498,23 +512,32 @@ def scan(path: str):
             else:
                 head_start = i + 1
         elif paren == 0 and c == ";":
-            if stack and stack[-1][0] == "CLASS" and not in_anonymous():
+            if stack and stack[-1][0] == "CLASS" and not in_anonymous() and not saw_class_body:
                 # THREAD-WRAP: a non-inline thread_local static data member of a class at namespace scope
-                # (every enclosing scope a namespace or a class, every class named and none a template's).
+                # (every enclosing scope a namespace or a class, every class named and none a template's). The
+                # declaration is what follows the last brace before its `thread_local`: a constructor's body or
+                # braced mem-initialiser just above is no part of it, and a head that closed a nested class's
+                # body (`struct Inner { ... };`) declares that class, not a member.
                 raw = masked[head_start:i]
-                h = norm(raw)
-                if THREAD_LOCAL.search(h) and STATIC_WORD.search(h) and not INLINE_OR_CONSTEXPR.search(h):
-                    declarator = re.split(r"[={]", raw, maxsplit=1)[0]
+                tls = list(THREAD_LOCAL.finditer(raw))
+                cut = raw.rfind("}", 0, tls[-1].start()) + 1 if tls else 0
+                h = norm(raw[cut:])
+                if tls and STATIC_WORD.search(h) and not INLINE_OR_CONSTEXPR.search(h):
+                    declarator = re.split(r"[={]", raw[cut:], maxsplit=1)[0]
+                    declarator = TRAILING_ATTRIBUTE.sub(lambda m: " " * len(m.group(0)), declarator)
                     name = list(re.finditer(r"[A-Za-z_]\w*", re.sub(r"\[[^\]]*\]\s*$", "", declarator.rstrip())))
                     classes = [s[3] for s in stack if s[0] == "CLASS"]
                     if (name and all(s[0] in ("NS", "CLASS") for s in stack)
                             and all(c3[0] for c3 in classes) and not any(c3[1] for c3 in classes)):
-                        tl_members.append((classes[-1][0], name[-1].group(0), classes[0][2], head_start + name[-1].start()))
+                        tl_members.append((classes[-1][0], name[-1].group(0), classes[0][2],
+                                           head_start + cut + name[-1].start()))
             if at_namespace_scope() and not in_anonymous():
                 h = norm(masked[head_start:i])
                 if THREAD_LOCAL.search(h) and INLINE_WORD.search(h):
                     seg = masked[head_start:i]
-                    tl_definitions.append((h, head_start + len(seg) - len(seg.lstrip())))
+                    # The declarator: what stands before the initialiser (`=`, `{`, or a direct one in parentheses).
+                    declarator = _strip_trailing_parens(norm(re.split(r"[={]", seg, maxsplit=1)[0]))
+                    tl_definitions.append((declarator, head_start + len(seg) - len(seg.lstrip())))
                 if h and re.search(r"\w", h):
                     constructs += 1
                     hop = OPERATOR_RE.sub("operatorOP", h)
