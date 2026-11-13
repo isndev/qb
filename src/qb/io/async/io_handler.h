@@ -30,6 +30,7 @@
 #include <qb/utility/type_traits.h> // qb::has_on — the two dispatch if-constexpr below test it
 #include <qb/uuid.h>
 #include <qb/io/async/event/extracted.h>
+#include <qb/io/async/teardown.h>
 #include <qb/io/config.h>
 
 namespace qb::io::async {
@@ -286,6 +287,7 @@ public:
         // session under its new owner (Huly QB-1089).
         if constexpr (requires { keep_alive->cancel_linger(); })
             keep_alive->cancel_linger();
+        const bool queued = output_queued_(*keep_alive); // before a hook can empty the queue (Huly QB-1270)
         if constexpr (qb::has_on<_Session, qb::io::async::event::extracted>) {
             // The hook may register or extract sessions: no iterator survives it (a rehash frees the
             // bucket array, an erase frees the node -- Huly QB-306). Look the session up again.
@@ -293,16 +295,37 @@ public:
             const auto still = _sessions.find(ident);
             if (still == _sessions.cend() || still->second != keep_alive)
                 return {typename _Session::transport_io_type{}, false}; // extracted or replaced inside its hook
-            auto t_io = std::move(keep_alive->transport());
+            auto t_io = take_transport_(*keep_alive, queued);
             _sessions.erase(still);
             return {std::move(t_io), true};
         } else {
-            auto t_io = std::move(keep_alive->transport());
+            auto t_io = take_transport_(*keep_alive, queued);
             _sessions.erase(it);
             return {std::move(t_io), true};
         }
     }
 
+private:
+    /// Whether a session has output queued -- what it exposes of its queue: `pendingWrite()` is its base's.
+    [[nodiscard]] static bool
+    output_queued_([[maybe_unused]] _Session &session) noexcept {
+        if constexpr (requires { session.out().size(); })
+            return session.out().size() != 0;
+        else
+            return false;
+    }
+
+    /// The transport of a session that is being extracted. Output the session still has queued dies with it -- what
+    /// was queued before its extracted hook ran (`queued`), or after: a hook that empties the queue drops that output
+    /// all the same. A TLS stream is marked cut first, so that its next owner's close does not tell the peer it is
+    /// whole (Huly QB-1270).
+    [[nodiscard]] static typename _Session::transport_io_type
+    take_transport_(_Session &session, bool queued) {
+        detail::mark_cut_stream(session.transport(), queued || output_queued_(session));
+        return std::move(session.transport());
+    }
+
+public:
     /**
      * @brief Broadcast data to all sessions
      *

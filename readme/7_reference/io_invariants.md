@@ -233,14 +233,14 @@ registry, or as a member — never relocate them.
   stopped (`src/qb/io/async/io.h:3341-3346`), after `on(event::disconnected)`
   — which still sees it as the connection left it — and before
   `on(event::dispose)`, the one hook that may free the object
-  (`src/qb/io/async/teardown.h:219-264`). Who ended the connection is read
+  (`src/qb/io/async/teardown.h:227-272`). Who ended the connection is read
   before the hooks run (`src/qb/io/async/io.h:3299`): no reason of the
   object's and a protocol still ok mean the peer's EOF or a socket error did,
   and the transport is closed — `disconnect()` when it has one, then
   `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
   When the object ended it (`disconnect()`, a framing error, the end of
   `close_after_deliver()`), the descriptor **leaves the object for its
-  thread's loop** (`src/qb/io/async/teardown.h:219-264`): the loop
+  thread's loop** (`src/qb/io/async/teardown.h:227-272`): the loop
   shuts the sending side down — the peer reads EOF once everything queued
   has left, and nothing is reset — reads and drops what the peer still
   sends, and closes on the first of the peer's EOF, a socket error,
@@ -252,7 +252,7 @@ registry, or as a member — never relocate them.
   `transport().is_open()` is false in `on(event::dispose)`, which reads no
   peer from it — so the object is destroyed or connected again at once; a
   TLS socket detaches its `SSL` object from the descriptor it gives away
-  (`src/qb/io/tcp/ssl/socket.cpp:1110-1114`). A size guard of the io
+  (`src/qb/io/tcp/ssl/socket.cpp:1127-1131`). A size guard of the io
   (`message_too_large`, `buffer_overflow`) and a `linger()` of zero close at
   once (`src/qb/io/async/teardown.h:89-95`); a listening socket has no
   sending side, so an acceptor keeps its socket and its port, and a
@@ -285,21 +285,23 @@ registry, or as a member — never relocate them.
   decides (`src/qb/io/async/teardown.h:108-111`): the alert when it
   ended the connection and wrote everything it had queued — before the
   descriptor goes to the loop
-  (`src/qb/io/async/teardown.h:245-250`), before the half-close of
+  (`src/qb/io/async/teardown.h:253-258`), before the half-close of
   a lingering `close_after_deliver()`
-  (`src/qb/io/async/teardown.h:156-160`), or from the socket's
+  (`src/qb/io/async/teardown.h:161-165`), or from the socket's
   `disconnect()` when a session, or a stream with nothing left to write,
   closes with its destructor; none
-  when the peer ended the connection or output is still queued, which is
-  dropped — that stream is cut
-  (`src/qb/io/async/teardown.h:140-145`). What is queued is
+  when output is still queued, which is dropped — that stream is cut,
+  whoever ended the connection; a peer that ended the TLS session with its
+  own `close_notify` and finds nothing dropped is answered with this side's,
+  and nothing is written after a reset
+  (`src/qb/io/async/teardown.h:129-134`). What is queued is
   read before `on(event::disconnected&&)` runs and again after it
   (`src/qb/io/async/io.h:3301`), and the stream is judged
   before it: a hook that empties the queue, or closes the transport itself,
   does not make a cut stream whole. One write on a non-blocking
   socket, never retried: a socket that cannot take it is closed without it.
   OpenSSL is told the session ended on every close, so a saved session
-  resumes (`src/qb/io/tcp/ssl/socket.cpp:1065-1090`).
+  resumes (`src/qb/io/tcp/ssl/socket.cpp:1068-1102`).
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
   (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody
@@ -330,7 +332,7 @@ registry, or as a member — never relocate them.
   releases the timer whatever ended the linger (`src/qb/io/async/io.h:3302`),
   `disconnect()` still aborts at once, a server's teardown destroys a lingering
   session with no wait, and `extractSession()` takes one out of it
-  (`src/qb/io/async/io_handler.h:287-288`). Closing at once closed a socket
+  (`src/qb/io/async/io_handler.h:288-289`). Closing at once closed a socket
   with unread input: the reset failed the peer's send, and on Windows dropped
   the answer it had received and not read.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
@@ -363,7 +365,7 @@ registry, or as a member — never relocate them.
 ## 7. Sessions in `io_handler<Session>`
 
 - `io_handler::registerSession` enforces the session cap **before** allocation
-  (`src/qb/io/async/io_handler.h:230-233`). If `_max_sessions > 0` and the
+  (`src/qb/io/async/io_handler.h:231-234`). If `_max_sessions > 0` and the
   registry is full, it closes the incoming I/O (which already owns an open fd,
   and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
   prevents a connection flood from amplifying into heap pressure.
@@ -373,7 +375,7 @@ registry, or as a member — never relocate them.
   or define `QB_DEFAULT_MAX_SESSIONS` before including the header, on any
   network-facing server.
 - `stream()` / `stream_if()` fan-out reuses a persistent `_broadcast_scratch`
-  vector (`src/qb/io/async/io_handler.h:116`) so broadcasting to N sessions
+  vector (`src/qb/io/async/io_handler.h:117`) so broadcasting to N sessions
   costs O(N) reads, not O(N²) allocations.
 
 ---
@@ -480,7 +482,7 @@ with I/O lifetime are:
 - A default-constructed socket is **uninitialized**; call `init()` before any
   connect/accept/read/write. The success conventions differ and cannot be
   treated uniformly (`src/qb/io/tcp/socket.h:132`,
-  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:552`):
+  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:553`):
   - `tcp::socket::init(int af)` returns `int` (`0` = success).
   - `udp::socket::init(int af)` returns `bool` (`true` = success).
   - `ssl::socket::init(SSL*)` returns `void` and adopts the supplied handle.
@@ -497,7 +499,7 @@ with I/O lifetime are:
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`src/qb/io/tcp/ssl/socket.h:574-576,600-602`,
+  returns `0` (`src/qb/io/tcp/ssl/socket.h:575-577,601-603`,
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
@@ -523,7 +525,7 @@ peer's memory footprint (`src/qb/io/config.h:174-175`, `:250-251`, `:264-265`):
 | `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
 
 Setting a cap to `SIZE_MAX` disables that limit
-(`src/qb/io/stream.h:124-125`, `:494-495`); it is discouraged for any network-facing
+(`src/qb/io/stream.h:124-125`, `:521-522`); it is discouraged for any network-facing
 component.
 
 ---

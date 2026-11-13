@@ -1568,8 +1568,8 @@ protected:
         }
 
         if constexpr (_Derived::has_server) {
-            this->_async_event.stop(); // first: a session somebody still holds must not be dispatched again (Huly QB-1270)
-            detail::end_cut_stream(Derived.transport(), ended_by_peer, true); // no output queue: what TLS may say last
+            // Stopped first: a session somebody still holds after this must not be dispatched again (Huly QB-1270).
+            this->_async_event.stop();
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
@@ -2070,7 +2070,7 @@ protected:
         // Who ended the connection (no reason of this object's means a write error did, Huly QB-1060) and whether all
         // that was queued is written (what a TLS close_notify asserts): read before a hook can empty the queue.
         [[maybe_unused]] const bool ended_by_peer = !_reason, complete = Derived.pendingWrite() == 0;
-        detail::end_cut_stream(Derived.transport(), ended_by_peer, complete); // before a hook can close the transport itself
+        detail::end_cut_stream(Derived.transport(), complete); // judged before a hook can close the transport itself
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
                 if (_system_error != 0) {
@@ -2085,7 +2085,7 @@ protected:
 
         if constexpr (_Derived::has_server) {
             this->_async_event.stop(); // first: a session somebody still holds must not be dispatched again (Huly QB-1270)
-            detail::end_cut_stream(Derived.transport(), ended_by_peer, complete && Derived.pendingWrite() == 0);
+            detail::end_cut_stream(Derived.transport(), complete && Derived.pendingWrite() == 0);
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
@@ -3300,7 +3300,7 @@ protected:
         // A lingering close_after_deliver() was under way (it has had its wait); all that was queued is written (TLS, below).
         [[maybe_unused]] const bool lingered = _lingering, complete = Derived.pendingWrite() == 0;
         end_linger(); // its bound, whatever ended it: the peer, the bound, a disconnect() (Huly QB-1089)
-        detail::end_cut_stream(Derived.transport(), ended_by_peer, complete); // before a hook can close the transport itself
+        detail::end_cut_stream(Derived.transport(), complete); // judged before a hook can close the transport itself
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
                 if (_system_error != 0) {
@@ -3325,7 +3325,7 @@ protected:
             // reset that on Windows destroys what the peer has not read yet (Huly QB-1270). Not a session that
             // already waited for its peer (a lingering close_after_deliver(), whatever ended it), not one with output still queued
             // (dropped with the session, as before: a peer that does not read cannot hold anything), nor an "at once" (close_bound).
-            detail::end_cut_stream(Derived.transport(), ended_by_peer, complete && Derived.pendingWrite() == 0); // TLS's last word
+            detail::end_cut_stream(Derived.transport(), complete && Derived.pendingWrite() == 0); // TLS's last word
             if constexpr (detail::has_socket_transport<_Derived> && !detail::resets_input_per_read<_Derived>) {
                 if (!ended_by_peer && !lingered && Derived.pendingWrite() == 0) {
                     const qb::duration bound = detail::close_bound(false, _reason, _linger);

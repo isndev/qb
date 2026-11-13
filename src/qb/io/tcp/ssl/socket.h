@@ -361,6 +361,7 @@ namespace qb::io::tcp::ssl {
 class QB_API socket : public tcp::socket {
     std::unique_ptr<SSL, void (*)(SSL *)> _ssl_handle;             /**< Unique pointer managing the OpenSSL `SSL` object. */
     bool                                  _connected;              /**< Flag indicating if the SSL handshake has successfully completed. */
+    bool                                  _stream_cut = false;     /**< `mark_cut()`: this session's stream ends without a `close_notify`. */
     std::string                           _pending_sni_hostname;   /**< Desired SNI hostname to apply to the next/client SSL handle. */
     std::vector<std::string>              _pending_alpn_protocols; /**< Desired ALPN offers to apply before handshake starts. */
     std::unique_ptr<SSL_SESSION, void (*)(SSL_SESSION *)> _pending_session{
@@ -473,8 +474,8 @@ class QB_API socket : public tcp::socket {
      *          the handshake completed, after a fatal TLS error, during a renegotiation or a post-handshake message
      *          the peer has not finished sending), and nothing once this side's end is recorded. Otherwise OpenSSL
      *          is told the session is over (`SSL_SENT_SHUTDOWN`) -- through `SSL_shutdown()`, called ONCE, when the
-     *          alert may be sent, the peer has not ended the session and the `SSL` object writes this socket's
-     *          descriptor; set directly when not.
+     *          alert may be sent, the stream is not marked cut and the `SSL` object writes this socket's descriptor;
+     *          set directly when not. A peer whose own `close_notify` was read is answered like any other.
      * @private
      */
     bool end_session_(session_end how) noexcept;
@@ -489,8 +490,8 @@ public:
      * @brief Destructor.
      * @details Frees the `SSL` object if managed, and writes nothing: a socket destroyed while still connected sends
      *          no `close_notify` -- nothing said its stream was whole; `disconnect()` does, and the destructor of a
-     *          TLS stream calls it. OpenSSL is told the session is over all the same, so a session saved with
-     *          `get_session()` still resumes (Huly QB-1270).
+     *          TLS stream calls it, after `quiet_shutdown()` when it drops output still queued. OpenSSL is told the
+     *          session is over all the same, so a session saved with `get_session()` still resumes (Huly QB-1270).
      *          The base class destructor handles closing the underlying TCP socket.
      */
     ~socket() noexcept;
@@ -723,13 +724,14 @@ public:
     /**
      * @brief Close the SSL/TLS connection and the underlying socket.
      * @return 0 on success, non-zero error code from the base-class `disconnect()`.
-     * @details Ends the TLS stream first -- as `close_notify()` does: one alert, never awaited, none when the peer
-     *          ended the session or the socket cannot take it -- then shuts the TCP connection down in both
-     *          directions, so the peer reads everything written, the alert, then EOF. Until 3.4 no alert was sent
-     *          and an OpenSSL 3 peer read every connection qb ended as cut short
+     * @details Ends the TLS stream first -- as `close_notify()` does: one alert, never awaited, the answer to the
+     *          peer's own when it ended the session first, none when the socket cannot take it -- then shuts the TCP
+     *          connection down in both directions, so the peer reads everything written, the alert, then EOF. Until
+     *          3.4 no alert was sent and an OpenSSL 3 peer read every connection qb ended as cut short
      *          (`SSL_R_UNEXPECTED_EOF_WHILE_READING`, Huly QB-1270). It never blocks: a socket still in blocking
      *          mode is made non-blocking for the alert and left so -- the connection is over. `stream::close()` and
-     *          the destructor of every TLS stream call it; call `quiet_shutdown()` first to close without the alert.
+     *          the destructor of every TLS stream call it, after `quiet_shutdown()` when they drop output still
+     *          queued; call `quiet_shutdown()` first yourself to close without the alert.
      *          With input left unread this TCP shutdown is a reset on Windows, which destroys what the peer has
      *          received and not read yet, the alert included: the async objects hand their descriptor to the loop
      *          instead. The `SSL` object -- and, through it, its reference to the reference-counted `SSL_CTX` -- is
@@ -754,38 +756,53 @@ public:
      *            completed, after a fatal TLS error (OpenSSL forbids the call, and has sent the alert the error
      *            called for), during a renegotiation, or while a TLS 1.3 post-handshake message is still arriving:
      *            nothing is recorded either;
-     *          - when the peer ended the session -- its `close_notify` was read: it is not answered (OpenSSL's
-     *            manual calls an unanswered `close_notify` not fully standards compliant; the connection is closed,
-     *            and the peer reads the FIN);
-     *          - once this side's end is recorded: a second call, or after `quiet_shutdown()`;
+     *          - once this side's end is recorded: a second call, after `quiet_shutdown()`, or after `read()` or
+     *            `write()` met a socket error -- a reset (`SSL_ERROR_SYSCALL`: OpenSSL forbids the call from there);
+     *          - on a stream marked cut (`mark_cut()`);
      *          - when OpenSSL still holds a record it could not write whole: the alert may not overtake it;
      *          - on an `SSL` object in OpenSSL's own quiet-shutdown mode (`SSL_set_quiet_shutdown`,
      *            `SSL_CTX_set_quiet_shutdown`), which qb set on every client until 3.4 and no longer sets, or one
      *            that does not write this socket's descriptor.
      *
+     *          A peer that ended the session itself -- its `close_notify` was read -- IS answered, since 3.4: each
+     *          side sends its alert before it closes its sending direction (RFC 8446 6.1), and a peer that waits
+     *          for this side's reads a clean end where it read an unexpected EOF. Its bare EOF and a fatal alert
+     *          are the first case, OpenSSL's own state the judge; a reset this socket read is the second.
+     *
      *          In every case but the first OpenSSL is told this side's end of the session (`SSL_SENT_SHUTDOWN`): an
      *          `SSL` object freed without it has its session discarded, and a session saved with `get_session()`
-     *          would no longer resume. Nothing is left in the thread's OpenSSL error queue. A reset OpenSSL has read
-     *          is a fatal error for it (the first case); one it has not seen leaves the session as it was: the alert
-     *          is attempted, and the socket refuses the write. qb-io calls this when the io object that owns the
-     *          socket ends a connection whose output it has written (`async::detail::end_transport`, and the lingering
-     *          close of `close_after_deliver()`); call it yourself only to half-close a socket you drive directly.
+     *          would no longer resume. Nothing is left in the thread's OpenSSL error queue. A reset that `read()` or
+     *          `write()` has met recorded this side's end then (the second case); one not met yet leaves the session
+     *          as it was: the alert is attempted, and the socket refuses the write. qb-io calls this when the io
+     *          object that owns the socket ends a connection whose output it has written
+     *          (`async::detail::end_transport`, and the lingering close of `close_after_deliver()`); call it yourself
+     *          only to half-close a socket you drive directly.
      */
     bool close_notify() noexcept;
 
     /**
      * @brief End this side of the TLS session without a word: no `close_notify`, now or from a later `disconnect()`.
      * @details For a stream that is CUT rather than ended -- output queued above this socket is being dropped, so an
-     *          alert would tell the peer that a truncated message is whole -- and for a connection its peer ended.
+     *          alert would tell the peer that a truncated message is whole.
      *          OpenSSL is told the session is over (`SSL_SENT_SHUTDOWN`), so a saved session still resumes; nothing
      *          is written. A no-op while no session is established (`close_notify()`'s first case) and once this
      *          side's end is recorded. Not OpenSSL's quiet-shutdown MODE, which this resembles: no mode is set, and
-     *          only this side's end is recorded. qb-io calls it for a connection that ends with output still queued
-     *          and for one its peer ended. It knows what it has queued, not what the application still meant to
-     *          send: an application that abandons a message half-way -- a body the end of the connection delimits --
-     *          calls `transport().quiet_shutdown()` before its `disconnect()`.
+     *          only this side's end is recorded. qb-io calls it for a connection, or a stream closed or destroyed,
+     *          that ends with output still queued, whoever ended it. It knows what it has queued, not what the
+     *          application still meant to send: an application that abandons a message half-way -- a body the end of
+     *          the connection delimits -- calls `transport().quiet_shutdown()` before its `disconnect()`.
      */
     void quiet_shutdown() noexcept;
+
+    /**
+     * @brief Mark this session's TLS stream as CUT: it goes on, and whoever ends it sends no `close_notify`.
+     * @details For a transport that leaves its owner while output that owner still had queued is dropped
+     *          (`io_handler::extractSession()` calls it): the octets are missing from the middle of the stream, so
+     *          its end must not say it is whole, whatever the next owner writes. Unlike `quiet_shutdown()` the
+     *          session is not ended -- reads and writes go on -- and the mark travels with the socket when it is
+     *          moved. It ends with the session: a new connection, or another `SSL` handle, starts without it.
+     */
+    void mark_cut() noexcept;
 
     /**
      * @brief Give the descriptor away: the caller, or what it hands it to, closes it.
@@ -811,10 +828,13 @@ public:
      * @brief Read decrypted data from the secure SSL/TLS socket.
      * @param data Pointer to the buffer where decrypted data will be stored.
      * @param size Maximum number of bytes to read into the buffer.
-     * @return Number of bytes actually read and decrypted.
-     *         Returns 0 if the peer performed an orderly SSL shutdown.
-     *         Returns a negative value on error (e.g., `SSL_ERROR_WANT_READ`, `SSL_ERROR_SYSCALL`).
-     * @details Internally calls `SSL_read()`.
+     * @return Number of bytes actually read and decrypted; 0 when nothing can be read yet (`SSL_ERROR_WANT_READ`,
+     *         `SSL_ERROR_WANT_WRITE`, a handshake still in progress); -1 on the peer's `close_notify` -- never with a
+     *         would-block an earlier call left as the system error -- and on an error.
+     * @details Internally calls `SSL_read()`. A socket error the io layer does not read as "try again" (a reset:
+     *          `SSL_ERROR_SYSCALL`, after which OpenSSL forbids `SSL_shutdown()`) records this side's end of the
+     *          session without the alert, as `quiet_shutdown()` does: nothing more is written into that connection
+     *          (Huly QB-1270).
      */
     int read(void *data, std::size_t size) noexcept;
 
@@ -825,7 +845,8 @@ public:
      * @return Number of bytes successfully encrypted and written to the SSL/TLS layer.
      *         This can be less than `size` if the SSL/TLS layer cannot accept all data immediately.
      *         Returns a negative value on error.
-     * @details Internally calls `SSL_write()`.
+     * @details Internally calls `SSL_write()`. A socket error the io layer does not write again after (a reset:
+     *          `SSL_ERROR_SYSCALL`) records this side's end of the session without the alert, as after `read()`'s.
      */
     int write(const void *data, std::size_t size) noexcept;
 
