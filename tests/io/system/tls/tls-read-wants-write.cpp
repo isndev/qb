@@ -270,8 +270,9 @@ holds_unsent(qb::io::tcp::ssl::socket &socket) {
  *        every write while the system reports the socket full (the loop's own view of it: a system may take a small
  *        write it reports no room for, Linux appends one to a segment not yet sent), or fails the next write once with
  *        a system error and no retry flag (what a socket BIO answers for `ENOBUFS`); and counts every write the `SSL`
- *        object attempts. It wraps the socket BIO, never chained onto it: OpenSSL before 3.5.6
- *        leaks the socket BIO of a chain (`shared/tls_wrapping_bio.h`).
+ *        object attempts. `install_reads()` puts a second one in front of the BIO it reads through, which fails the
+ *        next read once the same way (`read_fail_with`). Each wraps the socket BIO, never chained onto it: OpenSSL
+ *        before 3.5.6 leaks the socket BIO of a chain (`shared/tls_wrapping_bio.h`).
  */
 namespace refuse {
 int         would_block = 0;     ///< How many next writes are refused "try again".
@@ -322,6 +323,23 @@ void
 install(SSL *ssl) {
     qb::io::test::tls_wrapping_bio::wrapper<&refuse::write, &qb::io::test::tls_wrapping_bio::forward_read>::install(ssl, true);
     attempts = 0;
+}
+
+int read_fail_with = 0; ///< The system error the next read fails with, once (no retry flag); 0: none.
+
+int
+read(BIO *self, BIO *inner, char *out, int size) {
+    if (const int error = std::exchange(read_fail_with, 0)) {
+        qb::io::socket::set_last_errno(error);
+        return -1;
+    }
+    return qb::io::test::tls_wrapping_bio::forward_read(self, inner, out, size);
+}
+
+/// The wrapper in front of the socket BIO `ssl` reads through, from here on (`read_fail_with`).
+void
+install_reads(SSL *ssl) {
+    qb::io::test::tls_wrapping_bio::wrapper<&qb::io::test::tls_wrapping_bio::forward_write, &refuse::read>::install(ssl, false);
 }
 } // namespace refuse
 
@@ -610,14 +628,15 @@ protected:
     void
     SetUp() override {
         CleanLoop::SetUp();
-        g_state             = &state;
-        refuse::would_block = 0;
-        refuse::while_full  = false;
-        refuse::fail_with   = 0;
-        refuse::attempts    = 0;
-        refuse::half_once   = 0;
-        refuse::hold        = false;
-        refuse::hold_with   = 0;
+        g_state                = &state;
+        refuse::would_block    = 0;
+        refuse::while_full     = false;
+        refuse::fail_with      = 0;
+        refuse::attempts       = 0;
+        refuse::half_once      = 0;
+        refuse::hold           = false;
+        refuse::hold_with      = 0;
+        refuse::read_fail_with = 0;
         ASSERT_TRUE(qb::io::test::require_ssl_files());
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         port = listener.local_endpoint().port();
@@ -1331,9 +1350,57 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitedToWriteReadsAgainWhileOutputWaits) {
               << "): " << (read ? "the peer's data read" : "the peer's data NOT read") << " with " << client.out().size()
               << " octets queued, watching " << spell(client.watching()) << '\n';
     EXPECT_TRUE(read) << "the reads did not go on once the write they waited for had left";
-    // ...and readability is watched beside the output: the write pass that left it queued watched both directions again
-    // (a read made only when a record OpenSSL held had left would read the peer's data late, or never if the peer waited
-    // for it before reading more).
+    // ...and readability stays watched beside the output.
+    EXPECT_EQ(client.watching(), EV_READ | EV_WRITE) << "output left queued without readability: " << spell(client.watching());
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + bulk; })) << "the output never arrived whole";
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// A read whose RECEIVE failed once with a socket error the io layer tries again after (ENOBUFS): OpenSSL 3 keeps the
+// session and does not say whether the error met a receive or the read's own handshake write, so the read waits for
+// writability, as one that must write first. No handshake is under way: the writability that comes is a write pass, which
+// leaves output queued -- more than the socket takes -- and must watch readability again beside it: the peer's data waits
+// in the socket, and the peer reads none of the output until it is answered. OpenSSL 4 ends the session on that error.
+TEST_F(TlsReadWantsWrite, AReadWhoseReceiveFailedOnceReadsAgainWhileOutputWaits) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    const std::size_t bulk = filled == kFill ? kBulk : kBulk + filled;
+    client.publish(std::string(bulk, 'b')); // queued behind the fill: the socket takes none of it now
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the output did not wait";
+    ASSERT_NO_FATAL_FAILURE(refuse::install_reads(client.transport().ssl_handle()));
+    refuse::read_fail_with = ENOBUFS;
+    ASSERT_TRUE(peer.write("ping\n"));
+    ASSERT_TRUE(pump_while_not([&] { return refuse::read_fail_with == 0 || client.disconnected != 0u; }, 2000ms))
+        << "the case proves nothing: the client never read";
+    pump(20ms);
+    if (OPENSSL_version_major() >= 4) {
+        const bool ended = pump_while_not([&] { return client.disconnected != 0u; }, 2000ms);
+        std::cout << "[ MEASURED ] a receive failed once with ENOBUFS, output waiting (" << OpenSSL_version(OPENSSL_VERSION)
+                  << "): " << (ended ? "the session ended" : "the session went on") << " (system error " << client.system_error << ")\n";
+        EXPECT_TRUE(ended) << "OpenSSL 4 ended the session on the receive's error: the connection went on";
+        EXPECT_EQ(client.system_error, kSessionAborted) << "the session OpenSSL ended was not reported aborted";
+        return;
+    }
+    ASSERT_EQ(client.disconnected, 0u) << "the connection ended on a receive's error OpenSSL lets the session go on after (system error "
+                                       << client.system_error << ")";
+    ASSERT_EQ(client.pings, 0u) << "the case proves nothing: the read that failed read the ping";
+    ASSERT_EQ(client.watching(), EV_WRITE) << "the case proves nothing: the read does not wait for writability";
+    // The peer reads the fill alone: room for part of the output, a write pass, the rest left queued.
+    ASSERT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled; })) << "the peer could not read the fill";
+    const bool read = pump_while_not([&] { return client.pings == 1u; }, 2000ms);
+    std::cout << "[ MEASURED ] a receive failed once with ENOBUFS, output waiting (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): " << (read ? "the peer's data read" : "the peer's data NOT read") << " with " << client.out().size()
+              << " octets queued, watching " << spell(client.watching()) << '\n';
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the output did not wait";
+    EXPECT_TRUE(read) << "the write pass that left output queued did not watch readability again";
     EXPECT_EQ(client.watching(), EV_READ | EV_WRITE) << "output left queued without readability: " << spell(client.watching());
     EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + bulk; })) << "the output never arrived whole";
     EXPECT_EQ(client.disconnected, 0u);
