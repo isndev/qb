@@ -44,7 +44,10 @@ WHAT IT FORBIDS  (at NAMESPACE scope, in a scanned header)
              `constexpr` (which give internal linkage at namespace scope), not `static`,
              not a bare `extern` declaration, not a template. Includes an explicit
              specialization of a VARIABLE template with an initialiser, which is a
-             definition and is not implicitly inline either.
+             definition and is not implicitly inline either, and a class's static data member
+             defined out of class `const` but not `inline` (`const int C::k = 5;`): `const`
+             gives internal linkage to a namespace variable only (Huly QB-1246, found by the
+             THREAD-WRAP review: the guard said OK over a strong `C::k`).
 
 Class scope needs no separate rule for what a class DEFINES: an in-class member function
 definition is implicitly `inline`, and the two class-scope shapes that DO emit a strong symbol
@@ -57,12 +60,14 @@ measured (Huly QB-1246):
              opening brace of its outermost class and that definition -- a member defined in the
              class body (above or below the declaration: a member function body is a complete-class
              context), a nested class, a template or a function written before the definition.
-             `listener::current` has to be declared so (its type is its class). On Darwin a
-             `thread_local` is reached through a replaceable thread wrapper (`_ZTW...`, whatever its
-             initialiser and destructor), and clang gives the wrapper the linkage of the declaration
-             the translation unit's first emitted reference names: from such a reference, the in-class
-             declaration, which is not `inline` -- the wrapper is emitted `external`, STRONG; from a
-             reference written after the definition, `weak_odr hidden`. Two translation units of one
+             `listener::current` has to be declared so (its type is its class). On Darwin a reference
+             through the in-class declaration goes through a replaceable thread wrapper (`_ZTW...`)
+             whatever the variable's initialiser -- a constant-initialised `int` too -- and clang gives
+             the wrapper the linkage of the declaration the translation unit's first emitted reference
+             names: from such a reference, the in-class declaration, which is not `inline` -- the
+             wrapper is emitted `external`, STRONG; from a reference written after the definition,
+             `weak_odr hidden` (or no wrapper at all, for a variable constant-initialised and
+             trivially destructible). Two translation units of one
              link whose first reference came from the class are a duplicate
              `thread-local wrapper routine for ...` -- ld's warning on the macOS runner, a link error
              on a developer's Mac: QB-1246 part 3 wrote `listener::release()` in the class, reading
@@ -77,7 +82,8 @@ measured (Huly QB-1246):
              TEMPLATE (the variable is a template instantiation, the wrapper `weak_odr` either way),
              and an UNEVALUATED operand (`sizeof`, `alignof`, `decltype`, `noexcept`: no reference is
              emitted). The cure is the definition's place, not a flag: define the code that reads the
-             member AFTER its definition (`listener::release()`, listener.h).
+             member AFTER its definition (`listener::release()`, listener.h). A definition that is not
+             `inline` is VAR-DEF's, never paired here: in a header it is a duplicate variable already.
 
 WHAT IT DELIBERATELY ALLOWS
 ---------------------------
@@ -112,7 +118,7 @@ This is a scope-aware scanner over comment/string/preprocessor-masked text, not 
     unexpanded token soup.
   * Preprocessor lines are blanked, so a definition inside `#if 0` is still reported.
 
-All four are false NEGATIVES except the last. THREAD-WRAP adds four of its own:
+All four are false NEGATIVES except the last. THREAD-WRAP adds its own:
 
   * A definition in ANOTHER header than the class is not paired (a false negative): the rule
     reads one header at a time, and `listener::current` is declared and defined in listener.h.
@@ -121,9 +127,12 @@ All four are false NEGATIVES except the last. THREAD-WRAP adds four of its own:
   * The class's name is the last word of its head before the base clause, so a macro written
     AFTER the name (`class X SOME_MACRO {`) is taken for it and the member never pairs (a false
     negative; qb writes its macros before the name: `class QB_API name`).
+  * A member declared with its class's definition (`thread_local static struct p { ... } cur;`)
+    is skipped, as `struct X { ... } g_obj;` is above (a false negative).
   * `obj.member` and `ptr->member` count as references whatever `obj` is -- a static member read
-    through an object IS one, and the scanner cannot type `obj` -- and so does a local of the
-    member's name (false POSITIVES: name the local otherwise, or move the code below).
+    through an object IS one, and the scanner cannot type `obj` -- and so do a local, and a
+    member of another class, of the member's name: the rule reads names, not entities (false
+    POSITIVES: name it otherwise, or move the code below the definition).
 
 The bias is deliberate: this check is the
 cheap, always-on half. The exact half is scripts/check-installed-headers.sh, which compiles
@@ -222,8 +231,9 @@ INLINE_WORD = re.compile(r"\binline\b")
 UNEVALUATED_OPEN = re.compile(r"\b(sizeof|alignof|__alignof__|decltype|noexcept)\s*$")
 CLASS_HEAD_WORDS = {"class", "struct", "union", "final", "enum"}
 ACCESS_PREFIX = re.compile(r"^(?:(?:public|protected|private)\s*:\s*)+")
-# A standard attribute after a declarator (`cur [[maybe_unused]]`) is blanked, never read as its name.
-TRAILING_ATTRIBUTE = re.compile(r"\[\[.*?\]\]")
+# An attribute after a declarator (`cur [[maybe_unused]]`, `cur __attribute__((unused))`) is blanked, never read
+# as its name.
+TRAILING_ATTRIBUTE = re.compile(r"\[\[.*?\]\]|\b__attribute__\s*\(\(.*?\)\)")
 
 
 def mask(src: str) -> str:
@@ -362,18 +372,22 @@ def class_head(head: str) -> tuple[str | None, bool]:
     """The name a class head declares and whether it is a TEMPLATE's:
     `template <typename T> class QB_API name final : public base<T>` -> ("name", True).
     An explicit specialization (`template <>`) declares a class, not a template. A nested class's
-    head may open on the access specifiers before it (`public: template <...> struct inner`)."""
-    h = ACCESS_PREFIX.sub("", norm(head))
+    head may open on what stands before it in its class -- access specifiers (`public: template
+    <...> struct inner`), the braces of a constructor's body just above (` {} template <...>`) --
+    so a template head is looked for anywhere in it, and every one is set aside, never only a
+    leading one."""
+    h = norm(head)
     templated = False
-    if TEMPLATE_ANGLE.match(h):
-        templated = not EMPTY_TEMPLATE.match(h)
-        depth = 0
-        for idx in range(h.index("<"), len(h)):
+    while (head_at := re.search(r"\btemplate\s*<", h)) is not None:
+        templated = templated or not re.match(r"template\s*<\s*>", h[head_at.start():])
+        depth, idx = 0, head_at.end() - 1  # at the parameter list's `<`
+        while idx < len(h):
             depth += h[idx] == "<"
             depth -= h[idx] == ">"
+            idx += 1
             if depth == 0:
-                h = h[idx + 1:]
                 break
+        h = h[:head_at.start()] + " " + h[idx:]
     h = _strip_attribute_groups(h)
     key = CLASS_KEY.search(h)
     if key is None:
@@ -400,6 +414,37 @@ def unevaluated_spans(masked: str, lo: int, hi: int) -> list[tuple[int, int]]:
     return spans
 
 
+def before_top_level_equals(text: str) -> str:
+    """The text before the first `=` that stands outside every bracket and is no part of `==`, `!=`, `<=`,
+    `>=`: a definition's declarator and direct initialiser, without its copy-initialiser."""
+    depth = 0
+    for k, ch in enumerate(text):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "=" and depth == 0 and text[k - 1:k] not in ("=", "!", "<", ">") and text[k + 1:k + 2] != "=":
+            return text[:k]
+    return text
+
+
+def declares(declarator: str, cls: str, name: str) -> bool:
+    """Does this namespace-scope definition (its text before the first top-level `=`) DEFINE `cls::name`?
+    Only where `cls::name` stands outside every bracket, followed by nothing but array bounds and
+    attributes, then the initialiser's `(` or `{` or the end: a definition whose TYPE names it
+    (`decltype(cls::name.x) other`) or whose initialiser reads it defines another variable."""
+    target = re.compile(rf"\b{re.escape(cls)}\s*(?:<[^;{{}}]*?>)?\s*::\s*{re.escape(name)}\b")
+    for m in target.finditer(declarator):
+        before = declarator[:m.start()]
+        if before.count("(") != before.count(")") or before.count("{") != before.count("}"):
+            continue  # inside a decltype, a template argument's parentheses, an initialiser
+        after = TRAILING_ATTRIBUTE.sub(" ", declarator[m.end():])
+        after = re.sub(r"^\s*(?:\[[^\]]*\]\s*)*", "", after)
+        if not after.strip() or after.lstrip()[0] in "({":
+            return True
+    return False
+
+
 def thread_wrap_findings(masked: str, members, definitions) -> tuple[list, int]:
     """THREAD-WRAP over one header. `members`: (class, member, window start, declaration's name
     offset) of each in-class non-inline thread_local static data member; `definitions`: (declarator,
@@ -408,10 +453,7 @@ def thread_wrap_findings(masked: str, members, definitions) -> tuple[list, int]:
     number of pairs found."""
     refs, pairs = [], 0
     for cls, name, lo, decl_at in members:
-        # The definition's DECLARATOR must be `cls::name`, at the end of what stands before its initialiser: a
-        # definition whose type or initialiser merely names `cls::name` is another variable's.
-        target = re.compile(rf"\b{re.escape(cls)}\s*(?:<[^;{{}}]*?>)?\s*::\s*{re.escape(name)}\s*(?:\[[^\]]*\]\s*)?$")
-        hi = next((at for declarator, at in definitions if at > lo and target.search(declarator)), None)
+        hi = next((at for declarator, at in definitions if at > lo and declares(declarator, cls, name)), None)
         if hi is None:
             continue  # not defined inline in this header: no wrapper of this header's making
         pairs += 1
@@ -535,9 +577,8 @@ def scan(path: str):
                 h = norm(masked[head_start:i])
                 if THREAD_LOCAL.search(h) and INLINE_WORD.search(h):
                     seg = masked[head_start:i]
-                    # The declarator: what stands before the initialiser (`=`, `{`, or a direct one in parentheses).
-                    declarator = _strip_trailing_parens(norm(re.split(r"[={]", seg, maxsplit=1)[0]))
-                    tl_definitions.append((declarator, head_start + len(seg) - len(seg.lstrip())))
+                    # What stands before a copy-initialiser's top-level `=`: `declares()` reads the declarator there.
+                    tl_definitions.append((norm(before_top_level_equals(seg)), head_start + len(seg) - len(seg.lstrip())))
                 if h and re.search(r"\w", h):
                     constructs += 1
                     hop = OPERATOR_RE.sub("operatorOP", h)
@@ -554,6 +595,11 @@ def scan(path: str):
                           and (saw_braced_init or re.search(r"^[^(]*=", hop))
                           and not re.search(r"\b(inline|constexpr)\b", spec)):
                         kind = "VAR-DEF"           # initialized extern is a definition, even when const
+                    elif (re.search(r"\bconst\b", spec) and not re.search(r"\b(inline|constexpr|static|extern|typedef|using|concept)\b", spec)
+                          and re.search(r"::\s*~?\w+\s*(?:\[[^\]]*\]\s*)*$", spec.strip())
+                          and not ("(" in hop and hop.index("(") < min(
+                              hop.index("{") if "{" in hop else len(hop), hop.index("=") if "=" in hop else len(hop)))):
+                        kind = "VAR-DEF"           # a class's const static member defined out of class: external
                     elif SAFE_VAR.search(spec):
                         pass                       # inline / const / constexpr / static / extern / typedef / using
                     elif saw_class_body and not saw_braced_init and not re.search(r"\w", h.rsplit("}", 1)[-1]):

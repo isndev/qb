@@ -1856,8 +1856,8 @@ private:
  *       the same reason. Storage that must be unique per process belongs in the header.
  *
  * @note **Nothing above this definition may name `current` in code** -- no member defined in the
- *       class body, no template written before this line (Huly QB-1246). On Darwin a `thread_local`,
- *       whatever its initialiser, is reached through a *replaceable* thread wrapper (`_ZTW`), and
+ *       class body, no template written before this line (Huly QB-1246). On Darwin this variable --
+ *       dynamically initialised -- is reached through a *replaceable* thread wrapper (`_ZTW`), and
  *       clang gives that wrapper the linkage of the declaration the translation unit's first emitted
  *       reference names: a reference written above names the in-class declaration, which is not
  *       `inline`, and emits the wrapper `external` (strong); one written below names this definition

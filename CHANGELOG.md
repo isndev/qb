@@ -258,7 +258,9 @@ policy.
   written in the class during this cycle, made five qbm-http test binaries fail to link on macOS under TSan, and the
   runner's ld warned on every build. A class template and an unevaluated operand (`sizeof`, `decltype`, `noexcept`,
   `alignof`) are not reported: their wrapper is never strong. `--min-thread-wraps N` refuses a pass that paired fewer
-  members, and the format-check lane passes `1`.
+  members, and the format-check lane passes `1`. Its VAR-DEF rule also refuses, since this change, a class's static data
+  member defined out of class `const` but not `inline` (`const int C::k = 5;`): `const` gives internal linkage to a
+  namespace variable only, and that definition is a strong external symbol the script passed.
 
 ### Changed
 
