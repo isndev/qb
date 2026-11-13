@@ -419,6 +419,12 @@ struct ReadCapProbe {
 
 ReadCapProbe g_read_cap;
 
+/// Whether @p Transport is TLS, asked OUTSIDE the session: a session holds its transport as a private base of
+/// `async::tcp::client`, and MSVC checks `Transport::is_secure()` written inside it along that derivation and refuses
+/// it (C2247 / C2248, 19.51), where GCC and clang read the template parameter.
+template <typename Transport>
+inline constexpr bool is_tls_transport = Transport::is_secure();
+
 template <typename Transport, typename Accept>
 class ReadCapServer;
 
@@ -438,7 +444,7 @@ public:
     void
     on(typename Protocol::message &&msg) {
         g_read_cap.delivered(msg.text, this->in().size());
-        if constexpr (Transport::is_secure()) {
+        if constexpr (is_tls_transport<Transport>) {
             if (SSL_pending(this->transport().ssl_handle()) > 0 && waiting_in_socket(this->transport()) == std::optional<std::size_t>{0u})
                 ++g_read_cap.held_with_an_empty_socket;
         }
