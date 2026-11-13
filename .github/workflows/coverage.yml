@@ -40,7 +40,7 @@ jobs:
 
       - name: Build and run each variant
         run: |
-          set -uo pipefail
+          set +e -uo pipefail
           o="${RUNNER_TEMP}/oracle"
           t=qb-io-test-unit-over-aligned-promise
           common=(-G Ninja -DQB_CXX_STANDARD=20 -DQB_BUILD_EXAMPLES=OFF -DQB_BUILD_BENCHMARKS=OFF -DQB_USE_SYSTEM_GTEST=ON
