@@ -367,10 +367,28 @@ public:
      */
     void
     close() noexcept {
+        quiet_if_cut_(); // dropped output: no TLS close_notify (Huly QB-1270)
         _out_buffer.reset();
         if constexpr (qb::has_disconnect<_IO_>)
             _out.disconnect();
         _out.close();
+    }
+
+private:
+    /**
+     * @brief A stream closed with output still queued is cut, not ended (Huly QB-1270).
+     * @details A TLS transport ends its stream with a `close_notify` when it disconnects, which tells the peer that
+     *          what it received is whole. Output that is dropped with the stream says otherwise: the session is ended
+     *          without the alert (`quiet_shutdown()`), and the peer reads a truncated stream. Nothing on a transport
+     *          that has no such end. An io object that disposes judges its stream itself (`io<>::dispose()`); this is
+     *          for a stream that is closed, or destroyed, without one.
+     */
+    void
+    quiet_if_cut_() noexcept {
+        if constexpr (requires(_IO_ &io) { io.quiet_shutdown(); }) {
+            if (_out_buffer.size() != 0)
+                _out.quiet_shutdown();
+        }
     }
 };
 
@@ -421,6 +439,15 @@ protected:
         QB_MAX_WRITE_BUFFER_SIZE; /**< Maximum allowed size for the output buffer (DoS protection). Configurable at runtime. */
 
 public:
+    /**
+     * @brief Destructor: a stream destroyed with output still queued is cut, as by `close()`.
+     * @details `~istream()` closes the transport after this destructor ran -- through its own `close()`, which
+     *          cannot see the output queue.
+     */
+    ~stream() noexcept {
+        quiet_if_cut_();
+    }
+
     /**
      * @brief Get the output buffer
      * @return Reference to the output buffer
@@ -530,8 +557,26 @@ public:
      */
     void
     close() noexcept {
+        quiet_if_cut_(); // dropped output: no TLS close_notify (Huly QB-1270)
         _out_buffer.reset();
         static_cast<istream<_IO_> &>(*this).close();
+    }
+
+private:
+    /**
+     * @brief A stream closed or destroyed with output still queued is cut, not ended (Huly QB-1270).
+     * @details A TLS transport ends its stream with a `close_notify` when it disconnects, which tells the peer that
+     *          what it received is whole. Output that is dropped with the stream says otherwise: the session is ended
+     *          without the alert (`quiet_shutdown()`), and the peer reads a truncated stream. Nothing on a transport
+     *          that has no such end. An io object that disposes judges its stream itself (`io<>::dispose()`); this is
+     *          for a stream that is closed, or destroyed, without one.
+     */
+    void
+    quiet_if_cut_() noexcept {
+        if constexpr (requires(_IO_ &io) { io.quiet_shutdown(); }) {
+            if (_out_buffer.size() != 0)
+                this->_in.quiet_shutdown();
+        }
     }
 };
 

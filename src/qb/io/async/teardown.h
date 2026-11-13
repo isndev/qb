@@ -101,8 +101,8 @@ close_bound(bool datagram, int reason, qb::duration linger) noexcept {
  * @details TLS has its own end of stream -- the `close_notify` alert -- and a peer that reads the TCP FIN without it
  *          cannot tell a stream its sender ended from one something cut (OpenSSL 3 reports an unexpected EOF). The
  *          transport sends it (`close_notify()`: once, never awaited, never blocking) or ends its session without
- *          a word (`quiet_shutdown()`); WHICH is decided here, where the io object knows who ended the connection
- *          and whether it wrote everything it had queued (`end_cut_stream`, `end_transport`; Huly QB-1270).
+ *          a word (`quiet_shutdown()`); WHICH is decided here, where the io object knows whether it wrote
+ *          everything it had queued, whoever ended the connection (`end_cut_stream`, `end_transport`; Huly QB-1270).
  */
 template <typename Transport>
 concept tls_transport = requires(Transport &transport) {
@@ -111,36 +111,41 @@ concept tls_transport = requires(Transport &transport) {
 };
 
 /**
- * @brief End a TLS transport's session without a `close_notify`; nothing on any other transport.
- * @details For a connection the peer ended: nothing is said back.
- */
-template <typename Transport>
-constexpr void
-end_quietly([[maybe_unused]] Transport &transport) noexcept {
-    if constexpr (tls_transport<Transport>)
-        transport.quiet_shutdown();
-}
-
-/**
  * @brief End without a word the TLS stream of a connection that does not end as a whole one; nothing on any other
  *        transport.
- * @details A connection the peer ended, and one that ends with output still queued: it is dropped, so the stream is
- *          cut short and a `close_notify` would tell the peer it is whole. Every other stream is left to say it:
- *          through `end_transport` when the descriptor goes to the loop, from `ssl::socket::disconnect()` when a
- *          session closes with its destructor (a linger of zero, a size guard), and not a second time after a
+ * @details A connection that ends with output still queued, whoever ended it: the output is dropped, so the stream
+ *          is cut short and a `close_notify` would tell the peer it is whole. Every other stream is left to say it:
+ *          through `end_transport` when the descriptor goes to the loop, from `ssl::socket::disconnect()` when the
+ *          transport closes with its object -- a session's destructor (a linger of zero, a size guard), a connection
+ *          the peer ended, where the alert answers the peer's own --, and not a second time after a
  *          lingering `close_after_deliver()`. `io<>::dispose()` and `output<>::dispose()` judge the stream BEFORE
  *          `on(event::disconnected&&)` runs, with what is queued then -- a hook that closes the transport itself, or
  *          empties the queue, changes nothing -- and a session's once more after it, with what the hook queued; an
  *          `input<>` has no queue and is judged once. Inside the hook a stream so ended takes no more output.
- * @param ended_by_peer Whether the peer's EOF or a socket error ended the connection.
  * @param complete      Whether the object wrote everything it had queued: its `pendingWrite()` is zero.
  */
 template <typename Transport>
 constexpr void
-end_cut_stream([[maybe_unused]] Transport &transport, [[maybe_unused]] bool ended_by_peer, [[maybe_unused]] bool complete) noexcept {
+end_cut_stream([[maybe_unused]] Transport &transport, [[maybe_unused]] bool complete) noexcept {
     if constexpr (tls_transport<Transport>) {
-        if (ended_by_peer || !complete)
+        if (!complete)
             transport.quiet_shutdown();
+    }
+}
+
+/**
+ * @brief Mark as cut the TLS stream of a transport that leaves its object with output still queued; nothing on any
+ *        other transport.
+ * @details `io_handler::extractSession()`: the session's queue dies with the session and the transport goes on under
+ *          another owner. The octets are missing from the middle of the stream: its end must not say it is whole
+ *          (`ssl::socket::mark_cut()`), and the stream must go on meanwhile -- which is why it is not ended here.
+ */
+template <typename Transport>
+constexpr void
+mark_cut_stream([[maybe_unused]] Transport &transport, [[maybe_unused]] bool output_queued) noexcept {
+    if constexpr (requires { transport.mark_cut(); }) {
+        if (output_queued)
+            transport.mark_cut();
     }
 }
 
@@ -168,15 +173,18 @@ shutdown_send([[maybe_unused]] Transport &transport, std::remove_cv_t<decltype(q
  *          connection and the work it routed for it alive, and a client whose peer hung up stayed in CLOSE_WAIT
  *          (Huly QB-1060; qbm-http's HTTP/2 client met it as QB-1021). Every standalone `dispose()` calls this
  *          after `on(event::disconnected&&)`, which still sees the transport as the connection left it (a TLS
- *          stream that is cut or was ended by its peer is already ended there: it takes no more output), and
+ *          stream that is cut is already ended there, and so is one a fatal error ended: it takes no output), and
  *          before `on(event::dispose&&)`, the one hook that may free the object; the watcher is stopped first,
  *          since libev must not watch a descriptor closed under it. How depends on who ended the connection:
  *
  *          - The peer or the socket (`ended_by_peer`): its EOF, a read or a write error. Nothing of ours can be
  *            lost -- the peer sends nothing more and what it sent was read -- so the transport is closed
  *            outright: `disconnect()` when it has one, as `stream::close()` does (the TLS socket clears its
- *            connected state there), then `close()`, which releases the descriptor. A TLS session is ended
- *            without a word first (`end_quietly`): a peer that ended the connection is not answered.
+ *            connected state there), then `close()`, which releases the descriptor. A TLS socket's
+ *            `disconnect()` answers the peer's `close_notify` with this side's own when the peer ended the session
+ *            with one and nothing queued is dropped (`complete`); no `close_notify` follows the peer's bare EOF or a
+ *            fatal error (OpenSSL holds no session to end, and wrote the fatal alert the error called for itself),
+ *            and nothing at all a reset (the socket recorded its end when it met it).
  *          - This object: `disconnect()`, a framing error, a size guard, the end of `close_after_deliver()`.
  *            Closing here would reset a peer whose bytes are still unread: its next send fails, and on Windows it
  *            also drops what it received and has not read yet -- the tail of the very reply
@@ -205,7 +213,7 @@ shutdown_send([[maybe_unused]] Transport &transport, std::remove_cv_t<decltype(q
  *          Out of line and cold, like the hooks around it.
  * @param transport     The object's transport (`Derived.transport()`).
  * @param ended_by_peer Whether the peer's EOF or a socket error ended the connection, rather than this object.
- * @param complete      For a connection this object ended: whether it wrote everything it had queued -- its
+ * @param complete      Whether the object wrote everything it had queued -- its
  *                      `pendingWrite()` was zero before `on(event::disconnected&&)` ran (a hook that clears the
  *                      queue drops output all the same) and is zero after it. What a TLS transport's `close_notify`
  *                      asserts, and read by one alone: an object that disconnects with output still queued drops
@@ -217,8 +225,8 @@ shutdown_send([[maybe_unused]] Transport &transport, std::remove_cv_t<decltype(q
 template <typename Transport>
 QB_NOINLINE QB_COLD void
 end_transport(Transport &transport, bool ended_by_peer, [[maybe_unused]] bool complete, qb::duration linger) noexcept {
+    end_cut_stream(transport, complete); // output dropped since the stream was judged (a hook that queued more)
     if (ended_by_peer) {
-        end_quietly(transport);
         if constexpr (qb::has_disconnect<Transport>)
             static_cast<void>(transport.disconnect());
         if constexpr (requires { transport.close(); })

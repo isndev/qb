@@ -13,13 +13,17 @@
  *
  * - **Sent**: a standalone object's `disconnect()`, `disconnect_now()` and `close_after_deliver()`; a server session
  *   that ends its connection, handed to the loop or lingering through `close_after_deliver()` (the alert follows the
- *   delivered bytes and precedes the half-close); an object destroyed while connected; `ssl::socket::disconnect()`
- *   called directly; a close "at once" -- a linger of zero, a size guard -- whose output was written.
- * - **Not sent**: when the peer ended the connection (its own `close_notify`, or its EOF); before the handshake
- *   completed; when this side drops output it had queued -- that stream IS cut, and saying otherwise would tell the
- *   peer a truncated reply is whole; after `quiet_shutdown()`.
+ *   delivered bytes and precedes the half-close); an object, or a stream, closed or destroyed while connected with
+ *   nothing left to write; `ssl::socket::disconnect()` called directly; a close "at once" -- a linger of zero, a size
+ *   guard -- whose output was written; the answer to a peer that ended the session with its own `close_notify`
+ *   (RFC 8446 6.1), by a client, a session, an `input<>` object or session, or the socket alone.
+ * - **Not sent**: before the handshake completed; after the peer's bare EOF, a fatal error, or a reset -- nothing is
+ *   even written into a reset connection; when this side drops output it had queued, whoever ended the connection --
+ *   that stream IS cut, and saying otherwise would tell the peer a truncated reply is whole: a stream closed or
+ *   destroyed with output queued, a session extracted with output queued (its stream marked cut: the next owner's
+ *   close says nothing either); after `quiet_shutdown()`; in OpenSSL's own quiet-shutdown mode.
  * - **Never in the way**: one call, no wait -- a socket that cannot take the alert is closed without it, a blocking
- *   socket included; nothing is left in the thread's OpenSSL error queue.
+ *   socket included; nothing is left in the thread's OpenSSL error queue; no SIGPIPE is raised.
  * - **Sessions stay resumable**: a session saved from a connection resumes after that connection is closed, by this
  *   side or by its peer -- OpenSSL discards the session of an `SSL` object freed without its shutdown state set,
  *   which is what every qb close did since the `SSL_shutdown()` call was dropped.
@@ -35,6 +39,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <csignal>
 #include <cstdint>
 #include <functional>
 #include <iostream>
@@ -42,6 +47,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <utility>
 
 #include <gtest/gtest.h>
 
@@ -311,6 +317,18 @@ fill(::socket_type socket) {
     return sent;
 }
 
+/// `ssl::socket::mark_cut()`, where the tree has it.
+template <typename Socket>
+bool
+mark_cut(Socket &socket) {
+    if constexpr (requires { socket.mark_cut(); }) {
+        socket.mark_cut();
+        return true;
+    } else {
+        return false;
+    }
+}
+
 /// `ssl::socket::close_notify()`, where the tree has it: the witness builds against a tree that sends none.
 template <typename Socket>
 bool
@@ -382,6 +400,10 @@ struct State {
     qb::duration       linger           = 20s;   ///< Long: a session that ends at once did not wait for its bound.
     bool               clear_in_hook    = false; ///< on(event::disconnected&&) empties the session's output queue.
     bool               queue_in_hook    = false; ///< ...or queues output nobody will write.
+    std::size_t        held             = 0;     ///< What a session asked to "hold" had queued when it returned.
+    bool               clear_on_extract = false; ///< on(event::extracted&&) empties the session's output queue.
+    bool               queue_on_extract = false; ///< ...or queues output the session will never write.
+    int                extracted        = 0;
     std::size_t        max_message_size = 0;
 };
 State *g_state = nullptr;
@@ -418,6 +440,9 @@ public:
             set_linger(qb::duration::zero());
             *this << LAST;
             disconnect();
+        } else if (message.text == "hold") { // queues more than one pass writes, and stays connected
+            publish(std::string(CUT, 'c'));
+            g_state->held = this->out().size();
         } else if (message.text == "cut") { // ends with output still queued: it is dropped
             publish(std::string(CUT, 'c'));
             disconnect();
@@ -430,6 +455,15 @@ public:
         if (g_state->clear_in_hook) // what a reconnecting client does with a dead connection's bytes
             this->out().reset();
         if (g_state->queue_in_hook)
+            this->out() << LAST;
+    }
+
+    void
+    on(qb::io::async::event::extracted &&) {
+        ++g_state->extracted;
+        if (g_state->clear_on_extract)
+            this->out().reset();
+        if (g_state->queue_on_extract)
             this->out() << LAST;
     }
 };
@@ -617,11 +651,74 @@ public:
     }
 };
 
-/// A protocol that never finds a message.
-class NoMessage : public qb::io::async::AProtocol<TlsInput> {
+/// A server-side session on `input<>` alone. Its transport is a TLS STREAM, as a shipped session's is: the stream's
+/// destructor closes the socket, through `ssl::socket::disconnect()`.
+class TlsInputSession : public qb::io::async::input<TlsInputSession> {
+    qb::io::transport::stcp   _stream;
+    qb::allocator::pipe<char> _in;
+    Registry                 &_server;
+
 public:
-    explicit NoMessage(TlsInput &io) noexcept
-        : AProtocol(io) {}
+    constexpr static const bool has_server = true;
+
+    std::size_t disconnected_events = 0;
+
+    explicit TlsInputSession(Registry &owner)
+        : _server(owner) {}
+
+    Registry &
+    server() noexcept {
+        return _server;
+    }
+    [[nodiscard]] int
+    id() const noexcept {
+        return 1;
+    }
+    qb::io::tcp::ssl::socket &
+    transport() noexcept {
+        return _stream.transport();
+    }
+    qb::allocator::pipe<char> &
+    in() noexcept {
+        return _in;
+    }
+    [[nodiscard]] std::size_t
+    pendingRead() const noexcept {
+        return _in.size();
+    }
+
+    int
+    read() noexcept {
+        constexpr std::size_t chunk = 4096;
+        auto *const           into  = _in.allocate_back(chunk);
+        const int             ret   = transport().read(into, chunk);
+        _in.free_back(ret > 0 ? chunk - static_cast<std::size_t>(ret) : chunk);
+        return ret;
+    }
+    void
+    flush(std::size_t size) noexcept {
+        _in.free_front(size);
+    }
+    void
+    eof() noexcept {
+        if (_in.empty())
+            _in.reset();
+        else
+            _in.reorder();
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) noexcept {
+        ++disconnected_events;
+    }
+};
+
+/// A protocol that never finds a message.
+template <typename IO>
+class NoMessageOf : public qb::io::async::AProtocol<IO> {
+public:
+    explicit NoMessageOf(IO &io) noexcept
+        : qb::io::async::AProtocol<IO>(io) {}
 
     std::size_t
     getMessageSize() noexcept final {
@@ -632,16 +729,148 @@ public:
     void
     reset() noexcept final {}
 };
+using NoMessage = NoMessageOf<TlsInput>;
 
-/// The peer resets the connection: a close with a linger of zero seconds is an RST, not a FIN.
+/// The peer resets the connection: a close with a linger of zero seconds and no shutdown first is an RST alone, not
+/// a FIN (which a shutdown would send before it, and the reader would read as an EOF).
 void
 reset_connection(qb::io::tcp::socket &peer) {
     struct linger hard{};
     hard.l_onoff  = 1;
     hard.l_linger = 0;
     ASSERT_EQ(::setsockopt(peer.native_handle(), SOL_SOCKET, SO_LINGER, reinterpret_cast<const char *>(&hard), sizeof(hard)), 0);
-    peer.close();
+    peer.close(QB_SD_NONE);
 }
+
+/// What the write callback below counts: every write a socket BIO it watches attempts, taken or refused.
+std::size_t g_write_attempts = 0;
+
+/// Counts, from here on, every write the `SSL` object's socket BIO attempts -- an alert written into a dead connection
+/// is one even when the system refuses it, which neither the peer nor `BIO_number_written()` would show. The callback
+/// lives as long as the BIO; the counter is global, so nothing dangles when the BIO goes with its `SSL` object.
+void
+count_write_attempts(SSL *ssl) {
+    BIO *const bio = SSL_get_wbio(ssl);
+    ASSERT_NE(bio, nullptr);
+    g_write_attempts = 0;
+    BIO_set_callback_ex(bio, [](BIO *, int oper, const char *, std::size_t, int, long, int ret, std::size_t *) -> long {
+        if (oper == BIO_CB_WRITE)
+            ++g_write_attempts;
+        return ret;
+    });
+}
+
+/**
+ * @brief A filter BIO over a socket BIO that fails the next write, or read, once with a system error the caller
+ *        names: what a socket that refuses one call does. It sets no retry flag, so OpenSSL reports the call as
+ *        `SSL_ERROR_SYSCALL` -- as it does for `ENOBUFS` from a real socket, which its socket BIO does not retry.
+ */
+namespace inject_once {
+int fail_write = 0; ///< The system error the next write fails with, once; 0: none.
+int fail_read  = 0; ///< The same for the next read.
+
+int
+write(BIO *bio, const char *in, int size) {
+    BIO_clear_retry_flags(bio);
+    if (const int error = std::exchange(fail_write, 0)) {
+        qb::io::socket::set_last_errno(error);
+        return -1;
+    }
+    const int ret = BIO_write(BIO_next(bio), in, size);
+    BIO_copy_next_retry(bio);
+    return ret;
+}
+int
+read(BIO *bio, char *out, int size) {
+    BIO_clear_retry_flags(bio);
+    if (const int error = std::exchange(fail_read, 0)) {
+        qb::io::socket::set_last_errno(error);
+        return -1;
+    }
+    const int ret = BIO_read(BIO_next(bio), out, size);
+    BIO_copy_next_retry(bio);
+    return ret;
+}
+long
+ctrl(BIO *bio, int cmd, long num, void *ptr) {
+    return BIO_ctrl(BIO_next(bio), cmd, num, ptr);
+}
+int
+create(BIO *bio) {
+    BIO_set_init(bio, 1);
+    return 1;
+}
+BIO_METHOD *
+method() {
+    static BIO_METHOD *const methods = [] {
+        BIO_METHOD *const m = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_FILTER, "qb-test-fail-once");
+        BIO_meth_set_write(m, &inject_once::write);
+        BIO_meth_set_read(m, &inject_once::read);
+        BIO_meth_set_ctrl(m, &inject_once::ctrl);
+        BIO_meth_set_create(m, &inject_once::create);
+        return m;
+    }();
+    return methods;
+}
+
+/// The filter over the socket BIO `ssl` writes through (`writes`) or reads through: the descriptor it carries is
+/// still the socket's (the filter passes every control on).
+void
+install(SSL *ssl, bool writes) {
+    BIO *const sock = writes ? SSL_get_wbio(ssl) : SSL_get_rbio(ssl);
+    ASSERT_NE(sock, nullptr);
+    BIO *const filter = BIO_new(method());
+    ASSERT_NE(filter, nullptr);
+    ASSERT_EQ(BIO_up_ref(sock), 1); // the filter's own reference: the SSL object lets go of the one it replaces
+    BIO_push(filter, sock);
+    if (writes)
+        SSL_set0_wbio(ssl, filter);
+    else
+        SSL_set0_rbio(ssl, filter);
+}
+} // namespace inject_once
+
+#if !defined(_WIN32)
+/// While it lives, SIGPIPE is counted rather than ignored: a write into a connection its peer reset raises it, and an
+/// application that put the default disposition back would end there.
+class SigpipeCount {
+    struct sigaction                  _previous{};
+    static volatile std::sig_atomic_t raised;
+
+    static void
+    count(int) noexcept {
+        raised = raised + 1;
+    }
+
+public:
+    SigpipeCount() {
+        raised = 0;
+        struct sigaction counting{};
+        counting.sa_handler = &SigpipeCount::count;
+        sigemptyset(&counting.sa_mask);
+        ::sigaction(SIGPIPE, &counting, &_previous);
+    }
+    SigpipeCount(SigpipeCount const &)            = delete;
+    SigpipeCount &operator=(SigpipeCount const &) = delete;
+    ~SigpipeCount() {
+        ::sigaction(SIGPIPE, &_previous, nullptr);
+    }
+
+    [[nodiscard]] int
+    count() const noexcept {
+        return static_cast<int>(raised);
+    }
+};
+volatile std::sig_atomic_t SigpipeCount::raised = 0;
+#else
+/// Windows raises no SIGPIPE: nothing to count.
+struct SigpipeCount {
+    [[nodiscard]] static int
+    count() noexcept {
+        return 0;
+    }
+};
+#endif
 
 void first_connection(RawPeer &peer, qb::io::tcp::ssl::socket &client, qb::io::ssl::Session &session);
 
@@ -769,6 +998,47 @@ protected:
         EXPECT_EQ(SSL_session_reused(client.ssl_handle()), 1) << "the client made a full handshake: its saved session was discarded";
         static_cast<void>(client.disconnect());
         client.close();
+    }
+
+    /// A standalone client whose raw peer ends the TLS session FIRST -- its close_notify, its sending side shut down --
+    /// and then reads to the end: what that peer read.
+    TlsEnd
+    peer_ends_a_client(int max_version) {
+        TlsEnd end;
+        [&] {
+            RawContext context{RawContext::role::server, max_version};
+            RawPeer    peer{context, RawContext::role::server};
+            TlsClient  client;
+            ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+            client.start();
+            pump(20ms); // the client reads what the handshake left for it (TLS 1.3: the session tickets)
+            ASSERT_EQ(peer.close_notify(), 0) << "the peer's own close_notify was not sent";
+            ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+            ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+            EXPECT_EQ(client.reason, 0) << "the peer's close_notify must read as the peer's end of the connection";
+            EXPECT_EQ(client.system_error, 0);
+            EXPECT_EQ(closing(), 0u) << "a connection its peer ended is closed outright";
+            end = peer.read_to_end();
+        }();
+        return end;
+    }
+
+    /// The same for a server session: the raw client ends the TLS session first and waits for the session's answer.
+    TlsEnd
+    peer_ends_a_session(int max_version) {
+        TlsEnd end;
+        [&] {
+            RawContext context{RawContext::role::client, max_version};
+            RawPeer    peer{context, RawContext::role::client};
+            ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+            pump(20ms);
+            ASSERT_EQ(state.destroyed, 0);
+            ASSERT_EQ(peer.close_notify(), 0) << "the peer's own close_notify was not sent";
+            ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+            ASSERT_TRUE(pump_while_not([&] { return state.destroyed == 1; })) << "the session did not end on its peer's close_notify";
+            end = peer.read_to_end();
+        }();
+        return end;
     }
 
     /// The whole of a standalone client's own close, as its raw peer read it: `how` ends the connection.
@@ -1258,28 +1528,489 @@ TEST_F(TlsCloseNotify, AReadAfterThePeersCloseNotifyIsAnEndAndNoWouldBlock) {
     client.close();
 }
 
-// ─────────────────────────────── when none is sent ───────────────────────────────
+// ─────────────────────────────── the peer ended the session first: it is answered ───────────────────────────────
+// Each side sends its close_notify before it closes its sending direction (RFC 8446 6.1), whoever was first. A peer
+// that sent its own and still reads -- OpenSSL's two-step shutdown -- reads this side's alert, then the FIN.
 
-// The peer ended the connection with its own close_notify: nothing is said back, on the wire -- the peer, which
-// half-closed and still reads, gets the FIN and not one octet.
-TEST_F(TlsCloseNotify, AConnectionThePeerEndedIsNotAnswered) {
+TEST_F(TlsCloseNotify, APeersCloseNotifyIsAnswered) {
+    const TlsEnd end = peer_ends_a_client(0);
+    note("peer-ended (its close_notify), the client answers", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+TEST_F(TlsCloseNotify, APeersCloseNotifyIsAnsweredOverTls12) {
+    const TlsEnd end = peer_ends_a_client(TLS1_2_VERSION);
+    note("peer-ended (its close_notify), the client answers, TLS 1.2", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+TEST_F(TlsCloseNotify, ASessionAnswersItsPeersCloseNotify) {
+    const TlsEnd end = peer_ends_a_session(0);
+    note("peer-ended (its close_notify), the session answers", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+TEST_F(TlsCloseNotify, ASessionAnswersItsPeersCloseNotifyOverTls12) {
+    const TlsEnd end = peer_ends_a_session(TLS1_2_VERSION);
+    note("peer-ended (its close_notify), the session answers, TLS 1.2", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+// input<> has no queue: the peer's close_notify is answered by a standalone object, through end_transport...
+TEST_F(TlsCloseNotify, AnInputObjectAnswersItsPeersCloseNotify) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    TlsInput   object;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, object.transport()));
+    ASSERT_NE(object.switch_protocol<NoMessage>(object), nullptr);
+    object.start();
+    pump(20ms);
+    ASSERT_EQ(peer.close_notify(), 0);
+    ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+    ASSERT_TRUE(pump_while_not([&] { return object.disconnected_events == 1u; }));
+    EXPECT_EQ(closing(), 0u) << "a connection its peer ended is closed outright";
+    const TlsEnd end = peer.read_to_end();
+    note("input<> object, peer-ended (its close_notify), answered", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+// ...and by a session, when its stream closes after its server released it.
+TEST_F(TlsCloseNotify, AnInputSessionAnswersItsPeersCloseNotify) {
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    Registry   registry;
+    auto       session = std::make_unique<TlsInputSession>(registry);
+    ASSERT_NO_FATAL_FAILURE(accept_from(peer, session->transport()));
+    ASSERT_NE(session->switch_protocol<NoMessageOf<TlsInputSession>>(*session), nullptr);
+    session->start();
+    pump(20ms);
+    ASSERT_EQ(session->disconnected_events, 0u);
+    ASSERT_EQ(peer.close_notify(), 0);
+    ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+    ASSERT_TRUE(pump_while_not([&] { return registry.released == 1u; })) << "the session was never handed back";
+    EXPECT_EQ(session->disconnected_events, 1u);
+    session.reset(); // its owner lets it go: the stream closes the socket
+    const TlsEnd end = peer.read_to_end();
+    note("input<> session, peer-ended (its close_notify), answered", end);
+    EXPECT_CLEAN_END(end, "");
+}
+
+// A peer that closed at once after its alert -- what most do: the answer meets a connection its peer has left. It
+// costs nothing: the system takes the write and the peer's answers it with a reset nobody reads, no SIGPIPE is
+// raised, the application is told the peer ended the connection, nothing is left in the thread's OpenSSL error
+// queue, and both ends of the session are recorded (the session resumes: the cases below).
+TEST_F(TlsCloseNotify, AnAnswerToAPeerThatClosedAtOnceCostsNothing) {
+    for (const int version : {0, TLS1_2_VERSION}) {
+        RawContext context{RawContext::role::server, version};
+        RawPeer    peer{context, RawContext::role::server};
+        TlsClient  client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        SSL *const ssl = client.transport().ssl_handle();
+        ASSERT_NE(ssl, nullptr);
+        const auto written = BIO_number_written(SSL_get_wbio(ssl)); // what the client wrote so far: its handshake
+        ASSERT_EQ(peer.close_notify(), 0);
+        const SigpipeCount sigpipes;
+        peer.tcp.close(); // at once: this side's answer is written to a connection its peer has left
+        ERR_clear_error();
+        ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+        EXPECT_EQ(client.reason, 0) << "the peer's close_notify must read as the peer's end of the connection";
+        EXPECT_EQ(ERR_peek_error(), 0ul) << "the answer left an error in the thread's queue";
+        EXPECT_FALSE(client.transport().is_open());
+        EXPECT_EQ(closing(), 0u);
+        ASSERT_EQ(client.transport().ssl_handle(), ssl);
+        EXPECT_GT(BIO_number_written(SSL_get_wbio(ssl)), written) << "the case proves nothing: no answer was written";
+        EXPECT_EQ(SSL_get_shutdown(ssl), SSL_SENT_SHUTDOWN | SSL_RECEIVED_SHUTDOWN);
+        pump(20ms); // the loop goes on: nothing of that connection is left to wake it
+        EXPECT_EQ(sigpipes.count(), 0) << "the answer raised SIGPIPE";
+    }
+}
+
+// The peer RESETS the connection: OpenSSL reads a socket error (SSL_ERROR_SYSCALL), not an end of its stream, and
+// keeps the session as it was -- but no alert may follow on a connection that is gone: nothing is written into it,
+// and no SIGPIPE is raised. By a client, a session and the socket alone, the reset met by a read or by a write.
+TEST_F(TlsCloseNotify, AClientWhosePeerResetTheConnectionWritesNothingIntoIt) {
+    for (const int version : {0, TLS1_2_VERSION}) {
+        RawContext context{RawContext::role::server, version};
+        RawPeer    peer{context, RawContext::role::server};
+        TlsClient  client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.transport().ssl_handle()));
+        const SigpipeCount sigpipes;
+        ASSERT_NO_FATAL_FAILURE(reset_connection(peer.tcp));
+        ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+        EXPECT_NE(client.system_error, 0) << "the case proves nothing: the client read no reset";
+        EXPECT_EQ(g_write_attempts, 0u) << "something was written into a connection its peer reset";
+        EXPECT_EQ(sigpipes.count(), 0) << "a write into a connection its peer reset raised SIGPIPE";
+        EXPECT_EQ(ERR_peek_error(), 0ul);
+        EXPECT_FALSE(client.transport().is_open());
+        EXPECT_EQ(closing(), 0u) << "a connection its peer reset is closed outright";
+    }
+}
+
+TEST_F(TlsCloseNotify, ASessionWhosePeerResetTheConnectionWritesNothingIntoIt) {
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    pump(20ms);
+    ASSERT_EQ(server->sessions().size(), 1u);
+    ASSERT_NO_FATAL_FAILURE(count_write_attempts(server->sessions().begin()->second->transport().ssl_handle()));
+    const SigpipeCount sigpipes;
+    ASSERT_NO_FATAL_FAILURE(reset_connection(peer.tcp));
+    ASSERT_TRUE(pump_while_not([&] { return state.destroyed == 1; })) << "the session did not end on its peer's reset";
+    EXPECT_EQ(state.disconnected, 1);
+    EXPECT_EQ(g_write_attempts, 0u) << "something was written into a connection its peer reset";
+    EXPECT_EQ(sigpipes.count(), 0) << "a write into a connection its peer reset raised SIGPIPE";
+}
+
+TEST_F(TlsCloseNotify, ASocketThatReadAResetWritesNothingMore) {
+    for (const int version : {0, TLS1_2_VERSION}) {
+        RawContext               context{RawContext::role::server, version};
+        RawPeer                  peer{context, RawContext::role::server};
+        qb::io::tcp::ssl::socket client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+        ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+        ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
+        const SigpipeCount sigpipes;
+        ASSERT_NO_FATAL_FAILURE(reset_connection(peer.tcp));
+        char       octet    = 0;
+        int        got      = 0;
+        const auto deadline = steady::now() + 5s;
+        while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
+            std::this_thread::sleep_for(1ms);
+        const int error = qb::io::socket::get_last_errno();
+        ASSERT_EQ(got, -1) << "the socket never read the reset";
+        EXPECT_FALSE(qb::io::socket::not_recv_error(error)) << "the case proves nothing: the read met no socket error";
+        EXPECT_NE(error, 0) << "the read's socket error was not left for its caller";
+        EXPECT_EQ(SSL_in_init(client.ssl_handle()), 0) << "the case proves nothing: OpenSSL took the reset for a fatal error";
+        EXPECT_FALSE(send_close_notify(client)) << "an alert was attempted after a reset";
+        static_cast<void>(client.disconnect());
+        EXPECT_EQ(g_write_attempts, 0u) << "something was written into a connection its peer reset";
+        EXPECT_EQ(sigpipes.count(), 0) << "a write into a connection its peer reset raised SIGPIPE";
+        EXPECT_EQ(ERR_peek_error(), 0ul);
+        client.close();
+    }
+}
+
+// A socket error the io layer reads as "try again" is not a reset: the io layer makes the call again, and the session
+// must go on. ENOBUFS on a write is one -- OpenSSL's socket BIO reports it as SSL_ERROR_SYSCALL, qb-io writes again
+// (socket::not_send_error()) -- and the stream ends whole after the retry.
+TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesDoesNotEndTheSession) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.ssl_handle(), true));
+    inject_once::fail_write = ENOBUFS;
+    ASSERT_EQ(client.write(LAST.data(), LAST.size()), -1) << "the case proves nothing: the write did not fail";
+    const int error = qb::io::socket::get_last_errno();
+    ASSERT_TRUE(qb::io::socket::not_send_error(error)) << "the case proves nothing: the io layer would not write again (" << error << ")";
+    ERR_clear_error();
+    EXPECT_EQ(client.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the write the io layer makes again failed";
+    EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("ssl::socket: one write refused with ENOBUFS, written again, disconnect()", end);
+    EXPECT_CLEAN_END(end, LAST);
+    client.close();
+}
+
+// ...and so is an EINTR OpenSSL reports on a read (its socket BIO retries one itself: this is the contract of the
+// layer, kept the same both ways).
+TEST_F(TlsCloseNotify, AReadErrorTheIoLayerRetriesDoesNotEndTheSession) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.ssl_handle(), false));
+    ASSERT_TRUE(peer.write("y"));
+    inject_once::fail_read = EINTR;
+    char octet             = 0;
+    ASSERT_EQ(client.read(&octet, 1), -1) << "the case proves nothing: the read did not fail";
+    const int error = qb::io::socket::get_last_errno();
+    ASSERT_TRUE(qb::io::socket::not_recv_error(error)) << "the case proves nothing: the io layer would not read again (" << error << ")";
+    int        got      = 0;
+    const auto deadline = steady::now() + 5s;
+    while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    EXPECT_EQ(got, 1) << "the read the io layer makes again failed";
+    EXPECT_EQ(octet, 'y');
+    EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("ssl::socket: one read refused with EINTR, read again, disconnect()", end);
+    EXPECT_CLEAN_END(end, "");
+    client.close();
+}
+
+// The reset met by a write: the write fails (and, unless the process ignores it, raises SIGPIPE itself, as any write
+// into a reset connection does -- that is not the close's doing, and not counted here); nothing is written after it.
+TEST_F(TlsCloseNotify, ASocketThatWroteIntoAResetWritesNothingMore) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_NO_FATAL_FAILURE(reset_connection(peer.tcp));
+    int        got      = 0;
+    const auto deadline = steady::now() + 5s;
+    while ((got = client.write(LAST.data(), LAST.size())) >= 0 && steady::now() < deadline)
+        std::this_thread::sleep_for(5ms); // a write the system took before the reset arrived
+    ASSERT_EQ(got, -1) << "the socket never refused a write after its peer reset the connection";
+    EXPECT_EQ(SSL_in_init(client.ssl_handle()), 0) << "the case proves nothing: OpenSSL took the reset for a fatal error";
+    ERR_clear_error(); // what the failed write left there is the write's: the close must add nothing
+    ASSERT_NO_FATAL_FAILURE(count_write_attempts(client.ssl_handle()));
+    const SigpipeCount sigpipes;
+    EXPECT_FALSE(send_close_notify(client)) << "an alert was attempted after a reset";
+    static_cast<void>(client.disconnect());
+    EXPECT_EQ(g_write_attempts, 0u) << "something was written into a connection its peer reset";
+    EXPECT_EQ(sigpipes.count(), 0) << "a write into a connection its peer reset raised SIGPIPE";
+    EXPECT_EQ(ERR_peek_error(), 0ul);
+    client.close();
+}
+
+// A peer that ended the session while this side still had output queued: the output is dropped, the stream is cut,
+// and the answer is withheld -- the alert says the stream is whole.
+TEST_F(TlsCloseNotify, APeersCloseNotifyIsNotAnsweredWhenOutputIsDropped) {
     RawContext context{RawContext::role::server};
     RawPeer    peer{context, RawContext::role::server};
     TlsClient  client;
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
     client.start();
-    pump(20ms); // the client reads what the handshake left for it (TLS 1.3: the session tickets)
-    ASSERT_EQ(peer.close_notify(), 0) << "the peer's own close_notify was not sent";
+    pump(20ms);
+    client.publish(std::string(CUT, 'c')); // more than one pass writes; the socket has room for an alert
+    ASSERT_EQ(peer.close_notify(), 0);
     ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
     ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
-    EXPECT_EQ(client.reason, 0) << "the peer's close_notify must read as the peer's end of the connection";
-    EXPECT_EQ(client.system_error, 0);
+    EXPECT_NE(client.queued(), 0u) << "the case proves nothing: nothing was left queued";
     const TlsEnd end = peer.read_to_end();
-    note("peer-ended (its close_notify)", end);
-    EXPECT_FALSE(end.clean()) << "a close_notify answered the peer's: " << end.text();
-    EXPECT_TRUE(end.received.empty());
-    EXPECT_TRUE(end.fin) << end.text();
+    note("peer-ended (its close_notify), output still queued", end);
+    EXPECT_LT(end.received.size(), CUT) << "the case proves nothing: everything queued was written";
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
 }
+
+// ...and so is it when the output is queued by on(event::disconnected&&) itself: the stream is judged again after it.
+TEST_F(TlsCloseNotify, APeersCloseNotifyIsNotAnsweredWhenTheHookQueuesOutput) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    TlsClient  client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.disconnected_hook = [](TlsClient &self) {
+        self.out() << LAST;
+    };
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(peer.close_notify(), 0);
+    ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+    ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+    EXPECT_EQ(client.queued(), LAST.size()) << "the case proves nothing: the hook queued nothing";
+    const TlsEnd end = peer.read_to_end();
+    note("peer-ended (its close_notify), the hook queues output", end);
+    EXPECT_TRUE(end.received.empty());
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+}
+
+// The peer's bare EOF -- no close_notify -- is a fatal error for OpenSSL 3: it holds no session to end, and nothing
+// that says the stream is whole is written.
+TEST_F(TlsCloseNotify, APeersBareEofIsNotAnswered) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    TlsClient  client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+    ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+    const TlsEnd end = peer.read_to_end();
+    note("peer-ended (its bare EOF)", end);
+    EXPECT_FALSE(end.clean()) << "a close_notify answered an end of stream with no alert: " << end.text();
+}
+
+// ─────────────────────────────── a session extracted with output queued ───────────────────────────────
+// io_handler::extractSession() gives the transport to another owner; what the session still had queued dies with the
+// session. Those octets are missing from the middle of the stream: it goes on, and its end must not say it is whole.
+
+TEST_F(TlsCloseNotify, ASessionExtractedWithOutputQueuedLeavesAStreamThatEndsWithoutAlert) {
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    ASSERT_TRUE(peer.write("hold\n"));
+    ASSERT_TRUE(pump_while_not([&] { return state.held != 0; })) << "the session never queued its reply";
+    ASSERT_EQ(server->sessions().size(), 1u);
+    const auto id = server->sessions().begin()->first;
+    ASSERT_NE(server->sessions().begin()->second->out().size(), 0u) << "the case proves nothing: nothing is queued";
+    auto [extracted, found] = server->extractSession(id);
+    ASSERT_TRUE(found);
+    EXPECT_EQ(state.destroyed, 1) << "the session outlived its extraction";
+    qb::io::tcp::ssl::socket owner;
+    owner = std::move(extracted); // the mark travels with the socket, by construction and by assignment
+    ASSERT_TRUE(owner.is_open());
+    ASSERT_EQ(owner.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the stream must go on under its next owner";
+    static_cast<void>(owner.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("session extracted with output queued, its next owner disconnect()s", end);
+    EXPECT_LT(end.received.size(), CUT) << "the case proves nothing: everything the session queued was written";
+    EXPECT_FALSE(end.clean()) << "a stream with octets missing was ended as a whole one: " << end.text();
+    owner.close();
+}
+
+// ...and with nothing queued the stream is whole: its next owner ends it with the alert.
+TEST_F(TlsCloseNotify, ASessionExtractedWithNothingQueuedLeavesAStreamThatEndsWhole) {
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    pump(20ms);
+    ASSERT_EQ(server->sessions().size(), 1u);
+    const auto id = server->sessions().begin()->first;
+    ASSERT_EQ(server->sessions().begin()->second->out().size(), 0u);
+    auto [extracted, found] = server->extractSession(id);
+    ASSERT_TRUE(found);
+    ASSERT_EQ(extracted.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size()));
+    static_cast<void>(extracted.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("session extracted with nothing queued, its next owner disconnect()s", end);
+    EXPECT_CLEAN_END(end, LAST);
+    extracted.close();
+}
+
+// A session whose extracted hook empties its queue: what was queued when the extraction began dies with the session
+// all the same -- the queue is read before the hook as well as after it.
+TEST_F(TlsCloseNotify, ASessionWhoseExtractedHookEmptiesItsQueueLeavesAStreamThatEndsWithoutAlert) {
+    state.clear_on_extract = true;
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    ASSERT_TRUE(peer.write("hold\n"));
+    ASSERT_TRUE(pump_while_not([&] { return state.held != 0; })) << "the session never queued its reply";
+    ASSERT_EQ(server->sessions().size(), 1u);
+    const auto id      = server->sessions().begin()->first;
+    auto       session = server->sessions().begin()->second;
+    ASSERT_NE(session->out().size(), 0u) << "the case proves nothing: nothing is queued";
+    auto [extracted, found] = server->extractSession(id);
+    ASSERT_TRUE(found);
+    EXPECT_EQ(state.extracted, 1) << "the session's extracted hook did not run";
+    EXPECT_EQ(session->out().size(), 0u) << "the case proves nothing: the hook left the queue as it was";
+    session.reset();
+    ASSERT_EQ(extracted.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the stream must go on";
+    static_cast<void>(extracted.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("session extracted with output queued, its hook empties the queue, its next owner disconnect()s", end);
+    EXPECT_LT(end.received.size(), CUT) << "the case proves nothing: everything the session queued was written";
+    EXPECT_FALSE(end.clean()) << "a stream with octets missing was ended as a whole one: " << end.text();
+    extracted.close();
+}
+
+// ...and so it does when that hook queues output: it dies with the session too, the queue is read after the hook.
+TEST_F(TlsCloseNotify, ASessionWhoseExtractedHookQueuesOutputLeavesAStreamThatEndsWithoutAlert) {
+    state.queue_on_extract = true;
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    pump(20ms);
+    ASSERT_EQ(server->sessions().size(), 1u);
+    const auto id      = server->sessions().begin()->first;
+    auto       session = server->sessions().begin()->second;
+    ASSERT_EQ(session->out().size(), 0u);
+    auto [extracted, found] = server->extractSession(id);
+    ASSERT_TRUE(found);
+    EXPECT_EQ(state.extracted, 1) << "the session's extracted hook did not run";
+    EXPECT_EQ(session->out().size(), LAST.size()) << "the case proves nothing: the hook queued nothing";
+    session.reset();
+    ASSERT_EQ(extracted.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the stream must go on";
+    static_cast<void>(extracted.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("session extracted, its hook queues output, its next owner disconnect()s", end);
+    EXPECT_EQ(end.received, LAST) << "the case proves nothing: what the hook queued was written";
+    EXPECT_FALSE(end.clean()) << "a stream with octets missing was ended as a whole one: " << end.text();
+    extracted.close();
+}
+
+// The mark is one session's: the socket's next connection starts without it.
+TEST_F(TlsCloseNotify, ASocketMarkedCutEndsWithoutAlertAndItsNextConnectionEndsWhole) {
+    RawContext               context{RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    {
+        RawPeer peer{context, RawContext::role::server};
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+        ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+        ASSERT_TRUE(mark_cut(client)) << "this tree cannot mark a stream cut";
+        ASSERT_EQ(client.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "a stream marked cut goes on";
+        EXPECT_FALSE(send_close_notify(client)) << "a stream marked cut said it was whole";
+        static_cast<void>(client.disconnect());
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket marked cut, disconnect()", end);
+        EXPECT_EQ(end.received, LAST);
+        EXPECT_FALSE(end.clean()) << "a stream marked cut was ended as a whole one: " << end.text();
+        client.close();
+    }
+    RawPeer peer{context, RawContext::role::server};
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("the same socket's next connection, disconnect()", end);
+    EXPECT_CLEAN_END(end, "");
+    client.close();
+}
+
+// ...and so does another SSL handle given to the socket: the mark is the session's.
+TEST_F(TlsCloseNotify, ASocketGivenAnotherSslHandleStartsWithoutTheMark) {
+    RawContext          context{RawContext::role::server};
+    RawContext          ours{RawContext::role::client};
+    RawPeer             peer{context, RawContext::role::server};
+    qb::io::tcp::socket plain;
+    ASSERT_EQ(plain.connect_v4("127.0.0.1", port), qb::io::SocketStatus::Done);
+    ASSERT_EQ(listener.accept(peer.tcp), qb::io::SocketStatus::Done);
+    qb::io::tcp::ssl::socket client(nullptr, plain);
+    ASSERT_TRUE(mark_cut(client)) << "this tree cannot mark a stream cut";
+    SSL *const handle = SSL_new(ours.ctx);
+    ASSERT_NE(handle, nullptr);
+    SSL_set_connect_state(handle);
+    client.init(handle); // owned by the socket from here
+    ASSERT_EQ(client.set_nonblocking(true), 0);
+    ASSERT_NO_FATAL_FAILURE(peer.attach());
+    const auto deadline = steady::now() + 5s;
+    for (;;) {
+        const int ours_step = client.handshake_status();
+        const int theirs    = peer.handshake_step();
+        ASSERT_GE(ours_step, 0);
+        ASSERT_GE(theirs, 0);
+        if (ours_step == 1 && theirs == 1)
+            break;
+        ASSERT_LT(steady::now(), deadline) << "the handshake did not complete";
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("another SSL handle on a socket that was marked cut, disconnect()", end);
+    EXPECT_CLEAN_END(end, "");
+    client.close();
+}
+
+// An SSL object in OpenSSL's own quiet-shutdown mode -- the application's choice, on its handle or its context --
+// records both ends and writes nothing: close_notify() says so.
+TEST_F(TlsCloseNotify, AnSslObjectInOpenSslsQuietModeSendsNothingAndSaysSo) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    SSL_set_quiet_shutdown(client.ssl_handle(), 1);
+    EXPECT_FALSE(send_close_notify(client)) << "an alert OpenSSL did not write was reported as sent";
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("OpenSSL's quiet-shutdown mode, close_notify(), disconnect()", end);
+    EXPECT_FALSE(end.clean()) << end.text();
+    client.close();
+}
+
+// ─────────────────────────────── when none is sent ───────────────────────────────
 
 // Output this side drops is a stream it cut. A standalone object that disconnects with output queued: the peer reads
 // what TLS was given -- nothing here -- and an end with no alert.
@@ -1487,6 +2218,29 @@ TEST_F(TlsCloseNotify, ASessionWhoseHookQueuesOutputSendsNoCloseNotify) {
     EXPECT_EQ(state.destroyed, 1);
 }
 
+// ...and so does it when something still holds the session after its server released it and closes the transport
+// itself: the stream is judged again after the hook, at the dispose, not left to the session's destructor.
+TEST_F(TlsCloseNotify, ASessionHeldPastItsReleaseWhoseHookQueuedOutputSendsNoCloseNotify) {
+    state.queue_in_hook = true;
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    ASSERT_EQ(server->sessions().size(), 1u);
+    auto held = server->sessions().begin()->second; // the session outlives its server's release
+    ASSERT_TRUE(peer.write("bye\n"));
+    ASSERT_TRUE(pump_while_not([&] { return server->sessions().empty(); })) << "the server never released the session";
+    EXPECT_EQ(state.disconnected, 1);
+    EXPECT_EQ(state.destroyed, 0) << "the case proves nothing: the session did not outlive its release";
+    EXPECT_EQ(held->out().size(), LAST.size()) << "the case proves nothing: the hook queued nothing";
+    static_cast<void>(held->transport().disconnect()); // its holder closes it
+    const TlsEnd end = peer.read_to_end();
+    note("session disconnect(), its hook queues output, held past its release, then disconnect()", end);
+    EXPECT_EQ(end.received, LAST) << "the case proves nothing: the reply before the close was not delivered";
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+    held.reset();
+    EXPECT_EQ(state.destroyed, 1);
+}
+
 // A fatal TLS error ends the session for OpenSSL, which sends the alert the error calls for: no close_notify follows.
 TEST_F(TlsCloseNotify, AConnectionThatEndedOnAFatalTlsErrorSendsNoCloseNotify) {
     RawContext context{RawContext::role::server};
@@ -1581,8 +2335,8 @@ TEST_F(TlsCloseNotify, ASocketEndedQuietlySendsNoCloseNotify) {
     client.close();
 }
 
-// The socket alone: its peer's close_notify was read, and disconnect() answers nothing.
-TEST_F(TlsCloseNotify, ASocketWhosePeerEndedTheSessionAnswersNothing) {
+// The socket alone: its peer's close_notify was read, and close_notify() answers it -- true: the alert was written.
+TEST_F(TlsCloseNotify, ASocketWhosePeerEndedTheSessionAnswersWithItsOwn) {
     RawContext               context{RawContext::role::server};
     RawPeer                  peer{context, RawContext::role::server};
     qb::io::tcp::ssl::socket client;
@@ -1596,12 +2350,34 @@ TEST_F(TlsCloseNotify, ASocketWhosePeerEndedTheSessionAnswersNothing) {
     while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
         std::this_thread::sleep_for(1ms);
     ASSERT_EQ(got, -1) << "the client never read its peer's close_notify";
-    EXPECT_FALSE(send_close_notify(client)) << "a close_notify answered the peer's";
+    EXPECT_TRUE(send_close_notify(client)) << "the answer to the peer's close_notify was not reported as written";
+    EXPECT_FALSE(send_close_notify(client)) << "the answer was sent twice";
+    static_cast<void>(client.disconnect());
+    const TlsEnd end = peer.read_to_end();
+    note("ssl::socket: peer-ended, close_notify(), disconnect()", end);
+    EXPECT_CLEAN_END(end, "");
+    client.close();
+}
+
+// ...and disconnect() alone answers it too.
+TEST_F(TlsCloseNotify, ASocketWhosePeerEndedTheSessionAnswersFromDisconnect) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_EQ(peer.close_notify(), 0);
+    ASSERT_EQ(::shutdown(peer.tcp.native_handle(), QB_SD_SEND), 0);
+    char       octet    = 0;
+    int        got      = 0;
+    const auto deadline = steady::now() + 5s;
+    while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    ASSERT_EQ(got, -1) << "the client never read its peer's close_notify";
     static_cast<void>(client.disconnect());
     const TlsEnd end = peer.read_to_end();
     note("ssl::socket: peer-ended, disconnect()", end);
-    EXPECT_FALSE(end.clean()) << "a close_notify answered the peer's: " << end.text();
-    EXPECT_TRUE(end.fin) << end.text();
+    EXPECT_CLEAN_END(end, "");
     client.close();
 }
 
@@ -1813,6 +2589,111 @@ TEST_F(TlsCloseNotify, AnObjectNeverStartedIsNotWaitedForEither) {
     EXPECT_FALSE(client.transport().is_open());
 }
 
+// ─────────────────────────────── a stream closed or destroyed with output queued ───────────────────────────────
+// Nothing disposed these: no dispose() judged the stream. The stream itself knows what it drops.
+
+TEST_F(TlsCloseNotify, AClientDestroyedWithOutputQueuedSendsNoCloseNotify) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    {
+        TlsClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        ASSERT_EQ(client.disconnected_events, 0u);
+        client.publish(std::string(LAST));
+        ASSERT_EQ(client.queued(), LAST.size()) << "the case proves nothing: nothing is queued";
+    } // destroyed while connected: no loop pass wrote what it queued
+    const TlsEnd end = peer.read_to_end();
+    note("client destroyed with output queued", end);
+    EXPECT_TRUE(end.received.empty()) << "the case proves nothing: what was queued was written";
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+}
+
+TEST_F(TlsCloseNotify, AServerDestroyedWithASessionThatHasOutputQueuedSendsNoCloseNotify) {
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(connect_to_server(peer));
+    ASSERT_TRUE(peer.write("hold\n"));
+    ASSERT_TRUE(pump_while_not([&] { return state.held != 0; })) << "the session never queued its reply";
+    server.reset(); // its sessions go with it, undisposed, most of the reply still queued
+    const TlsEnd end = peer.read_to_end();
+    note("server destroyed, a session with output queued", end);
+    EXPECT_LT(end.received.size(), CUT) << "the case proves nothing: everything queued was written";
+    EXPECT_FALSE(end.clean()) << "a reply cut short was ended as a whole one: " << end.text();
+    EXPECT_EQ(state.destroyed, 1);
+}
+
+TEST_F(TlsCloseNotify, ATlsStreamClosedWithOutputQueuedSendsNoCloseNotify) {
+    RawContext              context{RawContext::role::server};
+    RawPeer                 peer{context, RawContext::role::server};
+    qb::io::transport::stcp stream;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, stream.transport()));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, stream.transport()));
+    ASSERT_NE(stream.publish(LAST.data(), LAST.size()), nullptr);
+    stream.close();
+    const TlsEnd end = peer.read_to_end();
+    note("stcp close() with output queued", end);
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+}
+
+// ...and with nothing queued it is a whole stream's end, by close() as by the destructor.
+TEST_F(TlsCloseNotify, ATlsStreamClosedWithNothingQueuedSendsCloseNotify) {
+    RawContext              context{RawContext::role::server};
+    RawPeer                 peer{context, RawContext::role::server};
+    qb::io::transport::stcp stream;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, stream.transport()));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, stream.transport()));
+    ASSERT_NE(stream.publish(LAST.data(), LAST.size()), nullptr);
+    ASSERT_EQ(stream.write(), static_cast<int>(LAST.size()));
+    stream.close();
+    const TlsEnd end = peer.read_to_end();
+    note("stcp close(), everything written", end);
+    EXPECT_CLEAN_END(end, LAST);
+}
+
+TEST_F(TlsCloseNotify, ATlsStreamDestroyedWithOutputQueuedSendsNoCloseNotify) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    {
+        qb::io::transport::stcp stream;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, stream.transport()));
+        ASSERT_NO_FATAL_FAILURE(settle(peer, stream.transport()));
+        ASSERT_NE(stream.publish(LAST.data(), LAST.size()), nullptr);
+    }
+    const TlsEnd end = peer.read_to_end();
+    note("stcp destroyed with output queued", end);
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+}
+
+TEST_F(TlsCloseNotify, AnOutputStreamClosedWithOutputQueuedSendsNoCloseNotify) {
+    RawContext                                context{RawContext::role::server};
+    RawPeer                                   peer{context, RawContext::role::server};
+    qb::io::ostream<qb::io::tcp::ssl::socket> stream;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, stream.transport()));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, stream.transport()));
+    ASSERT_NE(stream.publish(LAST.data(), LAST.size()), nullptr);
+    stream.close();
+    const TlsEnd end = peer.read_to_end();
+    note("ostream<ssl::socket> close() with output queued", end);
+    EXPECT_FALSE(end.clean()) << "a stream cut short was ended as a whole one: " << end.text();
+}
+
+// ...and with everything written it is a whole stream's end.
+TEST_F(TlsCloseNotify, AnOutputStreamClosedWithNothingQueuedSendsCloseNotify) {
+    RawContext                                context{RawContext::role::server};
+    RawPeer                                   peer{context, RawContext::role::server};
+    qb::io::ostream<qb::io::tcp::ssl::socket> stream;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, stream.transport()));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, stream.transport()));
+    ASSERT_NE(stream.publish(LAST.data(), LAST.size()), nullptr);
+    ASSERT_EQ(stream.write(), static_cast<int>(LAST.size()));
+    stream.close();
+    const TlsEnd end = peer.read_to_end();
+    note("ostream<ssl::socket> close(), everything written", end);
+    EXPECT_CLEAN_END(end, LAST);
+}
+
 // ─────────────────────────────── sessions stay resumable ───────────────────────────────
 
 // The alert sent, the peer's not awaited, the SSL object freed: the session resumes. Before, freeing the SSL object
@@ -1907,6 +2788,57 @@ TEST_F(TlsCloseNotify, ASessionResumesAfterThePeerEndedTheConnection) {
     EXPECT_EQ(SSL_session_reused(client.ssl_handle()), 1) << "the client made a full handshake: its saved session was discarded";
     static_cast<void>(client.disconnect());
     client.close();
+}
+
+TEST_F(TlsCloseNotify, ASessionResumesOverTls12AfterThePeerEndedTheConnection) {
+    RawContext           context{RawContext::role::server, TLS1_2_VERSION};
+    qb::io::ssl::Session session{};
+    {
+        RawPeer   peer{context, RawContext::role::server};
+        TlsClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        ASSERT_NO_FATAL_FAILURE(first_connection(peer, client.transport(), session));
+        client.start();
+        ASSERT_EQ(peer.close_notify(), 0);
+        peer.tcp.close();
+        ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+        EXPECT_EQ(client.reason, 0);
+    }
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    client.resume(session);
+    qb::io::ssl::free_session(session);
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    EXPECT_EQ(SSL_session_reused(client.ssl_handle()), 1) << "the client made a full handshake: its saved session was discarded";
+    static_cast<void>(client.disconnect());
+    client.close();
+}
+
+// A reset is a socket error, not a TLS one: OpenSSL keeps the session, and this side's end is recorded when the reset
+// is read (no alert follows it) -- a session saved from that connection resumes, as after any other close.
+TEST_F(TlsCloseNotify, ASessionResumesAfterThePeerResetTheConnection) {
+    for (const int version : {0, TLS1_2_VERSION}) {
+        RawContext           context{RawContext::role::server, version};
+        qb::io::ssl::Session session{};
+        {
+            RawPeer   peer{context, RawContext::role::server};
+            TlsClient client;
+            ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+            ASSERT_NO_FATAL_FAILURE(first_connection(peer, client.transport(), session));
+            client.start();
+            ASSERT_NO_FATAL_FAILURE(reset_connection(peer.tcp));
+            ASSERT_TRUE(pump_while_not([&] { return client.disconnected_events == 1u; }));
+            EXPECT_NE(client.system_error, 0) << "the case proves nothing: the client read no reset";
+        }
+        RawPeer                  peer{context, RawContext::role::server};
+        qb::io::tcp::ssl::socket client;
+        client.resume(session);
+        qb::io::ssl::free_session(session);
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+        EXPECT_EQ(SSL_session_reused(client.ssl_handle()), 1) << "the client made a full handshake: its saved session was discarded";
+        static_cast<void>(client.disconnect());
+        client.close();
+    }
 }
 
 // A connection ended with output dropped sends no alert, and its session is still usable: OpenSSL is told the session

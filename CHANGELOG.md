@@ -9,15 +9,17 @@ policy.
 
 ### Added
 
-- **`qb::io::tcp::ssl::socket::close_notify()` and `quiet_shutdown()`: the TLS end of stream, sent or withheld (Huly
-  QB-1270).** `bool close_notify() noexcept` writes this side's `close_notify` alert once and never waits for the
-  peer's -- OpenSSL's fast shutdown; it answers whether the alert was handed to the socket, leaves the socket's
-  blocking mode as it is (on a blocking socket the alert waits for room as a write does), and sends nothing before
-  the handshake completed, after a fatal TLS error, once the peer's own alert was read, or while OpenSSL still holds
-  a record it could not write whole. `void quiet_shutdown() noexcept` ends the session without the alert, now and
-  from a later `disconnect()`: for a stream that is cut rather than ended. It sets no OpenSSL quiet-shutdown mode.
-  `disconnect()` sends the alert as the first does, on a socket it makes non-blocking; qb-io decides which of the two
-  its own closes call.
+- **`qb::io::tcp::ssl::socket::close_notify()`, `quiet_shutdown()` and `mark_cut()`: the TLS end of stream, sent or
+  withheld (Huly QB-1270).** `bool close_notify() noexcept` writes this side's `close_notify` alert once and never
+  waits for the peer's -- OpenSSL's fast shutdown; it answers whether the alert was handed to the socket, leaves the
+  socket's blocking mode as it is (on a blocking socket the alert waits for room as a write does), and sends nothing
+  before the handshake completed, after a fatal TLS error, after a socket error (a reset) `read()` or `write()` met,
+  or while OpenSSL still holds a record it could not write whole; a peer whose own alert was read is answered.
+  `void quiet_shutdown() noexcept` ends the session without the alert, now and from a later `disconnect()`: for a
+  stream that is cut rather than ended. It sets no OpenSSL quiet-shutdown mode. `void mark_cut() noexcept` marks a
+  stream that goes on and must not end as whole: reads and writes continue, and whoever ends it sends no alert.
+  `disconnect()` sends the alert as the first does, on a socket it makes non-blocking; qb-io decides which of the
+  three its own closes call.
 - **`qb::io::tcp::ssl::socket::release_handle()` gives a TLS socket's descriptor away with its `SSL` object detached
   from it (Huly QB-1270).** `socket_type release_handle() noexcept` hides the one inherited from `tcp::socket`: the
   socket BIO is freed first (the descriptor stays open) and the connected state cleared, so nothing the socket still
@@ -264,17 +266,25 @@ policy.
   `close_after_deliver()`, after the delivered bytes and before the half-close -- the peer's own `close_notify` then
   ends that linger as its EOF does; a session that closes at once and the destructor of a stream still connected
   that has nothing left to write, from `ssl::socket::disconnect()`; a direct `ssl::socket::disconnect()`.
-  Where it is not: when the peer ended the connection (its EOF, a reset, its own `close_notify`); before the
-  handshake completed; after a fatal TLS error; and when the object ends its connection with output still queued --
-  that output is dropped, as before, so the stream is cut, and an alert would tell the peer that a truncated reply is
-  whole. Such a peer reads the unexpected EOF it read before. What is queued is read before
+  Where it is not: before the handshake completed; after a fatal TLS error -- a peer's bare EOF is one for OpenSSL 3;
+  after a reset -- a socket error, after which OpenSSL forbids `SSL_shutdown()`: `ssl::socket::read()` and `write()`
+  record this side's end when they meet one, and nothing more is written into that connection (measured: no write
+  attempted by a client, a session or a bare socket whose peer reset the connection, no SIGPIPE raised); and when
+  the connection ends with output still queued, whoever ended it -- that output is dropped, as
+  before, so the stream is cut, and an alert would tell the peer that a truncated reply is whole. Such a peer reads
+  the unexpected EOF it read before. What is queued is read before
   `on(event::disconnected&&)` runs and again after it, and the stream is judged before it: a hook that empties the
   queue, as a reconnecting client does with the bytes of a dead connection, or that closes the transport itself,
-  does not make a cut stream whole.
-  The peer's own `close_notify` is still not answered: a connection whose peer ended the TLS session first is closed
-  without this side's alert, as before. That is short of the TLS standard, which asks each side for its alert before
-  it closes its sending direction: a peer that sends its alert and then waits for this side's reads an unexpected
-  EOF; one that closes after its own alert sees nothing of it.
+  does not make a cut stream whole. A stream closed or destroyed with output still queued and never disposed -- a
+  client destroyed while connected, a server destroyed with its sessions, an explicit `stream::close()` -- is cut the
+  same way (`stream<>` and `ostream<>` end the session quietly before they drop it), and a session extracted with
+  output still queued (`io_handler::extractSession()`) leaves a stream that goes on under its next owner and ends
+  without the alert (`ssl::socket::mark_cut()`).
+  The peer's own `close_notify` is answered: each side sends its alert before it closes its sending direction,
+  whoever was first (RFC 8446 6.1). A connection whose peer ended the TLS session with its alert gets this side's own
+  before the close, once and without blocking, when nothing queued is dropped: a peer that sends its alert and then
+  waits for this side's reads a clean end where it read an unexpected EOF; one that closed right after its alert has
+  left, and the answer is one write nobody reads -- no signal, no error reported, the session still resumable.
   It never holds a close: one `SSL_shutdown()` call, on a socket made non-blocking for it; a socket that cannot take
   the alert (a full send buffer, a record OpenSSL could not write whole) is closed without it, and nothing is left in
   the thread's OpenSSL error queue. The loop still reads the descriptor raw after the alert: what the peer answers,
@@ -289,7 +299,15 @@ policy.
   the descriptor raw, so close such a connection at once (`set_linger(qb::duration::zero())`).
   A direct `disconnect()` is still a TCP shutdown in both directions: with input unread it is a reset on Windows,
   which destroys what the peer has not read yet, the alert included.
-  Instructions (callgrind, g++ 14, the difference method; nothing timed): a round trip of a TLS client and its session is level -- 28 152.1 against 28 152.1, 3 333.0 of them in qb's own code on both sides -- and so is a plain TCP round trip within the run's noise (2 202 to 2 228 where the base gives 2 225 to 2 236, three rounds each); of the 1 166 functions qb-io compiles 1 157 are the same instructions, the handshake among them, and `read()` and `write()` differ in their error exits alone. The close pays for the alert, one record sealed and written: a TLS connection its client ends costs 35 074 where it cost 31 856 (+10.1 %), a session's lingering close 41 295 where it cost 37 924 (+8.9 %); a plain TCP connection opened, used and closed costs 7 706 against 7 710.
+  Instructions (callgrind, g++ 14, the difference method; nothing timed): a round trip of a TLS client and its session
+  is level -- 28 152.1 against 28 152.1, 3 333.0 of them in qb's own code on both sides -- and so is a plain TCP round
+  trip (2 216.3 on the base, 2 216.1 now, the median of three rounds each); a TLS stream object made and destroyed
+  costs 21 instructions more (its session's end recorded, its queue judged), a plain one none. The close pays for the
+  alerts, each sealed by the side that sends it and read by the other: a TLS connection its client ends, its server
+  answering, costs 41 235 where it cost 31 138, the whole close of both ends in one process 43 023 where it cost
+  32 969, a session's lingering close, its client answering, 47 379 where it cost 37 923 -- qb's own code in them
+  2 770, 3 801 and 4 709 where it was 2 465, 3 496 and 4 503; a plain TCP connection opened, used and closed costs
+  7 679 against 7 669, inside the runs' ranges.
 - **A standalone qb-io stream object that ends its own connection gives its descriptor to its thread's loop, which
   closes it after the peer: its `transport().is_open()` is false from `dispose()` on, and `set_linger()` bounds that
   close (Huly QB-1270).** So does a server session that ends its own connection with nothing left to write. What a
@@ -742,8 +760,9 @@ policy.
   destroyed or assigned: after the client's own close and after the server's alike (measured: OpenSSL marks the saved
   session not resumable; TLS 1.3 and 1.2). Every close now records this side's end of the session
   (`SSL_SENT_SHUTDOWN`), with the `close_notify` it sends or without one, and so does a socket destroyed, assigned
-  or re-`init()`ed while still connected (which writes nothing). Unchanged, and OpenSSL's own rule: a session whose
-  connection ended on a fatal TLS error -- a peer's EOF with no `close_notify` is one, and so is a reset -- does not
+  or re-`init()`ed while still connected (which writes nothing). A reset is a socket error, not a TLS one: the
+  session of a connection its peer reset resumes too (measured, TLS 1.3 and 1.2). Unchanged, and OpenSSL's own rule:
+  a session whose connection ended on a fatal TLS error -- a peer's EOF with no `close_notify` is one -- does not
   resume.
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
   `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a

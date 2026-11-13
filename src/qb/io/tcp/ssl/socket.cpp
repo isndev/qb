@@ -641,6 +641,7 @@ socket::operator=(socket &&rhs) noexcept {
     tcp::socket::operator=(std::move(rhs));
     _ssl_handle                 = std::move(rhs._ssl_handle);
     _connected                  = rhs._connected;
+    _stream_cut                 = rhs._stream_cut;
     _pending_sni_hostname       = std::move(rhs._pending_sni_hostname);
     _pending_alpn_protocols     = std::move(rhs._pending_alpn_protocols);
     _pending_session            = std::move(rhs._pending_session);
@@ -660,6 +661,7 @@ socket::init(SSL *handle) noexcept {
     // or shared context is never torn out from under its other users.
     static_cast<void>(end_session_(session_end::quiet)); // the previous handle's session, as release_ssl_() ends it
     _ssl_handle.reset(handle);
+    _stream_cut = false; // another SSL object, another stream
     if (_ssl_handle)
         apply_pending_client_settings();
 }
@@ -944,6 +946,7 @@ socket::setup_client_ssl(std::string const &hostname) noexcept {
     // that kept this SSL object may get the descriptor number just closed, which attach_socket() would take for
     // attached (Huly QB-1004): free the last connection's BIO, and its first attach makes a new one.
     SSL_set_bio(h_ssl, nullptr, nullptr);
+    _stream_cut = false; // another connection, another stream
     if (!hostname.empty())
         _pending_sni_hostname = hostname;
     if (!apply_pending_client_settings()) {
@@ -1072,9 +1075,13 @@ socket::end_session_(session_end how) noexcept {
     const int state = SSL_get_shutdown(ssl);
     if (state & SSL_SENT_SHUTDOWN)
         return false; // once: this side's end is recorded -- the alert sent, or the session ended without one
-    // Not to a peer that ended the session itself, and only through the descriptor this socket still owns: a number it
-    // closed or gave away may name another connection by now.
-    if (how == session_end::quiet || (state & SSL_RECEIVED_SHUTDOWN) || !is_open() || SSL_get_wfd(ssl) != static_cast<int>(native_handle())) {
+    // Only through the descriptor this socket still owns: a number it closed or gave away may name another connection
+    // by now (compared as descriptors: the `int` OpenSSL keeps is widened, never the descriptor narrowed). A stream
+    // marked cut says nothing at its end. A peer that ended the session itself IS answered: each side sends its alert
+    // before it closes its sending direction (RFC 8446 6.1), and OpenSSL's state is the judge of what the peer did --
+    // its close_notify read leaves the session open for ours; its bare EOF or a fatal alert stopped above, and a reset
+    // read() or write() met recorded this side's end then (SSL_ERROR_SYSCALL: no SSL_shutdown() may follow it).
+    if (how == session_end::quiet || _stream_cut || !is_open() || static_cast<::socket_type>(SSL_get_wfd(ssl)) != native_handle()) {
         SSL_set_shutdown(ssl, state | SSL_SENT_SHUTDOWN);
         return false;
     }
@@ -1082,11 +1089,16 @@ socket::end_session_(session_end how) noexcept {
     // connection is over. close_notify() alone leaves the mode to its caller, who may go on reading.
     if (how == session_end::closing && test_nonblocking() != 1)
         static_cast<void>(set_nonblocking(true));
+    // In OpenSSL's own quiet-shutdown mode (the application's, on its handle or its context) SSL_shutdown() records
+    // both ends and writes nothing.
+    const bool silent = SSL_get_quiet_shutdown(ssl) != 0;
     // What a refused write raises is dropped: the queue is left as the connection's own errors left it.
     ERR_set_mark();
     const int sent = SSL_shutdown(ssl);
     ERR_pop_to_mark();
-    return sent == 0; // 0: this side's alert written, the peer's not awaited. 1: OpenSSL's quiet mode -- nothing sent
+    // -1: the socket did not take the alert. 0: written, the peer's not awaited. 1: written, and the peer's own had
+    // been read before -- this side's answer.
+    return !silent && sent >= 0;
 }
 
 int
@@ -1104,6 +1116,11 @@ socket::close_notify() noexcept {
 void
 socket::quiet_shutdown() noexcept {
     static_cast<void>(end_session_(session_end::quiet));
+}
+
+void
+socket::mark_cut() noexcept {
+    _stream_cut = true;
 }
 
 socket_type
@@ -1144,6 +1161,14 @@ socket::read(void *data, std::size_t size) noexcept {
             case SSL_ERROR_WANT_WRITE:
             case SSL_ERROR_WANT_READ:
                 return 0; // Non-blocking, no data ready; not an error
+            case SSL_ERROR_SYSCALL:
+                // A socket error -- a reset: OpenSSL forbids SSL_shutdown() on the connection from here, so this
+                // side's end is recorded without the alert, which nobody would read (Huly QB-1270). Not one the io
+                // layer reads as "try again" (not_recv_error()): the stream goes on. No system call: the error is
+                // left for the caller.
+                if (!qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                    quiet_shutdown();
+                return -1;
             default:
                 return -1;
         }
@@ -1173,6 +1198,13 @@ socket::write(const void *data, std::size_t size) noexcept {
                 case SSL_ERROR_WANT_WRITE:
                 case SSL_ERROR_WANT_READ:
                     return 0;
+                case SSL_ERROR_SYSCALL:
+                    // A socket error, as after a read's: no alert may follow it (Huly QB-1270) -- unless the io layer
+                    // writes again after it (not_send_error(): ENOBUFS, an EINTR OpenSSL does not retry itself), and the
+                    // stream goes on.
+                    if (!qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
+                        quiet_shutdown();
+                    return -1;
                 default:
                     // OpenSSL refuses a write after this side's close_notify -- a lingering session that is
                     // published to -- before it makes any system call or clears the system error: the thread's last

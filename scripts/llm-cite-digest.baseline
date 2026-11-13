@@ -66,8 +66,8 @@ llm/qb.llm.api.md	VirtualCore.h:1693-1695	61c0b8a45ff7	Actor::spawn_detached(std
 llm/qb.llm.api.md	VirtualCore.h:1693-1702	5626538722c5	Actor::spawn_detached(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1707-1710	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1707-1718	4592a4bd1df3	Actor::spawn(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	async/io_handler.h:139-140	882119ee1afd	[[nodiscard]] session_map_t &
-llm/qb.llm.api.md	async/io_handler.h:148-149	09bf0b8927e8	[[nodiscard]] std::size_t
+llm/qb.llm.api.md	async/io_handler.h:140-141	882119ee1afd	[[nodiscard]] session_map_t &
+llm/qb.llm.api.md	async/io_handler.h:149-150	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
 llm/qb.llm.api.md	container/growable_ring.h:60-60	6ccfe2d90a0b	class growable_ring {
 llm/qb.llm.api.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine outlives its actor — shared_ptr RAII counter must no...
@@ -260,7 +260,7 @@ llm/qb.llm.md	io.h:3163-3163	a5087061f699	if (const bool alive = process_message
 llm/qb.llm.md	io.h:3195-3199	7125e5014727	if (_lingering) {
 llm/qb.llm.md	io.h:3299-3299	caa6004094df	[[maybe_unused]] const bool ended_by_peer = !_reason && this->_protoc...
 llm/qb.llm.md	io.h:3301-3301	2bdabcec9298	[[maybe_unused]] const bool lingered = _lingering, complete = Derived...
-llm/qb.llm.md	io.h:3317-3336	53f0c0a772f2	// The watcher of a disposed session is stopped here, whoever ended t...
+llm/qb.llm.md	io.h:3317-3336	9960ff92de2a	// The watcher of a disposed session is stopped here, whoever ended t...
 llm/qb.llm.md	io.h:3341-3346	4286ef7e7be2	this->_async_event.stop(); // Stop the watcher to prevent further events
 llm/qb.llm.md	io.h:3398-3399	1d5ba9591555	*          Call it where the next connection is set up, before its tr...
 llm/qb.llm.md	io.h:3407-3411	13b349c0b5e9	reset_for_reconnect() {
@@ -297,7 +297,7 @@ llm/qb.llm.md	scheduler.h:731-760	2673fad18211	* @brief Spawn a callable (lambda
 llm/qb.llm.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
 llm/qb.llm.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
 llm/qb.llm.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.md	socket.cpp:1110-1114	02a7d2fb6943	socket::release_handle() noexcept {
+llm/qb.llm.md	socket.cpp:1127-1131	02a7d2fb6943	socket::release_handle() noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
@@ -324,11 +324,11 @@ llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw 
 llm/qb.llm.md	ssl/context.h:237-248	8f8ec340851e	/**
 llm/qb.llm.md	ssl/listener.cpp:215-215	2f35dcaa0759	listener::set_supported_alpn_protocols(const std::vector<std::string>...
 llm/qb.llm.md	ssl/listener.h:118-146	568219875e9c	/**
-llm/qb.llm.md	ssl/socket.cpp:1065-1090	7d081305951a	socket::end_session_(session_end how) noexcept {
-llm/qb.llm.md	ssl/socket.cpp:1093-1097	2d52e403e97d	socket::disconnect() noexcept {
-llm/qb.llm.md	ssl/socket.h:1021-1021	0e2c7a135bf8	void set_insecure() noexcept;
-llm/qb.llm.md	ssl/socket.h:504-538	206b0d649699	/**
-llm/qb.llm.md	ssl/socket.h:686-686	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
+llm/qb.llm.md	ssl/socket.cpp:1068-1102	08a9095c1f60	socket::end_session_(session_end how) noexcept {
+llm/qb.llm.md	ssl/socket.cpp:1105-1109	2d52e403e97d	socket::disconnect() noexcept {
+llm/qb.llm.md	ssl/socket.h:1042-1042	0e2c7a135bf8	void set_insecure() noexcept;
+llm/qb.llm.md	ssl/socket.h:505-539	206b0d649699	/**
+llm/qb.llm.md	ssl/socket.h:687-687	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
 llm/qb.llm.md	ssl/socket.h:96-96	c1d7b0697db7	SSL_CTX *create_server_context(const SSL_METHOD *method, std::filesys...
 llm/qb.llm.md	string.h:289-289	f11444169765	_size = static_cast<size_type>(std::min(size, static_cast<std::size_t...
@@ -341,10 +341,10 @@ llm/qb.llm.md	tcp/connector.h:974-974	e6381c56922f	connect_awaiter(const connect
 llm/qb.llm.md	tcp/listener.h:32-46	d52de035dbc3	/**
 llm/qb.llm.md	tcp/socket.cpp:109-116	2829bae2b61d	connect_attempt_budget(qb::duration const remaining, std::size_t cons...
 llm/qb.llm.md	teardown.h:108-111	5599b2e8b7ab	concept tls_transport = requires(Transport &transport) {
-llm/qb.llm.md	teardown.h:140-145	03d311874699	end_cut_stream([[maybe_unused]] Transport &transport, [[maybe_unused]...
-llm/qb.llm.md	teardown.h:156-160	deeb314da6f4	shutdown_send([[maybe_unused]] Transport &transport, std::remove_cv_t...
-llm/qb.llm.md	teardown.h:219-264	fe707fb07ba3	end_transport(Transport &transport, bool ended_by_peer, [[maybe_unuse...
-llm/qb.llm.md	teardown.h:245-250	0b9558127017	if constexpr (tls_transport<Transport>) {
+llm/qb.llm.md	teardown.h:129-134	efc68699709c	end_cut_stream([[maybe_unused]] Transport &transport, [[maybe_unused]...
+llm/qb.llm.md	teardown.h:161-165	deeb314da6f4	shutdown_send([[maybe_unused]] Transport &transport, std::remove_cv_t...
+llm/qb.llm.md	teardown.h:227-272	604fd68d893b	end_transport(Transport &transport, bool ended_by_peer, [[maybe_unuse...
+llm/qb.llm.md	teardown.h:253-258	0b9558127017	if constexpr (tls_transport<Transport>) {
 llm/qb.llm.md	teardown.h:61-61	12cffac47308	run_teardown_hook([[maybe_unused]] char const *hook, Run &&run) noexc...
 llm/qb.llm.md	teardown.h:89-95	31d874fc4ef0	close_bound(bool datagram, int reason, qb::duration linger) noexcept {
 llm/qb.llm.md	thread_arena.h:126-171	1e7eb599b710	allocate(std::size_t const size) {
