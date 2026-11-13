@@ -44,12 +44,46 @@ WHAT IT FORBIDS  (at NAMESPACE scope, in a scanned header)
              `constexpr` (which give internal linkage at namespace scope), not `static`,
              not a bare `extern` declaration, not a template. Includes an explicit
              specialization of a VARIABLE template with an initialiser, which is a
-             definition and is not implicitly inline either.
+             definition and is not implicitly inline either, and a class's static data member
+             defined out of class `const` but not `inline` (`const int C::k = 5;`): `const`
+             gives internal linkage to a namespace variable only (Huly QB-1246, found by the
+             THREAD-WRAP review: the guard said OK over a strong `C::k`).
 
-Class scope needs no separate rule: an in-class member function definition is implicitly
-`inline`, and the two class-scope shapes that DO emit a strong symbol -- an out-of-line
-member definition and an out-of-class static data member definition -- are written at
-namespace scope and are caught above.
+Class scope needs no separate rule for what a class DEFINES: an in-class member function
+definition is implicitly `inline`, and the two class-scope shapes that DO emit a strong symbol
+-- an out-of-line member definition and an out-of-class static data member definition -- are
+written at namespace scope and are caught above. It needs one for what a class body READS,
+measured (Huly QB-1246):
+
+  THREAD-WRAP  a `thread_local` static data member DECLARED in a class (not `inline` there) and
+             DEFINED `inline` at namespace scope in the same header, named in code between the
+             opening brace of its outermost class and that definition -- a member defined in the
+             class body (above or below the declaration: a member function body is a complete-class
+             context), a nested class, a template or a function written before the definition.
+             `listener::current` has to be declared so (its type is its class). On Darwin a reference
+             through the in-class declaration goes through a replaceable thread wrapper (`_ZTW...`)
+             whatever the variable's initialiser -- a constant-initialised `int` too -- and clang gives
+             the wrapper the linkage of the declaration the translation unit's first emitted reference
+             names: from such a reference, the in-class declaration, which is not `inline` -- the
+             wrapper is emitted `external`, STRONG; from a reference written after the definition,
+             `weak_odr hidden` (or no wrapper at all, for a variable constant-initialised and
+             trivially destructible). Two translation units of one
+             link whose first reference came from the class are a duplicate
+             `thread-local wrapper routine for ...` -- ld's warning on the macOS runner, a link error
+             on a developer's Mac: QB-1246 part 3 wrote `listener::release()` in the class, reading
+             `current`, and five qbm-http test binaries stopped linking under TSan. Measured with clang
+             19 `-target arm64-apple-macos14 -S -emit-llvm` per shape and with Apple clang 21 `nm -m`
+             on the runner: a static member, a non-static one, `this->`, a nested class, a template
+             written before the definition -- all `external`; the same bodies after it -- `weak_odr
+             hidden`; x86_64-linux-gnu and MinGW -- `weak_odr hidden` in every case (the wrapper is
+             not replaceable there), and the MSVC ABI (cl, clang-cl) has no thread wrapper at all, so
+             Linux and Windows never see it. Two shapes are not reported,
+             because their wrapper is not strong, measured the same way: a member of a class
+             TEMPLATE (the variable is a template instantiation, the wrapper `weak_odr` either way),
+             and an UNEVALUATED operand (`sizeof`, `alignof`, `decltype`, `noexcept`: no reference is
+             emitted). The cure is the definition's place, not a flag: define the code that reads the
+             member AFTER its definition (`listener::release()`, listener.h). A definition that is not
+             `inline` is VAR-DEF's, never paired here: in a header it is a duplicate variable already.
 
 WHAT IT DELIBERATELY ALLOWS
 ---------------------------
@@ -84,7 +118,23 @@ This is a scope-aware scanner over comment/string/preprocessor-masked text, not 
     unexpanded token soup.
   * Preprocessor lines are blanked, so a definition inside `#if 0` is still reported.
 
-All four are false NEGATIVES except the last. The bias is deliberate: this check is the
+All four are false NEGATIVES except the last. THREAD-WRAP adds its own:
+
+  * A definition in ANOTHER header than the class is not paired (a false negative): the rule
+    reads one header at a time, and `listener::current` is declared and defined in listener.h.
+  * `Other::member` is another entity, so an alias of the class (`using L = listener;
+    L::current`) and a derived class (`Derived::current`) are not read either (false negatives).
+  * The class's name is the last word of its head before the base clause, so a macro written
+    AFTER the name (`class X SOME_MACRO {`) is taken for it and the member never pairs (a false
+    negative; qb writes its macros before the name: `class QB_API name`).
+  * A member declared with its class's definition (`thread_local static struct p { ... } cur;`)
+    is skipped, as `struct X { ... } g_obj;` is above (a false negative).
+  * `obj.member` and `ptr->member` count as references whatever `obj` is -- a static member read
+    through an object IS one, and the scanner cannot type `obj` -- and so do a local, and a
+    member of another class, of the member's name: the rule reads names, not entities (false
+    POSITIVES: name it otherwise, or move the code below the definition).
+
+The bias is deliberate: this check is the
 cheap, always-on half. The exact half is scripts/check-installed-headers.sh, which compiles
 every installed header alone and LINKS every public entry point -- and a link is the only
 thing that has ever told the truth here (`-fsyntax-only` and `-c` both pass on the defect).
@@ -95,21 +145,26 @@ ESCAPE HATCH
 
 on the reported line or the line above. The reason is mandatory; a bare
 `header-linkage: allow` is itself an error, so an exemption always carries an argument
-someone had to write down.
+someone had to write down. It covers THREAD-WRAP too: the reason must then say why that
+reference cannot be the first a Darwin translation unit emits.
 
 ANTI-VACUOUS FLOORS
 -------------------
-Two, because there are two ways to pass while doing nothing. `NAME:MIN` per root floors the
+Three, because there are three ways to pass while doing nothing. `NAME:MIN` per root floors the
 number of headers SCANNED (a moved path finds zero and passes). `--min-constructs` floors
 the number of namespace-scope constructs CLASSIFIED across the whole run (a masking bug that
 blanks the file finds zero constructs in a hundred headers and also passes). Floors are PER
 ROOT and are never shared -- a shared floor lets one root absorb another's collapse.
+`--min-thread-wraps` floors the number of THREAD-WRAP PAIRS found across the run (an in-class
+`thread_local` declaration matched with its inline definition): a pairing that stopped
+recognising `listener::current`'s definition would check nothing and pass.
 
 USAGE
 -----
     ./scripts/check-header-linkage.py                              # qb alone, from qb root
     ./scripts/check-header-linkage.py qb/src:120 qbm/http/src:70 …
     ./scripts/check-header-linkage.py --min-constructs 4000 ROOT:MIN …
+    ./scripts/check-header-linkage.py --min-thread-wraps 1 ROOT:MIN …
     ./scripts/check-header-linkage.py --stats ROOT:MIN             # per-root construct counts
 
 Exit status: 0 clean, 1 findings, 2 usage/IO/vacuity error.
@@ -165,6 +220,20 @@ NOT_A_DECL = re.compile(r"^(namespace|asm|__asm|static_assert)\b")
 OPERATOR_RE = re.compile(
     r"\boperator\s*(<=>|==|!=|<=|>=|\+=|-=|\*=|/=|%=|\^=|&=|\|=|<<=|>>=|=|\[\]|\(\)|->\*|->|\+\+|--|<<|>>|[-+*/%^&|~!<>,])"
 )
+
+# THREAD-WRAP. A class-scope declaration is a non-inline `thread_local` static data member when it carries
+# both words and neither `inline` nor `constexpr` (a `constexpr` static member is implicitly inline).
+THREAD_LOCAL = re.compile(r"\bthread_local\b")
+STATIC_WORD = re.compile(r"\bstatic\b")
+INLINE_OR_CONSTEXPR = re.compile(r"\b(inline|constexpr)\b")
+INLINE_WORD = re.compile(r"\binline\b")
+# The operators whose operand is unevaluated: a name inside them emits no reference, so no wrapper (measured).
+UNEVALUATED_OPEN = re.compile(r"\b(sizeof|alignof|__alignof__|decltype|noexcept)\s*$")
+CLASS_HEAD_WORDS = {"class", "struct", "union", "final", "enum"}
+ACCESS_PREFIX = re.compile(r"^(?:(?:public|protected|private)\s*:\s*)+")
+# An attribute after a declarator (`cur [[maybe_unused]]`, `cur __attribute__((unused))`) is blanked, never read
+# as its name.
+TRAILING_ATTRIBUTE = re.compile(r"\[\[.*?\]\]|\b__attribute__\s*\(\(.*?\)\)")
 
 
 def mask(src: str) -> str:
@@ -299,15 +368,125 @@ def classify_open(head: str) -> str:
     return "OTHER"  # braced initialiser, lambda body, enum-less block
 
 
+def class_head(head: str) -> tuple[str | None, bool]:
+    """The name a class head declares and whether it is a TEMPLATE's:
+    `template <typename T> class QB_API name final : public base<T>` -> ("name", True).
+    An explicit specialization (`template <>`) declares a class, not a template. A nested class's
+    head may open on what stands before it in its class -- access specifiers (`public: template
+    <...> struct inner`), the braces of a constructor's body just above (` {} template <...>`) --
+    so a template head is looked for anywhere in it, and every one is set aside, never only a
+    leading one."""
+    h = norm(head)
+    templated = False
+    while (head_at := re.search(r"\btemplate\s*<", h)) is not None:
+        templated = templated or not re.match(r"template\s*<\s*>", h[head_at.start():])
+        depth, idx = 0, head_at.end() - 1  # at the parameter list's `<`
+        while idx < len(h):
+            depth += h[idx] == "<"
+            depth -= h[idx] == ">"
+            idx += 1
+            if depth == 0:
+                break
+        h = h[:head_at.start()] + " " + h[idx:]
+    h = _strip_attribute_groups(h)
+    key = CLASS_KEY.search(h)
+    if key is None:
+        return None, templated
+    rest = re.split(r"(?<!:):(?!:)", h[key.end():], maxsplit=1)[0]  # the base clause goes
+    rest = rest.split("<", 1)[0]  # a specialization's arguments go
+    names = [t for t in re.findall(r"[A-Za-z_][\w:]*", rest) if t not in CLASS_HEAD_WORDS]
+    return (names[-1].rsplit("::", 1)[-1] if names else None), templated
+
+
+def unevaluated_spans(masked: str, lo: int, hi: int) -> list[tuple[int, int]]:
+    """The (open, close) offsets of every parenthesised operand of sizeof/alignof/decltype/noexcept
+    in masked[lo:hi]: a name inside one is no reference."""
+    spans, opened = [], []
+    for k in range(lo, hi):
+        c = masked[k]
+        if c == "(":
+            opened.append((k, bool(UNEVALUATED_OPEN.search(masked[max(lo, k - 32):k]))))
+        elif c == ")" and opened:
+            start, unevaluated = opened.pop()
+            if unevaluated:
+                spans.append((start, k))
+    spans.extend((start, hi) for start, unevaluated in opened if unevaluated)
+    return spans
+
+
+def before_top_level_equals(text: str) -> str:
+    """The text before the first `=` that stands outside every bracket and is no part of `==`, `!=`, `<=`,
+    `>=`: a definition's declarator and direct initialiser, without its copy-initialiser."""
+    depth = 0
+    for k, ch in enumerate(text):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "=" and depth == 0 and text[k - 1:k] not in ("=", "!", "<", ">") and text[k + 1:k + 2] != "=":
+            return text[:k]
+    return text
+
+
+def declares(declarator: str, cls: str, name: str) -> bool:
+    """Does this namespace-scope definition (its text before the first top-level `=`) DEFINE `cls::name`?
+    Only where `cls::name` stands outside every bracket, followed by nothing but array bounds and
+    attributes, then the initialiser's `(` or `{` or the end: a definition whose TYPE names it
+    (`decltype(cls::name.x) other`) or whose initialiser reads it defines another variable."""
+    target = re.compile(rf"\b{re.escape(cls)}\s*(?:<[^;{{}}]*?>)?\s*::\s*{re.escape(name)}\b")
+    for m in target.finditer(declarator):
+        before = declarator[:m.start()]
+        if before.count("(") != before.count(")") or before.count("{") != before.count("}"):
+            continue  # inside a decltype, a template argument's parentheses, an initialiser
+        after = TRAILING_ATTRIBUTE.sub(" ", declarator[m.end():])
+        after = re.sub(r"^\s*(?:\[[^\]]*\]\s*)*", "", after)
+        if not after.strip() or after.lstrip()[0] in "({":
+            return True
+    return False
+
+
+def thread_wrap_findings(masked: str, members, definitions) -> tuple[list, int]:
+    """THREAD-WRAP over one header. `members`: (class, member, window start, declaration's name
+    offset) of each in-class non-inline thread_local static data member; `definitions`: (declarator,
+    first-token offset) of each namespace-scope `inline thread_local` definition. Returns the
+    references (offset, class, member, definition offset) named before the definition, and the
+    number of pairs found."""
+    refs, pairs = [], 0
+    for cls, name, lo, decl_at in members:
+        hi = next((at for declarator, at in definitions if at > lo and declares(declarator, cls, name)), None)
+        if hi is None:
+            continue  # not defined inline in this header: no wrapper of this header's making
+        pairs += 1
+        spans = unevaluated_spans(masked, lo, hi)
+        for m in re.finditer(rf"\b{re.escape(name)}\b", masked[lo:hi]):
+            at = lo + m.start()
+            if at == decl_at or any(a < at < b for a, b in spans):
+                continue
+            qualifier = re.search(r"(\w+)\s*(?:<[^;{}]*?>)?\s*::\s*$", masked[max(lo, at - 160):at])
+            if qualifier and qualifier.group(1) != cls:
+                continue  # `Other::name` is another entity
+            refs.append((at, cls, name, hi))
+    return refs, pairs
+
+
 def analyse(path: str):
     """Return (findings, constructs): findings are (line, kind, text); constructs is the number
     of namespace-scope constructs classified, which is what the --min-constructs floor counts."""
+    findings, constructs, _pairs = scan(path)
+    return findings, constructs
+
+
+def scan(path: str):
+    """`analyse()`, and the number of THREAD-WRAP pairs found, which --min-thread-wraps floors."""
     with open(path, encoding="utf-8", errors="replace") as fh:
         src = fh.read()
     lines = src.splitlines()
     masked = mask(src)
 
-    stack: list[tuple[str, int, bool]] = []  # (kind, saved head_start, is anonymous namespace)
+    # (kind, saved head_start, is anonymous namespace, (class name, templated, `{` offset) for a CLASS)
+    stack: list[tuple[str, int, bool, tuple[str | None, bool, int] | None]] = []
+    tl_members: list[tuple[str, str, int, int]] = []  # THREAD-WRAP: in-class declarations
+    tl_definitions: list[tuple[str, int]] = []  # THREAD-WRAP: namespace-scope inline definitions
     head_start = 0
     saw_class_body = False
     saw_braced_init = False
@@ -358,11 +537,12 @@ def analyse(path: str):
                 is_template = TEMPLATE_ANGLE.match(h) and not EMPTY_TEMPLATE.match(h)
                 if not is_template and not SAFE_FUNC.search(h.split("(")[0]):
                     findings.append((line_of(head_start, i), "FUNC-DEF", h[:160]))
-            stack.append((kind, head_start, kind == "NS" and bool(ANON_NS.search(norm(head)))))
+            cls = (*class_head(head), i) if kind == "CLASS" else None
+            stack.append((kind, head_start, kind == "NS" and bool(ANON_NS.search(norm(head))), cls))
             head_start = i + 1
         elif paren == 0 and c == "}":
             if stack:
-                kind, saved, _ = stack.pop()
+                kind, saved, _, _ = stack.pop()
                 if kind in ("REQUIRES", "OTHER", "CLASS"):
                     # These braces sit INSIDE a declaration; the declaration continues.
                     head_start = saved
@@ -374,8 +554,31 @@ def analyse(path: str):
             else:
                 head_start = i + 1
         elif paren == 0 and c == ";":
+            if stack and stack[-1][0] == "CLASS" and not in_anonymous() and not saw_class_body:
+                # THREAD-WRAP: a non-inline thread_local static data member of a class at namespace scope
+                # (every enclosing scope a namespace or a class, every class named and none a template's). The
+                # declaration is what follows the last brace before its `thread_local`: a constructor's body or
+                # braced mem-initialiser just above is no part of it, and a head that closed a nested class's
+                # body (`struct Inner { ... };`) declares that class, not a member.
+                raw = masked[head_start:i]
+                tls = list(THREAD_LOCAL.finditer(raw))
+                cut = raw.rfind("}", 0, tls[-1].start()) + 1 if tls else 0
+                h = norm(raw[cut:])
+                if tls and STATIC_WORD.search(h) and not INLINE_OR_CONSTEXPR.search(h):
+                    declarator = re.split(r"[={]", raw[cut:], maxsplit=1)[0]
+                    declarator = TRAILING_ATTRIBUTE.sub(lambda m: " " * len(m.group(0)), declarator)
+                    name = list(re.finditer(r"[A-Za-z_]\w*", re.sub(r"\[[^\]]*\]\s*$", "", declarator.rstrip())))
+                    classes = [s[3] for s in stack if s[0] == "CLASS"]
+                    if (name and all(s[0] in ("NS", "CLASS") for s in stack)
+                            and all(c3[0] for c3 in classes) and not any(c3[1] for c3 in classes)):
+                        tl_members.append((classes[-1][0], name[-1].group(0), classes[0][2],
+                                           head_start + cut + name[-1].start()))
             if at_namespace_scope() and not in_anonymous():
                 h = norm(masked[head_start:i])
+                if THREAD_LOCAL.search(h) and INLINE_WORD.search(h):
+                    seg = masked[head_start:i]
+                    # What stands before a copy-initialiser's top-level `=`: `declares()` reads the declarator there.
+                    tl_definitions.append((norm(before_top_level_equals(seg)), head_start + len(seg) - len(seg.lstrip())))
                 if h and re.search(r"\w", h):
                     constructs += 1
                     hop = OPERATOR_RE.sub("operatorOP", h)
@@ -392,6 +595,11 @@ def analyse(path: str):
                           and (saw_braced_init or re.search(r"^[^(]*=", hop))
                           and not re.search(r"\b(inline|constexpr)\b", spec)):
                         kind = "VAR-DEF"           # initialized extern is a definition, even when const
+                    elif (re.search(r"\bconst\b", spec) and not re.search(r"\b(inline|constexpr|static|extern|typedef|using|concept)\b", spec)
+                          and re.search(r"::\s*~?\w+\s*(?:\[[^\]]*\]\s*)*$", spec.strip())
+                          and not ("(" in hop and hop.index("(") < min(
+                              hop.index("{") if "{" in hop else len(hop), hop.index("=") if "=" in hop else len(hop)))):
+                        kind = "VAR-DEF"           # a class's const static member defined out of class: external
                     elif SAFE_VAR.search(spec):
                         pass                       # inline / const / constexpr / static / extern / typedef / using
                     elif saw_class_body and not saw_braced_init and not re.search(r"\w", h.rsplit("}", 1)[-1]):
@@ -411,6 +619,12 @@ def analyse(path: str):
             saw_class_body = saw_braced_init = False
         i += 1
 
+    refs, pairs = thread_wrap_findings(masked, tl_members, tl_definitions)
+    for at, cls, name, defined_at in refs:
+        findings.append((src.count("\n", 0, at) + 1, "THREAD-WRAP",
+                         f"`{cls}::{name}` is named before its inline definition at line "
+                         f"{src.count(chr(10), 0, defined_at) + 1}: on Darwin its thread wrapper is emitted STRONG"))
+
     kept = []
     for line_no, kind, text in findings:
         state = exempt(line_no)
@@ -420,7 +634,7 @@ def analyse(path: str):
             kept.append((line_no, "BARE-ALLOW", "`header-linkage: allow` without a reason"))
             continue
         kept.append((line_no, kind, text))
-    return kept, constructs
+    return kept, constructs, pairs
 
 
 def default_roots() -> list[str]:
@@ -431,6 +645,7 @@ def default_roots() -> list[str]:
 def main() -> int:
     argv = sys.argv[1:]
     min_constructs = 0
+    min_wraps = 0
     stats = False
     specs: list[str] = []
     while argv:
@@ -440,6 +655,11 @@ def main() -> int:
                 print("usage error: --min-constructs needs a number", file=sys.stderr)
                 return 2
             min_constructs = int(argv.pop(0))
+        elif a == "--min-thread-wraps":
+            if not argv:
+                print("usage error: --min-thread-wraps needs a number", file=sys.stderr)
+                return 2
+            min_wraps = int(argv.pop(0))
         elif a == "--stats":
             stats = True
         elif a.startswith("--"):
@@ -452,6 +672,7 @@ def main() -> int:
     findings: list[str] = []
     total_headers = 0
     total_constructs = 0
+    total_wraps = 0
 
     for spec in specs:
         if ":" not in spec:
@@ -469,6 +690,7 @@ def main() -> int:
 
         headers = 0
         constructs = 0
+        wraps = 0
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = sorted(dirnames)
             for fn in sorted(filenames):
@@ -478,8 +700,9 @@ def main() -> int:
                 if any(part in path.replace(os.sep, "/") for part in EXCLUDED_PARTS):
                     continue
                 headers += 1
-                hits, count = analyse(path)
+                hits, count, pairs = scan(path)
                 constructs += count
+                wraps += pairs
                 for line_no, kind, text in hits:
                     findings.append(
                         f"{path.replace(os.sep, chr(47))}:{line_no}: error: [{kind}] {text}")
@@ -492,9 +715,11 @@ def main() -> int:
             )
             return 2
         if stats:
-            print(f"  {root}: {headers} headers, {constructs} namespace-scope constructs")
+            print(f"  {root}: {headers} headers, {constructs} namespace-scope constructs, "
+                  f"{wraps} thread-local member(s) paired with an inline definition")
         total_headers += headers
         total_constructs += constructs
+        total_wraps += wraps
 
     if total_constructs < min_constructs:
         print(
@@ -505,20 +730,38 @@ def main() -> int:
         )
         return 2
 
+    if total_wraps < min_wraps:
+        print(
+            f"::error::VACUOUS: {total_wraps} in-class thread_local member(s) paired with an inline "
+            f"definition across {total_headers} headers, floor is {min_wraps}. The THREAD-WRAP "
+            f"pairing is broken or the definition moved; a pass here proves nothing.",
+            file=sys.stderr,
+        )
+        return 2
+
     if findings:
         for f in findings:
             print(f)
-        print(
-            f"\n{len(findings)} finding(s). A non-template, non-inline definition in a header "
-            f"reached by both the archive and a consumer TU is a duplicate symbol at the "
-            f"consumer's link. Move it to a .cpp, or make it a template / `inline`. See "
-            f"{os.path.basename(__file__)}."
-        )
+        print(f"\n{len(findings)} finding(s). See {os.path.basename(__file__)}.")
+        if any("[THREAD-WRAP]" not in f for f in findings):
+            print(
+                "A non-template, non-inline definition in a header reached by both the archive and a "
+                "consumer TU is a duplicate symbol at the consumer's link. Move it to a .cpp, or make it a "
+                "template / `inline`."
+            )
+        if any("[THREAD-WRAP]" in f for f in findings):
+            print(
+                "A THREAD-WRAP finding names a thread_local static member before its inline definition: "
+                "on Darwin the translation unit whose first reference that is emits the member's thread "
+                "wrapper STRONG, and two such units are a duplicate symbol. Define that code after the "
+                "member's definition."
+            )
         return 1
 
     print(
-        f"OK — {total_headers} headers, {total_constructs} namespace-scope constructs classified; "
-        f"0 strong external definitions."
+        f"OK — {total_headers} headers, {total_constructs} namespace-scope constructs classified, "
+        f"{total_wraps} thread-local member(s) paired with an inline definition; "
+        f"0 strong external definitions, 0 thread wrappers named before their definition."
     )
     return 0
 

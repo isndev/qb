@@ -17,10 +17,10 @@ The one set of threads qb-io starts itself is the offload pool (3.3), and it is 
 Three consequences follow immediately, and all three are load-bearing:
 
 - **An I/O object may not be shared across threads.** Not "should not" — the watcher it registered lives in another thread's loop, and stopping or restarting it from here corrupts libev's per-fd bookkeeping. On Windows the epoll backend is wepoll (IOCP), which additionally requires the whole loop lifecycle to stay on one thread (`src/qb/io/async/listener.h:100-102`).
-- **`listener::current` is one per thread, not one per thread per binary image.** Its definition is `inline` **in the header** and `QB_ABI_ANCHOR`-annotated, because an out-of-line `thread_local` emits a `non-external` TLS descriptor: a host executable and a `dlopen`ed plugin that each statically link `libqb-io.a` would then hold *two* event loops for one thread, and everything the second registers goes into a loop nobody runs — silently (`src/qb/io/async/listener.h:1882`). The definition site carries the measurement. Do not move it into a `.cpp`.
+- **`listener::current` is one per thread, not one per thread per binary image.** Its definition is `inline` **in the header** and `QB_ABI_ANCHOR`-annotated, because an out-of-line `thread_local` emits a `non-external` TLS descriptor: a host executable and a `dlopen`ed plugin that each statically link `libqb-io.a` would then hold *two* event loops for one thread, and everything the second registers goes into a loop nobody runs — silently (`src/qb/io/async/listener.h:1895`). The definition site carries the measurement. Do not move it into a `.cpp`.
 - **The libev backend is auto-selected, and overridable for measurement only.** The loop is built with `_resolve_backend_flags()` (`src/qb/io/async/listener.h:801`) -- in the constructor of a listener of one's own, at the first use that needs a loop for the thread's -- which reads `QB_EV_BACKEND` and accepts `select`, `poll`, `epoll`, `kqueue`, `port`, `linuxaio`, `iouring`/`io_uring` and `auto`. The selection is safe by construction: an unknown name, a backend not compiled in, and a backend that fails to initialise at runtime (io_uring under a restrictive seccomp profile, for instance) all degrade to `EVFLAG_AUTO` with a one-line stderr notice, never a throw — the last case is caught by creating and destroying a throwaway probe loop first (`src/qb/io/async/listener.h:845-848`). Ask the running loop what it chose with `backend()` and `backend_name(unsigned)` (`src/qb/io/async/listener.h:975`, `:987`).
 
-`qb::io::async::init()` exists for symmetry and is a **no-op** — its whole body is a comment (`src/qb/io/async/listener.h:1911`). It deliberately does *not* clear anything: fixtures that share a thread's listener would have their already-registered watchers invalidated, leaving dangling `_async_event` references in live objects. When you genuinely want a clean loop — a test `TearDown`, a restart — call `listener::current.clear()` (`src/qb/io/async/listener.h:1025`).
+`qb::io::async::init()` exists for symmetry and is a **no-op** — its whole body is a comment (`src/qb/io/async/listener.h:1936`). It deliberately does *not* clear anything: fixtures that share a thread's listener would have their already-registered watchers invalidated, leaving dangling `_async_event` references in live objects. When you genuinely want a clean loop — a test `TearDown`, a restart — call `listener::current.clear()` (`src/qb/io/async/listener.h:1025`).
 
 ## The turn
 
@@ -73,11 +73,11 @@ The free functions all operate on `listener::current`:
 
 | Function | Behaviour | Declared |
 |---|---|---|
-| `async::run(int flag = 0)` | One turn with a libev flag. `0` blocks until the loop is broken or no active watcher remains. Returns the number of events invoked. | `listener.h:1959` |
-| `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h:2003` |
-| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds; a pass that invoked nothing parks the loop in its backend until a watcher fires — io readiness, a timer — or 1 ms, whichever comes first, so a reply is read at poll latency and an idle loop neither spins nor sleeps blind. Flip `status` on the loop thread (a handler, a callback, a coroutine): it is read unsynchronised. | `listener.h:2018` |
-| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:2049` |
-| `async::defer(func)` | Queue `func` for the tail of this turn. | `listener.h:1985` |
+| `async::run(int flag = 0)` | One turn with a libev flag. `0` blocks until the loop is broken or no active watcher remains. Returns the number of events invoked. | `listener.h:1984` |
+| `async::run_once()` | `run(EVRUN_ONCE)` — wait for and process one block of events. | `listener.h:2028` |
+| `async::run_until(bool const &status)` | `run(EVRUN_NOWAIT)` while `status` holds; a pass that invoked nothing parks the loop in its backend until a watcher fires — io readiness, a timer — or 1 ms, whichever comes first, so a reply is read at poll latency and an idle loop neither spins nor sleeps blind. Flip `status` on the loop thread (a handler, a callback, a coroutine): it is read unsynchronised. | `listener.h:2043` |
+| `async::break_parent()` | Ask `listener::current` to leave its current `run()` cycle. | `listener.h:2074` |
+| `async::defer(func)` | Queue `func` for the tail of this turn. | `listener.h:2010` |
 | `async::run_for(qb::duration)` | Pump the loop and the scheduler for a `steady_clock`-measured window, then return. | `coroutine/utils.h:228` |
 | `async::run_sync(Awaitable&&)` | Spawn an awaitable and pump until it completes, returning its result. | `coroutine/utils.h:294` |
 
@@ -93,7 +93,7 @@ So while `run_sync` is running, **the loop keeps turning**: sockets are serviced
 
 ### The guard, and what it actually checks
 
-Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:297`, `:229`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1931-1946`; `src/qb/io/async/coroutine/scheduler.h:898-907`, `:983-986`). When it fires it asserts in debug and throws `std::logic_error`.
+Both open with `ensure_not_inside_ready_drain(...)` (`src/qb/io/async/coroutine/utils.h:297`, `:229`). That guard asks exactly one question — is this scheduler currently inside `CoroutineScheduler::run_ready()`? — and the flag it reads, `in_run_ready_`, is set by an RAII guard scoped to `run_ready()` and to nothing else (`src/qb/io/async/listener.h:1956-1971`; `src/qb/io/async/coroutine/scheduler.h:898-907`, `:983-986`). When it fires it asserts in debug and throws `std::logic_error`.
 
 That covers exactly one case, and covers it well:
 
@@ -156,7 +156,7 @@ Four primitives answer "run this later", and they differ in ways the names do no
 | Ownership | listener-owned queue entry | none | self-deleting `Timeout<std::decay_t<F>>`, its own copy of `f` | caller-owned `unique_ptr<ScopedTimeout<std::decay_t<F>>>`, its own copy of `f` |
 | Heap traffic in steady state | one `std::function` per call | none | zero (freelist) | one allocation per call |
 
-<!-- src: qb/src/qb/io/async/listener.h:1985 (defer), qb/src/qb/io/async/io.h:399 (callback inline), :415 (callback delayed), :518 (scoped_callback), :532 (scoped_callback timed) -->
+<!-- src: qb/src/qb/io/async/listener.h:2010 (defer), qb/src/qb/io/async/io.h:399 (callback inline), :415 (callback delayed), :518 (scoped_callback), :532 (scoped_callback timed) -->
 
 A fifth shape does not belong in that table because it is not a one-shot: [`with_timeout<Derived>`](#inactivity-timeouts-with_timeoutderived) is a member timer that lives with the object and measures from the last activity rather than from arming.
 
@@ -400,7 +400,7 @@ Both counters include deferred callbacks and coroutine resumes, not just libev w
 
 ## Pitfalls
 
-- **`init()` does not reset anything.** It is a no-op by design (`src/qb/io/async/listener.h:1911`). For a clean loop — tests, restarts — call `listener::current.clear()`.
+- **`init()` does not reset anything.** It is a no-op by design (`src/qb/io/async/listener.h:1936`). For a clean loop — tests, restarts — call `listener::current.clear()`.
 - **`callback(func)` runs `func` inline.** So does `callback(func, d)` with `d <= 0`. If a handler must continue *after it unwinds* — above all if it must destroy or replace the object it is running on — that is `defer()`, not `callback()`, and not `callback(func, 1ms)`.
 - **Timer callbacks swallow exceptions.** `Timeout` and `ScopedTimeout` wrap the callable in `catch (...)`; so does the deferred drain, and so does the watcher dispatch boundary. Errors that escape your callable are logged at most, never propagated.
 - **`run_sync` / `run_for` block the thread that calls them.** Legitimate in a `main()`, a test or a CLI; a defect inside an actor handler, where the thread is the `VirtualCore` and the framework's guard does not fire. See [the rule above](#the-rule).

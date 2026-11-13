@@ -82,7 +82,7 @@ llm/qb.llm.api.md	crypto.h:1120-1124	b836147352c8	static std::vector<unsigned ch
 llm/qb.llm.api.md	crypto.h:817-825	8e21780c7681	* @brief Operation modes for elliptic curve encryption.
 llm/qb.llm.api.md	crypto.h:828-828	9e7269fef498	enum class EnvelopeFormat {
 llm/qb.llm.api.md	crypto_asymmetric.cpp:450-450	0ac40dcef3d3	return std::make_pair(ephemeral_pub_key, encrypted_data);
-llm/qb.llm.api.md	listener.h:1930-1946	d9f67615fd6a	inline void
+llm/qb.llm.api.md	listener.h:1955-1971	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
 llm/qb.llm.api.md	metrics.h:175-175	4fec3c2dbb3e	class family {
@@ -271,10 +271,10 @@ llm/qb.llm.md	lingering_close.cpp:46-46	3fb443641aec	constexpr std::size_t socke
 llm/qb.llm.md	lingering_close.cpp:58-58	7f93e02c4e88	constexpr std::size_t byte_budget = std::size_t{16} << 20;
 llm/qb.llm.md	lingering_close.h:56-56	a746dcd44a4e	void close_after_peer(::socket_type socket, qb::duration bound) noexc...
 llm/qb.llm.md	lingering_close.h:65-65	39764eb52022	std::size_t release_closing_sockets() noexcept;
-llm/qb.llm.md	listener.h:1910-1922	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1930-1946	d9f67615fd6a	inline void
-llm/qb.llm.md	listener.h:1985-1985	cc6b74b785e4	defer(_Func &&func) {
-llm/qb.llm.md	listener.h:2018-2018	d3424619f351	run_until(bool const &status) {
+llm/qb.llm.md	listener.h:1935-1947	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:1955-1971	d9f67615fd6a	inline void
+llm/qb.llm.md	listener.h:2010-2010	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:2043-2043	d3424619f351	run_until(bool const &status) {
 llm/qb.llm.md	metrics.h:208-208	7a5b17981653	class snapshot {
 llm/qb.llm.md	metrics.h:283-283	c90dbf2c7516	void describe_dispatch(snapshot &snap, qb::TimingStats const &stats, ...
 llm/qb.llm.md	metrics_registry.h:178-178	33a57aecca79	class Registry final : public detail::basic_registry<detail::registry...
