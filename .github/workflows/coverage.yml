@@ -48,6 +48,13 @@ jobs:
           for v in ${{ inputs.variants }}; do
             case "$v" in
               cov14)      args=(--preset coverage -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DGCOV_PATH="${GCOV_PATH:-}") ;;
+              cov14zb)    args=(--preset coverage -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DGCOV_PATH="${GCOV_PATH:-}" -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON) ;;
+              cov14z)     args=(--preset coverage -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DGCOV_PATH="${GCOV_PATH:-}" -DQB_WITH_ZSTD=ON) ;;
+              cov14b)     args=(--preset coverage -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DGCOV_PATH="${GCOV_PATH:-}" -DQB_WITH_BROTLI=ON) ;;
+              dbg14zb)    args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON) ;;
+              dbg15zb)    args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15 -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON) ;;
+              clangzb)    args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=clang-22 -DCMAKE_CXX_COMPILER=clang++-22 -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON) ;;
+              rel14zb)    args=(-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON) ;;
               dbg14)      args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14) ;;
               o1)         args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS=-O1 -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14) ;;
               dbg15)      args=(-DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=gcc-15 -DCMAKE_CXX_COMPILER=g++-15) ;;
@@ -83,7 +90,8 @@ jobs:
             if [ $rc -ne 0 ] || [ -n "$bad" ]; then
               extra=(); if [ -n "$bad" ]; then extra=(--gtest_shuffle "--gtest_random_seed=$bad"); fi
               (cd "$(dirname "$bin")" && gdb -batch -ex run -ex bt -ex 'info registers rip rsp rbp rdi rsi rax' \
-                 -ex 'x/16i $pc-32' -ex 'frame 1' -ex 'info frame' --args "./$t" "${extra[@]}") > "$o/$v-gdb.log" 2>&1
+                 -ex 'x/16i $pc-32' -ex 'frame 1' -ex 'info frame' -ex 'info symbol $pc' -ex 'info sharedlibrary' \
+                 --args "./$t" "${extra[@]}") > "$o/$v-gdb.log" 2>&1
               sed -n '/received signal/,$p' "$o/$v-gdb.log" | head -70
               objdump -d --no-show-raw-insn -C "$bin" > "$o/$v-objdump.txt" 2>/dev/null || true
             fi
