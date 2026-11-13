@@ -236,6 +236,26 @@ wider_values(std::uint64_t const seed) {
     w.words[0] = seed;
     co_yield w;
 }
+
+// The pooled promise types past the cache line: their frames take a realigned block, not a pool block.
+static_assert(alignof(task<Wider>::promise_type) == 128);
+static_assert(alignof(async_generator<Wider>::promise_type) == 128);
+
+task<Wider>
+produce_wider(std::uint64_t const seed, std::uintptr_t *promise_at) {
+    co_await promise_address{promise_at};
+    Wider w;
+    w.words[0] = seed;
+    co_return w;
+}
+
+async_generator<Wider>
+wider_values_async(std::uint64_t const seed, std::uintptr_t *promise_at) {
+    co_await promise_address{promise_at};
+    Wider w;
+    w.words[0] = seed;
+    co_yield w;
+}
 #else
 #define OVER_ALIGNED_PROMISE_PAST_THE_CACHE_LINE 0
 #endif
@@ -408,6 +428,94 @@ TEST_F(OverAlignedPromise, GeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedP
         census.record(opaque_address(&held), alignof(generator<Wider>::promise_type));
     }
     EXPECT_TRUE(all_aligned(census, kFrames, alignof(generator<Wider>::promise_type)));
+}
+
+/**
+ * @test A `task<Wider>` has its promise at the promise's alignment, frame after frame: past the cache line the pooled
+ *       promise types take a realigned block instead of a pool block.
+ */
+TEST_F(OverAlignedPromise, TaskOfAValueAlignedPastTheCacheLineHasAnAlignedPromise) {
+    std::atomic<bool>           done{false};
+    std::atomic<std::size_t>    values{0};
+    std::vector<std::uintptr_t> promises(kFrames, 0);
+    auto                        done_ptr     = &done;
+    auto                        values_ptr   = &values;
+    auto                        promises_ptr = &promises;
+    std::atomic<long>           counted_alive{-1};
+    std::atomic<long>           counted_after{-1};
+    auto                        alive_ptr = &counted_alive;
+    auto                        after_ptr = &counted_after;
+    coro_scheduler().spawn([done_ptr, values_ptr, promises_ptr, alive_ptr, after_ptr]() -> task<void> {
+        using detail::CoroutineFrameAllocator;
+        long const               before = CoroutineFrameAllocator::live_frames;
+        std::vector<task<Wider>> tasks;
+        spacers                  between;
+        tasks.reserve(kFrames);
+        between.reserve(kFrames);
+        for (std::uint64_t i = 0; i < kFrames; ++i) {
+            tasks.push_back(produce_wider(i, &(*promises_ptr)[i]));
+            between.push_back(std::make_unique<std::uint64_t>(i));
+        }
+        alive_ptr->store(CoroutineFrameAllocator::live_frames - before);
+        std::size_t n = 0;
+        for (std::uint64_t i = 0; i < kFrames; ++i) {
+            const Wider w = co_await std::move(tasks[i]);
+            if (w.words[0] == i)
+                ++n;
+        }
+        tasks.clear(); // every frame destroyed
+        after_ptr->store(CoroutineFrameAllocator::live_frames - before);
+        values_ptr->store(n);
+        done_ptr->store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the spawned coroutine never completed";
+    EXPECT_EQ(values.load(), kFrames);
+    alignment_census census;
+    for (auto const a : promises)
+        census.record(a, alignof(task<Wider>::promise_type));
+    EXPECT_TRUE(all_aligned(census, kFrames, alignof(task<Wider>::promise_type)));
+    // Past the line the frames are not pool blocks, and the pool's per-thread count still sees them -- the leak check
+    // qb's tests rely on: kFrames while they live, back where it was once they are gone.
+    EXPECT_EQ(counted_alive.load(), static_cast<long>(kFrames));
+    EXPECT_EQ(counted_after.load(), 0);
+}
+
+/**
+ * @test An `async_generator<Wider>` has its promise at the promise's alignment, frame after frame.
+ */
+TEST_F(OverAlignedPromise, AsyncGeneratorOfAValueAlignedPastTheCacheLineHasAnAlignedPromise) {
+    std::atomic<bool>           done{false};
+    std::atomic<std::size_t>    values{0};
+    std::vector<std::uintptr_t> promises(kFrames, 0);
+    auto                        done_ptr     = &done;
+    auto                        values_ptr   = &values;
+    auto                        promises_ptr = &promises;
+    coro_scheduler().spawn([done_ptr, values_ptr, promises_ptr]() -> task<void> {
+        std::vector<async_generator<Wider>> gens;
+        spacers                             between;
+        gens.reserve(kFrames);
+        between.reserve(kFrames);
+        for (std::uint64_t i = 0; i < kFrames; ++i) {
+            gens.push_back(wider_values_async(i, &(*promises_ptr)[i]));
+            between.push_back(std::make_unique<std::uint64_t>(i));
+        }
+        std::size_t n = 0;
+        for (std::uint64_t i = 0; i < kFrames; ++i) {
+            std::optional<Wider> const v = co_await gens[i].next();
+            if (v && v->words[0] == i)
+                ++n;
+        }
+        values_ptr->store(n);
+        done_ptr->store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the spawned coroutine never completed";
+    EXPECT_EQ(values.load(), kFrames);
+    alignment_census census;
+    for (auto const a : promises)
+        census.record(a, alignof(async_generator<Wider>::promise_type));
+    EXPECT_TRUE(all_aligned(census, kFrames, alignof(async_generator<Wider>::promise_type)));
 }
 #endif
 

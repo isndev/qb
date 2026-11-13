@@ -106,18 +106,18 @@ task<void> caller() {
 
 | Property | Detail | Source |
 |---|---|---|
-| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:454`, `:835` |
-| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:526-527` |
-| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:693-694`, `:715-716` |
-| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:590`, `:774-775` |
-| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:742-743` |
-| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:210` |
+| Return types | `task<void>` or `task<T>` for any move-constructible `T` | `task.h:492`, `:873` |
+| Initial suspend | `std::suspend_always` — lazy until spawned or awaited | `task.h:564-565` |
+| Move-only | yes; a moved-from task is empty and destroys nothing | `task.h:731-732`, `:753-754` |
+| Exception propagation | stored in the promise, re-thrown at the awaiting `co_await` | `task.h:628`, `:812-813` |
+| Symmetric transfer | `await_suspend` returns a `coroutine_handle<>` — flat stack in deep chains | `task.h:780-781` |
+| Frame allocation | thread-local size-bucketed freelist (`detail::CoroutineFrameAllocator`) | `task.h:211` |
 
 `await_resume()` always checks for a stored exception first and re-throws it; if the task is somehow not ready it throws `std::logic_error` rather than returning an uninitialized value. You generally never see these paths — you `co_await` the task and the result (or exception) is delivered.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:766-784 -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:804-822 -->
 
 > `task<T>` is move-only. Pass it to `spawn` (or any consumer) with `std::move`. `coro_scheduler().spawn(t)` is a compile error; write `coro_scheduler().spawn(std::move(t))`. See the [`spawn(Callable)` overload](#the-scheduler) for the case where you want to hand a lambda directly.
-<!-- src: qb/src/qb/io/async/coroutine/task.h:715-716; scheduler.h:615 (Factbook) -->
+<!-- src: qb/src/qb/io/async/coroutine/task.h:753-754; scheduler.h:615 (Factbook) -->
 
 ### `shared_task<T>` — one computation, many awaiters
 
@@ -402,7 +402,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await async_awaiter<T>(op)` | your callback (`awaiter.h:627`) | your callback |
 | `co_await tcp::connect(uri, timeout)` | the callback connector (`async/tcp/connector.h:936`) | connect success, failure, or the connector's own deadline |
 | `co_await offload(fn, args...)` | the thread's offload port: an `ev_async` the pool sends (`offload.h:49-59`) | the call returning on a pool thread — a running call is never interrupted |
-| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:743`) | the inner coroutine finishing |
+| `co_await innerTask` | the inner coroutine, by **symmetric transfer** (`task.h:781`) | the inner coroutine finishing |
 | `co_await sharedTask` | the shared state's waiter list (`shared_task.h:148`) | the one computation finishing |
 | `co_await when_all(...)` / `when_any(...)` / `race(...)` | N spawned branch runners (`combinators.h:99`, `:457`) | the branches |
 | `co_await coro_with_timeout(t, d)` | a spawned runner **and** a raw self-stopping `ev_timer` (`combinators.h:802`) | whichever comes first |
@@ -411,7 +411,7 @@ Everything else. Grouped by what they park on, because that determines what *doe
 | `co_await select(a, b, ...)` | every channel's list of select registrations (one node per channel in the awaiter), through `channel_select_awaiter` (`channel.h:1449`) | the first channel with data or a close |
 | `co_await sem.acquire()` (no token) / `mtx.lock()` / `rw.lock_read()` / `lock_write()` — only when the permit or lock is NOT free: a free one is taken without suspending | the primitive's own waiter deque — `acquire_awaiter` (`sync.h:102`), `lock_awaiter` (`:465`), `read_lock_awaiter` (`:707`), `write_lock_awaiter` (`:763`) | a `release()` / `unlock()`, which hands the permit or lock over (FIFO) before resuming the waiter |
 | `co_await b.arrive_and_wait()` / `ev.wait()` / `latch.wait()` | the primitive's waiter list — `arrive_awaiter` (`sync.h:1033`) and the two `wait_awaiter`s (`:1192`, `:1395`) | the final arrival / `set()` / the count reaching zero |
-| `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:472`) | the generator's next `co_yield` |
+| `co_await gen.next()` (async generator) | the generator, by symmetric transfer (`generator.h:465`) | the generator's next `co_yield` |
 | `co_await stream.collect()` and every other terminal | an ordinary `task` over the source | the source |
 | `co_await with_retry(f, policy)` | `f()`, and `sleep(delay)` between attempts (`retry.h:273`, `:321`, `:379`) | `f()` or the backoff timer — **the backoff is a plain `sleep`, not `cancellable_sleep`** |
 
@@ -428,7 +428,7 @@ Every awaiter in the layer therefore carries a destructor that has to survive "d
 - **Queue-backed awaiters retract their own entry** — and several also *repair* the object they were parked on. A destroyed `sem.acquire()` that had already been granted a permit calls `release()` so capacity does not erode by one permanently (`sync.h:133-135`); a destroyed `mtx.lock()` whose handle is no longer in the queue means `unlock()` already handed it ownership, so it unlocks rather than leaving the mutex locked with no holder (`sync.h:492-493`); an auto-reset `async_event` re-`set()`s a consumed-but-unclaimed signal (`sync.h:1219-1220`); a destroyed `ch.recv()` or `recv_for()` whose sender already handed it a value gives that value back through the channel's own hand-off -- to a receiver or a select waiter parked since, to the buffer only when nobody can take it -- so the message is not lost (`channel.h:349-350`, `:715`, `:1121-1124`). The send side has nothing to repair: a parked `ch.send()` or `send_for()` is served by its wake, which hands the value over before resuming it, so a sender reclaimed after its wake has sent, exactly once (Huly QB-272).
 - **Combinators tear down what they spawned, in a fixed order.** `when_any`'s loser reclaim destroys the branch's spawned runner **first** — so the inner task's `continuation_`, which points at that frame, can never be resumed — then `forget`s the inner frame, then destroys the inner `task`, whose destructor stops any watcher it was parked on (`combinators.h:492-501`). Getting that order wrong is a use-after-free, which is why the source spells it out.
 
-`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:683-686`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
+`~task()` is the blunt instrument at the bottom of all this: for a frame still in flight it calls `forget_frame_if_current(handle_)` and then `handle_.destroy()` (`task.h:721-724`). It does not wait, does not resume, and does not cancel cooperatively — the frame is destroyed where it sits, running the destructors of every live local. Every property above is what makes that safe.
 
 One consequence for your own code: **a coroutine's locals are destroyed at `co_return`, not when the frame is later freed.** Anything a deferred operation needs must be owned by the frame — a parameter or a capture — not borrowed from a caller's stack.
 
@@ -676,7 +676,7 @@ One property is worth relying on: **`take(gen, n)` pulls exactly `min(n, size(ge
 more.** The limit is tested before the source is resumed. Over `iota` an extra pull would cost nothing,
 which is exactly why the opposite behaviour survived for so long; over a source whose body reads a row, a
 token or a socket byte, that pull is a side effect nobody asked for.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:79 (generator), :151 (await_transform deleted), :583 (collect_to_vector lvalue), :610 (collect_to_vector rvalue), :636 (from_range), :677 (from_iterator), :692 (iota), range/repeat (:709/:724) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:77 (generator), :144 (await_transform deleted), :576 (collect_to_vector lvalue), :603 (collect_to_vector rvalue), :629 (from_range), :670 (from_iterator), :685 (iota), range/repeat (:702/:717) -->
 
 ### Asynchronous `async_generator<T>`
 
@@ -700,14 +700,14 @@ auto total = co_await reduce(read_lines("f"), std::size_t{0},
 ```
 
 `reduce(gen, init, reducer)` takes the seed before the reducer.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:328 (async_generator), :850 (take), :864 (skip), :889 (map, lazy), :900 (filter, lazy), :923 (for_each), :953 (reduce: init then reducer), :971 (collect_to_vector), :997 (map_to_vector, eager), :1016 (filter_to_vector, eager) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:321 (async_generator), :843 (take), :857 (skip), :882 (map, lazy), :893 (filter, lazy), :916 (for_each), :946 (reduce: init then reducer), :964 (collect_to_vector), :990 (map_to_vector, eager), :1009 (filter_to_vector, eager) -->
 
 #### Frames and promises
 
-A generator's frame is aligned to the cache line, as a task's is (3.4). C++20 does not align a coroutine frame for what it holds: the frame is placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block when there is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its most strictly aligned member; MSVC realigns it itself. Until 3.4 the generators had no `operator new`, so a `generator<E>` of a `qb::Event` -- every event is cache-line aligned -- had its promise, and a body that kept an `alignas(64)` local across `co_yield` had that local, at 16, 32 or 48 mod 64 on those three compilers (measured with g++ 14, clang 19 and clang-cl 22; MSVC 19.51 aligned every frame): undefined behaviour, and a segmentation fault wherever aligned vector moves are emitted -- an AVX target, `-march=native` or an x86-64-v3 distribution's default. Where the block comes from follows who owns the frame. An `async_generator<T>` is resumed by its loop's scheduler, as a task is, so it takes `task<T>`'s pool, `detail::CoroutineFrameAllocator`, and keeps a task's rules: its frame is made and destroyed on its loop's thread (one destroyed on another goes to that thread's free list), counts in the pool's `live_frames`, and AddressSanitizer sees it reused, never freed. A `generator<T>` is a plain value, which a program may move to another thread and destroy there, so it takes neither the pool -- whose per-thread free lists kept a frame freed on another thread until that thread exited -- nor the aligned `::operator new`, which glibc serves off its fast path (296 instructions a generator made, advanced once and destroyed, against 216 with `malloc`; callgrind, g++ 14 Release, glibc 2.41): its `operator new` takes an ordinary block `frame_alignment()` bytes larger and places the frame at its first aligned address past the word that keeps the block's own (218 instructions). That alignment is the cache line (`kAlign`), or the promise's own when it is stricter: a `generator<T>` of a value aligned past the cache line has its promise aligned (on GCC, clang and clang-cl -- MSVC does not compile a generator of a `T` aligned to 128, error C2719, since `yield_value` takes its `T` by value). Nothing else goes past the cache line: a local aligned further, or such a promise in an `async_generator` or a `task`, is not guaranteed its alignment on GCC, clang and clang-cl. A coroutine type of your own whose promise or locals are over-aligned needs an `operator new` that returns blocks aligned for them.
+A generator's frame is aligned to the cache line, as a task's is (3.4). C++20 does not align a coroutine frame for what it holds: the frame is placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block when there is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its most strictly aligned member; MSVC realigns it itself. Until 3.4 the generators had no `operator new`, so a `generator<E>` of a `qb::Event` -- every event is cache-line aligned -- had its promise, and a body that kept an `alignas(64)` local across `co_yield` had that local, at 16, 32 or 48 mod 64 on those three compilers (measured with g++ 14, clang 19 and clang-cl 22; MSVC 19.51 aligned every frame): undefined behaviour, and a segmentation fault wherever aligned vector moves are emitted -- an AVX target, `-march=native` or an x86-64-v3 distribution's default. Where the block comes from follows who owns the frame. An `async_generator<T>` is resumed by its loop's scheduler, as a task is, so it takes `task<T>`'s pool, `detail::CoroutineFrameAllocator`, and keeps a task's rules: its frame is made and destroyed on its loop's thread (one destroyed on another goes to that thread's free list), counts in the pool's `live_frames`, and AddressSanitizer sees a pooled frame reused, never freed. A `generator<T>` is a plain value, which a program may move to another thread and destroy there, so it takes neither the pool -- whose per-thread free lists kept a frame freed on another thread until that thread exited -- nor the aligned `::operator new`, which glibc serves off its fast path (296 instructions a generator made, advanced once and destroyed, against 216 with `malloc`; callgrind, g++ 14 Release, glibc 2.41): its `operator new` takes an ordinary block `frame_alignment()` bytes larger and places the frame at its first aligned address past the word that keeps the block's own (218 instructions). That alignment is the cache line (`kAlign`), or the promise's own when it is stricter, so a `generator<T>` of a value aligned past the cache line has its promise aligned. So do a `task<T>` and an `async_generator<T>` of one (3.4): past `kAlign` their promise takes a realigned block (`CoroutineFrameAllocator::allocate_realigned`) instead of a pool block, counted in the pool's `live_frames` as a pool block is -- 366 instructions a `task<Ev128>` made, awaited and destroyed, against the 276 of the pool block that misaligned it; at or below `kAlign` not one instruction changed. (MSVC does not compile any of the three for a `T` aligned to 128, error C2719: `yield_value` and `return_value` take their `T` by value.) What no allocator can align is a frame local aligned past its promise's alignment: an `operator new(size)` is not told it, and GCC, clang and clang-cl give it no more than the frame's base. A coroutine type of your own whose promise or locals are over-aligned needs an `operator new` that returns blocks aligned for them.
 
 The promise is built empty, whatever the coroutine's arguments, so `next()` returns what the body yields. A coroutine's promise is initialised from the coroutine's arguments whenever that is viable, and until 3.4 both promise types were aggregates, which C++20's parenthesized aggregate initialisation made viable on GCC, clang and clang-cl whenever the arguments, in order, could initialise the promise's first members: a generator whose one argument converts to `T` started with that argument as its value, and `next()` returned it without running the body -- `single_generator(42)` gave 42 twice, `iota(5)` began 5, 5, 6 -- and an `std::exception_ptr` argument after it was rethrown by the first `next()`, for both generators. A range-for never showed the first: `begin()` always runs the body to its first `co_yield`. `task<void>`'s promise had the same shape, its first member the stored exception: a `task<void>` coroutine whose first argument is an `std::exception_ptr` -- an error handler -- was awaited as if it had thrown that exception, and its body never ran.
-<!-- src: qb/src/qb/io/async/coroutine/generator.h:94 (frame_alignment, generator), :99 (operator new, generator), :120 (promise_type, generator), :334 (QB_CORO_PROMISE_POOLED_NEW_DELETE, async_generator), :342 (promise_type, async_generator); qb/src/qb/io/async/coroutine/task.h:210 (CoroutineFrameAllocator), :219 (kAlign), :871 (promise_type, task<void>) -->
+<!-- src: qb/src/qb/io/async/coroutine/generator.h:92 (frame_alignment, generator), :97 (operator new, generator), :113 (promise_type, generator), :327 (QB_CORO_PROMISE_POOLED_NEW_DELETE, async_generator), :335 (promise_type, async_generator); qb/src/qb/io/async/coroutine/task.h:211 (CoroutineFrameAllocator), :220 (kAlign), :909 (promise_type, task<void>) -->
 
 ## Async streams
 
@@ -890,7 +890,7 @@ for (int i = 0; i < 5; ++i) {
 ```
 
 Three rules cover every case: function parameters are copied into the coroutine frame, so passing data as an argument is always safe; the `spawn(Callable)` and `coroutine_scope::spawn(Callable)` overloads move the closure into an owning frame for you; and a coroutine local lives until `co_return`, not until the frame is destroyed. Note that a coroutine's locals are destroyed at `co_return` — not when the spawned frame is later freed — so anything a deferred operation needs must be owned by the frame (a parameter or a capture), not borrowed from a caller stack.
-<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:730-761 (spawn Callable), :1202 (invoke_owned_), task.h:715-716; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:758 -->
+<!-- src: qb/src/qb/io/async/coroutine/scheduler.h:730-761 (spawn Callable), :1202 (invoke_owned_), task.h:753-754; coroutine.h (capture-safety guidance); io_invariants Factbook scheduler.h:758 -->
 
 > **Scheduler teardown.** `~CoroutineScheduler` destroys every coroutine it owns: each spawned root with its chain down to the awaiter parked on a watcher, whose destructor stops it, then the frames queued and the frames completed -- and again, sixteen passes at most, while a destructor it ran spawned on it. It is what the listener's own destruction, `reset_coro_scheduler()` and a `VirtualCore`'s teardown always did (the last through `recycle_coro_scheduler()`, which keeps the scheduler and its storage for the next engine on the thread). Until 3.4 a scheduler owned directly abandoned its parked coroutines instead: they leaked, and one parked on a wait list ran on after its owner (Huly QB-1246). A scheduler now abandons -- destroying NOTHING, parked, queued and completed frames alike -- only in the orders where destroying would run code that cannot run: destroyed after its thread's `listener::current` (static storage, a thread_local built before the listener), destroyed on another thread than the one that built it, destroyed from inside one of its own coroutines (`std::exit()` in a coroutine body ends the thread's listener from inside it: no coroutine local is destroyed, the executing coroutine's or another's, and none queued behind it is resumed), and past the sixteenth pass, where it abandons what those passes left. It says so in every build: one WARNING line on stderr that names the order (written with `fputs`: no `std::cerr`, no lock of qb's -- it may be printed among the destructors of objects with static storage), and the coroutines it owned -- a root counted once, whatever it awaits -- added to `qb::io::async::abandoned_coroutine_frames_total()`, the process-wide tally (Huly QB-84). `recycle()` and `destroy_all_suspended()` do nothing in those orders. `listener::reset_coro_scheduler()` asked from one of the scheduler's own coroutines does nothing and says so on one line: the scheduler cannot go under its own `run_ready()`. A scheduler destroyed while it is the thread's current one unbinds itself (3.4, Huly QB-1220). A spawned coroutine that finishes under another scheduler of the thread -- resumed by hand, or queued there by the waker that fired -- is freed once, by that scheduler's drain or by its owner's `cancel_spawned()` if that comes first, and leaves its owner's bookkeeping, so the owner's reset no longer reads it (3.4, Huly QB-1243).
 
@@ -997,13 +997,13 @@ Each macro is a compile-time flag (`-DQB_DEBUG_CORO_LIFECYCLE=1`); when set it e
 
 | Macro | What it traces | Source |
 |---|---|---|
-| `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:94`, `awaiter.h:210` |
+| `QB_DEBUG_COROUTINES` | `task<T>` promise lifecycle, awaiter `on_event_ready`, timer fire | `task.h:95`, `awaiter.h:210` |
 | `QB_DEBUG_SCOPE` | `coroutine_scope` spawn / join / completion | `scope.h:43` |
 | `QB_DEBUG_CORO_LIFECYCLE` | `CoroutineScheduler` teardown, suspended-count traces | `scheduler.h:57-58` |
-| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:37-39` |
+| `QB_DEBUG_AGEN` | `async_generator` yield / next / suspend flow | `generator.h:35-37` |
 
 `QB_DEBUG_SCOPE` and `QB_DEBUG_CORO_LIFECYCLE` share the scheduler trace channel.
-<!-- src: qb/src/qb/io/async/coroutine/{task.h:94, awaiter.h:210, scope.h:43, scheduler.h:57-58, generator.h:37-39} -->
+<!-- src: qb/src/qb/io/async/coroutine/{task.h:95, awaiter.h:210, scope.h:43, scheduler.h:57-58, generator.h:35-37} -->
 
 ## Header reference
 

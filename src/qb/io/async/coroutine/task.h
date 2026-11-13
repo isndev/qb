@@ -81,6 +81,7 @@
 #include "promise_access.h" // handle_from_promise / promise_of: right for an over-aligned promise on clang-cl (QB-200)
 #include "tracking.h"       // opt-in suspension tracking (QB-71)
 #include <cstddef>
+#include <cstdint> // std::uintptr_t -- CoroutineFrameAllocator::allocate_realigned
 #include <cstdlib>
 #include <exception>
 #include <new>
@@ -212,8 +213,8 @@ public:
     // Cache line: a frame may hold a qb::Event (QB_LOCKFREE_CACHELINE_ALIGNMENT) in its promise or across a suspension,
     // and C++20 does not align a frame for it: GCC, clang and clang-cl lay the frame out from the address this
     // operator new returns (MSVC realigns it), and ::operator new guarantees 16 B -- the Event at 16, 32 or 48 mod 64,
-    // UB and a SIGSEGV wherever aligned vector moves are emitted. task<T> and async_generator<T> rely on these blocks,
-    // generator<T> on kAlign (or its promise's alignment past it); nothing else goes past kAlign. Use the canonical cache-line constant
+    // UB and a SIGSEGV wherever aligned vector moves are emitted. task<T> and async_generator<T> rely on these blocks up to
+    // kAlign and on allocate_realigned past it, generator<T> on allocate_realigned. Use the canonical cache-line constant
     // (overridable via KNOWN_L1_CACHE_LINE_SIZE) rather than a magic 64 so the pool
     // always tracks the platform's true line size / the alignment Events are built with.
     static constexpr std::size_t kAlign     = QB_LOCKFREE_CACHELINE_BYTES;
@@ -273,6 +274,25 @@ public:
         if (idx == 0 || idx > kMaxBucket)
             return ::operator new(size, std::align_val_t{kAlign});
         return ::operator new(idx * kAlign, std::align_val_t{kAlign});
+    }
+
+    /// A frame aligned to `alignment` (a power of two) where the pool cannot place it: generator<T>'s, a value that may
+    /// die on another thread, and a pooled promise type's aligned past kAlign. An ordinary ::operator new block
+    /// `alignment` bytes larger, the frame at its first aligned address past the word that keeps the block's own --
+    /// MSVC's _aligned_malloc does the same, and glibc's aligned ::operator new is off its fast path (Huly QB-1246).
+    /// Counts nothing in live_frames.
+    [[nodiscard]] static void *
+    allocate_realigned(std::size_t size, std::size_t alignment) {
+        auto *const block = static_cast<char *>(::operator new(size + alignment));
+        auto *const frame = block + (alignment - (reinterpret_cast<std::uintptr_t>(block) & (alignment - 1)));
+        // block is at least 8-aligned, so the step is 8 to `alignment` bytes: room for the word below the frame
+        reinterpret_cast<void **>(frame)[-1] = block; // what deallocate_realigned frees
+        return frame;
+    }
+
+    static void
+    deallocate_realigned(void *frame) noexcept {
+        ::operator delete(static_cast<void **>(frame)[-1]);
     }
 
 private:
@@ -340,20 +360,38 @@ private:
 // the pooled new/delete pair. We inject the operators via a macro rather
 // than a CRTP base to keep the promise layout identical (coroutine frames
 // are sensitive to promise size / alignment). Allocation carries no tracking metadata; each await records itself.
-#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                                               \
-    static void *operator new(std::size_t sz) {                                                           \
-        return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);                            \
-    }                                                                                                     \
-    static void operator delete(void *p, std::size_t sz) noexcept {                                       \
-        ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);                              \
-    }                                                                                                     \
-    static void operator delete(void *p) noexcept {                                                       \
-        /* Unsized delete fallback (used when sized-deallocation is off).   */                            \
-        /* We cannot recover the original bucket index, so we surrender the */                            \
-        /* block to the global allocator — correct but slower. Modern C++20 */                            \
-        /* compilers default to sized deallocation, so this path is cold.   */                            \
-        /* Match allocate()'s aligned ::operator new.                       */                            \
-        ::operator delete(p, std::align_val_t{::qb::io::async::detail::CoroutineFrameAllocator::kAlign}); \
+// A promise aligned past kAlign -- a task<T> or async_generator<T> of a T aligned past the cache line -- cannot take a
+// pool block: its frame is a realigned block (allocate_realigned), counted in live_frames as a pooled one is, freed by
+// both deletes alike. At or below kAlign the operators are what they were (Huly QB-1246). Pasted in a class named promise_type.
+#define QB_CORO_PROMISE_POOLED_NEW_DELETE()                                                                                      \
+    static void *operator new(std::size_t sz) {                                                                                  \
+        if constexpr (alignof(promise_type) > ::qb::io::async::detail::CoroutineFrameAllocator::kAlign) {                        \
+            void *const frame = ::qb::io::async::detail::CoroutineFrameAllocator::allocate_realigned(sz, alignof(promise_type)); \
+            ++::qb::io::async::detail::CoroutineFrameAllocator::live_frames;                                                     \
+            return frame;                                                                                                        \
+        } else                                                                                                                   \
+            return ::qb::io::async::detail::CoroutineFrameAllocator::allocate(sz);                                               \
+    }                                                                                                                            \
+    static void operator delete(void *p, std::size_t sz) noexcept {                                                              \
+        if constexpr (alignof(promise_type) > ::qb::io::async::detail::CoroutineFrameAllocator::kAlign) {                        \
+            static_cast<void>(sz);                                                                                               \
+            --::qb::io::async::detail::CoroutineFrameAllocator::live_frames;                                                     \
+            ::qb::io::async::detail::CoroutineFrameAllocator::deallocate_realigned(p);                                           \
+        } else                                                                                                                   \
+            ::qb::io::async::detail::CoroutineFrameAllocator::deallocate(p, sz);                                                 \
+    }                                                                                                                            \
+    static void operator delete(void *p) noexcept {                                                                              \
+        if constexpr (alignof(promise_type) > ::qb::io::async::detail::CoroutineFrameAllocator::kAlign) {                        \
+            --::qb::io::async::detail::CoroutineFrameAllocator::live_frames;                                                     \
+            ::qb::io::async::detail::CoroutineFrameAllocator::deallocate_realigned(p);                                           \
+        } else {                                                                                                                 \
+            /* Unsized delete fallback (used when sized-deallocation is off).   */                                               \
+            /* We cannot recover the original bucket index, so we surrender the */                                               \
+            /* block to the global allocator — correct but slower. Modern C++20 */                                               \
+            /* compilers default to sized deallocation, so this path is cold.   */                                               \
+            /* Match allocate()'s aligned ::operator new.                       */                                               \
+            ::operator delete(p, std::align_val_t{::qb::io::async::detail::CoroutineFrameAllocator::kAlign});                    \
+        }                                                                                                                        \
     }
 
 /**
