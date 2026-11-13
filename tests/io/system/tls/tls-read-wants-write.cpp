@@ -1331,6 +1331,10 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitedToWriteReadsAgainWhileOutputWaits) {
               << "): " << (read ? "the peer's data read" : "the peer's data NOT read") << " with " << client.out().size()
               << " octets queued, watching " << spell(client.watching()) << '\n';
     EXPECT_TRUE(read) << "the reads did not go on once the write they waited for had left";
+    // ...and readability is watched beside the output: the write pass that left it queued watched both directions again
+    // (a read made only when a record OpenSSL held had left would read the peer's data late, or never if the peer waited
+    // for it before reading more).
+    EXPECT_EQ(client.watching(), EV_READ | EV_WRITE) << "output left queued without readability: " << spell(client.watching());
     EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + bulk; })) << "the output never arrived whole";
     EXPECT_EQ(client.disconnected, 0u);
 }
