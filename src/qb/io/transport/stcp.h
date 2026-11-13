@@ -37,9 +37,9 @@ namespace qb::io::transport {
  *
  * This class implements a transport layer for secure (SSL/TLS) TCP sockets by extending
  * the generic `qb::io::stream` class, specializing it with `qb::io::tcp::ssl::socket`
- * as the underlying I/O mechanism. It handles SSL-specific behavior such as managing
- * pending encrypted data in the SSL buffer during read operations to ensure all application
- * data is retrieved.
+ * as the underlying I/O mechanism. A TLS record is decrypted whole: what a read leaves of one
+ * stays decrypted in the SSL object, and the transport says how much (`held_input()`), so that the
+ * io layer reads it although the socket announces nothing.
  */
 class stcp : public stream<io::tcp::ssl::socket> {
 public:
@@ -50,44 +50,60 @@ public:
     }
     /**
      * @brief Read data from the secure TCP socket
-     * @return Number of bytes read on success, error code on failure
+     * @return Number of bytes read on success, error code on failure (-2, `ErrBufferLimitExceeded`: no room left)
      *
-     * Reads data from the secure socket in chunks, ensuring that any
-     * pending data in the SSL buffer is also retrieved. This is important
-     * for SSL sockets where decrypted data might be buffered by the
-     * SSL implementation even after a socket read.
+     * One read of the TLS socket, of at most the room left under `max_read_buffer_size()`: nothing is read past the
+     * cap. A record is decrypted whole, so a read that takes less than the record leaves the rest decrypted in the
+     * SSL object, where no readiness of the socket announces it: `held_input()` counts it, and the io layer
+     * dispatches the component again for it. Nothing is lost.
      */
     [[nodiscard]] int
     read() noexcept {
         static constexpr const std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
 
-        if (this->_max_read_buffer_size < _in_buffer.size() || bucket_read > this->_max_read_buffer_size - _in_buffer.size()) {
-            return ErrBufferLimitExceeded;
-        }
+        if (_in_buffer.size() >= this->_max_read_buffer_size)
+            return ErrBufferLimitExceeded; // no room left under the cap: what the session holds waits for it
+        const std::size_t room      = this->_max_read_buffer_size - _in_buffer.size();
+        const std::size_t read_size = room < bucket_read ? room : bucket_read; // never past the cap (Huly QB-86)
 
-        auto ret = _in.read(_in_buffer.allocate_back(bucket_read), bucket_read);
-        if (ret >= 0) {
-            _in_buffer.free_back(bucket_read - ret);
-            const auto pending = SSL_pending(transport().ssl_handle());
-            if (pending) {
-                if (this->_max_read_buffer_size < _in_buffer.size()
-                    || static_cast<std::size_t>(pending) > this->_max_read_buffer_size - _in_buffer.size()) {
-                    return ErrBufferLimitExceeded;
-                }
-                const auto pending_sz = static_cast<std::size_t>(pending);
-                const auto ret2       = _in.read(_in_buffer.allocate_back(pending_sz), pending_sz);
-                if (ret2 >= 0) {
-                    _in_buffer.free_back(pending_sz - static_cast<std::size_t>(ret2));
-                    ret += ret2;
-                } else {
-                    _in_buffer.free_back(pending_sz);
-                }
-            }
-        } else {
-            _in_buffer.free_back(bucket_read);
-        }
+        const auto ret = _in.read(_in_buffer.allocate_back(read_size), read_size);
+        if (ret >= 0)
+            _in_buffer.free_back(read_size - static_cast<std::size_t>(ret));
+        else
+            _in_buffer.free_back(read_size);
+        _last_read_filled = ret >= 0 && static_cast<std::size_t>(ret) == read_size; // only then may its record hold more
         return ret;
     }
+
+    /**
+     * @brief Decrypted octets the TLS session holds that `read()` has not moved to the input buffer (`SSL_pending()`).
+     * @return Their count; 0 without a session.
+     * @details A read with less room than its record leaves them there, unannounced by the descriptor: `async::io` and
+     *          `async::input` dispatch a started component again for them (Huly QB-86). A transport of one's own may
+     *          declare it too, counting only what its next `read()` with room takes; its async base must be able to name
+     *          it -- public, or the base a friend as in `async::tcp::client` -- or it is taken for none, silently.
+     */
+    [[nodiscard]] std::size_t
+    held_input() const noexcept {
+        const SSL *const session = transport().ssl_handle();
+        return session ? static_cast<std::size_t>(SSL_pending(session)) : 0u;
+    }
+
+    /**
+     * @brief Whether the last `read()` of the socket filled the place it asked for.
+     * @details Only such a read can leave octets of its record inside the session: one that took less took the end of
+     *          its record. `async::io` and `async::input` test it after a read, before they ask `held_input()`, so a
+     *          dispatch whose read emptied its record calls nothing of the TLS library for it. A refused read (-2)
+     *          reads nothing and leaves it as it was. A transport of one's own that declares `held_input()` may
+     *          declare it too; without it the bases ask `held_input()` after every read that took octets.
+     */
+    [[nodiscard]] bool
+    last_read_filled() const noexcept {
+        return _last_read_filled;
+    }
+
+private:
+    bool _last_read_filled = false; ///< `read()` records it: its last read of the socket filled the place it asked for.
 };
 
 } // namespace qb::io::transport

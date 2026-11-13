@@ -189,6 +189,18 @@ MUTANTS = {
             '        _tls_held = false;\n        this->_async_event.feed_event(EV_READ);\n', 1),
     'E02': ('io<>: start() does not clear the arm kept aside', IOH, START_CLEAR, '', 1),
     'F01': ('a blocking connect answers 0 on a kept handshake error (round 2)', SSL, CONNECT_FAIL, '    if (false) {\n', 1),
+    # ---- the junction with QB-86 (composed tree only): each conflict of the port resolved QB-86's way ---------------
+    'J1': ('junction: io<>::start() arms as QB-86 left it (a read that waits to write watches readability)', IOH,
+           '        this->_async_event.start(Derived.transport().native_handle(), start_events());\n',
+           '        this->_async_event.start(Derived.transport().native_handle(), Derived.pendingWrite() ? EV_READ | EV_WRITE : EV_READ);\n', 1),
+    'J2': ('junction: input<>::start() arms readability, as QB-86 left it', IOH,
+           '        this->_async_event.start(Derived.transport().native_handle(), read_events());\n'
+           '        feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over\n',
+           '        this->_async_event.start(Derived.transport().native_handle(), EV_READ);\n'
+           '        feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over\n', 1),
+    'J3': ('junction: io<>::ready_to_read() adds readability during the wait, as QB-86 left it', IOH,
+           '                if ((this->_async_event.events & EV_WRITE) && _protocol->ok())\n                    return;\n',
+           '                if (false)\n                    return;\n', 1),
     'I16b': ('input<>: a start() during a read\'s wait watches readability', IOH, START_EV, '', 2, 0),
     'I17': ('io<>: ready_to_read() during a read\'s wait watches readability again', IOH, RTR_IO, '', 1),
     'I17b': ('input<>: ready_to_read() during a read\'s wait restarts on readability', IOH, RTR_IN, '', 1),

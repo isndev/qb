@@ -30,6 +30,12 @@
  *     aware override) draining decrypted bytes into `in()` / `pendingRead()`. The round-trip proves the
  *     stcp `read()` correctly retrieves SSL-buffered application data.
  *
+ *   - `transport::stcp` under a read cap (Huly QB-86): `read()` takes at most the room left under
+ *     `max_read_buffer_size()` -- a cap below the read bucket still reads, a stream that fits its cap is read
+ *     whole -- and what a record holds past that room stays inside the TLS session, read later with nothing
+ *     more from the socket. Both ends are driven by the test thread (shared/tls_pump.h), so every record and
+ *     every read happens where the case writes it.
+ *
  * Both POSIX and Windows keep the accepted socket alive until the client has finished.
  * The synchronous client uses a fixture deadline covering TCP and TLS; the server polls its
  * nonblocking handshake. SSL is gated at CMake (`REQUIRES ssl`); the shipped self-signed
@@ -62,7 +68,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -81,6 +89,7 @@
 #include "../../shared/loopback_fixture.h"
 #include "../../shared/ssl_fixtures.h"
 #include "../../shared/tls_deadline.h"
+#include "../../shared/tls_pump.h"
 
 using namespace std::chrono_literals;
 
@@ -372,4 +381,253 @@ TEST(SecureTransport, SacceptFlushReleasesAlreadyMovedOutSlot) {
     EXPECT_TRUE(client_connected.load());
     owner.disconnect();
     client.disconnect();
+}
+
+// ===========================================================================
+// stcp under a read cap: the room left is read, the rest of a record stays inside the session (Huly QB-86)
+// ===========================================================================
+//
+// Until 3.4 `stcp::read()` asked for a whole bucket (`QB_DEFAULT_READ_BUFFER_SIZE`, 64 KiB) or nothing: a cap below
+// the bucket refused every read, and a stream within a bucket of its cap was refused although its octets fit. It now
+// reads the room left. A TLS record is decrypted whole, so a read that takes less than the record leaves the rest
+// INSIDE the session (`SSL_pending()`), where no readiness of the socket will ever announce it: the cases below pin
+// that it stays there, intact, and is what the next read with room takes.
+
+namespace secure_transport_loopback_test {
+
+constexpr std::size_t kBucket    = QB_DEFAULT_READ_BUFFER_SIZE;
+constexpr std::size_t kMaxRecord = 16384u; // the most plaintext one TLS record carries, and one `SSL_write()` here
+
+/// `size` octets no two neighbours of which are equal, so an octet lost, repeated or out of place shows.
+std::string
+patterned(std::size_t size) {
+    std::string payload(size, '\0');
+    for (std::size_t i = 0; i < size; ++i)
+        payload[i] = static_cast<char>('a' + (i % 23));
+    return payload;
+}
+
+/// What a socket's receive buffer holds, or nothing when the socket cannot say.
+std::optional<std::size_t>
+waiting_in_socket(qb::io::tcp::socket const &sock) {
+#ifdef _WIN32
+    u_long held = 0;
+#else
+    int held = 0;
+#endif
+    if (::QB_IOCTLSOCKET(sock.native_handle(), FIONREAD, &held) != 0)
+        return std::nullopt;
+    return static_cast<std::size_t>(held);
+}
+
+/// An established TLS connection, both ends non-blocking and driven by the test thread: the accepted end is the
+/// socket of a `transport::stcp` -- the reader under test -- and `peer` writes to it, one record per write.
+class StcpUnderACap {
+    qb::io::tcp::ssl::listener _listener;
+
+public:
+    qb::io::tcp::ssl::socket peer;
+    qb::io::transport::stcp  reader;
+
+    [[nodiscard]] ::testing::AssertionResult
+    open() {
+        if (!require_ssl_files())
+            return ::testing::AssertionFailure() << "shipped SSL cert/key not found at " << ssl_resource_path("cert.pem");
+        _listener.init(make_server_context());
+        if (_listener.listen_v4(0, "127.0.0.1") != 0)
+            return ::testing::AssertionFailure() << "listen_v4 failed";
+        qb::io::test::tls_pair pair;
+        pair.client.set_insecure(); // self-signed test cert
+        if (auto opened = qb::io::test::open_tls_connection(_listener, _listener.local_endpoint().port(), pair); !opened)
+            return opened;
+        if (auto shaken = qb::io::test::complete_tls_handshake(pair); !shaken)
+            return shaken;
+        peer               = std::move(pair.client);
+        reader.transport() = std::move(pair.server);
+        return ::testing::AssertionSuccess();
+    }
+
+    /// The peer writes `octets` as ONE record: a write of at most `kMaxRecord` octets is one `SSL_write()`.
+    [[nodiscard]] ::testing::AssertionResult
+    send_record(std::string_view octets) {
+        if (octets.empty() || octets.size() > kMaxRecord)
+            return ::testing::AssertionFailure() << "not one record: " << octets.size() << " octets";
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        for (;;) {
+            const int ret = peer.write(octets.data(), octets.size());
+            if (ret == static_cast<int>(octets.size()))
+                return ::testing::AssertionSuccess();
+            if (ret != 0)
+                return ::testing::AssertionFailure() << "the peer's write answered " << ret << ": " << peer.get_last_ssl_error_string();
+            if (std::chrono::steady_clock::now() >= deadline)
+                return ::testing::AssertionFailure() << "the peer's socket never took the record";
+            std::this_thread::sleep_for(1ms);
+        }
+    }
+
+    /// `reader.read()` once the record the peer wrote has crossed the loopback: 0 from a TLS read is "not yet" --
+    /// a record is decrypted whole, so nothing of it is returned before its last octet arrived.
+    [[nodiscard]] int
+    read_when_it_arrived() {
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        for (;;) {
+            const int ret = reader.read();
+            if (ret != 0 || std::chrono::steady_clock::now() >= deadline)
+                return ret;
+            std::this_thread::sleep_for(1ms);
+        }
+    }
+
+    /// Decrypted octets the reader's TLS session holds, as OpenSSL counts them.
+    [[nodiscard]] std::size_t
+    held_in_session() {
+        return static_cast<std::size_t>(SSL_pending(reader.transport().ssl_handle()));
+    }
+
+    ~StcpUnderACap() {
+        static_cast<void>(peer.disconnect());
+        static_cast<void>(reader.transport().disconnect());
+    }
+};
+
+} // namespace secure_transport_loopback_test
+
+// A cap below the read bucket reads up to it, and is refused only once no room is left; what the record holds past
+// the cap stays inside the TLS session -- the socket has nothing more to give -- and is read, whole and in order, as
+// the buffer is flushed.
+TEST(SecureTransport, StcpUnderAReadCapBelowTheBucketReadsUpToItAndKeepsTheRestOfTheRecord) {
+    using namespace secure_transport_loopback_test;
+    constexpr std::size_t kCap = 1024u;
+    ASSERT_LT(kCap, kBucket);
+    const std::string payload = patterned(3000u);
+
+    StcpUnderACap tls;
+    ASSERT_TRUE(tls.open());
+    tls.reader.set_max_read_buffer_size(kCap);
+    ASSERT_TRUE(tls.send_record(payload));
+
+    ASSERT_EQ(tls.read_when_it_arrived(), static_cast<int>(kCap)) << "a cap below the bucket reads up to the cap";
+    EXPECT_EQ(tls.reader.pendingRead(), kCap);
+    EXPECT_EQ(tls.held_in_session(), payload.size() - kCap) << "the rest of the record is held inside the TLS session";
+    EXPECT_EQ(waiting_in_socket(tls.reader.transport()), std::optional<std::size_t>{0u})
+        << "and the socket has nothing left: no readiness will announce what the session holds";
+
+    EXPECT_EQ(tls.reader.read(), qb::io::ErrBufferLimitExceeded) << "no room left: refused";
+    EXPECT_EQ(tls.reader.pendingRead(), kCap) << "nothing read past the cap";
+    EXPECT_EQ(tls.held_in_session(), payload.size() - kCap) << "a refused read drops nothing of what the session holds";
+
+    std::string assembled;
+    for (std::size_t step = 0; assembled.size() < payload.size() && step < 64u; ++step) {
+        ASSERT_LE(tls.reader.pendingRead(), kCap) << "the buffer never holds more than its cap";
+        const std::size_t taken = tls.reader.pendingRead() < 600u ? tls.reader.pendingRead() : 600u; // a protocol consumes
+        assembled.append(tls.reader.in().begin(), taken);
+        tls.reader.flush(taken);
+        tls.reader.eof();
+        const std::size_t room = kCap - tls.reader.pendingRead();
+        const std::size_t held = tls.held_in_session();
+        if (held == 0u)
+            continue; // the record is read: what is buffered is all there is
+        ASSERT_EQ(tls.reader.read(), static_cast<int>(room < held ? room : held))
+            << "what the session holds is read as far as the room goes, with nothing more from the socket";
+    }
+    EXPECT_EQ(assembled, payload) << "every octet of the record, once, in order";
+    EXPECT_EQ(tls.held_in_session(), 0u);
+}
+
+// A stream that fills exactly to its cap is read whole, and one more octet is refused. The cap is a bucket and 1000
+// octets: once the buffer holds more than 1000 octets the room left is less than a bucket, which is where the read was
+// refused although the rest of the stream fits.
+TEST(SecureTransport, StcpReadsAStreamThatFillsExactlyToItsCapAndRefusesOneMoreOctet) {
+    using namespace secure_transport_loopback_test;
+    constexpr std::size_t kCap    = kBucket + 1000u;
+    const std::string     payload = patterned(kCap + 1u); // the stream, and one octet more
+
+    StcpUnderACap tls;
+    ASSERT_TRUE(tls.open());
+    tls.reader.set_max_read_buffer_size(kCap);
+
+    std::size_t sent = 0;
+    while (sent < kCap) { // record by record: four of 16384 octets, then the 1000 that fill the cap
+        const std::size_t record = kCap - sent < kMaxRecord ? kCap - sent : kMaxRecord;
+        ASSERT_TRUE(tls.send_record(std::string_view{payload}.substr(sent, record)));
+        ASSERT_EQ(tls.read_when_it_arrived(), static_cast<int>(record))
+            << "refused with " << tls.reader.pendingRead() << " octets buffered under a cap of " << kCap;
+        sent += record;
+    }
+    ASSERT_EQ(tls.reader.pendingRead(), kCap) << "the stream that fits its cap is read whole";
+    EXPECT_EQ(std::string_view(tls.reader.in().begin(), tls.reader.pendingRead()), std::string_view{payload}.substr(0u, kCap));
+    EXPECT_EQ(tls.held_in_session(), 0u);
+
+    // One octet more: it reaches the socket, and the read is refused without taking it.
+    ASSERT_TRUE(tls.send_record(std::string_view{payload}.substr(kCap, 1u)));
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (waiting_in_socket(tls.reader.transport()).value_or(0u) == 0u && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    ASSERT_GT(waiting_in_socket(tls.reader.transport()).value_or(0u), 0u) << "the record of the extra octet never arrived";
+    EXPECT_EQ(tls.reader.read(), qb::io::ErrBufferLimitExceeded) << "one more octet does not fit: refused";
+    EXPECT_EQ(tls.reader.pendingRead(), kCap) << "nothing read past the cap, nothing dropped";
+
+    tls.reader.flush(1u);
+    tls.reader.eof();
+    ASSERT_EQ(tls.read_when_it_arrived(), 1) << "the refused octet was left for a read with room";
+    EXPECT_EQ(tls.reader.in().begin()[tls.reader.pendingRead() - 1u], payload.back());
+}
+
+// The bucket bounds a read whatever the room, over TLS as over TCP: under a cap that leaves far more room than a
+// bucket, a read reserves a bucket for the record it takes -- not the room left, which would be the whole cap.
+TEST(SecureTransport, StcpReservesABucketForAReadWhateverTheRoom) {
+    using namespace secure_transport_loopback_test;
+    constexpr std::size_t kCap    = kBucket * 64u; // 4 MiB of room
+    const std::string     payload = patterned(3000u);
+
+    StcpUnderACap tls;
+    ASSERT_TRUE(tls.open());
+    tls.reader.set_max_read_buffer_size(kCap);
+    ASSERT_TRUE(tls.send_record(payload));
+
+    ASSERT_EQ(tls.read_when_it_arrived(), static_cast<int>(payload.size()));
+    EXPECT_EQ(std::string_view(tls.reader.in().begin(), tls.reader.pendingRead()), std::string_view{payload});
+    EXPECT_LT(tls.reader.in().capacity(), kCap) << "a read reserved the room left under the cap, not a bucket";
+}
+
+// `last_read_filled()` is what the io layer tests after a read, before it asks what the session holds: only a read
+// that filled the place it asked for can have left octets of its record there. It is a "may", and `held_input()` the
+// count: a record that ends exactly where the room does fills its read and leaves nothing.
+TEST(SecureTransport, StcpRecordsWhetherItsLastReadFilledThePlaceItAskedFor) {
+    using namespace secure_transport_loopback_test;
+    constexpr std::size_t kCap    = 1024u;
+    const std::string     payload = patterned(3000u);
+
+    StcpUnderACap tls;
+    ASSERT_TRUE(tls.open());
+    tls.reader.set_max_read_buffer_size(kCap);
+    EXPECT_FALSE(tls.reader.last_read_filled()) << "no read was made";
+    ASSERT_EQ(tls.reader.read(), 0) << "nothing was sent";
+    EXPECT_FALSE(tls.reader.last_read_filled()) << "a read that took nothing filled nothing";
+
+    ASSERT_TRUE(tls.send_record(payload));
+    ASSERT_EQ(tls.read_when_it_arrived(), static_cast<int>(kCap));
+    EXPECT_TRUE(tls.reader.last_read_filled()) << "the read took all it asked for: its record may hold more";
+    EXPECT_EQ(tls.reader.held_input(), payload.size() - kCap) << "and does";
+
+    ASSERT_EQ(tls.reader.read(), qb::io::ErrBufferLimitExceeded);
+    EXPECT_TRUE(tls.reader.last_read_filled()) << "a refused read reads nothing: what the session holds is still there to ask for";
+    EXPECT_EQ(tls.reader.held_input(), payload.size() - kCap);
+
+    tls.reader.flush(kCap);
+    tls.reader.eof();
+    ASSERT_EQ(tls.reader.read(), static_cast<int>(kCap));
+    EXPECT_TRUE(tls.reader.last_read_filled());
+    tls.reader.flush(kCap);
+    tls.reader.eof();
+    ASSERT_EQ(tls.reader.read(), static_cast<int>(payload.size() - 2u * kCap)) << "the end of the record: less than the room";
+    EXPECT_FALSE(tls.reader.last_read_filled()) << "a read that took less than it asked for took the end of its record";
+    EXPECT_EQ(tls.reader.held_input(), 0u);
+
+    tls.reader.flush(tls.reader.pendingRead());
+    tls.reader.eof();
+    ASSERT_TRUE(tls.send_record(std::string_view{payload}.substr(0u, kCap))); // a record of exactly the room
+    ASSERT_EQ(tls.read_when_it_arrived(), static_cast<int>(kCap));
+    EXPECT_TRUE(tls.reader.last_read_filled()) << "a read its record fills exactly is one that may have left octets";
+    EXPECT_EQ(tls.reader.held_input(), 0u) << "and held_input() says it left none";
 }

@@ -691,6 +691,39 @@ TEST(IoHandler, ASessionReadsAndSetsItsTransportsWriteBufferCap) {
     drain_after_clients();
 }
 
+// A tcp session reads and sets the read-buffer cap of its transport as well -- the one read() enforces by refusing,
+// which the io layer turns into a disconnection (Huly QB-86). The write cap was re-exposed and this one was not: a
+// session could bound what it queues for a peer, and not what a peer makes it buffer. Set at run time on a connected
+// session, the cap is the one the next read obeys: six octets are read of the ten sent, and the rest is refused.
+TEST(IoHandler, ASessionReadsAndSetsItsTransportsReadBufferCap) {
+    qb::io::async::init();
+    {
+        transport_accept_loopback_test::StandaloneClient standalone; // never connected: its cap alone
+        EXPECT_EQ(standalone.max_read_buffer_size(), static_cast<std::size_t>(QB_MAX_READ_BUFFER_SIZE)) << "the default";
+        standalone.set_max_read_buffer_size(42u);
+        EXPECT_EQ(standalone.max_read_buffer_size(), 42u);
+    }
+    HookServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
+    server.start();
+    {
+        qb::io::tcp::socket peer;
+        ASSERT_EQ(peer.connect_v4("127.0.0.1", server.transport().local_endpoint().port()), 0);
+        ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 3s));
+        auto session = server.sessions().begin()->second;
+        EXPECT_EQ(session->max_read_buffer_size(), static_cast<std::size_t>(QB_MAX_READ_BUFFER_SIZE)) << "the default";
+        session->set_max_read_buffer_size(6u);
+        EXPECT_EQ(session->max_read_buffer_size(), 6u);
+
+        ASSERT_EQ(peer.write("abcdefghij", 10u), 10); // no line in them: nothing is consumed
+        EXPECT_TRUE(pump_until([&] { return session->disconnection_reason() != 0; }, 3s)) << "octets past the cap were never refused";
+        EXPECT_EQ(session->disconnection_reason(), static_cast<int>(qb::io::async::event::disconnect_reason::buffer_overflow));
+        EXPECT_EQ(std::string(session->in().begin(), session->in().size()), "abcdef") << "read up to the cap the session set, not past it";
+        peer.close();
+    }
+    drain_after_clients();
+}
+
 namespace transport_accept_loopback_test {
 
 class PeerServer;

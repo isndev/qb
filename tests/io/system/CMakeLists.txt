@@ -277,8 +277,14 @@ qb_add_test(MODULE qb-io TIER system NAME tls-read-wants-write SOURCES tls/tls-r
 # clear() closes as many closing sockets as a loop may hold.
 qb_add_test(MODULE qb-io TIER system NAME close-after-peer-teardown SOURCES tcp/close-after-peer-teardown.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
 # Each of the three allocations of a closing socket's node fails in turn: closed at once, nothing left registered.
-# Alone in its binary: it replaces the global allocation functions (Huly QB-1270).
-qb_add_test(MODULE qb-io TIER system NAME close-after-peer-alloc SOURCES tcp/close-after-peer-alloc.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+# Alone in its binary: it replaces the global allocation functions (Huly QB-1270) -- which clang's ThreadSanitizer cannot
+# link off Apple: there its runtime is a static archive whose new/delete object defines every form, and each replaced
+# one is a duplicate definition (clang-22, libclang_rt.tsan_cxx, the sanitize-thread lane; the string test meets the
+# same). A capability gate, not a skip: g++'s TSan and Apple's (shared runtimes, measured: 2 / 2 on the macOS image),
+# ASan and every other build run it.
+if (NOT (QB_SANITIZE MATCHES "thread" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT APPLE))
+    qb_add_test(MODULE qb-io TIER system NAME close-after-peer-alloc SOURCES tcp/close-after-peer-alloc.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+endif ()
 # A server session that ends its own connection with everything written is released at once and its descriptor
 # closes after the peer, on the loop; one that lingered, has output queued, was ended by its size guard or has a
 # linger of zero closes with the session; close_after_deliver() lingers in time alone (a peer still sending 64 MiB

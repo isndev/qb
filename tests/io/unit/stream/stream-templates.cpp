@@ -22,6 +22,9 @@
  * Contracts proven:
  *   - istream: read-buffer-limit → `ErrBufferLimitExceeded` (0 pending); injected read failure → -1;
  *     a scripted payload reads to the exact byte count; `eof()`/`flush()` buffer management.
+ *   - istream, the read cap (Huly QB-86): a read takes at most the room left under `max_read_buffer_size()`, so a cap
+ *     below the read bucket still reads, a stream that fits its cap is read whole, nothing is read past the cap, and
+ *     the read is refused only once no room is left -- with nothing dropped, and read on once the buffer is flushed.
  *   - ostream: partial writes drain the buffer in scripted steps and preserve the exact wire image;
  *     `LimitedScriptedOStream` proves publish() rejects (nullptr) once the cap would be crossed;
  *     an injected write failure keeps the pending bytes intact.
@@ -54,6 +57,7 @@
  */
 
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -75,9 +79,11 @@ using qb::io::test::ScriptedStreamTransport;
  * @brief Salvaged verbatim-in-spirit from StreamTemplates.InputReadLimitsFailuresAndConstAccess.
  */
 TEST(StreamTemplates, InputReadLimitsFailuresAndConstAccess) {
-    // A read-buffer cap below one bucket makes the first read() trip the DoS guard.
+    // A read-buffer cap that leaves no room makes the first read() trip the DoS guard: a cap of zero is no room at all.
+    // (A cap below one read bucket is room, and reads: see the read-cap cases below.)
     qb::io::istream<ScriptedStreamTransport> limited;
-    limited.set_max_read_buffer_size(4u);
+    limited.transport() = ScriptedStreamTransport{"never read"};
+    limited.set_max_read_buffer_size(0u);
     EXPECT_EQ(limited.read(), qb::io::ErrBufferLimitExceeded);
     EXPECT_EQ(limited.pendingRead(), 0u);
 
@@ -100,6 +106,142 @@ TEST(StreamTemplates, InputReadLimitsFailuresAndConstAccess) {
 
     const auto &const_input = input;
     EXPECT_FALSE(const_input.transport().closed);
+}
+
+// =============================================================================
+// istream — the read cap: a read takes the room left, and is refused only when none is (Huly QB-86).
+// =============================================================================
+//
+// Until 3.4 a read was all or nothing: it asked for a whole bucket (`QB_DEFAULT_READ_BUFFER_SIZE`, 64 KiB) and was
+// refused whenever a bucket did not fit under the cap. A cap below the bucket therefore refused every read -- a stream
+// with such a cap never read an octet -- and a stream whose buffered input sat within a bucket of its cap was refused
+// although the octets waiting would have fitted: where the reads happened to fall decided what a cap let through.
+
+namespace stream_templates_test {
+
+/// `size` octets no two neighbours of which are equal, so an octet lost, repeated or out of place shows.
+std::string
+patterned(std::size_t size) {
+    std::string payload(size, '\0');
+    for (std::size_t i = 0; i < size; ++i)
+        payload[i] = static_cast<char>('a' + (i % 23));
+    return payload;
+}
+
+constexpr std::size_t kBucket = QB_DEFAULT_READ_BUFFER_SIZE;
+
+} // namespace stream_templates_test
+
+/**
+ * @test A cap below the read bucket reads up to it, is refused only past it, and reads on once there is room.
+ * @brief 1 KiB under a 64 KiB bucket. The first read takes exactly the cap -- not a bucket, and not nothing; the next is
+ *        refused with the buffer intact; each flush then lets the next read take exactly the room it freed. The whole
+ *        script arrives, in order, and the buffer never holds more than its cap.
+ */
+TEST(StreamTemplates, AReadCapBelowTheBucketReadsUpToItAndIsRefusedOnlyPastIt) {
+    constexpr std::size_t kCap = 1024u;
+    ASSERT_LT(kCap, stream_templates_test::kBucket);
+    const std::string payload = stream_templates_test::patterned(3000u);
+
+    qb::io::istream<ScriptedStreamTransport> input;
+    input.transport() = ScriptedStreamTransport{payload};
+    input.set_max_read_buffer_size(kCap);
+
+    ASSERT_EQ(input.read(), static_cast<int>(kCap)) << "a cap below the bucket reads up to the cap";
+    EXPECT_EQ(input.pendingRead(), kCap);
+    EXPECT_EQ(input.read(), qb::io::ErrBufferLimitExceeded) << "no room left: refused";
+    EXPECT_EQ(input.pendingRead(), kCap) << "a refused read drops nothing";
+
+    std::string assembled;
+    for (std::size_t step = 0; assembled.size() < payload.size() && step < 64u; ++step) {
+        ASSERT_LE(input.pendingRead(), kCap) << "the buffer never holds more than its cap";
+        const std::size_t taken = input.pendingRead() < 600u ? input.pendingRead() : 600u; // what a protocol consumes
+        assembled.append(input.in().begin(), taken);
+        input.flush(taken);
+        input.eof();
+        const std::size_t room = kCap - input.pendingRead();
+        const std::size_t left = payload.size() - assembled.size() - input.pendingRead(); // what the transport still has
+        const int         n    = input.read();
+        ASSERT_EQ(n, static_cast<int>(room < left ? room : left)) << "a read takes the room left, or what there is";
+    }
+    EXPECT_EQ(assembled, payload) << "every octet, once, in order";
+}
+
+/**
+ * @test A stream that fills exactly to its cap is read whole, and one more octet is refused.
+ * @brief The cap is a bucket and 1000 octets. After a first read of a whole bucket the room left is 1000 octets --
+ *        less than a bucket, which is where the read was refused although those 1000 octets fit. They are read; the
+ *        buffer then holds exactly its cap; and the octet after them is refused, left in the transport, where it is
+ *        found again once the buffer has room.
+ */
+TEST(StreamTemplates, AStreamThatFillsExactlyToItsCapIsReadWholeAndOneMoreOctetIsRefused) {
+    constexpr std::size_t kCap    = stream_templates_test::kBucket + 1000u;
+    const std::string     payload = stream_templates_test::patterned(kCap + 1u); // the stream, and one octet more
+
+    qb::io::istream<ScriptedStreamTransport> input;
+    input.transport() = ScriptedStreamTransport{payload};
+    input.set_max_read_buffer_size(kCap);
+
+    ASSERT_EQ(input.read(), static_cast<int>(stream_templates_test::kBucket)) << "a bucket at most per read";
+    ASSERT_EQ(input.read(), 1000) << "within a bucket of the cap, what fits is read";
+    ASSERT_EQ(input.pendingRead(), kCap) << "the stream that fits its cap is read whole";
+    EXPECT_EQ(std::string(input.in().begin(), input.pendingRead()), payload.substr(0u, kCap));
+
+    EXPECT_EQ(input.read(), qb::io::ErrBufferLimitExceeded) << "one more octet does not fit: refused";
+    EXPECT_EQ(input.pendingRead(), kCap) << "nothing read past the cap, nothing dropped";
+
+    input.flush(1u);
+    input.eof();
+    ASSERT_EQ(input.read(), 1) << "the refused octet was left in the transport";
+    EXPECT_EQ(input.in().begin()[input.pendingRead() - 1u], payload.back());
+}
+
+/**
+ * @test A cap set under what is already buffered refuses the next read and keeps what is buffered.
+ */
+TEST(StreamTemplates, AReadCapSetUnderWhatIsBufferedRefusesTheNextRead) {
+    qb::io::istream<ScriptedStreamTransport> input;
+    input.transport() = ScriptedStreamTransport{"payload and more"};
+    input.set_max_read_buffer_size(7u);
+    ASSERT_EQ(input.read(), 7);
+
+    input.set_max_read_buffer_size(4u); // under the 7 octets buffered
+    EXPECT_EQ(input.read(), qb::io::ErrBufferLimitExceeded);
+    EXPECT_EQ(std::string(input.in().begin(), input.pendingRead()), "payload");
+
+    input.flush(5u); // 2 octets left under a cap of 4: room for 2
+    input.eof();
+    EXPECT_EQ(input.read(), 2);
+    EXPECT_EQ(std::string(input.in().begin(), input.pendingRead()), "ad a");
+}
+
+/**
+ * @test The bucket bounds a read whatever the room: under a cap of several buckets, and under no cap (`SIZE_MAX`,
+ *       written -1), one read takes exactly a bucket while the transport has more to give.
+ * @brief The other half of the rule. A read that took the room left instead -- every octet the transport has, under a
+ *        cap that large -- would pass every case above, whose caps leave less room than a bucket.
+ */
+TEST(StreamTemplates, AnUnlimitedReadCapReadsABucketAtATime) {
+    const std::string payload = stream_templates_test::patterned(stream_templates_test::kBucket * 2u + 10u);
+    {
+        // Room for the whole payload and more, under a cap that is one: the read stops at the bucket.
+        qb::io::istream<ScriptedStreamTransport> roomy;
+        roomy.transport() = ScriptedStreamTransport{payload};
+        roomy.set_max_read_buffer_size(stream_templates_test::kBucket * 4u);
+        ASSERT_EQ(roomy.read(), static_cast<int>(stream_templates_test::kBucket)) << "a read took the room left, not a bucket";
+        EXPECT_EQ(roomy.pendingRead(), stream_templates_test::kBucket);
+    }
+
+    qb::io::istream<ScriptedStreamTransport> input;
+    input.transport() = ScriptedStreamTransport{payload};
+    input.set_max_read_buffer_size(static_cast<std::size_t>(-1));
+    EXPECT_EQ(input.max_read_buffer_size(), std::numeric_limits<std::size_t>::max());
+
+    ASSERT_EQ(input.read(), static_cast<int>(stream_templates_test::kBucket)) << "one read took more than a bucket";
+    EXPECT_EQ(input.pendingRead(), stream_templates_test::kBucket) << "with a bucket and ten octets still to give";
+    EXPECT_EQ(input.read(), static_cast<int>(stream_templates_test::kBucket));
+    EXPECT_EQ(input.read(), 10);
+    EXPECT_EQ(std::string(input.in().begin(), input.pendingRead()), payload);
 }
 
 // =============================================================================

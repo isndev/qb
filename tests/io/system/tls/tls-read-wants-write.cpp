@@ -158,6 +158,12 @@ public:
     void
     pump_once() {
         qb::io::async::run(EVRUN_NOWAIT);
+        read_once();
+    }
+
+    /// One read: the application octets kept, a handshake in progress driven.
+    void
+    read_once() {
         char buffer[4096];
         ERR_clear_error();
         const int n = SSL_read(ssl, buffer, static_cast<int>(sizeof(buffer)));
@@ -1761,4 +1767,130 @@ TEST_F(TlsReadWantsWrite, ARenegotiationBehindARecordHeldAfterEnobufsCompletes) 
     EXPECT_EQ(client.disconnected, 0u) << "the connection ended";
     EXPECT_EQ(peer.received, expected) << "the record or the answers did not arrive";
     EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0) << "the renegotiation never completed";
+}
+
+// The junction with QB-86 (a read cap below a record; what the record leaves inside the session is read through FED
+// dispatches, `feed_held_input()`). Under a cap of kCap octets, a record of 2 x kCap is read by two reads that each fill
+// the cap: the second, and the read after it, come from fed events -- no readiness of the socket announces octets the
+// session holds. The read after them meets the HelloRequest behind that record and must write first into a full socket.
+namespace tls_read_wants_write_test {
+constexpr std::size_t kCap = 1024;
+
+/// kCap lines of two octets: one record of 2 x kCap the peer writes in one SSL_write().
+std::string
+two_caps_of_lines() {
+    std::string lines;
+    for (std::size_t i = 0; i < kCap; ++i)
+        lines += "a\n";
+    return lines;
+}
+
+/// Pumps the peer's reads until `done()` or the bound, one loop pass between two reads: the most events a pass dispatched.
+template <typename Pred>
+std::size_t
+most_events_a_pass(RawPeer &peer, Pred &&done, bool &held) {
+    std::size_t most     = 0;
+    const auto  deadline = steady::now() + kBound;
+    while (!(held = done()) && steady::now() < deadline) {
+        const std::size_t events = events_in(1);
+        most                     = events > most ? events : most;
+        peer.read_once();
+        std::this_thread::sleep_for(1ms);
+    }
+    return most;
+}
+} // namespace tls_read_wants_write_test
+
+// (a) The read that meets the HelloRequest is reached through a fed event, and must write first: writability alone is
+// armed, as after a read the socket's readiness dispatched. (c) That read answered "wants write": it filled nothing, so
+// nothing is fed after it -- the loop is not woken while the full socket waits. (b) A stop() and a start(), then a
+// ready_to_read(), during that wait keep writability alone: start() feeds held input only to a watcher that reads, and the
+// session holds none -- OpenSSL hands out what a record left before it reads the next one. (d) Once the peer reads, the
+// renegotiation completes and the data behind it is read, a bounded number of dispatches in every pass.
+TEST_F(TlsReadWantsWrite, AReadReachedThroughHeldInputThatMustWriteFirstWaitsForWritability) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.set_max_read_buffer_size(kCap);
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::while_full = true;
+    ASSERT_TRUE(peer.write(two_caps_of_lines()));
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    SSL *const ssl = client.transport().ssl_handle();
+    ASSERT_EQ(client.disconnected, 0u) << "the client ended the connection (system error " << client.system_error << ")";
+    ASSERT_GE(refuse::attempts, 1u) << "the case proves nothing: the read wrote no ClientHello";
+    ASSERT_EQ(SSL_in_init(ssl), 1) << "the case proves nothing: the client did not answer the HelloRequest";
+    ASSERT_EQ(SSL_pending(ssl), 0) << "OpenSSL holds input while its read must write first";
+    EXPECT_EQ(client.watching(), EV_WRITE) << "the fed read that must write first did not arm writability alone: " << spell(client.watching());
+    const std::size_t waiting = events_in(kPasses);
+    client.stop();
+    pump(10ms);
+    client.start();
+    const bool restarted = client.watching() == EV_WRITE;
+    client.ready_to_read();
+    const std::size_t after = events_in(kPasses);
+    std::cout << "[ MEASURED ] a read reached through held input that must write first (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): " << waiting << " events in " << kPasses << " passes, " << after << " after a stop, a start and a "
+              << "ready_to_read(), watching " << spell(client.watching()) << '\n';
+    EXPECT_LE(waiting, kIdleEvents) << "the loop was woken while the read waited for the socket to take its write";
+    EXPECT_TRUE(restarted) << "a start() during the wait did not wait for writability alone";
+    EXPECT_EQ(client.watching(), EV_WRITE) << "ready_to_read() during the wait changed what the watcher waits for";
+    EXPECT_LE(after, kIdleEvents) << "the loop was woken after a start() during the wait";
+    bool              done = false;
+    const std::size_t most = most_events_a_pass(
+        peer,
+        [&] {
+            return (client.pings == 1u && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE || client.disconnected != 0u;
+        },
+        done);
+    std::cout << "[ MEASURED ] ...then " << (done ? "" : "NOT ") << "done: at most " << most << " events in a pass, pings " << client.pings
+              << ", renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << '\n';
+    EXPECT_TRUE(done) << "the renegotiation or the data behind it never got through";
+    EXPECT_EQ(client.disconnected, 0u);
+    EXPECT_LE(most, 2 * kCap / kCap + 2) << "a pass dispatched the session more often than the record's pieces";
+}
+
+// (d) and (e): the same cap, the data behind the HelloRequest answered -- the answers wait for the handshake the reads
+// drive (a write would drive it too and meet the next record), the reads come in pieces through fed dispatches, and the
+// answers leave once the handshake completes; a bounded number of dispatches in every pass.
+TEST_F(TlsReadWantsWrite, AnswersHeldBackByARenegotiationLeaveWhenTheReadsInPiecesCompleteIt) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.set_max_read_buffer_size(kCap);
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n" + two_caps_of_lines()));
+    ASSERT_TRUE(peer.write("ping\n"));
+    bool              done = false;
+    const std::size_t most = most_events_a_pass(
+        peer,
+        [&] {
+            return (peer.received == "pong\npong\n" && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE
+                   || client.disconnected != 0u;
+        },
+        done);
+    std::cout << "[ MEASURED ] answers held back by a renegotiation, reads in pieces (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): " << (done ? "" : "NOT ") << "done, at most " << most << " events in a pass, pings " << client.pings
+              << ", answered during the renegotiation " << client.answered_in_handshake << ", the peer read " << peer.received.size()
+              << ", disconnected " << client.disconnected << '\n';
+    ASSERT_GE(client.answered_in_handshake, 1u) << "the case proves nothing: no answer was queued during the renegotiation";
+    EXPECT_TRUE(done) << "the answers or the renegotiation never got through";
+    EXPECT_EQ(client.disconnected, 0u);
+    EXPECT_EQ(peer.received, "pong\npong\n");
+    EXPECT_LE(most, 2 * kCap / kCap + 3) << "a pass dispatched the session more often than the record's pieces";
 }

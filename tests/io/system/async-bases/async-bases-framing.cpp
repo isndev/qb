@@ -2262,3 +2262,401 @@ TEST_F(AsyncIoBaseTest, InputClearProtocolsOutsideADispatchEndsTheProtocolsAtOnc
     input.base().clear_protocols();
     EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
 }
+
+// =============================================================================
+// Input a transport holds below its descriptor (Huly QB-86)
+// =============================================================================
+//
+// A transport may hold input its descriptor will never announce -- `transport::stcp` holds what a TLS record carries
+// past the room a read had -- and says so with `held_input()`. The bases then feed their own watcher, which is the
+// only thing that can have the component dispatched: the probes below hold their input in memory, over one end of a
+// socket pair nobody writes to. What bounds the feeding is pinned case by case: it follows a read that took octets --
+// one that filled the place it asked for, when the transport says which did -- it is for a started component with its
+// protocol in place, `start()` and `ready_to_read()` do it once, and a duplex component must be reading.
+
+namespace async_bases_framing_test {
+
+constexpr std::size_t kReadBudget = 10000u; // reads past which a case is a loop that would not end
+
+/// The transport surface of a component whose transport holds input: `held` is what its reads hand out, `per_read`
+/// octets at a time, and `held_input()` what is left of it. A watchdog lets go of a dispatch that would never end.
+class HoldingSurface {
+    SocketTransport           _transport;
+    qb::allocator::pipe<char> _in;
+    qb::allocator::pipe<char> _out;
+
+public:
+    std::string              held;                     ///< what the transport still holds
+    std::size_t              per_read         = 4u;    ///< octets one read() takes of it; 0: it holds input and gives none
+    std::size_t              reads            = 0u;    ///< read() calls
+    bool                     runaway          = false; ///< the watchdog let go, after `kReadBudget` reads
+    std::size_t              stop_after       = 0u;    ///< the handler of that message stops the component (0: none does)
+    std::size_t              write_only_after = 0u;    ///< ...or has its watcher wait for writes alone (0: none does)
+    std::vector<std::string> messages;
+
+    explicit HoldingSurface(qb::io::tcp::socket &sock) noexcept
+        : _transport(sock) {}
+
+    SocketTransport &
+    transport() noexcept {
+        return _transport;
+    }
+    qb::allocator::pipe<char> &
+    in() noexcept {
+        return _in;
+    }
+    qb::allocator::pipe<char> &
+    out() noexcept {
+        return _out;
+    }
+    [[nodiscard]] std::size_t
+    pendingRead() const noexcept {
+        return _in.size();
+    }
+    [[nodiscard]] std::size_t
+    pendingWrite() const noexcept {
+        return _out.size();
+    }
+    [[nodiscard]] std::size_t
+    held_input() const noexcept {
+        return held.size();
+    }
+
+    int
+    read() noexcept {
+        if (++reads >= kReadBudget) {
+            runaway = true;
+            held.clear();
+            return 0;
+        }
+        const std::size_t taken = std::min(per_read, held.size());
+        std::memcpy(_in.allocate_back(taken), held.data(), taken);
+        held.erase(0u, taken);
+        return static_cast<int>(taken);
+    }
+
+    int
+    write() noexcept {
+        return 0; // nothing is ever published
+    }
+
+    void
+    flush(std::size_t size) noexcept {
+        _in.free_front(size);
+    }
+
+    void
+    eof() noexcept {
+        if (_in.empty())
+            _in.reset();
+        else
+            _in.reorder();
+    }
+
+    void
+    close() noexcept {
+        _transport.close();
+    }
+};
+
+class HoldingInput
+    : public qb::io::async::input<HoldingInput>
+    , public HoldingSurface {
+public:
+    using HoldingSurface::HoldingSurface;
+
+    void
+    wait_for_writes_alone() noexcept {} // an input has no such state
+
+    /// A stopped watcher that is no longer set for reads: what `ready_to_read()` starts.
+    void
+    watch_nothing() noexcept {
+        this->_async_event.set(this->transport().native_handle(), 0);
+    }
+};
+
+class HoldingDuplex
+    : public qb::io::async::io<HoldingDuplex>
+    , public HoldingSurface {
+public:
+    using HoldingSurface::HoldingSurface;
+
+    void
+    wait_for_writes_alone() noexcept {
+        this->_async_event.set(EV_WRITE);
+    }
+};
+
+/// A transport that also says whether its last read filled the place it asked for: `filled` is its word, and `asked`
+/// counts the times it is asked what it holds.
+class TellingSurface : public HoldingSurface {
+public:
+    using HoldingSurface::HoldingSurface;
+
+    bool                filled = true; ///< what `last_read_filled()` answers
+    mutable std::size_t asked  = 0u;   ///< `held_input()` calls
+
+    [[nodiscard]] bool
+    last_read_filled() const noexcept {
+        return filled;
+    }
+    [[nodiscard]] std::size_t
+    held_input() const noexcept {
+        ++asked;
+        return HoldingSurface::held_input();
+    }
+};
+
+class TellingInput
+    : public qb::io::async::input<TellingInput>
+    , public TellingSurface {
+public:
+    using TellingSurface::TellingSurface;
+
+    void
+    wait_for_writes_alone() noexcept {}
+};
+
+class TellingDuplex
+    : public qb::io::async::io<TellingDuplex>
+    , public TellingSurface {
+public:
+    using TellingSurface::TellingSurface;
+
+    void
+    wait_for_writes_alone() noexcept {}
+};
+
+/// Four octets are a message. The handler of message `stop_after` stops its component, that of message
+/// `write_only_after` has its watcher wait for writes alone.
+template <typename Io>
+class FourOctets : public qb::io::async::AProtocol<Io> {
+public:
+    explicit FourOctets(Io &io) noexcept
+        : qb::io::async::AProtocol<Io>(io) {}
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return this->_io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        this->_io.messages.emplace_back(this->_io.in().begin(), size);
+        if (this->_io.messages.size() == this->_io.stop_after)
+            this->_io.stop();
+        if (this->_io.messages.size() == this->_io.write_only_after)
+            this->_io.wait_for_writes_alone();
+    }
+
+    void
+    reset() noexcept final {}
+};
+
+const std::vector<std::string> kFourMessages{"aaaa", "bbbb", "cccc", "dddd"};
+
+/// `start()` has what the transport holds read, dispatch after dispatch, with nothing from the socket.
+template <typename Probe>
+void
+expect_held_input_is_read_from_start_on() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.held = "aaaabbbbccccdddd";
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the input the transport holds is read"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_EQ(probe.reads, 4u) << "one read a dispatch, and no dispatch once nothing is held";
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// A component that stops itself in a handler is not dispatched for what its transport holds; its `start()` reads it.
+template <typename Probe>
+void
+expect_a_stopped_component_is_not_fed_and_its_start_reads() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.held       = "aaaabbbbccccdddd";
+    probe.stop_after = 2u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages before the stop"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"})) << "a component that stopped itself was dispatched again";
+    EXPECT_EQ(probe.held, "ccccdddd");
+    EXPECT_EQ(probe.reads, 2u);
+
+    probe.stop_after = 0u;
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "start() reads what the transport still holds"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// A transport that says it holds input and whose reads take none: `start()` has it read once, and that is all -- a
+/// fed event runs in the loop pass that feeds it, so feeding after a read that took nothing would never let it end.
+template <typename Probe>
+void
+expect_held_input_no_read_takes_is_not_fed_again() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.held     = "never given";
+    probe.per_read = 0u;
+
+    probe.start();
+    run_nowait_iterations();
+    EXPECT_FALSE(probe.runaway) << "a transport that holds input and gives none kept the loop in one pass for " << probe.reads << " reads";
+    EXPECT_EQ(probe.reads, 1u) << "start() has it read once; a read that took nothing is followed by no other";
+    EXPECT_EQ(probe.held_input(), 11u);
+    EXPECT_TRUE(probe.messages.empty());
+}
+
+/// A component started before it has a protocol is not dispatched for what its transport holds: a read dispatch with
+/// no protocol ends the component. Its transport keeps every octet, and the `start()` made with the protocol in place
+/// reads them.
+template <typename Probe>
+void
+expect_a_component_with_no_protocol_is_not_fed_and_reads_once_it_has_one() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    probe.held = "aaaabbbbccccdddd";
+
+    probe.start(); // no switch_protocol<P>() yet
+    run_nowait_iterations();
+    ASSERT_TRUE(probe.is_connected()) << "a component with no protocol was dispatched for what its transport holds, and ended";
+    EXPECT_EQ(probe.reads, 0u);
+    EXPECT_EQ(probe.held_input(), 16u);
+
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "start() reads it, the protocol in place"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// A transport that says whether its last read filled the place it asked for is taken at its word: after a read that
+/// did not, it is not asked what it holds and is not fed -- that read took the end of what there was. `start()`
+/// follows no read and asks whatever that word is.
+template <typename Probe>
+void
+expect_a_transport_is_asked_what_it_holds_only_after_a_read_that_filled_its_place() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.held   = "aaaabbbbcccc";
+    probe.filled = false;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "start() has the first message read"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa"})) << "a read that did not fill its place was followed by another";
+    EXPECT_EQ(probe.asked, 1u) << "start() asks; a read that did not fill its place is followed by no question";
+
+    probe.filled = true;
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 3u || probe.runaway; }, "the reads that fill their place are followed"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb", "cccc"}));
+    EXPECT_EQ(probe.asked, 4u) << "start() again, then each of the two reads that filled their place";
+    EXPECT_EQ(probe.reads, 3u);
+    EXPECT_FALSE(probe.runaway);
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, InputReadsWhatItsTransportHoldsFromStartOn) {
+    async_bases_framing_test::expect_held_input_is_read_from_start_on<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, DuplexReadsWhatItsTransportHoldsFromStartOn) {
+    async_bases_framing_test::expect_held_input_is_read_from_start_on<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, InputStoppedInAHandlerIsNotFedWhatItsTransportHoldsAndItsStartReadsIt) {
+    async_bases_framing_test::expect_a_stopped_component_is_not_fed_and_its_start_reads<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, DuplexStoppedInAHandlerIsNotFedWhatItsTransportHoldsAndItsStartReadsIt) {
+    async_bases_framing_test::expect_a_stopped_component_is_not_fed_and_its_start_reads<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, InputIsNotFedAgainForHeldInputItsReadDoesNotTake) {
+    async_bases_framing_test::expect_held_input_no_read_takes_is_not_fed_again<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, DuplexIsNotFedAgainForHeldInputItsReadDoesNotTake) {
+    async_bases_framing_test::expect_held_input_no_read_takes_is_not_fed_again<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, InputWithNoProtocolIsNotFedWhatItsTransportHoldsAndReadsItOnceItHasOne) {
+    async_bases_framing_test::expect_a_component_with_no_protocol_is_not_fed_and_reads_once_it_has_one<
+        async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, DuplexWithNoProtocolIsNotFedWhatItsTransportHoldsAndReadsItOnceItHasOne) {
+    async_bases_framing_test::expect_a_component_with_no_protocol_is_not_fed_and_reads_once_it_has_one<
+        async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, InputAsksWhatItsTransportHoldsOnlyAfterAReadThatFilledItsPlace) {
+    async_bases_framing_test::expect_a_transport_is_asked_what_it_holds_only_after_a_read_that_filled_its_place<
+        async_bases_framing_test::TellingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAsksWhatItsTransportHoldsOnlyAfterAReadThatFilledItsPlace) {
+    async_bases_framing_test::expect_a_transport_is_asked_what_it_holds_only_after_a_read_that_filled_its_place<
+        async_bases_framing_test::TellingDuplex>();
+}
+
+// A duplex component whose watcher waits for writes alone is not reading: what its transport holds is not fed to it,
+// and the write readiness that puts it back on reads brings none of it. ready_to_read() is the call that resumes
+// reading: made on a watcher off reads, it has what the transport holds read, as start() does.
+TEST_F(AsyncIoBaseTest, DuplexThatWaitsForWritesAloneIsNotFedWhatItsTransportHoldsAndItsReadyToReadReadsIt) {
+    using namespace async_bases_framing_test;
+    auto          pair = make_stream_pair();
+    HoldingDuplex probe{pair.probe};
+    ASSERT_NE(probe.switch_protocol<FourOctets<HoldingDuplex>>(probe), nullptr);
+    probe.held             = "aaaabbbbccccdddd";
+    probe.write_only_after = 2u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages before it stops reading"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"})) << "a component that was not reading was fed a read";
+    EXPECT_EQ(probe.held, "ccccdddd");
+
+    probe.write_only_after = 0u;
+    probe.wait_for_writes_alone(); // off reads again: the passes above had its write readiness put it back on them
+    probe.ready_to_read();
+    ASSERT_TRUE(
+        pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "ready_to_read() reads what the transport still holds"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+// An input's ready_to_read() starts a watcher that is not set for reads, and has what the transport holds read too.
+TEST_F(AsyncIoBaseTest, InputReadyToReadReadsWhatItsTransportHolds) {
+    using namespace async_bases_framing_test;
+    auto         pair = make_stream_pair();
+    HoldingInput probe{pair.probe};
+    ASSERT_NE(probe.switch_protocol<FourOctets<HoldingInput>>(probe), nullptr);
+    probe.held       = "aaaabbbbccccdddd";
+    probe.stop_after = 2u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages before the stop"));
+    run_nowait_iterations();
+    ASSERT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"}));
+
+    probe.stop_after = 0u;
+    probe.watch_nothing();
+    probe.ready_to_read();
+    ASSERT_TRUE(
+        pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "ready_to_read() reads what the transport still holds"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}

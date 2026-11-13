@@ -670,7 +670,7 @@ public:
     /**
      * @brief Reads all available data from the file and processes it using the current protocol.
      * @return `0` on success (all data read and processed, or file unchanged and no data to read).
-     *         `-1` if a read error occurs, or if the protocol becomes invalid, or if `_Derived::read()` fails.
+     *         `-1` if the protocol becomes invalid, or if `_Derived::read()` fails or is refused: the buffer holds its cap, nothing framed.
      * @details This method is typically called from the `on(event::file&)` handler when a change
      *          is detected (e.g. file size increased). It repeatedly calls `_Derived::read()` to fill the input buffer,
      *          then processes messages via `_protocol->getMessageSize()` and `_protocol->onMessage()`.
@@ -695,7 +695,7 @@ public:
         std::size_t          ret         = 0u;
         do {
             ret = static_cast<std::size_t>(Derived.read());
-            if (unlikely(ret == invalid_ret))
+            if (unlikely(ret == invalid_ret || ret == static_cast<std::size_t>(-2))) // -2: refused, the buffer holds its cap
                 return -1;
             // Stop if the protocol is invalid — or absent: a cleared/unset protocol is the
             // NoProtocol sentinel whose ok() is false (so no separate null check is needed).
@@ -1017,10 +1017,9 @@ public:
      */
     void
     start() noexcept {
-        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
-        // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
-        // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
-        // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
+        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into `anfds[-1]` (the debug assert is
+        // compiled out in release → OOB, CWE-787). start() is "begin I/O on a connected transport"; if the transport is not
+        // open, no-op. Gated on native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
         // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
@@ -1030,13 +1029,13 @@ public:
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), read_events());
+        feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
     }
 
     /**
      * @brief Ensures the I/O watcher is listening for read events (`EV_READ`).
      * @details If the internal `event::io` watcher (from the `base` class) is not currently set to listen for `EV_READ`,
-     *          this method reconfigures and restarts it to include `EV_READ` in its watched events.
-     *          This is useful if read operations were temporarily paused.
+     *          this method restarts it for `EV_READ` -- reads were paused -- and feeds it for what the transport holds.
      */
     void
     ready_to_read() noexcept {
@@ -1049,6 +1048,7 @@ public:
             if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
                 return; // don't arm ev::io on an invalid fd (release OOB into anfds[-1])
             this->_async_event.start(Derived.transport().native_handle(), read_events());
+            feed_held_input(); // reading resumes: what the transport holds is read from here, as from start()
         }
     }
 
@@ -1461,6 +1461,9 @@ private:
         }
     }
 
+    QB_NOINLINE void         feed_held_input() noexcept; ///< A transport's held input is read readiness: at the end of this file.
+    QB_MSVC_FORCEINLINE void feed_held_input(std::size_t taken) noexcept; ///< After a read that took `taken` octets: the test before that feed.
+
     /**
      * @brief Internal I/O event handler, called by the listener when `event::io` triggers for read readiness.
      * @param event The `event::io` that was triggered. `event._revents` contains the actual events (e.g., `EV_READ`).
@@ -1480,15 +1483,12 @@ private:
     void
     on(event::io const &event) {
         constexpr const auto invalid_ret = static_cast<std::size_t>(-1);
-        // Keep a strong reference to prevent UAF for the entire duration of
-        // this handler:
-        //   - When process_messages() triggers extractSession() (e.g. WebSocket
-        //     upgrade), the io_handler drops the last shared_ptr to *this.
+        // Keep a strong reference to prevent UAF for the entire duration of this handler:
+        //   - When process_messages() triggers extractSession() (e.g. WebSocket upgrade), the io_handler drops the last shared_ptr to *this.
         //   - When dispose() invokes Derived.on(event::disconnected) and the
         //     user handler decides to release the last shared_ptr (typical
         //     "self-managing" actor pattern), *this would be destroyed before
-        //     dispose() reaches `_async_event.stop()` further down the call
-        //     stack.
+        //     dispose() reaches `_async_event.stop()` further down the call stack.
         // The guard MUST be acquired before any branch that can reach
         // dispose() — including the goto-error path triggered by an external
         // disconnect() — not only the EV_READ branch.
@@ -1548,7 +1548,7 @@ private:
 
             Derived.eof();
             handle_post_read();
-            return;
+            return feed_held_input(ret);
         }
         if constexpr (detail::tls_io<_Derived>) {
             // Writability, which only a read that had to write first asks this object for (above): read again.
@@ -2312,14 +2312,14 @@ class io : public base<io<_Derived>, event::io> {
     }
 
     /**
-     * @brief Serves one dispatch of a lingering close: drops what the peer sent, a read over the input-buffer cap (-2) included.
+     * @brief Serves one dispatch of a lingering close: drops what the peer sent; a read cap of 0, which drains nothing, ends it.
      * @details Bounded in time alone, on purpose: this linger exists so that a peer that is STILL SENDING -- an upload
      *          answered early, a request refused -- reads the reply, and a bound in octets would reset exactly that
      *          peer on a fast link (on Windows a reset drops the reply it has not read yet). The loop's own close
      *          after the peer -- a session's `disconnect()` or framing error, and every close of a standalone
      *          object, its `close_after_deliver()` included -- stops at a count of octets as well
      *          (`detail::close_after_peer`, Huly QB-1270).
-     * @return False once the linger ends -- the peer closed (EOF), the socket failed, or the bound elapsed.
+     * @return False once the linger ends -- the peer closed (EOF), the socket failed, the bound elapsed, or the read is refused.
      */
     QB_NOINLINE QB_COLD bool
     linger_read(event::io const &event) noexcept {
@@ -2331,7 +2331,7 @@ class io : public base<io<_Derived>, event::io> {
         if (ret == static_cast<std::size_t>(-1))
             return qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()); // EOF reads -1 with no error
         Derived.in().reset();
-        return true;
+        return ret != static_cast<std::size_t>(-2); // refused with the buffer empty: a cap of 0 -- nothing can be drained
     }
 
     /// The linger bound elapsed: flagged here, ended by the dispatch this feeds (linger_timer).
@@ -2611,10 +2611,9 @@ public:
             assert(!(_is_disposed && this->_async_event.is_active())
                    && "io::start() from inside dispose(): the watcher is stopped as soon as "
                       "on(event::disconnected&&) returns");
-        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into
-        // `anfds[-1]` (the debug assert is compiled out in release → OOB, CWE-787). start() is
-        // "begin I/O on a connected transport"; if the transport is not open, no-op. Gated on
-        // native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
+        // Never arm a watcher on an invalid fd: on POSIX `ev_io_start(fd<0)` writes into `anfds[-1]` (the debug assert is
+        // compiled out in release → OOB, CWE-787). start() is "begin I/O on a connected transport"; if the transport is not
+        // open, no-op. Gated on native_handle() (== is_open() here — sys__socket: `fd != invalid_socket`), NOT is_open(),
         // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
@@ -2631,11 +2630,11 @@ public:
         // NEXT publish() to leave. A start() with nothing to write arms EV_READ alone, as before.
         // A TLS read that waited to write when the object was stopped waits for writability alone (start_events()).
         this->_async_event.start(Derived.transport().native_handle(), start_events());
+        feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
     }
 
     /**
-     * @brief Ensures the I/O watcher is listening for read events (`EV_READ`).
-     * @details Modifies the event watcher flags to include `EV_READ` if not already set.
+     * @brief Ensures the I/O watcher is listening for read events: adds `EV_READ` if not set, and feeds it for what the transport holds.
      */
     void
     ready_to_read() noexcept {
@@ -2648,6 +2647,7 @@ public:
                     return;
             }
             this->_async_event.set(this->_async_event.events | EV_READ);
+            feed_held_input(); // reading resumes: what the transport holds is read from here, as from start()
         }
     }
 
@@ -3443,6 +3443,7 @@ private:
 
             Derived.eof();
             handle_post_read();
+            feed_held_input(ret);
             ok = true;
         }
 
@@ -3458,8 +3459,7 @@ private:
         // peer side. Issuing a non-blocking handle_write() here keeps the
         // outgoing pipe flowing as long as the kernel has space; if the
         // socket would block (or SSL needs a renegotiation read), handle_write
-        // simply leaves bytes in the buffer and the watcher's EV_WRITE
-        // registration takes over for the next round.
+        // simply leaves bytes in the buffer and the watcher's EV_WRITE registration takes over for the next round.
         if ((event._revents & EV_WRITE) || (ok && Derived.pendingWrite() > 0)) {
             if constexpr (detail::tls_io<_Derived>) {
                 // Output queued during a TLS handshake after the first: the read drives it, the output waits for its end
@@ -3696,7 +3696,78 @@ protected:
         Derived.out().reset();
         clear_protocols();
     }
+
+private:
+    QB_NOINLINE void         feed_held_input() noexcept;                  ///< A transport's held input is read readiness: defined below.
+    QB_MSVC_FORCEINLINE void feed_held_input(std::size_t taken) noexcept; ///< After a read that took `taken` octets: the test before that feed.
 };
+
+/**
+ * @brief Octets a transport holds for a next `read()` are read readiness of their own: the watcher is fed (Huly QB-86).
+ * @details A transport that buffers below its descriptor has nothing left in the socket to raise an event with:
+ *          `transport::stcp` keeps, inside the TLS session, the rest of a record its `read()` had no room for, and says
+ *          so with `held_input()`. The component is dispatched again for them, as a level-triggered loop dispatches it
+ *          for octets still in the socket: with room in the input buffer they are read, and with none the read is
+ *          refused (`ErrBufferLimitExceeded`), exactly as for octets on the wire. Two conditions bound it here:
+ *          - the watcher is started: a component that called `stop()` is not dispatched. `start()` and
+ *            `ready_to_read()` come here once, for a component that resumes or takes over a transport holding octets;
+ *          - its protocol is in place: a read dispatch without one ends the component, so a `start()` made before
+ *            `switch_protocol<P>()` feeds nothing.
+ *          Nothing for a transport that declares no `held_input()`.
+ */
+template <typename _Derived>
+QB_NOINLINE void
+input<_Derived>::feed_held_input() noexcept {
+    if constexpr (requires { Derived.held_input(); }) {
+        if (this->_async_event.is_active() && _protocol->ok() && Derived.held_input() != 0)
+            this->_async_event.feed_event(EV_READ);
+    }
+}
+
+/**
+ * @brief After the read of a dispatch: the feed above, entered only for a read that can have left input.
+ * @param taken The octets that read took.
+ * @details A third condition, tested inline where the read was made (the feed itself is kept out of line): the read
+ *          took octets. A fed event runs in the loop pass that fed it, so a transport whose `held_input()` stayed
+ *          non-zero while its `read()` took nothing would never let that pass end. A transport that also declares
+ *          `last_read_filled()` is asked that first -- for `transport::stcp` a flag its `read()` records: only a read
+ *          that filled the place it asked for can leave octets of its record in the session, so an ordinary TLS
+ *          dispatch enters no feed and calls nothing of the TLS library for it.
+ */
+template <typename _Derived>
+QB_MSVC_FORCEINLINE void
+input<_Derived>::feed_held_input(std::size_t const taken) noexcept {
+    if constexpr (requires { Derived.held_input(); }) {
+        bool may_hold = true; // the transport's word on the read it just made, when it gives one
+        if constexpr (requires { Derived.last_read_filled(); })
+            may_hold = Derived.last_read_filled();
+        if (may_hold && taken != 0)
+            feed_held_input();
+    }
+}
+
+/// The same for a bidirectional component, whose watcher must also be reading: see `input`'s, above.
+template <typename _Derived>
+QB_NOINLINE void
+io<_Derived>::feed_held_input() noexcept {
+    if constexpr (requires { Derived.held_input(); }) {
+        if (this->_async_event.is_active() && (this->_async_event.events & EV_READ) && _protocol->ok() && Derived.held_input() != 0)
+            this->_async_event.feed_event(EV_READ);
+    }
+}
+
+/// After the read of a dispatch, as `input`'s: the feed is entered only for a read that can have left input.
+template <typename _Derived>
+QB_MSVC_FORCEINLINE void
+io<_Derived>::feed_held_input(std::size_t const taken) noexcept {
+    if constexpr (requires { Derived.held_input(); }) {
+        bool may_hold = true; // the transport's word on the read it just made, when it gives one
+        if constexpr (requires { Derived.last_read_filled(); })
+            may_hold = Derived.last_read_filled();
+        if (may_hold && taken != 0)
+            feed_held_input();
+    }
+}
 
 } // namespace qb::io::async
 
