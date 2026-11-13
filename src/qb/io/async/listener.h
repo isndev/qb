@@ -1272,17 +1272,9 @@ public:
      *          the list. Any other is unregistered from the thread's listener, as
      *          `listener::current.unregisterEvent()` does. Until 3.4 every owner called that member, which read
      *          the destroyed listener first (Huly QB-1246).
+     * @note Defined after `listener::current`'s definition, never in this class: see there.
      */
-    static void
-    release(IRegisteredKernelEvent *kevent) {
-        if (!kevent)
-            return;
-        if (kevent->_detached_by_clear) // on no listener's list any more: no listener is reached, its own may be gone
-            kevent->_detached_by_clear = false;
-        else if (!current._unlink(kevent))
-            return; // not registered here (a second release)
-        delete kevent;
-    }
+    static void release(IRegisteredKernelEvent *kevent);
 
     /**
      * @brief Get a reference to the underlying libev event loop.
@@ -1854,6 +1846,19 @@ private:
  *       defined in the archive") as the fix; measured, an archive-defined accessor's
  *       function-local `thread_local` returns **two different addresses** in the two images, for
  *       the same reason. Storage that must be unique per process belongs in the header.
+ *
+ * @note **Nothing above this definition may name `current` in code** -- no member defined in the
+ *       class body, no template written before this line (Huly QB-1246). On Darwin a `thread_local`
+ *       with a dynamic initialiser is reached through a *replaceable* thread wrapper (`_ZTW`), and
+ *       clang gives that wrapper the linkage of the declaration the translation unit's first emitted
+ *       reference names: a reference written above names the in-class declaration, which is not
+ *       `inline`, and emits the wrapper `external` (strong); one written below names this definition
+ *       and emits it `weak_odr hidden` (`nm -m`: `weak private external`). Two translation units of
+ *       one link whose first reference came from above are a duplicate `thread-local wrapper routine
+ *       for qb::io::async::listener::current`: a warning of the runner image's ld, a link error on a
+ *       developer's Mac (measured with clang 19 `-target arm64-apple-macos14` and Apple clang 21 on
+ *       the macOS runner; on Linux and Windows the wrapper is `weak_odr` in every case). That is why
+ *       `release()` is defined below; `scripts/check-header-linkage.py` (THREAD-WRAP) refuses the shape.
  */
 namespace detail {
 #ifdef QB_LISTENER_ASAN
@@ -1886,6 +1891,21 @@ inline detail::listener_poisoner::~listener_poisoner() noexcept {
     __asan_poison_memory_region(&listener::current, sizeof(listener));
 }
 #endif
+
+// Defined here, after `listener::current`, and never in the class: a body written in the class names `current` through
+// its in-class declaration, and on Darwin that emits the variable's thread wrapper STRONG in every translation unit whose
+// first reference it is -- a duplicate symbol between two of them (the note on the definition above). Written here it
+// names the inline definition, and the wrapper is `weak_odr hidden` as on every other platform.
+inline void
+listener::release(IRegisteredKernelEvent *kevent) {
+    if (!kevent)
+        return;
+    if (kevent->_detached_by_clear) // on no listener's list any more: no listener is reached, its own may be gone
+        kevent->_detached_by_clear = false;
+    else if (!current._unlink(kevent))
+        return; // not registered here (a second release)
+    delete kevent;
+}
 
 namespace detail {
 /// The thread's loop, to arm a watcher on: read on the thread's record while the thread's listener has its loop --

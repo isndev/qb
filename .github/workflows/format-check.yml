@@ -37,12 +37,15 @@ jobs:
       # true. The second is the one that matters after the merge -- qb-core is ONE TU, so a
       # non-template definition in a header reached both by the archive and by a consumer TU
       # builds green here and fails at the CONSUMER's link (measured: `ld: 1 duplicate symbols`).
+      # Its THREAD-WRAP rule: a thread_local static member read before its inline definition (in its
+      # class's body, say) gets a STRONG thread wrapper on Darwin, a duplicate symbol between two TUs;
+      # `--min-thread-wraps 1` refuses a pass that paired no such member (listener::current).
       # This job only covers qb; qbm's copies run from the superproject's dev/agent/verify.sh.
       - name: Headers - `.h` is the only header extension
         run: ./scripts/check-header-extensions.py
 
       - name: Headers - no shipped header defines a strong external symbol
-        run: ./scripts/check-header-linkage.py --min-constructs 800
+        run: ./scripts/check-header-linkage.py --min-constructs 800 --min-thread-wraps 1
 
       # An `#include` between the braces of a namespace declares `<that-ns>::std`, and stays a
       # no-op for exactly as long as some earlier header keeps pulling the same header in first.
