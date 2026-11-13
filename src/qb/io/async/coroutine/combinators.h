@@ -157,10 +157,12 @@ private:
     reclaim_branch(state_t &st) {
         if (!st.branch_handles[I])
             return;
-        auto &sched = coro_scheduler();
-        sched.cancel_spawned(std::exchange(st.branch_handles[I], {}));
-        if (auto inner = std::get<I>(st.tasks).handle())
-            sched.forget(inner);
+        const auto branch = std::exchange(st.branch_handles[I], {});
+        if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+            sched->cancel_spawned(branch);
+            if (auto inner = std::get<I>(st.tasks).handle())
+                sched->forget(inner);
+        }
         std::get<I>(st.tasks) = std::tuple_element_t<I, std::tuple<Tasks...>>{};
     }
 
@@ -313,10 +315,12 @@ private:
     reclaim_branch(state_t &st, size_t j) {
         if (j >= st.branch_handles.size() || !st.branch_handles[j])
             return;
-        auto &sched = coro_scheduler();
-        sched.cancel_spawned(std::exchange(st.branch_handles[j], {}));
-        if (auto inner = st.tasks[j].handle())
-            sched.forget(inner);
+        const auto branch = std::exchange(st.branch_handles[j], {});
+        if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+            sched->cancel_spawned(branch);
+            if (auto inner = st.tasks[j].handle())
+                sched->forget(inner);
+        }
         st.tasks[j] = task<T>{};
     }
 
@@ -488,10 +492,12 @@ private:
     reclaim_branch(state_t &st) {
         if (!st.branch_handles[I])
             return;
-        auto &sched = coro_scheduler();
-        sched.cancel_spawned(std::exchange(st.branch_handles[I], {}));
-        if (auto inner = std::get<I>(st.tasks).handle())
-            sched.forget(inner);
+        const auto branch = std::exchange(st.branch_handles[I], {});
+        if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+            sched->cancel_spawned(branch);
+            if (auto inner = std::get<I>(st.tasks).handle())
+                sched->forget(inner);
+        }
         std::get<I>(st.tasks) = std::tuple_element_t<I, std::tuple<Tasks...>>{};
     }
 
@@ -687,10 +693,12 @@ private:
     reclaim_branch(state_t &st, size_t j) {
         if (j >= st.branch_handles.size() || !st.branch_handles[j])
             return;
-        auto &sched = coro_scheduler();
-        sched.cancel_spawned(std::exchange(st.branch_handles[j], {}));
-        if (auto inner = st.tasks[j].handle())
-            sched.forget(inner);
+        const auto branch = std::exchange(st.branch_handles[j], {});
+        if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+            sched->cancel_spawned(branch);
+            if (auto inner = st.tasks[j].handle())
+                sched->forget(inner);
+        }
         st.tasks[j] = task<T>{};
     }
 
@@ -791,8 +799,9 @@ class timeout_awaiter {
         // Single self-stopping timeout watcher (see class doc). Lives here, not in the
         // awaiter, so it survives the awaiter's destruction while run_task is still
         // running; `finish()` always stops it before this state_t is destroyed.
-        ev_timer timer{};
-        bool     timer_started{false};
+        ev_timer        timer{};
+        bool            timer_started{false};
+        struct ev_loop *timer_loop{nullptr}; ///< the loop the timer was armed on: the stop asks no listener for it
         // The detached run_task driving inner_task. Recorded so a destroy-while-parked teardown
         // (awaiter unwound mid-race) can reclaim it instead of letting it resume a freed frame.
         std::coroutine_handle<> runner_handle{};
@@ -848,7 +857,7 @@ class timeout_awaiter {
     void
     finish() noexcept {
         if (_state && _state->timer_started) {
-            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(_state->timer_loop, &_state->timer);
             _state->timer_started = false;
         }
     }
@@ -883,10 +892,13 @@ public:
         if (_state && !_state->completed) {
             _state->completed    = true;
             _state->continuation = {};
-            if (_state->runner_handle)
-                coro_scheduler().cancel_spawned(std::exchange(_state->runner_handle, {}));
-            if (auto ih = _state->inner_task.handle())
-                coro_scheduler().forget(ih);
+            const auto runner    = std::exchange(_state->runner_handle, {});
+            if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+                if (runner)
+                    sched->cancel_spawned(runner);
+                if (auto ih = _state->inner_task.handle())
+                    sched->forget(ih);
+            }
             _state->inner_task = task<T>{};
         }
         finish();
@@ -906,12 +918,13 @@ public:
         // coroutine. `data` points at the raw state_t (kept alive by _state while the
         // timer can fire); ev_now_update refreshes libev's cached time so the timeout is
         // measured from now, not a stale loop iteration (mirrors timer_awaiter).
-        auto loop = listener::current.loop();
+        auto loop = detail::thread_listener_loop();
         ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
         ev_now_update(static_cast<struct ev_loop *>(loop));
         ev_timer_start(loop, &_state->timer);
         _state->timer_started = true;
+        _state->timer_loop    = static_cast<struct ev_loop *>(loop);
     }
 
     T
@@ -967,8 +980,9 @@ class timeout_awaiter<void> {
         std::coroutine_handle<> continuation;
         // Single self-stopping timeout watcher; stopped via finish() before this state_t
         // is destroyed. See the non-void timeout_awaiter for the full lifetime contract.
-        ev_timer timer{};
-        bool     timer_started{false};
+        ev_timer        timer{};
+        bool            timer_started{false};
+        struct ev_loop *timer_loop{nullptr}; ///< the loop the timer was armed on: the stop asks no listener for it
         // The detached run_task driving inner_task — see the non-void timeout_awaiter.
         std::coroutine_handle<> runner_handle{};
 
@@ -1010,7 +1024,7 @@ class timeout_awaiter<void> {
         // clears that pending entry first. See the timeout_awaiter<T> finish() and
         // qb/io/async/coroutine/awaiter.h (timer_awaiter dtor) for the full rationale.
         if (_state && _state->timer_started) {
-            ev_timer_stop(static_cast<struct ev_loop *>(listener::current.loop()), &_state->timer);
+            ev_timer_stop(_state->timer_loop, &_state->timer);
             _state->timer_started = false;
         }
     }
@@ -1039,10 +1053,13 @@ public:
         if (_state && !_state->completed) {
             _state->completed    = true;
             _state->continuation = {};
-            if (_state->runner_handle)
-                coro_scheduler().cancel_spawned(std::exchange(_state->runner_handle, {}));
-            if (auto ih = _state->inner_task.handle())
-                coro_scheduler().forget(ih);
+            const auto runner    = std::exchange(_state->runner_handle, {});
+            if (CoroutineScheduler *const sched = detail::cleanup_scheduler()) { // null after the thread's loop: dropped
+                if (runner)
+                    sched->cancel_spawned(runner);
+                if (auto ih = _state->inner_task.handle())
+                    sched->forget(ih);
+            }
             _state->inner_task = task<void>{};
         }
         finish();
@@ -1058,12 +1075,13 @@ public:
         ::qb::io::async::detail::track_suspension(h.address(), qb_suspension_kind);
         _state->continuation  = h;
         _state->runner_handle = coro_scheduler().spawn_tracked(run_task({_state, _state->runner_handle}));
-        auto loop             = listener::current.loop();
+        auto loop             = detail::thread_listener_loop();
         ev_timer_init(&_state->timer, &timeout_awaiter::on_timeout, qb::detail::to_ev_seconds(_timeout), 0.0);
         _state->timer.data = _state.get();
         ev_now_update(static_cast<struct ev_loop *>(loop));
         ev_timer_start(loop, &_state->timer);
         _state->timer_started = true;
+        _state->timer_loop    = static_cast<struct ev_loop *>(loop);
     }
 
     void

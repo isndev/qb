@@ -84,8 +84,11 @@ jobs:
           # Ubuntu 24.04). Every clang before 22 lays a never-written by-value coroutine parameter out
           # at the wrong alignment on x86-64 (LLVM issue 159571, Huly QB-213): two system tests SIGSEGV
           # at -O3 without qb::io::async::pin_frame_copy, and this lane is what keeps that shield honest.
+          # The image is named, not ubuntu-latest: apt.llvm.org publishes no clang 19 for Ubuntu 26.04
+          # (`llvm-toolchain-resolute-19` answers 404), and ubuntu-latest moved to 26.04 on 2026-11-13,
+          # which turned this row red at its first step without compiling a line.
           - name: ubuntu-clang19-cxx20-release
-            os: ubuntu-latest
+            os: ubuntu-24.04
             c_compiler: clang-19
             cpp_compiler: clang++-19
             llvm_version: "19"

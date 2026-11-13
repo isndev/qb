@@ -31,6 +31,8 @@
  * instrumentation from the original file is dropped entirely (it belonged to the async half).
  */
 
+#include <exception>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 
@@ -275,6 +277,64 @@ TEST(GeneratorSync, HasNextAndNextHonorExhaustionContract) {
     auto v3 = g.next();
     EXPECT_FALSE(v3.has_value());
     EXPECT_FALSE(g.has_next());
+}
+
+namespace generator_sync_test {
+
+// Free coroutines, not lambdas: a lambda coroutine's promise arguments start with its closure, which converts to
+// nothing, so a lambda never showed what follows.
+
+/// One argument convertible to the yielded type.
+generator<int>
+tenfold(int n) {
+    co_yield n * 10;
+}
+
+/// An exception_ptr in second place, after an argument convertible to the yielded type.
+generator<int>
+carrying(int n, std::exception_ptr ep) {
+    (void) ep; // looked at, never thrown
+    co_yield n;
+}
+
+} // namespace generator_sync_test
+
+// A coroutine's promise is built FROM THE COROUTINE'S ARGUMENTS whenever that initialisation is viable, and an
+// aggregate promise made it viable by C++20 parenthesized aggregate initialisation: GCC, clang and clang-cl built
+// tenfold(7)'s promise holding 7, so next() returned the argument without running the body (Huly QB-1246). The
+// shipped single-argument factories had the same shape.
+TEST(GeneratorSync, NextReturnsWhatTheBodyYieldsNotAnArgument) {
+    auto g  = generator_sync_test::tenfold(7);
+    auto v1 = g.next();
+    ASSERT_TRUE(v1.has_value());
+    EXPECT_EQ(*v1, 70) << "next() returned the coroutine's argument: the promise was built from it";
+    EXPECT_FALSE(g.next().has_value()) << "the body yields once";
+
+    auto s = single_generator(42);
+    EXPECT_EQ(s.next().value_or(-1), 42);
+    EXPECT_FALSE(s.next().has_value()) << "single_generator yields once, not twice";
+
+    auto i  = iota(5);
+    auto i1 = i.next(), i2 = i.next(), i3 = i.next();
+    EXPECT_EQ((std::vector<int>{i1.value_or(-1), i2.value_or(-1), i3.value_or(-1)}), (std::vector<int>{5, 6, 7}));
+}
+
+// The same initialisation set the promise's stored exception from an exception_ptr argument: next() and the
+// iterator rethrew an argument the body never threw.
+TEST(GeneratorSync, AnExceptionPtrArgumentIsNotAStoredException) {
+    auto const ep = std::make_exception_ptr(std::runtime_error("an argument, never thrown"));
+
+    auto               g = generator_sync_test::carrying(3, ep);
+    std::optional<int> v;
+    EXPECT_NO_THROW(v = g.next());
+    EXPECT_EQ(v.value_or(-1), 3);
+
+    std::vector<int> seen;
+    EXPECT_NO_THROW({
+        for (auto x : generator_sync_test::carrying(4, ep))
+            seen.push_back(x);
+    });
+    EXPECT_EQ(seen, (std::vector<int>{4}));
 }
 
 // ---------------------------------------------------------------------------

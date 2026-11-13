@@ -30,7 +30,7 @@
  * Dispatcher cannot make a count assertion pass vacuously. A generous ctest TIMEOUT is the only
  * backstop; no wall-clock EXPECT is used as an oracle.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

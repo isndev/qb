@@ -669,7 +669,7 @@ public:
             timed_recv_awaiter(channel<T> &c, qb::duration t)
                 : ch(c)
                 , timeout_ms(t)
-                , loop(listener::current.loop())
+                , loop(::qb::io::async::detail::thread_listener_loop())
                 , _ch_alive(c._alive) {
                 ev_timer_init(&watchdog, on_watchdog, qb::detail::to_ev_seconds(t), 0.0);
                 watchdog.data = this;
@@ -881,7 +881,7 @@ public:
                 : ch(c)
                 , val(std::move(v))
                 , timeout_ms(t)
-                , loop(listener::current.loop())
+                , loop(::qb::io::async::detail::thread_listener_loop())
                 , _ch_alive(c._alive) {
                 ev_timer_init(&watchdog, on_watchdog, qb::detail::to_ev_seconds(t), 0.0);
                 watchdog.data = this;

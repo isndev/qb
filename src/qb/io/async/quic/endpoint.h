@@ -148,12 +148,12 @@ protected:
         if (_io_event) {
             auto *iface = _io_event->_interface;
             _io_event   = nullptr;
-            listener::current.unregisterEvent(iface);
+            listener::release(iface);
         }
         if (_timer_event) {
             auto *iface  = _timer_event->_interface;
             _timer_event = nullptr;
-            listener::current.unregisterEvent(iface);
+            listener::release(iface);
         }
     }
 
@@ -636,9 +636,33 @@ public:
         drain_backend_events();
     }
 
+    /**
+     * @brief Closes the endpoint: the backend sends what a close sends, the connections it ends are reported, the
+     *        two watchers are stopped and the socket is closed.
+     * @details The timer is kept from the drains: a closed backend still has a deadline (its closing period), and
+     *          `drain_backend_packets()` armed the timer for it -- for the lines below to stop. Nothing is lost in
+     *          a running program. But an endpoint with static storage -- an HTTP/3 client a program keeps there --
+     *          is closed by its destructor AFTER its thread's `listener::current`, and a timer started there writes
+     *          into the freed loop (Huly QB-1246); stopping one is safe. A handler told here that its connection
+     *          ended may close and connect again before it returns: that `connect()` finds no timer and registers
+     *          one, which is released as the close resumes -- the endpoint keeps the one registration it had, and
+     *          the lines below end what the handler started, as they did before the timer was held.
+     */
     void
     close(std::uint64_t application_error_code = 0, std::string_view reason = {}) {
         if (_backend) {
+            struct timer_aside {
+                endpoint                          &owner;
+                qb::io::async::event::timer *const held;
+
+                explicit timer_aside(endpoint &ep) noexcept
+                    : owner(ep)
+                    , held(std::exchange(ep._timer_event, nullptr)) {}
+                ~timer_aside() noexcept {
+                    if (auto *const second = std::exchange(owner._timer_event, held))
+                        listener::release(second->_interface); // a handler's connect() registered it meanwhile
+                }
+            } const aside{*this};
             _backend->close(application_error_code, reason);
             drain_backend_packets();
             drain_backend_events();

@@ -26,7 +26,7 @@
  * never-scheduled coroutine cannot pass any of them vacuously. Shutdown is driven by the asker the
  * instant its coroutine finishes — no wall-clock stop offset.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

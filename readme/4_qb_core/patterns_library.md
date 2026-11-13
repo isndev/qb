@@ -55,10 +55,10 @@ this page only states what the patterns depend on.
 - **`ScopedCoroContext` carries the actor's id and cancellation scope.** A coroutine launched with
   `Actor::spawn(...)` receives a `qb::ScopedCoroContext` (`qb/src/qb/core/Actor.h:1508-1510`);
   inside `onInit()` or any handler you obtain the same context from `Actor::context()`
-  (`qb/src/qb/core/Actor.h:1564`, `:2413-2417`). The context exposes the safe send surface
+  (`qb/src/qb/core/Actor.h:1564`, `:2417-2421`). The context exposes the safe send surface
   (`push`, `push_to`, `broadcast`, `id`, `time` from `CoroContext`,
   `qb/src/qb/core/Actor.h:1713,1733,1745,1754,1761,1769`) plus the scope token and cancellation-aware `sleep`
-  (`qb/src/qb/core/Actor.h:2294-2295,2307-2311,2335-2337`). **Never capture `this` past a `co_await`** — capture by
+  (`qb/src/qb/core/Actor.h:2298-2299,2311-2315,2339-2341`). **Never capture `this` past a `co_await`** — capture by
   value (`qb/src/qb/core/Actor.h:1512-1514`).
 - **Correlation via `CorrelatedEvent`.** A reply is routed back to its waiting coroutine by a
   `correlation_id` carried at a fixed base-class offset. `qb::CorrelatedEvent` holds that id
@@ -80,8 +80,9 @@ These behaviours are uniform across the awaitable patterns and are not repeated 
 - **Timeouts throw.** A relative `qb::duration` timeout that elapses throws
   `qb::io::async::timeout_error`. A `timeout <= 0` waits indefinitely (until reply or kill)
   (`qb/src/qb/core/patterns/request.h:298-302`).
-- **Run all pattern tests under `ASAN_OPTIONS=detect_leaks=0`** — cross-core asks leave a fixed,
-  benign teardown residual (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
+- **No teardown residual.** A cross-core ask leaves nothing for LeakSanitizer to report: qb's
+  pattern tests run with it on in the `sanitize` lane (3.4, Huly QB-1246), where this page used to
+  advise running them with leak detection off (`qb/tests/core/system/coroutine/ask-patterns.cpp:37-38`).
 
 ---
 
@@ -132,7 +133,7 @@ base supplies the `response` slot and the `AskEvent` correlation id, you add the
   Every one of these pattern coroutines opens with `qb::io::async::pin_frame_copy(req)`: clang older than 22 lays
   a never-written by-value parameter out at the wrong alignment on x86-64 Linux and Intel macOS (LLVM
   issue 159571) — the shield, and the rule for a coroutine of your own, are in
-  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:267`, `coroutine/utils.h:388`). `qb::ask` itself
+  [the coroutine chapter](../3_qb_io/coroutines.md) (`request.h:267`, `coroutine/utils.h:389`). `qb::ask` itself
   is no coroutine since 3.2: it returns the exchange as an awaitable that lives in the awaiting frame —
   `ask_operation<E>` holds the context, the target, the request and the timeout, engages the `ask_awaiter` in
   place at `await_suspend()` and hands the reply over with one move (`request.h:110-179`, the emplace form's

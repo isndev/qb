@@ -35,6 +35,7 @@
 #include <vector>
 #include <qb/ev/ev++.h>
 #include <qb/system/time.h> // qb::duration (parked_coroutine::age)
+#include <qb/utility/branch_hints.h>
 // Same guard as qb/io/async/event/base.h: ev.h's fallback lookup for the generated ev_config.h is
 // __has_include-guarded, so a missing include path silently flips EV_MULTIPLICITY from 1 to 4 and
 // desynchronises every ev_* prototype from the compiled libqev.a. Fail loudly instead.
@@ -79,10 +80,92 @@ namespace detail {
  *        to the loop that drains it -- and a core that never runs a coroutine never gets a scheduler or asks one for work.
  */
 CoroutineScheduler &bind_thread_scheduler();
+
+/// Where this thread's `listener::current` stands: the listener whose loop every awaiter of qb arms its watcher on,
+/// and which owns the thread's scheduler.
+enum class thread_loop_phase : unsigned char {
+    unborn, ///< never constructed on this thread
+    alive,  ///< constructed, its destructor not yet at its end; its loop is built on the first use that needs one
+    gone,   ///< destroyed: nothing pumps this thread any more
+};
+
+/**
+ * @brief What a thread knows of its own `listener::current` without touching it (Huly QB-1246).
+ * @details Trivially destructible on purpose, like `live_schedulers_t`: it is read after every thread_local
+ *          destructor of its thread, and by the destructors of objects with static storage, which run after the
+ *          main thread's thread-locals -- when the listener itself may not be read any more. The listener keeps it
+ *          in step: `owner` and `phase` from its constructor, `raw` when it builds its loop, `scheduler` when it
+ *          creates and when it destroys its scheduler, and `phase` again at the end of its destructor. It serves
+ *          twice. It is the DOOR: once the phase is `gone`, a wake, the hand-over of a completed frame and a
+ *          cleanup are dropped, and a request that needs the scheduler or the loop stops the process on one line
+ *          that names it (`refuse_after_thread_loop()`). And it is the FAST PATH: `coro_scheduler()`, `sleep()`,
+ *          the `wait_*()` family, the timed channel operations, the timeouts and qb-core's `ask` read the thread's
+ *          scheduler and loop here, with no thread_local that has a destructor on the way.
+ */
+struct thread_loop_t {
+    void const         *owner;          ///< the thread's `listener::current`; once it is gone, COMPARED, never followed
+    struct ev_loop     *raw;            ///< its loop, from the moment it is built to the listener's destructor; else null
+    CoroutineScheduler *scheduler;      ///< its scheduler, from its creation to its destruction; else null
+    unsigned            inline_resumes; ///< coroutines of this thread being resumed outside a `run_ready()` drain
+    thread_loop_phase   phase;
+};
+
+QB_ABI_ANCHOR inline thread_loop_t &
+thread_loop() noexcept {
+    thread_local thread_loop_t state{};
+    return state;
+}
+
+/// The thread's `listener::current` is destroyed: nothing will pump this thread again.
+[[nodiscard]] inline bool
+thread_loop_gone() noexcept {
+    return thread_loop().phase == thread_loop_phase::gone;
+}
+
+/// `listener` is this thread's `listener::current`, and it is destroyed. Reads the record alone: nothing of the
+/// listener may be read then.
+[[nodiscard]] inline bool
+is_gone_thread_listener(void const *listener) noexcept {
+    thread_loop_t const &state = thread_loop();
+    return state.phase == thread_loop_phase::gone && state.owner == listener;
+}
+
+/// A request that cannot be served once the thread's loop is gone -- for the thread's scheduler or its loop, to
+/// suspend, to spawn, to register an event, to run -- stops the process with one line that names `request`;
+/// defined in `listener.cpp`. Until 3.4 such a request read the destroyed listener and its freed loop. What only
+/// hands something over never gets here: it is dropped (`schedule_via_current()`, `defer_frame_destruction()`,
+/// `detail::cleanup_scheduler()`, `listener::release()`, `listener::defer()`).
+[[noreturn]] void refuse_after_thread_loop(char const *request) noexcept;
+
+/// The one line of a `listener::reset_coro_scheduler()` that cannot be served -- asked while one of that scheduler's
+/// coroutines is executing. Written to `stderr` with `fputs`, as the named stop is.
+void report_refused_scheduler_reset(void const *scheduler) noexcept;
+
+/**
+ * @brief For its lifetime, a coroutine of this thread is being resumed OUTSIDE a `run_ready()` drain: inline, by the
+ *        handler that routed its `ask` reply (`ask_awaiter::deliver_thunk`) or by the core, for an `onInit()`.
+ * @details A teardown reached from that coroutine -- `exit()` in its body ends the thread's listener -- then finds a
+ *          frame executing, exactly as under a drain, and the scheduler that owns it destroys nothing
+ *          (`CoroutineScheduler::must_abandon()`): without the mark it destroyed the frame that was running.
+ */
+class inline_resume_scope {
+public:
+    inline_resume_scope() noexcept {
+        ++thread_loop().inline_resumes;
+    }
+    ~inline_resume_scope() {
+        --thread_loop().inline_resumes;
+    }
+    inline_resume_scope(inline_resume_scope const &)            = delete;
+    inline_resume_scope &operator=(inline_resume_scope const &) = delete;
+};
+
 // Huly QB-1220, defined at the end of this file: the scheduler destroying its frames now, and the schedulers alive here.
 QB_ABI_ANCHOR inline CoroutineScheduler *&destroying_scheduler() noexcept;
 QB_ABI_ANCHOR inline void                 track_live_scheduler(CoroutineScheduler *scheduler, bool alive) noexcept;
 QB_ABI_ANCHOR inline bool                 is_live_scheduler(CoroutineScheduler const *scheduler) noexcept;
+QB_ABI_ANCHOR inline bool                 built_on_this_thread(CoroutineScheduler const *scheduler) noexcept;
+[[nodiscard]] inline bool                 resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept;
 } // namespace detail
 
 /**
@@ -176,8 +259,16 @@ public:
         return locate(p) != npos ? 1 : 0;
     }
 
+    // `insert()` and `erase()` are forced inline on GCC and Clang (`QB_GNU_ALWAYS_INLINE`, the idiom of Huly
+    // QB-1225): every resume passes through one of each -- `schedule_resume()` and `run_ready()` -- and whether
+    // g++ inlined them there depended on how many OTHER callers the unit had. The teardown that destroys what a
+    // scheduler owns (Huly QB-1246) added callers on cold paths, and g++ 14 took `erase()` out of line in
+    // `run_ready()`: +13 instructions per spawned coroutine (callgrind, `SpawnThroughput/1000`), `insert()` out
+    // of line in the channels' wake path: +23 per `select`. Forced, both cells are under the base they were
+    // measured against.
+
     /// @return `true` if `p` was inserted, `false` if it was already present (or null).
-    bool
+    QB_GNU_ALWAYS_INLINE bool
     insert(void *p) {
         if (!p)
             return false;
@@ -197,8 +288,8 @@ public:
     }
 
     /// @return The number of elements removed (0 or 1), like `std::unordered_set::erase`.
-    std::size_t
-    erase(void *p) noexcept {
+    QB_GNU_ALWAYS_INLINE auto
+    erase(void *p) noexcept -> std::size_t {
         std::size_t i = locate(p);
         if (i == npos)
             return 0;
@@ -322,7 +413,7 @@ public:
      * @brief Construct a scheduler.
      *
      * It owns no event loop: an awaiter that suspends on libev carries the loop it arms its watcher on
-     * (`listener::current.loop()`, injected by `sleep()` / `wait_readable()`), and the scheduler only queues and resumes
+     * (the thread's listener's, injected by `sleep()` / `wait_readable()`), and the scheduler only queues and resumes
      * handles. It used to take an `ev::loop_ref` defaulting to `ev::get_default_loop()`, stored and never read -- the one
      * effect of that default was to CREATE libev's global default loop from whichever core thread first hit the
      * `current()` fallback: a loop nobody pumps, and a data race against every other core's `ev_loop_destroy`, which
@@ -336,69 +427,137 @@ public:
     /**
      * @brief Destructor
      *
-     * Drains and destroys all coroutines in the ready queue only. Coroutines
-     * that are suspended (waiting on I/O or timers) are NOT destroyed, because
-     * their libev watchers are still active; destroying those handles would
-     * run awaiter destructors that call `ev_*_stop()`, which can cause
-     * use-after-free or double-free if the loop is being torn down or if
-     * callbacks are in flight.
+     * Destroys every coroutine it owns -- the spawned roots, each with its chain down to the awaiter parked on a
+     * watcher, whose destructor stops it -- then the frames queued and the frames completed, as `recycle()` does;
+     * and again, sixteen passes at most, while a destructor it ran left it a coroutine (one that spawned on it and
+     * pumped it). A frame it does not own (a task driven by hand) is its task's.
      *
-     * Finding 2.B.8 — decision log:
-     *   Destroying suspended frames here would be *worse* than leaking
-     *   them because:
-     *     1. libev watchers registered in the awaiter still reference the
-     *        frame via `ev_watcher::data`. If the loop iterates once more
-     *        (e.g. another listener on this thread), it would dispatch to
-     *        freed memory.
-     *     2. The frame's awaiter may hold non-trivial RAII (cancellation
-     *        tokens, shared_ptrs) whose destruction order is not the one
-     *        intended by the user when they wrote their coroutine.
-     *   The correct lifecycle is therefore: **stop the event loop first**,
-     *   then destroy the scheduler. The listener does this on its own
-     *   destruction. Suspended frames at process exit are reclaimed by
-     *   the OS (they are by definition not going to make progress).
+     * Three orders are refused, and then it destroys NOTHING -- parked, queued and completed frames alike: the
+     * coroutines it owns are counted in `abandoned_coroutine_frames_total()` and one line on `stderr` says
+     * which order it was (Huly QB-84):
+     *   - destroyed AFTER its thread's `listener::current` (static storage, a thread_local built before the
+     *     listener): the loop its coroutines waited on is gone, and no destructor of a coroutine local is run
+     *     against a thread that can run nothing any more. Destroy a scheduler before its thread's listener.
+     *   - destroyed FROM INSIDE one of its own coroutines -- its `run_ready()` is on the stack, or qb-core is
+     *     resuming one inline (an `ask` reply, an `onInit()`): what `exit()` in a coroutine body does. One of them is
+     *     executing, and which root it belongs to is not known here (a drain resumes a leaf, not its root).
+     *   - destroyed ON ANOTHER THREAD than the one that built it (static storage, and `exit()` called on a thread
+     *     that is not the scheduler's): its coroutines wait on their own thread's loop, which may be running.
+     * A fourth line exists for the scheduler that still owns coroutines after the sixteenth pass.
      *
-     *   Suspended frames left at teardown are REPORTED, in every build: one
-     *   line on `qb::io::cerr` naming the count, and the count added to
-     *   `abandoned_coroutine_frames_total()` (Huly QB-84). It used to be a
-     *   debug-only `fprintf`, so a release service that recreated listeners
-     *   accumulated frames with no message and no number.
+     * (Finding 2.B.8 abandoned in every order until 3.4. Its reason was the watchers, which the destruction of a
+     * frame stops; what it protected against was the first order above alone -- Huly QB-1246.)
      */
     ~CoroutineScheduler() {
         QB_SCHED_TRACE("~CoroutineScheduler() begin this=%p", (void *) this);
-        drain_for_teardown();
+        coroutine_abandon_reason why = coroutine_abandon_reason::respawning; // what a sixteenth pass leaves
+        if (must_abandon(why) || !destroy_everything_owned()) [[unlikely]]
+            abandon_everything(why);
         detail::track_live_scheduler(this, false); // out of the live ones, and unbound if current (Huly QB-1220)
     }
 
     /**
      * @brief Return this scheduler to the state of a freshly constructed one, KEEPING its storage.
-     * @details Destroys every frame it owns -- `destroy_all_suspended()`, then the drains the
-     *          destructor runs -- so nothing an engine spawned survives into the next one on the same
-     *          thread (`start(false)` runs core 0 on the caller's thread, which outlives the
-     *          engine). What it keeps is memory: the ready ring, the deferred-destroy vector and the
+     * @details Destroys every frame it owns, as the destructor does and in the orders the destructor accepts, so
+     *          nothing an engine spawned survives into the next one on the same thread (`start(false)` runs core 0
+     *          on the caller's thread, which outlives the engine). In an order the destructor refuses -- from
+     *          inside one of its own coroutines above all -- it does nothing, and says nothing: the scheduler
+     *          lives on. What it keeps is memory: the ready ring, the deferred-destroy vector and the
      *          three pointer sets keep their capacity, and a set whose entries were all erased is
      *          already all-null, so the next engine's coroutines neither re-grow (rehash) nor
      *          re-zero (calloc) them. Deleting and re-creating the scheduler instead cost a fresh
      *          32 -> 2048 growth of each set per engine start: +5.8 % on a 1000-coroutine spawn
-     *          (g++-14, ~64 KB zeroed and ~4 000 rehashed slots per start). Owner thread only, outside
-     *          `run_ready()`.
+     *          (g++-14, ~64 KB zeroed and ~4 000 rehashed slots per start). Owner thread only.
      */
     void
     recycle() {
-        destroy_all_suspended();
-        drain_for_teardown();
+        coroutine_abandon_reason why{};
+        if (!must_abandon(why)) [[likely]]
+            (void) destroy_everything_owned(); // what sixteen passes of respawning destructors leave stays owned
     }
 
 private:
-    // The destructor's drains: owned ready frames and deferred-destroy frames are destroyed, a
-    // suspended frame is reported (Huly QB-84), the bookkeeping is cleared.
+    // One is the rule; two is a destructor that spawned on the dying scheduler and pumped it; a destructor that does
+    // so at every pass would keep an unbounded teardown running for ever.
+    static constexpr unsigned kMaxTeardownPasses = 16;
+
+    // One of this scheduler's coroutines is executing: its own drain is on the stack, or qb-core is resuming a
+    // coroutine inline (an `ask` reply, an `onInit()`) -- and that coroutine is the thread's listener's scheduler's,
+    // or the current one's. A scheduler that is neither (one the resumed coroutine built for itself) is not
+    // concerned. The second half is the rule of every scheduler qb-core spawns on, not a proof: which scheduler owns
+    // the frame an inline resume runs is not recorded (it would cost every reply), so a coroutine spawned by hand on
+    // a third scheduler is not seen, and a CURRENT one destroyed inside such a resume abandons, or refuses a reset.
+    [[nodiscard]] bool
+    resuming_one_of_its_own() const noexcept {
+        if (in_run_ready_)
+            return true;
+        detail::thread_loop_t const &thread = detail::thread_loop();
+        return thread.inline_resumes != 0 && (thread.scheduler == this || current_ == this);
+    }
+    friend bool detail::resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept;
+
+    // The orders in which this scheduler must not destroy the coroutines it owns (see the destructor); `why` is
+    // written only when the answer is yes.
+    [[nodiscard]] bool
+    must_abandon(coroutine_abandon_reason &why) const noexcept {
+        if (!detail::built_on_this_thread(this)) [[unlikely]] { // its coroutines are another thread's
+            why = coroutine_abandon_reason::foreign_thread;
+            return true;
+        }
+        if (resuming_one_of_its_own()) [[unlikely]] {
+            why = coroutine_abandon_reason::draining;
+            return true;
+        }
+        if (detail::thread_loop_gone()) [[unlikely]] {
+            why = coroutine_abandon_reason::loop_gone;
+            return true;
+        }
+        return false;
+    }
+
+    // Destroy every coroutine it owns: the parked roots, then the queued and the completed ones -- and again while
+    // a destructor those passes ran left it one (it spawned on this scheduler and pumped it, so the new coroutine
+    // parked: outside the snapshot of the pass that was running). False when it still owns some after the last pass.
+    [[nodiscard]] bool
+    destroy_everything_owned() {
+        for (unsigned pass = 0; pass < kMaxTeardownPasses; ++pass) {
+            destroy_all_suspended();
+            destroy_ready_and_deferred();
+            if (owned_frames_.empty()) [[likely]]
+                return true;
+        }
+        return false;
+    }
+
+    // The refused orders of the destructor: drop everything it holds and destroy nothing. The coroutines it owned
+    // are counted and reported, a root once whatever it awaits; a frame it does not own (registered by a task
+    // driven by hand) is its task's and is not.
     void
-    drain_for_teardown() {
+    abandon_everything(coroutine_abandon_reason why) noexcept {
+        const std::size_t abandoned = owned_frames_.size();
+        QB_SCHED_TRACE("  abandoning %zu owned coroutine(s), NOT destroying them", abandoned);
+        ready_queue_.clear();       // queued, never resumed: dropped, not destroyed
+        frames_to_destroy_.clear(); // completed, at their final suspension: their parameters are not destroyed either
+        suspended_coroutines_.clear();
+        in_flight_.clear();
+        owned_frames_.clear();
+        if (abandoned != 0)
+            report_abandoned_coroutine_frames(abandoned, this, why);
+    }
+
+    // The queued and the completed frames it owns are destroyed; the bookkeeping of the others is cleared. Each
+    // drain takes what is queued WHEN IT BEGINS: a frame destroyed here may spawn on this scheduler again (a
+    // parameter of a coroutine that never ran, whose destructor spawns), and popped in the same drain the new frame
+    // kept it running for ever. Left queued, it is the next pass's, and the passes are counted.
+    void
+    destroy_ready_and_deferred() {
         CoroutineScheduler *const was           = std::exchange(detail::destroying_scheduler(), this); // QB-1220
         std::size_t               ready_drained = 0;
-        while (!ready_queue_.empty()) {
+        for (std::size_t queued = ready_queue_.size(); queued != 0 && !ready_queue_.empty(); --queued) {
             ready_item item = ready_queue_.front();
             ready_queue_.pop_front();
+            if (item.handle)
+                in_flight_.erase(item.handle.address()); // out of the queue, out of its dedup set: as run_ready()
             // Only destroy frames the scheduler owns (spawned). Non-owned entries are continuations
             // whose frame is owned by a task<T> object elsewhere — destroying them here would
             // double-free when that task's destructor runs later. Leaking a queued continuation at
@@ -413,7 +572,7 @@ private:
         (void) ready_drained;
         // Destroy the spawned frames a final run_ready() did not drain, one popped at a time: a destruction may cancel,
         // null or defer another, which a range-for read past. One another live scheduler owns leaves its set (Huly QB-1243).
-        while (!frames_to_destroy_.empty()) {
+        for (std::size_t deferred = frames_to_destroy_.size(); deferred != 0 && !frames_to_destroy_.empty(); --deferred) {
             std::coroutine_handle<> const h = frames_to_destroy_.back();
             frames_to_destroy_.pop_back();
             if (h && owned_frames_.erase(h.address()) == 0)
@@ -421,14 +580,12 @@ private:
             if (h)
                 h.destroy();
         }
-        if (const std::size_t abandoned = suspended_coroutines_.size(); abandoned != 0)
-            report_abandoned_coroutine_frames(abandoned, this);
-        QB_SCHED_TRACE("  clearing suspended_coroutines_ (count=%zu), NOT destroying handles", suspended_coroutines_.size());
+        // A frame still registered as suspended is not this scheduler's (destroy_all_suspended() ran first): it is
+        // its task's, and its registration is dropped, unreported. The dedup set keeps what a destruction queued
+        // meanwhile: forget() scrubs the queue only for a frame it finds there.
         suspended_coroutines_.clear();
-        in_flight_.clear();
-        // Any owned frames still here are suspended (not in the ready queue) and are intentionally leaked at
-        // teardown per Finding 2.B.8 — just drop the bookkeeping; the OS reclaims them at process/thread exit.
-        owned_frames_.clear();
+        if (ready_queue_.empty())
+            in_flight_.clear();
         detail::destroying_scheduler() = was;
     }
 
@@ -844,7 +1001,9 @@ public:
      * When none is bound yet, binds the thread's `listener::current` scheduler (creating the
      * listener and its scheduler on a thread that has none) on the cold out-of-line path
      * `detail::bind_thread_scheduler()`, so whatever is queued here is drained by that loop.
-     * There is no private fallback: a scheduler nobody pumps was the defect (Huly QB-271).
+     * There is no private fallback: a scheduler nobody pumps was the defect (Huly QB-271). Once the
+     * thread's `listener::current` is destroyed there is nothing to bind: the request stops the
+     * process on a line that names it (`detail::refuse_after_thread_loop()`, Huly QB-1246).
      */
     static CoroutineScheduler &
     current() {
@@ -926,9 +1085,9 @@ public:
     /**
      * @brief Destroy every coroutine this scheduler OWNS -- each spawned root, and its chain down to the awaiter
      *        parked on a watcher, whose destructor stops it. A frame it does not own (a task driven by hand, never
-     *        spawned) is left to its task<T>, which destroys it once (Huly QB-1220). Call this before reset/destroy
-     *        when the event loop is still valid (e.g. test TearDown). Must not be used in ~CoroutineScheduler()
-     *        at process exit (loop may be tearing down); use only when explicitly resetting the scheduler.
+     *        spawned) is left to its task<T>, which destroys it once (Huly QB-1220). The destructor and `recycle()`
+     *        run it, in the orders they accept. A no-op in the others: while one of this scheduler's coroutines is
+     *        executing (a drain, or qb-core resuming one inline), on another thread, after its thread's loop.
      */
     void
     destroy_all_suspended() {
@@ -946,9 +1105,16 @@ public:
         // wake a plain sleep(), so the worker tree is still parked at reset).
         //
         // Nothing owned and nothing parked -- every engine teardown after a clean run -- is nothing
-        // to do: return before building the snapshot (`recycle()` runs this twice per `~VirtualCore`;
+        // to do: return before building the snapshot (`recycle()` runs this three times per `~VirtualCore`;
         // the vectors and the scans were the whole of its +5 % on MSVC spawn-1000).
         if (owned_frames_.empty() && suspended_coroutines_.empty())
+            return;
+        // Never while one of its own coroutines is executing -- `exit()` in a coroutine body ends the thread's
+        // listener from inside it -- and destroying that one would run its awaiters' destructors a second time.
+        // Which root the executing frame belongs to is not known here (a drain resumes the leaf a waker queued,
+        // never its root), so nothing is destroyed; the destructor then reports what is left. Nor on another
+        // thread than its own, nor after its thread's loop: what these frames wait on cannot be reached from here.
+        if (resuming_one_of_its_own() || !detail::built_on_this_thread(this) || detail::thread_loop_gone()) [[unlikely]]
             return;
         std::vector<void *> owned_roots;
         owned_roots.reserve(owned_frames_.size());
@@ -1178,15 +1344,42 @@ current_scheduler_ptr() noexcept {
  * (`detail::bind_thread_scheduler()`, the cold path `CoroutineScheduler::current()`
  * shares), so the handle is drained by `listener::current`. It used to assert in
  * debug and drop the handle in release: a waiter queued that way was never resumed
- * (Finding 2.A.2, Huly QB-271).
+ * (Finding 2.A.2, Huly QB-271). Once the thread's `listener::current` is destroyed the
+ * wake is DROPPED: nothing pumps that thread any more, and binding then built a scheduler
+ * on the destroyed listener (a `channel` with static storage closed at exit, since 3.3.0;
+ * Huly QB-1246).
  *
  * @param handle The coroutine handle to schedule
  */
 inline void
 schedule_via_current(std::coroutine_handle<> handle) noexcept {
     auto *sched = CoroutineScheduler::current_ptr();
-    if (!sched) [[unlikely]]
+    if (!sched) [[unlikely]] {
+        // Once the thread's loop is destroyed nothing will ever resume this frame: the wake is dropped.
+        if (detail::thread_loop_gone())
+            return;
         sched = &detail::bind_thread_scheduler(); // first coroutine on this thread: the loop's scheduler
+    }
+    sched->schedule_resume(handle);
+}
+
+/**
+ * @brief A completion's wake, delivered from a reply handler (the qbm modules'): `handle` is queued on the current
+ *        scheduler, the thread's being bound if none is, and dropped once the thread's loop is gone --
+ *        `schedule_via_current()`'s rule, read on the same record.
+ * @details Not `noexcept`, unlike `schedule_via_current()`: a reply handler is not a destructor, and what queuing
+ *          throws -- the ready ring or the in-flight set growing with no memory left -- propagates into the
+ *          module's reply path, as it did while the modules called `coro_scheduler().schedule_resume()`. A
+ *          `noexcept` wake there would turn that failure into `std::terminate()`.
+ */
+inline void
+resume_via_current(std::coroutine_handle<> handle) {
+    auto *sched = CoroutineScheduler::current_ptr();
+    if (!sched) [[unlikely]] {
+        if (detail::thread_loop_gone())
+            return; // delivered after the thread's loop: nothing will ever resume this frame
+        sched = &detail::bind_thread_scheduler();
+    }
     sched->schedule_resume(handle);
 }
 
@@ -1210,8 +1403,44 @@ enqueue_for_later_via_current(std::coroutine_handle<> handle) noexcept {
  */
 inline void
 defer_frame_destruction(std::coroutine_handle<> handle) noexcept {
-    CoroutineScheduler::current().defer_destroy(handle);
+    auto *sched = CoroutineScheduler::current_ptr();
+    if (!sched) [[unlikely]] {
+        if (detail::thread_loop_gone())
+            return; // finished after the thread's loop: the frame stays with the scheduler that owns it, which counts it
+        sched = &detail::bind_thread_scheduler();
+    }
+    sched->defer_destroy(handle);
 }
+
+namespace detail {
+/**
+ * @brief The thread's scheduler for a CLEANUP -- reclaiming a helper frame it owns, scrubbing a handle from its
+ *        queues -- or null when there is nothing to clean: the thread's listener has no scheduler, or it is gone
+ *        (it destroyed or abandoned every frame it owned).
+ * @details What a destructor and a cancellation hook use instead of `coro_scheduler()`, which creates the scheduler
+ *          and, once the thread's loop is gone, stops the process: a cleanup after the loop is dropped, never
+ *          refused (Huly QB-1246). Read on the thread's record: no listener is reached, and none is built.
+ */
+[[nodiscard]] inline CoroutineScheduler *
+cleanup_scheduler() noexcept {
+    return thread_loop().scheduler;
+}
+
+/// CLEANUP: destroy a helper frame the thread's scheduler owns (`cancel_spawned()`); dropped after the loop.
+inline void
+cleanup_cancel_spawned(std::coroutine_handle<> handle) noexcept {
+    if (CoroutineScheduler *const sched = cleanup_scheduler())
+        sched->cancel_spawned(handle);
+}
+
+/// CLEANUP: scrub a frame its task is about to destroy from the thread's scheduler (`forget()`); dropped after the
+/// loop (the task's destructor scrubs every live scheduler by itself).
+inline void
+cleanup_forget(std::coroutine_handle<> handle) noexcept {
+    if (CoroutineScheduler *const sched = cleanup_scheduler())
+        sched->forget(handle);
+}
+} // namespace detail
 
 /*
  * forget_frame_if_current() -- declared in task.h -- is defined at the end of this file, beside the table of the
@@ -1284,6 +1513,7 @@ namespace detail {
 struct live_schedulers_t {
     CoroutineScheduler *slot[16];
     unsigned            count;
+    bool                overflowed; ///< a scheduler built here found no slot: `built_on_this_thread()` cannot say no
 };
 
 QB_ABI_ANCHOR inline live_schedulers_t &
@@ -1307,6 +1537,30 @@ track_live_scheduler(CoroutineScheduler *scheduler, bool alive) noexcept {
         }
     if (alive && live.count < std::size(live.slot))
         live.slot[live.count++] = scheduler;
+    else if (alive)
+        live.overflowed = true;
+}
+
+// One of `scheduler`'s coroutines is executing -- its drain is on the stack, or qb-core is resuming one inline: what
+// the listener asks before it resets its scheduler.
+inline bool
+resuming_one_of_its_own(CoroutineScheduler const &scheduler) noexcept {
+    return scheduler.resuming_one_of_its_own();
+}
+
+// Whether `scheduler` was built on the calling thread: it is in this thread's table from its constructor to the end
+// of its destructor. A scheduler destroyed on another thread -- static storage, and `exit()` on a thread that is not
+// its own -- is not, and its coroutines are that other thread's: their watchers are on its loop, which may be
+// running. A thread that ever had more schedulers than slots answers yes for all of them (the table cannot tell).
+QB_ABI_ANCHOR inline bool
+built_on_this_thread(CoroutineScheduler const *scheduler) noexcept {
+    live_schedulers_t const &live = live_schedulers();
+    if (live.overflowed)
+        return true;
+    for (unsigned i = 0; i < live.count; ++i)
+        if (live.slot[i] == scheduler)
+            return true;
+    return false;
 }
 
 QB_ABI_ANCHOR inline bool

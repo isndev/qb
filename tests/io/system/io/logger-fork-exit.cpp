@@ -18,6 +18,12 @@
  * holding the binary until the ctest TIMEOUT. The parent waits for its writer to be idle before it forks: a fork that
  * meets the writer inside a line can hang in `fork()` itself under ThreadSanitizer on macOS (Huly QB-1193).
  *
+ * Under LeakSanitizer (the `sanitize` preset on Linux) the child's `exit()` runs a leak check, and the child exits 1 on
+ * a report. Nothing of the parent's writer thread exists in the child, so whatever only that thread pointed to had no
+ * owner there (Huly QB-1246, reopened): the state `std::thread` allocates for the function it runs, lost once the child
+ * started a thread of its own (the third case: 32 bytes with libstdc++), and the heap buffer of the record the writer
+ * last wrote, when the record outgrew its own buffer -- so the parent's last line before each fork is a long one.
+ *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,6 +65,10 @@ namespace logger_fork_exit_test {
 #if defined(QB_WITH_LOGGING) && !defined(_WIN32)
 
 constexpr int lines_per_phase = 200;
+
+// The tag of the parent's last line before the fork: longer than a record's own buffer (under 256 bytes, nanolog.h),
+// so the record keeps its text in a heap buffer, which the parent's writer still holds when it goes idle.
+std::string const long_tag = "long-" + std::string(400, 'x');
 
 // A unique, empty directory per test, removed afterwards -- after the logger is sent back to LogInitializer's file.
 class LogDir {
@@ -182,6 +192,7 @@ expect_parent_file_complete(std::filesystem::path const &dir) {
         for (int n = 0; n < lines_per_phase; ++n)
             ASSERT_EQ(count_line_endings(text, std::string("] ") + tag + ' ' + std::to_string(n)), 1)
                 << tag << ' ' << n << " is not in the parent's file exactly once";
+    EXPECT_EQ(count_line_endings(text, "] " + long_tag + " 0"), 1) << "the long line is not in the parent's file exactly once";
     EXPECT_EQ(count_lines(text, "from the child"), 0) << "the child wrote into its parent's logger";
 }
 
@@ -192,9 +203,13 @@ run_case(Child child) {
     log_and_wait_written(dir.path() / "parent.1.log", "before", lines_per_phase);
     if (::testing::Test::HasFatalFailure())
         return;
+    log_and_wait_written(dir.path() / "parent.1.log", long_tag.c_str(), 1); // the writer goes idle holding a heap buffer
+    if (::testing::Test::HasFatalFailure())
+        return;
     EXPECT_EQ(fork_and_exit(child, dir.path() / "child"), 0)
-        << "the child did not exit cleanly (-1: hung, killed; -2, -3: waitpid, fork failed; 5, 6: log_file_opened() "
-           "answered wrong; 7: a throw; 128 + n: signal n -- 134 is std::terminate)";
+        << "the child did not exit cleanly (-1: hung, killed; -2, -3: waitpid, fork failed; 1: a sanitizer's report -- "
+           "under LeakSanitizer, the child leaked; 5, 6: log_file_opened() answered wrong; 7: a throw; 128 + n: signal n "
+           "-- 134 is std::terminate)";
     // Read before the parent writes again: its next line is written at the offset its stream remembers, over a line
     // the child would have appended to the file they share.
     std::string const at_exit = read_file(dir.path() / "parent.1.log");

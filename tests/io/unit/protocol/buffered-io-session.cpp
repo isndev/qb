@@ -30,6 +30,8 @@
  */
 
 #include <cstddef>
+#include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -721,4 +723,353 @@ TEST(BufferedIoSession, ServerOwnedDisposeReportsConnectionAndStreamIdentity) {
     EXPECT_EQ(recorder.disconnected_calls, 1u);
     EXPECT_EQ(recorder.last_connection, 7u);
     EXPECT_EQ(recorder.last_stream, 42u);
+}
+
+// =============================================================================
+// CLEAR FROM INSIDE A DISPATCH (Huly QB-1278)
+// =============================================================================
+// A handler that called clear_protocols() ended the protocol whose onMessage() was still running; a protocol
+// that writes its own state after its handler -- as the WebSocket decoder does -- then wrote freed memory.
+
+namespace {
+
+struct BufferedProtocolLifetime {
+    bool        in_dispatch           = false;
+    std::size_t destroyed             = 0u;
+    std::size_t destroyed_in_dispatch = 0u;
+    std::size_t frames_after_handler  = 0u;
+};
+
+class DispatchingBufferedProtocol : public qb::io::async::AProtocol<BufferedProbe> {
+    BufferedProtocolLifetime &_life;
+    void (*_handler)(BufferedProbe &);
+    std::size_t _frames = 0u;
+
+public:
+    DispatchingBufferedProtocol(BufferedProbe &io, BufferedProtocolLifetime &life, void (*handler)(BufferedProbe &)) noexcept
+        : AProtocol(io)
+        , _life(life)
+        , _handler(handler) {}
+
+    ~DispatchingBufferedProtocol() override {
+        ++_life.destroyed;
+        if (_life.in_dispatch)
+            ++_life.destroyed_in_dispatch;
+    }
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return _io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        auto &life       = _life;
+        life.in_dispatch = true;
+        _io.messages.emplace_back(_io.in().begin(), size);
+        _handler(_io);
+        ++_frames; // the protocol's own state, after its handler: freed memory if the handler ended it
+        life.frames_after_handler = _frames;
+        life.in_dispatch          = false;
+    }
+
+    void
+    reset() noexcept final {
+        _frames = 0u;
+    }
+};
+
+void
+buffered_clear_in_handler(BufferedProbe &io) {
+    io.clear_protocols();
+}
+
+void
+buffered_clear_then_switch_in_handler(BufferedProbe &io) {
+    io.clear_protocols();
+    (void) io.switch_protocol<FixedFrameProtocol>(io, 4u);
+}
+
+void
+buffered_clear_then_switch_wide_in_handler(BufferedProbe &io) {
+    io.clear_protocols();
+    (void) io.switch_protocol<FixedFrameProtocol>(io, 8u);
+}
+
+void
+buffered_disconnect_then_clear_in_handler(BufferedProbe &io) {
+    io.disconnect(5);
+    io.clear_protocols();
+}
+
+void
+buffered_publish_then_clear_in_handler(BufferedProbe &io) {
+    io.publish(std::string_view{"bye"});
+    io.clear_protocols();
+}
+
+} // namespace
+
+TEST(BufferedIoSession, ClearProtocolsFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    BufferedProtocolLifetime life;
+    {
+        BufferedProbe session;
+        ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_in_handler), nullptr);
+        session.append("abcd");
+
+        EXPECT_FALSE(session.process_input());
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+        EXPECT_EQ(life.frames_after_handler, 1u) << "the protocol finished its onMessage() after the handler cleared it";
+        EXPECT_EQ(life.destroyed, 1u) << "the cleared protocol is destroyed once the dispatch has returned";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+        EXPECT_EQ(session.disconnection_reason(), -1);
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST(BufferedIoSession, ClearThenSwitchFromAHandlerKeepsTheNewProtocolAndEndsTheOld) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_then_switch_in_handler), nullptr);
+    session.append("abcdefgh");
+
+    EXPECT_TRUE(session.process_input());
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd", "efgh"}));
+    EXPECT_EQ(life.destroyed, 1u) << "the cleared protocol is destroyed once the dispatch has returned";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_NE(session.protocol(), qb::io::async::no_protocol()) << "the protocol switched in after the clear is kept";
+}
+
+// The other exits of process_input() end what the dispatch retired too: a disconnect() from the handler, a clear
+// with output still to deliver, and a frame of the switched-in protocol over the size limit.
+TEST(BufferedIoSession, DisconnectThenClearFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_disconnect_then_clear_in_handler), nullptr);
+    session.append("abcd");
+
+    EXPECT_FALSE(session.process_input());
+    EXPECT_EQ(life.frames_after_handler, 1u);
+    EXPECT_EQ(life.destroyed, 1u) << "the disconnect exit ends what the dispatch retired";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_EQ(session.disconnection_reason(), 5);
+}
+
+TEST(BufferedIoSession, ClearWithOutputPendingFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_publish_then_clear_in_handler), nullptr);
+    session.append("abcd");
+
+    EXPECT_TRUE(session.process_input()) << "output still to deliver: the session drains it first";
+    EXPECT_EQ(life.destroyed, 1u) << "the drain exit ends what the dispatch retired";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_EQ(std::string_view(session.out().begin(), session.out().size()), "bye");
+}
+
+TEST(BufferedIoSession, AnOversizedFrameAfterAClearThenSwitchEndsTheOldProtocol) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_then_switch_wide_in_handler), nullptr);
+    session.set_max_message_size(4u);
+    session.append("abcdefghijkl"); // a 4-byte frame for the old protocol, an 8-byte one for the new: over the limit
+
+    EXPECT_FALSE(session.process_input());
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+    EXPECT_EQ(life.destroyed, 1u) << "the size-guard exit ends what the dispatch retired";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own onMessage()";
+    EXPECT_EQ(session.disconnection_reason(), -2);
+}
+
+TEST(BufferedIoSession, ClearProtocolsOutsideADispatchEndsTheProtocolsAtOnce) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_in_handler), nullptr);
+    session.clear_protocols();
+    EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
+}
+
+// =============================================================================
+// THE PROTOCOL LIST (Huly QB-1278)
+// =============================================================================
+// What a dispatch retired ends when it returns, or with the list; a retired protocol's destructor may call back
+// into its component -- switch_protocol(), clear_protocols() -- while the list ends it.
+
+namespace {
+
+struct EndingRecord {
+    std::size_t destroyed           = 0u;
+    bool        flag_when_destroyed = false; ///< the component's dispatch flag, read by the destructor
+};
+
+/// Whether an EndingProtocol's hook may run: a test disarms them before its list -- what they call into -- dies.
+bool g_ending_hooks_armed = true;
+
+struct ArmEndingHooks {
+    ArmEndingHooks() noexcept {
+        g_ending_hooks_armed = true;
+    }
+    ~ArmEndingHooks() {
+        g_ending_hooks_armed = false;
+    }
+};
+
+/// Frames nothing; its destructor counts itself, reads the dispatch flag it ends under, then runs a hook.
+class EndingProtocol final : public qb::io::async::IProtocol {
+    EndingRecord         &_record;
+    bool const           *_dispatch_flag;
+    std::function<void()> _on_destroy;
+
+public:
+    explicit EndingProtocol(EndingRecord &record, bool const *dispatch_flag = nullptr, std::function<void()> on_destroy = {})
+        : _record(record)
+        , _dispatch_flag(dispatch_flag)
+        , _on_destroy(std::move(on_destroy)) {}
+
+    ~EndingProtocol() override {
+        ++_record.destroyed;
+        if (_dispatch_flag)
+            _record.flag_when_destroyed = *_dispatch_flag;
+        if (_on_destroy && g_ending_hooks_armed)
+            _on_destroy(); // never into a list being destroyed: a failed case must fail, not crash
+    }
+
+    std::size_t
+    getMessageSize() noexcept override {
+        return 0u;
+    }
+
+    void
+    onMessage(std::size_t) noexcept override {}
+
+    void
+    reset() noexcept override {}
+};
+
+using protocol_list = qb::io::async::detail::protocol_list;
+
+// The component's side of end_dispatch(): its protocol list and its dispatch flag, both reached as its members.
+struct ListOwner {
+    protocol_list list;
+    bool          in_dispatch = false; // the read loop has returned: its flag is clear
+};
+
+bool
+end_dispatch(ListOwner &owner, bool result) noexcept {
+    return owner.list.end_dispatch<&ListOwner::list, &ListOwner::in_dispatch>(result, owner);
+}
+
+} // namespace
+
+TEST(ProtocolList, ARetiredProtocolEndsWithTheListWhenNoDispatchEndsIt) {
+    EndingRecord record;
+    {
+        protocol_list list;
+        list.push_back(std::make_unique<EndingProtocol>(record));
+        list.clear(true);
+        EXPECT_EQ(record.destroyed, 0u) << "retired, not destroyed, while the dispatch runs";
+    }
+    EXPECT_EQ(record.destroyed, 1u) << "the component's destructor ends what a dispatch retired";
+}
+
+TEST(ProtocolList, RetiredProtocolsEndWithTheDispatchFlagSetThenTheFlagIsRestored) {
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    list.push_back(std::make_unique<EndingProtocol>(record, &in_dispatch));
+    list.clear(true);
+
+    EXPECT_FALSE(end_dispatch(owner, false)) << "the dispatch's verdict passes through";
+    EXPECT_EQ(record.destroyed, 1u);
+    EXPECT_TRUE(record.flag_when_destroyed) << "the destructor ends under the dispatch flag, as when the clear destroyed at once";
+    EXPECT_FALSE(in_dispatch) << "the flag is the read loop's again";
+    EXPECT_TRUE(end_dispatch(owner, true));
+    EXPECT_EQ(record.destroyed, 1u) << "nothing retired, nothing ends";
+}
+
+TEST(ProtocolList, ADestructorRunByAClearOutsideADispatchMaySwitchOrClear) {
+    // A clear outside a dispatch ends its protocols one at a time too: a destructor's push_back is kept, a
+    // destructor's clear joins the clear under way (it used to run inside vector::clear()).
+    EndingRecord   switching, next, clearing, live;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+    list.push_back(std::make_unique<EndingProtocol>(switching, &in_dispatch, [&] { list.push_back(std::make_unique<EndingProtocol>(next)); }));
+    list.clear(false);
+    EXPECT_EQ(switching.destroyed, 1u);
+    EXPECT_FALSE(switching.flag_when_destroyed) << "outside a dispatch: no dispatch flag";
+    EXPECT_EQ(next.destroyed, 0u) << "switched in by the destructor: kept";
+
+    list.push_back(std::make_unique<EndingProtocol>(clearing, nullptr, [&] { list.clear(in_dispatch); }));
+    list.push_back(std::make_unique<EndingProtocol>(live));
+    list.clear(false);
+    EXPECT_EQ(next.destroyed, 1u);
+    EXPECT_EQ(clearing.destroyed, 1u);
+    EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear joined the one under way";
+    EXPECT_TRUE(end_dispatch(owner, true));
+}
+
+TEST(ProtocolList, AClearOutsideADispatchEndsEveryProtocolAtOnce) {
+    EndingRecord  first, second;
+    protocol_list list;
+    list.push_back(std::make_unique<EndingProtocol>(first));
+    list.push_back(std::make_unique<EndingProtocol>(second));
+    list.clear(false);
+    EXPECT_EQ(first.destroyed, 1u);
+    EXPECT_EQ(second.destroyed, 1u);
+}
+
+TEST(ProtocolList, AClearThatFindsRetiredProtocolsRetiresToo) {
+    // Retired entries mean a dispatch is on the stack, even when the dispatch flag was lost under it (a
+    // reset_io_state() from a handler): the running protocol must not be destroyed by a second clear.
+    EndingRecord   running, switched_in;
+    ListOwner      owner;
+    protocol_list &list = owner.list;
+    list.push_back(std::make_unique<EndingProtocol>(running));
+    list.clear(true);
+    list.push_back(std::make_unique<EndingProtocol>(switched_in));
+    list.clear(false);
+    EXPECT_EQ(running.destroyed, 0u);
+    EXPECT_EQ(switched_in.destroyed, 0u);
+    (void) end_dispatch(owner, true);
+    EXPECT_EQ(running.destroyed, 1u);
+    EXPECT_EQ(switched_in.destroyed, 1u);
+}
+
+TEST(ProtocolList, ARetiredProtocolsDestructorMaySwitchTheNextOneIn) {
+    EndingRecord   retired, live, next;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+    list.push_back(std::make_unique<EndingProtocol>(retired, &in_dispatch, [&] { list.push_back(std::make_unique<EndingProtocol>(next)); }));
+    list.clear(true);
+    list.push_back(std::make_unique<EndingProtocol>(live)); // switched in after the clear, by the handler
+    (void) end_dispatch(owner, true);
+
+    EXPECT_EQ(retired.destroyed, 1u);
+    EXPECT_EQ(live.destroyed, 0u) << "switched in after the clear: kept";
+    EXPECT_EQ(next.destroyed, 0u) << "switched in by the destructor: kept";
+    list.clear(false);
+    EXPECT_EQ(live.destroyed, 1u);
+    EXPECT_EQ(next.destroyed, 1u);
+}
+
+TEST(ProtocolList, ARetiredProtocolsDestructorThatClearsEndsEveryProtocolInTheSameCall) {
+    EndingRecord   retired, live;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+    list.push_back(std::make_unique<EndingProtocol>(retired, &in_dispatch, [&] { list.clear(in_dispatch); }));
+    list.clear(true);
+    list.push_back(std::make_unique<EndingProtocol>(live, &in_dispatch));
+    (void) end_dispatch(owner, true);
+
+    EXPECT_EQ(retired.destroyed, 1u);
+    EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear retired it, and the same call ended it";
+    EXPECT_TRUE(live.flag_when_destroyed);
+    EXPECT_FALSE(in_dispatch);
 }

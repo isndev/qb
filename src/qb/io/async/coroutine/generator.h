@@ -77,8 +77,22 @@ template <typename T>
 class generator {
 public:
     struct promise_type {
+        // The frame comes from task<T>'s pool (detail::CoroutineFrameAllocator), whose blocks are cache-line aligned.
+        // C++20 does not align a coroutine frame for what it holds: without this operator new the frame is
+        // ::operator new(size)'s 16-aligned block, and GCC, clang and clang-cl lay it out as if it were aligned for
+        // its widest member -- a generator of a qb::Event, or a body holding an alignas(64) local across co_yield,
+        // had that object at 16, 32 or 48 mod 64 (Huly QB-1246).
+        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+
         std::optional<T>   current_value;
         std::exception_ptr exception;
+
+        // Declared, so that the promise is not an AGGREGATE. A coroutine's promise is built from the coroutine's
+        // arguments whenever that initialisation is viable, and since C++20 a parenthesized aggregate
+        // initialisation is: GCC, clang and clang-cl built `one(7)`'s promise with current_value = 7, and an
+        // exception_ptr argument in second place became the stored exception -- next() returned the argument before
+        // the body ran, single_generator(42) yielded 42 twice, iota(5) yielded 5 twice (Huly QB-1246).
+        promise_type() noexcept = default;
 
         auto
         get_return_object() {
@@ -289,9 +303,16 @@ template <typename T>
 class async_generator {
 public:
     struct promise_type {
+        // Cache-line-aligned pooled frame, for the reason generator<T>::promise_type gives (Huly QB-1246).
+        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+
         std::optional<T>        current_value;
         std::exception_ptr      exception;
         std::coroutine_handle<> continuation;
+
+        /// Not an aggregate, for the reason generator<T>::promise_type gives: an exception_ptr argument in second
+        /// place became the stored exception, and next() threw it before the first value (Huly QB-1246).
+        promise_type() noexcept = default;
 
         /// The frame goes: so does its suspension record, when this thread tracks (Huly QB-71; coroutine/tracking.h).
         QB_MSVC_FORCEINLINE ~promise_type() {

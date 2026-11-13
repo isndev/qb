@@ -180,6 +180,13 @@ struct FedWatcher {
         ev_timer_init(&w, &FedWatcher::cb, 0., 0.);
         w.data = this;
     }
+    // Out of the loop's pending queue on every way out, a failed assertion included: a watcher still pending when
+    // its storage goes is read by the next pass, and written by the loop when it is destroyed (Huly QB-1246).
+    ~FedWatcher() {
+        ev_timer_stop(async::listener::current.loop(), &w);
+    }
+    FedWatcher(FedWatcher const &)            = delete;
+    FedWatcher &operator=(FedWatcher const &) = delete;
     static void
     cb(struct ev_loop *, ev_timer *w, int) {
         auto *self = static_cast<FedWatcher *>(w->data);

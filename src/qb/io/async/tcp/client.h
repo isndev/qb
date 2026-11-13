@@ -55,7 +55,9 @@ public:
     using base_io_t         = io<_Derived>;                           /**< Base I/O type */
     using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
     using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::max_write_buffer_size;                          /**< Import the write-buffer cap publish() enforces (Huly QB-86) */
     using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::set_max_write_buffer_size;                      /**< Import its setter: a session sets its own (Huly QB-86) */
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 
@@ -99,10 +101,10 @@ public:
      * full rationale: `_Transport` is a sibling base listed after `io<_Derived>`,
      * so it is destroyed first (closing the fd) — the watcher must therefore be
      * stopped here, in the destructor body, before any base is torn down.
-     * Server-associated sessions are especially exposed because `dispose()` does
-     * not stop their watcher (the server owns the lifecycle), so without this the
-     * watcher would routinely outlive its fd. Stopping an already-stopped (or
-     * never-started) watcher is a no-op.
+     * Server-associated sessions are especially exposed: one destroyed while still connected --
+     * its server torn down under it -- has had no `dispose()` to stop its watcher, which would
+     * outlive its fd (`dispose()` stops a session's watcher since 3.4, Huly QB-1270). Stopping
+     * an already-stopped (or never-started) watcher is a no-op.
      */
     ~client() {
         this->_async_event.stop();
@@ -193,7 +195,9 @@ public:
     using base_io_t         = io<_Derived>;                           /**< Base I/O type */
     using transport_io_type = typename _Transport::transport_io_type; /**< Transport I/O type */
     using _Transport::in;                                             /**< Import the in method from the transport */
+    using _Transport::max_write_buffer_size;                          /**< Import the write-buffer cap publish() enforces (Huly QB-86) */
     using _Transport::out;                                            /**< Import the out method from the transport */
+    using _Transport::set_max_write_buffer_size;                      /**< Import its setter: a session sets its own (Huly QB-86) */
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 

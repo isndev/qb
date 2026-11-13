@@ -31,7 +31,7 @@ The identity of one actor incarnation within an engine run: `[generation:32 | co
 <a id="addrefactort-addrefhandlet"></a>
 #### `addRefActor<T>()` / `addRefHandle<T>()`
 
-Create a [referenced actor](#referenced-actor) on the caller's own core. Both return a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle) (`addRefHandle` is `addRefActor` marked `[[nodiscard]]`); the handle is empty (`!valid()`) if creation failed. The caller does not own the child. The handle never dangles: `id()` is valid immediately (events to a still-Activating child are stashed and replayed FIFO), and `get()` resolves the live actor only once it is **active**, returning `nullptr` while Activating, after a failed init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable (`Actor.h:2572-2577`). Use `ready()` / `co_await ready_async(ctx)` to wait for an async-init child. Declared in `src/qb/core/Actor.h`. See [Actor](../4_qb_core/actor.md).
+Create a [referenced actor](#referenced-actor) on the caller's own core. Both return a phase-aware [`ActorHandle<T>`](#actorhandlet-qbactorhandle-alias-qbrefactorhandle) (`addRefHandle` is `addRefActor` marked `[[nodiscard]]`); the handle is empty (`!valid()`) if creation failed. The caller does not own the child. The handle never dangles: `id()` is valid immediately (events to a still-Activating child are stashed and replayed FIFO), and `get()` resolves the live actor only once it is **active**, returning `nullptr` while Activating, after a failed init, or once it died. `operator->` requires `ready()` and asserts in debug when unavailable (`Actor.h:2576-2581`). Use `ready()` / `co_await ready_async(ctx)` to wait for an async-init child. Declared in `src/qb/core/Actor.h`. See [Actor](../4_qb_core/actor.md).
 
 #### Affinity (CPU affinity)
 
@@ -129,7 +129,7 @@ The primary way to send an event. `push<Event>(dest, args...)` is `noexcept`, gu
 
 #### `ActorHandle<T>` (`qb::ActorHandle`, alias `qb::RefActorHandle`)
 
-The phase-aware handle returned by [`addRefActor<T>()`](#addrefactort-addrefhandlet) for a [referenced actor](#referenced-actor). It caches the `ActorId` and resolves the live pointer on demand via `findActor<T>()`, so it never dangles: `get()` returns `nullptr` unless the actor is **active** (`is_active()`) — while Activating, after a failed init, or once it died. `operator->` and `operator*` require `ready()` and assert in debug when unavailable; dereferencing an unavailable handle is invalid (`Actor.h:2572-2586`). `ready()` / `co_await ready_async(ctx, timeout)` wait for an async-init child. It may only be dereferenced from the owning `VirtualCore`'s worker thread; cross-thread use is a logic error, asserted in debug builds. Declared in `src/qb/core/Actor.h`.
+The phase-aware handle returned by [`addRefActor<T>()`](#addrefactort-addrefhandlet) for a [referenced actor](#referenced-actor). It caches the `ActorId` and resolves the live pointer on demand via `findActor<T>()`, so it never dangles: `get()` returns `nullptr` unless the actor is **active** (`is_active()`) — while Activating, after a failed init, or once it died. `operator->` and `operator*` require `ready()` and assert in debug when unavailable; dereferencing an unavailable handle is invalid (`Actor.h:2576-2590`). `ready()` / `co_await ready_async(ctx, timeout)` wait for an async-init child. It may only be dereferenced from the owning `VirtualCore`'s worker thread; cross-thread use is a logic error, asserted in debug builds. Declared in `src/qb/core/Actor.h`.
 
 #### Referenced actor
 
@@ -224,9 +224,9 @@ A `qb-io` utility that runs a callable on the current thread. With a positive [`
 <a id="defer-qbioasyncdefer"></a>
 #### `defer` (`qb::io::async::defer`)
 
-A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1608`, forwarding to the listener member at `:1172`. See [Async system](../3_qb_io/async_system.md).
+A `qb-io` utility that queues a callable to run **once, at the tail of the current event-loop turn** — after every libev watcher for that turn has returned, so it never executes re-entrantly from inside a handler. The one correct primitive for "continue after this handler unwinds", above all when the handler must destroy or replace the object it is running on (a reconnect). No timer and no delay, unlike [`callback`](#callback-io-qbioasynccallback). Defined in `src/qb/io/async/listener.h:1985`, forwarding to the listener member at `:1413`. See [Async system](../3_qb_io/async_system.md).
 
-The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:1277`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
+The listener reports a non-empty deferred queue through `has_deferred` (`src/qb/io/async/listener.h:1534`); a `VirtualCore` tick gates on it so a bare `defer()` still pumps the loop.
 
 <a id="coro_scheduler-coroutinescheduler"></a>
 #### `coro_scheduler` / CoroutineScheduler

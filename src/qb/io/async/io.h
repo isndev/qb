@@ -112,13 +112,13 @@ protected:
      * @brief Destructor that unregisters the event watcher.
      * @details Stops the event watcher and unregisters it from the listener to prevent dangling references
      *          and ensure proper cleanup of libev resources.
-     *          Specifically, it calls `_async_event.stop()` and then `listener::current.unregisterEvent(_async_event._interface)`.
+     *          Specifically, it calls `_async_event.stop()` and then `listener::release(_async_event._interface)`.
      */
     ~base() {
         // std::cout << "handle=" << _async_event.fd
         //           << " disposed async.stop()" << std::endl;
         _async_event.stop();
-        listener::current.unregisterEvent(_async_event._interface);
+        listener::release(_async_event._interface); // frees a wrapper clear() detached without reaching a listener
     }
 };
 
@@ -858,16 +858,16 @@ private:
  */
 template <typename _Derived>
 class input : public base<input<_Derived>, event::io> {
-    using base_t         = base<input<_Derived>, event::io>;
-    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list; /**< Owned protocol instances (RAII). */
-    bool        _on_message         = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
-    bool        _is_disposed        = false; /**< Internal flag to ensure `dispose()` is called only once. */
-    int         _reason             = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
-    int         _system_error       = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
-    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
+    using base_t                    = base<input<_Derived>, event::io>;
+    IProtocol            *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    detail::protocol_list _protocol_list;            /**< Owned protocols; one a dispatch cleared ends once it has returned (QB-1278). */
+    bool                  _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
+    bool                  _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
+    int                   _reason      = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
+    int                   _system_error = 0;    /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
 
 public:
     using base_io_t                        = input<_Derived>; /**< Base I/O type alias for CRTP. */
@@ -901,7 +901,7 @@ public:
 
     /**
      * @brief Destructor.
-     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
+     * @details RAII: `_protocol_list` destroys every protocol it owns, those a dispatch retired included.
      *          The base class destructor handles unregistering the `event::io` watcher.
      */
     ~input() noexcept = default;
@@ -922,8 +922,8 @@ public:
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
      *
-     * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
-     *       `clear_protocols()` is called or when the component is destroyed.
+     * @note **Memory Management:** The protocol instance is owned by this component and is deleted by
+     *       `clear_protocols()` -- once the dispatch has returned when called from one (QB-1278) -- or with the component.
      */
     template <typename _Protocol, typename... _Args>
     _Protocol *
@@ -939,14 +939,14 @@ public:
     }
 
     /**
-     * @brief Clears all owned protocol instances.
-     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
+     * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
+     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
      */
     void
     clear_protocols() {
-        _protocol_list.clear();
-        _protocol_list.shrink_to_fit();
-        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
+        _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
+        _protocol_list.clear(_on_message);
     }
 
     [[nodiscard]] IProtocol *
@@ -1313,7 +1313,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**
@@ -1364,8 +1364,8 @@ private:
             // switch_protocol() internally (e.g. handshake → HTTP/2 upgrade).
             // The OLD protocol's should_flush() must be used for flush(), not the new one.
             // Snapshot should_flush() here as well: onMessage() may not only switch the
-            // protocol but also drop the old one from the protocol list (clear_protocols()),
-            // which would leave `protocol` dangling. should_flush() is a per-protocol
+            // protocol but also end the old one (clear_protocols(): retired, it is destroyed
+            // once this read pass returns -- QB-1278). should_flush() is a per-protocol
             // invariant (no setter is ever called after construction), so reading it now
             // is equivalent to reading it after and removes every post-onMessage deref.
             auto      *protocol         = this->_protocol;
@@ -1510,8 +1510,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-
-            if (!process_messages())
+            // Retired protocols end once the dispatch has returned (QB-1278); the dispatch first, in a statement of its own.
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&input::_protocol_list, &input::_on_message>(alive, *this))
                 goto error;
 
             Derived.eof();
@@ -1533,11 +1533,12 @@ protected:
      * @details This method is called internally when an I/O error occurs or when `disconnect()`
      *          is explicitly initiated. It ensures cleanup happens only once by checking the `_is_disposed` flag.
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
-     *          If `_Derived::has_server` is true (typically for server-side sessions), it notifies the server of the disconnection.
-     *          Otherwise it stops the watcher, ends the transport (`detail::end_transport`, Huly QB-1060: closed
-     *          when the peer's EOF or a read error ended the connection, its sending side shut down when this
-     *          object did) and, if `_Derived` implements `on(event::dispose&&)`, calls that method as a final
-     *          cleanup hook. A hook that throws is contained and logged (`detail::run_teardown_hook`): the steps
+     *          If `_Derived::has_server` is true (typically for server-side sessions), it stops the watcher and notifies
+     *          the server of the disconnection. Otherwise it stops the watcher, ends the transport
+     *          (`detail::end_transport`, Huly QB-1060, QB-1270: closed when the peer's EOF or a read error ended the
+     *          connection; given to the thread's loop, which closes it after the peer, when this object did -- a
+     *          listening socket is kept) and, if `_Derived` implements `on(event::dispose&&)`, calls that method as a
+     *          final cleanup hook. A hook that throws is contained and logged (`detail::run_teardown_hook`): the steps
      *          after it still run (Huly QB-256). The base class (`async::base`) destructor will handle
      *          unregistering the `event::io` watcher.
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
@@ -1567,10 +1568,13 @@ protected:
         }
 
         if constexpr (_Derived::has_server) {
+            // Stopped first: a session somebody still holds after this must not be dispatched again (Huly QB-1270).
+            this->_async_event.stop();
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            detail::end_transport(Derived.transport(), ended_by_peer, true,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, detail::default_linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -1956,7 +1960,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**
@@ -2047,9 +2051,10 @@ protected:
      * @details This method is called internally when an I/O error occurs or when `disconnect()`
      *          is explicitly initiated. It ensures cleanup happens only once by checking `_is_disposed`.
      *          If `_Derived` implements `on(event::disconnected&&)`, this method is called with the stored `_reason`.
-     *          If `_Derived::has_server` is true, it notifies the server. Otherwise it stops the watcher, ends the
-     *          transport (`detail::end_transport`, Huly QB-1060: closed after a write error, its sending side shut
-     *          down when this object ended the connection) and, if `_Derived` implements `on(event::dispose&&)`,
+     *          If `_Derived::has_server` is true, it stops the watcher and notifies the server. Otherwise it stops the
+     *          watcher, ends the transport (`detail::end_transport`, Huly QB-1060, QB-1270: closed after a write
+     *          error; given to the thread's loop, which closes it after the peer, when this object ended the
+     *          connection) and, if `_Derived` implements `on(event::dispose&&)`,
      *          calls that method for final cleanup. A hook that throws is contained and
      *          logged (`detail::run_teardown_hook`): the steps after it still run (Huly QB-256).
      *          The base class (`async::base`) destructor handles unregistering the `event::io` watcher.
@@ -2062,10 +2067,10 @@ protected:
         if (_is_disposed)
             return;
         _is_disposed = true;
-        // Who ended the connection, read before the hooks run: no reason of this object's means a write
-        // error did (Huly QB-1060).
-        [[maybe_unused]] const bool ended_by_peer = !_reason;
-
+        // Who ended the connection (no reason of this object's means a write error did, Huly QB-1060) and whether all
+        // that was queued is written (what a TLS close_notify asserts): read before a hook can empty the queue.
+        [[maybe_unused]] const bool ended_by_peer = !_reason, complete = Derived.pendingWrite() == 0;
+        detail::end_cut_stream(Derived.transport(), complete); // judged before a hook can close the transport itself
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
                 if (_system_error != 0) {
@@ -2079,10 +2084,13 @@ protected:
         }
 
         if constexpr (_Derived::has_server) {
+            this->_async_event.stop(); // first: a session somebody still holds must not be dispatched again (Huly QB-1270)
+            detail::end_cut_stream(Derived.transport(), complete && Derived.pendingWrite() == 0);
             Derived.server().disconnected(Derived.id());
         } else {
             this->_async_event.stop();
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            detail::end_transport(Derived.transport(), ended_by_peer, complete && Derived.pendingWrite() == 0,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, detail::default_linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -2114,19 +2122,19 @@ protected:
  */
 template <typename _Derived>
 class io : public base<io<_Derived>, event::io> {
-    using base_t         = base<io<_Derived>, event::io>;
-    IProtocol *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
-    std::vector<std::unique_ptr<IProtocol>> _protocol_list;        /**< Owned protocol instances (RAII). */
-    bool                                    _on_message   = false; /**< Internal flag for re-entrance protection in `on(event::io&)`. */
-    bool                                    _is_disposed  = false; /**< Internal flag for `dispose()` idempotency. */
-    bool                                    _lingering    = false; /**< A delivered close_after_deliver() waits for its peer. */
-    bool                                    _linger_spent = false; /**< The linger bound elapsed: the next dispatch ends it. */
-    int                                     _reason       = 0;     /**< Disconnection reason code. */
-    int                                     _system_error = 0;     /**< Stores the system error code (errno) if an I/O error occurred. */
-    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
-    std::size_t _bytes_written      = 0;                   /**< Total number of bytes written to the transport. */
-    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
+    using base_t                    = base<io<_Derived>, event::io>;
+    IProtocol            *_protocol = no_protocol(); /**< Active protocol; the NoProtocol sentinel (never null) until switch_protocol(). */
+    detail::protocol_list _protocol_list;            /**< Owned protocols; one a dispatch cleared ends once it has returned (QB-1278). */
+    bool                  _on_message   = false;     /**< Internal flag for re-entrance protection in `on(event::io&)`. */
+    bool                  _is_disposed  = false;     /**< Internal flag for `dispose()` idempotency. */
+    bool                  _lingering    = false;     /**< A delivered close_after_deliver() waits for its peer. */
+    bool                  _linger_spent = false;     /**< The linger bound elapsed: the next dispatch ends it. */
+    int                   _reason       = 0;         /**< Disconnection reason code. */
+    int                   _system_error = 0;         /**< Stores the system error code (errno) if an I/O error occurred. */
+    std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _bytes_written          = 0;                   /**< Total number of bytes written to the transport. */
+    std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
 
     /**
      * @brief The bound of a lingering close (Huly QB-1089): armed when a server session's close_after_deliver()
@@ -2153,15 +2161,15 @@ class io : public base<io<_Derived>, event::io> {
 
     /**
      * @brief Begins a lingering close once a server session's close_after_deliver() has delivered everything
-     *        (Huly QB-1089): the sending side is shut down -- the peer reads the delivered bytes, then EOF --
+     *        (Huly QB-1089): the sending side is shut down -- the peer reads the delivered bytes, a TLS session's close_notify, EOF --
      *        and what the peer still sends is read and dropped until it closes, the socket fails, or
      *        linger() elapses; then the session is disposed. Closing at once would close a socket whose input
      *        is unread, which TCP turns into a reset, and a reset can destroy the delivered bytes before the
      *        peer reads them (Windows drops data received and not yet read).
      * @return False when there is nothing to linger for -- a disconnect() since (the `eos` hook may have called
-     *         it), a linger() of zero, a standalone object (its dispose() half-closes and keeps the descriptor,
-     *         `detail::end_transport`), a datagram transport, a socket already gone or reset -- and the caller
-     *         disposes at once, as before.
+     *         it), a linger() of zero, a standalone object (its dispose() gives the descriptor to the loop, which
+     *         closes it after the peer: `detail::end_transport`), a datagram transport, a socket already gone or
+     *         reset -- and the caller disposes at once, as before.
      */
     QB_NOINLINE QB_COLD bool
     begin_linger() noexcept {
@@ -2173,7 +2181,7 @@ class io : public base<io<_Derived>, event::io> {
             if (_linger <= qb::duration::zero())
                 return false;
             const auto handle = Derived.transport().native_handle();
-            if (handle == qb::io::invalid_socket || ::shutdown(handle, QB_SD_SEND) != 0)
+            if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derived.transport(), handle))
                 return false;
             try {
                 _linger_timer = std::make_unique<linger_timer>(*this, _linger);
@@ -2192,6 +2200,12 @@ class io : public base<io<_Derived>, event::io> {
 
     /**
      * @brief Serves one dispatch of a lingering close: drops what the peer sent, a read over the input-buffer cap (-2) included.
+     * @details Bounded in time alone, on purpose: this linger exists so that a peer that is STILL SENDING -- an upload
+     *          answered early, a request refused -- reads the reply, and a bound in octets would reset exactly that
+     *          peer on a fast link (on Windows a reset drops the reply it has not read yet). The loop's own close
+     *          after the peer -- a session's `disconnect()` or framing error, and every close of a standalone
+     *          object, its `close_after_deliver()` included -- stops at a count of octets as well
+     *          (`detail::close_after_peer`, Huly QB-1270).
      * @return False once the linger ends -- the peer closed (EOF), the socket failed, or the bound elapsed.
      */
     QB_NOINLINE QB_COLD bool
@@ -2250,7 +2264,7 @@ public:
 
     /**
      * @brief Destructor.
-     * @details RAII: `_protocol_list` (unique_ptr vector) cleans up all owned protocols.
+     * @details RAII: `_protocol_list` destroys every protocol it owns, those a dispatch retired included.
      */
     ~io() noexcept = default;
 
@@ -2270,8 +2284,8 @@ public:
      * @note **Error Handling:** If the protocol constructor throws an exception, it will propagate to the caller.
      *       If `ok()` returns false, the protocol is immediately deleted and `nullptr` is returned.
      *
-     * @note **Memory Management:** The protocol instance is owned by this component and will be deleted when
-     *       `clear_protocols()` is called or when the component is destroyed.
+     * @note **Memory Management:** The protocol instance is owned by this component and is deleted by
+     *       `clear_protocols()` -- once the dispatch has returned when called from one (QB-1278) -- or with the component.
      */
     template <typename _Protocol, typename... _Args>
     _Protocol *
@@ -2287,14 +2301,14 @@ public:
     }
 
     /**
-     * @brief Clears all owned protocol instances.
-     * @details Clears `_protocol_list` (unique_ptrs auto-delete) and resets `_protocol` to nullptr.
+     * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
+     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
      */
     void
     clear_protocols() {
-        _protocol_list.clear();
-        _protocol_list.shrink_to_fit();
-        _protocol = no_protocol(); // never null → the framing loop / ok() guards stay branch-free
+        _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
+        _protocol_list.clear(_on_message);
     }
 
     [[nodiscard]] IProtocol *
@@ -2325,7 +2339,8 @@ public:
      *       `on(event::disconnected&&)` either: on a standalone client `dispose()` stops the watcher as soon as that
      *       handler returns. Both are debug assertions. Clear what the previous connection left with
      *       `reset_for_reconnect()` before installing the next transport (Huly QB-202): `dispose()` has ended the
-     *       previous one -- closed, or shut down for sending (Huly QB-1060).
+     *       previous one -- closed, or handed to the loop that closes it after its peer (Huly QB-1060, QB-1270): the
+     *       object holds no descriptor of the previous connection, and the next one never waits for it.
      *
      * @note **Actor Integration:** When used within a `qb::Actor`, this is typically called in `onInit()` or after
      *       establishing a connection. The component will then automatically trigger `on(event::io&)` events
@@ -2722,11 +2737,21 @@ public:
      *            which TCP turns into a reset, and a reset can destroy what was just delivered before the
      *            peer reads it: on Windows it drops data received and not yet read, and everywhere the
      *            peer's next send fails. `set_linger(qb::duration::zero())` restores the immediate close.
-     *          - any other object disposes at once; its transport is half-closed and kept (Huly QB-1060).
+     *          - any other object disposes at once, and its descriptor is closed after the peer all the same: by
+     *            its thread's loop, within linger() or 16 MiB read, whichever comes first
+     *            (`detail::end_transport`, Huly QB-1270).
      *
-     *          `disconnect()` stays an abort: called before or during the linger, it disposes at the next
-     *          dispatch. A TLS session is half-closed at the TCP level, as `detail::end_transport` does:
-     *          no close_notify is sent first.
+     *          On a server session this is the call that lets a peer that is STILL SENDING read your last bytes --
+     *          an upload answered early, a request refused: the output is delivered first, then the peer is read
+     *          for linger(), a bound in time alone. `disconnect()` stays an abort: called before or during the
+     *          linger, it disposes at the next dispatch. During the linger it ends it: that session has had its
+     *          wait, and its socket closes with it. Before it, what the session still has queued is dropped with
+     *          it and its socket closed at once -- an error reply behind output the peer has not taken is not
+     *          delivered: there the bound on resources wins over delivery -- and a connection ended with nothing
+     *          queued is closed after the peer by the loop, which also stops at 16 MiB read
+     *          (`detail::close_after_peer`): a peer that goes on sending into a connection `disconnect()` ended
+     *          is reset. A TLS session tells its peer first -- one close_notify, never awaited, after the delivered
+     *          bytes and before the half-close (`tcp::ssl::socket::close_notify()`) -- unless it drops queued output.
      */
     void
     close_after_deliver() noexcept {
@@ -2737,11 +2762,14 @@ public:
     }
 
     /**
-     * @brief Sets the bound of a lingering close: how long a server session that called
-     *        close_after_deliver() waits, once its output is delivered, for its peer to close (Huly QB-1089).
-     * @param bound The longest wait; zero or less closes at once when the output is delivered, as before 3.3.
-     *        The default is 2 s. Set it before close_after_deliver() delivers: a linger in progress keeps
-     *        the bound it began with.
+     * @brief Sets the bound of a close after the peer: how long a server session that called
+     *        close_after_deliver() waits, once its output is delivered, for its peer to close (Huly QB-1089),
+     *        and how long the loop waits for the peer before it closes the descriptor of a connection this
+     *        object ended itself -- a standalone object's, and a session's whose disconnect(), or framing
+     *        error, found nothing left to write (`dispose()`, Huly QB-1270).
+     * @param bound The longest wait; zero or less closes at once -- when the output is delivered, as before
+     *        3.3, and in `dispose()` -- which resets a peer whose bytes are unread. The default is 2 s. Set it
+     *        before the connection ends: a close in progress keeps the bound it began with.
      */
     void
     set_linger(qb::duration bound) noexcept {
@@ -2758,8 +2786,8 @@ public:
 
     /**
      * @brief Whether this session is in a lingering close: its close_after_deliver() output is delivered, its
-     *        sending side shut down, and it waits for its peer to close (Huly QB-1089). A lingering session
-     *        is closing, never open work: it reads nothing for its protocol and writes nothing more.
+     *        sending side shut down, and it waits for its peer to close (Huly QB-1089). A lingering session is closing,
+     *        never open work: it reads nothing for its protocol, and output published to it fails and ends the linger.
      */
     [[nodiscard]] bool
     lingering() const noexcept {
@@ -2861,7 +2889,7 @@ public:
     void
     disconnect(int reason = 1) noexcept {
         _reason = reason ? reason : static_cast<int>(event::disconnect_reason::user_initiated);
-        this->_async_event.feed_event(EV_UNDEF);
+        detail::feed_own_watcher(this->_async_event, EV_UNDEF); // dropped after the thread's loop (Huly QB-1246)
     }
 
     /**
@@ -2936,7 +2964,7 @@ private:
             }
             // Snapshot the protocol pointer AND its should_flush() before onMessage():
             // onMessage() may switch_protocol() (handshake → upgrade) or even
-            // clear_protocols(), either of which can leave `protocol` dangling. The OLD
+            // clear_protocols() (retired: destroyed once this read pass returns, QB-1278). The OLD
             // protocol's should_flush() governs flushing the bytes of THIS message, and
             // should_flush() is a per-protocol invariant (no setter is ever called), so
             // capturing it now is equivalent and removes every post-onMessage deref.
@@ -3131,8 +3159,8 @@ private:
 
             // Update statistics
             _bytes_read += ret;
-
-            if (!process_messages())
+            // Retired protocols end once the dispatch has returned (QB-1278); the dispatch first, in a statement of its own.
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&io::_protocol_list, &io::_on_message>(alive, *this))
                 goto error;
 
             Derived.eof();
@@ -3209,26 +3237,43 @@ protected:
      *
      * @note **Important: Difference between server-associated and standalone clients:**
      *       - **Server-associated clients** (`has_server = true`): Created via `accept()` on a server.
-     *         The server manages the lifecycle, so we notify it via `server().disconnected(id())`
-     *         and let the server handle watcher cleanup. No explicit `stop()` is needed here.
+     *         The server manages the lifecycle, so we notify it via `server().disconnected(id())`, the watcher
+     *         stopped first: a session somebody still holds after its dispose -- `server.session(id)` is a
+     *         `shared_ptr` -- was dispatched on every loop pass until it was let go. A session that ended its own
+     *         connection -- `disconnect()`, a framing error -- with everything it had queued written also gives
+     *         its descriptor to the loop, which closes it after the peer within linger()
+     *         (`detail::end_transport`): the session is released at once all the same, and its destructor no
+     *         longer closes a socket whose input is unread (Huly QB-1270). That hand-over comes BEFORE
+     *         `server().disconnected(id())`: a server's override that looks the session up there finds its
+     *         transport closed and no peer, as `on(event::dispose&&)` does on a standalone object -- read the
+     *         peer in `on(event::disconnected&&)`.
+     *         Not after a lingering `close_after_deliver()`, not for a size guard, not with a linger() of zero,
+     *         and not with output still queued: those close with the session, and what was queued -- an error
+     *         reply behind output the peer has not taken -- is dropped with it. The bound on resources wins over
+     *         delivery there; `close_after_deliver()` is the path that waits for the delivery.
      *       - **Standalone clients** (`has_server = false`): Created via `connect()` for outgoing connections.
      *         These manage their own lifecycle, so we explicitly call `_async_event.stop()` to prevent
      *         further events from being processed after disconnection, then end the transport the connection
      *         ended with (`detail::end_transport`), before calling `event::dispose`. It is closed outright when
      *         the peer's EOF or a socket error ended the connection. When this object ended it -- `disconnect()`,
-     *         a framing error, a size guard, the end of `close_after_deliver()` -- only its sending side is shut
-     *         down: the peer reads EOF once everything queued has left and nothing is reset, and the descriptor
-     *         stays until the object's destruction or its next transport. Before 3.3 the transport was left as
-     *         it was: the peer of a `disconnect()` never saw EOF, and a client whose peer hung up stayed in
-     *         CLOSE_WAIT (Huly QB-1060). `on(event::disconnected&&)` still sees the transport as the connection
-     *         left it; one installed from inside that hook is the one ended -- install the next connection's
-     *         after `dispose()` has returned.
+     *         a framing error, the end of `close_after_deliver()` -- the descriptor leaves the object for its
+     *         thread's loop, which shuts the sending side down -- the peer reads EOF once everything queued has
+     *         left, and nothing is reset -- reads and drops what the peer still sends, and closes on its EOF, a
+     *         socket error, linger() or 16 MiB dropped; a size guard, or a linger() of zero, closes at once.
+     *         Either way `transport().is_open()` is false from here on, and `on(event::dispose&&)` reads no peer
+     *         from it: read the peer in `on(event::disconnected&&)`. In 3.3 the half-closed descriptor stayed in
+     *         the object until its destruction or its next transport: a peer that kept writing blocked for ever,
+     *         and that later close could reset away what the object had just sent (Huly QB-1270). Before 3.3 the
+     *         transport was left as it was: the peer of a `disconnect()` never saw EOF, and a client whose peer
+     *         hung up stayed in CLOSE_WAIT (Huly QB-1060). `on(event::disconnected&&)` still sees the transport
+     *         as the connection left it -- a TLS stream that is cut takes no more output there; one installed from
+     *         inside that hook is the one ended: install the next connection's after `dispose()` has returned.
      *
      * @note **Actor Lifecycle Integration:** When used within a `qb::Actor`, this method is called
      *       during the I/O component's cleanup phase. The sequence is:
      *       1. `on(event::disconnected&&)` is called if implemented, allowing the actor to handle the disconnection
      *          (e.g., attempt reconnection, notify other actors, or call `kill()` if termination is required).
-     *       2. A standalone client's watcher is stopped and its transport ended (closed, or shut down for sending).
+     *       2. A standalone client's watcher is stopped and its transport ended (closed, or handed to the loop).
      *       3. `on(event::dispose&&)` is called if implemented, providing a final cleanup hook before destruction.
      *       4. The base class destructor unregisters the event watcher from the listener.
      *       Actors should implement `on(event::disconnected&&)` to handle connection loss gracefully.
@@ -3252,8 +3297,10 @@ protected:
         // still ok mean the peer's EOF or a socket error did -- close_after_deliver() ends with a protocol
         // that is not ok (Huly QB-1060).
         [[maybe_unused]] const bool ended_by_peer = !_reason && this->_protocol->ok();
+        // A lingering close_after_deliver() was under way (it has had its wait); all that was queued is written (TLS, below).
+        [[maybe_unused]] const bool lingered = _lingering, complete = Derived.pendingWrite() == 0;
         end_linger(); // its bound, whatever ended it: the peer, the bound, a disconnect() (Huly QB-1089)
-
+        detail::end_cut_stream(Derived.transport(), complete); // judged before a hook can close the transport itself
         if constexpr (qb::has_on<_Derived, event::disconnected>) {
             detail::run_teardown_hook("on(event::disconnected)", [this] {
                 if (_system_error != 0) {
@@ -3267,6 +3314,25 @@ protected:
         }
 
         if constexpr (_Derived::has_server) {
+            // The watcher of a disposed session is stopped here, whoever ended the connection: the server releases
+            // the session, but a session somebody still holds -- server.session(id) is a shared_ptr -- kept a
+            // started watcher on its descriptor and was dispatched on every loop pass until it was let go, and
+            // must never watch a number the loop below will close and the system hand out again (Huly QB-1270).
+            this->_async_event.stop();
+            // A session that ended its own connection with everything it had to say written: the server releases
+            // it at once, as before, and its descriptor goes to the loop, which closes it after the peer
+            // (detail::end_transport) -- the session's destructor would close it with the peer's bytes unread, a
+            // reset that on Windows destroys what the peer has not read yet (Huly QB-1270). Not a session that
+            // already waited for its peer (a lingering close_after_deliver(), whatever ended it), not one with output still queued
+            // (dropped with the session, as before: a peer that does not read cannot hold anything), nor an "at once" (close_bound).
+            detail::end_cut_stream(Derived.transport(), complete && Derived.pendingWrite() == 0); // TLS's last word
+            if constexpr (detail::has_socket_transport<_Derived> && !detail::resets_input_per_read<_Derived>) {
+                if (!ended_by_peer && !lingered && Derived.pendingWrite() == 0) {
+                    const qb::duration bound = detail::close_bound(false, _reason, _linger);
+                    if (bound > qb::duration::zero())
+                        detail::end_transport(Derived.transport(), false, complete, bound);
+                }
+            }
             // Server-associated client: server manages lifecycle, just notify it
             Derived.server().disconnected(Derived.id());
         } else {
@@ -3274,8 +3340,10 @@ protected:
             // This is critical for clients created via connect() to avoid processing events after disconnect
             this->_async_event.stop(); // Stop the watcher to prevent further events
             // ...then end the transport the connection ended with: nothing else would until the object
-            // connects again or dies, and the peer would never see EOF (Huly QB-1060).
-            detail::end_transport(Derived.transport(), ended_by_peer);
+            // connects again or dies, and the peer would never see EOF (Huly QB-1060). A connection this object
+            // ended leaves it for the loop, which closes it after the peer within linger() (Huly QB-1270).
+            detail::end_transport(Derived.transport(), ended_by_peer, complete && Derived.pendingWrite() == 0,
+                                  detail::close_bound(detail::resets_input_per_read<_Derived>, _reason, _linger));
             if constexpr (qb::has_on<_Derived, event::dispose>) {
                 detail::run_teardown_hook("on(event::dispose)", [this] {
                     auto evt__dispose = event::dispose{};
@@ -3328,7 +3396,7 @@ protected:
      *          next connection is being set up has nothing to tear down (Huly QB-202).
      *
      *          Call it where the next connection is set up, before its transport is installed -- never
-     *          from inside a protocol's handler, as it destroys the protocol that is running.
+     *          from inside a protocol's handler: the dispatch then frees the message's bytes from the `in()` it emptied.
      *
      * @note A client that serializes requests straight into `out()` and lets a failing callback
      *       re-issue one during the disconnect (qbm-redis) cannot clear `out()` at reconnect -- the

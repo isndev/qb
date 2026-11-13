@@ -46,6 +46,10 @@ qb_add_test(MODULE qb-core TIER system NAME core-io-poll-interval SOURCES engine
 # whole latency; its two push cases bring up a second VirtualCore, and its CPU-time assertion
 # (parked, not polling) is meaningless on a loaded host, so it is both serial and multicore.
 qb_add_test(MODULE qb-core TIER system NAME core-park-wake   SOURCES engine/core-park-wake.cpp   DEPENDS ${PROJECT_NAME} LABELS serial requires-multicore)
+# actor-close-after-peer pins what a core's loop does with the descriptor of a connection an actor ended itself and
+# died with (Huly QB-1270): an engine never waits for it, a core that lives on keeps it until the peer closes, a core
+# that stops closes it before join() returns, and a destructor's close in a stopped core leaves nothing behind.
+qb_add_test(MODULE qb-core TIER system NAME actor-close-after-peer SOURCES engine/actor-close-after-peer.cpp DEPENDS ${PROJECT_NAME})
 # engine-io-smoke drives the LOGGING BACKEND itself -- it points the global logger at a throwaway
 # temp path with qb::io::log::init() and reads the rolled files back. That namespace, and nanolog
 # behind it, only exist when QB_WITH_LOGGING is ON, and the test uses them unguarded, so with
@@ -248,6 +252,10 @@ qb_add_test(MODULE qb-core TIER system NAME mailbox-footprint SOURCES engine/mai
 qb_add_test(MODULE qb-core TIER system NAME core-affinity SOURCES core/core-affinity.cpp DEPENDS ${PROJECT_NAME} LABELS requires-multicore)
 # ask-self: an ask addressed to the asking actor itself, in every form (Huly QB-1100).
 qb_add_test(MODULE qb-core TIER system NAME ask-self SOURCES coroutine/ask-self.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
+# ask-exit-teardown pins `exit()` from an actor's coroutine (Huly QB-1246): resumed by the core's drain, inline by
+# its `ask` reply or by hand for an `onInit()`, it destroys no frame and resumes none -- the thread's scheduler
+# abandons, in a child process -- and a scheduler the resumed coroutine built for itself destroys what it owns.
+qb_add_test(MODULE qb-core TIER system NAME ask-exit-teardown SOURCES coroutine/ask-exit-teardown.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
 # metrics-scrape pins qb::metrics::Registry and scrape() (Huly QB-154): every core answers through the scraping
 # actor's own registry, a core without a registry is reported down instead of failing the scrape, a throwing source
 # is contained and counted, a reset source is gone, and a core with no registry refuses to scrape.

@@ -46,6 +46,19 @@
 #include <cstdlib>
 #include <cstring>
 
+// The sanitizer's poison call, in an AddressSanitizer build only -- detected the way thread_arena.h does it: gcc and
+// MSVC define __SANITIZE_ADDRESS__, clang answers __has_feature.
+#if defined(__SANITIZE_ADDRESS__)
+#define QB_LISTENER_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define QB_LISTENER_ASAN 1
+#endif
+#endif
+#ifdef QB_LISTENER_ASAN
+#include <sanitizer/asan_interface.h>
+#endif
+
 #if defined(QB_DEBUG_CORO_LIFECYCLE) && QB_DEBUG_CORO_LIFECYCLE
 // Standard C++20 __VA_OPT__ elides the comma when no trailing args are passed
 // (MSVC needs the conformant preprocessor /Zc:preprocessor, enabled by qb's build).
@@ -96,8 +109,28 @@ public:
      * Each thread has its own listener accessible through this static member.
      * This provides a way to access the current thread's event loop without
      * passing a reference explicitly.
-     * @note This is typically initialized automatically when `qb::Main` starts its `VirtualCore` threads,
-     *       or by calling `qb::io::async::init()` for standalone `qb-io` usage.
+     * @note Nothing initialises it by hand: a `VirtualCore` thread and a standalone `qb-io` thread alike reach it
+     *       through this member. Its event loop is built on the FIRST USE THAT NEEDS ONE -- an event registered, a
+     *       coroutine that sleeps or waits on a socket, `loop()`, a park -- never before: a thread that uses
+     *       nothing of qb builds no loop, on any platform (Huly QB-1246; MSVC constructs every thread_local of a
+     *       module at each thread's start, and until 3.4 that was an event loop per thread).
+     * @note AFTER ITS DESTRUCTOR -- reached from the destructor of an object with static storage, or of a
+     *       thread_local built before it -- every member follows one rule, decided on the thread's record
+     *       (`detail::thread_loop()`), never on the destroyed object (Huly QB-1246):
+     *       - a REQUEST that needs the loop stops the process on one line that names it: `registerEvent()` (an
+     *         io object, a timer, an `async::callback`), `loop()`, `coro_scheduler()`, `arm_wake()`,
+     *         `run_once_for()`, and the free `async::run()`, `run_once()`, `run_until()`, `run_for()`, `run_sync()`;
+     *       - a CLEANUP, a hand-over or a setting is dropped: `release()` and `unregisterEvent()` of a wrapper
+     *         `clear()` detached (freed without reading the listener), `defer()` (the callback is destroyed, never
+     *         run), `clear()`, `break_one()`, `disarm_wake()`, `recycle_coro_scheduler()`,
+     *         `reset_coro_scheduler()`, `set_io_poll_interval()`, `set_dispatch_timing()`;
+     *       - a QUERY answers "nothing": `has_coro_scheduler()`, `has_deferred()`, `is_wake_armed()` false;
+     *         `size()`, `total_events_processed()`, `io_poll_interval_ticks()`, `backend()` zero;
+     *         `dispatch_timing()` all zero;
+     *       - `run()`, `has_work()` and `nb_invoked_event()` carry NO test: a core calls them on every pass, on its
+     *         own thread, and is destroyed before its thread's listener. Nor does `wake()`, the one call made from
+     *         another thread: its caller knows the wake is armed, which a destroyed listener's never is. In an
+     *         AddressSanitizer build the destroyed listener is poisoned and such a touch reported (g++: at `-O0`).
      * @warning **One per thread, not one per thread per image.** The definition is `inline` and
      *          `QB_ABI_ANCHOR`-annotated *below this class*, and both parts are load-bearing —
      *          see the definition site for what regressed when it lived in `listener.cpp`.
@@ -261,7 +294,26 @@ public:
     };
 
 private:
-    ev::dynamic_loop _loop; /**< The libev event loop */
+    /// The loop this listener owns: created by `build()`, destroyed with the listener. Null until it is built --
+    /// the constructor of a listener of one's own builds it, the thread's `listener::current` on its first use.
+    struct owned_loop : ev::loop_ref {
+        owned_loop() noexcept
+            : ev::loop_ref(static_cast<struct ev_loop *>(nullptr)) {}
+        owned_loop(owned_loop const &)            = delete;
+        owned_loop &operator=(owned_loop const &) = delete;
+        ~owned_loop() {
+            if (raw_loop)
+                ev_loop_destroy(raw_loop);
+        }
+        void
+        build(unsigned int const flags) {
+            raw_loop = ev_loop_new(flags);
+            if (!raw_loop)
+                throw ev::bad_loop();
+        }
+    };
+
+    owned_loop _loop; /**< The libev event loop */
     // The loop's own "is there anything to do" counters, read INLINE on every pass a core
     // takes through `has_work()` / `run()`: the referenced-active count `ev_run`'s loop
     // condition consults, and the per-priority pending counts (`EV_NUMPRI` entries). Two
@@ -566,7 +618,8 @@ private:
     // and armed lazily — a spinning or actor-only core never creates the wake pipe.
     ev::async _wake;
     ev::timer _park_cap;
-    bool      _wake_armed = false;
+    bool      _wake_armed      = false;
+    bool      _scheduler_dying = false; ///< a reset or a `recycle()` is busy with its frames: a nested one is a no-op
 
     // ---- The pass without the loop, its fields (see the block above `_timer_due`). Declared LAST
     //      on purpose: `has_work()` reads `_deferred` and `_coro_scheduler` on every pass of every
@@ -577,6 +630,13 @@ private:
     const EV_ATOMIC_T *_wake_pending;   ///< `&pipe_write_skipped` of `_loop`: a cross-thread wake no pass delivered
 
     static constexpr int kNoPeriodics = 0; ///< the periodic count of a loop built without them
+
+    // What the counters above read while this listener has no loop yet (the thread's, before its first use that
+    // needs one): nothing active, nothing pending, no fd, no timer, no wake. `has_work()` and `run()` are then
+    // right as they are -- no test of their own on the pass every core takes.
+    static constexpr int          kNoCounts[EV_NUMPRI] = {};
+    static constexpr unsigned int kNoIoFed             = 0;
+    static constexpr sig_atomic_t kNoWake              = 0;
 
     // `_wake_pending` (qev's `pipe_write_skipped`) is written by a PRODUCER thread's `ev_async_send`
     // (Huly QB-192 made that store a `__atomic` release); this inline read is on the owner thread, so
@@ -664,14 +724,26 @@ private:
     // destructors -- a captured shared_ptr can be the last reference to an object whose teardown
     // calls `defer()` again -- and a push_back into a deque halfway through its own clear() is
     // undefined. After the swap the member is empty, so such a re-entrant defer lands in a fresh
-    // queue, which the loop drops in turn.
+    // queue, which the loop drops in turn -- sixteen turns at most: a closure whose destructor defers again at
+    // every turn kept this loop running for ever (Huly QB-1246). What the sixteenth turn leaves is given up:
+    // never run, and never destroyed either (leaked), so that nothing defers again.
     void
     _drop_deferred() {
-        while (!_deferred.empty()) {
+        for (unsigned turn = 0; !_deferred.empty(); ++turn) {
+            if (turn == kMaxTeardownPasses) [[unlikely]]
+                return _give_up_deferred();
             std::deque<std::function<void()>> dropped;
             dropped.swap(_deferred);
             dropped.clear();
         }
+    }
+
+    // What is still deferred is given up: taken out of the listener, never run and never destroyed -- leaked on
+    // purpose, and LeakSanitizer says so: a destructor that defers again at every turn is the defect it reports.
+    QB_NOINLINE void
+    _give_up_deferred() {
+        auto *const given_up = new std::deque<std::function<void()>>;
+        given_up->swap(_deferred);
     }
 
     /** @brief Prepend `e` to the registered-events list. O(1), no alloc. */
@@ -778,32 +850,20 @@ private:
         return EVFLAG_AUTO;
     }
 
-public:
-    /**
-     * @brief Constructor
-     *
-     * Creates a new listener with a dynamic event loop. The backend is normally
-     * auto-detected (libev's `EVFLAG_AUTO`: e.g. epoll/io_uring on Linux, kqueue/
-     * select on macOS). It can be pinned for testing/benchmarking via the
-     * `QB_EV_BACKEND` environment variable (see `_resolve_backend_flags()`).
-     */
-    listener()
-        : _loop(_resolve_backend_flags())
-        , _active_count(_loop.active_count_addr())
-        , _pending_count(_loop.pending_count_addr())
-        , _io_count(_loop.io_count_addr())
-        , _io_fed(_loop.io_fed_addr())
+private:
+    // Everything of a listener but its loop: the state both constructors start from.
+    struct no_loop_tag {};
+    explicit listener(no_loop_tag) noexcept
+        : _active_count(kNoCounts)
+        , _pending_count(kNoCounts)
+        , _io_count(kNoCounts)
+        , _io_fed(&kNoIoFed)
         , _defer_wake(_loop)
         , _wake(_loop)
         , _park_cap(_loop)
-        , _timer_count(_loop.timer_count_addr())
-#if EV_PERIODIC_ENABLE
-        , _periodic_count(_loop.periodic_count_addr())
-#else
+        , _timer_count(kNoCounts)
         , _periodic_count(&kNoPeriodics)
-#endif
-        , _wake_pending(_loop.wake_pending_addr()) {
-        _calibrate_tsc(); // the interval itself stays 0 (poll every pass) until an embedder sets one
+        , _wake_pending(&kNoWake) {
         _defer_wake.set<listener, &listener::_on_defer_wake>(this);
         // Lowest priority: libev invokes pendings highest-priority-first, so the
         // drain lands after every other watcher pending in the same iteration.
@@ -813,12 +873,110 @@ public:
         _park_cap.set<listener, &listener::_on_park_cap>(this);
     }
 
+    // The constructor of `listener::current`, and of nothing else. It enters the thread's record -- a listener of
+    // one's own never does: the record is about the loop the thread's coroutines wait on -- and it builds NO loop:
+    // MSVC runs it at the start of every thread of the process, whatever that thread does (Huly QB-1246). From
+    // here "this is the thread's listener" is asked of the record (`_is_thread_current()`), on the calling thread:
+    // a member called from another thread, against the class's rule, writes nothing into that thread's record.
+    struct thread_current_tag {};
+    explicit listener(thread_current_tag) noexcept
+        : listener(no_loop_tag{}) {
+        detail::thread_loop_t &state = detail::thread_loop();
+        state.owner                  = this;
+        state.phase                  = detail::thread_loop_phase::alive;
+    }
+
+    // The loop, and everything that reads it: the backend (`QB_EV_BACKEND`), the counters' addresses, the three
+    // watchers of the listener's own, the counter's calibration (~200 us). The public constructor runs it; the
+    // thread's listener runs it on the first use that needs a loop, through `_require_loop()`. Never in a listener
+    // whose destructor has run: that would be a loop nobody destroys, in an object nobody may read. It throws
+    // `ev::bad_loop` when no backend can be created (it was the thread_local's initialiser that threw, at the
+    // first touch); from a `noexcept` caller -- `backend()`, `set_io_poll_interval()`, `set_dispatch_timing()`,
+    // qb-core's `ask` -- that is `std::terminate()`, as it always was on MSVC, where the initialiser ran in the
+    // thread's startup.
+    QB_NOINLINE void
+    _build_loop() {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            detail::refuse_after_thread_loop("its thread's event loop");
+        _loop.build(_resolve_backend_flags());
+        const ev::loop_ref loop = _loop;
+        _active_count           = loop.active_count_addr();
+        _pending_count          = loop.pending_count_addr();
+        _io_count               = loop.io_count_addr();
+        _io_fed                 = loop.io_fed_addr();
+        _timer_count            = loop.timer_count_addr();
+#if EV_PERIODIC_ENABLE
+        _periodic_count = loop.periodic_count_addr();
+#endif
+        _wake_pending = loop.wake_pending_addr();
+        _defer_wake.set(loop);
+        _wake.set(loop);
+        _park_cap.set(loop);
+        _calibrate_tsc(); // the interval itself stays 0 (poll every pass) until an embedder sets one
+        if (_is_thread_current())
+            detail::thread_loop().raw = static_cast<struct ev_loop *>(loop);
+    }
+
+    // This listener is the calling thread's `listener::current`: the thread's record names it.
+    [[nodiscard]] bool
+    _is_thread_current() const noexcept {
+        return detail::thread_loop().owner == this;
+    }
+
+    // The door of every request that needs this listener's loop, then the loop itself. The thread's record is read
+    // BEFORE any member: after its destructor the thread's listener may not be read at all, and the request stops
+    // the process on the line that names it. Then the loop is built if this is the thread's listener and nothing
+    // needed one yet -- `const`, because `loop()` and `backend()` are: no listener object is const, and one a user
+    // declared const built its loop in its constructor.
+    void
+    _require_loop(char const *const request) const {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            detail::refuse_after_thread_loop(request);
+        if (!_loop.raw_loop) [[unlikely]]
+            const_cast<listener *>(this)->_build_loop();
+    }
+
+    // Sixteen teardown passes, as a scheduler's: see the destructor.
+    static constexpr unsigned kMaxTeardownPasses = 16;
+
+    // What is still registered is stopped and taken off the list, its owner left alive: no destructor runs, so
+    // nothing registers again. A loop-owned handler is leaked. The destructor's last resort.
+    void
+    _detach_registered() noexcept {
+        while (_registered_head) {
+            IRegisteredKernelEvent *const cur = _registered_head;
+            (void) _unlink(cur);
+            cur->stop();
+            cur->_detached_by_clear = true;
+        }
+    }
+
+public:
+    /**
+     * @brief Constructor
+     *
+     * Creates a new listener with a dynamic event loop. The backend is normally
+     * auto-detected (libev's `EVFLAG_AUTO`: e.g. epoll/io_uring on Linux, kqueue/
+     * select on macOS). It can be pinned for testing/benchmarking via the
+     * `QB_EV_BACKEND` environment variable (see `_resolve_backend_flags()`).
+     * The thread's own listener, `listener::current`, builds its loop the same way, on its
+     * first use that needs one.
+     */
+    listener()
+        : listener(no_loop_tag{}) {
+        _build_loop();
+    }
+
     /**
      * @brief libev backend actually in use by this listener's loop.
      * @return One of the `EVBACKEND_*` values (e.g. `EVBACKEND_EPOLL`).
      */
     [[nodiscard]] inline unsigned int
     backend() const noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return 0; // no backend any more
+        if (!_loop.raw_loop) [[unlikely]]
+            const_cast<listener *>(this)->_build_loop();
         return _loop.backend();
     }
 
@@ -860,10 +1018,13 @@ public:
      * deferred while it tears down (Huly QB-276) -- and their captured state is released.
      * Called from a deferred callback, it ends that drain: what is deferred after it runs on
      * the next turn.
-     * @note This is automatically called by the listener's destructor.
+     * @note This is automatically called by the listener's destructor. On `listener::current` after
+     *       its destructor it does nothing: that destructor cleared it.
      */
     void
     clear() {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return;
         QB_LISTENER_TRACE("clear() begin registeredEvents=%zu has_coro_scheduler=%d", _registered_count, _coro_scheduler != nullptr);
         // Drop pending deferred callbacks: they must not run against a listener being
         // torn down (they may touch registrations we are about to destroy). Each
@@ -901,21 +1062,32 @@ public:
             // cache a `_list_next` across `destroy(owner)`: that call runs arbitrary
             // user code (the `async::callback` closure's captured state — e.g. the last
             // `shared_ptr` to a still-registered session), and that code's own `~base`
-            // re-enters `unregisterEvent()` on ANOTHER still-linked node, freeing it. A
+            // re-enters `listener::release()` on ANOTHER still-linked node, freeing it. A
             // cached `next` pointing at that node then becomes dangling and the next
             // `cur->stop()` is a use-after-free. Popping through `_unlink()` also keeps
             // `_registered_count` exact — the previous "null the head + zero the count"
             // prelude let such a re-entrant `_unlink` underflow the counter to SIZE_MAX.
+            //
+            // The owners it destroys are BUDGETED: sixteen times what was registered when the drain
+            // began. A destroyed owner may register again -- an `async::callback` whose closure's
+            // destructor posts another -- and the new handler is popped in its turn, so a closure that
+            // re-posts at every destruction kept this loop running for ever, and with it the thread's
+            // exit (Huly QB-1246). Past the budget a loop-owned handler is stopped and detached like any
+            // other and its owner left alive: no destructor runs, nothing registers again, the drain ends.
+            // The budget is a cut, not a judgement: a chain of destructions that would have ended by itself
+            // later than that leaves its tail undestroyed too (its closures, what they keep alive).
+            std::size_t owners_to_destroy = _registered_count * kMaxTeardownPasses;
             while (_registered_head) {
                 IRegisteredKernelEvent *cur = _registered_head;
                 (void) _unlink(cur);
                 cur->stop();
                 cur->_detached_by_clear = true;
-                if (cur->_destroy_owner && !_is_dispatching(cur)) {
+                if (cur->_destroy_owner && !_is_dispatching(cur) && owners_to_destroy != 0) {
+                    --owners_to_destroy;
                     // Loop-owned, self-deleting handler (e.g. an `async::callback`
                     // Timeout) whose one-shot timer never fired: nothing else will
                     // reclaim it. Destroy the owner now — its `~base` re-enters
-                    // `unregisterEvent(cur)` and frees this wrapper via the
+                    // `listener::release(cur)` and frees this wrapper via the
                     // `_detached_by_clear` branch (cur is already unlinked). Clear the
                     // hook first so the re-entry can never recurse back into here.
                     //
@@ -931,8 +1103,18 @@ public:
                     destroy(owner); // frees `cur`; do not touch it afterwards
                 }
             }
-            for (int i = 0; i < 4; ++i)
-                run(EVRUN_NOWAIT);
+            // The passes that let the loop take the detached watchers out of its backend. While qb-core is
+            // resuming a coroutine of this thread inline -- `exit()` reached from an `ask` reply or from an
+            // `onInit()` ends the listener from inside it -- they pump the loop ALONE: a whole pass would resume the
+            // coroutines queued behind the executing one, and each that finished would destroy its locals in the
+            // middle of that teardown (Huly QB-1246). Under a drain `run_ready()` refuses by itself.
+            const bool loop_alone = detail::thread_loop().inline_resumes != 0;
+            for (int i = 0; i < 4; ++i) {
+                if (loop_alone) [[unlikely]]
+                    _loop.run(EVRUN_NOWAIT);
+                else
+                    run(EVRUN_NOWAIT);
+            }
         }
         _drop_deferred();
         QB_LISTENER_TRACE("clear() end (scheduler NOT reset)");
@@ -941,13 +1123,44 @@ public:
     /**
      * @brief Destructor
      *
-     * Cleans up by calling `clear()` to remove all registered events and their watchers.
+     * Ends with nothing registered and no scheduler, while the loop lives: `clear()` stops and detaches what is
+     * registered and destroys the loop-owned handlers, then the scheduler destroys the coroutines it owns -- and
+     * again while those destructions left something registered or deferred. A coroutine local's destructor may
+     * post an `async::callback`, hand a closing socket over to the loop, or defer; a callback's closure may spawn.
+     * Until 3.4 one pass was all there was, and what the scheduler's teardown registered after `clear()` stayed
+     * on a loop about to be destroyed: a handler nobody destroyed, a descriptor held until the process ended
+     * (Huly QB-1246). Sixteen passes at most, as a scheduler's own teardown (which each pass runs whole): past
+     * them, what is still registered is stopped and detached, its owner left alive, and what is still deferred
+     * is given up -- no destructor runs any more, so nothing registers again.
+     *
+     * For `listener::current` the thread's record then reads `gone`: the loop itself goes after this body, with
+     * the members.
      */
     ~listener() noexcept {
         QB_LISTENER_TRACE("~listener() begin");
-        clear();
-        QB_LISTENER_TRACE("~listener() about to reset _coro_scheduler");
-        reset_coro_scheduler();
+        for (unsigned pass = 0;;) {
+            clear();
+            QB_LISTENER_TRACE("~listener() about to reset _coro_scheduler");
+            // Leaves no scheduler: one a destructor asks for meanwhile is the dying one. Not `reset_coro_scheduler()`:
+            // the listener goes whatever is executing, and a scheduler one of whose coroutines is abandons by itself.
+            if (_coro_scheduler && !_scheduler_dying)
+                _destroy_coro_scheduler();
+            if (!_registered_head && _deferred.empty()) [[likely]]
+                break;
+            if (++pass == kMaxTeardownPasses) [[unlikely]] { // sixteen passes did not end it
+                _detach_registered();
+                if (!_deferred.empty())
+                    _give_up_deferred();
+                break;
+            }
+        }
+        if (detail::thread_loop_t &state = detail::thread_loop(); state.owner == this) {
+            // From here the thread's loop is gone: what this listener owned was destroyed above, while it lived.
+            // `owner` stays in the record, to be compared; nothing else of it names this listener any more.
+            state.raw       = nullptr;
+            state.scheduler = nullptr;
+            state.phase     = detail::thread_loop_phase::gone;
+        }
     }
 
     /**
@@ -1015,6 +1228,7 @@ public:
     template <typename _Event, typename _Actor, typename... _Args>
     _Event &
     registerEvent(_Actor &actor, _Args &&...args) {
+        _require_loop("listener::current.registerEvent() (an io object, a timer, an async::callback)");
         auto revent = new RegisteredKernelEvent<_Event, _Actor>(_loop, actor);
         revent->_event.template set<listener, &listener::on<typename _Event::ev_t>>(this);
         revent->_event._interface = revent;
@@ -1036,25 +1250,52 @@ public:
      * @param kevent Pointer to the `IRegisteredKernelEvent` to unregister. This pointer
      *               is typically obtained when the event was initially registered or stored
      *               within the libev watcher wrapper itself (e.g., `_Event::_interface`).
+     * @note A wrapper `clear()` detached is on no list: it is freed without reading this listener (see
+     *       `release()`).
      */
     void
     unregisterEvent(IRegisteredKernelEvent *kevent) {
         if (!kevent)
             return;
-        if (_unlink(kevent) || kevent->_detached_by_clear) {
+        if (kevent->_detached_by_clear || _unlink(kevent)) {
             kevent->_detached_by_clear = false;
             delete kevent;
         }
     }
 
     /**
+     * @brief Release the registration an io object holds on the thread's listener: the one entry point of every
+     *        owner's teardown (`io::async::base`, the QUIC endpoint, the tcp connector).
+     * @details A wrapper `clear()` detached is freed WITHOUT reaching a listener: its owner may be destroyed after
+     *          the listener that held it -- an io object with static storage, after the main thread's
+     *          `listener::current` -- and `clear()`, which that listener's destructor runs, already took it off
+     *          the list. Any other is unregistered from the thread's listener, as
+     *          `listener::current.unregisterEvent()` does. Until 3.4 every owner called that member, which read
+     *          the destroyed listener first (Huly QB-1246).
+     */
+    static void
+    release(IRegisteredKernelEvent *kevent) {
+        if (!kevent)
+            return;
+        if (kevent->_detached_by_clear) // on no listener's list any more: no listener is reached, its own may be gone
+            kevent->_detached_by_clear = false;
+        else if (!current._unlink(kevent))
+            return; // not registered here (a second release)
+        delete kevent;
+    }
+
+    /**
      * @brief Get a reference to the underlying libev event loop.
      * @return `ev::loop_ref` (a reference wrapper to `ev_loop*`) for this listener.
      * @details Useful for advanced direct interaction with libev if needed, though most
-     *          operations are handled through the listener's API.
+     *          operations are handled through the listener's API. On `listener::current` this
+     *          builds the thread's loop if nothing needed one yet; after its destructor the
+     *          request stops the process by name. The coroutine awaiters do not come through
+     *          here on their fast path: they read the thread's record (`detail::thread_listener_loop()`).
      */
     [[nodiscard]] inline ev::loop_ref
     loop() const {
+        _require_loop("listener::current.loop()");
         return _loop;
     }
 
@@ -1175,7 +1416,8 @@ public:
      * whichever comes first — so a strong (`shared_ptr`) capture keeps its target
      * alive exactly until then, leak-free. Same-thread only. A callback deferred by a
      * deferred callback runs on the next `run()` call, never in the one that ran its
-     * parent: one generation per turn.
+     * parent: one generation per turn. On `listener::current` after its destructor the
+     * callback is dropped, never run.
      *
      * @note The queued `fn` is drained by `run()`: a NOWAIT pump drains at the tail of each
      *       call (`async::run_until`/`run_sync`, or a VirtualCore tick — which gates on
@@ -1187,6 +1429,8 @@ public:
      */
     void
     defer(std::function<void()> fn) {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return; // after the thread's loop no turn will run it: dropped, its captured state released (as clear() does)
         _deferred.push_back(std::move(fn));
         // Under a blocking run, arm the in-loop drain hook (see `_defer_wake`) so the
         // queue is serviced even though `run()` does not return; a non-blocking turn
@@ -1208,7 +1452,10 @@ public:
      */
     inline void
     break_one() {
-        _loop.break_loop();
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return;
+        if (_loop.raw_loop) // no loop yet, no run to break
+            _loop.break_loop();
     }
 
     /**
@@ -1233,6 +1480,10 @@ public:
      */
     inline void
     set_io_poll_interval(qb::duration const interval) noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return;
+        if (!_loop.raw_loop) [[unlikely]]
+            _build_loop(); // the interval is kept in the counter's ticks: it needs the calibration
         const auto ns   = std::chrono::duration_cast<std::chrono::nanoseconds>(interval).count();
         _poll_every_tsc = (ns > 0 && _tsc_per_ns > 0.) ? static_cast<std::uint64_t>(_tsc_per_ns * static_cast<double>(ns)) : 0;
     }
@@ -1240,6 +1491,8 @@ public:
     /// The interval `set_io_poll_interval()` holds, in the CPU counter's ticks (0 = every pass).
     [[nodiscard]] inline std::uint64_t
     io_poll_interval_ticks() const noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return 0;
         return _poll_every_tsc;
     }
 
@@ -1254,6 +1507,8 @@ public:
      */
     [[nodiscard]] inline std::size_t
     total_events_processed() const {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return 0;
         return _total_events_processed;
     }
 
@@ -1263,6 +1518,8 @@ public:
      */
     [[nodiscard]] inline std::size_t
     size() const {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return 0;
         return _registered_count;
     }
 
@@ -1275,6 +1532,8 @@ public:
      */
     [[nodiscard]] inline bool
     has_deferred() const noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return false;
         return !_deferred.empty();
     }
 
@@ -1307,6 +1566,7 @@ public:
      */
     inline void
     arm_wake() {
+        _require_loop("listener::current.arm_wake()");
         if (_wake_armed)
             return;
         _wake.start();
@@ -1322,6 +1582,8 @@ public:
      */
     inline void
     disarm_wake() noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return; // its destructor disarmed it
         if (!_wake_armed)
             return;
         _loop.ref();
@@ -1334,6 +1596,8 @@ public:
      */
     [[nodiscard]] inline bool
     is_wake_armed() const noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return false;
         return _wake_armed;
     }
 
@@ -1375,6 +1639,7 @@ public:
      */
     inline std::size_t
     run_once_for(qb::duration const cap) {
+        _require_loop("listener::current.run_once_for()");
         const bool prompt = !_deferred.empty() || (_coro_scheduler && _coro_scheduler->has_ready()) || _loop_has_pending();
         if (prompt || cap <= qb::duration::zero()) {
             run(EVRUN_NOWAIT);
@@ -1402,8 +1667,16 @@ public:
      */
     [[nodiscard]] inline CoroutineScheduler &
     coro_scheduler() {
+        // A door to the thread's scheduler (`detail::bind_thread_scheduler()` is the other): never on a listener
+        // whose destructor has run. Until 3.4 this built a scheduler inside the destroyed listener, bound it, and
+        // whatever was queued there never ran. The free `coro_scheduler()` reads the thread's record first, and
+        // comes here only to create.
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            detail::refuse_after_thread_loop("coro_scheduler()");
         if (!_coro_scheduler) {
             _coro_scheduler = std::make_unique<CoroutineScheduler>();
+            if (_is_thread_current())
+                detail::thread_loop().scheduler = _coro_scheduler.get();
             // Set as current for this thread
             CoroutineScheduler::set_current(_coro_scheduler.get());
         }
@@ -1416,6 +1689,8 @@ public:
      */
     [[nodiscard]] inline bool
     has_coro_scheduler() const {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return false;
         return _coro_scheduler != nullptr;
     }
 
@@ -1428,8 +1703,24 @@ public:
      */
     inline void
     recycle_coro_scheduler() {
-        if (_coro_scheduler)
-            _coro_scheduler->recycle();
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return;
+        if (_scheduler_dying || !_coro_scheduler)
+            return;
+        // A coroutine local it destroys may ask for a reset from its destructor: served, it freed the scheduler under
+        // its own `recycle()`. It finds the scheduler busy with its own frames, as during a reset, and does nothing.
+        struct Busy {
+            bool &flag;
+            explicit Busy(bool &f) noexcept
+                : flag(f) {
+                flag = true;
+            }
+            ~Busy() {
+                flag = false;
+            }
+        };
+        const Busy busy{_scheduler_dying};
+        _coro_scheduler->recycle();
     }
 
     /**
@@ -1437,19 +1728,48 @@ public:
      *        then the scheduler, and clears the thread-local current pointer if it names that scheduler -- another
      *        listener's stays bound; a frame it does not own -- a task driven by hand -- is its task's (Huly QB-1220).
      * The next call to coro_scheduler() will create a new scheduler. Use in test TearDown.
+     * @note Asked while one of that scheduler's coroutines is executing -- from a coroutine body its drain resumed,
+     *       or one qb-core resumed inline -- it does NOTHING and says so on one line on `stderr`. Under a drain the
+     *       reset freed the scheduler under its own `run_ready()`, which went on reading it; under an inline resume
+     *       it abandoned every coroutine the scheduler owned, the asking one's root included (Huly QB-1246). The
+     *       scheduler lives on; leave the coroutine first. Asked from a destructor that a reset or a `recycle()` is
+     *       running, it does nothing either, silently: the scheduler is already busy with its own frames.
      */
     inline void
     reset_coro_scheduler() {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return; // its destructor destroyed it
         QB_LISTENER_TRACE("reset_coro_scheduler() begin has_scheduler=%d", _coro_scheduler != nullptr);
-        if (_coro_scheduler) {
-            _coro_scheduler->destroy_all_suspended();
+        if (!_coro_scheduler || _scheduler_dying)
+            return;
+        if (detail::resuming_one_of_its_own(*_coro_scheduler)) [[unlikely]] {
+            detail::report_refused_scheduler_reset(_coro_scheduler.get());
+            return;
         }
-        if (CoroutineScheduler::current_ptr() == _coro_scheduler.get())
-            CoroutineScheduler::set_current(nullptr);
-        _coro_scheduler.reset();
+        _destroy_coro_scheduler();
+    }
+
+private:
+    // The scheduler's destruction, unasked: what `reset_coro_scheduler()` does once it may, and what `~listener`
+    // does whatever is executing.
+    void
+    _destroy_coro_scheduler() {
+        // Destroyed while it is still this listener's scheduler, still bound, still named by the thread's record:
+        // what its coroutines' destructors wake, spawn or clean up finds IT -- and is destroyed with it, by its
+        // own teardown passes -- instead of a scheduler built in its place half-way through. Its destructor
+        // unbinds it if it is the current one (Huly QB-1220); another listener's stays bound. A destructor that
+        // resets the scheduler again from inside this teardown finds it dying, and does nothing: it used to free
+        // the scheduler under its own destructor.
+        _scheduler_dying = true;
+        delete _coro_scheduler.get();
+        (void) _coro_scheduler.release();
+        _scheduler_dying = false;
+        if (_is_thread_current())
+            detail::thread_loop().scheduler = nullptr;
         QB_LISTENER_TRACE("reset_coro_scheduler() end");
     }
 
+public:
     /**
      * @brief Time this loop's watcher dispatch: the callbacks one libev iteration runs -- sockets,
      *        timers, signals, the cross-thread wake -- each iteration one span, into
@@ -1463,6 +1783,10 @@ public:
      */
     void
     set_dispatch_timing(bool const enabled) noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return;
+        if (!_loop.raw_loop) [[unlikely]]
+            _build_loop();
         if (enabled) {
             ev_set_userdata(_loop, this);
             ev_set_invoke_pending_cb(_loop, &listener::_timed_invoke_pending);
@@ -1478,6 +1802,8 @@ public:
      */
     [[nodiscard]] TimingStats
     dispatch_timing() const noexcept {
+        if (detail::is_gone_thread_listener(this)) [[unlikely]]
+            return {};
         return _dispatch_recorder.snapshot(qb::mono_now());
     }
 
@@ -1529,7 +1855,50 @@ private:
  *       function-local `thread_local` returns **two different addresses** in the two images, for
  *       the same reason. Storage that must be unique per process belongs in the header.
  */
-QB_ABI_ANCHOR inline thread_local listener listener::current = {};
+namespace detail {
+#ifdef QB_LISTENER_ASAN
+/// The sanitize lane's guard (Huly QB-1246): once its destructor has completed, the thread's `listener::current`
+/// is POISONED, so whatever reads it afterwards -- the destructor of an object with static storage, of a
+/// thread_local built before it -- is a use-after-poison the lane reports, instead of a read of a destroyed object
+/// nothing sees. No data member: the layout of `listener` is the same in a sanitized and an unsanitized
+/// translation unit. A function-local thread_local built BEFORE the listener, in the initialiser of
+/// `listener::current`, so that it is destroyed AFTER it. (clang reports the touch at every optimisation level,
+/// MSVC too; g++ only where the access is not folded into a direct thread-local reference, which is `-O0`.)
+struct listener_poisoner {
+    listener_poisoner() noexcept {}
+    ~listener_poisoner() noexcept;
+};
+inline void
+arm_listener_poisoner() noexcept {
+    thread_local listener_poisoner poisoner;
+    (void) poisoner;
+}
+#else
+inline void
+arm_listener_poisoner() noexcept {}
+#endif
+} // namespace detail
+
+QB_ABI_ANCHOR inline thread_local listener listener::current{(detail::arm_listener_poisoner(), listener::thread_current_tag{})};
+
+#ifdef QB_LISTENER_ASAN
+inline detail::listener_poisoner::~listener_poisoner() noexcept {
+    __asan_poison_memory_region(&listener::current, sizeof(listener));
+}
+#endif
+
+namespace detail {
+/// The thread's loop, to arm a watcher on: read on the thread's record while the thread's listener has its loop --
+/// no thread_local with a destructor on the way, which is what `sleep()`, the `wait_*()` family, the timed channel
+/// operations, the timeouts and qb-core's `ask` paid on every call. Otherwise the listener is asked: it builds its
+/// loop on a thread that has none yet, and stops the process by name once it is gone (`listener::loop()`).
+[[nodiscard]] inline ev::loop_ref
+thread_listener_loop() {
+    if (struct ev_loop *const raw = thread_loop().raw) [[likely]]
+        return ev::loop_ref(raw);
+    return listener::current.loop();
+}
+} // namespace detail
 
 /**
  * @brief Initialize the asynchronous event system for the current thread.
@@ -1553,11 +1922,19 @@ init() noexcept {
     // breaks accept sockets, I/O watchers, and timeouts.
 }
 
+/// The gate of every free function that RUNS the thread's loop (`async::run()`, `run_once()`, `run_until()`,
+/// `run_for()`, `run_sync()`): not after the thread's `listener::current` is destroyed -- a run needs the loop, and
+/// the request stops the process on the line that names `api_name` (Huly QB-1246) -- and not from inside a
+/// coroutine drain. Both are read on the thread's record: the listener's members, which a core calls on every
+/// pass, carry neither test.
 inline void
 ensure_not_inside_ready_drain(char const *api_name) {
-    if (listener::current.has_coro_scheduler() && listener::current.coro_scheduler().is_draining_ready()) {
+    detail::thread_loop_t const &thread = detail::thread_loop();
+    if (thread.phase == detail::thread_loop_phase::gone) [[unlikely]]
+        detail::refuse_after_thread_loop(api_name);
+    if (thread.scheduler != nullptr && thread.scheduler->is_draining_ready()) {
 #ifndef NDEBUG
-        assert(!listener::current.coro_scheduler().is_draining_ready()
+        assert(!thread.scheduler->is_draining_ready()
                && "async::run/run_once/run_until must not be called from inside a "
                   "coroutine or actor handler already executing under "
                   "CoroutineScheduler::run_ready()");
@@ -1679,7 +2056,22 @@ namespace detail {
 /// into ticks with it, so a thread calibrates once. Not part of the public API.
 inline double
 tsc_per_ns(listener const &loop) noexcept {
+    loop._require_loop("the counter's calibration of listener::current"); // calibrated where the loop is built
     return loop._tsc_per_ns;
+}
+
+/// INTERNAL (Huly QB-1246): feeds `revents` to an io object's own watcher, so that its loop's next dispatch runs the
+/// object's handler -- how `disconnect()` asks for its teardown. DROPPED once the thread's loop is gone: an object
+/// with static storage that disconnects from its destructor (a module's client does) runs after its thread's
+/// `listener::current`; nothing will dispatch its watcher again, and the loop the event would be queued on is freed
+/// memory -- until 3.4 a write into it at every such exit. The caller sets its own state first: `disconnect_now()`
+/// then completes the teardown in the call, and a plain `disconnect()` leaves the transport to the object's
+/// destructor, as for an object destroyed while connected.
+template <typename _Watcher>
+inline void
+feed_own_watcher(_Watcher &watcher, int const revents) noexcept {
+    if (!thread_loop_gone()) [[likely]]
+        watcher.feed_event(revents);
 }
 } // namespace detail
 

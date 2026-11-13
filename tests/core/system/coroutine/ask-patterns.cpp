@@ -34,8 +34,8 @@
  *   - NEW cross-core `ask_any` case (winner and loser on different cores) to pair with the same-core
  *     race (requires-multicore).
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites (cross-core asks
- * leave a fixed, benign teardown residual — see ask-roundtrip.cpp).
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite, and reports no teardown
+ * residual of a cross-core ask (Huly QB-1246).
  */
 
 #include <atomic>

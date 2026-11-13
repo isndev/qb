@@ -32,7 +32,9 @@
  */
 
 #include <atomic>
+#include <exception>
 #include <functional>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -353,6 +355,41 @@ TEST_F(GeneratorAsync, NextOverPullAndMovedFromReturnNullopt) {
     EXPECT_TRUE(b_empty.load()) << "clean end must be nullopt";
     EXPECT_TRUE(c_empty.load()) << "over-pull on a done generator must be nullopt, not UB";
     EXPECT_TRUE(d_empty.load()) << "next() on a moved-from generator must be nullopt, not UB";
+}
+
+namespace generator_async_test {
+
+/// A free coroutine (a lambda's closure would come first in its promise arguments): an exception_ptr in second place,
+/// after an argument convertible to the yielded type.
+async_generator<int>
+carrying(int n, std::exception_ptr ep) {
+    (void) ep; // looked at, never thrown
+    co_yield n;
+}
+
+} // namespace generator_async_test
+
+// A coroutine's promise is built from the coroutine's arguments whenever that is viable, and an aggregate promise
+// made it viable by C++20 parenthesized aggregate initialisation: GCC, clang and clang-cl stored the exception_ptr
+// argument as the generator's exception, and the first next() threw an argument the body never threw (Huly QB-1246).
+TEST_F(GeneratorAsync, AnExceptionPtrArgumentIsNotAStoredException) {
+    std::atomic<bool> done{false};
+    std::atomic<int>  value{-1};
+    std::atomic<bool> threw{false};
+    coro_scheduler().spawn([&]() -> task<void> {
+        auto gen = generator_async_test::carrying(3, std::make_exception_ptr(std::runtime_error("an argument")));
+        try {
+            auto v = co_await gen.next();
+            value.store(v.value_or(-1));
+        } catch (std::exception const &) {
+            threw.store(true);
+        }
+        done.store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the consumer never ran";
+    EXPECT_FALSE(threw.load()) << "next() threw the coroutine's exception_ptr argument: the promise was built from it";
+    EXPECT_EQ(value.load(), 3);
 }
 
 // The awaiter of async_generator::next() is neither copyable nor movable (Huly QB-1000): it parks its consumer in

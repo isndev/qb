@@ -24,6 +24,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
 #include <exception>
 #include <filesystem>
 #include <string>
@@ -73,8 +74,8 @@ qb::io::log::setLevel(io::log::Level lvl) {
 // that built the line can see it. Three things can throw there -- the mutex (std::system_error), the copy of the
 // buffer (std::bad_alloc), and the write itself when the program enabled exceptions on the standard stream
 // (std::cerr.exceptions(std::ios::badbit) with a failing stream) -- and the report paths that write through
-// qb::io::cerr exist precisely for the moment something already went wrong (a coroutine's escaped exception, an
-// abandoned frame). Writing a line is best-effort: a line that cannot be written is lost, the process is not
+// qb::io::cerr exist precisely for the moment something already went wrong (a coroutine's escaped exception).
+// Writing a line is best-effort: a line that cannot be written is lost, the process is not
 // (Huly QB-388). `ss.str()` stays a copy: `ss.view()` would avoid it, but it is not in every libc++ qb supports.
 std::mutex qb::io::cout::io_lock;
 
@@ -141,22 +142,48 @@ namespace {
 std::atomic<std::size_t> g_abandoned_coroutine_frames{0};
 } // namespace
 
-// The same policy and the same place as the detached-exception report above: one line on
-// `qb::io::cerr` in EVERY build, never `QB_LOG_*` (which compiles to nothing without
+// The same place as the detached-exception report above and its rule, on another channel: one line on
+// `stderr` in EVERY build, never `QB_LOG_*` (which compiles to nothing without
 // QB_WITH_LOGGING -- the very silence Huly QB-84 removes), and the number kept where a test or an
 // operator can read it back after the frames are gone.
 void
-qb::io::async::report_abandoned_coroutine_frames(std::size_t const count, void const *const scheduler) noexcept {
+qb::io::async::report_abandoned_coroutine_frames(std::size_t const count, void const *const scheduler,
+                                                 coroutine_abandon_reason const why) noexcept {
     g_abandoned_coroutine_frames.fetch_add(count, std::memory_order_relaxed);
-    try {
-        qb::io::cerr() << "WARNING: qb coroutine scheduler " << scheduler << " destroyed with " << count
-                       << " suspended coroutine frame(s) still parked on a watcher or a wait list -- ABANDONED, not "
-                          "destroyed (their watchers still reference them). Stop the event loop before destroying its "
-                          "scheduler. Process total so far: "
-                       << g_abandoned_coroutine_frames.load(std::memory_order_relaxed) << std::endl;
-    } catch (...) {
-        // Reporting must never become the failure.
+    // The order it was destroyed in, and why its coroutines could not be destroyed in that order.
+    char const *order  = "AFTER its thread's event loop (listener::current)";
+    char const *reason = "the loop they waited on is gone and nothing can run on that thread any more. Destroy a "
+                         "scheduler before its thread's listener";
+    switch (why) {
+        case coroutine_abandon_reason::loop_gone:
+            break;
+        case coroutine_abandon_reason::draining:
+            order  = "FROM INSIDE one of its own coroutines";
+            reason = "one of them is executing. Leave the coroutine before its scheduler goes (exit() in a coroutine "
+                     "body ends its thread's listener from inside it)";
+            break;
+        case coroutine_abandon_reason::foreign_thread:
+            order  = "ON ANOTHER THREAD than the one that built it";
+            reason = "they wait on that thread's loop, which may be running. Destroy a scheduler on the thread that "
+                     "built it (exit() on another thread destroys the ones with static storage there)";
+            break;
+        case coroutine_abandon_reason::respawning:
+            order  = "while its coroutines' destructors kept spawning on it";
+            reason = "each teardown pass left it new ones. A coroutine local's destructor must not spawn on, and "
+                     "pump, a scheduler that is being destroyed";
+            break;
     }
+    // One preformatted line, written to `stderr` with `fputs`, in every order: `qb::io::cerr()` locks a mutex that has
+    // static storage and goes through `std::cerr`, and this line is printed above all among the destructors of the
+    // objects with static storage -- the scheduler destroyed after its thread's loop -- where neither may be there
+    // any more. No lock of qb's, no C++ stream, no allocation; nothing here throws (Huly QB-1246).
+    char line[768];
+    std::snprintf(line, sizeof line,
+                  "WARNING: qb coroutine scheduler %p destroyed %s with %zu coroutine(s) it owns -- ABANDONED, not "
+                  "destroyed: %s. Process total so far: %zu\n",
+                  scheduler, order, count, reason, g_abandoned_coroutine_frames.load(std::memory_order_relaxed));
+    std::fputs(line, stderr);
+    std::fflush(stderr);
 }
 
 std::size_t

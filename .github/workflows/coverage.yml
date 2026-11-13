@@ -37,6 +37,7 @@ jobs:
           sudo apt-get install -y gdb g++-15 || sudo apt-get install -y gdb
           mkdir -p "${RUNNER_TEMP}/oracle"
           { cat /etc/os-release | head -3; gcc-14 --version | head -1; g++-15 --version 2>/dev/null | head -1; clang++-22 --version 2>/dev/null | head -1; gdb --version | head -1; git rev-parse HEAD; } | tee "${RUNNER_TEMP}/oracle/host.txt"
+          { echo "== the compilers' default target (lot T7-ALIGN)"; dpkg --print-architecture; apt-config dump | grep -i -E '^APT::Architecture' || true; grep -m1 -o -w avx2 /proc/cpuinfo || echo "cpu: no avx2"; for c in gcc-14 gcc-15; do echo "-- $c"; $c -v 2>&1 | grep -o -E -- '--with-arch[^ ]*' || echo "$c: configured with no --with-arch"; $c -Q --help=target 2>/dev/null | grep -E '^\s+-march=|^\s+-mtune='; echo | $c -dM -E -x c++ - 2>/dev/null | grep -E '__AVX__|__AVX2__' || echo "$c: no __AVX__ by default"; done; } | tee -a "${RUNNER_TEMP}/oracle/host.txt"
 
       - name: Build and run each variant
         run: |

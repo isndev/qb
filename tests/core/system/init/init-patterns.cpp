@@ -37,7 +37,7 @@
  * proof lives in init-ask-gate.cpp. tier=system. Every value assertion checks a framework-computed
  * result (e.g. `key * mult`), and each in-actor effect is mirrored to a post-`join()` atomic.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <atomic>

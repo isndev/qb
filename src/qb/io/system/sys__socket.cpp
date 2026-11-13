@@ -1176,6 +1176,14 @@ int
 socket::shutdown(int how) const {
     if (!is_open())
         return -1;
+#if defined(__APPLE__)
+    // XNU shuts the receiving side first, and refuses SHUT_RDWR with ENOTCONN when it is shut already -- once the
+    // peer's FIN has arrived, read or not -- without shutting the sending side: no FIN leaves, and a peer that waits
+    // for one waits until the descriptor is closed (measured on macOS 26, Huly QB-1270). Linux and Windows send it.
+    // The sending side alone then; XNU's own call stays the call wherever it is taken.
+    if (how == SHUT_RDWR)
+        return ::shutdown(this->fd, SHUT_RDWR) == 0 ? 0 : ::shutdown(this->fd, SHUT_WR);
+#endif
     return ::shutdown(this->fd, how);
 }
 

@@ -27,7 +27,11 @@
 #ifndef QB_IO_ASYNC_PROTOCOL_H
 #define QB_IO_ASYNC_PROTOCOL_H
 
+#include <cstddef>
+#include <memory>
+#include <vector>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
+#include <qb/utility/branch_hints.h>
 #include <qb/utility/type_traits.h>
 
 namespace qb::io::async {
@@ -360,6 +364,95 @@ protected:
      */
     virtual void reset() noexcept = 0;
 };
+
+namespace detail {
+
+/**
+ * @class protocol_list
+ * @ingroup Protocol
+ * @brief The protocols an I/O component owns, and those a dispatch retired until it returns (Huly QB-1278).
+ * @details The owner behind `switch_protocol()` / `clear_protocols()` in `input`, `io` and `buffered_io`.
+ *          `clear_protocols()` ends every protocol the component owns. Called while the read loop dispatches a
+ *          message -- from a protocol's `onMessage()`, from the handler it hands the message to, or from anything
+ *          those call -- destroying them at once freed the protocol whose `onMessage()` was still running, which
+ *          qbm-http's WebSocket and HTTP/1.1 protocols and qbm-redis's touch after their handler. `clear(true)`
+ *          retires them instead: they stay owned here, out of reach (the active protocol is already the NoProtocol
+ *          sentinel, or the one switched in after the clear), and the read loop ends them with `end_dispatch()`
+ *          once the dispatch has returned. `clear(false)`, outside a dispatch, ends them before it returns. A
+ *          protocol switched in after the clear is kept: only the ones owned when it was called end.
+ *
+ *          They end one at a time, front to back (switch order), each out of the list before its destructor runs,
+ *          so a destructor that calls back into its component finds the list consistent: `switch_protocol()`
+ *          installs a protocol that is kept, `clear_protocols()` joins the clear under way. Retired protocols end
+ *          with the component's dispatch flag set for the duration -- what such a destructor saw when the clear
+ *          destroyed at once -- so `disconnect_now()` leaves its teardown to the event `disconnect()` fed. Ending
+ *          entries mean a clear is under way (a dispatch on the stack, or a destructor running), so a clear that
+ *          finds some joins it rather than destroying under it. The component's own destruction is not a clear: no
+ *          protocol destructor may call back into a component that is being destroyed.
+ */
+class protocol_list {
+    std::vector<std::unique_ptr<IProtocol>> _owned;
+    std::size_t _ending = 0u; /**< Leading entries of `_owned` a clear ended: retired by a dispatch, or being destroyed. */
+
+    QB_NOINLINE void
+    destroy_ending() noexcept {
+        while (_ending != 0u) {
+            std::unique_ptr<IProtocol> first = std::move(_owned.front());
+            _owned.erase(_owned.begin());
+            --_ending;
+            first.reset(); // may switch_protocol() / clear_protocols() on the component: the list is consistent here
+        }
+        if (_owned.empty())
+            _owned.shrink_to_fit();
+    }
+
+    // The cold half of end_dispatch(), out of line: it takes the owner alone and returns nothing, and reaches the list
+    // and the flag through the owner's members, so the read pass computes nothing for it and keeps its registers.
+    template <auto List, auto Flag, typename Owner>
+    QB_NOINLINE static void
+    end_retired(Owner &owner) noexcept {
+        bool      &in_dispatch = owner.*Flag;
+        const bool outer       = in_dispatch;
+        in_dispatch            = true;
+        (owner.*List).destroy_ending();
+        in_dispatch = outer;
+    }
+
+public:
+    protocol_list()                                 = default;
+    protocol_list(protocol_list const &)            = delete; // `_ending` counts entries of this very vector: never copied nor moved
+    protocol_list &operator=(protocol_list const &) = delete;
+
+    /// Takes ownership of `protocol`, behind any ending ones.
+    void
+    push_back(std::unique_ptr<IProtocol> &&protocol) {
+        _owned.push_back(std::move(protocol));
+    }
+
+    /// Ends every protocol owned: before it returns, or -- `in_dispatch` -- once the running dispatch has returned.
+    /// A clear that finds others ending joins them.
+    void
+    clear(bool in_dispatch) noexcept {
+        const bool joining = _ending != 0u;
+        _ending            = _owned.size();
+        if (in_dispatch || joining)
+            return;
+        destroy_ending();
+    }
+
+    /// Ends the protocols retired during the dispatch that just returned, `owner.*Flag` (the component's dispatch flag)
+    /// set while they end; passes `result` through. `owner.*List` is this list. The read pass pays one load and one
+    /// branch for it, nothing else (Huly QB-1278).
+    template <auto List, auto Flag, typename Owner>
+    [[nodiscard]] bool
+    end_dispatch(bool result, Owner &owner) noexcept {
+        if (_ending != 0u) [[unlikely]] // the attribute: through qb::unlikely(), clang laid the cold call out inline
+            end_retired<List, Flag>(owner);
+        return result;
+    }
+};
+
+} // namespace detail
 
 } // namespace qb::io::async
 

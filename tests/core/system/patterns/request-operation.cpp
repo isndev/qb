@@ -29,7 +29,7 @@
  *   - EMPLACE: the emplace form, awaited directly and as a task;
  *   - TIMEOUT: a silent responder still surfaces `timeout_error`.
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites.
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite (Huly QB-1246).
  */
 
 #include <gtest/gtest.h>

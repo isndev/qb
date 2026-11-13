@@ -4169,6 +4169,7 @@ loop_init(EV_P_ unsigned int flags) EV_NOEXCEPT {
 }
 
 static void once_reclaim(EV_P);
+static void watchers_detach(EV_P);
 
 /* free up a loop structure */
 ecb_cold void
@@ -4189,15 +4190,20 @@ ev_loop_destroy(EV_P) {
     }
 #endif
 
-    /* the ev_once objects still waiting: freed, never invoked (Huly QB-736) */
-    once_reclaim(EV_A);
-
 #if EV_CHILD_ENABLE
+    /* before the detach below, which stops every signal watcher of the loop: this one is the loop's own, and it
+     * goes with the reference it gave back when it was started */
     if (ev_is_default_loop(EV_A) && ev_is_active(&childev)) {
         ev_ref(EV_A); /* child watcher */
         ev_signal_stop(EV_A_ & childev);
     }
 #endif
+
+    /* no watcher stays "active" or "pending" in a loop that is gone; after the cleanup watchers ran (Huly QB-1246) */
+    watchers_detach(EV_A);
+
+    /* the ev_once objects still waiting: freed, never invoked (Huly QB-736) */
+    once_reclaim(EV_A);
 
     if (ev_is_active(&pipe_w)) {
         /*ev_ref (EV_A);*/
@@ -6600,6 +6606,159 @@ once_reclaim(EV_P) {
         list = once->reclaim == once ? 0 : once->reclaim;
         ev_free(once);
     }
+}
+
+/* qev (Huly QB-1246): a loop being destroyed DETACHES every watcher still started on it or pending in it. Each is
+ * left inactive and not pending -- the state ev_TYPE_stop leaves -- so a stop that comes AFTER the loop (the
+ * watcher's owner outlived it: static storage, a thread_local destroyed later, a coroutine frame freed late)
+ * returns at its ev_is_active test, before it reads the loop. Until then such a stop read and wrote the freed
+ * loop: its timer heap, its fd lists, its counters. Nothing is invoked, as for ev_once (once_reclaim, which runs
+ * next and frees the ev_once objects this walk passes); the cleanup watchers have run before it, as they always
+ * did. A watcher that lives INSIDE the loop is the loop's own (pipe_w, sigfd_w, timerfd_w, the backends'):
+ * ev_loop_destroy still tests those, and they are freed with it. A signal or a child watcher sits on a
+ * process-wide list that names its loop: those are stopped for real, which takes the loop out of that list and
+ * gives the signal back its default action once no watcher is left on it. What the loop counted of them is reset
+ * (activecnt, iocnt, idleall, the inotify hash): the default loop's structure is static and comes back as it was
+ * left, and a count of watchers that are gone made its next ev_run wait for nothing, for ever.
+ *
+ * THE PRICE: the loop now WRITES to every such watcher (active = 0, pending = 0), so a watcher that is started or
+ * pending when its loop is destroyed must still be allocated at that moment. Free it AFTER ev_loop_destroy, or
+ * stop it first -- never free it started and then destroy the loop. libev never touched the watchers there, so a
+ * program that did exactly that, and never ran the loop again, worked by accident. */
+#if !EV_MULTIPLICITY
+/* without EV_MULTIPLICITY the loop is a set of globals: its own watchers are named */
+inline_size int
+watcher_is_loop_own(void *w) {
+    if (w == (void *) &pending_w || w == (void *) &pipe_w)
+        return 1;
+#if EV_USE_SIGNALFD
+    if (w == (void *) &sigfd_w)
+        return 1;
+#endif
+#if EV_USE_TIMERFD
+    if (w == (void *) &timerfd_w)
+        return 1;
+#endif
+#if EV_USE_INOTIFY
+    if (w == (void *) &fs_w)
+        return 1;
+#endif
+#if EV_USE_IOURING
+    if (w == (void *) &iouring_tfd_w)
+        return 1;
+#endif
+#if EV_USE_LINUXAIO
+    if (w == (void *) &linuxaio_epoll_w)
+        return 1;
+#endif
+    return 0;
+}
+#endif
+
+ecb_noinline ecb_cold static void
+watchers_detach(EV_P) {
+    int i, pri;
+    WL  wl;
+
+#if EV_MULTIPLICITY
+#define EV_DETACH_OWN(w) ((uintptr_t) (w) - (uintptr_t) EV_A < sizeof(struct ev_loop))
+#else
+#define EV_DETACH_OWN(w) watcher_is_loop_own((void *) (w))
+#endif
+
+#if EV_SIGNAL_ENABLE
+    for (i = 0; i < EV_NSIG - 1; ++i)
+#if EV_MULTIPLICITY
+        if (EV_WAKE_LOAD(&signals[i].loop) == EV_A) /* read as the signal handler reads it: another loop's thread writes its own slots */
+#endif
+            while ((wl = signals[i].head))
+                ev_signal_stop(EV_A_(ev_signal *) wl);
+#endif
+#if EV_CHILD_ENABLE
+    if (ev_is_default_loop(EV_A))
+        for (i = (EV_PID_HASHSIZE); i--;)
+            while ((wl = childs[i]))
+                ev_child_stop(EV_A_(ev_child *) wl);
+#endif
+
+    for (pri = NUMPRI; pri--;)
+        for (i = pendingcnt[pri]; i--;)
+            if (!EV_DETACH_OWN(pendings[pri][i].w))
+                pendings[pri][i].w->pending = 0;
+
+    for (i = 0; i < anfdmax; ++i)
+        for (wl = anfds[i].head; wl; wl = wl->next)
+            if (!EV_DETACH_OWN(wl)) {
+                ((W) wl)->active = 0;
+#if defined(_WIN32)
+                /* what ev_io_stop does last: the watcher's reference on the process-wide fd registry */
+                if (((ev_io *) wl)->handle) {
+                    ev_win32_fd_release(((ev_io *) wl)->fd, 0);
+                    ((ev_io *) wl)->fd = -1;
+                }
+#endif
+            }
+
+    for (i = timercnt + HEAP0; i-- > HEAP0;) {
+        W w = (W) ANHE_w(timers[i]);
+
+        if (EV_DETACH_OWN(w))
+            continue;
+#if EV_STAT_ENABLE
+        if (ev_cb((ev_timer *) w) == stat_timer_cb) /* an ev_stat polling through its timer */
+            ((W) EV_CONTAINER_OF((ev_timer *) w, ev_stat, timer))->active = 0;
+#endif
+        ev_at(w) -= mn_now; /* relative again, as ev_timer_stop leaves it */
+        w->active = 0;
+    }
+
+#if EV_PERIODIC_ENABLE
+    for (i = periodiccnt + HEAP0; i-- > HEAP0;)
+        ((W) ANHE_w(periodics[i]))->active = 0;
+#endif
+#if EV_STAT_ENABLE && EV_USE_INOTIFY
+    for (i = 0; i < (EV_INOTIFY_HASHSIZE); ++i) { /* the ev_stat watchers inotify serves */
+        for (wl = fs_hash[i].head; wl; wl = wl->next)
+            ((W) wl)->active = 0;
+        fs_hash[i].head = 0; /* a late ev_stat_stop returns before it unlinks: the list goes here */
+    }
+#endif
+#if EV_IDLE_ENABLE
+    for (pri = NUMPRI; pri--;)
+        for (i = idlecnt[pri]; i--;)
+            ((W) idles[pri][i])->active = 0;
+#endif
+#if EV_PREPARE_ENABLE
+    for (i = preparecnt; i--;) {
+#if EV_EMBED_ENABLE
+        if (ev_cb(prepares[i]) == embed_prepare_cb) /* an ev_embed: its io and its fork are on the lists walked here */
+            ((W) EV_CONTAINER_OF(prepares[i], ev_embed, prepare))->active = 0;
+#endif
+        ((W) prepares[i])->active = 0;
+    }
+#endif
+#if EV_CHECK_ENABLE
+    for (i = checkcnt; i--;)
+        ((W) checks[i])->active = 0;
+#endif
+#if EV_FORK_ENABLE
+    for (i = forkcnt; i--;)
+        ((W) forks[i])->active = 0;
+#endif
+#if EV_CLEANUP_ENABLE
+    for (i = cleanupcnt; i--;)
+        ((W) cleanups[i])->active = 0;
+#endif
+#if EV_ASYNC_ENABLE
+    for (i = asynccnt; i--;)
+        ((W) asyncs[i])->active = 0;
+#endif
+    /* nothing of the user's is active any more; the loop's own watchers hold no reference (each gave it back at its
+     * start, and takes it again where ev_loop_destroy stops it) */
+    activecnt = 0;
+    iocnt     = 0;
+    idleall   = 0;
+#undef EV_DETACH_OWN
 }
 
 /* See ev.h: no-op when cb is NULL, or when fd < 0 and timeout < 0. (nothing could fire). */

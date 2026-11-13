@@ -154,7 +154,7 @@ Once attached, the parsed `chat::Message` arrives at `on(const chat::Message&)`,
 **Pitfalls.**
 
 - `getMessageSize()` must leave valid fragmented input untouched and return the full frame size only when all bytes are buffered. Validate the header and both the application and I/O size ceilings before payload construction. On an invalid header or length, call `not_ok()`; do not try to resynchronize by returning `0` over the same bytes.
-- `onMessage()` may call `switch_protocol()` or `clear_protocols()` (for example, an HTTP-to-WebSocket upgrade). The I/O component snapshots the old protocol's `should_flush()` policy *before* invoking `onMessage()`, because the old protocol may be deleted during the call. If you switch protocols inside `onMessage()`, do not touch `this->_io.in()` afterward through the old protocol's state.
+- `onMessage()` may call `switch_protocol()` or `clear_protocols()` (for example, an HTTP-to-WebSocket upgrade). The I/O component snapshots the old protocol's `should_flush()` policy *before* invoking `onMessage()` and flushes the message's bytes by it, whatever the call installed. A protocol cleared during the call is destroyed once the read pass has returned, never under its own `onMessage()` (since 3.4, Huly QB-1278). If you switch protocols inside `onMessage()`, do not touch `this->_io.in()` afterward through the old protocol's state.
 - On an unrecoverable framing error, signal `this->not_ok()` (inherited from `AProtocol`) so the I/O component closes the connection; returning `0` forever silently stalls the stream instead.
 
 ## Scaling actors across cores
@@ -238,7 +238,7 @@ engine.core(1).setAffinity(qb::CoreIdSet{2});      // pin core-1 worker to CPU 2
 `Actor::spawn()` and `Actor::spawn_detached()` are the two supported ways to run a C++20 coroutine inside an actor. Both launch the coroutine in an *isolated context* on the actor's own `VirtualCore` and return immediately; the actor keeps processing other events while the coroutine is suspended at a `co_await`. They differ only in lifetime:
 
 - **`spawn()` — recommended default.** *Scoped* to the actor: `kill()` cancels it at the next cancellation-aware suspension point. Its callable receives a `qb::ScopedCoroContext` with cancellation-aware operations (`ctx.sleep`, `ctx.until_cancelled`, `ctx.cancellation_point`, `ctx.cancellable`). Request/response patterns (`qb::ask`, `qb::ask_all`, `qb::run_saga`, …) are free functions in `qb/patterns.h` built on it.
-- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1691-1702; qb/src/qb/core/VirtualCore.cpp:1073-1075 -->
+- **`spawn_detached()` — fire-and-forget.** *Detached* from the actor's cancellation scope: killing the actor does not cancel it. Its callable receives a plain `qb::CoroContext`. It can finish after the actor dies only while another actor keeps the same core running; arrange a completion event before the last actor stops. <!-- src: qb/src/qb/core/VirtualCore.h:1691-1702; qb/src/qb/core/VirtualCore.cpp:1078-1080 -->
 
 The coroutine layer itself — `task<T>`, awaiters, `sleep`, channels, scopes — is owned by [C++20 coroutines](../3_qb_io/coroutines.md). This section covers the actor-safety contract, which both entry points share.
 

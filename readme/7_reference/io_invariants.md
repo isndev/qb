@@ -34,7 +34,7 @@ or function, that symbol is named so you can verify it directly.
 
 - Each thread owns **exactly one** `qb::io::async::listener`, reachable through
   the `thread_local` static member `listener::current`
-  (`src/qb/io/async/listener.h:99,105`). Under `qb-core`, every `VirtualCore`
+  (`src/qb/io/async/listener.h:112,138`). Under `qb-core`, every `VirtualCore`
   worker thread has its own `listener::current`; the worker installs it before
   any I/O object is constructed on that core.
 - Every async object — `async::input<>`, `async::output<>`, `async::io<>`,
@@ -46,7 +46,7 @@ or function, that symbol is named so you can verify it directly.
   destroyed on the same thread**; the libev watcher is not cross-thread safe.
 - The listener is **never locked**. All event handlers (`on()` methods) run
   sequentially on the listener's own thread, so I/O state needs no mutex or
-  atomic (`src/qb/io/async/listener.h:82-84`). This is a strictly stronger and
+  atomic (`src/qb/io/async/listener.h:95-97`). This is a strictly stronger and
   strictly single-threaded guarantee than `std::thread`-safety: `qb-io` objects
   are *not* `std::thread`-safe, they are *thread-confined*.
 - To reach an I/O object from another thread, go through the actor mailbox
@@ -54,7 +54,7 @@ or function, that symbol is named so you can verify it directly.
   destination core dequeues and dispatches the event on its own thread.
 - On Windows, the libev epoll backend is wepoll (IOCP). The loop must not run
   on one thread while another thread closes the same loop or its epoll handle
-  (`src/qb/io/async/listener.h:87-89`). One thread per listener satisfies this
+  (`src/qb/io/async/listener.h:100-102`). One thread per listener satisfies this
   contract; do not break it on Windows even for "read-only" access.
 
 Moving an async object is also forbidden. `async::base` declares no move
@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1542-1545`). `listener::current` is a
+  (`src/qb/io/async/listener.h:1911-1914`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,20 +78,20 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:866,897-898,930-932`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:1025,1058-1059,1102-1104`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:934-935`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:1112-1117`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
 - `clear()` runs no deferred callback. It holds the drain guard for the whole
   call and drops the queue on entry and again on exit, so work deferred while it
   tears down — by a released closure, by the capture of a loop-owned timer it
   destroys, by a coroutine its flush passes resume — is dropped and its captured
-  state released, never run (`src/qb/io/async/listener.h:879-888,937`; Huly
+  state released, never run (`src/qb/io/async/listener.h:1040-1049,1119`; Huly
   QB-276). Called from a deferred callback, it also ends that drain.
 
 ---
@@ -102,16 +102,16 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1557`).
+  (`src/qb/io/async/listener.h:1931`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
-  `run_for()` (`src/qb/io/async/coroutine/utils.h:293`, `:227`): they are for
+  `run_for()` (`src/qb/io/async/coroutine/utils.h:294`, `:228`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
   `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
   debug and throws `std::logic_error` in release
-  (`src/qb/io/async/coroutine/utils.h:296`, `:228`). A second, deeper
+  (`src/qb/io/async/coroutine/utils.h:297`, `:229`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself makes a
   nested drain a no-op: it resumes nothing and returns `0`
-  (`src/qb/io/async/coroutine/scheduler.h:738-740`). That is what the member
+  (`src/qb/io/async/coroutine/scheduler.h:895-897`). That is what the member
   `listener::run()` meets when it is nested inside a drain — the library
   drains `Redis::await()` and `Transaction::await()` run one from a coroutine
   body: the pass runs its watchers and deferred callbacks and leaves the
@@ -128,7 +128,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1617-1620`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:1994-1997`).
 
 ---
 
@@ -155,7 +155,7 @@ registry, or as a member — never relocate them.
   A later delete observes that flag and falls back to global aligned delete, so it
   never touches a destroyed TLS freelist. `ScopedTimeout` itself has no separate
   object pool; its registered watcher uses the watcher pool.
-  (`src/qb/io/async/io.h:251-288,311-325`; `src/qb/io/async/listener.h:176-217,239-252`)
+  (`src/qb/io/async/io.h:251-288,311-325`; `src/qb/io/async/listener.h:209-250,272-285`)
 - All timeout, interval, and delay parameters in this layer are
   `qb::duration` (`std::chrono::nanoseconds`); the only raw `double` is libev's
   `ev_tstamp` (seconds) at the `qb::detail::to_ev_seconds` /
@@ -225,52 +225,118 @@ registry, or as a member — never relocate them.
   (`0`) code is generated automatically on kernel EOF
   (`src/qb/io/async/io.h:1315`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1549-1552`). It fires `on(event::disconnected)` if the
-  derived class implements it; for a server-owned object it then notifies
-  `server().disconnected(id())`, otherwise it stops the watcher, ends the
-  transport and fires `on(event::dispose)`.
+  (`src/qb/io/async/io.h:1550-1553`). It fires `on(event::disconnected)` if the
+  derived class implements it; for a server-owned object it then stops the
+  watcher and notifies `server().disconnected(id())`, otherwise it stops the
+  watcher, ends the transport and fires `on(event::dispose)`.
 - A standalone object's `dispose()` **ends its transport** once the watcher is
-  stopped (`src/qb/io/async/io.h:3275-3278`), after `on(event::disconnected)`
+  stopped (`src/qb/io/async/io.h:3341-3346`), after `on(event::disconnected)`
   — which still sees it as the connection left it — and before
   `on(event::dispose)`, the one hook that may free the object
-  (`src/qb/io/async/teardown.h:100-116`). Who ended the connection is read
-  before the hooks run (`src/qb/io/async/io.h:3254`): no reason of the
+  (`src/qb/io/async/teardown.h:227-272`). Who ended the connection is read
+  before the hooks run (`src/qb/io/async/io.h:3299`): no reason of the
   object's and a protocol still ok mean the peer's EOF or a socket error did,
   and the transport is closed — `disconnect()` when it has one, then
   `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
-  When the object ended it (`disconnect()`, a framing error, a size guard,
-  the end of `close_after_deliver()`), only the sending side is shut down:
-  the peer reads EOF once everything queued has left, and nothing is reset.
-  A close there would reset a peer whose bytes are still unread: its next
-  send fails, and on Windows it also drops what it received and has not
-  read yet — the tail of the reply `close_after_deliver()` promised. The descriptor then
-  stays with the object until its destruction or its next transport; a
-  listening socket has no sending side, so an acceptor keeps its port until
-  then. Before 3.3 the transport was left as it was: the peer of a
-  `disconnect()` never saw EOF (Huly QB-1060). Closing it again from a hook
-  is harmless; a transport installed from inside `on(event::disconnected)`
-  is the one ended, so the next connection's is installed once `dispose()`
-  has returned.
+  When the object ended it (`disconnect()`, a framing error, the end of
+  `close_after_deliver()`), the descriptor **leaves the object for its
+  thread's loop** (`src/qb/io/async/teardown.h:227-272`): the loop
+  shuts the sending side down — the peer reads EOF once everything queued
+  has left, and nothing is reset — reads and drops what the peer still
+  sends, and closes on the first of the peer's EOF, a socket error,
+  `linger()` (2 s by default) or 16 MiB dropped
+  (`src/qb/io/async/lingering_close.cpp:191-223`). A close there would
+  reset a peer whose bytes are still unread: its next send fails, and on
+  Windows it also drops what it received and has not read yet. The
+  transport is closed for the object from `dispose()` on —
+  `transport().is_open()` is false in `on(event::dispose)`, which reads no
+  peer from it — so the object is destroyed or connected again at once; a
+  TLS socket detaches its `SSL` object from the descriptor it gives away
+  (`src/qb/io/tcp/ssl/socket.cpp:1131-1135`). A size guard of the io
+  (`message_too_large`, `buffer_overflow`) and a `linger()` of zero close at
+  once (`src/qb/io/async/teardown.h:89-95`); a listening socket has no
+  sending side, so an acceptor keeps its socket and its port, and a
+  datagram object keeps its socket. In 3.3 the half-closed descriptor
+  stayed in the object until its destruction or its next transport: a peer
+  that kept writing blocked for ever (Huly QB-1270). Before 3.3 the
+  transport was left as it was: the peer of a `disconnect()` never saw EOF
+  (Huly QB-1060). Closing it again from a hook is harmless; a transport
+  installed from inside `on(event::disconnected)` is the one ended, so the
+  next connection's is installed once `dispose()` has returned.
+- A socket the loop is **closing after its peer** is that thread's: a read
+  watcher and a timer of its loop. A blocking `async::run()` returns when
+  the last one is gone — `linger()` later against a peer that stays silent,
+  at once when the peer closes or `linger()` is zero; the bound runs on the
+  loop, so a thread that stops running it keeps the descriptor until one
+  pass, `listener::clear()` or the thread's end. A loop holds at most 64 of
+  them — one more closes the oldest at once
+  (`src/qb/io/async/lingering_close.cpp:46`) — and reads at most
+  16 MiB of each (`src/qb/io/async/lingering_close.cpp:58`); a TCP
+  connect or an `accept()` the system refuses for lack of descriptors closes
+  them all at once and is made again
+  (`src/qb/io/async/lingering_close.cpp:228-234`) — except an `accept()`
+  on macOS, where the system has already closed the connection it
+  refused: its error is returned, and the next connection finds the
+  descriptors.
+- A **TLS connection** this side ends is told so: one `close_notify` alert
+  before the FIN, never waiting for the peer's (Huly QB-1270). A peer that
+  reads the FIN without it cannot tell a stream its sender ended from one
+  something cut, and OpenSSL 3 reports an unexpected EOF. The io object
+  decides (`src/qb/io/async/teardown.h:108-111`): the alert when it
+  ended the connection and wrote everything it had queued — before the
+  descriptor goes to the loop
+  (`src/qb/io/async/teardown.h:253-258`), before the half-close of
+  a lingering `close_after_deliver()`
+  (`src/qb/io/async/teardown.h:161-165`), or from the socket's
+  `disconnect()` when a session, or a stream with nothing left to write,
+  closes with its destructor; none
+  when output is still queued, which is dropped — that stream is cut,
+  whoever ended the connection; a peer that ended the TLS session with its
+  own `close_notify` and finds nothing dropped is answered with this side's,
+  and nothing is written after a reset
+  (`src/qb/io/async/teardown.h:129-134`). What is queued is
+  read before `on(event::disconnected&&)` runs and again after it
+  (`src/qb/io/async/io.h:3301`), and the stream is judged
+  before it: a hook that empties the queue, or closes the transport itself,
+  does not make a cut stream whole. One write on a non-blocking
+  socket, never retried: a socket that cannot take it is closed without it.
+  OpenSSL is told the session ended on every close, so a saved session
+  resumes (`src/qb/io/tcp/ssl/socket.cpp:1072-1106`).
+- A **server session** is released by its server whoever ended the
+  connection, its watcher stopped first
+  (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody
+  still holds — `server.session(id)` is a `shared_ptr` — was dispatched on
+  every loop pass until it was let go. One that ended its own connection
+  (`disconnect()`, a framing error) with everything it had queued written
+  also gives its descriptor to the loop, as a standalone object does, so
+  its peer reads its last bytes instead of a reset (Huly QB-1270) -- before
+  the server is told: a `disconnected(id)` override that looks the session
+  up finds its transport closed and no peer. Not a session that
+  lingered through `close_after_deliver()`, not one a size guard ended, not
+  with a `linger()` of zero, and not one with output still queued: those
+  close with the session, and what was queued is dropped with it — the
+  bound on resources wins over delivery there; `close_after_deliver()` is
+  the path that waits.
 - A session a server accepted **closes after its peer** when its
   `close_after_deliver()` has delivered everything (Huly QB-1089): after
   `event::eos` the write path begins a lingering close
-  (`src/qb/io/async/io.h:3067`) instead of disposing — the sending side is shut
+  (`src/qb/io/async/io.h:3095`) instead of disposing — the sending side is shut
   down, the input is reset and only reads are watched
-  (`src/qb/io/async/io.h:2167-2191`); every later dispatch that reads or
-  writes nothing drops what arrived (`src/qb/io/async/io.h:3167-3171`,
-  `:2198-2208`) until the peer's EOF, a socket error or the bound —
+  (`src/qb/io/async/io.h:2175-2199`); every later dispatch that reads or
+  writes nothing drops what arrived (`src/qb/io/async/io.h:3195-3199`,
+  `:2212-2222`) until the peer's EOF, a socket error or the bound —
   `linger()`, 2 s by default, `set_linger()` — ends it at the error label,
   which disposes as for any graceful close. The bound's timer only flags the
-  expiry and feeds the watcher (`src/qb/io/async/io.h:2212-2215`): the
+  expiry and feeds the watcher (`src/qb/io/async/io.h:2226-2229`): the
   session, which owns the timer, is never disposed from under it. `dispose()`
-  releases the timer whatever ended the linger (`src/qb/io/async/io.h:3255`),
+  releases the timer whatever ended the linger (`src/qb/io/async/io.h:3302`),
   `disconnect()` still aborts at once, a server's teardown destroys a lingering
   session with no wait, and `extractSession()` takes one out of it
-  (`src/qb/io/async/io_handler.h:287-288`). Closing at once closed a socket
+  (`src/qb/io/async/io_handler.h:288-289`). Closing at once closed a socket
   with unread input: the reset failed the peer's send, and on Windows dropped
   the answer it had received and not read.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
-  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:58`), which
+  `detail::run_teardown_hook` (`src/qb/io/async/teardown.h:61`), which
   contains what they throw and logs it (WARN, with `what()`), so the steps
   after them always run: the watcher is stopped, or the session handed back to
   its server. A throw used to skip them. The listener contained it, so nothing
@@ -299,7 +365,7 @@ registry, or as a member — never relocate them.
 ## 7. Sessions in `io_handler<Session>`
 
 - `io_handler::registerSession` enforces the session cap **before** allocation
-  (`src/qb/io/async/io_handler.h:230-233`). If `_max_sessions > 0` and the
+  (`src/qb/io/async/io_handler.h:231-234`). If `_max_sessions > 0` and the
   registry is full, it closes the incoming I/O (which already owns an open fd,
   and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
   prevents a connection flood from amplifying into heap pressure.
@@ -309,7 +375,7 @@ registry, or as a member — never relocate them.
   or define `QB_DEFAULT_MAX_SESSIONS` before including the header, on any
   network-facing server.
 - `stream()` / `stream_if()` fan-out reuses a persistent `_broadcast_scratch`
-  vector (`src/qb/io/async/io_handler.h:116`) so broadcasting to N sessions
+  vector (`src/qb/io/async/io_handler.h:117`) so broadcasting to N sessions
   costs O(N) reads, not O(N²) allocations.
 
 ---
@@ -321,24 +387,26 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
 `src/qb/io/protocol/**` depends on it.
 
 - `getMessageSize()` is expected to be a **pure query**
-  (`src/qb/io/async/protocol.h:87-91`). The stream layer may call it many
+  (`src/qb/io/async/protocol.h:91-95`). The stream layer may call it many
   times per byte of input; an implementation must not mutate parser state,
   decrement a credit counter, or emit semantically meaningful side effects.
   Base protocols keep a resumable scan offset so re-invocation does not rescan
   from the start.
 - It returns `IProtocol::kNoMessage` (`== 0`) when more input is needed, or the
   exact byte count of the next complete frame otherwise
-  (`src/qb/io/async/protocol.h:58`, `:105`). Consumption happens when
+  (`src/qb/io/async/protocol.h:62`, `:109`). Consumption happens when
   `onMessage(size)` is called with that size.
 - A protocol signals an unrecoverable framing or parse error by calling
   `not_ok()`; the I/O component then closes the connection, and the protocol
-  cannot be recovered (`src/qb/io/async/protocol.h:183-185`).
+  cannot be recovered (`src/qb/io/async/protocol.h:187-189`).
 - `set_should_flush(bool)` controls whether the input buffer is flushed after
-  each message (`src/qb/io/async/protocol.h:202-205`). `process_messages`
+  each message (`src/qb/io/async/protocol.h:206-209`). `process_messages`
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
-  upgrade) and leave the old protocol dangling — the flush must use the old
-  protocol's policy (`src/qb/io/async/io.h:1371-1372`).
+  upgrade) or `clear_protocols()` — the flush must use the old protocol's policy
+  (`src/qb/io/async/io.h:1371-1372`). A protocol cleared there is destroyed once
+  the read pass has returned, never under its own `onMessage()`
+  (`src/qb/io/async/io.h:1514`; since 3.4, Huly QB-1278).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer
@@ -361,7 +429,7 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:126-130`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:209-213`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
 - A thread's scheduler is its `listener::current` loop's, created on first use:
@@ -370,25 +438,30 @@ with I/O lifetime are:
   is bound, so a waiter queued before anything bound a scheduler is drained by
   that loop. `schedule_via_current()` used to assert in debug and drop the
   handle in release, and `current()` to create a private scheduler no loop pumped
-  (`src/qb/io/async/coroutine/scheduler.h:850-854`, `:1185-1191`).
+  (`src/qb/io/async/coroutine/scheduler.h:1009-1013`, `:1354-1364`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
   `await_resume()` (or the awaiter destructor) precisely to avoid a
   use-after-free.
-- `~CoroutineScheduler` destroys only the ready-queue and deferred-completed
-  frames it owns. **Suspended frames are intentionally leaked**, because their
-  libev watchers still reference them
-  (`src/qb/io/async/coroutine/scheduler.h:346-350`). **Stop the event loop
-  before destroying the scheduler**, or those watchers fire against freed
-  frames.
+- `~CoroutineScheduler` destroys every coroutine it owns -- parked, queued
+  and completed -- in sixteen passes at most. It **destroys nothing, and
+  reports**, in the orders where destroying would run code that cannot run:
+  after its thread's `listener::current`, on another thread than its own,
+  from inside one of its own coroutines (`std::exit()` in a coroutine body),
+  past the sixteenth pass for what those passes left (`src/qb/io/async/coroutine/scheduler.h`,
+  `~CoroutineScheduler` and `must_abandon`). **Destroy a scheduler before its
+  thread's listener, on the thread that built it**; a frame destroyed after
+  its loop stops no watcher on freed memory (the loop detached it), and a
+  request for the loop after it stops the process on a named line (Huly
+  QB-1246).
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
   even if the original `task` object is destroyed
-  (`src/qb/io/async/coroutine/scheduler.h:443-458`). Pass a callable to `spawn`
+  (`src/qb/io/async/coroutine/scheduler.h:600-615`). Pass a callable to `spawn`
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`src/qb/io/async/coroutine/scheduler.h:597-603`).
+  (`src/qb/io/async/coroutine/scheduler.h:754-760`).
 
 ---
 
@@ -409,7 +482,7 @@ with I/O lifetime are:
 - A default-constructed socket is **uninitialized**; call `init()` before any
   connect/accept/read/write. The success conventions differ and cannot be
   treated uniformly (`src/qb/io/tcp/socket.h:132`,
-  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:528`):
+  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:553`):
   - `tcp::socket::init(int af)` returns `int` (`0` = success).
   - `udp::socket::init(int af)` returns `bool` (`true` = success).
   - `ssl::socket::init(SSL*)` returns `void` and adopts the supplied handle.
@@ -426,7 +499,7 @@ with I/O lifetime are:
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`src/qb/io/tcp/ssl/socket.h:550-552,576-578`,
+  returns `0` (`src/qb/io/tcp/ssl/socket.h:575-577,601-603`,
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
@@ -452,7 +525,7 @@ peer's memory footprint (`src/qb/io/config.h:174-175`, `:250-251`, `:264-265`):
 | `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
 
 Setting a cap to `SIZE_MAX` disables that limit
-(`src/qb/io/stream.h:124-125`, `:494-495`); it is discouraged for any network-facing
+(`src/qb/io/stream.h:124-125`, `:521-522`); it is discouraged for any network-facing
 component.
 
 ---
@@ -474,7 +547,10 @@ component.
    `qb::has_own_on<Derived, Base, Event>` that the derived class actually
    provides the override, and that its signature is `&&` or `const&`, never a
    non-const lvalue reference (§5).
-5. **Did a coroutine outlive its scheduler?** Verify the event loop was stopped
-   before the `CoroutineScheduler` was destroyed; suspended frames are leaked,
-   not destroyed, and their watchers reference freed memory if the loop runs
-   again (§9).
+5. **Did a scheduler abandon its coroutines?** A `CoroutineScheduler` destroys
+   what it owns; one line on stderr, `WARNING: qb coroutine scheduler ...
+   ABANDONED`, says it could not, and in which order it was destroyed: after its
+   thread's `listener::current`, on another thread, from inside one of its own
+   coroutines. A line `qb: ... was requested after that thread's event loop
+   (listener::current) was destroyed` is the other end of the same lifecycle: a
+   request for the loop from a static destructor (§9).

@@ -171,10 +171,10 @@ VirtualCore::~VirtualCore() noexcept {
         _rx_len = 0;
     }
 
-    // A continuation queued by the teardown above (an actor or payload destructor that wakes a
-    // coroutine) lands in this loop's scheduler (bound lazily if none was). Destroy it with this
-    // core: under start(false) the thread outlives the engine, and the next engine on it must
-    // not inherit a frame of this one.
+    // What the teardown above left on this loop goes with the core (under start(false) the thread outlives the engine): a coroutine a
+    // destructor queued, never run; a socket or a timer one left after the clear() at the top (Huly QB-1270); then what that clear left queued.
+    listener.recycle_coro_scheduler();
+    listener.clear();
     listener.recycle_coro_scheduler();
     // Main owns the initializer until after its worker joins. Return all generations only
     // after actor/frame/user destruction; startup failures also retire abandoned promises.
@@ -727,7 +727,12 @@ VirtualCore::__drive_init__(Actor &actor, qb::io::async::task<bool> &init) noexc
     // a core whose actors never suspend keeps a loop pass that asks no scheduler for work.
     const Actor *const outer = tls_init_running;
     tls_init_running         = &actor;
-    h.resume();
+    {
+        // Resumed by hand (the mark nests under a drain or another mark): a coroutine of this thread is executing,
+        // so a teardown reached from it -- `exit()` in `onInit()` -- destroys no coroutine of the core (QB-1246).
+        qb::io::async::detail::inline_resume_scope resuming;
+        h.resume();
+    }
     tls_init_running = outer;
     if (h.done()) {
         auto &p = qb::io::async::detail::promise_of(h);

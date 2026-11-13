@@ -799,10 +799,12 @@ TEST(SSLSocketLoopback, AReconnectAttachesAFreshSocketBio) {
     qb::io::test::teardown_rendezvous rv;
     std::thread                       server_thread([&] {
         {
-            // The first connection: shaken hands, then closed by the server -- the client reads its end.
+            // The first connection: shaken hands, then closed by the server at the TCP level alone -- no close_notify
+            // (Huly QB-1270), so the client's BIO reads the end of the stream itself.
             qb::io::tcp::ssl::socket first;
             ASSERT_TRUE(qb::io::test::accept_within(listener, first));
             drive_server_handshake(first);
+            first.quiet_shutdown();
             first.disconnect();
         }
         qb::io::tcp::ssl::socket second;

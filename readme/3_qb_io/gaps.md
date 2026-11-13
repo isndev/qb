@@ -15,7 +15,7 @@ The complete list, and it is short. Everything else in `qb-io` reaches coroutine
 | Spelling | Parks on | Declared |
 |---|---|---|
 | `co_await sleep(qb::duration)` | a `ev_timer`; a non-positive duration is a cooperative yield with no timer at all | `coroutine/utils.h:101` |
-| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:127`, `:158`, `:181` |
+| `co_await wait_readable(fd)` / `wait_writable(fd)` / `wait_for_io(fd, events)` | a `ev_io` watcher on a **raw descriptor** | `coroutine/utils.h:126`, `:157`, `:180` |
 | `co_await tcp::connect<Transport>(uri, timeout, verify_peer)` | the callback connector's completion | `async/tcp/connector.h:1040` |
 | `co_await tcp::starttls_connect<Transport, Negotiator>(uri, timeout, verify_peer)` | the same, plus an in-band TLS upgrade | `async/tcp/connector.h:1266` |
 | `co_await async_awaiter<T>(start_op)` | whatever callback you hand it | `coroutine/awaiter.h:627` |
@@ -53,7 +53,7 @@ Two caveats that the acceptor component handles for you and this loop does not: 
 
 ## A session has no `co_await read()`
 
-Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:3089`), are framed by the active protocol in `process_messages()` (`:2914`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
+Nothing lets you write `auto msg = co_await session.next_message()`. Bytes arrive at the `io` base's `on(event::io const &event)` handler (`src/qb/io/async/io.h:3117`), are framed by the active protocol in `process_messages()` (`:2942`), and are delivered synchronously to your `on(Protocol::message&&)`. The read loop drains every complete frame in the buffer before returning.
 
 The bridge in the other direction is the one qbm's three modules use, and it is worth naming because it is the pattern: a request is written, its completion callback is stored, and an awaiter parks the coroutine until that callback fires. `async_awaiter<T>` does this generically (`src/qb/io/async/coroutine/awaiter.h:627-709`), and the modules hand-roll the same shape when they need a richer result type. See [C++20 coroutines](./coroutines.md#bridging-a-callback-api) for the mechanics and the lifetime rules.
 
@@ -63,7 +63,7 @@ Not one `co_await`, `co_return`, `task<` or awaiter appears in any of the eight 
 
 Three properties of the design make an awaiter genuinely hard here, and they are visible in the code rather than being a matter of taste:
 
-- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:686`). `wait_readable` has nothing to park on.
+- **There is no per-stream descriptor.** One UDP socket feeds `_backend->on_udp_datagram(...)` for every connection and every stream (`src/qb/io/async/quic/endpoint.h:710`). `wait_readable` has nothing to park on.
 - **`event::stream_data::payload` is a borrowed view.** The backend batches every connection's events into one vector that the endpoint drains in a single loop, and the payload is a `std::string_view` into that vector (`src/qb/io/async/quic/endpoint.h:329`). It cannot survive a suspension, so an awaiter would have to copy every frame before parking — which is exactly what the protocol layer already lets you decide for yourself.
 - **Resuming inside the drain is the bug the endpoint guards against.** `drain_backend_events` refuses to re-enter, setting `_drain_events_again` and returning instead (`src/qb/io/async/quic/endpoint.h:259-296`); the header calls the alternative "the root of a whole class of UAF / buffer-underflow bugs". A coroutine resumed mid-drain is precisely that re-entrancy.
 
@@ -73,7 +73,7 @@ Use the callback surface, and if you want coroutine ergonomics on top of it, par
 
 `event::signal<Sig>` wraps a libev `ev::sig` watcher (`src/qb/io/async/event/signal.h:82`) and is delivered like any other event: register it, implement `on(event::signal<SIGINT>&)`. There is no `co_await wait_signal(SIGINT)`.
 
-Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1691-1724`). That is the supported path, and it is an actor-tier concern.
+Under `qb-core` you do not use it directly at all: `qb::Main` installs the process-level handler and turns a raw signal into a `SignalEvent` broadcast, one per signal raised (repeats of the same signal between two passes coalesce), which reaches actors through `onSignal` / `kill()` (`src/qb/core/VirtualCore.cpp:1696-1729`). That is the supported path, and it is an actor-tier concern.
 
 ## File I/O is watched metadata plus a blocking read
 
@@ -82,7 +82,7 @@ This one is a **capability gap, not a documentation gap**, and it is the one mos
 `async::file<Derived>` is `file_watcher<Derived>` composed with `transport::file` (`src/qb/io/async/file.h:44-46`). Two things follow:
 
 - **The notification is a `stat()` comparison — inotify-woken on Linux, polled elsewhere.** `file_watcher::start(path, interval)` arms a libev `ev::stat` watcher, which compares two `stat()`s of the path. On Linux qev also adds an inotify watch: for a path on a filesystem libev knows to be local — ext2/3/4, xfs, btrfs, tmpfs, ramfs, jfs, reiserfs, fat, ntfs — a change wakes the loop at once and `interval` is not used (`infy_add` in `src/qb/ev/ev.c`); on any other filesystem (overlayfs, NFS, CIFS, 9p, FUSE, ZFS, …) inotify still catches local writes and the path is also `stat()`ed every `interval` for what it cannot see, and where inotify cannot be set up at all (the per-user watch limit, say) it is polling alone. On macOS and Windows it is always polling: one `stat()` per `interval`, 100 ms by default (`src/qb/io/async/io.h:635`), and libev raises any interval under ~0.107 s to that floor (`MIN_STAT_INTERVAL`, applied in `ev_stat_start`). Where it polls, a shorter interval costs CPU proportionally. Nowhere does the event carry an inotify, FSEvents or `ReadDirectoryChangesW` record: it is the previous and the current `stat`.
-- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:675-698`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is just as synchronous: it commits `out()` with the descriptor's ordinary blocking `write` (`src/qb/io/stream.h:464-480`) -- until 3.3 an override made it a placeholder that returned `0` and wrote nothing.
+- **The read is synchronous.** When the watcher reports growth, `read_all()` loops `Derived.read()` until the file is drained (`src/qb/io/async/io.h:675-698`), and that read is `qb::io::sys::file::read`, an ordinary blocking descriptor read (`src/qb/io/system/file.h:166`). `transport::file::write()` is just as synchronous: it commits `out()` with the descriptor's ordinary blocking `write` (`src/qb/io/stream.h:491-507`) -- until 3.3 an override made it a placeholder that returned `0` and wrote nothing.
 
 On a page-cached local file the read returns without ever blocking and none of this is observable. On a cold file, a network filesystem, or a slow device, the `VirtualCore` thread stops inside `read()` — every actor on that core with it, and with no diagnostic, exactly as described for [`run_sync`](./async_system.md#run_sync-and-run_for-block-the-calling-thread).
 
@@ -92,11 +92,11 @@ What to do about it, in order of preference: read the file **before** `qb::Main:
 
 `qb::io::socket::resolve` and its `_v4` / `_v6` / `_v4to6` siblings call `getaddrinfo` directly (`src/qb/io/system/sys__socket.h:1497-1540`). `getaddrinfo` is a blocking call: on a cache miss it does network I/O and can take as long as the resolver takes.
 
-That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:776-780`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:90-100`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
+That matters more than it first appears, because the resolution is on the **coroutine** connect path too. `co_await tcp::connect(uri)` calls `await_suspend`, which runs the callback `connect` overload synchronously — that overload builds a `connector` and calls `run()` before returning (`src/qb/io/async/tcp/connector.h:776-780`). `run()` resolves a hostname URI with `tcp::resolve_endpoints` (`src/qb/io/async/tcp/connector.h:541`), which walks `resolve_i` for every address of the URI's family before the first non-blocking `connect` syscall (`src/qb/io/tcp/socket.cpp:96-106`). **The DNS lookup therefore happens before the coroutine ever parks**, on the loop thread. What the connector does with the list since 3.3 is the other half: it tries the addresses in order, and one that refuses, fails or does not answer within its share of the deadline gives way to the next (Huly QB-164) -- a dead address in a DNS round-robin no longer fails the connect.
 
 There is no asynchronous resolver in the tree, so the honest options are:
 
-- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:262`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
+- Connect to an **endpoint** rather than a hostname where you can. `n_connect(endpoint const&)` performs no lookup (`src/qb/io/tcp/socket.cpp:268`), and `qb::io::endpoint::as_in(host, port)` accepts a numeric address.
 - Resolve on the offload pool, then connect to the addresses it returns, with the same fallback -- the lookup blocks a pool thread, not the loop:
 
   ```cpp

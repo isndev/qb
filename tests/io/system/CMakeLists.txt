@@ -91,6 +91,8 @@ qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-block
 qb_add_test(MODULE qb-io TIER system NAME logger-fork-exit SOURCES io/logger-fork-exit.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-loop SOURCES quic/quic-endpoint-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
+# Huly QB-1246: close() no longer arms its timer, so an endpoint with static storage -- closed after its thread's loop -- ends cleanly at exit.
+qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-static-exit SOURCES quic/quic-endpoint-static-exit.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network LABELS coroutine)
 if (TARGET qb-io-test-system-quic-handshake AND NOT QB_INSTALL)
     target_compile_definitions(qb-io-test-system-quic-handshake PRIVATE QB_IO_QUIC_TEST_HOOKS=1)
 endif ()
@@ -161,7 +163,8 @@ if (QB_HAS_SSL)
                 qb-io-test-system-tls-worker-deadline
                 qb-io-test-system-text-session-loopback
                 qb-io-test-system-quic-handshake
-                qb-io-test-system-quic-endpoint-loop)
+                qb-io-test-system-quic-endpoint-loop
+                qb-io-test-system-quic-endpoint-static-exit)
             if (TARGET ${_ssl_dep})
                 add_dependencies(${_ssl_dep} generate_ssl_certs)
             endif ()
@@ -247,6 +250,45 @@ qb_add_test(MODULE qb-io TIER system NAME suspension-tracking SOURCES coroutine/
 # disconnect() the peer reads EOF and nothing is reset, unread input included; a peer's EOF leaves no CLOSE_WAIT
 # socket; a hook that closes the transport again closes nothing else.
 qb_add_test(MODULE qb-io TIER system NAME standalone-dispose-ends-transport SOURCES tcp/standalone-dispose-ends-transport.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+# A standalone object that ends its own connection gives its descriptor to its thread's loop, which closes it after
+# the peer -- on the peer's EOF, an error, linger() or 16 MiB dropped, at most 64 at a time -- so a peer that keeps
+# writing is cut instead of blocked for ever and the object's last bytes survive its destruction or its reconnection;
+# a size guard or a linger of zero closes at once; an acceptor and a datagram object keep their socket (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer SOURCES tcp/close-after-peer.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+# The loop's side of that close: a blocking run() returns when the last closing socket is gone, the bound runs on the
+# loop, a thread that ends closes what its loop held, and the number the loop closes is heard again by the connection
+# that takes it -- the file to run under each QB_EV_BACKEND, which its fixture asserts (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer-loop SOURCES tcp/close-after-peer-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+# A TLS socket that gives its descriptor away detaches its SSL object from it: a write on the transport afterwards
+# reaches nothing, where it wrote a TLS record of the ended connection into whichever socket took the number (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer-tls SOURCES tcp/close-after-peer-tls.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+# A TLS connection this side ends tells its peer so: one close_notify before the FIN, never awaited, read by a raw
+# OpenSSL peer as a clean end where 3.3 gave it an unexpected EOF -- every own-ended close, a session's lingering close
+# included; none when the peer ended it, before the handshake, or when queued output is dropped; a socket that cannot
+# take the alert is closed without it; and a saved session resumes after either side closed (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME tls-close-notify SOURCES tls/tls-close-notify.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+# Where the close after the peer meets the end of a thread's loop (Huly QB-1270 with QB-1246): a connection a coroutine
+# frame ends while its thread's listener is destroyed is closed by that teardown, one an object with static storage
+# ends after it is closed in the call (a child process), one handed over on a thread with no loop builds it, and
+# clear() closes as many closing sockets as a loop may hold.
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer-teardown SOURCES tcp/close-after-peer-teardown.cpp DEPENDS ${PROJECT_NAME} REQUIRES network LABELS coroutine)
+# Each of the three allocations of a closing socket's node fails in turn: closed at once, nothing left registered.
+# Alone in its binary: it replaces the global allocation functions (Huly QB-1270) -- which clang's ThreadSanitizer cannot
+# link off Apple: there its runtime is a static archive whose new/delete object defines every form, and each replaced
+# one is a duplicate definition (clang-22, libclang_rt.tsan_cxx, the sanitize-thread lane; the string test meets the
+# same). A capability gate, not a skip: g++'s TSan and Apple's (shared runtimes, measured: 2 / 2 on the macOS image),
+# ASan and every other build run it.
+if (NOT (QB_SANITIZE MATCHES "thread" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT APPLE))
+    qb_add_test(MODULE qb-io TIER system NAME close-after-peer-alloc SOURCES tcp/close-after-peer-alloc.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+endif ()
+# A server session that ends its own connection with everything written is released at once and its descriptor
+# closes after the peer, on the loop; one that lingered, has output queued, was ended by its size guard or has a
+# linger of zero closes with the session; close_after_deliver() lingers in time alone (a peer still sending 64 MiB
+# reads the reply); a disposed session somebody still holds -- io, input or output -- is not dispatched (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME session-close-after-peer SOURCES tcp/session-close-after-peer.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
+# The loop's closes at the descriptor limit -- never above their cap under a limit of 256, given back at once to a
+# connect or an accept that EMFILE refuses -- and over AF_UNIX stream sockets (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME close-after-peer-posix SOURCES tcp/close-after-peer-posix.cpp DEPENDS ${PROJECT_NAME} REQUIRES network WINDOWS_EXCLUDE) # POSIX-only: fork, setrlimit(RLIMIT_NOFILE), AF_UNIX
 
 # The standalone loop drivers park in the backend instead of sleeping blind (Huly QB-1103): a reply ends
 # run_until's and run_sync's idle park at poll latency (the median of 200 loopback round trips awaited on
@@ -281,6 +323,11 @@ if (QB_IO_EV_TEST_BACKENDS)
     # to auto would pass while testing another backend than the one its name promises.
     # connector-clock and timeout-clock (Huly QB-1194) hold a connect deadline and a timeout's
     # time left on the monotonic clock: each runs under every backend's wait.
+    # close-after-peer, close-after-peer-loop and session-close-after-peer (Huly QB-1270): the loop closes a
+    # descriptor number that the system hands out again at once, and a second watcher is started on a number
+    # whose first watcher was stopped in the same pass -- each backend must hear the new socket.
+    # tls-close-notify (Huly QB-1270): the alert is written before the descriptor goes to the loop, and the
+    # loop then reads what a TLS peer answers as bytes -- each backend must hear that socket to its EOF.
     set(QB_IO_BACKEND_SENSITIVE_TESTS
             qb-io-test-system-tcp-socket-loopback
             qb-io-test-system-async-bases-framing
@@ -290,6 +337,10 @@ if (QB_IO_EV_TEST_BACKENDS)
             qb-io-test-system-offload
             qb-io-test-system-connector-clock
             qb-io-test-system-timeout-clock
+            qb-io-test-system-close-after-peer
+            qb-io-test-system-close-after-peer-loop
+            qb-io-test-system-session-close-after-peer
+            qb-io-test-system-tls-close-notify
             qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})

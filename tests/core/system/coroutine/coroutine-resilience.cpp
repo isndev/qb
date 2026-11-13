@@ -39,8 +39,8 @@
  * the centralized retry tunables below — chosen with wide margins, with the ctest TIMEOUT as the
  * sole wall-clock backstop (no tight EXPECT_LT is ever used as an oracle).
  *
- * Run under ASAN_OPTIONS=detect_leaks=0 like the rest of the actor-coroutine suites (cross-core /
- * detached asks leave a fixed, benign teardown residual — see system/coroutine/ask-roundtrip.cpp).
+ * LeakSanitizer runs it in the `sanitize` lane, like the rest of the suite, and reports no teardown
+ * residual of a cross-core or detached ask (Huly QB-1246).
  *
  * Promoted from the engine half of the former test-actor-coroutine-resilience.cpp; responders and
  * the kill-then-stop driver are hoisted to shared/AskResponders.h (single source of truth).
