@@ -756,7 +756,7 @@ public:
      *          No alert is sent, and false returned:
      *          - while no session is established or a handshake message is in flight -- before the handshake
      *            completed, after a fatal TLS error (OpenSSL forbids the call, and has sent the alert the error called
-     *            for; OpenSSL 4 makes one of a socket error met by a read or by a write of application data, a reset
+     *            for; OpenSSL 4 makes one of a socket error met by a receive or by a write of application data, a reset
      *            and the errors qb-io makes a call again after included), during a renegotiation, or while a TLS 1.3
      *            post-handshake message is still arriving: nothing is recorded either;
      *          - once this side's end is recorded: a second call, after `quiet_shutdown()`, or after `read()` or
@@ -841,8 +841,9 @@ public:
      *          session without the alert, as `quiet_shutdown()` does: nothing more is written into that connection
      *          (Huly QB-1270) -- with OpenSSL 4 nothing needs recording, OpenSSL ended the session itself. One it reads
      *          as "try again" (an `EINTR` from a BIO that fails a read with it) is left to the caller, which reads
-     *          again, where OpenSSL lets the session go on (OpenSSL 3 does, renegotiating or not); where OpenSSL ended
-     *          it -- OpenSSL 4 does, renegotiating or not -- the read reports the session aborted instead:
+     *          again, where OpenSSL lets the session go on (OpenSSL 3 does, and OpenSSL 4 when the error met a
+     *          handshake message's write, a renegotiation's ClientHello); where OpenSSL ended it -- OpenSSL 4 does when
+     *          the error met the receive, renegotiating or not -- the read reports the session aborted instead:
      *          `ECONNABORTED` (`WSAECONNABORTED` on Windows), an error nobody reads again after (measured: 4.1.0).
      */
     int read(void *data, std::size_t size) noexcept;
