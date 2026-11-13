@@ -239,8 +239,8 @@
  * @def QB_MAX_READ_BUFFER_SIZE
  * @brief Maximum allowed size for input buffers (DoS protection)
  * @details Limits the maximum size that an input buffer can grow to before reading is rejected.
- * If the buffer size would exceed this limit during a read operation, the read will fail
- * and the connection will be closed. Default is 200MB.
+ * A read takes at most the room left under this limit, so the buffer never passes it; once the buffer
+ * is full the next read fails and the connection is closed. Default is 200MB.
  * @note This is a critical safety measure against DoS attacks where an attacker sends
  *       data that never forms a complete message, causing the buffer to grow indefinitely.
  *       Without this limit, an attacker could exhaust server memory by keeping connections

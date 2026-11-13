@@ -326,7 +326,8 @@ registry, or as a member — never relocate them.
   writes nothing drops what arrived (`src/qb/io/async/io.h:3195-3199`,
   `:2212-2222`) until the peer's EOF, a socket error or the bound —
   `linger()`, 2 s by default, `set_linger()` — ends it at the error label,
-  which disposes as for any graceful close. The bound's timer only flags the
+  which disposes as for any graceful close. A session whose read cap is 0
+  can drain nothing: its linger ends at the first octet that arrives. The bound's timer only flags the
   expiry and feeds the watcher (`src/qb/io/async/io.h:2226-2229`): the
   session, which owns the timer, is never disposed from under it. `dispose()`
   releases the timer whatever ended the linger (`src/qb/io/async/io.h:3302`),
@@ -521,7 +522,7 @@ peer's memory footprint (`src/qb/io/config.h:174-175`, `:250-251`, `:264-265`):
 | Constant | Default | Enforced by |
 | --- | --- | --- |
 | `QB_MAX_MESSAGE_SIZE` | 100 MB | per-message cap; over-limit marks the protocol `not_ok()` and disconnects with `message_too_large` |
-| `QB_MAX_READ_BUFFER_SIZE` | 200 MB | input buffer growth; over-limit returns `ErrBufferLimitExceeded` and disconnects with `buffer_overflow` |
+| `QB_MAX_READ_BUFFER_SIZE` | 200 MB | input buffer growth; a read takes at most the room left, and one that finds none returns `ErrBufferLimitExceeded` and disconnects with `buffer_overflow` |
 | `QB_MAX_WRITE_BUFFER_SIZE` | 200 MB | output buffer growth; over-limit makes `publish()` return `nullptr` and disconnects with `buffer_overflow` |
 
 Setting a cap to `SIZE_MAX` disables that limit

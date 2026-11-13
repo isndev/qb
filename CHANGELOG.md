@@ -37,6 +37,34 @@ policy.
   member of the same name a derived session declares hides them, as before. A session that lowers the cap gets its
   `publish()` held to it at once -- below what is already queued, the next `publish()` disconnects. A transport given to
   `tcp::client` provides both names, as `qb::io::stream`, the base of every shipped transport, does.
+- **A TCP session reads and sets its transport's read-buffer cap as well: `max_read_buffer_size()` and
+  `set_max_read_buffer_size()` on `qb::io::async::tcp::client` (Huly QB-86).** The session re-exposed the write cap's
+  two accessors and left the read cap's where they were, members of its private transport: a session could bound what
+  it queues for a peer and not what a peer makes it buffer, and neither it nor a protocol over it could read the cap
+  `read()` enforces (`QB_MAX_READ_BUFFER_SIZE`, 200 MB, by default) -- `set_max_read_buffer_size()` on a session did
+  not compile. Both names are public now on the two forms of the session, the server-associated one and the
+  standalone one, over TCP and over TLS alike (`use<S>::tcp::client`, `use<S>::tcp::ssl::client`), beside the write
+  cap's. A cap set while the session is connected is the one its next read obeys: the session reads up to it, and
+  once its input buffer holds that much with no message consumed, the next read is refused -- whether more octets
+  or the peer's end of stream brings it -- and the session ends with `disconnect_reason::buffer_overflow`, not as
+  closed by its peer (what a cap means for a read: under Fixed). A cap of 0 refuses every read. A member of the
+  same name a derived session declares hides them, as for the write cap. A transport given to `tcp::client`
+  provides both names, as `qb::io::stream`, the base of every shipped transport, does.
+- **`qb::io::transport::stcp::held_input()`: the decrypted octets a TLS transport holds that no read has taken (Huly
+  QB-86).** `std::size_t held_input() const noexcept` is OpenSSL's `SSL_pending()` for the transport's session, and 0
+  without one. A TLS record is decrypted whole, so a `read()` with less room than the record leaves the rest inside
+  the session, where no readiness of the socket announces it. `async::io` and `async::input` read it on their own
+  (under Fixed); a component that drives `read()` itself calls it again, once its input buffer has room, while
+  `held_input()` is not zero. Beside it, `bool last_read_filled() const noexcept` says whether the transport's last
+  read of the socket filled the place it asked for -- the only read that can leave octets of its record behind --
+  and the two bases test it before they ask `held_input()` after a read. A transport of your own that buffers below
+  its descriptor declares `held_input()` and is read the same way, under one obligation: it counts only octets its
+  next `read()` with room takes. A component is dispatched again only after a read that took octets, so held input
+  that no read takes is asked for once -- by `start()` or `ready_to_read()` -- and never again. Such a transport may
+  declare `last_read_filled()` as well; without it the bases ask after every read that took octets. The async base
+  must be able to name what the transport declares: on a component composed by hand over a private transport, with
+  no `friend` for its base, the member is taken for absent, silently, and nothing is read for it
+  (`async::tcp::client` names its base a friend).
 - **`qb::deadline_at(qb::mono_time)`: a `qb::deadline` built from an instant of the monotonic clock (Huly QB-1199).**
   The typed spelling of `deadline{...}`: `qb::deadline_at(qb::mono_now() + 2s)`, `qb::deadline_at(qb::mono_time::max())`
   for a deadline never met, an instant before the clock's epoch for one already past. Why `at_ns` is no longer a date:
@@ -785,6 +813,75 @@ policy.
     record of a case and the judge that reads it, the places a program ends from, and the matcher of a child whose
     stderr is its verdict and nothing else.
 
+- **A read takes the room left under the read-buffer cap and is refused only when none is left: a cap below 64 KiB no
+  longer refuses every read, and a stream that fits its cap is read whole (Huly QB-86).** `qb::io::istream::read()`
+  -- the read of every stream transport -- and `transport::stcp::read()` asked for a whole bucket
+  (`QB_DEFAULT_READ_BUFFER_SIZE`, 65 536 octets) and answered `ErrBufferLimitExceeded` whenever a bucket did not fit
+  under `max_read_buffer_size()`. Two consequences, neither of them what a cap says. A cap below the bucket refused
+  EVERY read: a stream given a cap of 1 KiB, or of 32 KiB, never read an octet, and its session was disconnected with
+  `buffer_overflow` at the first one that arrived. And a stream whose buffered input came within a bucket of its cap
+  was refused although the octets waiting fit: under a cap of 100 000 octets, the read that followed the 34 465th
+  buffered octet was refused, so what a cap let through depended on where the reads happened to fall. A read now asks
+  for the bucket or the room left, whichever is smaller, never reads past the cap, and is refused only when the
+  buffer already holds the cap -- or more, a cap set under what is buffered; what a read has no room for stays where
+  it was, and is read once the protocol has consumed. Unchanged: a cap of `SIZE_MAX` (-1) is no cap, a cap of 0
+  refuses every read, and `transport::udp`, which keeps a datagram whole or not at all, and the QUIC stream, which
+  is handed whole pieces, already refused only what does not fit. Unchanged too, and now written down: a buffer at
+  its cap is refused at the next read whatever brings that read, so a peer that ends its stream then ends the
+  session as an overflow (`buffer_overflow`), not as a close (`peer_closed`). A read costs no more than it did: one
+  of its two comparisons selects the size where it branched (arm64, Release: 25 instructions run for a TCP read that
+  fills its bucket, where 29 did).
+
+  Over TLS a record is decrypted whole, so a read with less room than the record leaves the rest inside the TLS
+  session -- which could not happen while a read took a whole bucket, larger than any record. The socket is empty by
+  then and raises no event for those octets: `async::io` and `async::input` now dispatch the component again while
+  its transport holds some (`transport::stcp::held_input()`, under Added), as a level-triggered loop does for octets
+  still in a socket -- read when the protocol has made room, refused when it has not. Nothing waits inside the
+  session for the peer's next record. That dispatch is for a started component with its protocol in place, after a
+  read that took octets: a session that calls `stop()` in a handler is left alone, and `start()` and
+  `ready_to_read()` ask once for what the transport holds, so a session that resumes, or the new owner of an
+  extracted transport, reads it -- with its protocol in place: `start()` then `switch_protocol<P>()`, in that order,
+  asks while there is no protocol to read with, and feeds nothing. `transport::stcp::read()` is one read of the
+  socket now: the second read it made, of what OpenSSL still held, could not run after a read of a whole bucket and
+  is gone. An ordinary TLS dispatch pays one flag for this: `read()` records whether it filled the place it asked
+  for (`last_read_filled()`, under Added), and the bases ask OpenSSL what the session holds only after such a read.
+
+  A session can set a cap of 0 now, to read nothing more. Its lingering close -- which reads and drops what the peer
+  still sends until the peer closes or `linger()` elapses -- can then drain nothing: it ends at the first octet that
+  arrives, where it would have been dispatched for that octet on every pass of the loop until its bound.
+  - **Witness.** Thirty-one cases in six test binaries that already existed. `qb-io-test-unit-stream-templates` reads
+    a scripted transport under a cap of 1 KiB, a cap of one bucket and 1000 octets filled exactly, a cap set under
+    what is buffered, and under a cap of four buckets and no cap, where one read takes exactly a bucket: with the read
+    as it was, the first three fail on a read refused where the cap has room for 1024 octets, for 1000 and for 7.
+    `qb-io-test-system-secure-transport-loopback` does the same over a TLS connection whose two ends the test thread
+    drives, record by record: of a 3000-octet record under a 1 KiB cap, 1976 octets are held inside the session with
+    the socket empty, kept while the read is refused for want of room, and read in order as the buffer is flushed; two
+    of those three cases fail before, and a fourth follows, read by read, what the transport records of its last read.
+    `qb-io-test-system-tls-text-roundtrip` runs a session that sets its own cap, over TLS and over TCP with one
+    harness -- forty lines under a 1 KiB cap, then a line the cap cannot hold; a stream of exactly the cap, then one
+    octet more, or the peer's end of stream -- and one TLS record of thirty lines under a cap that holds ten, on a
+    session and on a component built on `input<>`: without the dispatch for what the transport holds, ten lines are
+    delivered and 1976 octets wait inside the session until the case gives up; a session that stops itself after those
+    ten is delivered nothing more, and its `start()` delivers the other twenty.
+    `qb-io-test-system-async-bases-framing` pins the dispatch without TLS, on components whose transport holds its
+    input in memory over a socket nobody writes to: read from `start()` on and from `ready_to_read()`, not while
+    stopped, not before the component has a protocol -- it stays connected, and reads once it has one -- not while a
+    duplex component waits for writes alone, once only when the reads take nothing (a watchdog ends the case where
+    that would otherwise never return), and, for a transport that says which of its reads filled their place, with no
+    question after one that did not. `qb-io-test-system-text-protocol-roundtrip` has a lingering session with a cap of
+    0 end at its peer's next octet, under a bound of 30 s. `qb-io-test-system-transport-accept-loopback` reads and
+    sets the cap on both forms of the session, and has a connected session read six octets of ten under the cap of six
+    it has just set. The binaries that set a session's cap did not compile before: a session had no such member.
+- **`file_watcher::read_all()` returns when its input buffer holds its read cap, instead of reading for ever (Huly
+  QB-86).** `read_all()` reads until a read returns nothing. A read the cap refuses returns neither nothing nor a
+  failure, and `read_all()` took it for octets read: it read again, was refused again, and never returned -- the
+  thread's loop stopped inside it, with every actor of that core. A watched file reached it by growing to within a
+  bucket of the cap (200 MB by default) with nothing its protocol frames, and so did an `async::file` given that
+  much content its protocol does not frame. It answers -1 now, as for a read that fails: the watcher stops and the
+  file is closed.
+  - **Witness.** `KernelEvents.ReadAllEndsWhenTheInputBufferHoldsItsCap` (`qb-io-test-system-kernel-events`) reads a
+    5000-octet file with no message in it under a cap of 1 KiB: one read to the cap, one refused, -1. Before, a
+    watchdog in the test's own `read()` ends the loop after 10 000 reads.
 - **A TLS session saved from a connection resumes after that connection is closed (Huly QB-1270).** OpenSSL discards
   the session of an `SSL` object freed while its shutdown state says this side never ended the session, and no qb
   close has set that state since the `SSL_shutdown()` call was taken out of `ssl::socket::disconnect()`, before 2.0:

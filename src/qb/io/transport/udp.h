@@ -349,6 +349,10 @@ public:
      *          Upon successful read, `_remote_source` is updated with the sender's endpoint,
      *          and `setDestination(_remote_source)` is called to set this as the default reply-to target.
      *          The maximum datagram size read is `io::udp::socket::MaxDatagramSize`.
+     * @note The input buffer never grows past `max_read_buffer_size()`. A datagram is kept whole or not at all: one
+     *       longer than the room left under the cap is taken off the socket and dropped, and the read answers
+     *       `ErrBufferLimitExceeded` with `EMSGSIZE` as the system error; with the buffer already past a cap set
+     *       under it, the read is refused before the socket is touched.
      */
     [[nodiscard]] int
     read() noexcept {

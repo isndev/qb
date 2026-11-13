@@ -123,8 +123,8 @@ public:
      * @param size Maximum buffer size in bytes, or -1 (SIZE_MAX) for unlimited
      * @note The default is `QB_MAX_READ_BUFFER_SIZE` (200 MB). Setting -1
      *       (SIZE_MAX) disables the limit entirely — not recommended for
-     *       network-facing components. This is a security-critical setting
-     *       that prevents DoS attacks via buffer exhaustion.
+     *       network-facing components. This is a security-critical setting that prevents DoS attacks via buffer exhaustion: `read()`
+     *       fills the buffer up to it, never past it, and is refused with no room left; 0 refuses every read and ends a lingering close.
      */
     void
     set_max_read_buffer_size(std::size_t size) noexcept {
@@ -136,15 +136,15 @@ public:
      * @return Number of bytes read on success, error code on failure
      *
      * This method is enabled only if the IO type has a compatible read method.
-     * It reads data in fixed-size chunks and adjusts the buffer size based
-     * on the actual number of bytes read.
+     * It reads at most `QB_DEFAULT_READ_BUFFER_SIZE` octets, and at most the room left under
+     * `max_read_buffer_size()`, then keeps the number of bytes actually read.
      *
-     * @note **Security:** If the buffer size would exceed `max_read_buffer_size()` after
-     *       this read, the operation fails with error code -2 to prevent DoS attacks.
+     * @note **Security:** The buffer never grows past `max_read_buffer_size()`: a read takes at most the room left, and
+     *       once none is left the operation fails with error code -2 (`ErrBufferLimitExceeded`) to prevent DoS attacks.
      */
     /**
      * @brief Read data from the input stream into the internal buffer
-     * @return Number of bytes read, or negative value on error
+     * @return Number of bytes read, or negative value on error (-2, `ErrBufferLimitExceeded`: no room left under the cap)
      *
      * C++20: using requires clause instead of std::enable_if_t for cleaner syntax.
      * This method is only available when the underlying IO type has a compatible read method.
@@ -157,12 +157,12 @@ public:
         constexpr std::size_t bucket_read = QB_DEFAULT_READ_BUFFER_SIZE;
         static_assert(bucket_read <= QB_MAX_IO_SIZE, "Buffer size exceeds safe I/O limits");
 
-        if (_max_read_buffer_size < _in_buffer.size() || bucket_read > _max_read_buffer_size - _in_buffer.size()) {
-            return ErrBufferLimitExceeded;
+        if (_in_buffer.size() >= _max_read_buffer_size) {
+            return ErrBufferLimitExceeded; // no room left under the cap (or the cap was set under what is buffered)
         }
-
-        // Clamp to max I/O size to prevent integer overflow in platform APIs
-        const std::size_t read_size = (bucket_read > QB_MAX_IO_SIZE) ? QB_MAX_IO_SIZE : bucket_read;
+        // At most the room left under the cap: a cap below the bucket still reads, and no read goes past the cap (Huly QB-86)
+        const std::size_t room      = _max_read_buffer_size - _in_buffer.size();
+        const std::size_t read_size = room < bucket_read ? room : bucket_read;
 
         const auto ret = _in.read(_in_buffer.allocate_back(read_size), read_size);
         if (ret >= 0)

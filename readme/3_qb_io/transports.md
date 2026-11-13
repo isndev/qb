@@ -38,7 +38,7 @@ sequenceDiagram
 
 Five things are worth noticing in that picture, because each one is a rule somewhere else:
 
-1. **The read is one call of a fixed size.** `istream::read()` reserves `QB_DEFAULT_READ_BUFFER_SIZE` (65 536) bytes at the tail of the input pipe, reads into it, and hands the unused tail straight back with `free_back` (`src/qb/io/stream.h:167-171`). No memmove, no realloc on the common path — that is [the pipe's cursor model](../0_foundations/buffers.md#what-allocate_back-actually-does) doing its job.
+1. **The read is one call, of one bucket at most.** `istream::read()` reserves `QB_DEFAULT_READ_BUFFER_SIZE` (65 536) bytes at the tail of the input pipe -- or the room left under the read cap, when that is less (`src/qb/io/stream.h:164-165`) -- reads into it, and hands the unused tail straight back with `free_back` (`src/qb/io/stream.h:167-171`). No memmove, no realloc on the common path — that is [the pipe's cursor model](../0_foundations/buffers.md#what-allocate_back-actually-does) doing its job.
 2. **The framing loop drains everything buffered before returning.** Several messages in one read are dispatched in one turn.
 3. **The framework, not the protocol, removes the bytes** — `flush(size)` after `onMessage`, and only when the protocol's `should_flush()` says so.
 4. **Output is drained in the same handler**, not on a separate `EV_WRITE` wake-up, whenever the read produced something to send (`src/qb/io/async/io.h:3185`). Waiting for libev to report writability instead lets the output buffer grow without bound under sustained read pressure — measured on SSL-over-UDS on macOS, where the kernel socket buffer is much smaller than TCP loopback.
@@ -195,19 +195,21 @@ The three stream templates live in `qb/io/stream.h`. Each is parameterized by th
 
 `stream::write()` calls `this->_in.write(...)`, so a bidirectional stream sends through the same socket it reads from. Reading and writing both go through buffers, so partial reads and partial writes are handled by the stream, not by your code.
 
-Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components. A TCP session -- `qb::io::async::tcp::client`, what `use<S>::tcp::client` and its TLS form build on -- holds its transport as a private base and re-exposes `max_write_buffer_size()` and `set_max_write_buffer_size()` with `in()` and `out()`, so a session reads and sets its own write cap, and a protocol over it reads the cap it really has (Huly QB-86: a session could reach neither).
+Buffer growth is bounded for denial-of-service protection. `set_max_read_buffer_size(size)` and `set_max_write_buffer_size(size)` adjust the per-stream caps at runtime; the defaults are `QB_MAX_READ_BUFFER_SIZE` and `QB_MAX_WRITE_BUFFER_SIZE` (200 MB each, defined in `qb/io/config.h`). The per-read chunk size is `QB_DEFAULT_READ_BUFFER_SIZE` (65536 bytes). Passing `SIZE_MAX` to either setter disables the cap; that is not recommended for network-facing components. A TCP session -- `qb::io::async::tcp::client`, what `use<S>::tcp::client` and its TLS form build on -- holds its transport as a private base and re-exposes `max_write_buffer_size()` and `set_max_write_buffer_size()` with `in()` and `out()`, so a session reads and sets its own write cap, and a protocol over it reads the cap it really has (Huly QB-86: a session could reach neither). It re-exposes `max_read_buffer_size()` and `set_max_read_buffer_size()` beside them (since 3.4, Huly QB-86): a session bounds what a peer makes it buffer as it bounds what it queues for one.
 
 The cap is enforced at two different layers, and they behave differently, so it is worth knowing which one you are calling:
 
 | Layer | Call | On overflow |
 |---|---|---|
-| stream | `istream::read()` | returns `qb::io::ErrBufferLimitExceeded` (`-2`) without reading (`src/qb/io/stream.h:160-162`) |
+| stream | `istream::read()` | with no room left under the cap, returns `qb::io::ErrBufferLimitExceeded` (`-2`) without reading (`src/qb/io/stream.h:160-162`) |
 | stream | `stream::publish(data, size)` | returns `nullptr` and copies nothing (`src/qb/io/stream.h:545-550`) |
 | CRTP | `io<Derived>::publish(args...)`, i.e. `*this << x` | **disconnects the session** with `disconnect_reason::buffer_overflow` (`src/qb/io/async/io.h:2822-2825`) |
 
 The CRTP layer checks twice, before and after streaming the arguments in, and on the second check it retracts the overflowing tail with `free_back` before disconnecting, so the buffer never actually exceeds its cap (`src/qb/io/async/io.h:2829-2841`). The read-side `-2` is likewise turned into a disconnect one level up, at `reason == -3` (`src/qb/io/async/io.h:3154-3157`). So from a session's point of view every buffer-cap breach ends the connection; the `nullptr`/`-2` returns are what the layer below reports upward.
 
-<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :527 (set_max_write_buffer_size), qb/src/qb/io/async/tcp/client.h:58,60 (the session's re-exports) -->
+The read cap is exact, and that is recent. A read asks for the bucket or the room left under the cap, whichever is smaller (`src/qb/io/stream.h:164-165`), so the input buffer fills to the cap and never past it, and the read is refused only when the buffer already holds the cap -- or more, when a cap is set under what is buffered. Until 3.4 a read was a whole bucket or nothing: a cap below 64 KiB refused every read, and a stream whose buffered input came within a bucket of its cap was refused although the octets waiting fit (Huly QB-86). A cap is therefore sized to the largest message the protocol frames, not to a multiple of the bucket. What a read has no room for stays where it was -- in the socket, or, over TLS, [inside the session](./ssl_transport.md#the-stcp-transport) -- and is read once the protocol has consumed and the buffer has room. A buffer at its cap is refused at the next read whatever brings that read: more octets, or the peer's end of stream, which then ends the session as an overflow rather than as a close by the peer. And a cap of 0 refuses every read: a session that sets it reads nothing more, and its lingering close, which could drain nothing, ends at the first octet its peer still sends.
+
+<!-- src: qb/src/qb/io/stream.h:39 (ErrBufferLimitExceeded), :130 (set_max_read_buffer_size), :527 (set_max_write_buffer_size), qb/src/qb/io/async/tcp/client.h:58,60 (the session's re-exports of the write cap), :64-65 (of the read cap) -->
 
 ### TCP socket: `qb::io::tcp::socket`
 
@@ -352,7 +354,7 @@ These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp
 
 ### Where `transport::stcp`, `transport::file`, and QUIC fit
 
-- **`transport::stcp`** (`qb/io/transport/stcp.h`) is `stream<tcp::ssl::socket>` with `is_secure() == true`. It overrides `read()` to drain OpenSSL's internal buffer via `SSL_pending()` after each socket read, so decrypted application bytes are not stranded. See [Secure (SSL/TLS) transport](./ssl_transport.md).
+- **`transport::stcp`** (`qb/io/transport/stcp.h`) is `stream<tcp::ssl::socket>` with `is_secure() == true`. Its `read()` is one read of the TLS socket, and its `held_input()` says what that read left decrypted inside OpenSSL (`SSL_pending()`): the async bases dispatch the component again for it, so decrypted application bytes are not stranded. See [Secure (SSL/TLS) transport](./ssl_transport.md).
 - **`transport::file`** (`qb/io/transport/file.h`) is `stream<sys::file>` for buffered local-file I/O: `read()` fills `in()` and `write()` commits `out()`, both through the descriptor's ordinary blocking calls. (Until 3.3 an override made `write()` a placeholder that returned `0` and wrote nothing.) Filesystem watching is covered in [the asynchronous I/O model](./async_system.md).
 - **QUIC** is not a `stream`-based transport. It is a reactor-driven endpoint over UDP; see [QUIC transport](./quic_transport.md).
 
@@ -362,7 +364,7 @@ These transports back `qb::io::use<...>::udp::client` and `qb::io::use<...>::udp
 |---|---|---|---|---|---|
 | `transport::tcp` | `stream<tcp::socket>` | `tcp::socket` | no | byte stream (a [protocol](./protocols.md) frames it) | plain buffered read/write |
 | `transport::udp` | `stream<udp::socket>` | `udp::socket` | no | datagram (message-oriented) | per-datagram source/dest; `has_reset_on_pending_read` |
-| `transport::stcp` | `stream<tcp::ssl::socket>` | `tcp::ssl::socket` | yes | byte stream | drains `SSL_pending()` after each socket read |
+| `transport::stcp` | `stream<tcp::ssl::socket>` | `tcp::ssl::socket` | yes | byte stream | `held_input()` counts what a read left decrypted inside OpenSSL (`SSL_pending()`) |
 | `transport::accept` / `saccept` | — (used as an `_IO_` type, not a `stream`) | `tcp::listener` | n/a | one connection per `read()` | remaps transient accept errors to `EWOULDBLOCK` |
 | `transport::file` | `stream<sys::file>` | `sys::file` | no | byte stream | local file I/O; blocking `read()` / `write()` |
 
@@ -541,7 +543,7 @@ int main() {
 - **`udp::socket::init()` returns `bool`; `tcp::socket::init()` returns `int`.** For UDP, `true` means success; for TCP, `0` means success. Check the right sense.
 - **UDP is all-or-nothing.** A datagram larger than `MaxDatagramSize` (65507) is rejected with `EMSGSIZE`, not truncated or split. Fragment large payloads at the application layer; the transport will not do it for you.
 - **Timed waits use `qb::duration`.** `connect(ep, wtimeout)` and `read_timeout(...)` take a `qb::duration` (a `std::chrono::nanoseconds` span). Non-positive durations are clamped to zero (poll once), not treated as "wait forever."
-- **Buffer caps are a DoS guard, not a soft limit.** At the stream layer a read past `max_read_buffer_size()` returns `ErrBufferLimitExceeded` (`-2`) and `stream::publish` returns `nullptr`; at the CRTP layer both become a disconnect (`buffer_overflow`, reason `-3`). Network-facing components should keep the defaults rather than raising the cap to `SIZE_MAX`.
+- **Buffer caps are a DoS guard, not a soft limit.** At the stream layer a read with the input buffer already at `max_read_buffer_size()` returns `ErrBufferLimitExceeded` (`-2`) and `stream::publish` returns `nullptr`; at the CRTP layer both become a disconnect (`buffer_overflow`, reason `-3`). Network-facing components should keep the defaults rather than raising the cap to `SIZE_MAX`.
 - **A composition of an async base and a transport needs a destructor that stops the watcher.** The transport is destroyed first and takes the fd with it; nothing in the type system asks for the `~T() { this->_async_event.stop(); }`. See [the CRTP sandwich](#the-crtp-sandwich-and-the-one-rule-the-type-system-does-not-enforce).
 - **Do not drive sockets directly inside an actor.** The blocking socket calls shown above are for standalone or test code. Inside the runtime, derive from `qb::io::use<...>` so reads and writes run on the non-blocking event loop instead of stalling a `VirtualCore`. Note that even the *asynchronous* connect resolves a hostname synchronously before it suspends — see [what has no coroutine form](./gaps.md#hostname-resolution-is-synchronous--including-inside-co_await-tcpconnect). And see [Building network actors](../5_core_io_integration/network_actors.md).
 

@@ -884,7 +884,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   message at 100 MB (`QB_MAX_MESSAGE_SIZE`); exceeding them marks the protocol `not_ok()` and closes the
   connection. A protocol signals unrecoverable framing errors via `not_ok()` -- from `getMessageSize()` as from
   `onMessage()`, the connection closes on the event that carried the bad bytes, after a reply already queued
-  (3.3, Huly QB-293). _(config.h:251, :265, :175; base.h:276)_
+  (3.3, Huly QB-293). _(config.h:251, :265, :175; base.h:276)_ A TCP or TLS session sets its own caps:
+  `set_max_read_buffer_size(n)` and `set_max_write_buffer_size(n)` are public on `async::tcp::client` (3.4, Huly
+  QB-86). The read cap is exact: a read takes at most the room left under it -- a cap below the 64 KiB read bucket
+  still reads -- and the session is disconnected with `buffer_overflow` only by a read that finds its input buffer
+  already at the cap, whether more octets or the peer's end of stream brings that read. Size it to the largest
+  message the protocol frames, not to a multiple of 64 KiB; 0 reads nothing more, and ends a lingering close at the
+  peer's next octet. _(src/qb/io/async/tcp/client.h:64-65; src/qb/io/stream.h:160-165)_
 - **TLS is secure-by-default; prefer the value-semantic `qb::io::ssl::Context`.** `Context::client()` /
   `Context::server(cert,key).alpn({...})` — copy = share one `SSL_CTX`, **no user `SSL_CTX_free`**,
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
@@ -1001,7 +1007,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2175-2199, from :3095),
   then reads and drops what the peer still sends (`linger_read()`, io.h:2212-2222, from :3195-3199) until the peer
   closes, the socket fails, or `linger()` elapses (2 s; `set_linger(qb::duration)`, zero closes at once); only then
-  does `dispose()` run. Closing at once reset a peer still sending — its send failed, and on Windows the reset
+  does `dispose()` run. A session whose read cap is 0 drains nothing: its linger ends at the peer's next octet. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`
   still aborts at once; a server's teardown destroys a lingering session without waiting; `extractSession()` takes
   one out of it (`cancel_linger()`, io_handler.h:287-288). Bounded in time alone: it is what lets a peer that
