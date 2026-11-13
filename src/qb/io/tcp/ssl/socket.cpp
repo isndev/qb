@@ -37,6 +37,7 @@
 #include <vector>
 #include <iomanip> // For std::hex, std::setw, std::setfill
 #include <sstream> // For std::ostringstream
+#include <string_view>
 
 namespace {
 
@@ -1167,14 +1168,14 @@ socket::read(void *data, std::size_t size) noexcept {
             case SSL_ERROR_SYSCALL:
                 // A socket error -- a reset: OpenSSL forbids SSL_shutdown() on the connection from here, so this
                 // side's end is recorded without the alert, which nobody would read (Huly QB-1270). Not one the io
-                // layer reads as "try again" (not_recv_error()): the stream goes on, where OpenSSL lets it. OpenSSL 4
-                // ends the session on every socket error -- its error state, SSL_in_init() 1 from there on (measured:
-                // 4.1.0) -- and a read made again would fail with an earlier call's error: the session is reported
-                // aborted instead. OpenSSL 3 does not, and is in init there only with a handshake message in flight (a
-                // KeyUpdate answer), which goes on. Otherwise the error is left for the caller.
+                // layer reads as "try again" (not_recv_error()): the stream goes on, where OpenSSL lets it. An idle
+                // OpenSSL 4 session ends on it -- OpenSSL's error state, which SSL_state_string() names "SSLERR" --,
+                // and a read made again would fail with an earlier call's error: reported aborted instead. Not while a
+                // handshake message is in flight (in init: a KeyUpdate answer goes on with OpenSSL 4 too; measured,
+                // 4.1.0), nor ever with OpenSSL 3, which keeps the session. Otherwise the error is left for the caller.
                 if (!qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
                     quiet_shutdown();
-                else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))
+                else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")
                     qb::io::socket::set_last_errno(tls_session_aborted);
                 return -1;
             default:
@@ -1214,10 +1215,10 @@ socket::write(const void *data, std::size_t size) noexcept {
                 case SSL_ERROR_SYSCALL:
                     // A socket error, as after a read's: no alert may follow it (Huly QB-1270) -- unless the io layer
                     // writes again after it (not_send_error(): ENOBUFS, an EINTR OpenSSL does not retry itself), and the
-                    // stream goes on where OpenSSL lets it: OpenSSL 4 ended the session on it, as after a read's.
+                    // stream goes on where OpenSSL lets it, or is reported aborted where OpenSSL ended the session.
                     if (!qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                         quiet_shutdown();
-                    else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))
+                    else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")
                         qb::io::socket::set_last_errno(tls_session_aborted);
                     return -1;
                 default:

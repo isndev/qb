@@ -20,9 +20,9 @@ targets = ['qb-io-test-system-tls-close-notify', 'qb-io-test-system-tcp-socket-l
 NL = chr(10)
 SOCKET = 'src/qb/io/system/sys__socket.cpp'
 TLS = 'src/qb/io/tcp/ssl/socket.cpp'
-READ_ELSE = NL + ' ' * 16 + 'else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))' + NL
+READ_ELSE = NL + ' ' * 16 + 'else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")' + NL
 READ_SET = ' ' * 20 + 'qb::io::socket::set_last_errno(tls_session_aborted);' + NL
-WRITE_ELSE = NL + ' ' * 20 + 'else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))' + NL
+WRITE_ELSE = NL + ' ' * 20 + 'else if (const char *state = SSL_state_string(ssl_handle()); state && std::string_view(state) == "SSLERR")' + NL
 WRITE_SET = ' ' * 24 + 'qb::io::socket::set_last_errno(tls_session_aborted);' + NL
 RETURN = '        return ::shutdown(this->fd, SHUT_RDWR) == 0 ? 0 : ::shutdown(this->fd, SHUT_WR);' + NL
 PLANTS = [
@@ -46,6 +46,9 @@ PLANTS = [
     ('B3', TLS, WRITE_ELSE + WRITE_SET, NL),
     # ...or reported as a "try again" of its own
     ('B4', TLS, WRITE_ELSE + WRITE_SET, WRITE_ELSE + ' ' * 24 + 'qb::io::socket::set_last_errno(ENOBUFS);' + NL),
+    # the error state read as in init on OpenSSL 4 (round 2's gate): a KeyUpdate answer reported aborted
+    ('B5', TLS, WRITE_ELSE, NL + ' ' * 20 + 'else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))' + NL),
+    ('B6', TLS, READ_ELSE, NL + ' ' * 16 + 'else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))' + NL),
     # the read's backstop taken out: a read OpenSSL refuses keeps a would-block an earlier call left
     ('B9', TLS, ' ' * 16 + 'if (err == SSL_ERROR_SSL && qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))' + NL,
      ' ' * 16 + 'if (false)' + NL),
