@@ -45,7 +45,12 @@
 #include <thread>
 #include <utility>
 #if !defined(_WIN32)
+#include <cerrno>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
 #endif
 
 #include <gtest/gtest.h>
@@ -1391,3 +1396,68 @@ TEST_F(TlsReadWantsWrite, ProbeARenegotiationBehindAHalfWrittenRecord) {
               << peer.failed << ", client disconnected " << client.disconnected << " (system error " << client.system_error
               << "), renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << ", last error " << text << '\n';
 }
+
+#if !defined(_WIN32)
+namespace tls_read_wants_write_test {
+namespace probe_full {
+int
+geti(int fd, int level, int name) {
+    int       v = -1;
+    socklen_t l = sizeof v;
+    return ::getsockopt(fd, level, name, &v, &l) == 0 ? v : -errno;
+}
+int
+seti(int fd, int level, int name, int v) {
+    return ::setsockopt(fd, level, name, &v, sizeof v) == 0 ? 0 : -errno;
+}
+int
+ioctl_int(int fd, unsigned long request) {
+    int n = -1;
+    return ::ioctl(fd, request, &n) == 0 ? n : -errno;
+}
+} // namespace probe_full
+} // namespace tls_read_wants_write_test
+
+// SCRATCH probe (never to merge): what the system reports for a socket that holds a fill its peer does not read.
+TEST_F(TlsReadWantsWrite, ProbeAFullSocket) {
+    using namespace tls_read_wants_write_test::probe_full;
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    const int fd   = static_cast<int>(client.transport().native_handle());
+    const int pfd  = static_cast<int>(peer.tcp.native_handle());
+    auto      show = [&](char const *what) {
+        std::cout << "[ PROBE ] " << what << ": SNDBUF " << geti(fd, SOL_SOCKET, SO_SNDBUF) << ", SNDLOWAT "
+                  << geti(fd, SOL_SOCKET, SO_SNDLOWAT)
+#if defined(__APPLE__)
+                  << ", NWRITE " << geti(fd, SOL_SOCKET, SO_NWRITE)
+#else
+                  << ", OUTQ " << ioctl_int(fd, TIOCOUTQ)
+#endif
+                  << ", writable " << writable_now(client.transport().native_handle()) << "; peer RCVBUF " << geti(pfd, SOL_SOCKET, SO_RCVBUF)
+                  << ", peer queued " << ioctl_int(pfd, FIONREAD) << '\n';
+    };
+    show("connected");
+    ASSERT_EQ(client.transport().set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
+    show("SNDBUF 2 MiB");
+    client.publish(std::string(kFill, 'f'));
+    ASSERT_TRUE(pump_while_not([&] { return client.out().size() == 0u; }));
+    pump(20ms);
+    show("the fill taken");
+    std::cout << "[ PROBE ] SO_SNDBUF 1: " << seti(fd, SOL_SOCKET, SO_SNDBUF, 1) << '\n';
+    show("SNDBUF 1");
+    std::cout << "[ PROBE ] SO_SNDBUF 2 MiB again: " << seti(fd, SOL_SOCKET, SO_SNDBUF, 1 << 21) << '\n';
+    std::cout << "[ PROBE ] SO_SNDLOWAT max: " << seti(fd, SOL_SOCKET, SO_SNDLOWAT, (std::numeric_limits<int>::max)()) << '\n';
+    show("SNDLOWAT max");
+    std::cout << "[ PROBE ] TCP_NOTSENT_LOWAT 1: " << seti(fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, 1) << '\n';
+    show("NOTSENT_LOWAT 1");
+    client.publish(std::string(std::size_t{1} << 20, 'g'));
+    pump(100ms);
+    std::cout << "[ PROBE ] a MiB more published: " << client.out().size() << " left queued\n";
+    show("a MiB more");
+}
+#endif

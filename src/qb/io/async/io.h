@@ -3332,7 +3332,8 @@ private:
      * This is the central dispatch for I/O events, delegating to helper methods
      * to reduce complexity: `process_messages()`, `handle_post_read()`, and `handle_write()`.
      * Over TLS it waits for what OpenSSL waits for (Huly QB-1270): a read that must write first (`read_wants_write()`)
-     * watches writability alone, and the write pass that finds nothing to write makes the read again; a write that
+     * watches writability -- alone, when nothing else asked for it --, and the write pass that finds nothing to write
+     * makes the read again; an empty arm made meanwhile still earns its `eos`, the read's writability none. A write that
      * waits for the peer (`write_wants_read()`) watches readability alone, and the read pass makes the write again; a
      * write pass that leaves output queued watches both. A plain transport compiles none of it.
      */
