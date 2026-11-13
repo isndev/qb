@@ -39,6 +39,7 @@
  */
 
 #include <atomic>
+#include <exception>
 #include <stdexcept>
 #include <string>
 
@@ -591,4 +592,50 @@ TEST_F(CoroutineExceptionTests, EmptyTaskAwaitThrowsLogicError) {
 
     EXPECT_TRUE(pump_until([&] { return threw.load(); })) << "empty-task await coroutine never ran";
     EXPECT_TRUE(threw.load()) << "co_await on an empty task must throw std::logic_error, not deref null";
+}
+
+// =============================================================================
+// AN exception_ptr ARGUMENT
+// =============================================================================
+
+namespace exception_propagation_test {
+
+/// Whether looks_at()'s body ran. Not a parameter: a second argument that cannot initialise the promise's second member
+/// (a coroutine_handle<>) makes the initialisation below non-viable, and the case would pass on a defective promise.
+std::atomic<bool> looked_at{false};
+
+/// The shape of an error handler: a free coroutine (a lambda's closure object would come first among its promise's
+/// arguments) whose one parameter is an exception_ptr it only looks at.
+task<void>
+looks_at(std::exception_ptr ep) {
+    (void) ep;
+    looked_at.store(true);
+    co_return;
+}
+
+} // namespace exception_propagation_test
+
+/**
+ * @test A `task<void>` coroutine taking an `exception_ptr` first runs its body and completes: the argument is not the
+ *       task's stored exception.
+ * @brief A coroutine's promise is built from the coroutine's arguments whenever that is viable, and `task<void>`'s
+ *        promise was an aggregate whose first member is the stored exception: GCC, clang and clang-cl initialised it
+ *        from the argument, and the `co_await` rethrew it without running the body (Huly QB-1246).
+ */
+TEST_F(CoroutineExceptionTests, AnExceptionPtrArgumentIsNotAStoredException) {
+    exception_propagation_test::looked_at.store(false);
+    std::atomic<bool> done{false};
+    std::atomic<bool> threw{false};
+    coro_scheduler().spawn([&done, &threw]() -> task<void> {
+        try {
+            co_await exception_propagation_test::looks_at(std::make_exception_ptr(std::runtime_error("an argument")));
+        } catch (std::exception const &) {
+            threw.store(true);
+        }
+        done.store(true);
+        co_return;
+    });
+    EXPECT_TRUE(pump_until([&] { return done.load(); })) << "the awaiting coroutine never completed";
+    EXPECT_FALSE(threw.load()) << "co_await rethrew the coroutine's exception_ptr argument: the promise was built from it";
+    EXPECT_TRUE(exception_propagation_test::looked_at.load()) << "the awaited body never ran";
 }

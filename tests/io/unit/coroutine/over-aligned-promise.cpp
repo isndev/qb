@@ -21,10 +21,12 @@
  * for the frame's widest member, so an `alignas(64)` promise or local lands at 16, 32 or 48 mod 64: undefined
  * behaviour, and a SIGSEGV wherever the compiler emits an aligned vector move (any AVX target -- this file's own
  * probe died so, in its promise's constructor, under the g++ 14 of an x86-64-v3 Ubuntu). MSVC 19.51 realigns the
- * frame itself. qb's coroutine types therefore take their frames from `detail::CoroutineFrameAllocator`, whose blocks
- * are cache-line aligned; the cases below create many frames at once, a small block between each two, so that no
- * 16-aligned allocator can hand all of them out 64-aligned, and read every address through a volatile, which the
- * optimiser cannot fold to "aligned" the way it may fold the residue of a typed pointer.
+ * frame itself. qb's coroutine types therefore take cache-line-aligned blocks: `task<T>` and `async_generator<T>` from
+ * `detail::CoroutineFrameAllocator`, `generator<T>` from the aligned `::operator new`. The cases below create many
+ * frames at once, a small block between each two, so that an allocator that lays consecutive blocks out in order (glibc's
+ * and the Windows heap, measured) cannot hand all of them out 64-aligned by luck -- a size-class allocator may -- and
+ * read every address through a volatile, which the optimiser cannot fold to "aligned" the way it may fold the residue
+ * of a typed pointer.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -124,8 +126,8 @@ all_aligned(alignment_census const &c, std::size_t const expected, std::size_t c
     return ::testing::AssertionSuccess();
 }
 
-/// One small heap block between two frames: a 16-aligned allocator then hands consecutive frames out at different
-/// residues modulo 64, so it cannot pass a case by placing every frame on a 64-byte boundary by accident.
+/// One small heap block between two frames: an allocator that lays blocks out in order then hands consecutive frames out
+/// at different residues modulo 64, so it cannot pass a case by placing every frame on a 64-byte boundary by accident.
 using spacers = std::vector<std::unique_ptr<std::uint64_t>>;
 
 /// The address of the promise of the coroutine that awaits it, through `detail::promise_of`; never suspends.

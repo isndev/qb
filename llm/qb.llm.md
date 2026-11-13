@@ -773,10 +773,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   coroutine opens with it (`qb::ask` itself is an awaitable, not a coroutine). _(coroutine/utils.h:389; request.h:267, resilience.h:468)_
 - **An over-aligned object in a coroutine frame is at its alignment only if the frame's `operator new` returns blocks
   aligned for it** — C++20 does not align a frame: GCC, clang and clang-cl lay it out from what `operator new(size)`
-  returns (16-aligned by default; MSVC realigns). `task<T>`, `generator<T>` and `async_generator<T>` take cache-line-aligned
-  blocks (since 3.4 for the generators), so a `qb::Event` in their promise or held across a suspension is aligned;
-  past the cache line nothing is, and a coroutine type of your own needs its own aligned `operator new`.
-  _(coroutine/task.h:210, :219; generator.h:85, :307)_
+  returns (16-aligned by default; MSVC realigns). `task<T>` and `async_generator<T>` take the cache-line-aligned blocks
+  of `detail::CoroutineFrameAllocator` (`QB_CORO_PROMISE_POOLED_NEW_DELETE()`), `generator<T>` an `operator new` over the
+  aligned `::operator new` (since 3.4 for the generators), so a `qb::Event` in their promise or held across a suspension
+  is aligned (`kAlign`); past the cache line nothing is, and a coroutine type of your own needs its own aligned
+  `operator new`. _(coroutine/task.h:210, :219; generator.h:89, :318)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core

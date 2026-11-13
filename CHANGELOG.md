@@ -756,41 +756,51 @@ policy.
 
 ### Fixed
 
-- **A generator's frame is aligned for what it holds: `generator<T>` and `async_generator<T>` take their frames from
-  `task<T>`'s cache-line-aligned pool (Huly QB-1246).** C++20 does not align a coroutine frame for what it holds: the
-  frame is placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block
-  when there is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its widest
-  member (MSVC realigns it itself). `task<T>`'s promise takes cache-line-aligned blocks from
+- **A generator's frame is aligned for what it holds: `generator<T>` and `async_generator<T>` take cache-line-aligned
+  blocks, as `task<T>` does (Huly QB-1246).** C++20 does not align a coroutine frame for what it holds: the frame is
+  placed where the promise type's `operator new(size)` puts it -- `::operator new(size)`'s 16-aligned block when there
+  is none -- and GCC, clang and clang-cl lay it out from that address as if it were aligned for its widest member
+  (MSVC realigns it itself). `task<T>`'s promise takes cache-line-aligned blocks from
   `detail::CoroutineFrameAllocator`; the generators' promises had no `operator new`. So a `generator<E>` or an
   `async_generator<E>` of a `qb::Event` -- every event is cache-line aligned -- had its promise, and a generator body
   that kept an `alignas(64)` local across `co_yield` had that local, at 16, 32 or 48 mod 64: undefined behaviour, and a
   segmentation fault wherever aligned vector moves are emitted (an AVX target: `-march=native`, the `release-native`
-  preset, a distribution whose compiler targets x86-64-v3). Both promise types now take the pool's blocks. The limit is
-  the cache line, as for `task<T>`: nothing aligns a frame further.
+  preset, a distribution whose compilers target x86-64-v3). `async_generator<T>`, resumed by its loop's scheduler as a
+  task is, now takes `task<T>`'s pool. `generator<T>` takes the aligned `::operator new` instead: it is a plain value a
+  program may destroy on another thread, and the pool keeps per-thread free lists -- with it, 20 000 generators made on
+  one thread and destroyed on another left about 2.5 MiB more in the destroying thread's list at every round, never
+  given back (measured with g++ 14). The limit is the cache line, as for `task<T>`: nothing aligns a frame further.
   - **Witness.** `qb-io-test-unit-over-aligned-promise` keeps 64 frames of each kind alive at once, a small heap block
     between each two, and reads every promise and local address through a volatile (the residue of a typed pointer
     to an over-aligned object may be folded to 0). On the base, 46 to 50 of 64 promises and 92 to 98 of 128 local
     addresses were off the 64-byte boundary with g++ 14 and clang 19 (Release) and clang-cl 22; MSVC 19.51 aligned
-    every frame, before and after. Green on all four with the pool.
+    every frame, before and after. Green on all four. `GeneratorSync.AFrameMadeOnOneThreadAndDestroyedOnAnotherBelongsToNeither`
+    holds `generator<T>` off the pool: neither thread's pool count moves.
   - **The coverage lane's red was this test's own probe.** Its `probe_task` promise is `alignas(64)` and had no
-    `operator new` either: on the hosted Ubuntu 26.04 image, an x86-64-v3 build of the distribution, the g++ 14
-    Debug build zero-initialised it with a 256-bit aligned store (`vmovdqa`) and faulted whenever the heap put the
-    frame at 16 mod 64 -- which the opt-in codecs and the test order decided. The probe takes the pool too, and its
-    promise's alignment is now asserted, with `task<Wide>`'s.
-- **`generator<T>::next()` returns what the body yields, never one of the coroutine's arguments: neither generator's
-  promise is built from the arguments any more (Huly QB-1246).** A coroutine's promise is initialised from the
-  coroutine's arguments whenever that is viable, and both promise types were aggregates, which C++20's parenthesized
-  aggregate initialisation made viable on GCC, clang and clang-cl (not on MSVC). A generator whose first argument
-  converts to `T` started with that argument as its value, and `next()` returned it without running the body:
-  `single_generator(42)` gave 42 twice, `iota(5)` began 5, 5, 6, and `generator<int> f(int n) { co_yield n * 10; }`
-  gave `n` before `10 * n`. An `std::exception_ptr` argument after it became the stored exception, which `next()`,
-  the iterator and `async_generator<T>::next()` rethrew though the body never threw. A range-for never showed the
-  first, since `begin()` always runs the body to its first `co_yield`. Both promise types declare their default
-  constructor now.
+    `operator new` either. GitHub's Ubuntu 26.04 image installs the distribution's x86-64-v3 variant, whose gcc-14 and
+    gcc-15 are configured `--with-arch-64=x86-64-v3`: AVX2 by default, which qb's Release flags pin away
+    (`-march=x86-64`) and its Debug and coverage builds keep. There, the probe's promise was zero-initialised with a
+    256-bit aligned store (`vmovdqa`) that faulted whenever the heap put the promise at 16 or 48 mod 64 -- which the
+    opt-in codecs and the test order decided. The probe takes the pool too, and its promise's alignment is now
+    asserted, with `task<Wide>`'s.
+- **A coroutine's promise is no longer built from the coroutine's arguments: `generator<T>::next()` returns what the
+  body yields, and a `task<void>` taking an `exception_ptr` runs (Huly QB-1246).** A coroutine's promise is
+  initialised from the coroutine's arguments whenever that is viable, and the promise types of `generator<T>`,
+  `async_generator<T>` and `task<void>` were aggregates, which C++20's parenthesized aggregate initialisation made
+  viable on GCC, clang and clang-cl (not on MSVC) whenever the arguments, in order, could initialise their first
+  members. A generator whose one argument converts to `T` started with that argument as its value, and `next()`
+  returned it without running the body: `single_generator(42)` gave 42 twice, `iota(5)` began 5, 5, 6, and
+  `generator<int> f(int n) { co_yield n * 10; }` gave `n` before `10 * n`. An `std::exception_ptr` argument after it
+  became the stored exception, which `next()`, the iterator and `async_generator<T>::next()` rethrew though the body
+  never threw. A range-for never showed the first, since `begin()` always runs the body to its first `co_yield`.
+  `task<void>`'s promise opens on its stored exception: a `task<void>` coroutine whose first argument is an
+  `std::exception_ptr` -- an error handler -- was awaited as if it had thrown that exception, and its body never ran.
+  The three promise types declare their default constructor now.
   - **Witness.** `GeneratorSync.NextReturnsWhatTheBodyYieldsNotAnArgument` and
     `GeneratorSync.AnExceptionPtrArgumentIsNotAStoredException` (`qb-io-test-unit-generator-sync`),
-    `GeneratorAsync.AnExceptionPtrArgumentIsNotAStoredException` (`qb-io-test-unit-generator-async`): free coroutines,
-    since a lambda's closure comes first among its promise's arguments and converts to nothing. Red on the base with
+    `GeneratorAsync.AnExceptionPtrArgumentIsNotAStoredException` (`qb-io-test-unit-generator-async`),
+    `CoroutineExceptionTests.AnExceptionPtrArgumentIsNotAStoredException` (`qb-io-test-unit-exception-propagation`):
+    free coroutines, since a lambda's closure object comes first among its promise's arguments. Red on the base with
     g++ 14, clang 19 and clang-cl 22; green on MSVC 19.51 before and after.
 
 - **A QUIC endpoint kept in static storage no longer writes into its thread's freed event loop at process exit:

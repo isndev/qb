@@ -29,6 +29,7 @@
 #include <cstdio>
 #include <exception>
 #include <memory> // std::shared_ptr — async_generator::_alive and next_awaiter shared ownership
+#include <new>    // std::align_val_t — generator<T>'s aligned frame
 #include <optional>
 #include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 
@@ -77,12 +78,21 @@ template <typename T>
 class generator {
 public:
     struct promise_type {
-        // The frame comes from task<T>'s pool (detail::CoroutineFrameAllocator), whose blocks are cache-line aligned.
-        // C++20 does not align a coroutine frame for what it holds: without this operator new the frame is
-        // ::operator new(size)'s 16-aligned block, and GCC, clang and clang-cl lay it out as if it were aligned for
-        // its widest member -- a generator of a qb::Event, or a body holding an alignas(64) local across co_yield,
-        // had that object at 16, 32 or 48 mod 64 (Huly QB-1246).
-        QB_CORO_PROMISE_POOLED_NEW_DELETE()
+        // The frame is a block aligned to the cache line, as task<T>'s are. C++20 does not align a coroutine frame for
+        // what it holds: without this operator new the frame is ::operator new(size)'s 16-aligned block, and GCC,
+        // clang and clang-cl lay it out as if it were aligned for its widest member -- a generator of a qb::Event, or a
+        // body holding an alignas(64) local across co_yield, had that object at 16, 32 or 48 mod 64 (Huly QB-1246).
+        // From ::operator new, not from task<T>'s pool: a generator<T> is a plain value that may be destroyed on
+        // another thread than the one that made it, and the pool's free lists are per thread -- a frame destroyed
+        // elsewhere stayed in that thread's list for good, and the maker's list never got it back.
+        static void *
+        operator new(std::size_t size) {
+            return ::operator new(size, std::align_val_t{detail::CoroutineFrameAllocator::kAlign});
+        }
+        static void
+        operator delete(void *frame) noexcept {
+            ::operator delete(frame, std::align_val_t{detail::CoroutineFrameAllocator::kAlign});
+        }
 
         std::optional<T>   current_value;
         std::exception_ptr exception;
@@ -303,7 +313,8 @@ template <typename T>
 class async_generator {
 public:
     struct promise_type {
-        // Cache-line-aligned pooled frame, for the reason generator<T>::promise_type gives (Huly QB-1246).
+        // A cache-line-aligned frame, for the reason generator<T>::promise_type gives, from task<T>'s pool: an async
+        // generator is resumed by its loop's scheduler, as a task is, and lives and dies on that thread (Huly QB-1246).
         QB_CORO_PROMISE_POOLED_NEW_DELETE()
 
         std::optional<T>        current_value;

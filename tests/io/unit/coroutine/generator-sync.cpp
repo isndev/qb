@@ -34,6 +34,8 @@
 #include <exception>
 #include <optional>
 #include <stdexcept>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -281,8 +283,8 @@ TEST(GeneratorSync, HasNextAndNextHonorExhaustionContract) {
 
 namespace generator_sync_test {
 
-// Free coroutines, not lambdas: a lambda coroutine's promise arguments start with its closure, which converts to
-// nothing, so a lambda never showed what follows.
+// Free coroutines, not lambdas: a lambda coroutine's promise arguments start with its closure object, so a lambda shows
+// what follows only for a T constructible from its closure -- none of this file's.
 
 /// One argument convertible to the yielded type.
 generator<int>
@@ -335,6 +337,29 @@ TEST(GeneratorSync, AnExceptionPtrArgumentIsNotAStoredException) {
             seen.push_back(x);
     });
     EXPECT_EQ(seen, (std::vector<int>{4}));
+}
+
+// A generator<T> is a plain value: one made on this thread may be destroyed on another. Its frame is a cache-line-aligned
+// block of ::operator new, never task<T>'s pool, whose free lists are per thread: a frame freed on another thread
+// stayed in that thread's list for good, and the maker's never got it back (Huly QB-1246). The pool's per-thread count
+// is what tells: neither thread's moves.
+TEST(GeneratorSync, AFrameMadeOnOneThreadAndDestroyedOnAnotherBelongsToNeither) {
+    using qb::io::async::detail::CoroutineFrameAllocator;
+    long const here_before = CoroutineFrameAllocator::live_frames;
+    auto       g           = iota(0);
+    EXPECT_EQ(g.next().value_or(-1), 0);
+    EXPECT_EQ(CoroutineFrameAllocator::live_frames, here_before) << "the frame came from this thread's pool";
+
+    long there = -1;
+    std::thread([&g, &there] {
+        long const before = CoroutineFrameAllocator::live_frames;
+        {
+            auto const gone = std::move(g); // destroyed on this thread
+        }
+        there = CoroutineFrameAllocator::live_frames - before;
+    }).join();
+    EXPECT_EQ(there, 0) << "the frame was handed to the destroying thread's pool";
+    EXPECT_EQ(CoroutineFrameAllocator::live_frames, here_before);
 }
 
 // ---------------------------------------------------------------------------

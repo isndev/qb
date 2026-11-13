@@ -201,7 +201,7 @@ void report_abandoned_coroutine_frames(std::size_t count, void const *scheduler,
 //     At thread exit `live_frames` is 0 (all frames already deallocated back into
 //     the pool), so the holder only ever frees idle, balanced pool memory.
 //
-// The allocator serves the promise types of `task<T>`, `generator<T>` and `async_generator<T>` (operator new/delete).
+// The allocator serves the promise types of `task<T>` and `async_generator<T>` (operator new/delete).
 // Both sized and unsized delete are provided as CLASS members, which is always legal.
 // The GLOBAL sized overloads are NOT: libstdc++ declares ::operator delete(void*, size_t
 // [, align_val_t]) only under __cpp_sized_deallocation, and clang leaves that off (<= 18).
@@ -212,8 +212,8 @@ public:
     // Cache line: a frame may hold a qb::Event (QB_LOCKFREE_CACHELINE_ALIGNMENT) in its promise or across a suspension,
     // and C++20 does not align a frame for it: GCC, clang and clang-cl lay the frame out from the address this
     // operator new returns (MSVC realigns it), and ::operator new guarantees 16 B -- the Event at 16, 32 or 48 mod 64,
-    // UB and a SIGSEGV wherever aligned vector moves are emitted. task<T> and both generators rely on these blocks;
-    // nothing aligns a frame past kAlign. Use the canonical cache-line constant
+    // UB and a SIGSEGV wherever aligned vector moves are emitted. task<T> and async_generator<T> rely on these blocks,
+    // generator<T> on kAlign; nothing aligns a frame past kAlign. Use the canonical cache-line constant
     // (overridable via KNOWN_L1_CACHE_LINE_SIZE) rather than a magic 64 so the pool
     // always tracks the platform's true line size / the alignment Events are built with.
     static constexpr std::size_t kAlign     = QB_LOCKFREE_CACHELINE_BYTES;
@@ -864,6 +864,11 @@ public:
         static inline std::atomic<std::size_t> next_id{0};
         std::size_t                            coro_id_ = next_id.fetch_add(1, std::memory_order_relaxed);
 #endif
+
+        /// Declared, so that the promise is not an aggregate: a coroutine's promise is built from the coroutine's
+        /// arguments whenever that is viable, and GCC, clang and clang-cl stored a first std::exception_ptr argument as
+        /// this task's exception -- the co_await rethrew it without running the body (Huly QB-1246).
+        promise_type() noexcept = default;
 
         task
         get_return_object() noexcept {
