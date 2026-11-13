@@ -184,6 +184,8 @@ MUTANTS = {
     'D02': ('io<>: the write that sends a held record makes no read follow', IOH, HELD_TEST, '', 1),
     'D03': ('io<>: the mark of a held record is never cleared (a read after every write)', IOH, HELD_FEED,
             '        if (_protocol->ok())\n            this->_async_event.feed_event(EV_READ);\n', 1),
+    'D05': ('io<>: a record OpenSSL holds after a socket error is not marked', IOH,
+            '                        _tls_held = true; // OpenSSL holds the record the error met, as for a full socket\n', '', 1),
     'D04': ('io<>: a read follows a held record during a drain too', IOH, HELD_FEED,
             '        _tls_held = false;\n        this->_async_event.feed_event(EV_READ);\n', 1),
     'E02': ('io<>: start() does not clear the arm kept aside', IOH, START_CLEAR, '', 1),

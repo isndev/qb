@@ -274,6 +274,7 @@ int         fail_with   = 0;     ///< The system error the next write fails with
 std::size_t attempts    = 0;     ///< Writes attempted through the wrapper, refused or not.
 int         half_once   = 0;     ///< How many next writes are taken in half: a record OpenSSL then holds unwritten.
 bool        hold        = false; ///< Every write is refused "try again" -- set by a half-taken write, cleared by the case.
+int         hold_with   = 0;     ///< While held, the system error every write fails with (no retry flag); 0: "try again".
 
 int
 write(BIO *self, BIO *inner, const char *in, int size) {
@@ -284,6 +285,10 @@ write(BIO *self, BIO *inner, const char *in, int size) {
         return qb::io::test::tls_wrapping_bio::forward_write(self, inner, in, size / 2);
     }
     if (hold) {
+        if (hold_with != 0) {
+            qb::io::socket::set_last_errno(hold_with);
+            return -1;
+        }
         BIO_set_retry_write(self);
         return -1;
     }
@@ -411,9 +416,16 @@ constexpr std::size_t kIdleEvents = 2;
 constexpr std::size_t kBulk = std::size_t{80} << 10;
 
 /// The fill of a real send buffer, and the receive buffer of the peer that reads none of it: the fill outgrows it.
-constexpr std::size_t kFill       = std::size_t{96} << 10; // under what a send buffer may hold (Linux: wmem_max)
-constexpr std::size_t kFillBound  = std::size_t{8} << 20;  // what a fill may grow to on XNU (holds_unsent())
-constexpr int         kPeerWindow = 8192;
+constexpr std::size_t kFill      = std::size_t{96} << 10; // under what a send buffer may hold (Linux: wmem_max)
+constexpr std::size_t kFillBound = std::size_t{8} << 20;  // what a fill may grow to on XNU (holds_unsent())
+
+/// What `ssl::socket` reports for a socket error OpenSSL ended the session on (OpenSSL 4): the connection aborted.
+#if defined(_WIN32)
+constexpr int kSessionAborted = WSAECONNABORTED;
+#else
+constexpr int kSessionAborted = ECONNABORTED;
+#endif
+constexpr int kPeerWindow = 8192;
 
 /// A standalone object on `output<>` alone over a TLS socket: it writes what it is given.
 class PushOutput : public qb::io::async::output<PushOutput> {
@@ -593,6 +605,7 @@ protected:
         refuse::attempts    = 0;
         refuse::half_once   = 0;
         refuse::hold        = false;
+        refuse::hold_with   = 0;
         ASSERT_TRUE(qb::io::test::require_ssl_files());
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         port = listener.local_endpoint().port();
@@ -1564,12 +1577,11 @@ TEST_F(TlsReadWantsWrite, ABlockingConnectWhoseClientHelloMetEnobufsFails) {
     qb::io::tcp::ssl::socket client;
     client.init(ssl);
     client.set_insecure();
-    // The server end accepted and closed at once: a handshake that met no error ends on the close, never waits.
+    // The server end accepted and closed at once -- the listener blocks until the client's TCP connect, which comes
+    // before its handshake --: a handshake that met no error ends on the close and never waits for a ServerHello.
     std::thread server([this] {
         qb::io::tcp::socket accepted;
-        const auto          deadline = steady::now() + kBound;
-        while (listener.accept(accepted) != qb::io::SocketStatus::Done && steady::now() < deadline)
-            std::this_thread::sleep_for(1ms);
+        static_cast<void>(listener.accept(accepted));
         accepted.close();
     });
     const int   ret = client.connect(qb::io::endpoint{"127.0.0.1", port}, "localhost");
@@ -1606,10 +1618,16 @@ TEST_F(TlsReadWantsWrite, ARenegotiationBehindAHalfWrittenRecordCompletes) {
     ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
     ASSERT_TRUE(peer.write("ping\n")) << "the peer could not send behind its HelloRequest";
     ASSERT_TRUE(peer.write("ping\n"));
-    pump(50ms); // the client reads what it can while its record waits
+    // The client reads what it can while its record waits (the wrapper refuses a socket that has room: the object is
+    // dispatched on every pass meanwhile, the test's doing).
+    pump(50ms);
     std::cout << "[ MEASURED ] a HelloRequest behind a half-written record (" << OpenSSL_version(OPENSSL_VERSION) << "): pings " << client.pings
-              << ", in init " << SSL_in_init(ssl) << ", state " << SSL_state_string_long(ssl) << ", disconnected " << client.disconnected
-              << '\n';
+              << ", in init " << SSL_in_init(ssl) << ", renegotiation pending " << SSL_renegotiate_pending(ssl) << ", state "
+              << SSL_state_string_long(ssl) << ", disconnected " << client.disconnected << '\n';
+    ASSERT_EQ(client.disconnected, 0u) << "the connection ended while the record was held";
+    ASSERT_EQ(client.pings, 2u) << "the case proves nothing: the data behind the HelloRequest was not read";
+    ASSERT_EQ(SSL_renegotiate_pending(ssl), 1) << "the case proves nothing: the client did not take the HelloRequest";
+    ASSERT_EQ(SSL_in_init(ssl), 0) << "the case proves nothing: OpenSSL started the renegotiation behind the held record";
     refuse::hold               = false;
     const std::string expected = record + "pong\npong\n";
     const bool        done     = peer.pump_until([&] {
@@ -1622,6 +1640,59 @@ TEST_F(TlsReadWantsWrite, ARenegotiationBehindAHalfWrittenRecordCompletes) {
               << ", system error " << client.system_error << "), renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << '\n';
     EXPECT_EQ(client.disconnected, 0u) << "the connection ended";
     EXPECT_EQ(peer.failed, SSL_ERROR_NONE);
+    EXPECT_EQ(peer.received, expected) << "the record or the answers did not arrive";
+    EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0) << "the renegotiation never completed";
+}
+
+// ...and the same record held after a socket error a write is made again after (ENOBUFS, every write meeting it until
+// the case clears it): once the record leaves, a read starts the renegotiation. OpenSSL 4 ends the session on such an
+// error an application write meets -- reported aborted (part 3), what the case then asserts.
+TEST_F(TlsReadWantsWrite, ARenegotiationBehindARecordHeldAfterEnobufsCompletes) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    SSL *const ssl = client.transport().ssl_handle();
+    ASSERT_NO_FATAL_FAILURE(refuse::install(ssl));
+    refuse::half_once        = 1;
+    refuse::hold_with        = ENOBUFS;
+    const std::string record = std::string(1000, 'x') + "\n";
+    client.publish(record);
+    pump(20ms);
+    ASSERT_TRUE(refuse::hold) << "the case proves nothing: no record was taken in half";
+    if (OPENSSL_version_major() >= 4) {
+        std::cout << "[ MEASURED ] a record held after ENOBUFS (" << OpenSSL_version(OPENSSL_VERSION) << "): disconnected "
+                  << client.disconnected << " (system error " << client.system_error << ")\n";
+        EXPECT_EQ(client.disconnected, 1u) << "OpenSSL 4 ended the session on the write's error: the connection goes on";
+        EXPECT_EQ(client.system_error, kSessionAborted) << "the session OpenSSL ended was not reported aborted";
+        return;
+    }
+    ASSERT_EQ(client.disconnected, 0u) << "the connection ended on an error OpenSSL lets the session go on after";
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n")) << "the peer could not send behind its HelloRequest";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms); // every write pass meets the error meanwhile: the object is dispatched on every pass, the test's doing
+    std::cout << "[ MEASURED ] a HelloRequest behind a record held after ENOBUFS (" << OpenSSL_version(OPENSSL_VERSION) << "): pings "
+              << client.pings << ", in init " << SSL_in_init(ssl) << ", renegotiation pending " << SSL_renegotiate_pending(ssl)
+              << ", disconnected " << client.disconnected << '\n';
+    ASSERT_EQ(client.disconnected, 0u) << "the connection ended while the record was held";
+    ASSERT_EQ(client.pings, 2u) << "the case proves nothing: the data behind the HelloRequest was not read";
+    ASSERT_EQ(SSL_renegotiate_pending(ssl), 1) << "the case proves nothing: the client did not take the HelloRequest";
+    ASSERT_EQ(SSL_in_init(ssl), 0) << "the case proves nothing: OpenSSL started the renegotiation behind the held record";
+    refuse::hold               = false;
+    const std::string expected = record + "pong\npong\n";
+    const bool        done     = peer.pump_until([&] {
+        return (peer.received == expected && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE
+               || client.disconnected != 0u;
+    });
+    pump(20ms);
+    std::cout << "[ MEASURED ] ...then " << (done ? "" : "NOT ") << "done: the peer read " << peer.received.size() << " of " << expected.size()
+              << ", renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << ", disconnected " << client.disconnected << '\n';
+    EXPECT_EQ(client.disconnected, 0u) << "the connection ended";
     EXPECT_EQ(peer.received, expected) << "the record or the answers did not arrive";
     EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0) << "the renegotiation never completed";
 }

@@ -2243,7 +2243,7 @@ class io : public base<io<_Derived>, event::io> {
     int                   _reason       = 0;         /**< Disconnection reason code. */
     int                   _system_error = 0;         /**< Stores the system error code (errno) if an I/O error occurred. */
     bool                  _tls_arm      = false;     /**< TLS: an empty arm made while a read waits to write -- its eos (Huly QB-1270). */
-    bool                  _tls_held     = false;     /**< TLS: OpenSSL holds a record a full socket refused (Huly QB-1270). */
+    bool                  _tls_held     = false;     /**< TLS: OpenSSL holds a record the socket did not take (Huly QB-1270). */
     std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
     std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
     std::size_t _bytes_written          = 0;                   /**< Total number of bytes written to the transport. */
@@ -2410,12 +2410,14 @@ class io : public base<io<_Derived>, event::io> {
     }
 
     /**
-     * @brief The record OpenSSL held for a full socket has left (Huly QB-1270): a read is made now. A renegotiation the
-     *        peer asked for meanwhile -- a HelloRequest read while that record was held -- waits in OpenSSL for its next
-     *        read or write with nothing left to write (`ssl3_renegotiate_check()`), and the peer waits for the
-     *        ClientHello: on readability alone the connection stalled. A read starts it, and takes the peer's
-     *        interleaved application data as only a read can (`tls_read_drives()`); one that finds nothing costs a
-     *        call. Not while close_after_deliver() drains: its read pass is off.
+     * @brief The record OpenSSL held -- for a full socket, or after a socket error a write is made again after -- has
+     *        left (Huly QB-1270): a read is made now. A renegotiation the peer asked for meanwhile -- a HelloRequest read
+     *        while that record was held -- waits in OpenSSL for its next read or write with nothing left to write
+     *        (`ssl3_renegotiate_check()`), and the peer waits for the ClientHello: on readability alone the connection
+     *        stalled. A read starts it, and takes the peer's interleaved application data as only a read can
+     *        (`tls_read_drives()`); one that finds nothing costs an `SSL_read()` whose `recv()` would block, and a
+     *        dispatch. Not while close_after_deliver() drains: its read pass is off. The mark outlives a start(): a
+     *        stop and a start on the same connection keep the record OpenSSL holds.
      */
     QB_NOINLINE QB_COLD void
     tls_held_flushed() noexcept {
@@ -3311,6 +3313,8 @@ private:
             }
             if (raw_ret < 0) {
                 if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                    if constexpr (detail::tls_io<_Derived>)
+                        _tls_held = true; // OpenSSL holds the record the error met, as for a full socket
                     ready_to_write();
                     return true;
                 }
