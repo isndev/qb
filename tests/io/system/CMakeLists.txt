@@ -91,6 +91,8 @@ qb_add_test(MODULE qb-io TIER system NAME file-blocking-io SOURCES io/file-block
 qb_add_test(MODULE qb-io TIER system NAME logger-fork-exit SOURCES io/logger-fork-exit.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER system NAME quic-handshake   SOURCES quic/quic-handshake.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-loop SOURCES quic/quic-endpoint-loop.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network)
+# Huly QB-1246: close() no longer arms its timer, so an endpoint with static storage -- closed after its thread's loop -- ends cleanly at exit.
+qb_add_test(MODULE qb-io TIER system NAME quic-endpoint-static-exit SOURCES quic/quic-endpoint-static-exit.cpp DEPENDS ${PROJECT_NAME} REQUIRES quic ssl network LABELS coroutine)
 if (TARGET qb-io-test-system-quic-handshake AND NOT QB_INSTALL)
     target_compile_definitions(qb-io-test-system-quic-handshake PRIVATE QB_IO_QUIC_TEST_HOOKS=1)
 endif ()
@@ -161,7 +163,8 @@ if (QB_HAS_SSL)
                 qb-io-test-system-tls-worker-deadline
                 qb-io-test-system-text-session-loopback
                 qb-io-test-system-quic-handshake
-                qb-io-test-system-quic-endpoint-loop)
+                qb-io-test-system-quic-endpoint-loop
+                qb-io-test-system-quic-endpoint-static-exit)
             if (TARGET ${_ssl_dep})
                 add_dependencies(${_ssl_dep} generate_ssl_certs)
             endif ()

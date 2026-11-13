@@ -685,6 +685,35 @@ policy.
 
 ### Fixed
 
+- **A QUIC endpoint kept in static storage no longer writes into its thread's freed event loop at process exit:
+  `close()` no longer arms its timer (Huly QB-1246).** `qb::io::async::quic::endpoint::close()` asked the backend to close, sent
+  what that left to send, reported the connections it ended, then stopped its two watchers and closed the socket. A
+  closed backend still has a deadline, its closing period, and the drain of its last packets armed the endpoint's timer
+  for it -- for the next lines to stop: a start and a stop of one watcher in one call, which nothing showed in a
+  running program. But `exit()` destroys the main thread's `listener::current`, a thread-local, before the objects with
+  static storage, and an endpoint's destructor closes it. An endpoint a program keeps there -- an HTTP/3 client, a
+  server -- started its timer on a loop already freed: a g++ 14 Release build ended on `free(): corrupted unsorted
+  chunks`, `corrupted double-linked list` or a segmentation fault at exit, and AddressSanitizer reports a
+  heap-use-after-free in `time_update`, under `event::timer::start` and `endpoint::arm_timer`. An endpoint the program
+  had closed itself was hit too: its destructor closes it again. `close()` now holds its timer aside
+  while the backend closes, so its drains arm nothing, and the timer is the endpoint's again when the close returns.
+  A handler told there that its connection ended may close and connect again before it returns: that `connect()`
+  finds no timer and registers one, which the close releases as it resumes -- the endpoint keeps the one registration
+  it had, and the close ends what the handler started, as it did before. Stopping a watcher after the loop was
+  already safe, since the loop detaches what is left on it; starting one is not, and qb-io has no door for it (the
+  note on `event::base`).
+  - **Witness.** `qb-io-test-system-quic-endpoint-static-exit` runs an endpoint with static storage to the end of a
+    child process, in four states and from two places, an `atexit` handler registered before the endpoint as its
+    judge. With `close()` as it was, 4 of its 9 cases fail in a g++ 14 Release build and 5 under AddressSanitizer;
+    the two cases that run in the test's own process pin what the timer held aside must not break: an endpoint that
+    closed connects again on its own timer, three times over the same two registrations, and a handler that closes
+    and connects again from inside the close leaves the endpoint the two registrations it had, and none behind it
+    once it is destroyed.
+  - **For the modules' tests.** `tests/io/shared/static_exit_support.h` is what the witnesses of an object with static
+    storage share, qbm-http's, qbm-redis's and qbm-pgsql's included: a loopback relay the test steps by hand, the
+    record of a case and the judge that reads it, the places a program ends from, and the matcher of a child whose
+    stderr is its verdict and nothing else.
+
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
   `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a
   WebSocket `on(message)` or `on(ping)`, an HTTP/1.1 `on(request)`), or from anything those call, it destroyed every

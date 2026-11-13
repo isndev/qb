@@ -16,7 +16,7 @@
  * quic-handshake.cpp` proves the happy-path loopback handshake end-to-end. What neither covers — and
  * what this file targets — are the `endpoint`'s own *event-loop body* branches that only execute when
  * a REAL libngtcp2 backend produces real packets/timeouts AND the framework's libev watchers actually
- * fire (`endpoint.h:160-173,191-256,657-702`):
+ * fire (`endpoint.h:160-173,191-256,681-726`):
  *
  *   - the `on(event::io)` EV_READ receive loop bounded by `settings.udp_rx_batch_size` — the
  *     budget-limited datagram drain (the live handshake leaves the budget unlimited, so the
@@ -110,7 +110,7 @@ establish_loopback(Server &server, Client &client, std::vector<std::string> cons
 /**
  * @test A tiny udp_rx_batch_size still delivers a multi-packet payload across several poll cycles
  * @brief `on(event::io)` reads at most `settings.udp_rx_batch_size` datagrams per EV_READ wakeup
- *        (endpoint.h:661-687). With the budget pinned to 1 on the server, a client payload that the
+ *        (endpoint.h:685-711). With the budget pinned to 1 on the server, a client payload that the
  *        backend fragments across multiple QUIC packets cannot all be consumed in a single readable
  *        wakeup — the loop hits the `budget-- > 0` ceiling and yields, and the framework re-arms
  *        EV_READ so the remainder is drained on subsequent wakeups. Driving a payload to the server
@@ -217,7 +217,7 @@ TEST(QuicEndpointLoop, TxBatchBudgetFlushesLargePayloadAcrossPolls) {
 /**
  * @test The endpoint's timer watcher tears down an idle connection without any inbound packet
  * @brief `arm_timer` programs the libev timer from `backend::next_timeout()` and `on(event::timer&)`
- *        feeds `backend::on_timeout(now)` (endpoint.h:160-173,695-702). With a very short idle_timeout
+ *        feeds `backend::on_timeout(now)` (endpoint.h:160-173,719-726). With a very short idle_timeout
  *        on the client and the server then stopped (no more packets ever arrive), the ONLY thing that
  *        can close the client is its own timer firing: the connection must transition to `closed`
  *        purely through the timer path. This is the one teardown the packet-driven tests never reach
