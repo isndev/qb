@@ -83,7 +83,7 @@ concept has_socket_transport = requires(T &component) {
  *        peer waiting for the message never ends with readability; readability for that write, where writability --
  *        a connected socket stays writable -- woke the loop on every pass. And a handshake after the first
  *        (`rehandshaking()`), whose interleaved application data OpenSSL takes from a read alone, is driven by the
- *        read. Compiled out for every other transport.
+ *        read. Every other transport compiles none of it (two bools of `io<>` stay, in its padding).
  */
 template <typename T>
 concept tls_io = requires(T &component) {
@@ -2356,12 +2356,17 @@ class io : public base<io<_Derived>, event::io> {
      *        message: on readability alone the connection stalled. And OpenSSL reads nothing before that write leaves:
      *        readability watched too -- input queued behind the peer's handshake message -- would dispatch the read
      *        again on every pass, whatever else asked for writability. Output queued waits for the handshake, which
-     *        the read drives (`tls_read_drives()`); an empty arm made meanwhile is kept aside (`_tls_arm`).
+     *        the read drives (`tls_read_drives()`); an empty arm, made before the wait (writability watched with
+     *        nothing queued) or during it, is kept aside (`_tls_arm`) and earns its eos when writability comes.
      */
     QB_NOINLINE QB_COLD void
     watch_write_for_read() noexcept {
-        if ((this->_async_event.events & (EV_READ | EV_WRITE)) != EV_WRITE)
+        const int watched = this->_async_event.events & (EV_READ | EV_WRITE);
+        if (watched != EV_WRITE) {
+            if ((watched & EV_WRITE) && !Derived.pendingWrite())
+                _tls_arm = true;
             this->_async_event.set(EV_WRITE);
+        }
     }
 
     /// Output left queued after a TLS write pass that did not watch both directions: both again -- writability alone
@@ -2395,7 +2400,7 @@ class io : public base<io<_Derived>, event::io> {
      *          output's -- the read is made now: it writes what the handshake has to, the message a read that waited
      *          to write could not send included. The read pass that completes the handshake writes what is queued. Not
      *          while close_after_deliver() drains: its read pass is off, and the write drives the handshake, as before
-     *          -- application data the peer sends then can still end the connection (not measured).
+     *          -- application data the peer sends then still ends the connection (measured with OpenSSL 3.5.7, as before).
      */
     QB_NOINLINE QB_COLD void
     tls_read_drives(bool read_made) noexcept {
@@ -2432,7 +2437,7 @@ class io : public base<io<_Derived>, event::io> {
      *          answered as any write pass answers it, with its `eos`. Nothing queued, writability alone: the
      *          writability watch_write_for_read() asked for -- only it, and a close_after_deliver() drain (its read
      *          pass off: left to the write pass), watch writability alone. Readability alone again, and the read made
-     *          again now; an `eos` only when an empty arm was made meanwhile (`_tls_arm`), none for the read's
+     *          again now; an `eos` only when an empty arm was made before or during the wait (`_tls_arm`), none for the read's
      *          writability. Output queued that OpenSSL took none of while it waits for the PEER (`write_wants_read()`:
      *          a handshake message to read first -- the first handshake, still in progress): writability is no longer
      *          watched -- the socket stays writable, and the loop was woken on every pass until the peer answered --;
@@ -2447,7 +2452,7 @@ class io : public base<io<_Derived>, event::io> {
                 return false;
             this->_async_event.set(EV_READ);
             this->_async_event.feed_event(EV_READ);
-            return !_tls_arm; // an empty arm made meanwhile earns its eos (cleared with it), the read's writability none
+            return !_tls_arm; // an empty arm earns its eos (cleared with it), the read's writability none
         }
         if (!Derived.transport().write_wants_read()) {
             _tls_held = true; // the write that sends it makes a read follow: tls_held_flushed()
@@ -3380,7 +3385,7 @@ private:
      * This is the central dispatch for I/O events, delegating to helper methods
      * to reduce complexity: `process_messages()`, `handle_post_read()`, and `handle_write()`.
      * Over TLS it waits for what OpenSSL waits for (Huly QB-1270): a read that must write first (`read_wants_write()`)
-     * watches writability alone, and the write pass makes the read again; an empty arm made meanwhile still earns its
+     * watches writability alone, and the write pass makes the read again; an empty arm made before or during it earns its
      * `eos`, the read's writability none. A handshake under way after the first (`rehandshaking()`) is driven by the
      * read, whose application data OpenSSL takes from a read alone: output queued waits for its end. A write that waits
      * for the peer (`write_wants_read()`) watches readability alone, and the read pass makes the write again; a write

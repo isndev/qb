@@ -737,7 +737,7 @@ public:
 
     /**
      * @brief Whether a handshake is under way on this connection after its first one completed -- a TLS 1.2
-     *        renegotiation, a TLS 1.3 post-handshake message this side answers (Huly QB-1270).
+     *        renegotiation, a TLS 1.3 post-handshake message being taken or answered (Huly QB-1270).
      * @details OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone: an
      *          `SSL_write()` made then drives the handshake too, and the connection ends when the peer's next record is
      *          application data -- a TLS 1.2 server may send it behind its HelloRequest (measured with OpenSSL 3.5).

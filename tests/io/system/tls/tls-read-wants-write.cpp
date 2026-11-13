@@ -1248,6 +1248,13 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteBesideAnEmptyArmDoesNotWakeTheLoo
     read_waits_while_writability_is_asked("an empty arm during the wait", [](PingClient &) {}, [](PingClient &client) { client.publish(); });
 }
 
+// ...and an empty arm made BEFORE the read waits -- writability watched with nothing queued when the read meets the
+// HelloRequest: the arm is kept aside as the wait drops readability, and still earns its eos (the review's MAJOR on the
+// final diff: watching writability alone had dropped it).
+TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteBesideAnEmptyArmMadeBeforeDoesNotWakeTheLoop) {
+    read_waits_while_writability_is_asked("an empty arm made before", [](PingClient &client) { client.publish(); }, [](PingClient &) {});
+}
+
 // ...and a stop() and a start() with output queued: start() arms writability alone, as the wait did.
 TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteBesideOutputQueuedThroughARestartDoesNotWakeTheLoop) {
     read_waits_while_writability_is_asked(

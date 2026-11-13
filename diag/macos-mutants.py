@@ -49,7 +49,7 @@ IN_AFTER = ('    read_after_write() noexcept {\n'
             '        this->_async_event.feed_event(EV_READ);\n'
             '    }\n')
 WATCH_FN = '    watch_write_for_read() noexcept {\n'
-WATCH_IO = WATCH_FN + '        if ((this->_async_event.events & (EV_READ | EV_WRITE)) != EV_WRITE)\n            this->_async_event.set(EV_WRITE);\n'
+WATCH_SET = '                _tls_arm = true;\n            this->_async_event.set(EV_WRITE);\n'
 WATCH = WATCH_FN + '        this->_async_event.set(EV_WRITE);\n'
 HW_TEST = '        if (unlikely(raw_ret < (detail::tls_io<_Derived> ? 1 : 0))) {\n'
 TOOK_FIRST = ('            if ((this->_async_event.events & EV_READ) || _reason || !_protocol->ok())\n'
@@ -131,14 +131,15 @@ MUTANTS = {
     'I01': ('input<>: its read pass never watches writability for a read', IOH, ARM, '', 2, 0),
     'I01b': ('io<>: its read pass never watches writability for a read', IOH, ARM, '', 2, 1),
     'I02': ('input<>: readability watched too (a read that waits to write)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ | EV_WRITE);\n', 1),
-    'I02b': ('io<>: readability watched too (a read that waits to write)', IOH, WATCH_IO,
-             WATCH_FN + '        if ((this->_async_event.events & (EV_READ | EV_WRITE)) != (EV_READ | EV_WRITE))\n'
-             '            this->_async_event.set(EV_READ | EV_WRITE);\n', 1),
-    'I02c': ('io<>: writability already watched kept beside readability (round 2: the busy loop)', IOH, WATCH_IO,
-             WATCH_FN + '        if (!(this->_async_event.events & EV_WRITE))\n            this->_async_event.set(EV_WRITE);\n', 1),
+    'I02b': ('io<>: readability watched too (a read that waits to write)', IOH, WATCH_SET,
+             '                _tls_arm = true;\n            this->_async_event.set(EV_READ | EV_WRITE);\n', 1),
+    'I02c': ('io<>: writability already watched kept beside readability (round 2: the busy loop)', IOH,
+             '        if (watched != EV_WRITE) {\n', '        if (!(watched & EV_WRITE)) {\n', 1),
     'I03': ('input<>: readability alone watched (nothing armed)', IOH, WATCH, WATCH_FN + '        this->_async_event.set(EV_READ);\n', 1),
-    'I03b': ('io<>: readability alone watched (nothing armed)', IOH, WATCH_IO,
-             WATCH_FN + '        if ((this->_async_event.events & (EV_READ | EV_WRITE)) != EV_READ)\n            this->_async_event.set(EV_READ);\n', 1),
+    'I03b': ('io<>: readability alone watched (nothing armed)', IOH, WATCH_SET,
+             '                _tls_arm = true;\n            this->_async_event.set(EV_READ);\n', 1),
+    'M1': ('io<>: an empty arm made before the wait not kept aside (the final review\'s MAJOR)', IOH,
+           '            if ((watched & EV_WRITE) && !Derived.pendingWrite())\n                _tls_arm = true;\n', '', 1),
     'I04': ('input<>: the writability a read asked for falls to the error path', IOH, IN_HOOK, '', 1),
     'I05': ('input<>: the read not made again when writability came', IOH, IN_AFTER,
             IN_AFTER.replace('        this->_async_event.feed_event(EV_READ);\n', ''), 1),
