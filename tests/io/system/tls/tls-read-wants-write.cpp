@@ -1442,6 +1442,42 @@ TEST_F(TlsReadWantsWrite, AClientStartedAgainWhileItsReadWaitsToWriteReadsAgainW
     EXPECT_EQ(client.watching(), EV_READ) << "a start() after the wait still waited for writability: " << spell(client.watching());
 }
 
+// ...and an empty arm made during that wait, then a stop() and a start(): the stop() dropped the arm, as it drops the
+// watcher's writability -- a plain io object started again with nothing queued watches readability and never answers
+// it --, so the read's writability after the start() earns no eos.
+TEST_F(TlsReadWantsWrite, AnEmptyArmAStopDroppedDuringAReadsWaitEarnsNoEos) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::while_full = true;
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    pump(50ms);
+    ASSERT_GE(refuse::attempts, 1u) << "the case proves nothing: the read wrote no ClientHello";
+    ASSERT_EQ(SSL_in_init(client.transport().ssl_handle()), 1) << "the case proves nothing: the client did not answer the HelloRequest";
+    const std::size_t eos = client.eos;
+    client.publish(); // the empty arm, while the read waits
+    client.stop();    // ...dropped with the watcher's writability
+    pump(10ms);
+    client.start();
+    ASSERT_EQ(client.watching(), EV_WRITE) << "the case proves nothing: the start() did not wait for writability";
+    const bool renegotiated = peer.pump_until(
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+    pump(20ms);
+    std::cout << "[ MEASURED ] an empty arm a stop() dropped during a read's wait (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): " << (renegotiated ? "renegotiated" : "NOT renegotiated") << ", eos " << client.eos - eos << '\n';
+    EXPECT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
+    EXPECT_EQ(client.eos, eos) << "the arm a stop() dropped earned an eos after the start()";
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
 // A socket error a call is made again after (ENOBUFS), met by a server's own handshake flight, which its first read
 // drives: the handshake goes on where OpenSSL keeps it -- until 3.4 it ended the connection.
 TEST_F(TlsReadWantsWrite, ASessionCompletesItsHandshakeWhoseFlightMetEnobufs) {

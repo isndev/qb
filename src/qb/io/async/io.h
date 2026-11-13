@@ -2391,10 +2391,10 @@ class io : public base<io<_Derived>, event::io> {
 
     /**
      * @brief Output queued while a handshake is under way after the first -- a TLS 1.2 renegotiation, a TLS 1.3
-     *        post-handshake message this side answers (`rehandshaking()`, Huly QB-1270): the read drives it, and what
-     *        is queued is written once it completes. OpenSSL takes the peer's application data during such a handshake
-     *        from `SSL_read()` alone; an `SSL_write()` made then drives the handshake too, and ended the connection
-     *        when the peer's next record was application data (a TLS 1.2 server may send it behind its HelloRequest).
+     *        post-handshake message (`rehandshaking()`, Huly QB-1270): the read drives it, and what is queued is
+     *        written once it completes. OpenSSL takes the peer's application data during such a handshake from
+     *        `SSL_read()` alone; an `SSL_write()` made then drives the handshake too, and ended the connection when the
+     *        peer's next record was application data (a TLS 1.2 server may send it behind its HelloRequest).
      * @details The read just made (`read_made`): the handshake waits for the peer -- readability alone; writability,
      *          which the socket keeps, would wake the loop on every pass. Otherwise -- writability, the read's or the
      *          output's -- the read is made now: it writes what the handshake has to, the message a read that waited
@@ -3329,7 +3329,7 @@ private:
         _bytes_written += ret;
 
         if (!Derived.pendingWrite()) {
-            // An empty arm made while a TLS read waited to write (Huly QB-1270): the eos below answers it too.
+            // An empty arm made before or while a TLS read waited to write (Huly QB-1270): the eos below answers it.
             if constexpr (detail::tls_io<_Derived>)
                 _tls_arm = false;
             if (unlikely(_reason || !_protocol->ok())) { // ok()==false also covers the NoProtocol sentinel
