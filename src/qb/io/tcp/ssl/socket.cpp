@@ -1168,15 +1168,21 @@ socket::read(void *data, std::size_t size) noexcept {
                 // A socket error -- a reset: OpenSSL forbids SSL_shutdown() on the connection from here, so this
                 // side's end is recorded without the alert, which nobody would read (Huly QB-1270). Not one the io
                 // layer reads as "try again" (not_recv_error()): the stream goes on, where OpenSSL lets it. OpenSSL 4
-                // ends the session on every socket error (its error state, SSL_in_init(); measured: 4.1.0), and a read
-                // made again would fail with no system call and an earlier call's error: the session is reported
-                // aborted instead. Otherwise the error is left for the caller.
+                // ends the session on every socket error -- its error state, SSL_in_init() 1 from there on (measured:
+                // 4.1.0) -- and a read made again would fail with an earlier call's error: the session is reported
+                // aborted instead. OpenSSL 3 does not, and is in init there only with a handshake message in flight (a
+                // KeyUpdate answer), which goes on. Otherwise the error is left for the caller.
                 if (!qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
                     quiet_shutdown();
-                else if (SSL_in_init(ssl_handle()))
+                else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))
                     qb::io::socket::set_last_errno(tls_session_aborted);
                 return -1;
             default:
+                // OpenSSL refuses a read without a system call once it has ended the session -- with OpenSSL 4 after
+                // an error met elsewhere, as by the alert of a lingering close -- and leaves an earlier call's error:
+                // a "try again" there would be read again on every pass. Reported as the session aborted.
+                if (err == SSL_ERROR_SSL && qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                    qb::io::socket::set_last_errno(tls_session_aborted);
                 return -1;
         }
     }
@@ -1211,7 +1217,7 @@ socket::write(const void *data, std::size_t size) noexcept {
                     // stream goes on where OpenSSL lets it: OpenSSL 4 ended the session on it, as after a read's.
                     if (!qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                         quiet_shutdown();
-                    else if (SSL_in_init(ssl_handle()))
+                    else if (OPENSSL_version_major() >= 4 && SSL_in_init(ssl_handle()))
                         qb::io::socket::set_last_errno(tls_session_aborted);
                     return -1;
                 default:

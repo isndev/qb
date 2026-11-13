@@ -1775,6 +1775,7 @@ TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesGoesOnUnlessOpenSslEndedTheSe
         EXPECT_CLEAN_END(end, LAST);
     } else {
         EXPECT_EQ(error, kSessionAborted) << "a session OpenSSL ended on ENOBUFS was not reported aborted (" << error << ")";
+        qb::io::socket::set_last_errno(EWOULDBLOCK); // what any call that found nothing leaves behind
         EXPECT_EQ(client.write(LAST.data(), LAST.size()), -1) << "a write was taken into a session OpenSSL ended";
         EXPECT_FALSE(qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
             << "a write made again failed with an error that reads as try again (" << qb::io::socket::get_last_errno() << ")";
@@ -1785,6 +1786,49 @@ TEST_F(TlsCloseNotify, AWriteErrorTheIoLayerRetriesGoesOnUnlessOpenSslEndedTheSe
         const TlsEnd end = peer.read_to_end();
         note("ssl::socket: one write refused with ENOBUFS, the session ended by OpenSSL, disconnect()", end);
         EXPECT_EQ(end.received, "") << "the peer read bytes of a write OpenSSL refused";
+        EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was not ended as a cut stream: " << end.text();
+    }
+    client.close();
+}
+
+// A handshake message in flight puts OpenSSL in init without ending anything: a peer's KeyUpdate request is answered
+// with this side's next write. A socket error the io layer writes again after, met by that write, ends the session with
+// OpenSSL 4 as on an idle connection; OpenSSL 3 writes the answer and the bytes again and the stream ends whole -- being
+// in init is not being ended, and the session must not be reported aborted for it.
+TEST_F(TlsCloseNotify, AWriteErrorWhileAKeyUpdateIsAnsweredGoesOnUnlessOpenSslEndedTheSession) {
+    RawContext               context{RawContext::role::server};
+    RawPeer                  peer{context, RawContext::role::server};
+    qb::io::tcp::ssl::socket client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client));
+    ASSERT_NO_FATAL_FAILURE(settle(peer, client));
+    ASSERT_EQ(SSL_version(client.ssl_handle()), TLS1_3_VERSION) << "the case proves nothing: no KeyUpdate before TLS 1.3";
+    ASSERT_EQ(SSL_key_update(peer.ssl, SSL_KEY_UPDATE_REQUESTED), 1);
+    ASSERT_TRUE(peer.write("k")); // the request leaves with it
+    char       octet    = 0;
+    int        got      = 0;
+    const auto deadline = steady::now() + 5s;
+    while ((got = client.read(&octet, 1)) == 0 && steady::now() < deadline)
+        std::this_thread::sleep_for(1ms);
+    ASSERT_EQ(got, 1) << "the client never read the octet behind the KeyUpdate request";
+    ASSERT_NO_FATAL_FAILURE(inject_once::install(client.ssl_handle(), true));
+    inject_once::fail_write = ENOBUFS;
+    ASSERT_EQ(client.write(LAST.data(), LAST.size()), -1) << "the case proves nothing: the write did not fail";
+    ASSERT_EQ(inject_once::fail_write, 0) << "the case proves nothing: the injected error was not met";
+    const int error = qb::io::socket::get_last_errno();
+    if (!kSocketErrorEndsTheSession) {
+        EXPECT_EQ(SSL_in_init(client.ssl_handle()), 1) << "the case proves nothing: no handshake message was in flight";
+        EXPECT_TRUE(qb::io::socket::not_send_error(error)) << "a session OpenSSL 3 keeps was reported ended (" << error << ")";
+        EXPECT_EQ(client.write(LAST.data(), LAST.size()), static_cast<int>(LAST.size())) << "the write the io layer makes again failed";
+        EXPECT_TRUE(send_close_notify(client)) << "a stream whose output was all written could not end whole";
+        static_cast<void>(client.disconnect());
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: a KeyUpdate answered, one write refused with ENOBUFS, written again, disconnect()", end);
+        EXPECT_CLEAN_END(end, LAST);
+    } else {
+        EXPECT_EQ(error, kSessionAborted) << "a session OpenSSL ended on ENOBUFS was not reported aborted (" << error << ")";
+        static_cast<void>(client.disconnect());
+        const TlsEnd end = peer.read_to_end();
+        note("ssl::socket: a KeyUpdate answered, one write refused with ENOBUFS, the session ended by OpenSSL", end);
         EXPECT_TRUE(end.unexpected_eof()) << "a session OpenSSL ended was not ended as a cut stream: " << end.text();
     }
     client.close();
@@ -1840,6 +1884,7 @@ TEST_F(TlsCloseNotify, AReadErrorTheIoLayerRetriesGoesOnUnlessOpenSslEndedTheSes
         EXPECT_CLEAN_END(end, "");
     } else {
         EXPECT_EQ(error, kSessionAborted) << "a session OpenSSL ended on EINTR was not reported aborted (" << error << ")";
+        qb::io::socket::set_last_errno(EWOULDBLOCK); // what any read that found nothing leaves behind
         EXPECT_EQ(client.read(&octet, 1), -1) << "a read was answered from a session OpenSSL ended";
         EXPECT_FALSE(qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
             << "a read made again failed with an error that reads as try again (" << qb::io::socket::get_last_errno() << ")";
