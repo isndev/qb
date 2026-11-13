@@ -62,11 +62,25 @@ jobs:
             bin="$(find "$b" -type f -name "$t" -perm -u+x | head -1)"
             [ -n "$bin" ] || { echo "$v: no binary" | tee -a "$o/verdicts.txt"; continue; }
             (cd "$(dirname "$bin")" && timeout 120 "./$t") > "$o/$v-run.log" 2>&1; rc=$?
-            echo "$v: run exit $rc" | tee -a "$o/verdicts.txt"; tail -4 "$o/$v-run.log"
-            if [ $rc -ne 0 ]; then
+            echo "$v: run exit $rc (declared order)" | tee -a "$o/verdicts.txt"; tail -4 "$o/$v-run.log"
+            for f in '*TaskOverAWideValueRoundTrips*' '*HandleFromPromiseRoundTripsAndResumes*'; do
+              (cd "$(dirname "$bin")" && timeout 60 "./$t" --gtest_filter="$f") > /dev/null 2>&1
+              echo "$v: run exit $? alone $f" | tee -a "$o/verdicts.txt"
+            done
+            bad=""
+            for seed in $(seq 1 30); do
+              (cd "$(dirname "$bin")" && timeout 60 "./$t" --gtest_shuffle --gtest_random_seed=$seed) > "$o/$v-seed-$seed.log" 2>&1; r=$?
+              order="$(grep -oE 'RUN +\] [A-Za-z_.]+' "$o/$v-seed-$seed.log" | sed -E 's/.*\.//' | tr '\n' ' ')"
+              echo "$v seed $seed: exit $r order: $order" >> "$o/$v-seeds.txt"
+              if [ $r -ne 0 ] && [ -z "$bad" ]; then bad=$seed; fi
+            done
+            echo "$v: $(grep -c 'exit 0 ' "$o/$v-seeds.txt") of 30 shuffled runs exit 0; first failing seed: ${bad:-none}" | tee -a "$o/verdicts.txt"
+            awk -F'exit | order: ' '{print $2 " | " $3}' "$o/$v-seeds.txt" | sort | uniq -c
+            if [ $rc -ne 0 ] || [ -n "$bad" ]; then
+              extra=(); if [ -n "$bad" ]; then extra=(--gtest_shuffle "--gtest_random_seed=$bad"); fi
               (cd "$(dirname "$bin")" && gdb -batch -ex run -ex bt -ex 'info registers rip rsp rbp rdi rsi rax' \
-                 -ex 'x/16i $pc-32' -ex 'frame 1' -ex 'info frame' "./$t") > "$o/$v-gdb.log" 2>&1
-              sed -n '/received signal/,$p' "$o/$v-gdb.log" | head -60
+                 -ex 'x/16i $pc-32' -ex 'frame 1' -ex 'info frame' --args "./$t" "${extra[@]}") > "$o/$v-gdb.log" 2>&1
+              sed -n '/received signal/,$p' "$o/$v-gdb.log" | head -70
               objdump -d --no-show-raw-insn -C "$bin" > "$o/$v-objdump.txt" 2>/dev/null || true
             fi
           done
