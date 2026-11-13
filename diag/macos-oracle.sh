@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# SCRATCH (Huly QB-1270 part 3), never to merge: the macOS runner as the oracle for qb's close_notify witness.
-# One machine, two OpenSSL majors (Homebrew openssl@4 -- the lane's -- and openssl@3): the system, the library's
-# documentation, a probe of OpenSSL and the kernel alone, then qb built against each and its tests run -- the tree as
-# committed here (the candidate), and the same tree with src/ put back at the base (the red run of its tests).
+# SCRATCH (Huly QB-1270 part 4), never to merge: the macOS runner as the oracle for qb's "a TLS read that must write
+# first" witness. One machine, two OpenSSL majors (Homebrew openssl@4 -- the lane's -- and openssl@3): the system, then
+# qb built against each and its tests run -- the tree as committed here (the candidate), and the same tree with src/ put
+# back at the base (the red run of its tests).
 #
 #   diag/macos-oracle.sh <logs directory> [suite|witness] [base commit]
 #
@@ -12,13 +12,12 @@ set -uo pipefail
 out="${1:?logs directory}"
 scope="${2:-suite}"
 base="${3:-}"
-mkdir -p "$out/docs"
+mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 jobs="$(sysctl -n hw.logicalcpu)"
 p3="$(brew --prefix openssl@3)"
 p4="$(brew --prefix openssl@4)"
-witnesses=(qb-io-test-system-tls-close-notify qb-io-test-system-tcp-socket-loopback)
-watch='TlsCloseNotify\.(ASocketWhosePeerEnded|ASocketThatWroteIntoAReset|ASocketThatReadAReset|AReadErrorTheIoLayer|AWriteErrorTheIoLayer|ASocketThatCannotTakeTheAlert|AFilledSocket|AClientWhose(Read|Write)FailsOnce|ABlockingSocket)|TCPSocket\.AShutdownOfBoth'
+witnesses=(qb-io-test-system-tls-read-wants-write qb-io-test-system-tls-close-notify qb-io-test-system-ssl-socket-loopback)
 
 section() { echo; echo "=================== $* ($(date -u +%H:%M:%S))"; }
 
@@ -27,21 +26,13 @@ section "the machine"
   sw_vers
   uname -a
   sysctl -n machdep.cpu.brand_string hw.logicalcpu
+  sysctl kern.ipc.maxsockbuf net.inet.tcp.sendspace net.inet.tcp.recvspace net.inet.tcp.autorcvbufmax net.inet.tcp.autosndbufmax 2>/dev/null
   clang++ --version | head -1
-  brew list --versions openssl@3 openssl@4 libngtcp2
+  brew list --versions openssl@3 openssl@4
   for p in "$p3" "$p4"; do "$p/bin/openssl" version; done
   git log --oneline -3
   [ -n "$base" ] && git diff --stat "$base" HEAD -- src tests
 } 2>&1 | tee "$out/env.txt"
-
-section "the probe: OpenSSL and the kernel alone"
-for v in 4 3; do
-  eval p="\$p$v"
-  clang++ -std=c++20 -O1 -Wall -Wextra -I"$p/include" diag/tls-macos-probe.cpp -L"$p/lib" -lssl -lcrypto -Wl,-rpath,"$p/lib" \
-    -o "$out/probe-$v" > "$out/probe-$v-build.txt" 2>&1 || cat "$out/probe-$v-build.txt"
-  "$out/probe-$v" tests/io/system/resources/ssl/cert.pem tests/io/system/resources/ssl/key.pem > "$out/probe-$v.txt" 2>&1
-  grep -E 'library|stale-errno|kernel-rdwr-after|full-buffer-autotuned-alert: SSL_shutdown' "$out/probe-$v.txt"
-done
 
 # $1 tree, $2 openssl major, $3 label, $4 suite|witness
 build_and_run() {
@@ -64,16 +55,16 @@ build_and_run() {
     cmake --build "$b" --parallel "$jobs" --target "${witnesses[@]}" > "$out/build-$label-$v.log" 2>&1
   fi || { echo "build failed"; grep -E 'error|FAILED' "$out/build-$label-$v.log" | head -40; return; }
   echo "warnings in the build: $(grep -c 'warning:' "$out/build-$label-$v.log")"
-  otool -L "$b/bin/tests/qb-io-test-system-tls-close-notify" | grep -i ssl
+  otool -L "$b/bin/tests/qb-io-test-system-tls-read-wants-write" | grep -i ssl
   for w in "${witnesses[@]}"; do
     "$b/bin/tests/$w" --gtest_color=no > "$out/$w-$label-$v.txt" 2>&1
     echo "$w: exit $?"
     grep -E '^\[  (PASSED|FAILED) |^\[==========\] [0-9]+ tests' "$out/$w-$label-$v.txt"
-    grep -A14 -E "^\[ RUN      \] ($watch)" "$out/$w-$label-$v.txt" | grep -E '^\[ RUN|^\[       OK|^\[  FAILED|PEER|Failure|Expected|Which is|Value of|Actual|the case|reads as|never|answered|took' | head -120
+    grep -E '^\[  FAILED  \] [A-Za-z]+\.[A-Za-z]+ \(|MEASURED|PROBE|OPENSSL \]' "$out/$w-$label-$v.txt" | cut -c1-300 | head -60
   done
-  "$b/bin/tests/qb-io-test-system-tls-close-notify" --gtest_color=no --gtest_repeat=5 > "$out/witness-repeat-$label-$v.txt" 2>&1
+  "$b/bin/tests/qb-io-test-system-tls-read-wants-write" --gtest_color=no --gtest_repeat=5 > "$out/witness-repeat-$label-$v.txt" 2>&1
   echo "the witness five times: exit $?; $(grep -c '^\[  PASSED  \]' "$out/witness-repeat-$label-$v.txt") passed runs"
-  grep -E '^\[  FAILED  \] TlsCloseNotify\.[A-Za-z]+ \(' "$out/witness-repeat-$label-$v.txt" | sed 's/ (.*//' | sort | uniq -c
+  grep -E '^\[  FAILED  \] TlsReadWantsWrite\.[A-Za-z]+ \(' "$out/witness-repeat-$label-$v.txt" | sed 's/ (.*//' | sort | uniq -c
   if [ "$what" = suite ]; then
     (cd "$b" && ctest --output-on-failure --parallel 4 --output-junit "$out/ctest-$label-$v.xml" > "$out/ctest-$label-$v.log" 2>&1)
     echo "ctest exit $?"

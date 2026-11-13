@@ -66,6 +66,7 @@
 
 #include "../../shared/close_after_peer_support.h"
 #include "../../shared/ssl_fixtures.h"
+#include "../../shared/tls_wrapping_bio.h"
 
 using namespace std::chrono_literals;
 
@@ -761,11 +762,12 @@ count_write_attempts(SSL *ssl) {
 }
 
 /**
- * @brief A filter BIO over a socket BIO that fails the next write, or read, once with a system error the caller
+ * @brief A BIO in front of a socket BIO that fails the next write, or read, once with a system error the caller
  *        names: what a socket that refuses one call does. It sets no retry flag, so OpenSSL reports the call as
  *        `SSL_ERROR_SYSCALL` -- as it does for `ENOBUFS` from a real socket, which its socket BIO does not retry.
  *        Or it answers every write "try again later", the retry flag set: what a socket BIO answers for a send
- *        buffer that takes nothing (`EWOULDBLOCK`), on every system and at every moment.
+ *        buffer that takes nothing (`EWOULDBLOCK`), on every system and at every moment. It wraps the socket BIO,
+ *        never chained onto it: OpenSSL before 3.5.6 leaks the socket BIO of a chain (`shared/tls_wrapping_bio.h`).
  */
 namespace inject_once {
 int  fail_write    = 0;     ///< The system error the next write fails with, once; 0: none.
@@ -773,67 +775,31 @@ int  fail_read     = 0;     ///< The same for the next read.
 bool refuse_writes = false; ///< Every write would block, until cleared.
 
 int
-write(BIO *bio, const char *in, int size) {
-    BIO_clear_retry_flags(bio);
+write(BIO *self, BIO *inner, const char *in, int size) {
     if (refuse_writes) {
-        BIO_set_retry_write(bio);
+        BIO_set_retry_write(self);
         return -1;
     }
     if (const int error = std::exchange(fail_write, 0)) {
         qb::io::socket::set_last_errno(error);
         return -1;
     }
-    const int ret = BIO_write(BIO_next(bio), in, size);
-    BIO_copy_next_retry(bio);
-    return ret;
+    return qb::io::test::tls_wrapping_bio::forward_write(self, inner, in, size);
 }
 int
-read(BIO *bio, char *out, int size) {
-    BIO_clear_retry_flags(bio);
+read(BIO *self, BIO *inner, char *out, int size) {
     if (const int error = std::exchange(fail_read, 0)) {
         qb::io::socket::set_last_errno(error);
         return -1;
     }
-    const int ret = BIO_read(BIO_next(bio), out, size);
-    BIO_copy_next_retry(bio);
-    return ret;
-}
-long
-ctrl(BIO *bio, int cmd, long num, void *ptr) {
-    return BIO_ctrl(BIO_next(bio), cmd, num, ptr);
-}
-int
-create(BIO *bio) {
-    BIO_set_init(bio, 1);
-    return 1;
-}
-BIO_METHOD *
-method() {
-    static BIO_METHOD *const methods = [] {
-        BIO_METHOD *const m = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_FILTER, "qb-test-fail-once");
-        BIO_meth_set_write(m, &inject_once::write);
-        BIO_meth_set_read(m, &inject_once::read);
-        BIO_meth_set_ctrl(m, &inject_once::ctrl);
-        BIO_meth_set_create(m, &inject_once::create);
-        return m;
-    }();
-    return methods;
+    return qb::io::test::tls_wrapping_bio::forward_read(self, inner, out, size);
 }
 
-/// The filter over the socket BIO `ssl` writes through (`writes`) or reads through: the descriptor it carries is
-/// still the socket's (the filter passes every control on).
+/// The BIO in front of the socket BIO `ssl` writes through (`writes`) or reads through: the descriptor it reports is
+/// still the socket's (every control is passed on).
 void
 install(SSL *ssl, bool writes) {
-    BIO *const sock = writes ? SSL_get_wbio(ssl) : SSL_get_rbio(ssl);
-    ASSERT_NE(sock, nullptr);
-    BIO *const filter = BIO_new(method());
-    ASSERT_NE(filter, nullptr);
-    ASSERT_EQ(BIO_up_ref(sock), 1); // the filter's own reference: the SSL object lets go of the one it replaces
-    BIO_push(filter, sock);
-    if (writes)
-        SSL_set0_wbio(ssl, filter);
-    else
-        SSL_set0_rbio(ssl, filter);
+    qb::io::test::tls_wrapping_bio::wrapper<&inject_once::write, &inject_once::read>::install(ssl, writes);
 }
 } // namespace inject_once
 

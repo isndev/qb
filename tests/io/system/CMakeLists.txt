@@ -267,6 +267,10 @@ qb_add_test(MODULE qb-io TIER system NAME close-after-peer-tls SOURCES tcp/close
 # included; none when the peer ended it, before the handshake, or when queued output is dropped; a socket that cannot
 # take the alert is closed without it; and a saved session resumes after either side closed (Huly QB-1270).
 qb_add_test(MODULE qb-io TIER system NAME tls-close-notify SOURCES tls/tls-close-notify.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+# A TLS read that must write first -- a ClientHello answering a HelloRequest, a server's answer to a client's
+# renegotiation, a post-handshake Certificate -- goes on when the socket can take that write: the io objects watch
+# writability for it and read again, where they waited for readability and the connection stalled (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME tls-read-wants-write SOURCES tls/tls-read-wants-write.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 # Where the close after the peer meets the end of a thread's loop (Huly QB-1270 with QB-1246): a connection a coroutine
 # frame ends while its thread's listener is destroyed is closed by that teardown, one an object with static storage
 # ends after it is closed in the call (a child process), one handed over on a thread with no loop builds it, and

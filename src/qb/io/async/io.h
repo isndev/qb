@@ -73,6 +73,21 @@ template <typename T>
 concept has_socket_transport = requires(T &component) {
     { component.transport().native_handle() } -> std::same_as<std::remove_cv_t<decltype(qb::io::invalid_socket)>>;
 };
+
+/**
+ * @brief A component over a TLS socket, whose read can have to WRITE before it reads and whose write can have to wait
+ *        for the PEER (Huly QB-1270): a handshake message -- a renegotiation's, a post-handshake one, a server's own
+ *        flight -- answers what a read took, and the socket may not take it at once (`tcp::ssl::socket::
+ *        read_wants_write()`); OpenSSL must read the peer's next message before a write takes anything
+ *        (`write_wants_read()`). The io layer waits for what OpenSSL waits for: writability for that read, which a
+ *        peer waiting for the message never ends with readability; readability for that write, where writability --
+ *        a connected socket stays writable -- woke the loop on every pass. Compiled out for every other transport.
+ */
+template <typename T>
+concept tls_io = requires(T &component) {
+    { component.transport().read_wants_write() } -> std::same_as<bool>;
+    { component.transport().write_wants_read() } -> std::same_as<bool>;
+};
 } // namespace detail
 
 /**
@@ -1496,8 +1511,13 @@ private:
         if (likely(event._revents & EV_READ)) {
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
-                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                    if constexpr (detail::tls_io<_Derived>) {
+                        if (Derived.transport().read_wants_write())
+                            watch_write_for_read();
+                    }
                     return;
+                }
                 goto error;
             }
 
@@ -1518,6 +1538,13 @@ private:
             handle_post_read();
             return;
         }
+        if constexpr (detail::tls_io<_Derived>) {
+            // Writability, which only a read that had to write first asks this object for (above): read again.
+            if (event._revents & EV_WRITE) {
+                read_after_write();
+                return;
+            }
+        }
     error:
         // No Windows would-block exemption (Huly QB-294): a genuine would-block returns above on
         // not_recv_error(), against the same last error, and every other path here either set a reason
@@ -1525,6 +1552,26 @@ private:
         if (!_reason)
             _system_error = qb::io::socket::get_last_errno();
         dispose();
+    }
+
+private:
+    /**
+     * @brief A TLS read that must write before it reads -- a handshake message answering what it took -- could not,
+     *        the socket refusing that write (`read_wants_write()`, Huly QB-1270): writability is watched instead of
+     *        readability, and the read made again when it comes. The peer usually waits for that message: on
+     *        readability alone the connection stalled. And OpenSSL reads nothing before that write leaves: with input
+     *        already queued, readability would dispatch the read again on every pass.
+     */
+    QB_NOINLINE QB_COLD void
+    watch_write_for_read() noexcept {
+        this->_async_event.set(EV_WRITE);
+    }
+
+    /// The writability watch_write_for_read() asked for came: readability alone again, and the read made again now.
+    QB_NOINLINE QB_COLD void
+    read_after_write() noexcept {
+        this->_async_event.set(EV_READ);
+        this->_async_event.feed_event(EV_READ);
     }
 
 protected:
@@ -2012,12 +2059,21 @@ private:
         if (likely(event._revents & EV_WRITE)) {
             {
                 auto ret = Derived.write();
-                if (unlikely(ret < 0)) {
-                    if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
-                        ready_to_write();
-                        return;
+                // A TLS write that took nothing is looked at here too, in the same test (Huly QB-1270).
+                if (unlikely(ret < (detail::tls_io<_Derived> ? 1 : 0))) {
+                    if constexpr (detail::tls_io<_Derived>) {
+                        if (ret == 0 && Derived.pendingWrite() && Derived.transport().write_wants_read()) {
+                            wait_read_for_write();
+                            return;
+                        }
                     }
-                    goto error;
+                    if (ret < 0) {
+                        if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                            ready_to_write();
+                            return;
+                        }
+                        goto error;
+                    }
                 }
                 if (likely(ret > 0))
                     _bytes_written += static_cast<std::size_t>(ret);
@@ -2035,6 +2091,14 @@ private:
             }
             return;
         }
+        if constexpr (detail::tls_io<_Derived>) {
+            // Readability, which only a write that waited for the peer asks this object for (above): write again --
+            // OpenSSL reads the peer's message from the write.
+            if (event._revents & EV_READ) {
+                write_after_read();
+                return;
+            }
+        }
     error:
         // No Windows would-block exemption (Huly QB-294): a genuine would-block returns above on
         // not_send_error(), against the same last error, and every other path here either set a reason
@@ -2043,6 +2107,28 @@ private:
         if (!_reason)
             _system_error = qb::io::socket::get_last_errno();
         dispose();
+    }
+
+private:
+    /**
+     * @brief Output queued that a TLS write took none of while OpenSSL waits for the PEER (`write_wants_read()`: a
+     *        handshake message to read first, Huly QB-1270): readability is watched instead of writability -- the
+     *        socket stays writable, and the loop was woken on every pass until the peer answered.
+     */
+    QB_NOINLINE QB_COLD void
+    wait_read_for_write() noexcept {
+        this->_async_event.set(EV_READ);
+        if constexpr (qb::has_on<_Derived, event::pending_write>) {
+            auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
+            Derived.on(std::move(evt__pending_write));
+        }
+    }
+
+    /// The readability wait_read_for_write() asked for came -- the peer's message, which the write reads: writability
+    /// again, and the write made again when the socket can take it.
+    QB_NOINLINE QB_COLD void
+    write_after_read() noexcept {
+        this->_async_event.set(EV_WRITE);
     }
 
 protected:
@@ -2234,6 +2320,50 @@ class io : public base<io<_Derived>, event::io> {
         _lingering    = false;
         _linger_spent = false;
         _linger_timer.reset();
+    }
+
+    /**
+     * @brief A TLS read that must write before it reads -- a handshake message answering what it took -- could not,
+     *        the socket refusing that write (`read_wants_write()`, Huly QB-1270): writability is watched instead of
+     *        readability, and the read made again when it comes (`tls_took_nothing()`); a write pass that leaves output
+     *        queued watches both again (`handle_write()`). The peer usually waits for that message: on readability
+     *        alone the connection stalled. And OpenSSL reads nothing before that write leaves: with input already
+     *        queued, readability would dispatch the read again on every pass.
+     */
+    QB_NOINLINE QB_COLD void
+    watch_write_for_read() noexcept {
+        this->_async_event.set(EV_WRITE);
+    }
+
+    /**
+     * @brief A TLS write pass that took nothing (Huly QB-1270): whether this answered the dispatch.
+     * @details Nothing queued: the writability watch_write_for_read() asked for -- readability alone again, and the
+     *          read made again now (no `eos`: nothing was written). Output queued that OpenSSL took none of while it
+     *          waits for the PEER (`write_wants_read()`: a handshake message to read first -- a renegotiation, a
+     *          handshake still in progress): writability is no longer watched, the socket stays writable and the loop
+     *          was woken on every pass until the peer answered; the read pass, which reads that message, makes the
+     *          write again. Otherwise -- a full socket, an empty pass, a connection being ended or drained by
+     *          close_after_deliver() (its read pass is off) -- what any write pass does.
+     */
+    QB_NOINLINE QB_COLD bool
+    tls_took_nothing() noexcept {
+        if (_reason || !_protocol->ok())
+            return false;
+        if (!Derived.pendingWrite()) {
+            if (!Derived.transport().read_wants_write())
+                return false;
+            this->_async_event.set(EV_READ);
+            this->_async_event.feed_event(EV_READ);
+            return true;
+        }
+        if (!Derived.transport().write_wants_read())
+            return false;
+        this->_async_event.set(EV_READ);
+        if constexpr (qb::has_on<_Derived, event::pending_write>) {
+            auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
+            Derived.on(std::move(evt__pending_write));
+        }
+        return true;
     }
 
 public:
@@ -3057,12 +3187,20 @@ private:
     bool
     handle_write() noexcept {
         auto raw_ret = Derived.write();
-        if (unlikely(raw_ret < 0)) {
-            if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
-                ready_to_write();
-                return true;
+        // A TLS write pass that took nothing is looked at here too, in the same test (`< 1` for `< 0`): what OpenSSL
+        // waits for then may be the peer (Huly QB-1270, tls_took_nothing()).
+        if (unlikely(raw_ret < (detail::tls_io<_Derived> ? 1 : 0))) {
+            if constexpr (detail::tls_io<_Derived>) {
+                if (raw_ret == 0 && tls_took_nothing())
+                    return true;
             }
-            return false;
+            if (raw_ret < 0) {
+                if (qb::io::socket::not_send_error(qb::io::socket::get_last_errno())) {
+                    ready_to_write();
+                    return true;
+                }
+                return false;
+            }
         }
         auto ret = static_cast<std::size_t>(raw_ret);
 
@@ -3099,9 +3237,17 @@ private:
                 auto evt__eos = event::eos{};
                 Derived.on(std::move(evt__eos));
             }
-        } else if constexpr (qb::has_on<_Derived, event::pending_write>) {
-            auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
-            Derived.on(std::move(evt__pending_write));
+        } else {
+            // Output left queued: readability and writability both. A TLS write that waited for the peer dropped
+            // writability, a TLS read that waited to write readability (tls_took_nothing(), watch_write_for_read()).
+            if constexpr (detail::tls_io<_Derived>) {
+                if ((this->_async_event.events & (EV_READ | EV_WRITE)) != (EV_READ | EV_WRITE))
+                    this->_async_event.set(EV_READ | EV_WRITE);
+            }
+            if constexpr (qb::has_on<_Derived, event::pending_write>) {
+                auto evt__pending_write = event::pending_write{Derived.pendingWrite()};
+                Derived.on(std::move(evt__pending_write));
+            }
         }
         return true;
     }
@@ -3145,8 +3291,13 @@ private:
 
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
-                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno()))
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                    if constexpr (detail::tls_io<_Derived>) {
+                        if (Derived.transport().read_wants_write())
+                            watch_write_for_read();
+                    }
                     return;
+                }
                 goto error;
             }
 
