@@ -374,7 +374,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   `ssl::socket::handshake_wants_write()` reports -- write when OpenSSL's output did not fit, read otherwise;
   a hand-driven handshake does the same, never both: a connected socket is always writable, so a write watch
   on a handshake that waits to read spins a level-triggered loop until the peer answers (Huly QB-301).
-  _(ssl/socket.h:662; tcp/connector.h:328)_
+  _(ssl/socket.h:686; tcp/connector.h:328)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -890,8 +890,8 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   fail-closed (`ok()`/`error()`). Hand it to `ssl::socket{ctx}` / `ssl::listener{ctx}` (or `connect()`
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
-  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:480-514, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:938`.
+  free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:504-538, :84, :96)_
+  `socket::set_insecure()` is declared at `ssl/socket.h:1021`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -951,7 +951,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `linger()` of zero close at once; an acceptor keeps its socket and port, a datagram object its socket. Closing the
   transport again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
   returned. In 3.3 the half-closed descriptor stayed in the object: a peer that kept writing blocked for ever.
-  _(io.h:3299, :3341-3346; teardown.h:143-177, :89-95)_
+  _(io.h:3299, :3341-3346; teardown.h:219-264, :89-95)_
 - **A socket the loop is closing after its peer is that thread's** (Huly QB-1270): a blocking `async::run()` returns
   when the last one is gone — up to `linger()` later against a silent peer, at once when the peer closes or
   `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
@@ -960,7 +960,26 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   descriptors (`EMFILE`, `ENFILE`) closes them all and is made again. A TLS socket detaches its `SSL` object from the
   descriptor it gives away: a `write()` on the transport afterwards fails. To let a peer that is STILL SENDING read
   your last bytes, a session calls `close_after_deliver()` (time-bounded only); `disconnect()` is the abort.
-  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1048-1052)_
+  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1110-1114)_
+- **A TLS connection this side ends sends `close_notify` before the FIN and never waits for the peer's** (3.4,
+  Huly QB-1270): one alert, one write on a non-blocking socket, on every own-ended close whose output was written --
+  a standalone object's `dispose()` (before the descriptor goes to the loop), a session's `disconnect()`, its
+  lingering `close_after_deliver()` (after the delivered bytes, before the half-close; the peer's own alert then ends
+  the linger; output published to it afterwards fails its write and the session is released at once), a `linger()` of
+  zero or a size guard (the alert, then closed at once), the destructor of a stream with nothing left to write, a direct
+  `ssl::socket::disconnect()`. NOT when the peer ended the connection (its own `close_notify` is not answered, as
+  before: short of the TLS standard, a peer that waits for this side's alert reads an unexpected EOF), before the
+  handshake, after a fatal TLS error, or with output still queued (`pendingWrite() != 0`, read before
+  `on(event::disconnected&&)` runs and again after it -- emptying the queue in that hook, or closing the transport
+  there, does not make the stream whole): it is dropped, the stream is cut, and the alert would call a truncated
+  message whole. To abandon a message of your own half-way, call `transport().quiet_shutdown()` before
+  `disconnect()`: the io object knows what it queued, not what you still meant to send. A socket that cannot
+  take the alert is closed without it. An OpenSSL peer reads `SSL_ERROR_ZERO_RETURN` where 3.3 gave it
+  `SSL_R_UNEXPECTED_EOF_WHILE_READING`. `ssl::socket::close_notify()` sends it alone, `quiet_shutdown()` ends the
+  session without it; a session saved with `get_session()` resumes after either side closed (it did not once its
+  connection was closed, through 3.3). Kernel TLS: never enabled by qb; with it the loop would not read the
+  descriptor raw -- close at once (`set_linger(qb::duration::zero())`).
+  _(teardown.h:108-111, :245-250, :156-160, :140-145; io.h:2184, :3301; ssl/socket.cpp:1065-1090, :1093-1097)_
 - **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
   after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
   — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to

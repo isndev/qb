@@ -233,14 +233,14 @@ registry, or as a member — never relocate them.
   stopped (`src/qb/io/async/io.h:3341-3346`), after `on(event::disconnected)`
   — which still sees it as the connection left it — and before
   `on(event::dispose)`, the one hook that may free the object
-  (`src/qb/io/async/teardown.h:143-177`). Who ended the connection is read
+  (`src/qb/io/async/teardown.h:219-264`). Who ended the connection is read
   before the hooks run (`src/qb/io/async/io.h:3299`): no reason of the
   object's and a protocol still ok mean the peer's EOF or a socket error did,
   and the transport is closed — `disconnect()` when it has one, then
   `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
   When the object ended it (`disconnect()`, a framing error, the end of
   `close_after_deliver()`), the descriptor **leaves the object for its
-  thread's loop** (`src/qb/io/async/teardown.h:143-177`): the loop
+  thread's loop** (`src/qb/io/async/teardown.h:219-264`): the loop
   shuts the sending side down — the peer reads EOF once everything queued
   has left, and nothing is reset — reads and drops what the peer still
   sends, and closes on the first of the peer's EOF, a socket error,
@@ -252,7 +252,7 @@ registry, or as a member — never relocate them.
   `transport().is_open()` is false in `on(event::dispose)`, which reads no
   peer from it — so the object is destroyed or connected again at once; a
   TLS socket detaches its `SSL` object from the descriptor it gives away
-  (`src/qb/io/tcp/ssl/socket.cpp:1048-1052`). A size guard of the io
+  (`src/qb/io/tcp/ssl/socket.cpp:1110-1114`). A size guard of the io
   (`message_too_large`, `buffer_overflow`) and a `linger()` of zero close at
   once (`src/qb/io/async/teardown.h:89-95`); a listening socket has no
   sending side, so an acceptor keeps its socket and its port, and a
@@ -275,6 +275,28 @@ registry, or as a member — never relocate them.
   connect or an `accept()` the system refuses for lack of descriptors closes
   them all at once and is made again
   (`src/qb/io/async/lingering_close.cpp:228-234`).
+- A **TLS connection** this side ends is told so: one `close_notify` alert
+  before the FIN, never waiting for the peer's (Huly QB-1270). A peer that
+  reads the FIN without it cannot tell a stream its sender ended from one
+  something cut, and OpenSSL 3 reports an unexpected EOF. The io object
+  decides (`src/qb/io/async/teardown.h:108-111`): the alert when it
+  ended the connection and wrote everything it had queued — before the
+  descriptor goes to the loop
+  (`src/qb/io/async/teardown.h:245-250`), before the half-close of
+  a lingering `close_after_deliver()`
+  (`src/qb/io/async/teardown.h:156-160`), or from the socket's
+  `disconnect()` when a session, or a stream with nothing left to write,
+  closes with its destructor; none
+  when the peer ended the connection or output is still queued, which is
+  dropped — that stream is cut
+  (`src/qb/io/async/teardown.h:140-145`). What is queued is
+  read before `on(event::disconnected&&)` runs and again after it
+  (`src/qb/io/async/io.h:3301`), and the stream is judged
+  before it: a hook that empties the queue, or closes the transport itself,
+  does not make a cut stream whole. One write on a non-blocking
+  socket, never retried: a socket that cannot take it is closed without it.
+  OpenSSL is told the session ended on every close, so a saved session
+  resumes (`src/qb/io/tcp/ssl/socket.cpp:1065-1090`).
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
   (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody
@@ -455,7 +477,7 @@ with I/O lifetime are:
 - A default-constructed socket is **uninitialized**; call `init()` before any
   connect/accept/read/write. The success conventions differ and cannot be
   treated uniformly (`src/qb/io/tcp/socket.h:132`,
-  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:528`):
+  `src/qb/io/udp/socket.h:118`, `src/qb/io/tcp/ssl/socket.h:552`):
   - `tcp::socket::init(int af)` returns `int` (`0` = success).
   - `udp::socket::init(int af)` returns `bool` (`true` = success).
   - `ssl::socket::init(SSL*)` returns `void` and adopts the supplied handle.
@@ -472,7 +494,7 @@ with I/O lifetime are:
   Timeout semantics are deliberately asymmetric: `ssl` timed connect bounds only
   the TCP phase (the TLS handshake is unbounded), and `udp::socket::read_timeout`
   returns `-ETIMEDOUT` on expiry, whereas a generic non-blocking "no data" read
-  returns `0` (`src/qb/io/tcp/ssl/socket.h:550-552,576-578`,
+  returns `0` (`src/qb/io/tcp/ssl/socket.h:574-576,600-602`,
   `src/qb/io/udp/socket.cpp:133`).
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but

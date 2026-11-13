@@ -215,8 +215,8 @@ TEST_F(CloseAfterPeerTls, AWriteOnTheTransportAfterAPeerEndedDisposeReachesNothi
     EXPECT_EQ(bystander.received().size(), 0u) << "a TLS record of the ended connection was written into an unrelated connection";
 }
 
-// A TLS client's own-ended close goes through the loop like a plain one: the peer reads what was sent, then EOF at the
-// TCP level (no close_notify: that is not this change), and the descriptor closes when the peer closes.
+// A TLS client's own-ended close goes through the loop like a plain one: the peer reads what was sent, the client's
+// close_notify (tls/tls-close-notify.cpp), then EOF, and the descriptor closes when the peer closes.
 TEST_F(CloseAfterPeerTls, ATlsClientThatEndsItsConnectionIsClosedAfterItsPeer) {
     ASSERT_NO_FATAL_FAILURE(connect_tls());
     TlsClient client;
