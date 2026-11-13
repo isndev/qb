@@ -1382,7 +1382,7 @@ public:
      * @brief Disables sends or receives on this socket
      * @params:
      *        how: [QB_SD_SEND] or [QB_SD_RECEIVE] or [QB_SD_BOTH]
-     *
+     *        QB_SD_BOTH sends this side's FIN on macOS too once the peer's has arrived (3.4, Huly QB-1270).
      * @returns: [0] succeed, otherwise, a value of SOCKET_ERROR is returned.
      */
     QB__DECL int shutdown(int how = QB_SD_BOTH) const;

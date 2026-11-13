@@ -566,10 +566,18 @@ TEST(TCPSocket, AShutdownOfBothDirectionsAfterThePeersFinSendsOurs) {
     }
 }
 
+// ...and with nothing connected there is nothing to shut down: the call fails, on every system (on macOS XNU refuses
+// SHUT_RDWR and then the sending side alone).
+TEST(TCPSocket, AShutdownOfBothDirectionsWithNothingConnectedFails) {
+    qb::io::tcp::socket unconnected;
+    ASSERT_EQ(unconnected.init(), 0);
+    EXPECT_EQ(unconnected.disconnect(), -1) << "a socket connected to nothing was shut down";
+    unconnected.close();
+}
+
 // ...and, the peer having sent no FIN but bytes this side never read, a shutdown of both directions ends the
-// connection as the system's own does: with a FIN on Linux and macOS -- on macOS the call is still XNU's SHUT_RDWR
-// there, its receiving side shut first: shut after the sending side, with input unread, it is a reset (measured on
-// macOS 26) --, with a reset on Windows, which resets a connection shut down with input left unread.
+// connection as the system's own does -- on macOS the call is XNU's SHUT_RDWR there, which it takes: with a FIN on
+// Linux and macOS, with a reset on Windows, which resets a connection shut down with input left unread.
 TEST(TCPSocket, AShutdownOfBothDirectionsWithInputUnreadEndsAsTheSystemsOwn) {
     constexpr bool resets =
 #if defined(_WIN32)

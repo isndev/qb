@@ -610,6 +610,26 @@ peer_ended(int how, const char *label) {
     line(name, text);
 }
 
+// 1b. Bytes that reach a socket after its shutdown of both directions: dropped, or answered with a reset?
+void
+kernel_data_after_shutdown(const char *name, int how) {
+    int a = -1, b = -1;
+    if (!tcp_pair(a, b)) {
+        line(name, "tcp_pair failed");
+        return;
+    }
+    errno            = 0;
+    const int   ret  = ::shutdown(a, how);
+    std::string text = call(how == SHUT_RDWR ? "shutdown(SHUT_RDWR)" : "shutdown(SHUT_RD)", ret, errno);
+    std::this_thread::sleep_for(20ms);
+    errno              = 0;
+    const ssize_t sent = ::send(b, "late", 4, 0);
+    text += "; the peer sends 4 octets after it: " + std::to_string(sent) + "; the peer reads: " + peer_reads(b, 1000ms);
+    ::close(a);
+    ::close(b);
+    line(name, text);
+}
+
 // 8. The errno a call OpenSSL refuses leaves behind: a "try again" code is set before the call, as an earlier call of
 // the thread may have left one, and read after it.
 std::string
@@ -693,6 +713,8 @@ main(int argc, char **argv) {
     kernel_shutdown("kernel-wr-then-rd-after-peer-fin-read", true, true, SHUT_WR, SHUT_RD);
     kernel_shutdown("kernel-wr-then-rdwr-no-peer-fin", false, false, SHUT_WR, SHUT_RDWR);
     kernel_shutdown("kernel-rdwr-twice-no-peer-fin", false, false, SHUT_RDWR, SHUT_RDWR);
+    kernel_data_after_shutdown("kernel-data-after-rdwr", SHUT_RDWR);
+    kernel_data_after_shutdown("kernel-data-after-rd", SHUT_RD);
 
     peer_ended(SHUT_RDWR, "rdwr");
     peer_ended(SHUT_WR, "wr");

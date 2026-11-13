@@ -731,7 +731,9 @@ public:
      *          (`SSL_R_UNEXPECTED_EOF_WHILE_READING`, Huly QB-1270). It never blocks: a socket still in blocking
      *          mode is made non-blocking for the alert and left so -- the connection is over. `stream::close()` and
      *          the destructor of every TLS stream call it, after `quiet_shutdown()` when they drop output still
-     *          queued; call `quiet_shutdown()` first yourself to close without the alert.
+     *          queued; call `quiet_shutdown()` first yourself to close without the alert. On macOS the FIN leaves
+     *          after the peer's own too: XNU refuses a shutdown of both directions once its receiving side is shut,
+     *          and `qb::io::socket::shutdown()` then shuts the sending side alone (3.4, Huly QB-1270).
      *          With input left unread this TCP shutdown is a reset on Windows, which destroys what the peer has
      *          received and not read yet, the alert included: the async objects hand their descriptor to the loop
      *          instead. The `SSL` object -- and, through it, its reference to the reference-counted `SSL_CTX` -- is
@@ -754,8 +756,9 @@ public:
      *          No alert is sent, and false returned:
      *          - while no session is established or a handshake message is in flight -- before the handshake
      *            completed, after a fatal TLS error (OpenSSL forbids the call, and has sent the alert the error
-     *            called for), during a renegotiation, or while a TLS 1.3 post-handshake message is still arriving:
-     *            nothing is recorded either;
+     *            called for; OpenSSL 4 makes one of every socket error it reports, a reset and the errors qb-io
+     *            makes a call again after included), during a renegotiation, or while a TLS 1.3 post-handshake
+     *            message is still arriving: nothing is recorded either;
      *          - once this side's end is recorded: a second call, after `quiet_shutdown()`, or after `read()` or
      *            `write()` met a socket error -- a reset (`SSL_ERROR_SYSCALL`: OpenSSL forbids the call from there);
      *          - on a stream marked cut (`mark_cut()`);
@@ -767,12 +770,14 @@ public:
      *          A peer that ended the session itself -- its `close_notify` was read -- IS answered, since 3.4: each
      *          side sends its alert before it closes its sending direction (RFC 8446 6.1), and a peer that waits
      *          for this side's reads a clean end where it read an unexpected EOF. Its bare EOF and a fatal alert
-     *          are the first case, OpenSSL's own state the judge; a reset this socket read is the second.
+     *          are the first case, OpenSSL's own state the judge; a reset this socket read is the second with
+     *          OpenSSL 3 and the first with OpenSSL 4.
      *
      *          In every case but the first OpenSSL is told this side's end of the session (`SSL_SENT_SHUTDOWN`): an
      *          `SSL` object freed without it has its session discarded, and a session saved with `get_session()`
      *          would no longer resume. Nothing is left in the thread's OpenSSL error queue. A reset that `read()` or
-     *          `write()` has met recorded this side's end then (the second case); one not met yet leaves the session
+     *          `write()` has met recorded this side's end then (the second case; with OpenSSL 4, which ended the
+     *          session there itself, the first, and the session still resumes); one not met yet leaves the session
      *          as it was: the alert is attempted, and the socket refuses the write. qb-io calls this when the io
      *          object that owns the socket ends a connection whose output it has written
      *          (`async::detail::end_transport`, and the lingering close of `close_after_deliver()`); call it yourself
@@ -834,7 +839,11 @@ public:
      * @details Internally calls `SSL_read()`. A socket error the io layer does not read as "try again" (a reset:
      *          `SSL_ERROR_SYSCALL`, after which OpenSSL forbids `SSL_shutdown()`) records this side's end of the
      *          session without the alert, as `quiet_shutdown()` does: nothing more is written into that connection
-     *          (Huly QB-1270).
+     *          (Huly QB-1270) -- with OpenSSL 4 nothing needs recording, OpenSSL ended the session itself. One it reads
+     *          as "try again" (an `EINTR` from a BIO that fails a read with it) is left to the caller, which reads
+     *          again, where OpenSSL lets the session go on: OpenSSL 3 does; OpenSSL 4 ends it on every socket error,
+     *          and the read reports the session aborted instead -- `ECONNABORTED` (`WSAECONNABORTED` on Windows), an
+     *          error nobody reads again after (measured: OpenSSL 4.1.0).
      */
     int read(void *data, std::size_t size) noexcept;
 
@@ -847,6 +856,10 @@ public:
      *         Returns a negative value on error.
      * @details Internally calls `SSL_write()`. A socket error the io layer does not write again after (a reset:
      *          `SSL_ERROR_SYSCALL`) records this side's end of the session without the alert, as after `read()`'s.
+     *          One it writes again after (`ENOBUFS`, which OpenSSL's socket BIO reports as a failure) is left to the
+     *          caller, where OpenSSL lets the session go on: OpenSSL 3 does, and the write made again goes on; OpenSSL 4
+     *          ends it on every socket error, and the write reports the session aborted instead, `ECONNABORTED`
+     *          (`WSAECONNABORTED`), as `read()` does (measured: OpenSSL 4.1.0).
      */
     int write(const void *data, std::size_t size) noexcept;
 
