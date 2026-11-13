@@ -13,6 +13,10 @@ on:
         description: "space-separated: cov14 dbg14 cov14nocov o1 dbg15 dbgclang asan14"
         required: false
         default: "cov14 dbg14 dbg15 dbgclang asan14"
+      lane:
+        description: "yes: also replay the lane (the whole tree, ctest sequential, then the binary again)"
+        required: false
+        default: "no"
 
 permissions:
   contents: read
@@ -85,6 +89,36 @@ jobs:
             fi
           done
           echo "== verdicts"; cat "$o/verdicts.txt"
+
+      - name: The lane itself -- the whole tree, ctest as qb-coverage-run runs it, then the binary again
+        if: inputs.lane == 'yes'
+        run: |
+          set -uo pipefail
+          o="${RUNNER_TEMP}/oracle"
+          t=qb-io-test-unit-over-aligned-promise
+          cmake --preset coverage -G Ninja -DCMAKE_C_COMPILER=gcc-14 -DCMAKE_CXX_COMPILER=g++-14 -DQB_CXX_STANDARD=20 \
+                -DQB_BUILD_EXAMPLES=OFF -DQB_USE_SYSTEM_GTEST=ON -DQB_ENABLE_NATIVE_ARCH=OFF -DQB_WITH_ZSTD=ON -DQB_WITH_BROTLI=ON \
+                -DGCOV_PATH="${GCOV_PATH:-}" -DOPENSSL_EXECUTABLE="${OPENSSL_EXECUTABLE:-}" > "$o/lane-configure.log" 2>&1
+          echo "lane: configure $?" | tee -a "$o/verdicts.txt"
+          cmake --build --preset coverage --parallel "$(nproc)" > "$o/lane-build.log" 2>&1; echo "lane: build $?" | tee -a "$o/verdicts.txt"
+          b=build/coverage; bin="$(find "$b" -type f -name "$t" -perm -u+x | head -1)"; echo "binary: $bin"
+          ctest --test-dir "$b" -N -R over-aligned --show-only=json-v1 > "$o/lane-props.json" 2>&1
+          python3 -c "import json,sys; d=json.load(open('$o/lane-props.json')); [print(t['name'], t.get('command'), t.get('properties')) for t in d['tests']]" || true
+          echo "== 1. the test alone through ctest, fresh tree (no .gcda), x10"
+          ctest --test-dir "$b" -R over-aligned-promise --output-on-failure --repeat until-fail:10 > "$o/lane-1.log" 2>&1; echo "lane 1: ctest $?" | tee -a "$o/verdicts.txt"; tail -5 "$o/lane-1.log"
+          echo "== 2. the whole suite, sequential, as qb-coverage-run runs it"
+          ctest --test-dir "$b" --output-on-failure > "$o/lane-2.log" 2>&1; echo "lane 2: ctest $?" | tee -a "$o/verdicts.txt"
+          grep -E "tests passed|tests failed|\(Failed\)|\(SEGFAULT\)|Exception|over-aligned" "$o/lane-2.log" | head -20
+          n=$(grep -n "over-aligned-promise" "$o/lane-2.log" | head -1 | cut -d: -f1); [ -n "$n" ] && sed -n "$((n-2)),$((n+40))p" "$o/lane-2.log"
+          echo "== 3. the binary directly, now that the suite left its .gcda files, x5 (shuffled as ctest does)"
+          for i in 1 2 3 4 5; do (cd "$(dirname "$bin")" && timeout 60 "./$t" --gtest_shuffle --gtest_random_seed=0) > "$o/lane-3-$i.log" 2>&1; echo "lane 3.$i: exit $?" | tee -a "$o/verdicts.txt"; done
+          echo "== 4. through ctest again, x10"
+          ctest --test-dir "$b" -R over-aligned-promise --output-on-failure --repeat until-fail:10 > "$o/lane-4.log" 2>&1; echo "lane 4: ctest $?" | tee -a "$o/verdicts.txt"; tail -30 "$o/lane-4.log"
+          if grep -q "exit [^0]" <(grep "lane 3" "$o/verdicts.txt"); then
+            (cd "$(dirname "$bin")" && gdb -batch -ex run -ex bt -ex 'info registers rip rsp rbp rdi rsi rax' -ex 'x/16i $pc-32' --args "./$t") > "$o/lane-gdb.log" 2>&1
+            sed -n '/received signal/,$p' "$o/lane-gdb.log" | head -70
+          fi
+          ls -la "$(dirname "$bin")" | head -5; find "$b" -name '*.gcda' | wc -l
 
       - name: Logs
         if: always()
