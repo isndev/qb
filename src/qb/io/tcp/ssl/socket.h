@@ -742,8 +742,9 @@ public:
      *          `SSL_write()` made then drives the handshake too, and the connection ends when the peer's next record is
      *          application data -- a TLS 1.2 server may send it behind its HelloRequest (measured with OpenSSL 3.5).
      *          `io<>` and the server sessions let their read drive such a handshake and write what is queued once it
-     *          completes; a hand-driven socket that reads does the same. OpenSSL's `SSL_in_init()` once connected: no
-     *          I/O.
+     *          completes -- not while `close_after_deliver()` drains, their read pass off, nor `output<>`, which never
+     *          reads: their write still drives it --; a hand-driven socket that reads does the same. OpenSSL's
+     *          `SSL_in_init()` once connected: no I/O.
      */
     [[nodiscard]] bool
     rehandshaking() const noexcept {

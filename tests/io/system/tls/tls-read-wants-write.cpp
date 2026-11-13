@@ -45,12 +45,7 @@
 #include <thread>
 #include <utility>
 #if !defined(_WIN32)
-#include <cerrno>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
 #include <poll.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
 #endif
 
 #include <gtest/gtest.h>
@@ -229,10 +224,10 @@ writable_now(::socket_type fd) {
 }
 
 /**
- * @brief Holds a socket that holds more than it may queue full, in what the system reports: no room until its peer
- *        reads. Linux and Windows take a send buffer shrunk under what the socket holds (measured: no room reported).
- *        XNU still reports room after that shrink (measured on the macOS runner), and takes the send low-water mark
- *        instead, capped at the buffer: room only once the send queue is empty. Linux refuses that option.
+ * @brief Holds a socket whose send queue holds octets its peer has not taken full, in what the system reports: no room
+ *        until its peer reads. Linux and Windows take a send buffer shrunk under what the socket holds (measured: no
+ *        room reported). XNU takes the send low-water mark, capped at the buffer: room only once the send queue is
+ *        empty (its socket code; asserted below on the macOS runner). Linux refuses that option.
  */
 void
 hold_full(qb::io::tcp::ssl::socket &socket) {
@@ -242,6 +237,25 @@ hold_full(qb::io::tcp::ssl::socket &socket) {
     ASSERT_EQ(socket.set_optval(SOL_SOCKET, SO_SNDBUF, 1), 0); // the system's least: under what the socket holds
 #endif
     ASSERT_FALSE(writable_now(socket.native_handle())) << "the case proves nothing: the socket reports room";
+}
+
+/**
+ * @brief Whether `socket`'s send queue holds octets its peer has not taken: a fill larger than the peer's receive buffer.
+ *        XNU gives an accepted socket a receive buffer of its own (measured on the macOS runner: 324 984 octets with
+ *        `kPeerWindow` set on the listener), and its peer took a `kFill` whole -- `SO_NWRITE` 0, the socket writable
+ *        whatever its low-water mark. Linux and Windows keep the listener's window, which one `kFill` outgrows
+ *        (measured): nothing is asked of them.
+ */
+bool
+holds_unsent(qb::io::tcp::ssl::socket &socket) {
+#if defined(__APPLE__)
+    int       queued = 0;
+    socklen_t length = sizeof(queued);
+    return ::getsockopt(socket.native_handle(), SOL_SOCKET, SO_NWRITE, &queued, &length) == 0 && queued > 0;
+#else
+    static_cast<void>(socket);
+    return true;
+#endif
 }
 
 /**
@@ -258,10 +272,21 @@ int         would_block = 0;     ///< How many next writes are refused "try agai
 bool        while_full  = false; ///< Every write is refused "try again" while the system reports the socket full.
 int         fail_with   = 0;     ///< The system error the next write fails with, once; 0: none.
 std::size_t attempts    = 0;     ///< Writes attempted through the wrapper, refused or not.
+int         half_once   = 0;     ///< How many next writes are taken in half: a record OpenSSL then holds unwritten.
+bool        hold        = false; ///< Every write is refused "try again" -- set by a half-taken write, cleared by the case.
 
 int
 write(BIO *self, BIO *inner, const char *in, int size) {
     ++attempts;
+    if (half_once > 0 && size > 1) {
+        --half_once;
+        hold = true;
+        return qb::io::test::tls_wrapping_bio::forward_write(self, inner, in, size / 2);
+    }
+    if (hold) {
+        BIO_set_retry_write(self);
+        return -1;
+    }
     if (while_full) {
         int fd = -1;
         if (BIO_get_fd(inner, &fd) >= 0 && !writable_now(static_cast<::socket_type>(fd))) {
@@ -387,6 +412,7 @@ constexpr std::size_t kBulk = std::size_t{80} << 10;
 
 /// The fill of a real send buffer, and the receive buffer of the peer that reads none of it: the fill outgrows it.
 constexpr std::size_t kFill       = std::size_t{96} << 10; // under what a send buffer may hold (Linux: wmem_max)
+constexpr std::size_t kFillBound  = std::size_t{8} << 20;  // what a fill may grow to on XNU (holds_unsent())
 constexpr int         kPeerWindow = 8192;
 
 /// A standalone object on `output<>` alone over a TLS socket: it writes what it is given.
@@ -555,6 +581,7 @@ protected:
     std::uint16_t               port = 0;
     std::unique_ptr<PingServer> server;
     std::uint16_t               server_port = 0;
+    std::size_t                 filled      = 0; ///< What the last fill wrote: `kFill`, or more on XNU (holds_unsent()).
 
     void
     SetUp() override {
@@ -564,6 +591,8 @@ protected:
         refuse::while_full  = false;
         refuse::fail_with   = 0;
         refuse::attempts    = 0;
+        refuse::half_once   = 0;
+        refuse::hold        = false;
         ASSERT_TRUE(qb::io::test::require_ssl_files());
         ASSERT_EQ(listener.listen_v4(0, "127.0.0.1"), qb::io::SocketStatus::Done);
         port = listener.local_endpoint().port();
@@ -643,8 +672,10 @@ protected:
     /**
      * @brief A REAL full send buffer: `client`'s socket holds far more than it may queue, its peer reading nothing --
      *        written whole first (a large send buffer, the peer's window small: `kPeerWindow` on the listener before
-     *        the connection), then held full (`hold_full()`: its send buffer shrunk under what it holds, or on XNU its
-     *        send low-water mark raised): the system reports no room until the peer reads (asserted). OpenSSL holds no record of its own and
+     *        the connection; on XNU, whose accepted socket keeps a receive buffer of its own, `kFill` again until the
+     *        send queue holds some: `filled`), then held full (`hold_full()`: its send buffer shrunk under what it
+     *        holds, or on XNU its send low-water mark raised): the system reports no room until the peer reads
+     *        (asserted). OpenSSL holds no record of its own and
      * the io object no output: the write path, which drives a handshake too, has nothing to make again -- the read alone answers the peer. The
      * read's own write is refused by the wrapper while the system reports no room (`refuse::while_full`): a system may still take a small write
      * it reports no room for (Linux appends it to a segment not yet sent, measured), and the loop goes by what the system reports.
@@ -652,11 +683,36 @@ protected:
     void
     fill_send_buffer(PingClient &client) {
         ASSERT_EQ(client.transport().set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
-        client.publish(std::string(kFill, 'f'));
-        ASSERT_TRUE(pump_while_not([&] { return client.out().size() == 0u; }))
-            << "the case proves nothing: the socket did not take the fill whole";
-        pump(20ms);
+        filled = 0;
+        do {
+            client.publish(std::string(kFill, 'f'));
+            filled += kFill;
+            ASSERT_TRUE(pump_while_not([&] { return client.out().size() == 0u; }))
+                << "the case proves nothing: the socket did not take the fill whole";
+            pump(20ms);
+        } while (!holds_unsent(client.transport()) && filled < kFillBound);
         ASSERT_NO_FATAL_FAILURE(hold_full(client.transport()));
+    }
+
+    /// The same through `socket` itself, before an io object owns it.
+    void
+    fill_directly(qb::io::tcp::ssl::socket &socket) {
+        ASSERT_EQ(socket.set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
+        const std::string fill(kFill, 'f');
+        filled = 0;
+        do {
+            std::size_t written  = 0;
+            const auto  deadline = steady::now() + kBound;
+            while (written < fill.size() && steady::now() < deadline) {
+                const int n = socket.write(fill.data() + written, fill.size() - written);
+                ASSERT_GE(n, 0) << "the fill failed";
+                written += static_cast<std::size_t>(n);
+            }
+            ASSERT_EQ(written, fill.size()) << "the case proves nothing: the socket did not take the fill whole";
+            filled += written;
+            pump(20ms);
+        } while (!holds_unsent(socket) && filled < kFillBound);
+        ASSERT_NO_FATAL_FAILURE(hold_full(socket));
     }
 
     /**
@@ -701,7 +757,7 @@ protected:
                   << spell(client.watching()) << ", queued " << queued << '\n';
         EXPECT_LE(events, kIdleEvents) << "the loop was woken while the read waited for the socket to take its write";
         const bool done = peer.pump_until([&] {
-            return (client.pings == 1u && peer.received.size() >= kFill + queued && SSL_renegotiate_pending(peer.ssl) == 0)
+            return (client.pings == 1u && peer.received.size() >= filled + queued && SSL_renegotiate_pending(peer.ssl) == 0)
                    || peer.failed != SSL_ERROR_NONE || client.disconnected != 0u;
         });
         pump(20ms);
@@ -710,7 +766,7 @@ protected:
                   << ", disconnected " << client.disconnected << '\n';
         EXPECT_TRUE(done) << "the renegotiation, the input or the output never got through";
         EXPECT_EQ(client.disconnected, 0u);
-        EXPECT_EQ(peer.received.size(), kFill + queued) << "what was queued did not arrive whole";
+        EXPECT_EQ(peer.received.size(), filled + queued) << "what was queued did not arrive whole";
         EXPECT_EQ(client.eos, eos + 1) << "what was queued, or the empty arm, was not answered by one eos";
     }
 
@@ -1078,15 +1134,15 @@ TEST_F(TlsReadWantsWrite, AClientAnswersARenegotiationOnceItsFullSocketDrains) {
     ASSERT_FALSE(writable_now(client.transport().native_handle())) << "the case proves nothing: the socket reports room";
     // The peer reads everything it was sent -- the socket can take the ClientHello again -- and waits for it.
     const bool renegotiated = peer.pump_until(
-        [&] { return (peer.received.size() >= kFill && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
     std::cout << "[ MEASURED ] ...the peer read " << peer.received.size()
               << " octets: " << (renegotiated && peer.failed == SSL_ERROR_NONE ? "renegotiated" : "NOT renegotiated") << " within "
               << kBound.count() << " ms, watching " << spell(client.watching()) << '\n';
-    ASSERT_EQ(peer.received.size(), kFill) << "the peer could not read what it was sent";
+    ASSERT_EQ(peer.received.size(), filled) << "the peer could not read what it was sent";
     ASSERT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
     EXPECT_EQ(client.eos, 1u) << "one eos, the fill's: none for the writability that was the read's";
     ASSERT_TRUE(peer.write("ping\n"));
-    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == kFill + 5; })) << "the client's answer never arrived";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + 5; })) << "the client's answer never arrived";
 }
 
 // ...and with input queued behind the HelloRequest: OpenSSL reads none of it before the ClientHello leaves, so watching
@@ -1117,7 +1173,7 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitsToWriteIntoAFullSocketDoesNotWakeTheLoop
     std::cout << "[ MEASURED ] a read waiting to write into a full socket, input queued (" << OpenSSL_version(OPENSSL_VERSION)
               << "): " << events << " events in " << kPasses << " loop passes, watching " << spell(client.watching()) << '\n';
     EXPECT_LE(events, kIdleEvents) << "the loop was woken while the read waited for the socket to take its write";
-    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == kFill + 5; })) << "the client's answer never arrived";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + 5; })) << "the client's answer never arrived";
     EXPECT_EQ(client.pings, 1u);
 }
 
@@ -1129,18 +1185,7 @@ TEST_F(TlsReadWantsWrite, AnInputObjectThatWaitsToWriteIntoAFullSocketDoesNotWak
     PingInput  input;
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, input.transport()));
     qb::io::tcp::ssl::socket &socket = input.transport();
-    ASSERT_EQ(socket.set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
-    const std::string fill(kFill, 'f');
-    std::size_t       written  = 0;
-    const auto        deadline = steady::now() + kBound;
-    while (written < fill.size() && steady::now() < deadline) {
-        const int n = socket.write(fill.data() + written, fill.size() - written);
-        ASSERT_GE(n, 0) << "the fill failed";
-        written += static_cast<std::size_t>(n);
-    }
-    ASSERT_EQ(written, fill.size()) << "the case proves nothing: the socket did not take the fill whole";
-    pump(20ms);
-    ASSERT_NO_FATAL_FAILURE(hold_full(socket));
+    ASSERT_NO_FATAL_FAILURE(fill_directly(socket));
     ASSERT_NO_FATAL_FAILURE(refuse::install(socket.ssl_handle()));
     refuse::while_full = true;
     input.switch_protocol<PingInput::Protocol>(input);
@@ -1155,7 +1200,7 @@ TEST_F(TlsReadWantsWrite, AnInputObjectThatWaitsToWriteIntoAFullSocketDoesNotWak
     ASSERT_GE(refuse::attempts, 1u) << "the case proves nothing: the read wrote no ClientHello";
     ASSERT_EQ(input.pings, 0u) << "the case proves nothing: the input behind the HelloRequest was read";
     EXPECT_LE(events, kIdleEvents) << "the loop was woken while the read waited for the socket to take its write";
-    EXPECT_TRUE(peer.pump_until([&] { return input.pings == 1u && peer.received.size() == kFill; }))
+    EXPECT_TRUE(peer.pump_until([&] { return input.pings == 1u && peer.received.size() == filled; }))
         << "the input behind the HelloRequest was never read (the peer read " << peer.received.size() << ")";
     EXPECT_EQ(input.disconnected, 0u);
 }
@@ -1199,10 +1244,13 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitedToWriteReadsAgainWhileOutputWaits) {
     ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's CertificateRequest was not sent";
     pump(50ms); // the client reads it; its Certificate waits for room
     ASSERT_GE(refuse::attempts, 1u) << "the case proves nothing: the read wrote no Certificate";
-    client.publish(std::string(kBulk, 'b')); // output that leaves after the Certificate, more than one pass writes
+    // Output that leaves after the Certificate, more than one pass writes -- and more than the peer's receive buffer,
+    // empty once it has read the fill, takes at once: on XNU, where the fill outgrew kFill, it outgrows the fill too.
+    const std::size_t bulk = filled == kFill ? kBulk : kBulk + filled;
+    client.publish(std::string(bulk, 'b'));
     // The peer reads the fill alone: room for the Certificate (measured on Linux: the output's first write pass then
     // took nothing, the socket full again -- the output waits whole).
-    ASSERT_TRUE(peer.pump_until([&] { return peer.received.size() >= kFill; })) << "the peer could not read the fill";
+    ASSERT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled; })) << "the peer could not read the fill";
     pump(50ms);
     ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the output did not wait";
     ASSERT_TRUE(peer.write("ping\n"));
@@ -1211,7 +1259,7 @@ TEST_F(TlsReadWantsWrite, AReadThatWaitedToWriteReadsAgainWhileOutputWaits) {
               << "): " << (read ? "the peer's data read" : "the peer's data NOT read") << " with " << client.out().size()
               << " octets queued, watching " << spell(client.watching()) << '\n';
     EXPECT_TRUE(read) << "the reads did not go on once the write they waited for had left";
-    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == kFill + kBulk; })) << "the output never arrived whole";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + bulk; })) << "the output never arrived whole";
     EXPECT_EQ(client.disconnected, 0u);
 }
 
@@ -1267,7 +1315,7 @@ TEST_F(TlsReadWantsWrite, AnEmptyArmMadeWhileAReadWaitsToWriteEarnsItsEos) {
     const std::size_t eos = client.eos;
     client.publish(); // the empty arm, while the read waits
     const bool renegotiated = peer.pump_until(
-        [&] { return (peer.received.size() >= kFill && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
     pump(20ms);
     std::cout << "[ MEASURED ] an empty arm while a read waits to write (" << OpenSSL_version(OPENSSL_VERSION)
               << "): " << (renegotiated ? "renegotiated" : "NOT renegotiated") << ", eos " << client.eos - eos << '\n';
@@ -1297,12 +1345,17 @@ TEST_F(TlsReadWantsWrite, AClientStartedAgainWhileItsReadWaitsToWriteReadsAgainW
     pump(10ms);
     client.start();
     const bool renegotiated = peer.pump_until(
-        [&] { return (peer.received.size() >= kFill && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
     std::cout << "[ MEASURED ] a client started again while its read waits to write (" << OpenSSL_version(OPENSSL_VERSION)
               << "): " << (renegotiated ? "renegotiated" : "NOT renegotiated") << ", watching " << spell(client.watching()) << '\n';
     EXPECT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
     ASSERT_TRUE(peer.write("ping\n"));
-    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == kFill + 5; })) << "the client's answer never arrived";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() == filled + 5; })) << "the client's answer never arrived";
+    // The wait is over -- the reads that followed found nothing more to write --: started again, readability.
+    client.stop();
+    pump(10ms);
+    client.start();
+    EXPECT_EQ(client.watching(), EV_READ) << "a start() after the wait still waited for writability: " << spell(client.watching());
 }
 
 // A socket error a call is made again after (ENOBUFS), met by a server's own handshake flight, which its first read
@@ -1417,7 +1470,7 @@ TEST_F(TlsReadWantsWrite, AReadyToReadWhileTheReadWaitsToWriteChangesNothing) {
     const std::size_t eos = client.eos;
     client.ready_to_read();
     const bool renegotiated = peer.pump_until(
-        [&] { return (peer.received.size() >= kFill && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
     pump(20ms);
     EXPECT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
     EXPECT_EQ(client.eos, eos) << "an eos nobody asked for: the writability was the read's";
@@ -1431,18 +1484,7 @@ TEST_F(TlsReadWantsWrite, AnInputObjectStartedAgainWhileItsReadWaitsToWriteReads
     PingInput  input;
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, input.transport()));
     qb::io::tcp::ssl::socket &socket = input.transport();
-    ASSERT_EQ(socket.set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
-    const std::string fill(kFill, 'f');
-    std::size_t       written  = 0;
-    const auto        deadline = steady::now() + kBound;
-    while (written < fill.size() && steady::now() < deadline) {
-        const int n = socket.write(fill.data() + written, fill.size() - written);
-        ASSERT_GE(n, 0) << "the fill failed";
-        written += static_cast<std::size_t>(n);
-    }
-    ASSERT_EQ(written, fill.size()) << "the case proves nothing: the socket did not take the fill whole";
-    pump(20ms);
-    ASSERT_NO_FATAL_FAILURE(hold_full(socket));
+    ASSERT_NO_FATAL_FAILURE(fill_directly(socket));
     ASSERT_NO_FATAL_FAILURE(refuse::install(socket.ssl_handle()));
     refuse::while_full = true;
     input.switch_protocol<PingInput::Protocol>(input);
@@ -1456,7 +1498,7 @@ TEST_F(TlsReadWantsWrite, AnInputObjectStartedAgainWhileItsReadWaitsToWriteReads
     pump(10ms);
     input.start();
     const bool renegotiated = peer.pump_until(
-        [&] { return (peer.received.size() >= kFill && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
     EXPECT_TRUE(renegotiated) << "the ClientHello never left once the socket could take it";
     ASSERT_TRUE(peer.write("ping\n"));
     EXPECT_TRUE(peer.pump_until([&] { return input.pings == 1u; })) << "the data after the renegotiation was never read";
@@ -1522,7 +1564,16 @@ TEST_F(TlsReadWantsWrite, ABlockingConnectWhoseClientHelloMetEnobufsFails) {
     qb::io::tcp::ssl::socket client;
     client.init(ssl);
     client.set_insecure();
-    const int ret = client.connect(qb::io::endpoint{"127.0.0.1", port}, "localhost"); // the listener's backlog accepts
+    // The server end accepted and closed at once: a handshake that met no error ends on the close, never waits.
+    std::thread server([this] {
+        qb::io::tcp::socket accepted;
+        const auto          deadline = steady::now() + kBound;
+        while (listener.accept(accepted) != qb::io::SocketStatus::Done && steady::now() < deadline)
+            std::this_thread::sleep_for(1ms);
+        accepted.close();
+    });
+    const int   ret = client.connect(qb::io::endpoint{"127.0.0.1", port}, "localhost");
+    server.join();
     std::cout << "[ MEASURED ] a blocking connect whose ClientHello failed with ENOBUFS (" << OpenSSL_version(OPENSSL_VERSION) << "): connect "
               << ret << ", handshake complete " << client.handshake_complete() << '\n';
     ASSERT_TRUE(g_installed_at_start) << "the case proves nothing: no handshake started";
@@ -1532,67 +1583,45 @@ TEST_F(TlsReadWantsWrite, ABlockingConnectWhoseClientHelloMetEnobufsFails) {
     client.close();
 }
 
-#if !defined(_WIN32)
-namespace tls_read_wants_write_test {
-namespace probe_full {
-int
-geti(int fd, int level, int name) {
-    int       v = -1;
-    socklen_t l = sizeof v;
-    return ::getsockopt(fd, level, name, &v, &l) == 0 ? v : -errno;
-}
-int
-seti(int fd, int level, int name, int v) {
-    return ::setsockopt(fd, level, name, &v, sizeof v) == 0 ? 0 : -errno;
-}
-int
-ioctl_int(int fd, unsigned long request) {
-    int n = -1;
-    return ::ioctl(fd, request, &n) == 0 ? n : -errno;
-}
-} // namespace probe_full
-} // namespace tls_read_wants_write_test
-
-// SCRATCH probe (never to merge): what the system reports for a socket that holds a fill its peer does not read.
-TEST_F(TlsReadWantsWrite, ProbeAFullSocket) {
-    using namespace tls_read_wants_write_test::probe_full;
-    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0);
+// A HelloRequest that comes while OpenSSL holds an application record it could not write whole, two records of data
+// behind it, the client answering each: the record, the answers and the renegotiation all get through. OpenSSL decides
+// when the renegotiation starts behind a pending write; the io object writes no record of its own meanwhile.
+TEST_F(TlsReadWantsWrite, ARenegotiationBehindAHalfWrittenRecordCompletes) {
     RawContext context{RawContext::role::server, TLS1_2_VERSION};
     RawPeer    peer{context, RawContext::role::server};
     PingClient client;
     ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
     client.start();
     pump(20ms);
-    const int fd   = static_cast<int>(client.transport().native_handle());
-    const int pfd  = static_cast<int>(peer.tcp.native_handle());
-    auto      show = [&](char const *what) {
-        std::cout << "[ PROBE ] " << what << ": SNDBUF " << geti(fd, SOL_SOCKET, SO_SNDBUF) << ", SNDLOWAT "
-                  << geti(fd, SOL_SOCKET, SO_SNDLOWAT)
-#if defined(__APPLE__)
-                  << ", NWRITE " << geti(fd, SOL_SOCKET, SO_NWRITE)
-#else
-                  << ", OUTQ " << ioctl_int(fd, TIOCOUTQ)
-#endif
-                  << ", writable " << writable_now(client.transport().native_handle()) << "; peer RCVBUF " << geti(pfd, SOL_SOCKET, SO_RCVBUF)
-                  << ", peer queued " << ioctl_int(pfd, FIONREAD) << '\n';
-    };
-    show("connected");
-    ASSERT_EQ(client.transport().set_optval(SOL_SOCKET, SO_SNDBUF, 1 << 21), 0);
-    show("SNDBUF 2 MiB");
-    client.publish(std::string(kFill, 'f'));
-    ASSERT_TRUE(pump_while_not([&] { return client.out().size() == 0u; }));
+    SSL *const ssl = client.transport().ssl_handle();
+    ASSERT_NO_FATAL_FAILURE(refuse::install(ssl));
+    refuse::half_once        = 1;
+    const std::string record = std::string(1000, 'x') + "\n";
+    client.publish(record);
     pump(20ms);
-    show("the fill taken");
-    std::cout << "[ PROBE ] SO_SNDBUF 1: " << seti(fd, SOL_SOCKET, SO_SNDBUF, 1) << '\n';
-    show("SNDBUF 1");
-    std::cout << "[ PROBE ] SO_SNDBUF 2 MiB again: " << seti(fd, SOL_SOCKET, SO_SNDBUF, 1 << 21) << '\n';
-    std::cout << "[ PROBE ] SO_SNDLOWAT max: " << seti(fd, SOL_SOCKET, SO_SNDLOWAT, (std::numeric_limits<int>::max)()) << '\n';
-    show("SNDLOWAT max");
-    std::cout << "[ PROBE ] TCP_NOTSENT_LOWAT 1: " << seti(fd, IPPROTO_TCP, TCP_NOTSENT_LOWAT, 1) << '\n';
-    show("NOTSENT_LOWAT 1");
-    client.publish(std::string(std::size_t{1} << 20, 'g'));
-    pump(100ms);
-    std::cout << "[ PROBE ] a MiB more published: " << client.out().size() << " left queued\n";
-    show("a MiB more");
+    ASSERT_TRUE(refuse::hold) << "the case proves nothing: no record was taken in half";
+    ASSERT_EQ(SSL_want_write(ssl), 1) << "the case proves nothing: OpenSSL holds no record";
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n")) << "the peer could not send behind its HelloRequest";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms); // the client reads what it can while its record waits
+    std::cout << "[ MEASURED ] a HelloRequest behind a half-written record (" << OpenSSL_version(OPENSSL_VERSION) << "): pings " << client.pings
+              << ", in init " << SSL_in_init(ssl) << ", state " << SSL_state_string_long(ssl) << ", disconnected " << client.disconnected
+              << '\n';
+    refuse::hold               = false;
+    const std::string expected = record + "pong\npong\n";
+    const bool        done     = peer.pump_until([&] {
+        return (peer.received == expected && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE
+               || client.disconnected != 0u;
+    });
+    pump(20ms);
+    std::cout << "[ MEASURED ] ...then " << (done ? "" : "NOT ") << "done: the peer read " << peer.received.size() << " of " << expected.size()
+              << ", peer failure " << peer.failed << ", disconnected " << client.disconnected << " (reason " << client.reason
+              << ", system error " << client.system_error << "), renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << '\n';
+    EXPECT_EQ(client.disconnected, 0u) << "the connection ended";
+    EXPECT_EQ(peer.failed, SSL_ERROR_NONE);
+    EXPECT_EQ(peer.received, expected) << "the record or the answers did not arrive";
+    EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0) << "the renegotiation never completed";
 }
-#endif
