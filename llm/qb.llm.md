@@ -776,9 +776,9 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   returns (16-aligned by default; MSVC realigns). `task<T>` and `async_generator<T>` take the cache-line-aligned blocks
   of `detail::CoroutineFrameAllocator` (`QB_CORO_PROMISE_POOLED_NEW_DELETE()`), `generator<T>` an `operator new` that
   realigns an ordinary block (since 3.4 for the generators), so a `qb::Event` in their promise or held across a
-  suspension is aligned (`kAlign`); past the cache line only a `generator<T>`'s promise is. A coroutine type of your own
+  suspension is aligned (`kAlign`); past it the promise still is (`allocate_realigned`, 3.4), a frame local aligned past its promise not. A coroutine type of your own
   needs its own aligned `operator new`, and a declared default constructor: an aggregate promise is built from the
-  coroutine's arguments on GCC, clang and clang-cl. _(coroutine/task.h:210, :219; generator.h:99, :334)_
+  coroutine's arguments on GCC, clang and clang-cl. _(coroutine/task.h:211, :220; generator.h:97, :327)_
 - **`on(qb::LoopEvent const&)` (ICallback) runs every loop iteration and must be fast/non-blocking;** blocking it
   stalls the whole core and every actor on it. _(ICallback.h:16-19)_
 - **Configure cores/actors before `start()`.** `Main::core()` throws once the engine is running. A core

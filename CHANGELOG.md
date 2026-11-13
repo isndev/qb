@@ -777,10 +777,20 @@ policy.
     destroyed, against 216 with `malloc`. Its `operator new` takes an ordinary block `frame_alignment()` bytes larger
     and places the frame at its first aligned address past the word that keeps the block's own, as MSVC's
     `_aligned_malloc` does: 218 instructions. `frame_alignment()` is the cache line, or the promise's own alignment
-    when that is stricter, so a `generator<T>` of a value aligned past the cache line has its promise aligned too (MSVC
-    does not compile a generator of a `T` aligned to 128: `yield_value` takes its `T` by value, error C2719).
-    Nothing else goes past the cache line: a local aligned further, or such a promise in an `async_generator` or a
-    `task`, is not guaranteed its alignment on GCC, clang and clang-cl.
+    when that is stricter, so a `generator<T>` of a value aligned past the cache line has its promise aligned too.
+  - **Past the cache line**, the pooled promise types (`task<T>`, `async_generator<T>`) take the same realigned block,
+    `CoroutineFrameAllocator::allocate_realigned`, instead of a pool block: `QB_CORO_PROMISE_POOLED_NEW_DELETE()`
+    routes there when `alignof(promise_type)` exceeds `kAlign` (`if constexpr`), its three operators alike, the frame
+    counted in `live_frames` as a pool block is. A `task<T>` or an `async_generator<T>` of an `alignas(128)` value had
+    about half its promises off the 128-byte boundary with the pool (29 to 33 of 64 across runs of g++ 14, clang 19,
+    clang-cl 22). Measured with callgrind (g++ 14 Release, glibc 2.41): a
+    `task<Ev128>` made, awaited and destroyed costs 366 instructions with the realigned block, 444 with the aligned
+    `::operator new`, and cost 276 with the pool block that misaligned it; at or below the line the change is
+    `if constexpr`'s other branch, and a program of `task<int>`, `task<std::string>` and a 64-aligned `task<T>` builds
+    to the same machine code, every function (g++ 14), and the same MSVC 19.51 listing. MSVC does not compile any of
+    the three for a `T` aligned to 128 (`yield_value` and `return_value` take their `T` by value: error C2719). What
+    no allocator can align is a frame local aligned past its promise's alignment: `operator new(size)` is not told it,
+    and GCC, clang and clang-cl give it no more than the frame's base.
   - **Witness.** `qb-io-test-unit-over-aligned-promise` keeps 64 frames of each kind alive at once, a small heap block
     between each two, and reads every promise and local address through a volatile (the residue of a typed pointer
     to an over-aligned object may be folded to 0). On the base, 46 to 50 of 64 promises and 92 to 98 of 128 local

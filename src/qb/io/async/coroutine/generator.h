@@ -26,11 +26,9 @@
 #include "task.h" // task<void> — for_each()/collect_to_vector() below return one
 #include <cassert>
 #include <coroutine>
-#include <cstdint> // std::uintptr_t — generator<T> realigns its frame
 #include <cstdio>
 #include <exception>
 #include <memory> // std::shared_ptr — async_generator::_alive and next_awaiter shared ownership
-#include <new>    // ::operator new — generator<T>'s frame
 #include <optional>
 #include <vector> // std::vector — collect_to_vector()/map_to_vector() below return one
 
@@ -87,9 +85,9 @@ public:
         // plain value a program may destroy on another thread, and the pool's free lists are per thread -- a frame
         // destroyed elsewhere stayed in that thread's list until it exited. Not the aligned ::operator new either,
         // which glibc serves off its fast path: a generator made, advanced once and destroyed cost 296 instructions
-        // with it, 216 with malloc (callgrind, g++ 14 Release, glibc 2.41). Instead an ordinary block `alignment` bytes
-        // larger, the frame at its first aligned address past the word that keeps the block's own address (MSVC's
-        // _aligned_malloc does the same): 218 instructions.
+        // with it, 216 with malloc (callgrind, g++ 14 Release, glibc 2.41). Instead an ordinary block frame_alignment()
+        // bytes larger, realigned (detail::CoroutineFrameAllocator::allocate_realigned, as MSVC's _aligned_malloc
+        // does): 218 instructions.
         static constexpr std::size_t
         frame_alignment() noexcept {
             return alignof(promise_type) > detail::CoroutineFrameAllocator::kAlign ? alignof(promise_type)
@@ -97,16 +95,11 @@ public:
         }
         static void *
         operator new(std::size_t size) {
-            constexpr std::size_t alignment = frame_alignment();
-            auto *const           block     = static_cast<char *>(::operator new(size + alignment));
-            auto *const           frame     = block + (alignment - (reinterpret_cast<std::uintptr_t>(block) & (alignment - 1)));
-            // block is at least 8-aligned, so the step is 8 to `alignment` bytes: room for the word below the frame
-            reinterpret_cast<void **>(frame)[-1] = block; // what operator delete frees
-            return frame;
+            return detail::CoroutineFrameAllocator::allocate_realigned(size, frame_alignment());
         }
         static void
         operator delete(void *frame) noexcept {
-            ::operator delete(static_cast<void **>(frame)[-1]);
+            detail::CoroutineFrameAllocator::deallocate_realigned(frame);
         }
 
         std::optional<T>   current_value;
