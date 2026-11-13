@@ -463,3 +463,77 @@ TEST(KernelEvents, RawFileWatcherDetectsChange) {
     qb::io::async::listener::current.clear();
 }
 #endif
+
+// ===========================================================================
+// file_watcher::read_all() under a read cap (Huly QB-86)
+// ===========================================================================
+//
+// read_all() reads until a read returns nothing. A read the cap refuses -- the input buffer holds its cap and the
+// protocol framed nothing of it -- returns neither nothing nor a failure, and read_all() took it for octets read: it
+// read again, was refused again, and never returned. It answers -1 now, as for a read that fails, and its caller
+// stops the watcher.
+
+namespace kernel_events_test {
+
+/// A file watcher over a file transport it inherits in the open, so that its read cap can be set. Its reads are
+/// counted, and a watchdog ends a read_all() that would never return: past `kReadBudget` reads it fails the read.
+class CappedFileReader
+    : public qb::io::async::file_watcher<CappedFileReader>
+    , public qb::io::transport::file {
+public:
+    static constexpr std::size_t kReadBudget = 10000u;
+
+    std::size_t reads   = 0u;
+    bool        runaway = false;
+
+    int
+    read() noexcept {
+        if (++reads > kReadBudget) {
+            runaway = true;
+            return -1;
+        }
+        return qb::io::transport::file::read();
+    }
+};
+
+/// A protocol that never finds a message: what is read stays in the input buffer.
+class NeverAMessage : public qb::io::async::AProtocol<CappedFileReader> {
+public:
+    explicit NeverAMessage(CappedFileReader &io) noexcept
+        : AProtocol(io) {}
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return 0u;
+    }
+    void
+    onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+};
+
+} // namespace kernel_events_test
+
+TEST(KernelEvents, ReadAllEndsWhenTheInputBufferHoldsItsCap) {
+    qb::io::async::init();
+    {
+        const ScopedTempDir tmp;
+        const std::string   path = tmp("capped.file");
+        {
+            std::ofstream seed(path, std::ios::binary);
+            seed << std::string(5000u, 'x'); // five times the cap, and no message in it
+        }
+
+        kernel_events_test::CappedFileReader reader;
+        ASSERT_NE(reader.switch_protocol<kernel_events_test::NeverAMessage>(reader), nullptr);
+        ASSERT_GE(reader.transport().open(path), 0) << "cannot open " << path;
+        reader.set_max_read_buffer_size(1024u);
+
+        EXPECT_EQ(reader.read_all(), -1) << "a buffer that holds its cap with nothing framed ends read_all(), as a failed read does";
+        EXPECT_FALSE(reader.runaway) << "read_all() went on reading a buffer that holds its cap: " << reader.reads << " reads";
+        EXPECT_EQ(reader.reads, 2u) << "one read up to the cap, one refused";
+        EXPECT_EQ(reader.pendingRead(), 1024u) << "what was read is kept";
+        reader.close();
+    }
+    qb::io::async::listener::current.clear();
+}

@@ -371,8 +371,8 @@ Every socket and transport exposes a `constexpr static bool is_secure()`. See
 
 - **Streams** (`qb/io/stream.h`): `qb::io::istream<_IO_>`, `ostream<_IO_>`, and `stream<_IO_>` add input
   and output buffering over a transport `_IO_`. Key members: `transport()`, `in()`, `out()`, `read`,
-  `write`, `publish`. A read or write that would exceed the configured buffer limit returns
-  `ErrBufferLimitExceeded` (`-2`).
+  `write`, `publish`. A read takes at most the room left under the read-buffer limit, and returns
+  `ErrBufferLimitExceeded` (`-2`) when none is left; a `publish` past the write-buffer limit returns `nullptr`.
 - **Transports** (`qb/io/transport/`): concrete specializations — `transport::tcp` is `stream<tcp::socket>`;
   likewise `transport::udp`, `transport::stcp` (TLS), `transport::file`, and the acceptors `transport::accept`
   and `transport::saccept`.

@@ -297,7 +297,7 @@ Key behaviors verified in the header:
   <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1146-1156 (orderly shutdown returns -1), :1161-1163 (WANT_* returns 0), :1176 (handshake in progress returns 0) -->
 - **Read drains less than requested.** Because OpenSSL can hold already-decrypted
   application data internally, generic streaming code should use `transport::stcp`, which
-  handles `SSL_pending()` for you (see [The stcp transport](#the-stcp-transport)).
+  counts it for the async bases to read (see [The stcp transport](#the-stcp-transport)).
 - **`disconnect()` ends the TLS stream before it closes the socket (3.4, Huly QB-1270).** TLS has
   its own end of stream, the `close_notify` alert: a peer that reads the TCP FIN without it cannot
   tell a stream its sender ended from one something cut, and OpenSSL 3 reports it as an error
@@ -499,13 +499,43 @@ public:
 
 `qb::io::transport::stcp` (in `qb/io/transport/stcp.h`) is the
 `qb::io::stream<qb::io::tcp::ssl::socket>` specialization that backs every asynchronous
-secure session. Its `read()` does a socket read, then checks `SSL_pending()` and performs a
-second read for any application data OpenSSL has already decrypted and buffered internally.
-Without that drain, decrypted bytes would be stranded until the next socket readiness
-event. Both `read()` results are bounded by `_max_read_buffer_size` and return
-`ErrBufferLimitExceeded` if the cap would be exceeded.
+secure session. Its `read()` is one read of the TLS socket, of at most the room left under
+the read cap (`max_read_buffer_size()`); it returns `ErrBufferLimitExceeded` only when the
+input buffer has no room left before it reads.
 
-<!-- src: qb/src/qb/io/transport/stcp.h:44-89 -->
+A TLS record is decrypted whole, so a read with less room than the record leaves the rest
+inside the TLS session: `held_input()` (OpenSSL's `SSL_pending()`) says how many octets. The
+socket is empty by then and will raise no readiness event for them. `async::io` and
+`async::input` therefore dispatch the component again while its transport holds some, as a
+level-triggered loop does for octets still in a socket: once the protocol has consumed, the
+read has room and takes them; if it has consumed nothing, the read is refused and the session
+ends with `buffer_overflow`, as it would for octets on the wire. Nothing waits inside the
+session for the peer's next record.
+
+That dispatch has three bounds. It is for a started component with its protocol in place: one
+that calls `stop()` in a handler is left alone, and a read dispatch with no protocol would end
+the component. It follows a read that took octets -- a fed event runs in the loop pass that fed
+it, so a transport that held input and gave none would never let that pass end. And `start()`
+and `ready_to_read()` ask once for what the transport holds, so a component that resumes, or
+the new owner of an extracted transport, reads it -- with its protocol in place:
+`start(); switch_protocol<P>()` in that order asks while there is no protocol to read with, and
+feeds nothing. A component that drives `read()` itself does the same by hand: read again, once
+there is room, while `held_input()` is not zero. A transport of your own may declare
+`held_input()` too, for octets its next `read()` with room takes; the async base must be able
+to name it -- a public member, or the base a friend as in `async::tcp::client` -- or it is
+taken for absent, silently.
+
+An ordinary dispatch pays one flag for this. `stcp::read()` records whether it filled the
+place it asked for (`last_read_filled()`): only such a read can leave octets of its record
+behind, so the bases ask `held_input()` -- a call into OpenSSL -- after such a read alone. A
+record carries 16 KiB at most and a read asks for up to 64 KiB: a read under no pressure from
+its cap empties its record, and nothing follows it.
+
+Until 3.4 a read asked for a whole 64 KiB bucket, larger than any record, or was refused:
+nothing could be left behind -- the second read `stcp::read()` then made of `SSL_pending()`
+never ran, and is gone -- and a cap below the bucket read nothing at all (Huly QB-86).
+
+<!-- src: qb/src/qb/io/transport/stcp.h:44-76 (the transport, its read), :86-90 (held_input), :100-103 (last_read_filled); qb/src/qb/io/async/io.h:3431-3438 (the dispatch it asks for), :3450-3460 (after a read), :1014, :2405 (start() asks once), :1028, :2415 (ready_to_read() too) -->
 
 ### SSL context helpers
 
@@ -574,7 +604,7 @@ file paths, and hand it to the transport's listener before listening. The aliase
 <!-- src: qb/src/qb/io/async.h:113-127 -->
 
 ```cpp
-// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:78-127 (adapted)
+// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:84-133 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 #include <qb/io/tcp/ssl/socket.h>   // qb::io::ssl::create_server_context
@@ -671,7 +701,7 @@ The default client verifies the peer. Against a public CA-signed server, a plain
 `set_insecure()` before connecting.
 
 ```cpp
-// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:104-143 (adapted)
+// src: qb/tests/io/system/tls/tls-text-roundtrip.cpp:110-149 (adapted)
 #include <qb/io/async.h>
 #include <qb/io/protocol/text.h>
 
@@ -781,8 +811,9 @@ that names its host only in its CN verifies its chain and is then refused for it
   and frees it. A `Session` from `get_session()` is always caller-owned; release it with
   `free_session()`.
 - **Use `stcp` for streaming, not raw `read()`.** OpenSSL may buffer decrypted data
-  internally. `transport::stcp::read()` drains `SSL_pending()`; the raw `socket::read()`
-  does not, so a hand-rolled read loop can strand already-decrypted bytes.
+  internally. `transport::stcp::held_input()` says what a read left there, and the async bases
+  read it; the raw `socket::read()` says nothing, so a hand-rolled read loop can strand
+  already-decrypted bytes.
 
 ## See also
 

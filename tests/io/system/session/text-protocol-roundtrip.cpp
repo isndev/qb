@@ -536,6 +536,48 @@ pump_for(qb::duration span) {
         async::run(EVRUN_NOWAIT);
 }
 
+class DeafLingerServer;
+
+/// A session that answers, sets its read cap to 0 -- it reads nothing more -- and closes after delivery.
+class DeafLingerSession : public use<DeafLingerSession>::tcp::client<DeafLingerServer> {
+public:
+    using Protocol = qb::protocol::text::command<DeafLingerSession>;
+
+    explicit DeafLingerSession(IOServer &server)
+        : client(server) {}
+
+    ~DeafLingerSession() {
+        g_destroyed_at = linger_clock::now();
+        g_destroyed.store(true);
+    }
+
+    void
+    on(Protocol::message &&) {
+        *this << "goodbye" << Protocol::end;
+        set_max_read_buffer_size(0u);
+        close_after_deliver();
+    }
+
+    void
+    on(qb::io::async::event::eos &&) {
+        g_delivered_at = linger_clock::now();
+        g_delivered.store(true);
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) {
+        g_disconnected.fetch_add(1);
+    }
+};
+
+class DeafLingerServer : public use<DeafLingerServer>::tcp::server<DeafLingerSession> {
+public:
+    void
+    on(IOSession &session) {
+        session.set_linger(g_linger);
+    }
+};
+
 } // namespace linger_test
 
 // The answer is delivered, then the session waits for its peer: still registered, lingering, its sending
@@ -588,6 +630,31 @@ TEST_F(SessionRoundtripTest, ALingeringCloseIsBoundedByItsLinger) {
     EXPECT_GE(g_destroyed_at - g_delivered_at, 290ms);
     EXPECT_NE(view.received.find("goodbye"), std::string::npos);
     EXPECT_EQ(g_disconnected.load(), 1);
+}
+
+// A read cap of 0 drains nothing: the linger of such a session ends at the first octet its peer still sends, where it
+// used to be dispatched for that octet on every pass of the loop until linger() elapsed -- here 30 s (Huly QB-86).
+TEST_F(SessionRoundtripTest, ALingeringCloseThatCanDrainNothingEndsAtTheFirstOctet) {
+    using namespace linger_test;
+    reset(30s);
+    DeafLingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    qb::io::tcp::socket peer;
+    ASSERT_EQ(peer.connect_v4("127.0.0.1", port), SocketStatus::Done);
+    ASSERT_EQ(peer.write("bye\n", 4u), 4);
+    ASSERT_TRUE(pump_until([&] { return g_delivered.load(); }, 5s)) << "the answer was never delivered";
+    pump_for(20ms);
+    ASSERT_FALSE(g_destroyed.load()) << "nothing has arrived since the answer: the session waits for its peer";
+    EXPECT_EQ(server.session_count(), 1u);
+
+    ASSERT_EQ(peer.write("more\n", 5u), 5); // the peer is still sending
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 2s)) << "a linger that can drain nothing went on for its bound of 30 s";
+    EXPECT_EQ(g_disconnected.load(), 1);
+    EXPECT_EQ(server.session_count(), 0u);
+    peer.close();
 }
 
 // set_linger(0): the session closes as soon as its answer is delivered, as before 3.3.

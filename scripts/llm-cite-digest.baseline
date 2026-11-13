@@ -251,9 +251,9 @@ llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
 llm/qb.llm.md	io.h:2175-2199	d340160ee45f	begin_linger() noexcept {
 llm/qb.llm.md	io.h:2184-2184	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
-llm/qb.llm.md	io.h:2212-2222	6d0e06e8f52b	linger_read(event::io const &event) noexcept {
+llm/qb.llm.md	io.h:2212-2222	31df185b7966	linger_read(event::io const &event) noexcept {
 llm/qb.llm.md	io.h:2309-2311	eeb80e56aede	clear_protocols() {
-llm/qb.llm.md	io.h:2377-2406	1e36f84eaea5	start() noexcept {
+llm/qb.llm.md	io.h:2377-2406	f5f46d847237	start() noexcept {
 llm/qb.llm.md	io.h:2923-2930	ceb8704b7ca9	disconnect_now(int reason = static_cast<int>(event::disconnect_reason...
 llm/qb.llm.md	io.h:3095-3095	5727fb5c89bd	return begin_linger();
 llm/qb.llm.md	io.h:3163-3163	a5087061f699	if (const bool alive = process_messages(); !_protocol_list.end_dispat...
@@ -307,6 +307,7 @@ llm/qb.llm.md	src/qb/core/detail/actor_id_pool.h:41-90	7da172c80143	class ActorI
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:398-406	a1c4380f4ec5	/// Per-peer RTT estimate; id zero names a client's connection or a s...
 llm/qb.llm.md	src/qb/io/async/quic/endpoint.h:566-579	64462074ff15	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	src/qb/io/async/tcp/client.h:153-167	85d04f79627d	[[nodiscard]] inline std::string
+llm/qb.llm.md	src/qb/io/async/tcp/client.h:64-65	483f8a4ae971	using _Transport::max_read_buffer_size;     /**< Import the read-buff...
 llm/qb.llm.md	src/qb/io/quic.cpp:1122-1123	2fb715b5c05b	params.initial_max_streams_bidi            = _config.max_streams_bidi;
 llm/qb.llm.md	src/qb/io/quic.cpp:1324-1332	f4b8ced2987a	if (written == 0) {
 llm/qb.llm.md	src/qb/io/quic.cpp:1343-1349	218294b6cd09	if (written == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
@@ -317,6 +318,7 @@ llm/qb.llm.md	src/qb/io/quic.cpp:422-437	87eafb98e954	bool
 llm/qb.llm.md	src/qb/io/quic.cpp:585-602	7c93cb524a16	extend_stream_credit(std::uint64_t connection_id, std::uint64_t strea...
 llm/qb.llm.md	src/qb/io/quic.cpp:725-745	b578f4722994	std::optional<qb::duration>
 llm/qb.llm.md	src/qb/io/quic/backend.h:84-88	19f80fbc9984	/// The named connection's smoothed RTT estimate, or no value when un...
+llm/qb.llm.md	src/qb/io/stream.h:160-165	4d5ad66b89d0	if (_in_buffer.size() >= _max_read_buffer_size) {
 llm/qb.llm.md	src/qb/io/system/sys__socket.h:1218-1229	d3c84ce551f8	/**
 llm/qb.llm.md	ssl/context.cpp:463-463	6a5ed66e2196	if (SSL_CTX_use_certificate_chain_file(_ctx.get(), cert_s.c_str()) != 1)
 llm/qb.llm.md	ssl/context.h:157-157	3b96c5ab4fe6	class QB_API Context {

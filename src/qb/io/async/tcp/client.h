@@ -61,6 +61,9 @@ public:
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 
+    using _Transport::max_read_buffer_size;     /**< Import the read-buffer cap read() enforces (Huly QB-86) */
+    using _Transport::set_max_read_buffer_size; /**< Import its setter: a session sets its own (Huly QB-86) */
+
 protected:
     const uuid _uuid;   /**< Unique identifier for this client */
     _Server   &_server; /**< Reference to the associated server */
@@ -69,17 +72,14 @@ public:
     using IOServer                         = _Server; /**< Type alias for the server type */
     constexpr static const bool has_server = true;    /**< Flag indicating server association */
 
-    /**
-     * @brief Default constructor (deleted)
-     */
+    /** @brief Default constructor (deleted) */
     client() = delete;
 
     /**
      * @brief Constructor with server reference
      *
-     * Creates a new client associated with the given server.
-     * If the derived class defines a Protocol type that is not void,
-     * an instance of that protocol is created and attached to the client.
+     * Creates a new client associated with the given server. If the derived class defines a Protocol type that is not
+     * void, an instance of that protocol is created and attached to the client.
      *
      * @param server Reference to the associated server
      */
@@ -201,13 +201,13 @@ public:
     using _Transport::transport;                                      /**< Import the transport method from the transport */
     using base_t::publish;                                            /**< Import the publish method from the base class */
 
-public:
+    using _Transport::max_read_buffer_size;     /**< Import the read-buffer cap read() enforces (Huly QB-86) */
+    using _Transport::set_max_read_buffer_size; /**< Import its setter: a session sets its own (Huly QB-86) */
+
     /**
      * @brief Default constructor
-     *
-     * Creates a new standalone client.
-     * If the derived class defines a Protocol type that is not void,
-     * an instance of that protocol is created and attached to the client.
+     * @details Creates a new standalone client. If the derived class defines a Protocol type that is not void, an
+     *          instance of that protocol is created and attached to the client.
      */
     client() noexcept {
         if constexpr (qb::has_type_Protocol<_Derived>) {
