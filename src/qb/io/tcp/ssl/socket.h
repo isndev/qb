@@ -834,14 +834,14 @@ public:
      * @param data Pointer to the buffer where decrypted data will be stored.
      * @param size Maximum number of bytes to read into the buffer.
      * @return Number of bytes actually read and decrypted; 0 when nothing can be read yet (`SSL_ERROR_WANT_READ`,
-     *         `SSL_ERROR_WANT_WRITE`, a handshake still in progress); -1 on the peer's `close_notify` -- never with a
-     *         would-block an earlier call left as the system error -- and on an error.
+     *         `SSL_ERROR_WANT_WRITE`, a handshake still in progress); -1 on the peer's `close_notify` and on an error --
+     *         never with a would-block an earlier call left (OpenSSL refused the read: `ECONNABORTED` then).
      * @details Internally calls `SSL_read()`. A socket error the io layer does not read as "try again" (a reset:
      *          `SSL_ERROR_SYSCALL`, after which OpenSSL forbids `SSL_shutdown()`) records this side's end of the
      *          session without the alert, as `quiet_shutdown()` does: nothing more is written into that connection
      *          (Huly QB-1270) -- with OpenSSL 4 nothing needs recording, OpenSSL ended the session itself. One it reads
      *          as "try again" (an `EINTR` from a BIO that fails a read with it) is left to the caller, which reads
-     *          again, where OpenSSL lets the session go on: OpenSSL 3 does; OpenSSL 4 ends it on every socket error,
+     *          again, where OpenSSL lets the session go on (OpenSSL 3 does, renegotiating or not); OpenSSL 4 ends it,
      *          and the read reports the session aborted instead -- `ECONNABORTED` (`WSAECONNABORTED` on Windows), an
      *          error nobody reads again after (measured: OpenSSL 4.1.0).
      */
@@ -857,9 +857,9 @@ public:
      * @details Internally calls `SSL_write()`. A socket error the io layer does not write again after (a reset:
      *          `SSL_ERROR_SYSCALL`) records this side's end of the session without the alert, as after `read()`'s.
      *          One it writes again after (`ENOBUFS`, which OpenSSL's socket BIO reports as a failure) is left to the
-     *          caller, where OpenSSL lets the session go on: OpenSSL 3 does, and the write made again goes on; OpenSSL 4
-     *          ends it on every socket error, and the write reports the session aborted instead, `ECONNABORTED`
-     *          (`WSAECONNABORTED`), as `read()` does (measured: OpenSSL 4.1.0).
+     *          caller, where OpenSSL lets the session go on: OpenSSL 3 does (in a TLS 1.2 renegotiation it ends it at
+     *          the write made again); OpenSSL 4 ends it on every socket error, the write reporting it `ECONNABORTED`
+     *          (`WSAECONNABORTED`) at once, as `read()` does (measured: OpenSSL 4.1.0).
      */
     int write(const void *data, std::size_t size) noexcept;
 

@@ -1221,11 +1221,11 @@ socket::write(const void *data, std::size_t size) noexcept {
                         qb::io::socket::set_last_errno(tls_session_aborted);
                     return -1;
                 default:
-                    // OpenSSL refuses a write after this side's close_notify -- a lingering session that is
-                    // published to -- before it makes any system call or clears the system error: the thread's last
-                    // socket error is an earlier call's. A would-block there reads as "try again" to the io layer,
-                    // for ever on a socket that stays writable: it is replaced by the error of a write after a
-                    // shutdown, which is what the socket answered before 3.4 (Huly QB-1270).
+                    // OpenSSL refuses a write after this side's close_notify -- a lingering session that is published
+                    // to -- or once it ended the session (OpenSSL 4, after an error met elsewhere), before it makes a
+                    // system call or clears the system error: the thread's last socket error is an earlier call's. A
+                    // "try again" there would be written again for ever on a socket that stays writable: it is replaced
+                    // by the error of a write after a shutdown, what the socket answered before 3.4 (Huly QB-1270).
                     if (err == SSL_ERROR_SSL && qb::io::socket::not_send_error(qb::io::socket::get_last_errno()))
                         qb::io::socket::set_last_errno(tls_write_after_shutdown);
                     return -1;
