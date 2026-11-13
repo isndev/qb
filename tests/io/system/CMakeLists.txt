@@ -326,6 +326,8 @@ if (QB_IO_EV_TEST_BACKENDS)
     # whose first watcher was stopped in the same pass -- each backend must hear the new socket.
     # tls-close-notify (Huly QB-1270): the alert is written before the descriptor goes to the loop, and the
     # loop then reads what a TLS peer answers as bytes -- each backend must hear that socket to its EOF.
+    # tls-read-wants-write (Huly QB-1270): a TLS read that must write first moves its watcher from readability to
+    # writability and back, and is fed the read again in the pass it modified it -- each backend must hear the change.
     set(QB_IO_BACKEND_SENSITIVE_TESTS
             qb-io-test-system-tcp-socket-loopback
             qb-io-test-system-async-bases-framing
@@ -339,6 +341,7 @@ if (QB_IO_EV_TEST_BACKENDS)
             qb-io-test-system-close-after-peer-loop
             qb-io-test-system-session-close-after-peer
             qb-io-test-system-tls-close-notify
+            qb-io-test-system-tls-read-wants-write
             qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})

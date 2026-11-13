@@ -675,7 +675,8 @@ public:
     /**
      * @brief Progress the TLS handshake and report its precise state.
      * @return 1 when the TLS handshake is complete, 0 when OpenSSL needs more
-     *         socket readiness (WANT_READ/WANT_WRITE), -1 on fatal error.
+     *         socket readiness (WANT_READ/WANT_WRITE, or since 3.4 a socket error it keeps the
+     *         handshake after: `handshake_wants_write()`), -1 on fatal error.
      */
     int handshake_status() noexcept;
 
@@ -689,7 +690,9 @@ public:
      *          after a step met a socket error a call is made again after (`ENOBUFS`, an `EINTR` from a BIO that fails
      *          a call with it) and OpenSSL kept the handshake: `handshake_status()` answered 0, not -1, and the step is
      *          made again when the socket can take a write -- until 3.4 such an error ended the connection (Huly
-     *          QB-1270).
+     *          QB-1270). An error that persists is met again on every such pass, as a write is made again after it:
+     *          the async connectors stop at their deadline, and one given no timeout does not stop. A blocking
+     *          `connect()` has no pass to make it again: such an error fails it, as before.
      */
     [[nodiscard]] bool handshake_wants_write() const noexcept;
 
@@ -730,6 +733,21 @@ public:
     [[nodiscard]] bool
     write_wants_read() const noexcept {
         return _write_wants_read;
+    }
+
+    /**
+     * @brief Whether a handshake is under way on this connection after its first one completed -- a TLS 1.2
+     *        renegotiation, a TLS 1.3 post-handshake message this side answers (Huly QB-1270).
+     * @details OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone: an
+     *          `SSL_write()` made then drives the handshake too, and the connection ends when the peer's next record is
+     *          application data -- a TLS 1.2 server may send it behind its HelloRequest (measured with OpenSSL 3.5).
+     *          `io<>` and the server sessions let their read drive such a handshake and write what is queued once it
+     *          completes; a hand-driven socket that reads does the same. OpenSSL's `SSL_in_init()` once connected: no
+     *          I/O.
+     */
+    [[nodiscard]] bool
+    rehandshaking() const noexcept {
+        return _connected && _ssl_handle && SSL_in_init(_ssl_handle.get()) == 1;
     }
 
     /**

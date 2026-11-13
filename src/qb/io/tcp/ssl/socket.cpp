@@ -885,7 +885,15 @@ socket::finish_client_connect_(int ret, int err, const std::string &hostname) no
         return SocketStatus::Error; // LCOV_EXCL_LINE GCOVR_EXCL_LINE
     if (ret != 0 && socket_no_error(err))
         return ret;
-    return handCheck() < 0 ? -1 : 0;
+    const int handshake = handCheck();
+    if (handshake == 0 && _handshake_retry) {
+        // A socket error handCheck() kept for a step made again when the socket can take a write (Huly QB-1270): a
+        // blocking connect has no loop to make it again, and it answered 0 with the handshake unfinished. It fails, as
+        // it did before 3.4.
+        disconnect();
+        return -1;
+    }
+    return handshake < 0 ? -1 : 0;
 }
 
 int
