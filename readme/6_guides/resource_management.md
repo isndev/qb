@@ -196,8 +196,8 @@ client.transport().set_insecure();
 
 Two further facts shape correct TLS lifetime management:
 
-- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. `init(SSL*)` adopts the handle; on a fresh socket, later client setup still applies peer mode and hostname verification. qb passes a null callback while changing the mode; the statement that an installed callback is retained is an inference from OpenSSL's `SSL_set_verify` contract. (`src/qb/io/tcp/ssl/socket.cpp:645-653,712-730,943-947,579-582`)
-- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:845-846`)
+- **TLS is secure by default.** When qb-io builds the client `SSL_CTX` itself, it loads the system trust store, enables `SSL_VERIFY_PEER`, and verifies the server certificate against the hostname or IP. `set_insecure()` must be called *before* `connect()`/`n_connect()` to opt out, and disables MITM protection. `init(SSL*)` adopts the handle; on a fresh socket, later client setup still applies peer mode and hostname verification. qb passes a null callback while changing the mode; the statement that an installed callback is retained is an inference from OpenSSL's `SSL_set_verify` contract. (`src/qb/io/tcp/ssl/socket.cpp:655-664,723-741,953-957,586-589`)
+- **A TLS session you extract is yours to free.** A `qb::io::ssl::Session` obtained from `socket::get_session()` must be released with `qb::io::ssl::free_session()` when no longer needed. (`src/qb/io/tcp/ssl/socket.h:928-929`)
 
 ### `qb::io::use<>` ties transport lifetime to the actor
 

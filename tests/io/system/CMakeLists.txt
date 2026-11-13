@@ -262,6 +262,11 @@ qb_add_test(MODULE qb-io TIER system NAME close-after-peer-loop SOURCES tcp/clos
 # A TLS socket that gives its descriptor away detaches its SSL object from it: a write on the transport afterwards
 # reaches nothing, where it wrote a TLS record of the ended connection into whichever socket took the number (Huly QB-1270).
 qb_add_test(MODULE qb-io TIER system NAME close-after-peer-tls SOURCES tcp/close-after-peer-tls.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
+# A TLS connection this side ends tells its peer so: one close_notify before the FIN, never awaited, read by a raw
+# OpenSSL peer as a clean end where 3.3 gave it an unexpected EOF -- every own-ended close, a session's lingering close
+# included; none when the peer ended it, before the handshake, or when queued output is dropped; a socket that cannot
+# take the alert is closed without it; and a saved session resumes after either side closed (Huly QB-1270).
+qb_add_test(MODULE qb-io TIER system NAME tls-close-notify SOURCES tls/tls-close-notify.cpp DEPENDS ${PROJECT_NAME} REQUIRES ssl network)
 # Where the close after the peer meets the end of a thread's loop (Huly QB-1270 with QB-1246): a connection a coroutine
 # frame ends while its thread's listener is destroyed is closed by that teardown, one an object with static storage
 # ends after it is closed in the call (a child process), one handed over on a thread with no loop builds it, and
@@ -315,6 +320,8 @@ if (QB_IO_EV_TEST_BACKENDS)
     # close-after-peer, close-after-peer-loop and session-close-after-peer (Huly QB-1270): the loop closes a
     # descriptor number that the system hands out again at once, and a second watcher is started on a number
     # whose first watcher was stopped in the same pass -- each backend must hear the new socket.
+    # tls-close-notify (Huly QB-1270): the alert is written before the descriptor goes to the loop, and the
+    # loop then reads what a TLS peer answers as bytes -- each backend must hear that socket to its EOF.
     set(QB_IO_BACKEND_SENSITIVE_TESTS
             qb-io-test-system-tcp-socket-loopback
             qb-io-test-system-async-bases-framing
@@ -327,6 +334,7 @@ if (QB_IO_EV_TEST_BACKENDS)
             qb-io-test-system-close-after-peer
             qb-io-test-system-close-after-peer-loop
             qb-io-test-system-session-close-after-peer
+            qb-io-test-system-tls-close-notify
             qb-io-test-system-event-loop-lifecycle)
     foreach (_qb_tgt ${QB_IO_BACKEND_SENSITIVE_TESTS})
         if (TARGET ${_qb_tgt})
