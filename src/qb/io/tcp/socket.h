@@ -292,7 +292,8 @@ public:
     /**
      * @brief Disconnect the TCP socket.
      * @return 0 on success, or a non-zero error code on failure.
-     * @details This typically calls `qb::io::socket::shutdown()` with `QB_SD_BOTH` and then `close()`.
+     * @details Calls `qb::io::socket::shutdown()` with `QB_SD_BOTH`: the peer reads EOF -- on macOS too once the peer's FIN
+     *          has arrived (3.4) --, or a reset on Windows where input is left unread.
      */
     int disconnect() const noexcept;
 };

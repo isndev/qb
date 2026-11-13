@@ -85,7 +85,7 @@ Verify with the configuration banner the build prints, or check that `QB_WITH_SS
 
 When `qb-io` builds the client `SSL_CTX` itself — the usual `connect()` / `n_connect()` / async-connector path — it is secure by default: it loads the system trust store, enables `SSL_VERIFY_PEER`, and checks the server certificate against the target hostname (or IP). The `_verify_peer` member starts `true`.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:372 (_verify_peer = true), :1023-1042 (set_insecure / secure-by-default doc), :1048 (verify_peer) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:372 (_verify_peer = true), :1038-1057 (set_insecure / secure-by-default doc), :1063 (verify_peer) -->
 
 The production hazard is the opt-out. `set_insecure()` clears verification (it is meant for self-signed certs in tests, externally-handled pinning, or trusted private channels) and removes protection against man-in-the-middle attacks. Audit your codebase before shipping:
 
@@ -96,7 +96,7 @@ grep -rn "set_insecure" your_service/ qbm/
 
 Adopting an externally-created `SSL` handle via `init(SSL*)` transfers ownership but does not freeze its verification policy. On a fresh qb socket, the later client setup still applies qb's secure default: `SSL_VERIFY_PEER` plus hostname verification. qb passes a null callback while setting that mode; by the OpenSSL `SSL_set_verify` contract, this retains any callback already installed on the handle. A socket already bound to a qb `Context` keeps that context's policy.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:656-666 (adoption), :725-743 (policy branches), :956-960 (connect-time application), :586-589 (null callback) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:660-670 (adoption), :729-747 (policy branches), :960-964 (connect-time application), :590-593 (null callback) -->
 
 ### Server contexts
 
@@ -110,7 +110,7 @@ These functions take `std::filesystem::path` arguments (certificate, key, CA fil
 
 After a handshake completes you can introspect the live connection — `get_negotiated_tls_version()`, `get_negotiated_cipher_suite()`, `get_alpn_selected_protocol()`, `get_peer_certificate_chain()` — to log or assert the negotiated parameters.
 
-<!-- src: qb/src/qb/io/tcp/ssl/socket.h:882 (cipher suite), :888 (tls version), :894 (alpn), :943 (peer cert chain) -->
+<!-- src: qb/src/qb/io/tcp/ssl/socket.h:897 (cipher suite), :903 (tls version), :909 (alpn), :958 (peer cert chain) -->
 
 ### Windows server bind: exclusive, not reusable
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1356-1359,2958-2961 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:882,888,901 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1356-1359,2958-2961 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:897,903,916 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

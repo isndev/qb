@@ -252,7 +252,7 @@ registry, or as a member — never relocate them.
   `transport().is_open()` is false in `on(event::dispose)`, which reads no
   peer from it — so the object is destroyed or connected again at once; a
   TLS socket detaches its `SSL` object from the descriptor it gives away
-  (`src/qb/io/tcp/ssl/socket.cpp:1127-1131`). A size guard of the io
+  (`src/qb/io/tcp/ssl/socket.cpp:1131-1135`). A size guard of the io
   (`message_too_large`, `buffer_overflow`) and a `linger()` of zero close at
   once (`src/qb/io/async/teardown.h:89-95`); a listening socket has no
   sending side, so an acceptor keeps its socket and its port, and a
@@ -301,7 +301,7 @@ registry, or as a member — never relocate them.
   does not make a cut stream whole. One write on a non-blocking
   socket, never retried: a socket that cannot take it is closed without it.
   OpenSSL is told the session ended on every close, so a saved session
-  resumes (`src/qb/io/tcp/ssl/socket.cpp:1068-1102`).
+  resumes (`src/qb/io/tcp/ssl/socket.cpp:1072-1106`).
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
   (`src/qb/io/async/io.h:3317-3336`): a disposed session somebody

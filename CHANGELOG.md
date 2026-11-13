@@ -258,7 +258,7 @@ policy.
   `SSL_ERROR_SSL` with `SSL_R_UNEXPECTED_EOF_WHILE_READING` -- a stream it cannot tell from a truncated one, which
   matters for a body the end of the connection delimits. It now reads this side's last bytes, then
   `SSL_ERROR_ZERO_RETURN`, then the FIN (measured against a raw OpenSSL peer, client and server, OpenSSL 3.5.7 on
-  Linux and 3.6.3 on Windows, TLS 1.3 and 1.2). It is visible on the wire: one alert record more per connection.
+  Linux, 3.6.3 on Windows, 3.5.9 and 4.1.0 on macOS, TLS 1.3 and 1.2). It is visible on the wire: one alert record more per connection.
   Where it is sent: a standalone object's `dispose()` after its `disconnect()`, `disconnect_now()`, a framing error
   or the end of `close_after_deliver()`, while the transport still owns the descriptor, which then goes to the loop
   -- or is closed at once, with `set_linger(zero)` or after a size guard: the bound decides how long the peer is
@@ -266,10 +266,11 @@ policy.
   `close_after_deliver()`, after the delivered bytes and before the half-close -- the peer's own `close_notify` then
   ends that linger as its EOF does; a session that closes at once and the destructor of a stream still connected
   that has nothing left to write, from `ssl::socket::disconnect()`; a direct `ssl::socket::disconnect()`.
-  Where it is not: before the handshake completed; after a fatal TLS error -- a peer's bare EOF is one for OpenSSL 3;
+  Where it is not: before the handshake completed; after a fatal TLS error -- a peer's bare EOF is one for OpenSSL 3 and 4;
   after a reset -- a socket error, after which OpenSSL forbids `SSL_shutdown()`: `ssl::socket::read()` and `write()`
-  record this side's end when they meet one, and nothing more is written into that connection (measured: no write
-  attempted by a client, a session or a bare socket whose peer reset the connection, no SIGPIPE raised); and when
+  record this side's end when they meet one -- with OpenSSL 4, which ends the session itself there, OpenSSL's state
+  holds it --, and nothing more is written into that connection (measured: no write attempted by a client, a session
+  or a bare socket whose peer reset the connection, no SIGPIPE raised, with OpenSSL 3 and 4); and when
   the connection ends with output still queued, whoever ended it -- that output is dropped, as
   before, so the stream is cut, and an alert would tell the peer that a truncated reply is whole. Such a peer reads
   the unexpected EOF it read before. What is queued is read before
@@ -796,6 +797,47 @@ policy.
   session of a connection its peer reset resumes too (measured, TLS 1.3 and 1.2). Unchanged, and OpenSSL's own rule:
   a session whose connection ended on a fatal TLS error -- a peer's EOF with no `close_notify` is one -- does not
   resume.
+- **On macOS a shutdown of both directions sends this side's FIN after the peer's: `disconnect()` no longer leaves a
+  peer that ended its side first waiting for the end of the stream until the socket is closed (Huly QB-1270).** XNU
+  shuts a socket's receiving side first and, once it is shut -- the peer's FIN arrived, read or not --, refuses
+  `shutdown(SHUT_RDWR)` with `ENOTCONN` before it shuts the sending side: no FIN left (measured on macOS 26, XNU
+  12377; Linux and Windows send it). `qb::io::socket::shutdown(QB_SD_BOTH)`, and through it `tcp::socket::disconnect()`
+  and `ssl::socket::disconnect()`, now shut the sending side alone where XNU refuses both, and succeed as on Linux
+  and Windows. The io objects were not affected: the loop closes the descriptor of a connection they end after its peer,
+  and `close()` sends the FIN. A socket driven directly was: its answer to the peer's `close_notify` reached the peer,
+  and then nothing. Two cases of `qb-io-test-system-tls-close-notify` and
+  `TCPSocket.AShutdownOfBothDirectionsAfterThePeersFinSendsOurs` are red without it on the macOS runner, with OpenSSL
+  4.1.0 and 3.5.9 alike, and green with it. Where XNU takes the call it is still the call: a socket shut with input
+  unread sends a FIN, as before (`TCPSocket.AShutdownOfBothDirectionsWithInputUnreadEndsAsTheSystemsOwn`).
+- **With OpenSSL 4 a socket error a TLS receive or an application write meets ends the session: `ssl::socket::read()`
+  and `write()` report an `EINTR` or `ENOBUFS` OpenSSL ended it on as `ECONNABORTED`, never as an error to try again
+  (Huly QB-1270).**
+  OpenSSL 4 holds to what `SSL_get_error(3)` says of `SSL_ERROR_SYSCALL` in both majors, "no further I/O operations
+  should be performed on the connection": from the failing call on the session is in OpenSSL's error state, and every
+  read or write fails with `SSL_ERROR_SSL`, no system call, and the system error an earlier call left (measured with
+  OpenSSL 4.1.0 on macOS: a reset met by a read or a write, an `ENOBUFS` or `EINTR` write of application data, an
+  `EINTR` read, a read waiting in a TLS 1.2 renegotiation). An error met by the write of a handshake message -- a
+  KeyUpdate answer a write sends first, a renegotiation's ClientHello a read sends -- it lets go on, as OpenSSL 3 does
+  every one of them (3.5.9 on the same machine, 3.5.7 on Linux, 3.6.3 on Windows). qb-io makes a read or a write
+  again after an error it reads as "try again" -- `EINTR`, and `ENOBUFS` on a write, which OpenSSL's socket BIO
+  reports as `SSL_ERROR_SYSCALL` --: with OpenSSL 4 that call failed with whatever error an earlier one left. A read
+  made again directly returned -1 with the `EINTR` it was failed with, a "try again" for ever while the descriptor
+  stayed readable; through the loop the io object ended with the error something else had left (`ETIMEDOUT` on the
+  macOS runner). `read()` and `write()` now report the session aborted at the failing call where OpenSSL ended it --
+  its error state, read through `SSL_state_string()`, never inferred from its version or from `SSL_in_init()`, which
+  a handshake message in flight sets too --: `ECONNABORTED` (`WSAECONNABORTED` on Windows), which no io object makes
+  the call again after: it ends the connection at once, and `on(event::disconnected&&)` carries that error; and a
+  read OpenSSL refuses never reports a "try again" an earlier call left (as a write has not since 3.4). Where OpenSSL
+  keeps the session nothing changes (a write in a TLS 1.2 renegotiation, which OpenSSL 3 refuses itself when it is
+  made again, fails as before); a reset still reports its own error. What an application sees with OpenSSL 4: an
+  `ENOBUFS` on a TLS write of application data ends the connection -- its peer reads it cut, with no `close_notify`
+  -- where OpenSSL 3 lets qb-io write again; a reset ends it as before, nothing is written into it, and a session
+  saved from it still resumes. OpenSSL's socket BIO takes a real `EINTR` for "try again" itself: the read cases need
+  a BIO that fails a call with one. Witnesses, in `qb-io-test-system-tls-close-notify`, each stating what each major
+  does: a read and a write failed once at the socket and through an io object, and a read waiting in a renegotiation,
+  red with OpenSSL 4.1.0 without the change and green with it; a write failed once while a KeyUpdate is answered and
+  a read whose renegotiation ClientHello fails (the session goes on with both majors); the resets met by a read and by
+  a write.
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
   `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a
   WebSocket `on(message)` or `on(ping)`, an HTTP/1.1 `on(request)`), or from anything those call, it destroyed every

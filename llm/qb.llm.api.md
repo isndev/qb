@@ -652,7 +652,7 @@ Reliable stream socket (IPv4/IPv6/Unix). `constexpr is_secure() == false`. Re-ex
 *   Free helpers (namespace `qb::io::tcp`, since 3.3): `std::vector<qb::io::endpoint> resolve_endpoints(int af, const std::string& host, uint16_t port)` — every address of the family, in the resolver's order; `qb::duration connect_attempt_budget(qb::duration remaining, std::size_t left) noexcept` — `remaining / left`, never under 2 s unless `remaining` is shorter (Go's dialer).
 *   `void connected() noexcept` — no-op for plain TCP (overridden by ssl).
 *   `int read(void* dest, std::size_t len) const noexcept` / `int write(const void* data, std::size_t size) const noexcept` — positive read = bytes; `-1` with system error 0 = peer shutdown; `-1` with a nonzero error also covers failure or EWOULDBLOCK/EAGAIN.
-*   `int bind(const qb::io::endpoint&) noexcept` / `int bind(const qb::io::uri&) noexcept` / `int disconnect() const noexcept`.
+*   `int bind(const qb::io::endpoint&) noexcept` / `int bind(const qb::io::uri&) noexcept` / `int disconnect() const noexcept` (a shutdown of both directions, `qb::io::socket::shutdown(QB_SD_BOTH)`: the peer reads EOF -- on macOS too once the peer's own FIN has arrived, since 3.4: XNU then refuses both directions, and the sending side is shut alone --, or a reset on Windows where input is left unread).
 *   use: `qb::io::tcp::socket s; s.init(); s.connect(uri("tcp://host:80"), 5s);`
 
 #### `class qb::io::tcp::listener : private qb::io::socket`

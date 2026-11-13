@@ -891,7 +891,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   auto-creates a secure client one). The auto/Context client verifies the chain + hostname; `set_insecure()`
   (before connect) disables MITM protection. Raw `create_client_context`/`create_server_context` (caller-owned,
   free with `SSL_CTX_free`) stay as an advanced escape hatch. _(ssl/context.h:157; ssl/socket.h:505-539, :84, :96)_
-  `socket::set_insecure()` is declared at `ssl/socket.h:1042`.
+  `socket::set_insecure()` is declared at `ssl/socket.h:1057`.
   A certificate file is a CHAIN -- the leaf, then the intermediates a peer needs: since 3.3 every loader
   (`Context::server` / `identity`, `create_server_context`, `configure_client_certificate`) presents all it
   holds (Huly QB-611). _(ssl/context.cpp:463)_
@@ -961,7 +961,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the refused connection: its error is returned). A TLS socket detaches its `SSL` object from the
   descriptor it gives away: a `write()` on the transport afterwards fails. To let a peer that is STILL SENDING read
   your last bytes, a session calls `close_after_deliver()` (time-bounded only); `disconnect()` is the abort.
-  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1127-1131)_
+  _(lingering_close.h:56, :65; lingering_close.cpp:46, :58; socket.cpp:1131-1135)_
 - **A TLS connection this side ends sends `close_notify` before the FIN and never waits for the peer's** (3.4,
   Huly QB-1270): one alert, one write on a non-blocking socket, on every own-ended close whose output was written --
   a standalone object's `dispose()` (before the descriptor goes to the loop), a session's `disconnect()`, its
@@ -969,9 +969,13 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   the linger; output published to it afterwards fails its write and the session is released at once), a `linger()` of
   zero or a size guard (the alert, then closed at once), the destructor of a stream with nothing left to write, a direct
   `ssl::socket::disconnect()`. A peer that ended the session first with its own `close_notify` is answered with this
-  side's (RFC 8446 6.1); its bare EOF -- a fatal error for OpenSSL 3, which writes the fatal alert the error calls for --
+  side's (RFC 8446 6.1); its bare EOF -- a fatal error for OpenSSL 3 and 4, which writes the fatal alert the error calls for --
   gets no `close_notify`, and a reset nothing at all: the socket records its end when it reads or writes one, and writes
-  nothing more into that connection. NOT before the
+  nothing more into that connection. OpenSSL 4 ends the session itself on a socket error met by a receive or by a
+  write of application data, an `ENOBUFS` write qb-io would make again included: `read()` / `write()` then report that
+  `EINTR` / `ENOBUFS` as `ECONNABORTED` and the connection ends there, cut (OpenSSL 3 lets the call made again go on,
+  and so does OpenSSL 4 for an error met by a handshake message's write -- a KeyUpdate answer, a renegotiation's
+  ClientHello: OpenSSL's state decides, not its version). NOT before the
   handshake, after a fatal TLS error, or with output still queued, whoever ended the connection -- a stream closed or
   destroyed with output queued, and a session extracted with output queued (`mark_cut()`: the stream goes on, its end
   says nothing), included (`pendingWrite() != 0`, read before
@@ -984,7 +988,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   session without it; a session saved with `get_session()` resumes after either side closed (it did not once its
   connection was closed, through 3.3). Kernel TLS: never enabled by qb; with it the loop would not read the
   descriptor raw -- close at once (`set_linger(qb::duration::zero())`).
-  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2184, :3301; ssl/socket.cpp:1068-1102, :1105-1109)_
+  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2184, :3301; ssl/socket.cpp:1072-1106, :1109-1113)_
 - **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
   after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
   — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to

@@ -297,7 +297,7 @@ llm/qb.llm.md	scheduler.h:731-760	2673fad18211	* @brief Spawn a callable (lambda
 llm/qb.llm.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
 llm/qb.llm.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
 llm/qb.llm.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.md	socket.cpp:1127-1131	02a7d2fb6943	socket::release_handle() noexcept {
+llm/qb.llm.md	socket.cpp:1131-1135	02a7d2fb6943	socket::release_handle() noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;
 llm/qb.llm.md	src/qb/core/ActorId.h:479-542	3b459e463b23	[[nodiscard]] constexpr std::uint64_t
@@ -324,9 +324,9 @@ llm/qb.llm.md	ssl/context.h:220-228	77b1eca342a4	// --- typed callbacks (no raw 
 llm/qb.llm.md	ssl/context.h:237-248	8f8ec340851e	/**
 llm/qb.llm.md	ssl/listener.cpp:215-215	2f35dcaa0759	listener::set_supported_alpn_protocols(const std::vector<std::string>...
 llm/qb.llm.md	ssl/listener.h:118-146	568219875e9c	/**
-llm/qb.llm.md	ssl/socket.cpp:1068-1102	08a9095c1f60	socket::end_session_(session_end how) noexcept {
-llm/qb.llm.md	ssl/socket.cpp:1105-1109	2d52e403e97d	socket::disconnect() noexcept {
-llm/qb.llm.md	ssl/socket.h:1042-1042	0e2c7a135bf8	void set_insecure() noexcept;
+llm/qb.llm.md	ssl/socket.cpp:1072-1106	08a9095c1f60	socket::end_session_(session_end how) noexcept {
+llm/qb.llm.md	ssl/socket.cpp:1109-1113	2d52e403e97d	socket::disconnect() noexcept {
+llm/qb.llm.md	ssl/socket.h:1057-1057	0e2c7a135bf8	void set_insecure() noexcept;
 llm/qb.llm.md	ssl/socket.h:505-539	206b0d649699	/**
 llm/qb.llm.md	ssl/socket.h:687-687	cec73508a982	[[nodiscard]] bool handshake_wants_write() const noexcept;
 llm/qb.llm.md	ssl/socket.h:84-84	111eae84930c	SSL_CTX *create_client_context(const SSL_METHOD *method);
