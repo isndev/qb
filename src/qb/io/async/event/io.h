@@ -52,11 +52,19 @@ struct io : base<ev::io> {
     using base_t = base<ev::io>; /**< Base type alias for `base<ev::io>`. */
 
     /**
-     * @brief Constructor.
+     * @brief Constructor: the watcher is born on no descriptor, watching nothing.
      * @param loop Reference to the libev event loop (`ev::loop_ref`) this event watcher will be associated with.
+     * @details libev leaves the descriptor and the event mask of a new watcher indeterminate until its first `set()`
+     *          (`ev_init()` sets neither), and the asynchronous components read that mask as what they watch
+     *          (`is_reading()`, `is_writing()`, `ready_to_read()`, `ready_to_write()`) before their first `start()`
+     *          too: an `output` that publishes before it starts asks `ready_to_write()`. Read from memory that held
+     *          other bytes, the mask answered for a watcher that watched nothing, armed nothing, or armed an illegal
+     *          mask, which a build that keeps the loop's assertions aborts on. So both are set here (Huly QB-1270).
      */
     explicit io(ev::loop_ref loop) noexcept
-        : base_t(loop) {}
+        : base_t(loop) {
+        this->set(-1, EV_NONE);
+    }
 };
 
 } // namespace qb::io::async::event

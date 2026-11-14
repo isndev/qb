@@ -39,6 +39,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <new>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -1399,6 +1400,90 @@ TEST_F(AsyncIoBaseTest, DuplexStartSendsWhatWasPublishedBeforeIt) {
     EXPECT_EQ(session.pendingWrite(), 0u) << "the bytes published before start() must have left";
 
     EXPECT_EQ(reply_of(pair.peer, 5), "early");
+}
+
+// The same shape on an output: what was published before start() leaves with it, once (Huly QB-1270). publish() asks
+// ready_to_write(), which reads the event mask of a watcher that was never set -- see the two cases below.
+TEST_F(AsyncIoBaseTest, OutputStartSendsWhatWasPublishedBeforeIt) {
+    auto            pair = make_stream_pair();
+    PipeOutputProbe output{pair.probe};
+    output.base().publish(std::string_view{"early"});
+    ASSERT_EQ(output.pendingWrite(), 5u);
+    EXPECT_TRUE(output.base().is_writing()) << "ready_to_write() left the watcher not watching writability";
+
+    output.base().start();
+    run_nowait_iterations();
+    EXPECT_EQ(output.pendingWrite(), 0u) << "the bytes published before start() must have left";
+    EXPECT_EQ(output.eos_events, 1u);
+
+    EXPECT_EQ(reply_of(pair.peer, 5), "early");
+}
+
+// libev leaves the descriptor and the event mask of a new watcher indeterminate until its first set() -- ev_init()
+// sets neither -- and the three bases READ that mask as what they watch: is_reading(), is_writing(),
+// ready_to_read(), ready_to_write(), before their first start() too. event::io sets both at construction (Huly
+// QB-1270): no descriptor, no event, whatever the storage held -- 0xCD in every byte is what an MSVC debug heap
+// hands out, and made `output::publish()` before `start()` arm an illegal mask, which the loop's assertion aborts on
+// (the `debug` preset of the Windows gate, in tls-read-wants-write).
+TEST_F(AsyncIoBaseTest, ANewIoWatcherIsOnNoDescriptorAndWatchesNothingWhateverItsStorageHeld) {
+    constexpr std::array<unsigned char, 5> kHeld{0x00, 0x55, 0xAA, 0xCD, 0xFF};
+    for (const unsigned char held : kHeld) {
+        SCOPED_TRACE("storage that held " + std::to_string(held) + " in every byte");
+        alignas(qb::io::async::event::io) std::array<unsigned char, sizeof(qb::io::async::event::io)> storage;
+        std::memset(storage.data(), held, storage.size());
+        auto *const watcher = ::new (static_cast<void *>(storage.data())) qb::io::async::event::io(qb::io::async::listener::current.loop());
+        EXPECT_EQ(watcher->fd, -1);
+        EXPECT_EQ(watcher->events & (EV_READ | EV_WRITE), 0);
+        EXPECT_FALSE(watcher->is_active());
+        watcher->~io();
+    }
+}
+
+// Where a base meets such storage in every build: its watcher lives in a block the listener recycles per handler
+// type, so a base built after one of its kind died is built over that one's watcher -- its event mask among the bytes
+// left. It answered "reading" or "writing" for a watcher that was never started, and its ready_to_read() or
+// ready_to_write(), which test that mask, armed nothing (Huly QB-1270).
+TEST_F(AsyncIoBaseTest, ABaseBuiltOverTheWatcherOfOneThatDiedWatchingWatchesNothing) {
+    auto pair = make_stream_pair();
+    {
+        PipeInputProbe before{pair.probe};
+        before.base().start();
+        ASSERT_TRUE(before.base().is_reading());
+    }
+    {
+        PipeInputProbe input{pair.probe};
+        EXPECT_FALSE(input.base().is_reading()) << "an input never started answered for the one that died reading";
+        input.base().ready_to_read();
+        EXPECT_TRUE(input.base().is_reading()) << "ready_to_read() armed nothing";
+    }
+    {
+        PipeOutputProbe before{pair.probe};
+        before.base().start();
+        ASSERT_TRUE(before.base().is_writing());
+    }
+    {
+        PipeOutputProbe output{pair.probe};
+        EXPECT_FALSE(output.base().is_writing()) << "an output never started answered for the one that died writing";
+        // No start(): ready_to_write() alone "ensures the watcher is listening for write events", and they come.
+        output.base().publish(std::string_view{"early"});
+        EXPECT_TRUE(output.base().is_writing());
+        run_nowait_iterations();
+        EXPECT_EQ(output.pendingWrite(), 0u) << "ready_to_write() armed nothing: the bytes never left";
+        EXPECT_EQ(reply_of(pair.peer, 5), "early");
+    }
+    {
+        PipeDuplexProbe before{pair.probe};
+        ASSERT_NE(before.base().switch_protocol<FourByteDuplexProtocol>(before), nullptr);
+        before.base().publish(std::string_view{"x"});
+        before.base().start();
+        ASSERT_TRUE(before.base().is_reading());
+        ASSERT_TRUE(before.base().is_writing());
+    }
+    {
+        PipeDuplexProbe session{pair.probe};
+        EXPECT_FALSE(session.base().is_reading()) << "a session never started answered for the one that died reading";
+        EXPECT_FALSE(session.base().is_writing()) << "a session never started answered for the one that died writing";
+    }
 }
 
 // disconnect_now() (Huly QB-202): the teardown a standalone client needs done before its disconnect

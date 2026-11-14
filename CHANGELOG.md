@@ -1155,6 +1155,24 @@ policy.
   renegotiation, which the read then drives (previous entry); one that finds nothing costs an `SSL_read()` whose
   `recv()` would block, and a dispatch. Witness: `ARenegotiationBehindAHalfWrittenRecordCompletes` in
   `qb-io-test-system-tls-read-wants-write`, red with qb-io as it was, green with the change.
+- **An io component that was never started no longer answers, or arms, from the memory its watcher was built in: an
+  `output<>` that publishes before `start()` no longer aborts a build that keeps the loop's assertions (Huly
+  QB-1270).** libev leaves the descriptor and the event mask of a new watcher indeterminate until its first `set()`,
+  and `input<>`, `output<>` and `io<>` read that mask as what they watch -- `is_reading()`, `is_writing()`,
+  `ready_to_read()`, `ready_to_write()` -- before their first `start()` too, since `publish()` asks
+  `ready_to_write()`. A component's watcher is built in a block the listener recycles per handler type, so a component
+  built after one of its kind was destroyed read that one's mask: it answered `is_reading()` or `is_writing()` true for
+  a watcher that watched nothing, and its `ready_to_read()` or `ready_to_write()`, finding the event watched already,
+  armed nothing (measured on the three bases; an `output<>` published to and never started sent nothing). In memory
+  fresh from the allocator the mask was whatever it held: an MSVC debug heap fills a block with `0xCD`, and an
+  `output<>` that published before `start()` then started its watcher with a mask the loop refuses --
+  `libev: ev_io_start called with illegal event mask`, an assertion, which aborted every run of
+  `qb-io-test-system-tls-read-wants-write` in an MSVC Debug build. `event::io`'s constructor now sets both: no
+  descriptor, no event. Witnesses in `qb-io-test-system-async-bases-framing`:
+  `ANewIoWatcherIsOnNoDescriptorAndWatchesNothingWhateverItsStorageHeld` and
+  `ABaseBuiltOverTheWatcherOfOneThatDiedWatchingWatchesNothing`, red with qb-io as it was (g++ 14 at `-O0`; at `-O2`
+  the compiler refuses the first under `-Werror=maybe-uninitialized`, on the read of the mask), green with the change,
+  and `OutputStartSendsWhatWasPublishedBeforeIt`.
 - **`clear_protocols()` called while a protocol dispatches no longer destroys that protocol under its own
   `onMessage()` (Huly QB-1278).** Called from a protocol's `onMessage()`, from the handler it hands the message to (a
   WebSocket `on(message)` or `on(ping)`, an HTTP/1.1 `on(request)`), or from anything those call, it destroyed every
