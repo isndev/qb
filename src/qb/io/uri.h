@@ -187,10 +187,10 @@ is_fragment_character(int c) {
  * @class uri
  * @brief Class for parsing, manipulating, and representing URIs
  *
- * This class implements URIs according to RFC 3986 and supports
- * URI components such as scheme, authority (including host and port),
- * path, query, and fragment. It also handles encoding and decoding
- * of special characters and supports IPv4 and IPv6 addressing formats.
+ * This class implements URIs according to RFC 3986 and supports URI components such as scheme, authority (including
+ * host and port), path, query, and fragment, encodes and decodes special characters, and reads IPv4 and IPv6 addresses.
+ * @note A standard library whose noexcept std::string operations allocate (MSVC's with _ITERATOR_DEBUG_LEVEL above 0:
+ *       a container proxy a string) still terminates on a failure there, inside a noexcept member (Huly QB-1248).
  */
 class uri {
     int                                               _af    = AF_INET; /**< Address family (AF_INET, AF_INET6, AF_UNIX) */
@@ -220,16 +220,16 @@ class uri {
     /**
      * @brief Parse the source URI and fill the object fields
      * @param how The reading: a reference, or the form origin_form(), absolute_form() or authority_form() reads
-     * @return true if parsing succeeded, false otherwise
+     * @return true if parsing succeeded; false otherwise -- a query map it cannot allocate too (reset_invalid())
      */
     bool parse(reading how = reading::reference) noexcept;
 
     /**
      * @brief Initialize the URI from a string
      * @param rhs The source string for the URI
-     * @return true if initialization succeeded, false otherwise
+     * @return true if initialization succeeded, false otherwise; throws what the copy of @p rhs throws, uri unchanged
      */
-    bool from(std::string const &rhs) noexcept;
+    bool from(std::string const &rhs);
 
     /**
      * @brief Initialize the URI from a string (move version)
@@ -239,7 +239,7 @@ class uri {
     bool from(std::string &&rhs) noexcept;
 
     /**
-     * @brief Parse query parameters without using regex
+     * @brief Parse query parameters without using regex; an allocation that fails throws, and fails parse()
      * @param begin Pointer to the beginning of the query string
      * @param end Pointer to the end of the query string
      */
@@ -272,14 +272,14 @@ public:
     uri(uri const &rhs);
 
     /**
-     * @brief Constructor from a string
+     * @brief Constructor from a string: throws std::bad_alloc when @p str cannot be copied, as a std::string does
      * @param str The source string for the URI
      * @param af The address family (defaults to AF_INET)
      */
     uri(std::string const &str, int af = AF_INET);
 
     /**
-     * @brief Constructor from a string (move version)
+     * @brief Constructor from a string (move version): a query map it cannot allocate leaves an invalid empty uri
      * @param str The source string for the URI (will be moved)
      * @param af The address family (defaults to AF_INET)
      */
@@ -367,38 +367,38 @@ public:
     /**
      * @brief Decodes a URI-encoded string view
      * @param input The string view to decode
-     * @return The decoded string
+     * @return The decoded string; throws std::bad_alloc when it cannot be allocated, as a std::string does
      */
-    static std::string decode(std::string_view input) noexcept;
+    static std::string decode(std::string_view input);
 
     /**
      * @brief Encodes a string view in URI format
      * @param input The string view to encode
-     * @return The encoded string
+     * @return The encoded string; throws std::bad_alloc when it cannot be allocated, as a std::string does
      */
-    static std::string encode(std::string_view input) noexcept;
+    static std::string encode(std::string_view input);
 
     /**
      * @brief Decodes a URI-encoded memory block
      * @param input Pointer to the data to decode
      * @param size Size of the data
-     * @return The decoded string
+     * @return The decoded string; throws std::bad_alloc when it cannot be allocated, as a std::string does
      */
-    static std::string decode(const char *input, std::size_t size) noexcept;
+    static std::string decode(const char *input, std::size_t size);
 
     /**
      * @brief Encodes a memory block in URI format
      * @param input Pointer to the data to encode
      * @param size Size of the data
-     * @return The encoded string
+     * @return The encoded string; throws std::bad_alloc when it cannot be allocated, as a std::string does
      */
-    static std::string encode(const char *input, std::size_t size) noexcept;
+    static std::string encode(const char *input, std::size_t size);
 
     /**
      * @brief Creates and parses a URI from a string
      * @param str The source string for the URI
      * @param af The address family (defaults to AF_INET)
-     * @return A parsed URI instance
+     * @return A parsed URI instance; an invalid empty one when the copy of @p str or its query map cannot be allocated
      */
     static uri parse(std::string const &str, int af = AF_INET) noexcept;
 
@@ -414,8 +414,8 @@ public:
      *         them: no request target holds a fragment, and a server refuses one itself.
      * @note A server builds the URI of an origin-form request with this function and takes the authority from the
      *       `Host` field (RFC 9112 §3.3), and that of an absolute-form one with absolute_form().
-     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
-     *       rule for a noexcept function that allocates).
+     * @note noexcept: the caller copies @p target, if it does, and that copy throws there; a query map that cannot be
+     *       allocated returns a default-constructed uri whose is_valid() is false, never terminates (Huly QB-1248).
      */
     [[nodiscard]] static uri origin_form(std::string target) noexcept;
 
@@ -430,8 +430,8 @@ public:
      *         hold. The authority is read as a reference's -- a userinfo, an empty host are accepted -- and the query
      *         and a fragment too: a server checks what HTTP requires of them itself.
      * @note A URI a client builds is a reference, `uri(text)`, which refuses `[`, `]` and `|` in a path.
-     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
-     *       rule for a noexcept function that allocates).
+     * @note noexcept: the caller copies @p target, if it does, and that copy throws there; a query map that cannot be
+     *       allocated returns a default-constructed uri whose is_valid() is false, never terminates (Huly QB-1248).
      */
     [[nodiscard]] static uri absolute_form(std::string target) noexcept;
 
@@ -444,8 +444,8 @@ public:
      *         query or a fragment. The host's characters and the port's digits are judged as in a reference's
      *         authority -- an IP literal is not checked to be an IPv6 address, a port is any number of digits --
      *         which a server checks itself. A URI reference reads `example.com:443` as the scheme `example.com`.
-     * @note noexcept, as every parse of a uri is: a failure to allocate the query map terminates the process (qb's
-     *       rule for a noexcept function that allocates).
+     * @note noexcept: the caller copies @p target, if it does, and that copy throws there; a query map that cannot be
+     *       allocated returns a default-constructed uri whose is_valid() is false, never terminates (Huly QB-1248).
      */
     [[nodiscard]] static uri authority_form(std::string target) noexcept;
 
@@ -458,8 +458,8 @@ public:
      * @note What it saves a server is a uri built apart and moved into its message: two moves of its strings and its
      *       query map (Huly QB-1177: 830 instructions a request on g++ 14, 54 ns of a 263 ns parse). It reuses only the
      *       storage THIS uri holds, none in a new message: qbm-http's HTTP/1.1 parser rebuilds its message per request.
-     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
-     *       terminates the process (qb's rule for a noexcept function that allocates).
+     * @note noexcept: an allocation failure -- the copy of the text, the query map -- is a failed read that leaves a
+     *       default-constructed uri, source() empty, which no target that is not empty leaves otherwise (Huly QB-1248).
      */
     bool read_origin_form(std::string_view target) noexcept;
 
@@ -470,8 +470,8 @@ public:
      * @param target The target as it was received, e.g. `http://example.com/a|b?x=1`.
      * @return is_valid(): false when @p target does not begin with a scheme and `://`, or its path holds a byte a
      *         request path may not hold, as for absolute_form().
-     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
-     *       terminates the process (qb's rule for a noexcept function that allocates).
+     * @note noexcept: an allocation failure -- the copy of the text, the query map -- is a failed read that leaves a
+     *       default-constructed uri, source() empty, which no target that is not empty leaves otherwise (Huly QB-1248).
      */
     bool read_absolute_form(std::string_view target) noexcept;
 
@@ -480,8 +480,8 @@ public:
      *        reads it into a new one: the text replaces source(), the components are parsed in place.
      * @param target The target as it was received, e.g. `example.com:443`.
      * @return is_valid(): false when the text is not a host and a port, as for authority_form().
-     * @note noexcept, as every parse of a uri is: a failure to allocate -- the copy of the text, the query map --
-     *       terminates the process (qb's rule for a noexcept function that allocates).
+     * @note noexcept: an allocation failure -- the copy of the text, the query map -- is a failed read that leaves a
+     *       default-constructed uri, source() empty, which no target that is not empty leaves otherwise (Huly QB-1248).
      */
     bool read_authority_form(std::string_view target) noexcept;
 
@@ -502,7 +502,7 @@ public:
     /**
      * @brief String assignment operator
      * @param str The source string for the URI
-     * @return Reference to this URI
+     * @return Reference to this URI; throws std::bad_alloc when @p str cannot be copied, this uri left unchanged
      * @note The result is what `uri(str)` gives: the text is parsed afresh and its address family classified from
      *       it, never kept from the previous text (a `unix://` uri assigned a `tcp://` text is AF_INET or AF_INET6).
      */
@@ -529,7 +529,7 @@ public:
      * @brief Whether the source string parsed into a structurally valid URI.
      * @return `false` if the last `parse()` rejected the input (invalid authority,
      *         path or port character, an unclosed IPv6 bracket, or text after the
-     *         closing bracket that is not `:port`); `true` otherwise.
+     *         closing bracket that is not `:port`) or could not allocate; `true` otherwise.
      * @note The constructors and assignment operators always run `parse()`; this
      *       accessor lets callers detect a malformed URI without re-parsing.
      */
@@ -711,9 +711,17 @@ public:
     /**
      * @brief Normalizes a path by resolving '.', '..' segments and standardizing slashes
      * @param path Path to normalize (will be modified)
-     * @return true if successful, false otherwise
+     * @return true if successful; false when the result cannot be allocated, @p path then left as it was
      */
     static bool normalize_path(std::string &path) noexcept;
+
+private:
+    /**
+     * @brief Makes this uri what a read or a parse that cannot allocate leaves: a default-constructed uri, not valid
+     *        (Huly QB-1248). The text and the query map keep their storage.
+     * @return false, the result of the failed read
+     */
+    bool reset_invalid() noexcept;
 };
 } // namespace qb::io
 

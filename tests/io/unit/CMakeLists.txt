@@ -503,3 +503,14 @@ qb_add_test(MODULE qb-io TIER unit NAME reconnect-contract SOURCES core/reconnec
 # abi.h alone (Huly QB-1271): it pins QB_ABI_RETAIN to ELF, the check CI runs; and it is the header's only qb include,
 # so under QB_TESTS_WERROR the warning g++ raised off ELF ("'retain' attribute ignored") fails a g++ build of it.
 qb_add_test(MODULE qb-io TIER unit NAME abi-header-alone SOURCES core/abi-header-alone.cpp DEPENDS ${PROJECT_NAME})
+# uri-alloc (Huly QB-1248): each allocation of a uri read or parse fails in turn -- the copy of the text, the query map,
+# decode() and encode(), normalize_path(): a failed read and an empty invalid uri, or what a std::string throws, never
+# std::terminate(). Alone in its binary: it replaces the global allocation functions, which clang's ThreadSanitizer
+# cannot link off Apple -- the gate of qb-io-test-system-close-after-peer-alloc (tests/io/system), whose replacement
+# this binary's is. Not under MSVC's Debug standard library either: its noexcept std::string constructors and moves
+# allocate a container proxy, and a failure injected there terminates in the library (a multi-config build that
+# reaches it anyway skips it in the source, on _ITERATOR_DEBUG_LEVEL).
+if (NOT (QB_SANITIZE MATCHES "thread" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND NOT APPLE)
+    AND NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))
+    qb_add_test(MODULE qb-io TIER unit NAME uri-alloc SOURCES core/uri-alloc.cpp DEPENDS ${PROJECT_NAME})
+endif ()

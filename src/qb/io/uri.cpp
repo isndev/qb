@@ -863,7 +863,7 @@ uri::uri(std::string &&str, int af) noexcept
 
 // Enhanced parsing implementation
 bool
-uri::parse(reading const how) noexcept {
+uri::parse(reading const how) noexcept try {
     _valid       = true;
     _scheme      = {};
     _user_info   = {};
@@ -1207,6 +1207,8 @@ uri::parse(reading const how) noexcept {
     }
 
     return true;
+} catch (...) {
+    return reset_invalid(); // the query map could not be allocated: a failed parse (Huly QB-1248)
 }
 
 // Improved query parameter parsing to handle complex cases
@@ -1263,7 +1265,7 @@ uri::parse_query_parameters(const char *begin, const char *end) {
         }
 
         // Store in our map
-        _queries[key].push_back(std::move(value));
+        _queries[std::move(key)].push_back(std::move(value)); // folded in place: no copy of a long key
 
         // Move to next parameter
         param_start = param_end + 1;
@@ -1271,7 +1273,7 @@ uri::parse_query_parameters(const char *begin, const char *end) {
 }
 
 std::string
-uri::decode(std::string_view input) noexcept {
+uri::decode(std::string_view input) {
     if (input.empty())
         return {};
 
@@ -1305,7 +1307,7 @@ uri::decode(std::string_view input) noexcept {
 }
 
 std::string
-uri::encode(std::string_view input) noexcept {
+uri::encode(std::string_view input) {
     if (input.empty())
         return {};
 
@@ -1333,7 +1335,7 @@ uri::encode(std::string_view input) noexcept {
 }
 
 std::string
-uri::decode(const char *input, std::size_t size) noexcept {
+uri::decode(const char *input, std::size_t size) {
     if (!input || size == 0)
         return {};
 
@@ -1341,7 +1343,7 @@ uri::decode(const char *input, std::size_t size) noexcept {
 }
 
 std::string
-uri::encode(const char *input, std::size_t size) noexcept {
+uri::encode(const char *input, std::size_t size) {
     if (!input || size == 0)
         return {};
 
@@ -1350,8 +1352,12 @@ uri::encode(const char *input, std::size_t size) noexcept {
 
 // Factory method
 uri
-uri::parse(std::string const &str, int af) noexcept {
+uri::parse(std::string const &str, int af) noexcept try {
     return {str, af};
+} catch (...) {
+    uri invalid; // the copy of the text could not be allocated (Huly QB-1248)
+    invalid.reset_invalid();
+    return invalid;
 }
 
 uri
@@ -1382,24 +1388,30 @@ uri::authority_form(std::string target) noexcept {
 // reset as from() resets it (Huly QB-350); the text is copied into the source the uri already owns, and parse() clears
 // the query map without freeing its storage.
 bool
-uri::read_origin_form(std::string_view target) noexcept {
+uri::read_origin_form(std::string_view target) noexcept try {
     _af = AF_INET;
     _source.assign(target);
     return parse(reading::origin_form);
+} catch (...) {
+    return reset_invalid(); // the copy of the text could not be allocated (Huly QB-1248)
 }
 
 bool
-uri::read_absolute_form(std::string_view target) noexcept {
+uri::read_absolute_form(std::string_view target) noexcept try {
     _af = AF_INET;
     _source.assign(target);
     return parse(reading::absolute_form);
+} catch (...) {
+    return reset_invalid(); // the copy of the text could not be allocated (Huly QB-1248)
 }
 
 bool
-uri::read_authority_form(std::string_view target) noexcept {
+uri::read_authority_form(std::string_view target) noexcept try {
     _af = AF_INET;
     _source.assign(target);
     return parse(reading::authority_form);
+} catch (...) {
+    return reset_invalid(); // the copy of the text could not be allocated (Huly QB-1248)
 }
 
 // Assignment operators
@@ -1447,9 +1459,9 @@ uri::operator=(uri &&rhs) noexcept {
 // the previous text left: parse() reads `_af` to know whether the text already said AF_UNIX, so a uri that once held
 // `unix://...` stayed AF_UNIX through `u = "tcp://127.0.0.1:80"` (Huly QB-350).
 bool
-uri::from(std::string const &rhs) noexcept {
+uri::from(std::string const &rhs) {
+    _source = rhs; // first: a copy that throws leaves the uri as it was (Huly QB-1248)
     _af     = AF_INET;
-    _source = rhs;
     return parse();
 }
 
@@ -1493,32 +1505,30 @@ uri::is_valid_host(std::string_view host) noexcept {
     return true;
 }
 
-// Improved path normalization
+// Improved path normalization. A backslash separates segments as a forward slash does, and is read where it stands: the
+// path is written once, with its result, so a result that cannot be allocated leaves it as it was (Huly QB-1248).
 bool
-uri::normalize_path(std::string &path) noexcept {
+uri::normalize_path(std::string &path) noexcept try {
     if (path.empty()) {
         path = "/";
         return true;
     }
 
-    // Replace backslashes with forward slashes
-    std::replace(path.begin(), path.end(), '\\', '/');
-
     // Optimize for simple cases
-    if (path == "/" || path == ".") {
+    if (path == "/" || path == "\\" || path == ".") {
         path = "/";
         return true;
     }
 
     // Handle relative vs absolute paths
-    bool is_absolute = path[0] == '/';
+    bool is_absolute = path[0] == '/' || path[0] == '\\';
 
-    // Split the path into segments
+    // Split the path into segments, at a forward slash or a backslash
     std::vector<std::string> segments;
     size_t                   start = is_absolute ? 1 : 0;
     size_t                   pos;
 
-    while ((pos = path.find('/', start)) != std::string::npos) {
+    while ((pos = path.find_first_of("/\\", start)) != std::string::npos) {
         if (pos > start) {
             segments.push_back(path.substr(start, pos - start));
         }
@@ -1568,6 +1578,20 @@ uri::normalize_path(std::string &path) noexcept {
 
     path = std::move(result);
     return true;
+} catch (...) {
+    return false; // the result could not be allocated: the path is as it was (Huly QB-1248)
+}
+
+// What a read or a parse that cannot allocate leaves (Huly QB-1248): a default-constructed uri that is not valid. The
+// text and the query map keep their storage, which the next read reuses.
+bool
+uri::reset_invalid() noexcept {
+    _af    = AF_INET;
+    _valid = false;
+    _source.clear();
+    _queries.clear();
+    _scheme = _user_info = _host = _port = _path = _raw_queries = _fragment = {};
+    return false;
 }
 
 } // namespace qb::io

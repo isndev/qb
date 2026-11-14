@@ -236,12 +236,12 @@ policy.
   HTTP/1.1 server read its targets as references, so a client chose the host its handlers saw and the route they
   served. `origin_form()` reads the target as the constructor does with nothing in it read as an authority: the path
   keeps every byte (`///x` is `///x`, where the reference reading kept one slash of three), and the query map is the
-  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte the reference parse
-  refuses (the query and a fragment are read as the constructor reads them). `authority_form()` reads the host and the
-  port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
-  userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's
-  digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server
-  checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)`,
+  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte a request target may not
+  hold (QB-1187 below; the query and a fragment are read as the constructor reads them). `authority_form()` reads
+  the host and the port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a
+  host, with a userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and
+  the port's digits are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address):
+  a server checks the authority itself, as qbm-http's `origin::is_request_authority()` does. `read_origin_form(target)`,
   `read_absolute_form(target)` and `read_authority_form(target)` give the same readings INTO an existing uri -- the
   text replaces `source()` and the components are parsed in place, no other uri being built -- and return
   `is_valid()`: what they save a server is a uri built apart and moved into its message, measured below; they reuse
@@ -253,20 +253,13 @@ policy.
   fewer instructions a request (5 126 -> 4 359 against 4 076 before the train, the rest QB-1186's Host check) and the
   cell reads 265 / 329 / 272 ns -- the previous release, the train, the train with this reader (ratios 1.238 and
   1.026 [1.022, 1.033]); the fragmented parse of the same request is level with the previous release again (314 ->
-  313 ns) and the byte-at-a-time parses keep the train's gain (0.86 and 0.70). A copy or a move carries either reading,
-  as for every uri (QB-351). The six readings are `noexcept`, as every parse of a uri is: a failure to allocate -- the copy
-  of the text, the query map -- terminates. The reference parse is unchanged; the
-  private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string literal
-  still names the public factory.
-
-  same; `is_valid()` is false for a text that does not begin with `/` or holds a path byte a request target may not hold
-  (QB-1187 below; the query and a fragment are read as the constructor reads them). `authority_form()` reads the host
-  and the port, IP literals included, no scheme, the path `/`; `is_valid()` is false without a port or a host, with a
-  userinfo, a second colon in a reg-name, a path, a query or a fragment, and the host's characters and the port's digits
-  are judged as in a reference's authority (an IP literal is not checked to be an IPv6 address): a server checks the
-  authority itself, as qbm-http's `origin::is_request_authority()` does. A copy or a move carries either reading, as for
-  every uri (QB-351). The reference parse is unchanged; the private parse() takes the reading as an enumeration, never a
-  `bool`, so `uri::parse("...")` with a string literal still names the public factory.
+  313 ns) and the byte-at-a-time parses keep the train's gain (0.86 and 0.70). A copy or a move carries either
+  reading, as for every uri (QB-351). The six readings are `noexcept`: a query map that cannot be allocated leaves a
+  uri that is not valid, and so does the copy of the text in the in-place readers, which return `false`; the
+  factories take a text their caller copied, a by-value parameter whose copy throws in the caller (Fixed, "A
+  `qb::io::uri` read or parse that cannot allocate is reported as a failed read"). The reference parse is unchanged;
+  the private parse() takes the reading as an enumeration, never a `bool`, so `uri::parse("...")` with a string
+  literal still names the public factory.
 
 - **A server reads `[`, `]` and `|` in a request path, as browsers send them: `qb::io::is_request_path_character()`
   and `qb::io::uri::absolute_form(target)` (Huly QB-1187).** RFC 3986 forbids those three octets in a path, and the
@@ -807,6 +800,27 @@ policy.
   free it after the loop, or stop it first. Nothing in qb, the modules or the examples frees one started (audited).
 
 ### Fixed
+
+- **A `qb::io::uri` read or parse that cannot allocate is reported as a failed read instead of terminating the process
+  (Huly QB-1248).** The readers of a uri are `noexcept` -- `read_origin_form()`, `read_absolute_form()`,
+  `read_authority_form()`, `origin_form()`, `absolute_form()`, `authority_form()`, the factory `uri::parse()`, the
+  constructor and the assignment that take a `std::string` rvalue -- and they allocate: the copy of the text, the
+  query map's buckets and nodes, a vector a key, a key or a value decoded past the small-string buffer. A
+  `std::bad_alloc` out of any of them met the `noexcept` boundary and called `std::terminate()`, and so did the query
+  map of the copying constructor and assignment. Each reports it now as it reports a malformed text: the in-place
+  readers return `false`, and every reader leaves a default-constructed uri whose `is_valid()` is false -- `source()`,
+  every component and the query map empty -- which keeps its storage for the next read. A failed read whose
+  `source()` is empty, of a target that is not empty, is that failure: a malformed target keeps its text (qbm-http
+  answers it `503`). The three request-target factories take a text their caller copied, a by-value parameter whose
+  copy throws in the caller. The copying constructor and assignment throw `std::bad_alloc` when the text cannot be
+  copied, the assigned uri as it was, and `decode()` and `encode()`, no longer `noexcept`, throw it when their result
+  cannot be allocated, as a `std::string` does; `normalize_path()` returns `false` with its path as it was, a backslash
+  read as a separator where it stands instead of the path rewritten first. Under MSVC's debug standard library
+  (`_ITERATOR_DEBUG_LEVEL` above 0), whose `noexcept` string constructors and moves allocate a container proxy, a
+  failure there still terminates. A read that can allocate runs the instructions it ran before --
+  `read_origin_form()` the same 11 (Apple clang 21, Release, arm64), `parse()` its body -- the handlers lying outside
+  them, and the query map takes each decoded key by move: one allocation fewer a key past the small-string buffer.
+  `qb-io-test-unit-uri-alloc` makes every allocation of every reader fail in turn.
 
 - **A generator's frame is aligned for what it holds: `generator<T>` and `async_generator<T>` take cache-line-aligned
   blocks, as `task<T>` does (Huly QB-1246).** C++20 does not align a coroutine frame for what it holds: the frame is
