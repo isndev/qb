@@ -49,6 +49,8 @@
 #include <qb/core/detail/actor_id_pool.h>
 #include <qb/main.h>
 
+#include "../../../io/shared/quiet_log.h"
+
 namespace qb::detail {
 struct actor_id_pool_test_access {
     static void
@@ -1379,6 +1381,9 @@ public:
 };
 
 TEST(AddReferencedActor, HoldsTwoHundredThousandLiveOrdinaryActorsOnOneCore) {
+    // Eight lifecycle lines an actor in an unoptimised build: 1.6 million lines, 200 MiB of log, which the logger was
+    // still writing out long after the case had passed (see quiet_log). The population, not its log.
+    const qb::io::test::quiet_log quiet;
     g_population_alive.store(0);
     g_population_built.store(0);
     g_population_peak.store(0);
