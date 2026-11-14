@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <new>
 #include <optional>
 #include <string>
@@ -290,6 +291,15 @@ expect_reference(uri const &u) {
 /// What a copying assignment that throws must leave as it was: a family another than the one a new text starts from.
 constexpr std::string_view previous_text = "tcp://[::1]:9/p";
 
+/// Makes @p u a uri no read has touched, its storage included: destroyed and built again where it stands. An
+/// assignment of `uri()` does not: libstdc++'s move assignment from a string in its small buffer keeps the storage the
+/// target string holds, so the uri a run before had read into came back with room for the text.
+void
+build_anew(uri &u) {
+    std::destroy_at(&u);
+    std::construct_at(&u);
+}
+
 void
 expect_previous(uri const &u) {
     EXPECT_TRUE(u.is_valid());
@@ -304,12 +314,16 @@ expect_previous(uri const &u) {
 
 using namespace uri_alloc_test;
 
-// The copy of the target, then the query map.
+// The copy of the target, then the query map. The uri is built anew before each run (build_anew): one assigned
+// `uri()` kept, with libstdc++, the room the run before had left it for the text, so the copy -- the first allocation
+// of every run after the first -- was no longer made: the query map's first allocation was then never the one to
+// fail, and the authority-form case below, whose one allocation is that copy, counted none in its control (red on
+// g++ 14 and clang 19 with libstdc++; libc++ and MSVC's library release that storage).
 TEST_F(UriAlloc, ReadOriginFormReportsEachFailedAllocationAsAFailedRead) {
     uri        u;
-    const auto reads = each_allocation_fails([&] { u = uri(); }, [&] { return u.read_origin_form(origin_target); }, [&] { return &u; },
+    const auto reads = each_allocation_fails([&] { build_anew(u); }, [&] { return u.read_origin_form(origin_target); }, [&] { return &u; },
                                              [&] { return u.read_origin_form(origin_target); }, expect_origin);
-    EXPECT_GE(reads, 10) << "the copy of the text, two rehashes, six nodes, the vectors, two decodings";
+    EXPECT_EQ(reads, 1 + 2 + 6 + 6 + 1 + 2) << "the copy of the text, then the query map's account (the case below)";
 }
 
 // The text fits the storage the uri already holds, so every allocation of the read is the query map's, inside the
@@ -338,16 +352,16 @@ TEST_F(UriAlloc, ParseReportsAQueryMapThatCannotBeAllocatedAsAFailedParse) {
 
 TEST_F(UriAlloc, ReadAbsoluteFormReportsEachFailedAllocationAsAFailedRead) {
     uri        u;
-    const auto reads = each_allocation_fails([&] { u = uri(); }, [&] { return u.read_absolute_form(absolute_target); }, [&] { return &u; },
+    const auto reads = each_allocation_fails([&] { build_anew(u); }, [&] { return u.read_absolute_form(absolute_target); }, [&] { return &u; },
                                              [&] { return u.read_absolute_form(absolute_target); }, expect_absolute);
-    EXPECT_GE(reads, 10);
+    EXPECT_EQ(reads, 1 + 2 + 6 + 6 + 1 + 2) << "the copy of the text, then the query map's account";
 }
 
 // An authority-form target holds no query: the copy of the text is its one allocation.
 TEST_F(UriAlloc, ReadAuthorityFormReportsAFailedCopyAsAFailedRead) {
     uri        u;
-    const auto reads = each_allocation_fails([&] { u = uri(); }, [&] { return u.read_authority_form(authority_target); }, [&] { return &u; },
-                                             [&] { return u.read_authority_form(authority_target); }, expect_authority);
+    const auto reads = each_allocation_fails([&] { build_anew(u); }, [&] { return u.read_authority_form(authority_target); },
+                                             [&] { return &u; }, [&] { return u.read_authority_form(authority_target); }, expect_authority);
     EXPECT_EQ(reads, 1);
 }
 
