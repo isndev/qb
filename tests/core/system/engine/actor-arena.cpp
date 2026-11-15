@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <new>
 #include <vector>
+#include "../../../io/shared/quiet_log.h"
 
 using qb::allocator::slab_cache;
 using qb::allocator::thread_arena;
@@ -234,6 +235,9 @@ placement_new_still_compiles(void *const mem, Observed *const obs) {
 using namespace actor_arena_test;
 
 TEST(ActorArena, ABurstOfActorLifetimesIsABurstOfArenaBlocks) {
+    // The arena, not the log: an unoptimised build logs every lifecycle step of the 8000 actors, megabytes the logger
+    // is still writing out after the case has passed (see quiet_log).
+    const qb::io::test::quiet_log quiet;
     g_constructed.store(0);
     g_destroyed.store(0);
     constexpr std::size_t n             = 8000; // 8000 x ~100 B: past the 64 KiB first chunk, into a slab
@@ -362,6 +366,8 @@ run_populated_engine() {
 } // namespace actor_arena_test
 
 TEST(ActorArena, AnEngineCachesNothingWhileItRunsAndTheNextOneMapsNothing) {
+    // The regions, not the log of two populations of 10 000 actors (see quiet_log): the logger maps no region.
+    const qb::io::test::quiet_log quiet;
     namespace detail = qb::allocator::detail;
     qb::allocator::region_cache::trim(); // what an earlier test or repetition left: the first engine maps its own
     std::size_t const lent_before = detail::region_stats().lent_bytes;
