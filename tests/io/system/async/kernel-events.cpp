@@ -17,7 +17,11 @@
  *
  * The raw-watcher cases are de-flaked: their open-ended `for(i){run(EVRUN_ONCE)}` polls become bounded
  * deadline pumps so a dead watcher fails loudly instead of passing on a smoke `GE` count; the periodic
- * timer asserts it fired several times AND that it stops firing once stopped.
+ * timer asserts it fired several times AND that it stops firing once stopped. `KernelEvents.File` waits
+ * the same way on every platform since Huly QB-1270: on Windows it counted ten blocking passes (each ends
+ * on its own cap, 0.74 s) around the ONE look a polling watcher takes at its default interval, 5.0 s, at
+ * a file `cmd /c echo` was spawned to write -- on a loaded host the spawn outlasted that look and the
+ * case failed with no event (7.24 s, the MSVC dev-cxx23 leg of the gate, 2026-11-15).
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -149,11 +153,7 @@ struct FakeActor {
         observed_file_size = static_cast<std::intmax_t>(event.attr.st_size);
         if (expected_file_size >= 0 && observed_file_size != expected_file_size)
             return;
-#ifdef _WIN32
-        EXPECT_EQ(observed_file_size, 7);
-#else
-        EXPECT_EQ(observed_file_size, 5);
-#endif // _WIN32
+        EXPECT_EQ(observed_file_size, 5); // "test\n", written in binary on every platform
         ++nb_events;
     }
 
@@ -233,13 +233,11 @@ TEST(KernelEvents, File) {
 
     qb::io::async::listener handler;
     FakeActor               actor;
-#ifdef _WIN32
-    actor.expected_file_size = 7;
-#else
     actor.expected_file_size = 5;
-#endif
 
-#if QB_PLATFORM_MACOS
+    // Where the loop watches a path by looking at it again -- macOS, and Windows, whose default is one look every five
+    // seconds -- the watcher is asked for its shortest interval; Linux is told by inotify and takes the default.
+#if QB_PLATFORM_MACOS || defined(_WIN32)
     constexpr double kFileEventInterval = 0.1;
 #else
     constexpr int kFileEventInterval = 0;
@@ -250,29 +248,22 @@ TEST(KernelEvents, File) {
     ev.start();
 
     std::thread t([&file, &file_tmp]() {
-#ifndef _WIN32
-        // Write atomically: produce the full content in a temporary file,
-        // close it (flushing all OS buffers), then rename it into place.
-        // rename(2) is atomic on POSIX — the stat watcher will see the file
-        // appear with its final size in a single notification, eliminating
-        // the race where ev_stat fires on creation before the write completes
-        // (which would give st_size == 0 instead of the expected 5).
+        // Write atomically, on every platform: produce the full content in a temporary file,
+        // close it (flushing all OS buffers), then rename it into place. The stat watcher sees
+        // the file appear with its final size in a single notification, eliminating the race
+        // where ev_stat fires on creation before the write completes (which would give
+        // st_size == 0 instead of the expected 5). rename(2) replaces the old file on POSIX; on
+        // Windows the path does not exist before, and this thread no longer spawns `cmd /c echo`
+        // to write it: the spawn is what a loaded host delays past the watcher (Huly QB-1270).
         {
             std::ofstream ofs(file_tmp, std::ios::binary);
             ofs << "test\n"; // exactly 5 bytes — matches EXPECT_EQ below
         }
         EXPECT_EQ(std::rename(file_tmp.c_str(), file.c_str()), 0);
-#else
-        // On Windows CMD, "echo test > file" produces "test \r\n" = 7 bytes (the space before the
-        // redirect is echoed). The path is quoted because temp_directory_path() may contain spaces.
-        (void) file_tmp;
-        const std::string cmd = "echo test > \"" + file + "\"";
-        EXPECT_EQ(system(cmd.c_str()), 0);
-#endif
     });
 
-#ifndef _WIN32
-#if QB_PLATFORM_MACOS
+    // A deadline, never a count of passes: the watcher is given every look it can take until then.
+#if QB_PLATFORM_MACOS || defined(_WIN32)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 #else
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -281,10 +272,6 @@ TEST(KernelEvents, File) {
         handler.run(EVRUN_NOWAIT);
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-#else
-    for (auto i = 0; i < 10 && !actor.nb_events; ++i)
-        handler.run(EVRUN_ONCE);
-#endif
     EXPECT_EQ(actor.nb_events, 1);
     EXPECT_EQ(actor.observed_file_size, actor.expected_file_size);
     t.join();
