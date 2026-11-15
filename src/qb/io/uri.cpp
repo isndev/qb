@@ -24,6 +24,7 @@
  */
 
 #include <qb/io/uri.h>
+#include <qb/utility/branch_hints.h>
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -863,7 +864,7 @@ uri::uri(std::string &&str, int af) noexcept
 
 // Enhanced parsing implementation
 bool
-uri::parse(reading const how) noexcept try {
+uri::parse(reading const how) noexcept {
     _valid       = true;
     _scheme      = {};
     _user_info   = {};
@@ -1198,8 +1199,9 @@ uri::parse(reading const how) noexcept try {
         // Store raw query string
         _raw_queries = make_string_view(query_begin, query_end);
 
-        // Parse query parameters
-        parse_query_parameters(query_begin, query_end);
+        // Parse query parameters: the one part of a parse that allocates
+        if (!read_query_parameters(query_begin, query_end)) [[unlikely]]
+            return reset_invalid(); // the query map could not be allocated: a failed parse (Huly QB-1248)
     }
 
     if (fragment_begin) {
@@ -1207,12 +1209,23 @@ uri::parse(reading const how) noexcept try {
     }
 
     return true;
+}
+
+// parse_query_parameters() for parse(), which is noexcept: the query map is all a parse allocates (its buckets, a node
+// and a vector a key, a key or a value decoded past the small-string buffer), so the handler of that failure is here,
+// around the one call that throws, and out of line. As a function-try-block around parse() it put the whole scan of the
+// text in a try region, which MSVC compiles with other registers and another block order -- 2 to 3 % of a parse (Huly
+// QB-1248). Neither function is inlined into its caller: the scan stays out of every try region.
+QB_NOINLINE bool
+uri::read_query_parameters(const char *begin, const char *end) noexcept try {
+    parse_query_parameters(begin, end);
+    return true;
 } catch (...) {
-    return reset_invalid(); // the query map could not be allocated: a failed parse (Huly QB-1248)
+    return false;
 }
 
 // Improved query parameter parsing to handle complex cases
-void
+QB_NOINLINE void
 uri::parse_query_parameters(const char *begin, const char *end) {
     if (begin >= end)
         return;

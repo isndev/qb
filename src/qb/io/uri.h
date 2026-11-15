@@ -246,6 +246,15 @@ class uri {
     void parse_query_parameters(const char *begin, const char *end);
 
     /**
+     * @brief parse_query_parameters() behind parse()'s noexcept: the query map is all a parse allocates, and this is
+     *        where that failure is caught (Huly QB-1248)
+     * @param begin Pointer to the beginning of the query string
+     * @param end Pointer to the end of the query string
+     * @return false when the query map could not be allocated; parse() then leaves the uri as reset_invalid() makes it
+     */
+    bool read_query_parameters(const char *begin, const char *end) noexcept;
+
+    /**
      * @brief Takes @p rhs's family, validity and components, each view re-pointed from @p rhs_text (where @p rhs's
      *        text was) at this object's text; a view of static storage (a default port, the default path) is kept.
      */

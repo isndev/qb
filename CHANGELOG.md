@@ -433,7 +433,16 @@ policy.
   `qb::string_to_lower::convert()` had overloads for a string literal, a `const std::string &` and a `std::string_view`, so
   `emplace()`, `try_emplace()` and `operator[]` given an rvalue `std::string` copied it, folded the copy and dropped the
   original -- one allocation a key past the small-string capacity (three a browser's HTTP/2 request in qbm-http). The new
-  `convert(std::string &&) noexcept` folds the string in place and returns it moved; an insert with an rvalue key takes it.
+  `convert(std::string &&) noexcept` folds the string where it is and hands it back -- its result is the caller's
+  string, no string is built -- and an insert with an rvalue key takes it. Its fold is the new `fold_in_place()`, which
+  writes only the bytes a fold changes: a key already lowercase (the name of a query parameter, of an HTTP/2 header)
+  reaches the map unwritten. Folded whole and returned by value, as it was on the development branch until then, the
+  string object was reloaded whole right behind the fold's narrower stores into its small-string buffer -- a load no
+  store can forward, which waits for the store buffer to drain -- and with MSVC 19.51, whose move constructor is that
+  load, 32 bytes wide, a short key moved into a map cost more than the copy it saved (Huly QB-1248, on the uri's query
+  map with its other change: `BM_Uri_ParseQueryHeavy` 2 831 -> 2 502 ns at sixteen keys and 11 793 -> 10 139 ns at
+  sixty-four on an i9-12900K, where 3.3.0 reads 2 549 and 10 521; g++ 14 runs 29 359 -> 28 731 instructions and 1 543 ->
+  1 483 ns for the sixteen).
   A lookup never consumes its key: the converting branch of a lookup (a base map without heterogeneous lookup; neither
   shipped alias takes it) converts a const view of the key. Measured with qbm-http's HTTP/2 server moving the name (its own
   commit): 3 allocations and ~620 instructions fewer a request; on its own over the shipped request path it reads +4.4..6.0 %
@@ -820,6 +829,11 @@ policy.
   failure there still terminates. A read that can allocate runs the instructions it ran before --
   `read_origin_form()` the same 11 (Apple clang 21, Release, arm64), `parse()` its body -- the handlers lying outside
   them, and the query map takes each decoded key by move: one allocation fewer a key past the small-string buffer.
+  `parse()` itself holds no handler: the query map is all a parse allocates, so that failure is caught around the one
+  call that builds the map, in a function of its own that is never inlined. A function-try-block around `parse()` put
+  the whole scan of the text in a try region, which MSVC 19.51 compiles with other registers and another block order:
+  2 to 3 % of a parse (`BM_Uri_ParseCommon/case:0` 287 -> 281 ns, qbm-http's `BM_Uri_ParseSimple` 235 -> 228 ns), where
+  g++ 14 runs the two forms within ten instructions of each other.
   `qb-io-test-unit-uri-alloc` makes every allocation of every reader fail in turn.
 
 - **A generator's frame is aligned for what it holds: `generator<T>` and `async_generator<T>` take cache-line-aligned

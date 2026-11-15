@@ -111,8 +111,9 @@ using unordered_map = ska::unordered_map<K, V, H, E, A>;
  * @brief Utility class for case-insensitive string operations
  *
  * Provides the ASCII case folding the case-insensitive maps key on: `fold()` lowercases bytes
- * in place or into a caller's buffer, eight at a time; the `convert()` overloads return the
- * folded copy as a `std::string`.
+ * in place or into a caller's buffer, eight at a time, `fold_in_place()` where they are and writing
+ * only what changes; the `convert()` overloads return the folded copy as a `std::string`, or the
+ * string itself when the caller gives it up.
  */
 class string_to_lower {
     /**
@@ -174,6 +175,43 @@ public:
     }
 
     /**
+     * @brief Lowercases `n` bytes where they are, writing only what the fold changes
+     *
+     * `fold()` of a text onto itself, but for one thing: a byte -- eight at a time, a word -- that the fold
+     * leaves as it is, is not stored again. A text already lowercase (the name of a query parameter, of an
+     * HTTP/2 header) is read and never written, and that is what lets a string folded here be moved right
+     * after: a move loads the string object whole, and a load behind narrower stores into the small-string
+     * buffer it holds cannot be forwarded from them -- it waits for the store buffer to drain (Huly QB-1248).
+     *
+     * @param text The bytes to fold.
+     * @param n    How many bytes.
+     */
+    static void
+    fold_in_place(char *text, std::size_t n) noexcept {
+        if (n < sizeof(std::uint64_t)) {
+            for (std::size_t i = 0; i < n; ++i) {
+                const char c = text[i];
+                if (const char folded = charToLower(c); folded != c)
+                    text[i] = folded;
+            }
+            return;
+        }
+        std::size_t i = 0;
+        for (; i + sizeof(std::uint64_t) <= n; i += sizeof(std::uint64_t)) {
+            std::uint64_t w;
+            std::memcpy(&w, text + i, sizeof w);
+            if (const std::uint64_t folded = fold_word(w); folded != w)
+                std::memcpy(text + i, &folded, sizeof folded);
+        }
+        if (i < n) {
+            std::uint64_t w;
+            std::memcpy(&w, text + n - sizeof w, sizeof w);
+            if (const std::uint64_t folded = fold_word(w); folded != w)
+                std::memcpy(text + n - sizeof folded, &folded, sizeof folded);
+        }
+    }
+
+    /**
      * @brief Converts a character array to lowercase
      *
      * @tparam N Size of the character array; `N - 1` bytes are converted (a string literal).
@@ -202,18 +240,21 @@ public:
     }
 
     /**
-     * @brief Converts a string the caller gives up to lowercase, in place
+     * @brief Lowercases a string the caller gives up where it is, and hands it back
      *
-     * The rvalue overload: a key moved into `emplace()`, `try_emplace()` or `operator[]` is folded where it
-     * is and moved on into the map, where the const overload copied it first -- one allocation a key past
-     * the small-string capacity (three a browser's HTTP/2 request, Huly QB-1216).
+     * The rvalue overload: a key moved into `emplace()`, `try_emplace()` or `operator[]` is folded in the
+     * buffer it brought and goes on into the map as it is, where the const overload copies it first -- one
+     * allocation a key past the small-string capacity (three a browser's HTTP/2 request, Huly QB-1216).
+     * No string is built here: the result is `str` itself, and `fold_in_place()` writes only what it
+     * changes, so a key already lowercase reaches the map unwritten. Folded whole and returned by value, a
+     * short key moved into a map cost MSVC more than the copy it saved (Huly QB-1248).
      *
      * @param str The input string, consumed
-     * @return std::string The same string, lowercased
+     * @return `str`, lowercased: a reference to the caller's string, not a new one -- use it before `str` dies
      */
-    [[nodiscard]] static std::string
+    [[nodiscard]] static std::string &&
     convert(std::string &&str) noexcept {
-        fold(str.data(), str.data(), str.size());
+        fold_in_place(str.data(), str.size());
         return std::move(str);
     }
 

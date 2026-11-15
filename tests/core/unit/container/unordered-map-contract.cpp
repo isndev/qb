@@ -63,6 +63,7 @@
  */
 
 #include <cstdint>
+#include <cstring>
 #include <gtest/gtest.h>
 #include <map>
 #include <memory>
@@ -76,6 +77,13 @@
 #include <vector>
 #include <qb/system/container/unordered_map.h>
 #include <qb/system/container/unordered_set.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <unistd.h>
+#endif
 
 namespace {
 
@@ -1040,6 +1048,9 @@ TEST(StringToLower, FoldAgreesWithTheByteWiseReferenceAtEveryLengthAndWordBounda
             std::string in_place(in);
             qb::string_to_lower::fold(in_place.data(), in_place.data(), n);
             EXPECT_EQ(in_place, expected) << "in place, n=" << n << " start=" << start;
+            std::string changed_only(in);
+            qb::string_to_lower::fold_in_place(changed_only.data(), n);
+            EXPECT_EQ(changed_only, expected) << "fold_in_place, n=" << n << " start=" << start;
         }
     }
     EXPECT_EQ(qb::string_to_lower::convert("Content-Type"), "content-type");
@@ -1048,6 +1059,83 @@ TEST(StringToLower, FoldAgreesWithTheByteWiseReferenceAtEveryLengthAndWordBounda
                                                             "AZ")),
               std::string("\x80\xC1\xDA\xFF"
                           "az"));
+}
+
+namespace {
+
+/// One page of memory the test can turn read-only: a store into it then stops the process, which is how a test sees a
+/// write that leaves every byte as it was.
+class read_only_page {
+    char       *_data = nullptr;
+    std::size_t _size = 0;
+
+public:
+    read_only_page() noexcept {
+#if defined(_WIN32)
+        SYSTEM_INFO info;
+        GetSystemInfo(&info);
+        _size = info.dwPageSize;
+        _data = static_cast<char *>(VirtualAlloc(nullptr, _size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
+#else
+        _size         = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+        void *const p = mmap(nullptr, _size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        _data         = p == MAP_FAILED ? nullptr : static_cast<char *>(p);
+#endif
+    }
+
+    ~read_only_page() {
+        if (!_data)
+            return;
+#if defined(_WIN32)
+        VirtualFree(_data, 0, MEM_RELEASE);
+#else
+        munmap(_data, _size);
+#endif
+    }
+
+    read_only_page(read_only_page const &)            = delete;
+    read_only_page &operator=(read_only_page const &) = delete;
+
+    [[nodiscard]] char *
+    data() const noexcept {
+        return _data;
+    }
+
+    [[nodiscard]] std::size_t
+    size() const noexcept {
+        return _size;
+    }
+
+    /// From here on the page may be read and not written.
+    [[nodiscard]] bool
+    make_read_only() noexcept {
+#if defined(_WIN32)
+        DWORD before = 0;
+        return VirtualProtect(_data, _size, PAGE_READONLY, &before) != 0;
+#else
+        return mprotect(_data, _size, PROT_READ) == 0;
+#endif
+    }
+};
+
+} // namespace
+
+// fold_in_place() writes only what the fold changes (Huly QB-1248): a text already lowercase is folded here in a page
+// the process may read and not write -- at every length across both paths (the byte loop under eight, the words and
+// their overlapped tail) and from every offset in a word. One store into it, of the very byte it holds, stops the test.
+TEST(StringToLower, FoldInPlaceWritesNothingIntoATextAlreadyLowercase) {
+    read_only_page page;
+    ASSERT_NE(page.data(), nullptr) << "no page could be mapped";
+    const std::string_view text = "content-type: text/html; charset=utf-8 \x80\xC1\xDA\xFF"
+                                  "[\\]^_`{|}~0123456789 az-09";
+    ASSERT_LE(text.size(), page.size());
+    std::memcpy(page.data(), text.data(), text.size());
+    ASSERT_TRUE(page.make_read_only());
+    for (std::size_t n = 0; n <= 40; ++n) {
+        for (std::size_t start = 0; start + n <= text.size() && start < 16; ++start)
+            qb::string_to_lower::fold_in_place(page.data() + start, n);
+    }
+    EXPECT_EQ(std::string_view(page.data(), text.size()), text);
 }
 
 TEST(StringHash, EqualsStdHashOfTheSameBytesSoBucketsAndOrderAreUnchanged) {
@@ -1155,14 +1243,25 @@ TEST(IcaseMapNoexcept, TheMoveMembersAreAsNothrowAsTheBaseMapsOwn) {
     EXPECT_THROW(target = std::move(source), std::bad_alloc);
 }
 
-// A key the caller gives up is folded where it is and moved into the map: the const overload of string_to_lower::convert()
-// copied it first, one allocation a key past the small-string capacity (Huly QB-1216: three a browser's HTTP/2 request).
+// A key the caller gives up is folded where it is and handed on, never copied: the const overload of
+// string_to_lower::convert() copies it first, one allocation a key past the small-string capacity (Huly QB-1216: three a
+// browser's HTTP/2 request). The rvalue overload builds no string at all -- its result is the caller's -- and its fold
+// writes only what it changes (Huly QB-1248, and FoldInPlaceWritesNothingIntoATextAlreadyLowercase above).
 TEST(UnorderedMapContract, AKeyTheCallerGivesUpIsFoldedInPlaceNotCopied) {
+    static_assert(std::is_same_v<decltype(qb::string_to_lower::convert(std::declval<std::string>())), std::string &&>,
+                  "the caller's string, handed back: no string is built for a key that is given up");
     std::string       key(40, 'X'); // past every small-string capacity: the bytes live in a heap buffer
     const char *const buffer = key.data();
     const std::string folded = qb::string_to_lower::convert(std::move(key));
     EXPECT_EQ(folded, std::string(40, 'x'));
     EXPECT_EQ(folded.data(), buffer) << "the caller's buffer, folded and moved on, not a copy";
+
+    std::string   short_key = "Content-Type"; // inside every small-string buffer
+    std::string &&handed    = qb::string_to_lower::convert(std::move(short_key));
+    EXPECT_EQ(&handed, &short_key) << "the caller's string itself";
+    EXPECT_EQ(short_key, "content-type");
+    std::string seven = "FIELD12"; // under eight bytes: the byte-wise fold
+    EXPECT_EQ(std::string(qb::string_to_lower::convert(std::move(seven))), "field12");
 
     const std::string spelled(40, 'Y');
     std::string       copied_from = spelled;
