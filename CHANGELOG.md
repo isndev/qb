@@ -449,6 +449,34 @@ policy.
   on g++ (more of the request's small allocations take glibc's slow path while two 4 KiB bodies keep `malloc_consolidate()`
   running), and with qbm-http's lazy body (QB-1216) it reads 0.2..2.2 % faster on g++ and 4.0 % faster on MSVC 19.51.
 
+- **`uri::decode()` and `uri::encode()` build their result once, and a query's keys and values are decoded where they
+  stay (Huly QB-1248).** `decode(std::string_view)` and `encode(std::string_view)` grew their result one `push_back()`
+  an octet -- a capacity test, a length store and a terminator each -- and told one octet from another by a chain of
+  comparisons. `decode()` now sizes its result to its source (a decoded text is never longer), writes it through a
+  pointer, reads the two digits of a `%XX` in the class's hexadecimal table and cuts the string to what it wrote;
+  `encode()` counts the octets it escapes in a first pass, one table lookup an octet, and allocates exactly what it
+  writes -- its result was reserved at three times its source and kept that capacity (a 1 000-octet text with nothing
+  to escape held 3 000). The query reader assigned each decoded key and value from a temporary; each is now built by
+  `decode()` in the string it stays in. What the three return is unchanged, octet for octet: `unit/core/uri-parse`
+  holds `decode()` to the rule for the 299 593 texts of up to six octets over an alphabet of every kind the rule tells
+  apart, for the 65 536 pairs of octets after a `%` and across the small-string boundary, and `encode()` for each of
+  the 256 octets and the 37 449 texts of up to five. Measured on an i9-12900K in interleaved rounds, before -> after.
+  MSVC 19.51: `BM_Uri_Decode/1024` 1 404 -> 748 ns, `BM_Uri_Encode/1024` 1 679 -> 976, `BM_Uri_ParseQueryHeavy` 2 499
+  -> 1 841 at sixteen keys and 10 073 -> 7 796 at sixty-four, `BM_Uri_ParseCommon/case:1` 678 -> 544, `case:0`
+  278 -> 270. g++ 14: `BM_Uri_Decode/1024` 1 315 -> 578 ns and 35 295 -> 15 691 instructions, `BM_Uri_ParseQueryHeavy`
+  at sixteen keys 1 452 -> 1 205 ns and 28 731 -> 23 884, `BM_Uri_Encode/1024` 35 452 -> 18 545 instructions. g++ 13.3,
+  the benchmarks lane's compiler: `BM_Uri_Decode/1024` 1 363 -> 583 ns, `BM_Uri_ParseQueryHeavy` at sixteen keys
+  1 525 -> 1 180.
+  Three things the measurements found on the way. The loop of `decode()` holds nothing that can throw, so its code no
+  longer depends on the function's exception specification: under g++ 13.3 the 1 024-octet cell had gone from 34 571
+  to 36 145 instructions, +3.9 % in time, when `decode()` stopped being `noexcept` (below), which neither g++ 14 nor
+  MSVC showed; it runs 15 694. Written through a pointer but still assigned from a temporary, a one-octet key cost
+  MSVC 5 % more than before (`BM_Uri_ParseCommon/case:0` 278 -> 292 ns): the string object was reloaded whole right
+  behind the narrow stores of its octets, the load of QB-1216 above, once a key and once a value. And an instruction
+  count is not a time: a first form of `encode()` that classified each octet twice by the chain of comparisons ran a
+  quarter fewer instructions and 41 % longer under g++ 14, two passes of data-dependent branches where there was one;
+  the table has none in its first pass.
+
 - **`qb::deadline` is an instant of the monotonic clock (Huly QB-1199).** Its `at_ns` held a date -- nanoseconds since
   the Unix epoch, built from `ctx.time()`, the core's sample of the wall clock -- so a step of the time of day spent or
   extended a chain's budget: 120 s forward, a 60 s budget read 0 left 1 ms in and `ask_by` failed without sending; 30 s

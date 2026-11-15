@@ -512,6 +512,184 @@ INSTANTIATE_TEST_SUITE_P(Corpus, UriRoundtrip,
                                            std::string("unicode: \xC3\xA9\xC3\xA0\xC3\xBC"), std::string("slashes/and?query=yes&more=true"),
                                            std::string(1000, 'X'), std::string("trailing%"), std::string("%already%20encoded")));
 
+namespace uri_parse_test {
+
+// The two rules, read one octet at a time into a string that grows -- the form `uri::decode(std::string_view)` and
+// `uri::encode(std::string_view)` had before they wrote through a pointer (Huly QB-1248). What the product returns is
+// held to them below.
+std::string
+decode_by_the_rule(std::string_view input) {
+    const auto hex = [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    };
+    const auto val = [](char c) {
+        return c <= '9' ? c - '0' : (c | 0x20) - 'a' + 10;
+    };
+    std::string out;
+    for (std::size_t i = 0; i < input.size(); ++i) {
+        const char c = input[i];
+        if (c == '%' && i + 2 < input.size() && hex(input[i + 1]) && hex(input[i + 2])) {
+            out.push_back(static_cast<char>((val(input[i + 1]) << 4) | val(input[i + 2])));
+            i += 2;
+        } else {
+            out.push_back(c == '+' ? ' ' : c);
+        }
+    }
+    return out;
+}
+
+std::string
+encode_by_the_rule(std::string_view input) {
+    static constexpr char digits[] = "0123456789ABCDEF";
+    std::string           out;
+    for (const char ch : input) {
+        const auto c = static_cast<unsigned char>(ch);
+        if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '-' || c == '.' || c == '_' || c == '~') {
+            out.push_back(ch);
+        } else if (c == ' ') {
+            out.push_back('+');
+        } else {
+            out.push_back('%');
+            out.push_back(digits[c >> 4]);
+            out.push_back(digits[c & 0xF]);
+        }
+    }
+    return out;
+}
+
+// Every text of up to `longest` octets over `alphabet`, in turn.
+template <typename Visit>
+void
+for_every_text(std::string_view alphabet, std::size_t longest, Visit &&visit) {
+    std::string text;
+    for (std::size_t length = 0; length <= longest; ++length) {
+        std::vector<std::size_t> digit(length, 0);
+        for (bool more = true; more;) {
+            text.resize(length);
+            for (std::size_t i = 0; i < length; ++i)
+                text[i] = alphabet[digit[i]];
+            visit(std::string_view(text));
+            more = false;
+            for (std::size_t i = 0; i < length; ++i) {
+                if (++digit[i] < alphabet.size()) {
+                    more = true;
+                    break;
+                }
+                digit[i] = 0;
+            }
+        }
+    }
+}
+
+// A text of `length` octets drawn from `alphabet` by a fixed sequence: the same texts on every run and every platform.
+std::string
+drawn_text(std::string_view alphabet, std::size_t length, std::uint32_t &state) {
+    std::string text(length, '\0');
+    for (char &c : text) {
+        state = state * 1664525u + 1013904223u;
+        c     = alphabet[(state >> 16) % alphabet.size()];
+    }
+    return text;
+}
+
+} // namespace uri_parse_test
+
+/**
+ * @test `decode(std::string_view)` gives what the rule gives, for every short text and across the small-string boundary.
+ * @brief The alphabet holds what the rule tells apart: '%', '+', two hexadecimal digits of each case and kind, a letter
+ *        that is no digit, a NUL and an octet past ASCII. Every text of up to six octets is decoded -- every place an
+ *        escape can start, be cut by the end or be refused -- then drawn texts at the lengths where a std::string
+ *        leaves its own buffer, and long ones.
+ */
+TEST(UriParse, DecodeGivesWhatTheRuleGivesForEveryShortTextAndAcrossTheSmallBuffer) {
+    using namespace uri_parse_test;
+    const std::string_view alphabet("%+2Fag\0\xE9", 8);
+    std::size_t            texts = 0, escapes = 0, kept = 0;
+    for_every_text(alphabet, 6, [&](std::string_view text) {
+        if (::testing::Test::HasFatalFailure())
+            return; // one text is enough to read
+        const std::string expected = decode_by_the_rule(text);
+        ASSERT_EQ(uri::decode(text), expected) << "a text of " << text.size() << " octets";
+        ASSERT_EQ(uri::decode(text.data(), text.size()), expected);
+        ++texts;
+        escapes += expected.size() + 2 <= text.size();
+        kept += expected.size() == text.size();
+    });
+    EXPECT_EQ(texts, 299593u) << "8^0 + 8^1 + ... + 8^6";
+    EXPECT_GT(escapes, 1000u) << "texts with an escape that was read";
+    EXPECT_GT(kept, 1000u) << "texts with none";
+
+    // Every pair of octets after a '%': which of the 256 is a hexadecimal digit, and its value, in each place.
+    std::size_t read = 0;
+    for (int first = 0; first < 256; ++first) {
+        for (int second = 0; second < 256; ++second) {
+            const char             octets[3] = {'%', static_cast<char>(first), static_cast<char>(second)};
+            const std::string_view text(octets, 3);
+            const std::string      decoded = uri::decode(text);
+            ASSERT_EQ(decoded, decode_by_the_rule(text)) << "'%', then octets " << first << " and " << second;
+            read += decoded.size() == 1;
+        }
+    }
+    EXPECT_EQ(read, 22u * 22u) << "22 octets are hexadecimal digits: 0-9, a-f, A-F";
+
+    std::uint32_t state = 20261115u;
+    for (const std::size_t length : {14u, 15u, 16u, 17u, 31u, 32u, 33u, 63u, 64u, 65u, 1024u, 4099u}) {
+        for (int draw = 0; draw < 200; ++draw) {
+            const std::string text = drawn_text(alphabet, length, state);
+            ASSERT_EQ(uri::decode(std::string_view(text)), decode_by_the_rule(text)) << "length " << length << ", draw " << draw;
+        }
+    }
+}
+
+/**
+ * @test `encode(std::string_view)` gives what the rule gives, decodes back to its source, and holds no more than it.
+ * @brief Each of the 256 octets alone, every text of up to five octets over an alphabet of each kind (kept, a space,
+ *        escaped below and past ASCII, a NUL), and drawn texts across the small-string boundary. The result of a long
+ *        text is sized to what it holds: it was reserved at three times its source, and kept that.
+ */
+TEST(UriParse, EncodeGivesWhatTheRuleGivesAndItsResultHoldsNoMoreThanIt) {
+    using namespace uri_parse_test;
+    for (int octet = 0; octet < 256; ++octet) {
+        const char        c       = static_cast<char>(octet);
+        const std::string encoded = uri::encode(std::string_view(&c, 1));
+        ASSERT_EQ(encoded, encode_by_the_rule(std::string_view(&c, 1))) << "octet " << octet;
+        ASSERT_EQ(uri::decode(std::string_view(encoded)), std::string(1, c)) << "octet " << octet;
+    }
+
+    const std::string_view alphabet("a- /%+\0\xE9", 8);
+    std::size_t            texts = 0;
+    for_every_text(alphabet, 5, [&](std::string_view text) {
+        if (::testing::Test::HasFatalFailure())
+            return; // one text is enough to read
+        const std::string encoded = uri::encode(text);
+        ASSERT_EQ(encoded, encode_by_the_rule(text)) << "a text of " << text.size() << " octets";
+        ASSERT_EQ(uri::encode(text.data(), text.size()), encoded);
+        ASSERT_EQ(uri::decode(std::string_view(encoded)), std::string(text));
+        ++texts;
+    });
+    EXPECT_EQ(texts, 37449u) << "8^0 + 8^1 + ... + 8^5";
+
+    std::uint32_t state = 20261115u;
+    for (const std::size_t length : {5u, 6u, 14u, 15u, 16u, 17u, 47u, 48u, 49u, 1024u, 4099u}) {
+        for (int draw = 0; draw < 200; ++draw) {
+            const std::string text    = drawn_text(alphabet, length, state);
+            const std::string encoded = uri::encode(std::string_view(text));
+            ASSERT_EQ(encoded, encode_by_the_rule(text)) << "length " << length << ", draw " << draw;
+            ASSERT_EQ(uri::decode(std::string_view(encoded)), text) << "length " << length << ", draw " << draw;
+        }
+    }
+
+    // One thousand octets that are all kept: a thousand octets, and a string that holds about that -- a standard
+    // library rounds a capacity up by a few octets, never to three times the text.
+    const std::string kept = uri::encode(std::string_view(std::string(1000, 'a')));
+    EXPECT_EQ(kept.size(), 1000u);
+    EXPECT_LT(kept.capacity(), 1500u) << "the result is sized to what it holds";
+    // And a text of escapes alone: three octets each, exactly.
+    const std::string escaped = uri::encode(std::string_view(std::string(1000, '/')));
+    EXPECT_EQ(escaped.size(), 3000u);
+    EXPECT_LT(escaped.capacity(), 3500u);
+}
+
 TEST(UriParse, SchemeAndHostValidators) {
     EXPECT_TRUE(uri::is_valid_scheme("h2+tls"));
     EXPECT_TRUE(uri::is_valid_scheme("custom.v1-transport"));

@@ -772,23 +772,17 @@ is_digit(char c) {
     return c >= '0' && c <= '9';
 }
 
-// Helper function to check if a character is a hexadecimal digit
-inline bool
-is_hex_digit(char c) {
-    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-}
-
-// Helper to extract a hex digit value
-inline int
-hex_value(char c) {
-    if (c >= '0' && c <= '9')
-        return c - '0';
-    if (c >= 'a' && c <= 'f')
-        return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F')
-        return c - 'A' + 10;
-    return 0;
-}
+// What encode(std::string_view) writes for an octet it keeps as one octet, and 0 for an octet it writes as "%XX", one
+// lookup an octet (Huly QB-1248): an unreserved octet (is_unreserved()) is itself, a space is '+'. unit/core/uri-parse
+// holds encode() to that rule for each of the 256 octets, and decode() -- which reads its digits in `tbl` -- for every
+// pair of octets after a '%'.
+constexpr auto encoded_octet = [] {
+    std::array<char, 256> table{};
+    for (unsigned char const c : std::string_view{"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"})
+        table[c] = static_cast<char>(c);
+    table[static_cast<unsigned char>(' ')] = '+';
+    return table;
+}();
 
 // The bytes a path holds as themselves, one lookup a byte (Huly QB-1187): [0] a URI reference's, is_path_character();
 // [1] a request target's, is_request_path_character(). unit/core/uri-parse holds both readings to those predicates for
@@ -1258,24 +1252,14 @@ uri::parse_query_parameters(const char *begin, const char *end) {
             param_end = end;
         }
 
-        // Extract key and value
-        std::string key;
-        std::string value;
-
-        if (equals) {
-            // Key is everything before equals sign
-            if (equals > param_start) {
-                key = decode(std::string_view(param_start, equals - param_start));
-            } // else key is empty string ""
-
-            // Value is everything after equals sign
-            if (equals + 1 < param_end) {
-                value = decode(std::string_view(equals + 1, param_end - (equals + 1)));
-            } // else value is empty string ""
-        } else {
-            // No equals sign, everything is the key
-            key = decode(std::string_view(param_start, param_end - param_start));
-        }
+        // The key is what precedes the first '=' -- the whole parameter when there is none -- and the value what follows
+        // it, empty when nothing does. Each is decoded into the string it stays in: assigned from a temporary, it was
+        // built in one object and moved into another right behind the stores of its octets (Huly QB-1248).
+        const char *const key_end = equals ? equals : param_end;
+        std::string       key     = decode(std::string_view(param_start, static_cast<std::size_t>(key_end - param_start)));
+        std::string       value   = equals && equals + 1 < param_end
+                                        ? decode(std::string_view(equals + 1, static_cast<std::size_t>(param_end - (equals + 1))))
+                                        : std::string();
 
         // Store in our map
         _queries[std::move(key)].push_back(std::move(value)); // folded in place: no copy of a long key
@@ -1287,60 +1271,66 @@ uri::parse_query_parameters(const char *begin, const char *end) {
 
 std::string
 uri::decode(std::string_view input) {
+    // A decoded text is never longer than its source, so the result is sized once, written through a pointer and cut
+    // to what was written: one allocation, as before, and no capacity test, length store and terminator an octet, which
+    // is what a push_back() costs (Huly QB-1248). Nothing in the loop can throw: its code is the same in a function
+    // that is noexcept and in one that is not. Every return names the one object, so every compiler builds the result
+    // in the caller's; an empty source leaves before the loop, which is then entered with an octet to read -- what
+    // g++'s unroller needs to know to unroll it.
+    std::string result(input.size(), '\0');
     if (input.empty())
-        return {};
+        return result;
 
-    std::string result;
-    result.reserve(input.size());
+    char             *out = result.data();
+    const char       *in  = input.data();
+    const char *const end = in + input.size();
 
-    for (std::size_t i = 0; i < input.size(); ++i) {
-        char c = input[i];
-
-        if (c == '%' && i + 2 < input.size()) {
-            // Check if next two chars are valid hex digits
-            if (is_hex_digit(input[i + 1]) && is_hex_digit(input[i + 2])) {
-                unsigned char high = hex_value(input[i + 1]);
-                unsigned char low  = hex_value(input[i + 2]);
-                result.push_back(static_cast<char>((high << 4) | low));
-                i += 2; // Skip the two hex digits
-            } else {
-                // Invalid hex digits, preserve the % character and continue
-                result.push_back('%');
+    while (in != end) {
+        const char c = *in++;
+        if (c == '%') {
+            // "%XX" is the octet its two hexadecimal digits name -- `tbl` holds a digit's value and -1 for any other
+            // octet, so both are digits when neither value has its sign set; any other '%' stands for itself
+            if (end - in >= 2) {
+                const int high = tbl[static_cast<unsigned char>(in[0])];
+                const int low  = tbl[static_cast<unsigned char>(in[1])];
+                if ((high | low) >= 0) {
+                    *out++ = static_cast<char>((high << 4) | low);
+                    in += 2;
+                    continue;
+                }
             }
-        } else if (c == '+') {
-            // In application/x-www-form-urlencoded, '+' means space
-            result.push_back(' ');
+            *out++ = '%';
         } else {
-            // Normal character
-            result.push_back(c);
+            *out++ = c == '+' ? ' ' : c; // application/x-www-form-urlencoded: '+' is a space
         }
     }
 
+    // Cut to what was written -- shorter by two octets an escape, so nothing is allocated; a text with no escape is
+    // returned as it was sized
+    if (const auto written = static_cast<std::size_t>(out - result.data()); written != input.size())
+        result.resize(written);
     return result;
 }
 
 std::string
 uri::encode(std::string_view input) {
-    if (input.empty())
-        return {};
+    // Two passes and one allocation of the exact size (Huly QB-1248): an octet is written as one (`encoded_octet`:
+    // an unreserved octet as itself, a space as '+') or as the three of "%XX". The result used to be reserved at three
+    // times its source and kept that capacity, and each octet went through a push_back(). One return, as decode().
+    std::size_t escaped = 0;
+    for (const char ch : input)
+        escaped += encoded_octet[static_cast<unsigned char>(ch)] == 0;
 
-    std::string encoded;
-    encoded.reserve(input.size() * 3); // Worst case: each char becomes %XX
-
-    for (std::size_t i = 0; i < input.size(); ++i) {
-        unsigned char c = static_cast<unsigned char>(input[i]);
-
-        if (is_unreserved(c)) {
-            // Safe character, no encoding needed
-            encoded.push_back(static_cast<char>(c));
-        } else if (c == ' ') {
-            // Space becomes '+' in query parameters
-            encoded.push_back('+');
+    std::string encoded(input.size() + 2 * escaped, '\0');
+    char       *out = encoded.data();
+    for (const char ch : input) {
+        const auto c = static_cast<unsigned char>(ch);
+        if (const char one = encoded_octet[c]) {
+            *out++ = one;
         } else {
-            // Encode as %XX
-            encoded.push_back('%');
-            encoded.push_back(hex[(c >> 4) & 0xF]);
-            encoded.push_back(hex[c & 0xF]);
+            *out++ = '%';
+            *out++ = hex[c >> 4];
+            *out++ = hex[c & 0xF];
         }
     }
 
