@@ -87,12 +87,14 @@ registry, or as a member — never relocate them.
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
   teardown (`src/qb/io/async/listener.h:1112-1117`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
-- `clear()` runs no deferred callback. It holds the drain guard for the whole
-  call and drops the queue on entry and again on exit, so work deferred while it
+- `clear()` runs no deferred callback. It holds the queue (`_defer_held`) for the
+  whole call and drops it on entry and again on exit, so work deferred while it
   tears down — by a released closure, by the capture of a loop-owned timer it
   destroys, by a coroutine its flush passes resume — is dropped and its captured
-  state released, never run (`src/qb/io/async/listener.h:1040-1049,1119`; Huly
-  QB-276). Called from a deferred callback, it also ends that drain.
+  state released, never run (`src/qb/io/async/listener.h:1041-1049,1119`; Huly
+  QB-276). Called from a deferred callback, it ends that drain and every drain
+  around it (drains nest, Huly QB-1246); what is deferred after it runs on a later
+  pass — of a pump still on the stack, or the next turn.
 
 ---
 

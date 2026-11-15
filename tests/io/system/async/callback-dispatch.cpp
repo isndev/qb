@@ -12,6 +12,11 @@
  *   - a positive timeout schedules a self-deleting `Timeout<F>` that fires exactly once when the loop
  *     reaches the deadline, and not before — owning its own copy of a named callable (Huly QB-972).
  *
+ * `async::defer(func)` is pinned beside them: the next turn, FIFO, one generation per call, served from
+ * inside a blocking run -- and a loop pumped from inside a deferred callback (`run_sync()`, `run_until()`,
+ * a nested `run()`) drains the other deferred callbacks, in queue order, never the ones executing on the
+ * stack (Huly QB-1246). Those cases connect over an empty address list, which fails without a descriptor.
+ *
  * Restructured from the dissolved system/test-async-io.cpp (CallbackImmediateExecution,
  * CallbackScheduledExecution). The hand-rolled `for(i){run(EVRUN_ONCE);sleep_for()}` poll is replaced
  * by the shared deadline-bounded `qb::io::test::pump_until`, the deferred case additionally asserts the
@@ -34,9 +39,13 @@
  * @ingroup Tests
  */
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <memory>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -308,4 +317,315 @@ TEST_F(CallbackDispatchTest, PendingDeferIsDroppedOnListenerClear) {
     async::listener::current.clear(); // teardown drops the queue
     EXPECT_FALSE(ran) << "a dropped defer must NOT run at teardown";
     EXPECT_TRUE(weak.expired()) << "dropping the defer must release its captured state";
+}
+
+// =============================================================================
+// A loop pumped from inside a deferred callback (Huly QB-1246)
+// =============================================================================
+//
+// A deferred callback that pumps the loop -- `run_sync()`, `run_until()`, a nested `run()` -- runs turns of its
+// own, and their drains take every deferred callback but the ones executing on the stack, in queue order: the
+// rule of GLib and Asio. Until 3.4 the drain refused to nest, so such a pump drained nothing -- a completion
+// delivered through `defer()` (the connector's immediate failure) never ran, and the pump spun at full CPU until a
+// timer ended it, or for ever when none was armed. Every case that pumps until something happens has a watchdog
+// (a timer, or `run_sync()`'s own timeout), so a red is an assertion, never a hang.
+
+namespace callback_dispatch_test {
+
+/// The fixture of the nested-drain cases: some spawn coroutines (`run_sync()`), whose frames are drained before the
+/// loop is cleared. A named namespace: a coroutine the cases spawn names nothing of theirs, but the rule is the file's
+/// (qb/scripts/check-coro-fixture-linkage.py).
+class NestedDrain : public ::testing::Test {
+protected:
+    void
+    SetUp() override {
+        reset_async_context();
+    }
+    void
+    TearDown() override {
+        if (async::listener::current.has_coro_scheduler()) {
+            async::run_for(5ms);
+            async::listener::current.reset_coro_scheduler();
+        }
+        async::listener::current.clear();
+    }
+};
+
+/// A connect over no address at all: the connector fails at once and delivers that failure through `defer()`
+/// (`tcp::connector::run()`), on every system, without a descriptor. Whether a socket came back.
+async::task<bool>
+connect_over_no_address() {
+    auto socket = co_await async::tcp::connect(std::vector<endpoint>{}, "nowhere");
+    co_return socket.has_value();
+}
+
+/// Ends every `ev_run` on the stack: a nested pump's and the blocking run's around it.
+void
+break_every_run() {
+    async::listener::current.loop().break_loop(ev::ALL);
+}
+
+} // namespace callback_dispatch_test
+
+using callback_dispatch_test::break_every_run;
+using callback_dispatch_test::connect_over_no_address;
+using callback_dispatch_test::NestedDrain;
+
+// `defer([] { run_sync(connect_to(nowhere)); })` -- the shape of a reconnect written as a deferred callback.
+TEST_F(NestedDrain, ARunSyncInADeferredCallbackHearsAFailureDeliveredThroughDefer) {
+    bool ran = false, heard = false, connected = true, timed_out = false;
+    async::defer([&] {
+        ran = true;
+        try {
+            connected = async::run_sync(async::coro_with_timeout(connect_over_no_address(), 2s));
+            heard     = true;
+        } catch (async::timeout_error const &) {
+            timed_out = true;
+        }
+    });
+    async::listener::current.run(EVRUN_NOWAIT);
+    ASSERT_TRUE(ran) << "the deferred callback never ran";
+    EXPECT_FALSE(timed_out) << "run_sync() in a deferred callback never ran the connector's deferred failure: its pump drained no "
+                               "deferred callback and spun until the 2 s timeout";
+    EXPECT_TRUE(heard);
+    EXPECT_FALSE(connected) << "a connect over no address returned a socket";
+}
+
+// The same under a blocking `async::run()`: the deferred callback runs from the in-loop drain, inside the loop.
+TEST_F(NestedDrain, ARunSyncInADeferredCallbackUnderABlockingRunHearsAFailureDeliveredThroughDefer) {
+    bool       ran = false, heard = false, connected = true, timed_out = false, watchdog = false;
+    auto const guard = async::scoped_callback(
+        [&] {
+            watchdog = true;
+            break_every_run();
+        },
+        5s);
+    async::defer([&] {
+        ran = true;
+        try {
+            connected = async::run_sync(async::coro_with_timeout(connect_over_no_address(), 2s));
+            heard     = true;
+        } catch (async::timeout_error const &) {
+            timed_out = true;
+        }
+        break_every_run();
+    });
+    async::run(); // the watchdog is a live watcher: this blocks, and the in-loop drain runs the callback
+    ASSERT_TRUE(ran) << "the in-loop drain never ran the deferred callback";
+    EXPECT_FALSE(watchdog) << "the blocking run outlived its deferred callback";
+    EXPECT_FALSE(timed_out) << "run_sync() in a deferred callback the in-loop drain ran never ran the connector's deferred failure";
+    EXPECT_TRUE(heard);
+    EXPECT_FALSE(connected);
+}
+
+// `run_until(flag)` in a deferred callback, the flag cleared by a callback that one defers before pumping.
+TEST_F(NestedDrain, ARunUntilInADeferredCallbackRunsTheChildThatEndsIt) {
+    bool       pumping = true, child_ran = false, watchdog = false, returned = false;
+    auto const guard = async::scoped_callback(
+        [&] {
+            watchdog = true;
+            pumping  = false;
+        },
+        2s);
+    async::defer([&] {
+        async::defer([&] {
+            child_ran = true;
+            pumping   = false;
+        });
+        async::run_until(pumping);
+        returned = true;
+    });
+    async::listener::current.run(EVRUN_NOWAIT);
+    ASSERT_TRUE(returned) << "the deferred callback never ran";
+    EXPECT_FALSE(watchdog) << "run_until() in a deferred callback drained no deferred callback: only the 2 s watchdog ended it";
+    EXPECT_TRUE(child_ran);
+}
+
+// The flag is cleared by a SIBLING queued after the pumping callback -- what separates the rule from a nested drain
+// that would take only what was deferred after it began.
+TEST_F(NestedDrain, ARunUntilInADeferredCallbackRunsTheSiblingQueuedAfterIt) {
+    bool       pumping = true, sibling_ran = false, watchdog = false, returned = false;
+    auto const guard = async::scoped_callback(
+        [&] {
+            watchdog = true;
+            pumping  = false;
+        },
+        2s);
+    async::defer([&] {
+        async::run_until(pumping);
+        returned = true;
+    });
+    async::defer([&] {
+        sibling_ran = true;
+        pumping     = false;
+    });
+    async::listener::current.run(EVRUN_NOWAIT);
+    ASSERT_TRUE(returned) << "the deferred callback never ran";
+    EXPECT_FALSE(watchdog) << "run_until() in a deferred callback never ran the sibling queued behind it: only the 2 s watchdog ended it";
+    EXPECT_TRUE(sibling_ran);
+}
+
+// The queue order holds across the nesting. A nested drain takes what was queued when it began -- the outer
+// drain's rest, then what the pumping callback deferred -- and a callback deferred in a nested drain waits for the
+// next nested pass.
+TEST_F(NestedDrain, ANestedDrainKeepsTheQueueOrder) {
+    std::vector<std::string> order;
+    async::defer([&] { order.push_back("A"); });
+    async::defer([&] {
+        order.push_back("X begins");
+        async::defer([&] { order.push_back("D, deferred by X"); });
+        async::listener::current.run(EVRUN_NOWAIT);
+        order.push_back("X between its passes");
+        async::listener::current.run(EVRUN_NOWAIT);
+        order.push_back("X ends");
+    });
+    async::defer([&] {
+        order.push_back("B");
+        async::defer([&] { order.push_back("E, deferred by B"); });
+    });
+    async::defer([&] { order.push_back("C"); });
+    async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(order,
+              (std::vector<std::string>{"A", "X begins", "B", "C", "D, deferred by X", "X between its passes", "E, deferred by B", "X ends"}));
+    EXPECT_FALSE(async::listener::current.has_deferred()) << "something was left queued";
+}
+
+// No stealing. What a nested pass deferred is the next turn's for the drain that encloses it: that drain stops at
+// the bound it took when it began, whatever the nested drains took past it.
+TEST_F(NestedDrain, TheEnclosingDrainDoesNotRunWhatANestedPassDeferred) {
+    std::vector<std::string> order;
+    async::defer([&] {
+        order.push_back("X begins");
+        async::listener::current.run(EVRUN_NOWAIT);
+        order.push_back("X ends");
+    });
+    async::defer([&] {
+        order.push_back("Y");
+        async::defer([&] { order.push_back("child of Y"); });
+    });
+    async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(order, (std::vector<std::string>{"X begins", "Y", "X ends"}))
+        << "the nested pass in X did not run Y, or the drain around X ran the child Y deferred in it";
+    EXPECT_TRUE(async::listener::current.has_deferred()) << "the child of Y was lost";
+    async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(order, (std::vector<std::string>{"X begins", "Y", "X ends", "child of Y"})) << "the child of Y never ran on a later turn";
+}
+
+// A deferred callback that runs a BLOCKING loop -- `async::run()` with a live watcher -- is a level of its own:
+// the loop's in-loop drain serves both the callback deferred before it and the one a watcher inside it defers.
+TEST_F(NestedDrain, ABlockingRunInADeferredCallbackDrainsWhatItDeferredAndWhatItsWatchersDefer) {
+    std::vector<std::string> order;
+    bool                     watchdog = false, returned = false;
+    auto const               guard = async::scoped_callback(
+        [&] {
+            watchdog = true;
+            break_every_run();
+        },
+        2s);
+    std::unique_ptr<async::ScopedTimeout<std::function<void()>>> inner_timer;
+    async::defer([&] {
+        async::defer([&] { order.push_back("deferred before the blocking run"); });
+        inner_timer = async::scoped_callback(std::function<void()>([&] {
+                                                 async::defer([&] {
+                                                     order.push_back("deferred by a watcher inside it");
+                                                     async::break_parent();
+                                                 });
+                                             }),
+                                             1ms);
+        async::run(); // the watchdog keeps it blocking
+        returned = true;
+    });
+    async::listener::current.run(EVRUN_NOWAIT);
+    ASSERT_TRUE(returned) << "the deferred callback never ran";
+    EXPECT_FALSE(watchdog) << "async::run() in a deferred callback never drained the callbacks deferred in it: only the 2 s watchdog "
+                              "ended it";
+    EXPECT_EQ(order, (std::vector<std::string>{"deferred before the blocking run", "deferred by a watcher inside it"}));
+}
+
+// The documented recursion: a deferred callback whose blocking run's drain runs the next one, and so on. Each level is a
+// blocking run of its own, and the count of those on the stack must not wrap: at 256 levels an 8-bit count read 0 there,
+// the in-loop drain stood down, and the next level never ran.
+TEST_F(NestedDrain, BlockingRunsInDeferredCallbacksNestPast256Levels) {
+    constexpr int kLevels        = 300;
+    int           deepest        = 0;
+    int           watchdog_level = 0; ///< the level the watchdog found stuck, 0 when it never fired
+    auto const    guard          = async::scoped_callback(
+        [&] {
+            watchdog_level = deepest;
+            break_every_run();
+        },
+        5s);
+    std::function<void(int)> level = [&](int const depth) {
+        deepest = depth;
+        if (depth == kLevels) {
+            break_every_run();
+            return;
+        }
+        async::defer([&level, depth] { level(depth + 1); });
+        async::run(); // a blocking level: its in-loop drain runs the next one
+    };
+    async::defer([&level] { level(1); });
+    async::run();
+    EXPECT_EQ(watchdog_level, 0) << "the blocking run at level " << watchdog_level
+                                 << " never drained the next level: only the watchdog ended it";
+    EXPECT_EQ(deepest, kLevels);
+}
+
+// A callback that throws in a nested drain is contained there; the pumping callback goes on, and every later
+// callback runs once, in order.
+TEST_F(NestedDrain, ACallbackThatThrowsInANestedDrainIsContained) {
+    std::vector<std::string> order;
+    async::defer([&] {
+        order.push_back("X begins");
+        async::defer([&] {
+            order.push_back("thrower");
+            throw std::runtime_error("a deferred callback that throws");
+        });
+        async::defer([&] { order.push_back("after the thrower"); });
+        async::defer([&] {
+            order.push_back("a non-std thrower");
+            throw 42; // what a drain contains is not always a std::exception
+        });
+        async::defer([&] { order.push_back("after the non-std thrower"); });
+        async::listener::current.run(EVRUN_NOWAIT);
+        order.push_back("X ends");
+    });
+    async::defer([&] { order.push_back("B"); });
+    async::listener::current.run(EVRUN_NOWAIT);
+    for (int i = 0; i < 3; ++i)
+        async::listener::current.run(EVRUN_NOWAIT); // nothing runs twice
+    EXPECT_EQ(order, (std::vector<std::string>{
+                         "X begins", "B", "thrower", "after the thrower", "a non-std thrower", "after the non-std thrower", "X ends"
+                     }));
+    EXPECT_FALSE(async::listener::current.has_deferred());
+}
+
+// A nested turn drains at ITS tail, after the watchers it ran, as any turn does: a callback deferred in a pumping
+// callback runs after a timer due in that pump's turn, never at the turn's entry before it.
+TEST_F(NestedDrain, ANestedTurnDrainsAfterTheWatchersItRan) {
+    std::vector<std::string>                                     order;
+    bool                                                         watchdog = false;
+    std::unique_ptr<async::ScopedTimeout<std::function<void()>>> due_timer;
+    auto const                                                   guard = async::scoped_callback(
+        [&] {
+            watchdog = true;
+            break_every_run();
+        },
+        2s);
+    async::defer([&] {
+        async::defer([&] { order.push_back("drained by the first pass"); });
+        async::listener::current.run(EVRUN_NOWAIT);
+        due_timer            = async::scoped_callback(std::function<void()>([&] { order.push_back("timer"); }), 1ms);
+        const auto due_after = std::chrono::steady_clock::now() + 5ms;
+        while (std::chrono::steady_clock::now() < due_after) {
+        } // the timer is due before the second pass begins
+        async::defer([&] { order.push_back("deferred before the second pass"); });
+        async::listener::current.run(EVRUN_NOWAIT);
+        order.push_back("X ends");
+        break_every_run();
+    });
+    async::run(); // the deferred callback runs from the in-loop drain of a blocking run
+    EXPECT_FALSE(watchdog);
+    EXPECT_EQ(order, (std::vector<std::string>{"drained by the first pass", "timer", "deferred before the second pass", "X ends"}))
+        << "the second nested pass drained its deferred callback before the timer it ran, or not at all";
 }

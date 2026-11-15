@@ -38,6 +38,9 @@
  * The same drop holds for what `clear()` releases AFTER that purge -- a loop-owned timer and the state
  * its callable captured -- whose destructors may defer too: that work is dropped like the rest, never
  * run by `clear()`'s flush passes (Huly QB-276), on an explicit `clear()` and on a thread's exit.
+ *
+ * A `clear()` called from a deferred callback ends the drain that runs it -- and, since drains nest (a
+ * deferred callback that pumps the loop runs one of its own, Huly QB-1246), every drain on the stack.
  */
 
 #include <atomic>
@@ -45,7 +48,9 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <string>
 #include <thread>
+#include <vector>
 #include <gtest/gtest.h>
 #include <qb/io/async.h>
 
@@ -218,6 +223,39 @@ TEST(ListenerClear, AClearCalledFromADeferredCallbackEndsThatDrain) {
     qb::io::async::listener::current.run(EVRUN_NOWAIT);
     EXPECT_FALSE(dropped_ran) << "the clear() did not drop the rest of the drain's snapshot";
     EXPECT_FALSE(later_ran) << "a callback deferred after the clear ran in the drain that ran the clear";
+    EXPECT_TRUE(qb::io::async::listener::current.has_deferred()) << "the callback deferred after the clear was lost";
+    for (int i = 0; i < 1000 && !later_ran; ++i)
+        qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_TRUE(later_ran) << "the callback deferred after the clear never ran on a later turn";
+    EXPECT_FALSE(dropped_ran);
+}
+
+TEST(ListenerClear, AClearCalledFromANestedDrainEndsEveryDrainOnTheStack) {
+    // A deferred callback that pumps the loop runs a drain of its own inside the drain that runs it (Huly QB-1246).
+    // A clear() in the nested drain drops the rest of the queue, and what is deferred after it runs in neither drain:
+    // both took their bound before the clear, and the clear moved the queue's sequence past every bound on the stack.
+    qb::io::async::init();
+    qb::io::async::listener::current.clear();
+    std::vector<std::string> order;
+    bool                     dropped_ran = false;
+    bool                     later_ran   = false;
+    qb::io::async::defer([&] {
+        order.push_back("X begins");
+        qb::io::async::defer([&] {
+            order.push_back("clearer");
+            qb::io::async::listener::current.clear();
+            qb::io::async::defer([&later_ran] { later_ran = true; });
+        });
+        qb::io::async::defer([&dropped_ran] { dropped_ran = true; }); // in the nested drain's bound, behind the clear
+        qb::io::async::listener::current.run(EVRUN_NOWAIT);           // the nested drain: Y, then the clearer
+        order.push_back("X ends");
+    });
+    qb::io::async::defer([&] { order.push_back("Y"); });
+    qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    EXPECT_EQ(order, (std::vector<std::string>{"X begins", "Y", "clearer", "X ends"}))
+        << "the nested pass in X did not drain the queue up to the clear";
+    EXPECT_FALSE(dropped_ran) << "the clear() did not drop the rest of the nested drain's bound";
+    EXPECT_FALSE(later_ran) << "a callback deferred after the clear ran in the drain that ran the clear, or in the one around it";
     EXPECT_TRUE(qb::io::async::listener::current.has_deferred()) << "the callback deferred after the clear was lost";
     for (int i = 0; i < 1000 && !later_ran; ++i)
         qb::io::async::listener::current.run(EVRUN_NOWAIT);

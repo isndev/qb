@@ -5,7 +5,8 @@
  * These benchmarks isolate the allocation-heavy async paths that gate every
  * higher-level transport: listener event registration/unregistration (single
  * and batched), immediate (zero-delay) callbacks, delayed (non-zero-delay)
- * callbacks driven to completion through the loop, and scoped (RAII) callbacks.
+ * callbacks driven to completion through the loop, scoped (RAII) callbacks, and the drain of a batch of
+ * deferred callbacks.
  *
  * @author qb - C++ Actor Framework
  * @copyright Copyright (c) 2011-2026 qb - isndev (cpp.actor)
@@ -153,6 +154,32 @@ BM_AsyncCallback_DelayedFire(benchmark::State &state) {
     state.SetItemsProcessed(state.iterations());
 }
 
+// One `run(EVRUN_NOWAIT)` turn that drains `callbacks` deferred callbacks: the queue's push and pop, the drain's walk
+// and bound, and the call through `std::function` (a reference capture, held in its small buffer). No watcher is
+// active, so the turn is the drain alone. A defer cell (Huly QB-1246): the drain bounds itself by a removal counter
+// since 3.4, which lets a loop pumped from inside a deferred callback drain the others.
+void
+BM_Defer_DrainBatch(benchmark::State &state) {
+    qb::io::async::init();
+    auto       &listener = qb::io::async::listener::current;
+    const auto  count    = static_cast<std::size_t>(state.range(0));
+    std::size_t ran      = 0;
+
+    for (auto _ : state) {
+        for (std::size_t i = 0; i < count; ++i)
+            listener.defer([&ran] { ++ran; });
+        listener.run(EVRUN_NOWAIT);
+    }
+
+    // Out-of-loop correctness assert: each turn ran every callback queued before it, and left nothing queued.
+    if (ran != count * static_cast<std::size_t>(state.iterations()) || listener.has_deferred())
+        state.SkipWithError("a turn did not drain every callback deferred before it");
+
+    benchmark::DoNotOptimize(ran);
+    listener.clear();
+    state.SetItemsProcessed(state.iterations() * static_cast<std::int64_t>(count));
+}
+
 } // namespace
 
 BENCHMARK(BM_Listener_RegisterUnregister)->Unit(benchmark::kNanosecond)->UseRealTime();
@@ -160,5 +187,6 @@ BENCHMARK(BM_Listener_RegisterUnregister_Batch)->Arg(16)->Arg(256)->Arg(4096)->A
 BENCHMARK(BM_AsyncCallback_ImmediateFire)->Unit(benchmark::kNanosecond)->UseRealTime();
 BENCHMARK(BM_AsyncCallback_DelayedFire)->Arg(100)->Arg(1000)->ArgName("delay_us")->Unit(benchmark::kMicrosecond)->UseRealTime();
 BENCHMARK(BM_ScopedCallback_ConstructCancel)->Unit(benchmark::kNanosecond)->UseRealTime();
+BENCHMARK(BM_Defer_DrainBatch)->Arg(1)->Arg(16)->Arg(256)->Unit(benchmark::kNanosecond)->UseRealTime();
 
 BENCHMARK_MAIN();

@@ -418,12 +418,12 @@ This uses the `scoped_callback` helper the framework provides for exactly this c
 
 ### Deferring to the next loop turn: `defer()`
 
-The correct primitive for "continue **after the current event handler returns**, on the next loop turn, with no delay" is `qb::io::async::defer(fn)` — **not** a bare `callback(fn)` (which runs inline) and **not** a `callback(fn, tiny_delay)` timer hack. `defer` posts `fn` to the tail of the current loop turn: it runs once every libev watcher for this turn has unwound, so it never executes re-entrantly from inside a handler.
+The correct primitive for "continue **after the current event handler returns**, on the next loop turn, with no delay" is `qb::io::async::defer(fn)` — **not** a bare `callback(fn)` (which runs inline) and **not** a `callback(fn, tiny_delay)` timer hack. `defer` posts `fn` to the tail of the current loop turn: it runs once every libev watcher for this turn has unwound, so it never executes inside the handler that queued it — unless that handler pumps the loop (`run_sync()`, `run_until()`), whose turns drain it too.
 
 Use it when a handler must do something that is unsafe inline — above all, destroy or replace the very object it is running on:
 
 ```cpp
-// src: qb/src/qb/io/async/listener.h:2010 (qb::io::async::defer), :1413 (listener::defer)
+// src: qb/src/qb/io/async/listener.h:2010 (qb::io::async::defer), :1431 (listener::defer)
 // This connection is owned by std::shared_ptr and derives from
 // std::enable_shared_from_this<Connection>.
 void on(event::disconnected const &) {

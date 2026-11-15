@@ -540,16 +540,15 @@ private:
     // magic delay. It is the non-coroutine twin of `co_await sleep(0ms)`'s
     // cooperative yield (mirrors the coroutine scheduler's `ready_queue_`).
     std::deque<std::function<void()>> _deferred;
-    bool                              _in_defer_drain  = false;
-    bool                              _defer_drain_cut = false; ///< `clear()` ended the drain in progress: what follows is the next turn's
-    std::uint8_t                      _blocking_runs   = 0;     ///< blocking `ev_run`s on the stack (`_run_blocking`): the hook's runs
+    bool                              _in_defer_drain = false; ///< a drain runs at the innermost blocking run's level: no hook feed
+    bool                              _defer_held     = false; ///< `clear()` holds the queue: no drain, no hook feed (it drops it)
+    std::uint16_t                     _blocking_runs  = 0;     ///< blocking `ev_run`s on the stack (`_run_blocking`): 16 bits, in the padding
 
     // ---- In-loop drain hook -------------------------------------------------
-    // Draining only *after* `_loop.run()` returns is not enough: a blocking
-    // `run()` (flag 0 — `qb::io::async::run()`, the documented standalone main
-    // loop) never returns while any watcher is active, so a `defer()` posted from
-    // a handler would be starved forever. That is reachable from framework code on
-    // a public API path (`tcp::connector::deliver_failure_deferred()`, qbm-http's
+    // Draining only *after* `_loop.run()` returns is not enough: a blocking `run()` (flag 0 —
+    // `qb::io::async::run()`, the documented standalone main loop) never returns while any watcher
+    // is active, so a `defer()` posted from a handler would be starved forever. That is reachable from
+    // framework code on a public API path (`tcp::connector::deliver_failure_deferred()`, qbm-http's
     // reconnect), so the queue must also be serviced from INSIDE the loop.
     //
     // `_defer_wake` is that hook. It is normally never started, so it holds no
@@ -558,22 +557,20 @@ private:
     // priority downwards and this watcher sits at `EV_MINPRI` (every qb watcher
     // stays at the default priority), so its callback runs after every other
     // watcher pending in the same iteration — precisely `defer()`'s "tail of the
-    // current turn, never re-entrant from inside a handler" contract.
+    // current turn" contract: a handler that does not pump the loop never sees it run.
     //
-    // It serves a BLOCKING run only (`run(0)`, `EVRUN_ONCE`: `_blocking_runs`), the one
-    // that may not return to its tail drain. A non-blocking run is one turn and drains
-    // once, at its tail, after every watcher of the call: libev invokes what is pending
-    // on ENTRY to `ev_run` too, so a hook fed between two calls (a `disconnect()` feed,
-    // a defer from a handler run at entry) drained there, and its re-arm below fired in
-    // the same call's iteration -- two generations in one `run(EVRUN_NOWAIT)` (Huly
-    // QB-448). `defer()` feeds the hook only under a blocking run, and the hook stands
-    // down when a stale re-arm fires in a non-blocking one.
+    // It serves a BLOCKING run only (`run(0)`, `EVRUN_ONCE`: `_blocking_runs`), the one that may not
+    // return to its tail drain. A non-blocking run is one turn and drains once, at its tail, after every
+    // watcher of the call: libev invokes what is pending on ENTRY to `ev_run` too, so a hook fed between
+    // two calls drained there and its re-arm fired in the same call -- two generations in one
+    // `run(EVRUN_NOWAIT)` (Huly QB-448). `defer()` feeds the hook only under a blocking run, and the
+    // hook stands down when a stale re-arm fires in a non-blocking one.
     //
-    // Leftovers (a callback that itself defers — excluded from this pass by the
-    // snapshot bound) must NOT be re-fed: `ev_feed_event` lands in the pass that is
+    // Leftovers (a callback deferred while the hook drains — past that drain's bound,
+    // see `_drain_queued`) must NOT be re-fed: `ev_feed_event` lands in the pass that is
     // still draining and would run them in the same turn. They are re-armed with a
     // 0-delay one-shot instead, which expires on the next loop iteration, and until it
-    // fires no drain takes them (`_drain_deferred`).
+    // fires no drain takes them (`_drain_queued`).
     ev::timer _defer_wake;
 
     void
@@ -587,18 +584,21 @@ private:
             _defer_wake.start(0.); // next turn, never this pass
     }
 
-    /// A blocking `ev_run` (`run(0)`, `EVRUN_ONCE`): the hook's runs. What was deferred before the
-    /// call is handed to the hook on entry -- the loop may block in its first poll, and only the hook
-    /// drains inside it. Out of line: a core's pass inlines `run(EVRUN_NOWAIT)`, where this is dead.
+    /// A blocking `ev_run` (`run(0)`, `EVRUN_ONCE`): the hook's runs. What was deferred before the call is handed to the
+    /// hook on entry -- the loop may block in its first poll, and only the hook drains inside it. A drain around the call
+    /// (a deferred callback's `async::run()`) is another level's: here the hook is fed. Out of line: a core's pass inlines NOWAIT.
     QB_NOINLINE void
     _run_blocking(int const flags) {
         struct Depth {
-            std::uint8_t &runs;
+            std::uint16_t &runs;
+            bool          &draining;
+            bool const     was_draining;
             ~Depth() {
                 --runs;
+                draining = was_draining;
             }
-        } const depth{++_blocking_runs};
-        if (!_deferred.empty() && !_in_defer_drain && !_defer_wake.is_pending() && !_defer_wake.is_active())
+        } const depth{++_blocking_runs, _in_defer_drain, std::exchange(_in_defer_drain, false)};
+        if (!_deferred.empty() && !_defer_held && !_defer_wake.is_pending() && !_defer_wake.is_active())
             _defer_wake.feed_event(EV_CUSTOM);
         _loop.run(flags);
     }
@@ -663,13 +663,13 @@ private:
     void
     _on_park_cap(ev::timer &, int) noexcept {}
 
-    // Run every callback queued BEFORE this pass; one that itself defers is left
-    // for the next loop turn (the snapshot count bounds the drain and stops a
-    // self-re-deferring callback from starving the loop). Never runs re-entrantly.
+    // Run every callback queued BEFORE this pass, in queue order; one deferred while it drains is
+    // left for a later turn (the drain's bound, see `_drain_queued`), so a self-re-deferring
+    // callback cannot starve the loop. Drains nest: a callback that pumps the loop drains too.
     std::size_t
     _drain_deferred() {
-        if (_in_defer_drain || _deferred.empty())
-            return 0; // branch-only fast path when nothing is queued
+        if (_deferred.empty())
+            return 0; // one load and one branch when nothing is queued
         return _drain_queued();
     }
 
@@ -680,59 +680,59 @@ private:
     // push round trip under callgrind, g++-14). As a call it costs those passes one call.
     [[nodiscard]] QB_NOINLINE auto
     _drain_queued() -> std::size_t {
-        // The queue's head is the next turn's while the in-loop drain's 0-delay re-arm is pending
-        // (see `_defer_wake`): `run()`'s own drain, after a blocking loop returned in the same call,
-        // is not where it runs (Huly QB-448).
-        if (_defer_wake.is_active())
+        // No drain while `clear()` holds the queue, which drops it; none while the in-loop drain's 0-delay
+        // re-arm is pending (see `_defer_wake`): the queue's head is then the next turn's, and `run()`'s own
+        // drain, after a blocking loop returned in the same call, is not where it runs (Huly QB-448).
+        if (_defer_held || _defer_wake.is_active())
             return 0;
-        // RAII re-entrancy guard (mirrors CoroutineScheduler::run_ready): the flag is
-        // cleared on every exit path, so a nested run()/drain is refused and the guard
-        // can never be stranded — even if a container op below were to throw.
-        struct DrainGuard {
-            bool &flag;
-            explicit DrainGuard(bool &f) noexcept
-                : flag(f) {
-                flag = true;
+        // Drains NEST: a callback that pumps the loop -- `run_sync()`, `run_until()`, a nested `run()` -- runs turns of its
+        // own, whose drains take every callback queued but the ones executing on the stack, in order, as GLib's and Asio's do
+        // (Huly QB-1246). `_defer_taken` counts the callbacks that left the front; a drain's bound is that count plus the
+        // queue's size when it begins, each callback counted out before it runs: nothing runs twice, no drain passes its
+        // bound, a drain goes on past what a nested one took, and a `clear()`, counting out what it drops, ends them all.
+        struct DrainLevel {
+            bool      &flag;
+            bool const was;
+            ~DrainLevel() noexcept {
+                flag = was;
             }
-            ~DrainGuard() noexcept {
-                flag = false;
-            }
-        } guard{_in_defer_drain};
-        std::size_t n       = _deferred.size();
-        std::size_t drained = 0;
-        // A callback that calls `clear()` ends the drain: the rest of the snapshot is dropped, and what
-        // is deferred after the clear is the next turn's, not this drain's (Huly QB-276).
-        _defer_drain_cut = false;
-        while (n-- > 0 && !_defer_drain_cut && !_deferred.empty()) {
+        } const level{_in_defer_drain, std::exchange(_in_defer_drain, true)};
+        std::uint64_t const bound   = _defer_taken + _deferred.size();
+        std::size_t         drained = 0;
+        while (_defer_taken < bound && !_deferred.empty()) {
             std::function<void()> fn = std::move(_deferred.front());
             _deferred.pop_front();
+            ++_defer_taken;
             if (fn) {
-                // Runs inside the loop: an escaping exception would unwind through
-                // libev's C frames (UB). Contain it, exactly as `Timeout` does.
+                // Runs inside the loop: an escaping exception would unwind through libev's C frames (UB).
+                // Contained, as `Timeout` does, and logged: a nested pump's `std::logic_error` is one.
                 try {
                     fn();
                 } catch (...) {
+                    _deferred_threw();
                 }
                 ++drained;
             }
         }
         return drained;
     }
+    // A callback a drain contained, reported (WARN) out of line in listener.cpp: inline, the log cost every drain a frame.
+    static QB_NOINLINE QB_COLD void _deferred_threw() noexcept;
 
-    // Drop every deferred callback without running it (`clear()`). By SWAPPING the queue out,
-    // never `_deferred.clear()` in place: releasing a closure's captured state runs arbitrary
-    // destructors -- a captured shared_ptr can be the last reference to an object whose teardown
-    // calls `defer()` again -- and a push_back into a deque halfway through its own clear() is
-    // undefined. After the swap the member is empty, so such a re-entrant defer lands in a fresh
-    // queue, which the loop drops in turn -- sixteen turns at most: a closure whose destructor defers again at
-    // every turn kept this loop running for ever (Huly QB-1246). What the sixteenth turn leaves is given up:
-    // never run, and never destroyed either (leaked), so that nothing defers again.
+    // Drop every deferred callback without running it (`clear()`). By SWAPPING the queue out, never `_deferred.clear()`
+    // in place: releasing a closure's captured state runs arbitrary destructors -- a captured shared_ptr can be the last
+    // reference to an object whose teardown calls `defer()` again -- and a push_back into a deque halfway through its own
+    // clear() is undefined. After the swap the member is empty, so such a re-entrant defer lands in a fresh queue, which
+    // the loop drops in turn -- sixteen turns at most: a closure whose destructor defers again at every turn kept this loop
+    // running for ever (Huly QB-1246). What the sixteenth turn leaves is given up: never run, and never destroyed either
+    // (leaked), so that nothing defers again. What leaves is counted out of the queue's sequence: every drain on the stack ends.
     void
     _drop_deferred() {
         for (unsigned turn = 0; !_deferred.empty(); ++turn) {
             if (turn == kMaxTeardownPasses) [[unlikely]]
                 return _give_up_deferred();
             std::deque<std::function<void()>> dropped;
+            _defer_taken += _deferred.size();
             dropped.swap(_deferred);
             dropped.clear();
         }
@@ -742,8 +742,8 @@ private:
     // purpose, and LeakSanitizer says so: a destructor that defers again at every turn is the defect it reports.
     QB_NOINLINE void
     _give_up_deferred() {
-        auto *const given_up = new std::deque<std::function<void()>>;
-        given_up->swap(_deferred);
+        _defer_taken += _deferred.size();
+        (new std::deque<std::function<void()>>)->swap(_deferred); // given up: never destroyed
     }
 
     /** @brief Prepend `e` to the registered-events list. O(1), no alloc. */
@@ -1016,8 +1016,8 @@ public:
      *
      * Deferred callbacks are DROPPED, never run -- those queued before the call and those
      * deferred while it tears down (Huly QB-276) -- and their captured state is released.
-     * Called from a deferred callback, it ends that drain: what is deferred after it runs on
-     * the next turn.
+     * Called from a deferred callback, it ends that drain and every drain around it (drains nest,
+     * Huly QB-1246): what is deferred after it runs on a later pass -- a pump's still on the stack, or the next turn.
      * @note This is automatically called by the listener's destructor. On `listener::current` after
      *       its destructor it does nothing: that destructor cleared it.
      */
@@ -1034,18 +1034,18 @@ public:
         // can post anything here; a released closure's destructor still can, and so can
         // what the teardown below destroys -- a loop-owned timer and the state its callable
         // captured -- and what the flush passes resume. All of it is dropped too (Huly
-        // QB-276): the drain guard is held for the whole call, so no drain runs and
-        // `defer()` does not feed the in-loop hook, and the queue is dropped again on the
-        // way out.
-        const bool was_draining = std::exchange(_in_defer_drain, true);
+        // QB-276): the hold is kept for the whole call, so no drain runs and `defer()`
+        // does not feed the in-loop hook, and the queue is dropped again on the way out.
+        // The drop counts what it drops out of the queue's sequence: every drain on the
+        // stack -- this call may run inside several, drains nest -- ends at its next step.
+        const bool was_held = std::exchange(_defer_held, true);
         struct DrainHold {
             bool      &flag;
             bool const was;
             ~DrainHold() {
                 flag = was;
             }
-        } const hold{_in_defer_drain, was_draining};
-        _defer_drain_cut = true; // a drain this call runs inside stops at its next callback
+        } const hold{_defer_held, was_held};
         _drop_deferred();
         _defer_wake.stop(); // also clears a pending feed; nothing is left to drain
         _park_cap.stop();
@@ -1198,7 +1198,7 @@ public:
         // destroyed stack frame, permanently corrupting the re-entrancy guard `clear()`
         // reads. Zero cost on the non-throwing path (table-driven EH), and it matches the
         // policy already applied at every other loop-facing boundary (`Timeout::on`,
-        // `ScopedTimeout::on`, `_drain_deferred`).
+        // `ScopedTimeout::on`, `_drain_queued`).
         try {
             w._interface->invoke();
         } catch (...) {
@@ -1403,28 +1403,28 @@ public:
     /**
      * @brief Queue `fn` to run once, at the tail of the current `run()` turn.
      *
-     * The callback executes after every libev watcher for this turn has returned,
-     * so it never runs re-entrantly from inside an event handler. Use it when a
-     * handler must continue work that is unsafe inline — above all destroying or
-     * replacing the object the handler is currently executing on (a reconnect that
-     * frees+recreates its connection). It is the non-coroutine twin of the
-     * `co_await sleep(0ms)` cooperative yield.
+     * `fn` runs once, never inside this call, in FIFO order, from a drain at the tail of a `run()` turn, after every
+     * libev watcher of that turn. A drain takes what was queued when it began: a callback deferred by a deferred
+     * callback runs on a later drain, one generation per turn. A loop pumped from inside any callback -- a watcher's,
+     * a coroutine's or a deferred one's: `run_sync()`, `run_until()`, a nested `run()` -- runs its own turns, and their
+     * drains take everything queued except the callbacks executing on the stack (Huly QB-1246). So `fn` runs after the
+     * handler that queued it, unless that handler pumps the loop. Before 3.4 no deferred callback ran while another was
+     * on the stack; now it runs as soon as the one on the stack pumps the loop. `clear()` ends every drain on the stack.
      *
-     * Prefer it over `async::callback(fn, tiny_delay)` for "next turn" semantics:
-     * no libev timer, no heap `Timeout`, no arbitrary delay. Captured state is
-     * released when the callback fires OR when the loop is torn down (`clear()`),
-     * whichever comes first — so a strong (`shared_ptr`) capture keeps its target
-     * alive exactly until then, leak-free. Same-thread only. A callback deferred by a
-     * deferred callback runs on the next `run()` call, never in the one that ran its
-     * parent: one generation per turn. On `listener::current` after its destructor the
-     * callback is dropped, never run.
-     *
+     * Use it when a handler must continue work that is unsafe inline — above all destroying or replacing
+     * the object it is executing on (a reconnect that frees+recreates its connection), in place of
+     * `async::callback(fn, tiny_delay)`: no libev timer, no heap `Timeout`, no delay. It is the
+     * non-coroutine twin of the `co_await sleep(0ms)` cooperative yield. Captured state is released when
+     * the callback fires OR when the loop is torn down (`clear()`), whichever comes first — so a strong
+     * (`shared_ptr`) capture keeps its target alive exactly until then, leak-free. Same-thread only. On
+     * `listener::current` after its destructor the callback is dropped, never run. It must not destroy the listener that
+     * runs it -- its `run()` goes on reading itself after the callback returns, as after a watcher's handler.
      * @note The queued `fn` is drained by `run()`: a NOWAIT pump drains at the tail of each
      *       call (`async::run_until`/`run_sync`, or a VirtualCore tick — which gates on
      *       `has_deferred()` so a bare `defer()` still pumps); a blocking run hands what is
      *       queued to its in-loop drain on entry and drains once per loop iteration. A `defer()`
      *       issued *from a coroutine* (which runs after the drain) fires on the next turn.
-     * @note Only the drain contains a throwing `fn`; the enqueue here is a plain
+     * @note Only the drain contains a throwing `fn`, and logs it; the enqueue here is a plain
      *       allocation and may itself throw `std::bad_alloc` under OOM.
      */
     void
@@ -1435,12 +1435,12 @@ public:
         // Under a blocking run, arm the in-loop drain hook (see `_defer_wake`) so the
         // queue is serviced even though `run()` does not return; a non-blocking turn
         // drains at its tail, and a blocking one hands what is queued to the hook on
-        // entry (`_run_blocking`). Skipped while draining: a callback that defers must
-        // land on the NEXT turn, and `_on_defer_wake` re-arms it with a 0-delay one-shot
-        // for exactly that -- and skipped while `clear()` runs, which holds the drain
-        // guard and drops the queue. The pending/active tests keep a burst of defers to
-        // a single queue entry.
-        if (_blocking_runs != 0 && !_in_defer_drain && !_defer_wake.is_pending() && !_defer_wake.is_active())
+        // entry (`_run_blocking`). Skipped while a drain runs at this blocking level: what
+        // its callbacks defer is past its bound, the next turn's, and `_on_defer_wake`
+        // re-arms the hook with a 0-delay one-shot for exactly that -- and skipped while
+        // `clear()` holds the queue, which it drops. The pending/active tests keep a burst
+        // of defers to a single queue entry.
+        if (_blocking_runs != 0 && !_in_defer_drain && !_defer_held && !_defer_wake.is_pending() && !_defer_wake.is_active())
             _defer_wake.feed_event(EV_CUSTOM);
     }
 
@@ -1808,9 +1808,8 @@ public:
     }
 
 private:
-    // Watcher-dispatch timing (Huly QB-165): installed in place of libev's `ev_invoke_pending` only
-    // while timing is on. Not noexcept, like the default it replaces: what a callback lets escape
-    // goes where it went before. Cold, so at the end of the object.
+    // Watcher-dispatch timing (Huly QB-165): installed in place of libev's `ev_invoke_pending` only while timing is on.
+    // Not noexcept, like the default it replaces: what a callback lets escape goes where it went before. Cold, at the end.
     static void
     _timed_invoke_pending(struct ev_loop *loop) {
         auto *const self  = static_cast<listener *>(ev_userdata(loop));
@@ -1820,6 +1819,7 @@ private:
     }
 
     qb::detail::TimingRecorder _dispatch_recorder;
+    std::uint64_t              _defer_taken = 0; ///< the deferred queue's sequence: the callbacks that left its front (`_drain_queued`)
 };
 
 /**
@@ -1991,9 +1991,9 @@ run(int flag = 0) {
  * @brief Defer `func` to run at the tail of the current event-loop turn.
  * @ingroup Async
  *
- * The one correct primitive for "continue after this event handler unwinds":
- * `func` runs once, after every libev watcher for this turn has returned, so it
- * never executes re-entrantly from inside a handler. Forwards to the current
+ * The one correct primitive for "continue after this event handler unwinds": `func` runs once,
+ * after every libev watcher for this turn has returned, never inside the handler that queued it --
+ * unless that handler pumps the loop, whose turns drain the queue too. Forwards to the current
  * thread's `listener::defer()` — see it for the full semantics and lifetime rules.
  *
  * Choose deliberately:

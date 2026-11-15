@@ -126,13 +126,13 @@ What a `kill()` does to a coroutine that is already parked is on [Writing actors
 
 ## `defer` — continue after the handler unwinds
 
-`qb::io::async::defer(func)` queues `func` to run **once, at the tail of the current loop turn**, after every watcher for that turn has returned. It is the primitive an actor uses to move work off the current handler frame without a timer — and the only one guaranteed never to run re-entrantly. Use it whenever a handler must destroy or replace the object it is running on; a reconnect that frees and recreates its connection is the canonical case.
+`qb::io::async::defer(func)` queues `func` to run **once, at the tail of the current loop turn**, after every watcher for that turn has returned. It is the primitive an actor uses to move work off the current handler frame without a timer — and the only one that never runs inside the handler that queued it, as long as that handler does not pump the loop itself. Use it whenever a handler must destroy or replace the object it is running on; a reconnect that frees and recreates its connection is the canonical case.
 
 ```cpp
 // Declared in qb/src/qb/io/async/listener.h
 namespace qb::io::async {
     template <typename _Func>
-    void defer(_Func &&func);          // tail of this loop turn — never re-entrant
+    void defer(_Func &&func);          // tail of this loop turn — never inside this call
 }
 ```
 <!-- src: qb/src/qb/io/async/listener.h:2010 (async::defer); qb/src/qb/io/async/listener.h:1431 (listener::defer) -->
@@ -411,7 +411,7 @@ public:
 
 | You want | Use | Because |
 |---|---|---|
-| to continue after this handler returns | `defer(f)` | tail of this turn, never re-entrant, safe to destroy the object you are running on |
+| to continue after this handler returns | `defer(f)` | tail of this turn, never inside the handler that does not pump the loop, safe to destroy the object you are running on |
 | to run something T from now, once | `callback(f, T)` | a real timer; `T` must be strictly positive |
 | the same, but cancellable | `scoped_callback(f, T)` | you own the handle; `reset()` cancels |
 | to act after a span of *silence* | `with_timeout<T>` | resets on activity, re-arms itself |

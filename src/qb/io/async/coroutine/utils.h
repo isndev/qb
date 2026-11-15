@@ -268,10 +268,10 @@ run_for(qb::duration duration) {
 /**
  * @brief Execute a coroutine synchronously (blocking until completion)
  *
- * Runs a coroutine to completion, blocking the current thread until it finishes.
- * Useful for bridging synchronous code (like test SetUp) with coroutine APIs.
+ * Runs a coroutine to completion, blocking the current thread until it finishes: a bridge from synchronous code (a
+ * test's SetUp) to coroutine APIs. Called from a deferred callback, it runs the other deferred callbacks while it
+ * waits -- before 3.4 none ran until that callback returned (Huly QB-1246).
  *
- * Usage:
  * @code
  * // In test SetUp:
  * void SetUp() override {

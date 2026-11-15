@@ -838,6 +838,54 @@ policy.
 
 ### Fixed
 
+- **A loop pumped from inside a deferred callback drains the other deferred callbacks (Huly QB-1246).** `run_sync()`,
+  `run_until()`, a nested `run()` or `async::run()` called from a callback queued with `defer()` drained no deferred
+  callback at all: the drain refused to nest. A completion delivered through `defer()` -- the connector's failure when
+  no address answers or there is none, a reconnect -- never ran: a non-blocking pump spun at full CPU until a timer
+  ended it, or for ever when none was armed, and a blocking `async::run()` slept in its poll while the queue starved.
+  `defer([] { run_sync(coro_with_timeout(connect(...), 2s)); })` against a closed port waited out its two seconds
+  instead of hearing the refusal, and qbm-redis's `Redis::await()`, called from a deferred callback after a command
+  was submitted to a client that was down, spun for ever: that command's failure is delivered through `defer()`.
+  Drains now nest, as GLib's idle sources and Asio's `run_one()` do: a loop pumped from inside any callback -- a
+  watcher's, a coroutine's or a deferred one's -- runs turns of its own, whose drains take everything queued but the
+  callbacks executing on the stack, in queue order. This is a visible change: a deferred callback never ran while
+  another deferred callback was on the stack, and it now runs as soon as that callback pumps the loop.
+  - Each drain is bounded by the queue's sequence. The listener counts the callbacks that left the queue's front, run
+    or dropped, and a drain runs until that count reaches its value plus the queue's size when the drain began; a
+    callback is counted out before it runs. Nothing runs twice, no drain passes its bound, a drain goes on past what a
+    nested one took, and a defer chain still advances one generation per turn.
+  - `clear()` counts out what it drops, past every bound on the stack: called from a callback of any drain it ends
+    them all, and what is deferred after it runs on a later turn -- the Huly QB-276 rule, at any depth. Its hold has a
+    flag of its own, and the flag that cut a drain is gone.
+  - A blocking run called from a deferred callback (`async::run()`, `run_once()`, the park of `run_once_for()`) is a
+    blocking level of its own: its in-loop drain is fed on entry and by the watchers it runs.
+  - A callback that throws is still contained by its drain, and is now logged (WARN): a `std::logic_error` from a pump
+    called where pumping is refused was swallowed in a release build. The report is out of line, in `listener.cpp`:
+    written in the drain, the log took a 432-byte frame and four more saved registers from every drain, a callback
+    that throws or not (+1.5 % on a turn that drains one callback). Its log line allocates, and a callback that threw
+    `std::bad_alloc` is the one whose report is likeliest to fail: what the log throws is contained too, the line
+    falling back to stderr.
+  - The count of blocking runs on the stack is 16 bits, in the padding it already had (no field moves): the recursion
+    below wrapped an 8-bit count at 256 levels, where a blocking run's in-loop drain stood down and its queue starved.
+  - What does not change: `defer()` never runs its callback inside its own call, and a handler that does not pump the
+    loop never sees a deferred callback run inside it. One shape now recurses where it hung: a callback that re-defers
+    itself and then pumps runs again inside its own pump, without bound, as in GLib and Asio; a cap would bring the
+    hang back. A deferred callback must not destroy the listener that runs it, as a watcher's handler must not: its
+    `run()` goes on reading the listener after the callback returns.
+  - The inlined test before the drain loses a load and a branch, it reads the queue alone, and no field a pass reads
+    moves: the counter is the object's last member. Measured on an Apple M4 (AppleClang 21, Release,
+    `-falign-functions=64` on both sides, each side linked with its own libraries, three copies of every binary in a
+    seeded order, medians of four or five rounds, the spread being the copies' A/A): `BM_Defer_DrainBatch/1`, a turn
+    that drains one callback, 9.32 -> 9.13 ns (-2.0 %, A/A 1.1 %); `/16` +1.0 % inside its A/A; `/256` +0.6 % against
+    an A/A of 0.5 %, the counter's one store a callback. No measurable difference on the core pass
+    (`BM_CorePassTimingOff`), the same-core push and ping-pong cells, the callback and timer cells, the TCP loopback
+    echo or qbm-http's HTTP/1.1 loopback round trip.
+  - Witnesses: eleven cases in `qb-io-test-system-callback-dispatch`, `qb-io-test-unit-listener-clear-reentrant-defer`
+    and `qb-io-test-system-connect-fallback`, each red before the fix. Of thirteen mutants planted one at a time, nine
+    are caught; the four that survive change nothing a program can observe (the counter advanced after the call
+    instead of before it, the give-up's advance removed, the hook's re-arm moved to every drain, the drain's flag
+    restored by hand).
+
 - **A `qb::io::uri` read or parse that cannot allocate is reported as a failed read instead of terminating the process
   (Huly QB-1248).** The readers of a uri are `noexcept` -- `read_origin_form()`, `read_absolute_form()`,
   `read_authority_form()`, `origin_form()`, `absolute_form()`, `authority_form()`, the factory `uri::parse()`, the

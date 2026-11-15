@@ -15,7 +15,8 @@
  * on it: refused), a loopback listener, and on Linux an address that drops SYNs (a listener whose accept
  * queue is full). What is pinned:
  *  - the async connector, callback and coroutine forms, tries the next address when one is refused, and
- *    delivers exactly one failure when every address refuses; an empty list fails;
+ *    delivers exactly one failure when every address refuses; an empty list fails; that failure is heard
+ *    by a `run_sync()` called from a deferred callback (Huly QB-1246);
  *  - an address that does not answer gives way within its share of the deadline
  *    (`tcp::connect_attempt_budget`), not at the deadline;
  *  - a socket handed over OPEN gets the first address only; one handed over not open falls back;
@@ -102,9 +103,17 @@ wake_accept(std::uint16_t port) {
     (void) waker.connect(loopback(port), 1s);
 }
 
+/// The coroutine connect over `endpoints`, no deadline of its own: whether a socket came back.
+qb::io::async::task<bool>
+connected_over(std::vector<endpoint> endpoints) {
+    auto socket = co_await qb::io::async::tcp::connect(std::move(endpoints), "");
+    co_return socket.has_value();
+}
+
 } // namespace connect_fallback_test
 
 using connect_fallback_test::closed_port;
+using connect_fallback_test::connected_over;
 using connect_fallback_test::ConnectFallback;
 using connect_fallback_test::loopback;
 using connect_fallback_test::PlainServer;
@@ -174,6 +183,29 @@ TEST_F(ConnectFallback, AnEmptyListFails) {
     ASSERT_TRUE(qb::io::test::pump_until([&] { return calls > 0; })) << "no completion";
     EXPECT_EQ(calls, 1);
     EXPECT_FALSE(open);
+}
+
+// Every address refused is delivered through `defer()`, refused at once or on the watcher's readiness: a `run_sync()`
+// called from a deferred callback hears it, because the loop it pumps drains the other deferred callbacks (Huly
+// QB-1246). The timeout is the watchdog: until 3.4 that pump drained nothing and only the timeout ended it.
+TEST_F(ConnectFallback, ARefusedConnectAwaitedInADeferredCallbackIsHeard) {
+    const auto refused = closed_port();
+    ASSERT_NE(refused, 0);
+    bool ran = false, heard = false, connected = true, timed_out = false;
+    qb::io::async::defer([&] {
+        ran = true;
+        try {
+            connected = qb::io::async::run_sync(qb::io::async::coro_with_timeout(connected_over({loopback(refused)}), 2s));
+            heard     = true;
+        } catch (qb::io::async::timeout_error const &) {
+            timed_out = true;
+        }
+    });
+    qb::io::async::listener::current.run(EVRUN_NOWAIT);
+    ASSERT_TRUE(ran) << "the deferred callback never ran";
+    EXPECT_FALSE(timed_out) << "run_sync() in a deferred callback never heard the refusal the connector delivers through defer()";
+    EXPECT_TRUE(heard);
+    EXPECT_FALSE(connected) << "a refused connect returned a socket";
 }
 
 TEST_F(ConnectFallback, ASocketHandedOverOpenGetsTheFirstAddressOnly) {

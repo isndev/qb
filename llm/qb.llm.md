@@ -305,6 +305,7 @@ spawn([d = 100ms](qb::ScopedCoroContext ctx) -> qb::io::async::task<void> {
 //   defer(fn)              -> run at the TAIL of the current loop turn (next tick, no delay,
 //                             no timer). THE way to continue after the current handler unwinds,
 //                             e.g. a handler that must destroy/replace the object it runs on.
+//                             A loop the handler itself pumps (run_sync, run_until) drains it.
 //   callback(fn) / fn()    -> run INLINE, right now (callback(fn) is NOT deferred).
 // An actor's deferred closure must own its captures; defer does not extend actor lifetime.
 // Never capture `this` and then call is_alive() from the deferred closure.
@@ -879,7 +880,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:1935-1947)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:402-442)_ _(listener.h:2010)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:402-442)_ _(listener.h:2010)_ A loop that handler pumps itself drains the deferred queue too, `fn` included (Huly QB-1246).
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:731-760)_

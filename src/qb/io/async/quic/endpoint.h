@@ -278,8 +278,8 @@ protected:
         // strand `_draining_events == true` FOREVER, and every later call would bail out at the
         // guard above: the endpoint keeps reading the socket but silently stops delivering ANY
         // event (no data, no stream close, no connection close) — a total, invisible wedge of the
-        // connection (or, on a server, of every connection it multiplexes). Mirrors the guards in
-        // `listener::_drain_deferred` and `CoroutineScheduler::run_ready`.
+        // connection (or, on a server, of every connection it multiplexes). Mirrors the guard of
+        // `CoroutineScheduler::run_ready`; `listener::_drain_queued` restores its flag so too, though its drains nest.
         struct DrainGuard {
             endpoint &owner;
             explicit DrainGuard(endpoint &ep) noexcept

@@ -90,4 +90,32 @@ detail::report_refused_scheduler_reset(void const *const scheduler) noexcept {
     std::fflush(stderr);
 }
 
+// A deferred callback that threw, contained by the drain that ran it (`listener::_drain_queued`): one WARN line, and
+// the drain goes on -- a pump called where pumping is refused throws `std::logic_error`, which a release build used to
+// swallow without a word. Out of line and cold: written in the drain, the log's stream and strings took a 432-byte
+// frame, four more saved registers and five string addresses from every drain, whether a callback threw or not (+1.5 %
+// on a one-callback turn, AppleClang 21, Huly QB-1246). The log line allocates (a text past its inline buffer, the
+// logger's queue): what it throws is contained too, and the line falls back to stderr, written with `fputs` like the
+// named stop above -- a callback that threw `std::bad_alloc` is the one whose report is likeliest to fail.
+void
+listener::_deferred_threw() noexcept {
+    try {
+        throw;
+    } catch ([[maybe_unused]] std::exception const &e) {
+        try {
+            QB_LOG_WARN("[qb-io] a deferred callback threw: " << e.what() << " -- contained, the drain goes on");
+        } catch (...) {
+            std::fputs("qb: a deferred callback threw, and its log line could not be written -- contained, the drain goes on\n", stderr);
+        }
+    } catch (...) {
+        try {
+            QB_LOG_WARN("[qb-io] a deferred callback threw a non-std exception -- contained, the drain goes on");
+        } catch (...) {
+            std::fputs("qb: a deferred callback threw a non-std exception, and its log line could not be written -- contained, "
+                       "the drain goes on\n",
+                       stderr);
+        }
+    }
+}
+
 } // namespace qb::io::async
