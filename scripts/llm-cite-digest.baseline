@@ -235,6 +235,7 @@ llm/qb.llm.md	async/io.h:133-134	bc5b8adc7b00	base()
 llm/qb.llm.md	async/io.h:142-146	d6470b3638a4	~base() {
 llm/qb.llm.md	async/listener.h:87-99	04faa0f1d4e6	* Each thread has its own listener instance accessible via the thread...
 llm/qb.llm.md	base.h:276-276	b16b009d8fe5	this->not_ok();
+llm/qb.llm.md	buffered_io.h:88-88	70dd4307ddba	dispatch_scope() noexcept {
 llm/qb.llm.md	channel.h:1526-1526	1fdcebbed208	channel_select_awaiter(const channel_select_awaiter &)            = d...
 llm/qb.llm.md	channel.h:229-229	2f5606bfe61b	send_awaiter(const send_awaiter &)            = delete;
 llm/qb.llm.md	combinators.h:193-193	db4da5a6aa58	when_all_awaiter(const when_all_awaiter &)            = delete;
@@ -264,45 +265,47 @@ llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
 llm/qb.llm.md	generator.h:348-348	cb8ff1e26552	QB_CORO_PROMISE_POOLED_NEW_DELETE()
 llm/qb.llm.md	generator.h:98-98	cbf342ea7cd4	operator new(std::size_t size) {
-llm/qb.llm.md	io.h:1102-1102	de9bfb91b0f4	pause_reading() noexcept {
-llm/qb.llm.md	io.h:1119-1119	8d685ee19ca7	resume_reading() noexcept {
-llm/qb.llm.md	io.h:1433-1433	ba12a1f2dd4f	if (_read_paused) [[unlikely]] { // pause_reading(): none dispatched ...
-llm/qb.llm.md	io.h:1598-1598	c8d9f4de9026	frame_held_input_first() {
-llm/qb.llm.md	io.h:1644-1644	94c6351f2e96	read_end_again() noexcept {
-llm/qb.llm.md	io.h:2499-2523	d340160ee45f	begin_linger() noexcept {
-llm/qb.llm.md	io.h:2508-2508	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
-llm/qb.llm.md	io.h:2536-2546	31df185b7966	linger_read(event::io const &event) noexcept {
-llm/qb.llm.md	io.h:2574-2581	9ee103cf0118	watch_write_for_read() noexcept {
-llm/qb.llm.md	io.h:2595-2602	ab2f44f16003	start_events() noexcept {
-llm/qb.llm.md	io.h:2640-2648	09f053c2b34a	tls_held_flushed() noexcept {
-llm/qb.llm.md	io.h:2665-2684	4f64023ae06e	tls_took_nothing() noexcept {
-llm/qb.llm.md	io.h:2701-2701	d08fc4385678	tls_read_needed() noexcept {
-llm/qb.llm.md	io.h:2744-2744	c8d9f4de9026	frame_held_input_first() {
-llm/qb.llm.md	io.h:2808-2808	94c6351f2e96	read_end_again() noexcept {
-llm/qb.llm.md	io.h:2885-2887	eeb80e56aede	clear_protocols() {
-llm/qb.llm.md	io.h:2953-2986	6a48e9220ff2	start() noexcept {
-llm/qb.llm.md	io.h:2982-2983	798b36a6a7a1	// A TLS read that waited to write when the object was stopped waits ...
-llm/qb.llm.md	io.h:2995-3001	02ed0dcc2012	if constexpr (detail::tls_io<_Derived>) {
-llm/qb.llm.md	io.h:3064-3064	de9bfb91b0f4	pause_reading() noexcept {
-llm/qb.llm.md	io.h:3080-3080	8d685ee19ca7	resume_reading() noexcept {
-llm/qb.llm.md	io.h:3120-3121	00bb073d41db	if (unlikely(!(this->_async_event.events & EV_READ)))
-llm/qb.llm.md	io.h:3596-3603	ceb8704b7ca9	disconnect_now(int reason = static_cast<int>(event::disconnect_reason...
-llm/qb.llm.md	io.h:3795-3795	5727fb5c89bd	return begin_linger();
-llm/qb.llm.md	io.h:3876-3877	19c4b3ea1877	if (Derived.transport().read_wants_write()) {
-llm/qb.llm.md	io.h:3909-3909	a5087061f699	if (const bool alive = process_messages(); !_protocol_list.end_dispat...
-llm/qb.llm.md	io.h:3936-3939	8c1c73659379	if (Derived.pendingWrite() && Derived.transport().rehandshaking() && ...
-llm/qb.llm.md	io.h:3950-3954	7125e5014727	if (_lingering) {
+llm/qb.llm.md	io.h:1121-1121	de9bfb91b0f4	pause_reading() noexcept {
+llm/qb.llm.md	io.h:1138-1138	8d685ee19ca7	resume_reading() noexcept {
+llm/qb.llm.md	io.h:1452-1452	ba12a1f2dd4f	if (_read_paused) [[unlikely]] { // pause_reading(): none dispatched ...
+llm/qb.llm.md	io.h:1617-1617	c8d9f4de9026	frame_held_input_first() {
+llm/qb.llm.md	io.h:1663-1663	94c6351f2e96	read_end_again() noexcept {
+llm/qb.llm.md	io.h:2518-2542	d340160ee45f	begin_linger() noexcept {
+llm/qb.llm.md	io.h:2527-2527	13ca5ad6b8b7	if (handle == qb::io::invalid_socket || !detail::shutdown_send(Derive...
+llm/qb.llm.md	io.h:2555-2565	31df185b7966	linger_read(event::io const &event) noexcept {
+llm/qb.llm.md	io.h:2593-2600	9ee103cf0118	watch_write_for_read() noexcept {
+llm/qb.llm.md	io.h:2614-2621	ab2f44f16003	start_events() noexcept {
+llm/qb.llm.md	io.h:2659-2667	09f053c2b34a	tls_held_flushed() noexcept {
+llm/qb.llm.md	io.h:2684-2703	4f64023ae06e	tls_took_nothing() noexcept {
+llm/qb.llm.md	io.h:2720-2720	d08fc4385678	tls_read_needed() noexcept {
+llm/qb.llm.md	io.h:2763-2763	c8d9f4de9026	frame_held_input_first() {
+llm/qb.llm.md	io.h:2827-2827	94c6351f2e96	read_end_again() noexcept {
+llm/qb.llm.md	io.h:2904-2906	eeb80e56aede	clear_protocols() {
+llm/qb.llm.md	io.h:2924-2924	70dd4307ddba	dispatch_scope() noexcept {
+llm/qb.llm.md	io.h:2991-3024	6a48e9220ff2	start() noexcept {
+llm/qb.llm.md	io.h:3020-3021	798b36a6a7a1	// A TLS read that waited to write when the object was stopped waits ...
+llm/qb.llm.md	io.h:3033-3039	02ed0dcc2012	if constexpr (detail::tls_io<_Derived>) {
+llm/qb.llm.md	io.h:3102-3102	de9bfb91b0f4	pause_reading() noexcept {
+llm/qb.llm.md	io.h:3118-3118	8d685ee19ca7	resume_reading() noexcept {
+llm/qb.llm.md	io.h:3158-3159	00bb073d41db	if (unlikely(!(this->_async_event.events & EV_READ)))
+llm/qb.llm.md	io.h:3634-3641	ceb8704b7ca9	disconnect_now(int reason = static_cast<int>(event::disconnect_reason...
+llm/qb.llm.md	io.h:3833-3833	5727fb5c89bd	return begin_linger();
+llm/qb.llm.md	io.h:3914-3915	19c4b3ea1877	if (Derived.transport().read_wants_write()) {
+llm/qb.llm.md	io.h:3947-3947	a5087061f699	if (const bool alive = process_messages(); !_protocol_list.end_dispat...
+llm/qb.llm.md	io.h:3974-3977	8c1c73659379	if (Derived.pendingWrite() && Derived.transport().rehandshaking() && ...
+llm/qb.llm.md	io.h:3988-3992	7125e5014727	if (_lingering) {
 llm/qb.llm.md	io.h:404-440	e202a9e7e165	* @brief Run a callable INLINE, right now (no scheduling).
-llm/qb.llm.md	io.h:4054-4054	caa6004094df	[[maybe_unused]] const bool ended_by_peer = !_reason && this->_protoc...
-llm/qb.llm.md	io.h:4056-4056	2bdabcec9298	[[maybe_unused]] const bool lingered = _lingering, complete = Derived...
-llm/qb.llm.md	io.h:4072-4091	9960ff92de2a	// The watcher of a disposed session is stopped here, whoever ended t...
 llm/qb.llm.md	io.h:409-449	0e2027553895	* @warning Despite the name, this overload does **not** defer: it sim...
-llm/qb.llm.md	io.h:4096-4101	4286ef7e7be2	this->_async_event.stop(); // Stop the watcher to prevent further events
-llm/qb.llm.md	io.h:4126-4135	7d56a7b75439	reset_io_state() noexcept {
-llm/qb.llm.md	io.h:4155-4156	1d5ba9591555	*          Call it where the next connection is set up, before its tr...
-llm/qb.llm.md	io.h:4164-4169	7b1788df8bfa	reset_for_reconnect() {
-llm/qb.llm.md	io.h:4164-4170	b0997cb092cf	reset_for_reconnect() {
+llm/qb.llm.md	io.h:4092-4092	caa6004094df	[[maybe_unused]] const bool ended_by_peer = !_reason && this->_protoc...
+llm/qb.llm.md	io.h:4094-4094	2bdabcec9298	[[maybe_unused]] const bool lingered = _lingering, complete = Derived...
+llm/qb.llm.md	io.h:4110-4129	9960ff92de2a	// The watcher of a disposed session is stopped here, whoever ended t...
+llm/qb.llm.md	io.h:4134-4139	4286ef7e7be2	this->_async_event.stop(); // Stop the watcher to prevent further events
+llm/qb.llm.md	io.h:4164-4173	7d56a7b75439	reset_io_state() noexcept {
+llm/qb.llm.md	io.h:4193-4194	1d5ba9591555	*          Call it where the next connection is set up, before its tr...
+llm/qb.llm.md	io.h:4202-4207	7b1788df8bfa	reset_for_reconnect() {
+llm/qb.llm.md	io.h:4202-4208	b0997cb092cf	reset_for_reconnect() {
 llm/qb.llm.md	io.h:660-663	91f115a44f84	start(const std::filesystem::path &fpath, qb::duration interval = std...
+llm/qb.llm.md	io.h:994-994	70dd4307ddba	dispatch_scope() noexcept {
 llm/qb.llm.md	lingering_close.cpp:46-46	3fb443641aec	constexpr std::size_t sockets_cap = 64;
 llm/qb.llm.md	lingering_close.cpp:58-58	7f93e02c4e88	constexpr std::size_t byte_budget = std::size_t{16} << 20;
 llm/qb.llm.md	lingering_close.h:56-56	a746dcd44a4e	void close_after_peer(::socket_type socket, qb::duration bound) noexc...
@@ -323,7 +326,8 @@ llm/qb.llm.md	offload.h:49-59	d8e3860f23af	* HOW THE RESUME CROSSES THREADS
 llm/qb.llm.md	patterns/request.h:317-317	fd61ad9ff46e	ask(qb::ScopedCoroContext ctx, qb::ActorId target, E req, qb::duratio...
 llm/qb.llm.md	patterns/request.h:350-350	c3c9fef2ebd3	ask(qb::ScopedCoroContext ctx, qb::ActorId target, qb::duration timeo...
 llm/qb.llm.md	patterns/request.h:437-437	5dd60a7f715b	ask_by(qb::ScopedCoroContext ctx, qb::ActorId target, deadline dl, Ar...
-llm/qb.llm.md	protocol.h:397-419	094b60198fa5	QB_NOINLINE void
+llm/qb.llm.md	protocol.h:398-420	094b60198fa5	QB_NOINLINE void
+llm/qb.llm.md	protocol.h:488-507	841a4d26da9e	class [[nodiscard]] dispatch_guard {
 llm/qb.llm.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.md	request.h:267-267	caff73e28888	qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its ...

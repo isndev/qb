@@ -29,6 +29,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
 #include <qb/utility/branch_hints.h>
@@ -449,6 +450,59 @@ public:
         if (_ending != 0u) [[unlikely]] // the attribute: through qb::unlikely(), clang laid the cold call out inline
             end_retired<List, Flag>(owner);
         return result;
+    }
+};
+
+/// A strong reference to `component` where it is shared (`shared_from_this()`, `shared()`), what the read pass holds
+/// while it dispatches; none otherwise.
+template <typename Component>
+[[nodiscard]] std::shared_ptr<void>
+keep_alive(Component &component) noexcept {
+    if constexpr (qb::has_shared_from_this<Component>) {
+        try {
+            return component.shared_from_this();
+        } catch (...) { // not owned by a shared_ptr (yet): nothing to hold
+            return {};
+        }
+    } else if constexpr (requires { component.shared(); }) {
+        return component.shared();
+    } else
+        return {};
+}
+
+/**
+ * @class dispatch_guard
+ * @ingroup Protocol
+ * @brief A call into a component's protocols made outside its read loop -- from a timer, from `on(pending_write)`,
+ *        from any callback of the component's -- marked as a dispatch while the guard lives (Huly QB-1248). What
+ *        `dispatch_scope()` returns, on `input`, `io` and `buffered_io`.
+ * @details A clear_protocols() made under it retires the component's protocols as one made by a handler of the read
+ *          loop does (Huly QB-1278): they stay alive, out of reach, until the guard ends, and end then, the component's
+ *          dispatch flag set while they do. Without it they ended inside the clear, and a protocol whose method was
+ *          still running -- the one whose observer cleared the protocols -- went on with its own memory freed. Inside a
+ *          dispatch already under way -- the read loop's, an outer guard's -- the guard changes nothing: that dispatch
+ *          ends them. It holds the component -- a strong reference where the component is shared -- until its own
+ *          end, as the read pass does. Not copyable, not movable; costs nothing to the read pass.
+ */
+template <auto List, auto Flag, typename Owner>
+class [[nodiscard]] dispatch_guard {
+    Owner                &_owner;
+    std::shared_ptr<void> _keep;  ///< the component, held until the guard ends, where it is shared
+    bool                  _outer; ///< a dispatch was under way already: it ends what is retired
+
+public:
+    dispatch_guard(Owner &owner, std::shared_ptr<void> keep) noexcept
+        : _owner(owner)
+        , _keep(std::move(keep))
+        , _outer(std::exchange(owner.*Flag, true)) {}
+    dispatch_guard(dispatch_guard const &)            = delete;
+    dispatch_guard &operator=(dispatch_guard const &) = delete;
+
+    ~dispatch_guard() {
+        if (_outer)
+            return;
+        (void) (_owner.*List).template end_dispatch<List, Flag>(true, _owner); // end_retired() sets the flag while they end
+        _owner.*Flag = false;
     }
 };
 

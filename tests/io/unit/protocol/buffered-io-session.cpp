@@ -1073,3 +1073,145 @@ TEST(ProtocolList, ARetiredProtocolsDestructorThatClearsEndsEveryProtocolInTheSa
     EXPECT_TRUE(live.flag_when_destroyed);
     EXPECT_FALSE(in_dispatch);
 }
+
+// =============================================================================
+// CLEAR FROM A PROTOCOL'S CALL OUTSIDE A DISPATCH (Huly QB-1248)
+// =============================================================================
+// A protocol's own method -- called from a timer, from on(pending_write) -- whose observer clears the protocols ended
+// the protocol under the method still running. Under dispatch_scope() it is retired until the scope ends.
+
+namespace {
+
+struct BufferedTickLife {
+    bool        in_tick           = false;
+    std::size_t destroyed         = 0u;
+    std::size_t destroyed_in_tick = 0u;
+    std::size_t ticks_after_clear = 0u;
+};
+
+class TickingBufferedProtocol : public qb::io::async::AProtocol<BufferedProbe> {
+    BufferedTickLife &_life;
+    std::size_t       _ticks = 0u;
+
+public:
+    TickingBufferedProtocol(BufferedProbe &io, BufferedTickLife &life) noexcept
+        : AProtocol(io)
+        , _life(life) {}
+
+    ~TickingBufferedProtocol() override {
+        ++_life.destroyed;
+        if (_life.in_tick)
+            ++_life.destroyed_in_tick;
+    }
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return 0u;
+    }
+    void
+    onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+
+    void
+    tick() noexcept {
+        auto &life   = _life;
+        life.in_tick = true;
+        _io.clear_protocols();
+        ++_ticks; // the protocol's own state, after the clear: freed memory if the clear ended it
+        life.ticks_after_clear = _ticks;
+        life.in_tick           = false;
+    }
+};
+
+} // namespace
+
+TEST(BufferedIoSession, AClearFromAProtocolsCallUnderItsDispatchScopeEndsTheProtocolWithTheScope) {
+    BufferedTickLife life;
+    BufferedProbe    session;
+    auto            *protocol = session.switch_protocol<TickingBufferedProtocol>(session, life);
+    ASSERT_NE(protocol, nullptr);
+    {
+        auto scope = session.dispatch_scope();
+        protocol->tick();
+        EXPECT_EQ(life.destroyed, 0u) << "the protocol was destroyed before its scope ended";
+    }
+    EXPECT_EQ(life.destroyed_in_tick, 0u) << "the protocol was destroyed under its own tick()";
+    EXPECT_EQ(life.ticks_after_clear, 1u);
+    EXPECT_EQ(life.destroyed, 1u) << "the retired protocol did not end with its scope";
+}
+
+TEST(BufferedIoSession, ADispatchScopeInsideAnotherChangesNothing) {
+    BufferedTickLife life;
+    BufferedProbe    session;
+    auto            *protocol = session.switch_protocol<TickingBufferedProtocol>(session, life);
+    ASSERT_NE(protocol, nullptr);
+    {
+        auto outer = session.dispatch_scope();
+        {
+            auto inner = session.dispatch_scope();
+            protocol->tick();
+        }
+        EXPECT_EQ(life.destroyed, 0u) << "an inner scope ended what the outer one retired";
+    }
+    EXPECT_EQ(life.destroyed, 1u);
+    EXPECT_EQ(life.destroyed_in_tick, 0u);
+    // The scope over, a clear is no dispatch's: it ends the protocol before it returns.
+    BufferedTickLife after;
+    ASSERT_NE(session.switch_protocol<TickingBufferedProtocol>(session, after), nullptr);
+    session.clear_protocols();
+    EXPECT_EQ(after.destroyed, 1u) << "the scope left the session marked as dispatching";
+}
+
+namespace {
+
+/// A stream shared through `std::enable_shared_from_this`, which counts its destruction.
+class SharedBufferedProbe
+    : public qb::io::async::buffered_io<SharedBufferedProbe>
+    , public std::enable_shared_from_this<SharedBufferedProbe> {
+    qb::allocator::pipe<char> _in;
+    qb::allocator::pipe<char> _out;
+    std::size_t              &_destroyed;
+
+public:
+    explicit SharedBufferedProbe(std::size_t &destroyed) noexcept
+        : _destroyed(destroyed) {}
+    ~SharedBufferedProbe() {
+        ++_destroyed;
+    }
+    qb::allocator::pipe<char> &
+    in() noexcept {
+        return _in;
+    }
+    qb::allocator::pipe<char> &
+    out() noexcept {
+        return _out;
+    }
+    [[nodiscard]] std::size_t
+    pendingRead() const noexcept {
+        return _in.size();
+    }
+    [[nodiscard]] std::size_t
+    pendingWrite() const noexcept {
+        return _out.size();
+    }
+    void
+    flush(std::size_t size) noexcept {
+        _in.free_front(size);
+    }
+};
+
+} // namespace
+
+// A shared stream whose last owner lets it go under its dispatch scope -- a session a sweep ended -- lives until the
+// scope ends: the scope holds it, as the read pass does.
+TEST(BufferedIoSession, ADispatchScopeHoldsASharedStreamUntilItEnds) {
+    std::size_t destroyed = 0u;
+    auto        owner     = std::make_shared<SharedBufferedProbe>(destroyed);
+    {
+        auto scope = owner->dispatch_scope();
+        owner.reset(); // the last owner lets go
+        EXPECT_EQ(destroyed, 0u) << "the stream was destroyed under its own dispatch scope";
+    }
+    EXPECT_EQ(destroyed, 1u) << "the scope did not let the stream go";
+}

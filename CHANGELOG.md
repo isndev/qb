@@ -326,6 +326,15 @@ policy.
   after a read that wrote first and then took data, it read as a read still waiting, and a pause made in that data's
   handler read on. `[[nodiscard]] bool reading_paused() const noexcept` tells the state; `reset_io_state()` and `io`'s
   `reset_for_reconnect()` end it. A QUIC or HTTP/3 stream (`buffered_io`) has no pause.
+- **`qb::io::async::input<>`, `io<>` and `buffered_io<>`: `dispatch_scope()` (Huly QB-1248).** `[[nodiscard]] auto
+  dispatch_scope() noexcept` returns a guard under which a `clear_protocols()` retires the component's protocols as one
+  made from the read loop's dispatch does (Huly QB-1278): they leave at once -- `protocol()` is the sentinel -- and end
+  when the guard ends, the dispatch flag still set while they do. A protocol method that a timer, `on(pending_write)` or
+  another callback of the component calls -- a sweep of idle streams, a flush once the output drains -- and whose
+  observer clears the protocols went on with its own memory freed; under the scope the protocol ends once the method
+  has returned. Inside a dispatch already under way -- the read loop's, an outer scope's -- the guard changes nothing.
+  It holds the component -- a strong reference where it is shared -- until it ends, as the read pass does, and is
+  neither copyable nor movable. The read pass does not use it, and costs nothing more.
 
 ### Changed
 

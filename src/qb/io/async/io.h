@@ -976,6 +976,25 @@ public:
         _protocol_list.clear(_on_message);
     }
 
+    /**
+     * @brief Marks the caller's scope as a dispatch of this component's protocols (Huly QB-1248): a clear_protocols()
+     *        made under it -- by a protocol's method called from a timer or from `on(pending_write)`, by an observer it
+     *        notifies -- retires the protocols until the scope ends, as one made from the read loop does, instead of
+     *        ending them under the method still running.
+     * @return A guard, neither copyable nor movable: the protocols retired under it end with it. Inside a dispatch
+     *         already under way it changes nothing. It holds the component, where it is shared, until it ends.
+     * @code
+     * void on(qb::io::async::event::pending_write &&) {
+     *     auto scope = this->dispatch_scope(); // the protocol may clear the protocols from here: they end with `scope`
+     *     static_cast<MyProtocol *>(this->protocol())->on_drained();
+     * }
+     * @endcode
+     */
+    [[nodiscard]] detail::dispatch_guard<&input::_protocol_list, &input::_on_message, input>
+    dispatch_scope() noexcept {
+        return {*this, detail::keep_alive(Derived)};
+    }
+
     [[nodiscard]] IProtocol *
     protocol() noexcept {
         return _protocol; // never null; "no protocol set" is the NoProtocol sentinel → compare against no_protocol()
@@ -2885,6 +2904,25 @@ public:
     clear_protocols() {
         _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
         _protocol_list.clear(_on_message);
+    }
+
+    /**
+     * @brief Marks the caller's scope as a dispatch of this component's protocols (Huly QB-1248): a clear_protocols()
+     *        made under it -- by a protocol's method called from a timer or from `on(pending_write)`, by an observer it
+     *        notifies -- retires the protocols until the scope ends, as one made from the read loop does, instead of
+     *        ending them under the method still running.
+     * @return A guard, neither copyable nor movable: the protocols retired under it end with it. Inside a dispatch
+     *         already under way it changes nothing. It holds the component, where it is shared, until it ends.
+     * @code
+     * void on(qb::io::async::event::pending_write &&) {
+     *     auto scope = this->dispatch_scope(); // the protocol may clear the protocols from here: they end with `scope`
+     *     static_cast<MyProtocol *>(this->protocol())->on_drained();
+     * }
+     * @endcode
+     */
+    [[nodiscard]] detail::dispatch_guard<&io::_protocol_list, &io::_on_message, io>
+    dispatch_scope() noexcept {
+        return {*this, detail::keep_alive(Derived)};
     }
 
     [[nodiscard]] IProtocol *

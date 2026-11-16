@@ -349,7 +349,7 @@ The read inside `read_all()` is a **blocking** `sys::file::read`, and a size *de
 | Code | Named constant | Set by |
 |---|---|---|
 | `0` | `peer_closed` | normal shutdown — peer closed, or the local side closed cleanly |
-| `1` | `user_initiated` | `disconnect()` from application code — including `disconnect(0)`, which is remapped (`src/qb/io/async/io.h:1404`) |
+| `1` | `user_initiated` | `disconnect()` from application code — including `disconnect(0)`, which is remapped (`src/qb/io/async/io.h:1423`) |
 | `> 1` | *(application-defined)* | your code (`qbm-http` uses this range) |
 | `-1` | `protocol_error` | the protocol marked itself `not_ok()` |
 | `-2` | `message_too_large` | `getMessageSize()` reported more than `max_message_size()`, or more than the bytes actually buffered |
@@ -369,7 +369,7 @@ void on(qb::io::async::event::disconnected &&ev) {
 }
 ```
 
-`error_code` is populated only when a real system error was captured — `disconnected::with_error(reason, errno)` builds it from `std::system_category()` (`src/qb/io/async/event/disconnected.h:116`). A protocol-initiated graceful close reports **no** system error, deliberately, so a stale `errno` from an earlier non-fatal write is not surfaced as a failure (`src/qb/io/async/io.h:3971-3979`).
+`error_code` is populated only when a real system error was captured — `disconnected::with_error(reason, errno)` builds it from `std::system_category()` (`src/qb/io/async/event/disconnected.h:116`). A protocol-initiated graceful close reports **no** system error, deliberately, so a stale `errno` from an earlier non-fatal write is not surfaced as a failure (`src/qb/io/async/io.h:4009-4017`).
 
 ### Handler signatures, and the one that fails silently
 

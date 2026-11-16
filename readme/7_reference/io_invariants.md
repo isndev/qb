@@ -120,7 +120,7 @@ registry, or as a member — never relocate them.
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
-  (`src/qb/io/async/io.h:1685-1686`). This is intra-thread re-entrance
+  (`src/qb/io/async/io.h:1704-1705`). This is intra-thread re-entrance
   protection, not cross-thread synchronization.
 
 > **`run_once()` footgun.** The bundled libev disables timerfd by default — the
@@ -223,18 +223,18 @@ registry, or as a member — never relocate them.
 - `disconnect(0)` is remapped to `user_initiated` (`1`) because internally
   `_reason == 0` is the sentinel for "no disconnect pending"; the `peer_closed`
   (`0`) code is generated automatically on kernel EOF
-  (`src/qb/io/async/io.h:1404`).
+  (`src/qb/io/async/io.h:1423`).
 - `dispose()` is **idempotent** — guarded by `_is_disposed`, it runs once
-  (`src/qb/io/async/io.h:1826-1829`). It fires `on(event::disconnected)` if the
+  (`src/qb/io/async/io.h:1845-1848`). It fires `on(event::disconnected)` if the
   derived class implements it; for a server-owned object it then stops the
   watcher and notifies `server().disconnected(id())`, otherwise it stops the
   watcher, ends the transport and fires `on(event::dispose)`.
 - A standalone object's `dispose()` **ends its transport** once the watcher is
-  stopped (`src/qb/io/async/io.h:4096-4101`), after `on(event::disconnected)`
+  stopped (`src/qb/io/async/io.h:4134-4139`), after `on(event::disconnected)`
   — which still sees it as the connection left it — and before
   `on(event::dispose)`, the one hook that may free the object
   (`src/qb/io/async/teardown.h:227-272`). Who ended the connection is read
-  before the hooks run (`src/qb/io/async/io.h:4054`): no reason of the
+  before the hooks run (`src/qb/io/async/io.h:4092`): no reason of the
   object's and a protocol still ok mean the peer's EOF or a socket error did,
   and the transport is closed — `disconnect()` when it has one, then
   `close()` — so a client whose peer hung up keeps no CLOSE_WAIT socket.
@@ -296,7 +296,7 @@ registry, or as a member — never relocate them.
   and nothing is written after a reset
   (`src/qb/io/async/teardown.h:129-134`). What is queued is
   read before `on(event::disconnected&&)` runs and again after it
-  (`src/qb/io/async/io.h:4056`), and the stream is judged
+  (`src/qb/io/async/io.h:4094`), and the stream is judged
   before it: a hook that empties the queue, or closes the transport itself,
   does not make a cut stream whole. One write on a non-blocking
   socket, never retried: a socket that cannot take it is closed without it.
@@ -304,7 +304,7 @@ registry, or as a member — never relocate them.
   resumes (`src/qb/io/tcp/ssl/socket.cpp:1111-1145`).
 - A **server session** is released by its server whoever ended the
   connection, its watcher stopped first
-  (`src/qb/io/async/io.h:4072-4091`): a disposed session somebody
+  (`src/qb/io/async/io.h:4110-4129`): a disposed session somebody
   still holds — `server.session(id)` is a `shared_ptr` — was dispatched on
   every loop pass until it was let go. One that ended its own connection
   (`disconnect()`, a framing error) with everything it had queued written
@@ -320,17 +320,17 @@ registry, or as a member — never relocate them.
 - A session a server accepted **closes after its peer** when its
   `close_after_deliver()` has delivered everything (Huly QB-1089): after
   `event::eos` the write path begins a lingering close
-  (`src/qb/io/async/io.h:3795`) instead of disposing — the sending side is shut
+  (`src/qb/io/async/io.h:3833`) instead of disposing — the sending side is shut
   down, the input is reset and only reads are watched
-  (`src/qb/io/async/io.h:2499-2523`); every later dispatch that reads or
-  writes nothing drops what arrived (`src/qb/io/async/io.h:3950-3954`,
-  `:2536-2546`) until the peer's EOF, a socket error or the bound —
+  (`src/qb/io/async/io.h:2518-2542`); every later dispatch that reads or
+  writes nothing drops what arrived (`src/qb/io/async/io.h:3988-3992`,
+  `:2555-2565`) until the peer's EOF, a socket error or the bound —
   `linger()`, 2 s by default, `set_linger()` — ends it at the error label,
   which disposes as for any graceful close. A session whose read cap is 0
   can drain nothing: its linger ends at the first octet that arrives. The bound's timer only flags the
-  expiry and feeds the watcher (`src/qb/io/async/io.h:2550-2553`): the
+  expiry and feeds the watcher (`src/qb/io/async/io.h:2569-2572`): the
   session, which owns the timer, is never disposed from under it. `dispose()`
-  releases the timer whatever ended the linger (`src/qb/io/async/io.h:4057`),
+  releases the timer whatever ended the linger (`src/qb/io/async/io.h:4095`),
   `disconnect()` still aborts at once, a server's teardown destroys a lingering
   session with no wait, and `extractSession()` takes one out of it
   (`src/qb/io/async/io_handler.h:288-289`). Closing at once closed a socket
@@ -349,7 +349,7 @@ registry, or as a member — never relocate them.
   logs a CRIT line, as `tcp::server` does; it used to throw.
 - For the entire duration of `on(event::io)`, the handler holds a
   `std::shared_ptr<void> _self_guard` to itself — acquired before any branch
-  that can reach `dispose()` (`src/qb/io/async/io.h:1683-1695`). This means a user
+  that can reach `dispose()` (`src/qb/io/async/io.h:1702-1714`). This means a user
   who releases the last external `shared_ptr` from inside `on(disconnected)`
   cannot trigger a use-after-free in the rest of `dispose()`. The guard is typed
   `shared_ptr<void>` so it works even when `_Derived` inherits
@@ -388,26 +388,26 @@ The protocol base class `IProtocol` / `AProtocol<_IO_>` lives in
 `src/qb/io/protocol/**` depends on it.
 
 - `getMessageSize()` is expected to be a **pure query**
-  (`src/qb/io/async/protocol.h:91-95`). The stream layer may call it many
+  (`src/qb/io/async/protocol.h:92-96`). The stream layer may call it many
   times per byte of input; an implementation must not mutate parser state,
   decrement a credit counter, or emit semantically meaningful side effects.
   Base protocols keep a resumable scan offset so re-invocation does not rescan
   from the start.
 - It returns `IProtocol::kNoMessage` (`== 0`) when more input is needed, or the
   exact byte count of the next complete frame otherwise
-  (`src/qb/io/async/protocol.h:62`, `:109`). Consumption happens when
+  (`src/qb/io/async/protocol.h:63`, `:110`). Consumption happens when
   `onMessage(size)` is called with that size.
 - A protocol signals an unrecoverable framing or parse error by calling
   `not_ok()`; the I/O component then closes the connection, and the protocol
-  cannot be recovered (`src/qb/io/async/protocol.h:187-189`).
+  cannot be recovered (`src/qb/io/async/protocol.h:188-190`).
 - `set_should_flush(bool)` controls whether the input buffer is flushed after
-  each message (`src/qb/io/async/protocol.h:206-209`). `process_messages`
+  each message (`src/qb/io/async/protocol.h:207-210`). `process_messages`
   snapshots the **old** protocol pointer and its `should_flush()` before calling
   `onMessage()`, because `onMessage()` may `switch_protocol()` (handshake or
   upgrade) or `clear_protocols()` — the flush must use the old protocol's policy
-  (`src/qb/io/async/io.h:1468-1469`). A protocol cleared there is destroyed once
+  (`src/qb/io/async/io.h:1487-1488`). A protocol cleared there is destroyed once
   the read pass has returned, never under its own `onMessage()`
-  (`src/qb/io/async/io.h:1753`; since 3.4, Huly QB-1278).
+  (`src/qb/io/async/io.h:1772`; since 3.4, Huly QB-1278).
 - The `handshake` protocol is the documented exception to the pure-query rule:
   its `getMessageSize()` calls `transport().do_handshake()` (a side effect) and
   caches the result so the handshake step is never executed twice per buffer

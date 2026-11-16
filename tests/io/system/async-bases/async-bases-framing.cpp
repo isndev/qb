@@ -3426,3 +3426,177 @@ TEST_F(AsyncIoBaseTest, AnInputsResumedDispatchThatFramedAllLeavesNoMarkBehind) 
 TEST_F(AsyncIoBaseTest, ADuplexsResumedDispatchThatFramedAllLeavesNoMarkBehind) {
     async_bases_read_pause_test::expect_no_mark_left_once_the_resumed_dispatch_framed_all<async_bases_framing_test::HoldingDuplex>();
 }
+
+// =====================================================================================================
+// clear_protocols() from a protocol's call made outside the read loop (Huly QB-1248). A timer calls a method of the
+// protocol; something it notifies clears the protocols; the method goes on with its own state. A clear made there
+// ended the protocol at once: the method wrote freed memory. Under dispatch_scope() the protocols are retired until the
+// scope ends, as a clear from the read loop retires them (Huly QB-1278).
+// =====================================================================================================
+namespace async_bases_protocol_scope_test {
+using namespace async_bases_framing_test;
+
+/// What a TickingProtocol saw of its own lifetime, outside it, so it can be read once it is gone.
+struct TickLife {
+    bool        in_tick           = false; ///< the protocol's tick() is on the stack
+    std::size_t destroyed         = 0u;    ///< its destructor ran
+    std::size_t destroyed_in_tick = 0u;    ///< its destructor ran while its tick() was still running
+    std::size_t ticks_after_clear = 0u;    ///< the protocol's own count, written after the clear
+};
+
+/// A protocol with a method of its own -- a sweep, a ping, a drain hook -- that clears its component's protocols, as
+/// an observer it notifies may, then writes its own state.
+template <typename Io>
+class TickingProtocol : public qb::io::async::AProtocol<Io> {
+    TickLife   &_life;
+    std::size_t _ticks = 0u;
+
+public:
+    TickingProtocol(Io &io, TickLife &life) noexcept
+        : qb::io::async::AProtocol<Io>(io)
+        , _life(life) {}
+
+    ~TickingProtocol() override {
+        ++_life.destroyed;
+        if (_life.in_tick)
+            ++_life.destroyed_in_tick;
+    }
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return 0u;
+    }
+    void
+    onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+
+    void
+    tick() noexcept {
+        auto &life   = _life;
+        life.in_tick = true;
+        this->_io.clear_protocols();
+        ++_ticks; // the protocol's own state, after the clear: freed memory if the clear ended it
+        life.ticks_after_clear = _ticks;
+        life.in_tick           = false;
+    }
+};
+
+/// A timer calls the protocol's tick() under dispatch_scope(): the protocol ends with the scope, not under tick().
+template <typename Probe>
+void
+expect_a_timer_driven_clear_to_end_with_its_scope() {
+    auto     pair = make_stream_pair();
+    Probe    probe{pair.probe};
+    TickLife life;
+    auto    *protocol = probe.template switch_protocol<TickingProtocol<Probe>>(probe, life);
+    ASSERT_NE(protocol, nullptr);
+    probe.start();
+    bool        called          = false;
+    std::size_t destroyed_in_it = 99u;
+    qb::io::async::callback(
+        [&] {
+            {
+                auto scope = probe.dispatch_scope();
+                protocol->tick();
+                destroyed_in_it = life.destroyed; // the scope still open
+            }
+            called = true;
+        },
+        std::chrono::milliseconds(5));
+    ASSERT_TRUE(pass_until([&] { return called; }, "the timer"));
+    EXPECT_EQ(life.destroyed_in_tick, 0u) << "the protocol was destroyed under its own tick()";
+    EXPECT_EQ(life.ticks_after_clear, 1u);
+    EXPECT_EQ(destroyed_in_it, 0u) << "the protocol was destroyed before its scope ended";
+    EXPECT_EQ(life.destroyed, 1u) << "the retired protocol did not end with its scope";
+    probe.stop();
+}
+
+/// The same from inside a read dispatch, a scope opened by its handler: the read pass's dispatch ends the protocol, the
+/// inner scope changes nothing.
+template <typename Probe>
+void
+expect_a_scope_inside_a_dispatch_to_change_nothing() {
+    TickLife life;
+    auto     pair = make_stream_pair();
+    Probe    probe{pair.probe};
+    auto    *protocol = probe.template switch_protocol<TickingProtocol<Probe>>(probe, life);
+    ASSERT_NE(protocol, nullptr);
+    {
+        auto outer = probe.dispatch_scope();
+        {
+            auto inner = probe.dispatch_scope(); // inside a dispatch already: changes nothing
+            protocol->tick();
+        }
+        EXPECT_EQ(life.destroyed, 0u) << "an inner scope ended what the outer dispatch retired";
+    }
+    EXPECT_EQ(life.destroyed_in_tick, 0u);
+    EXPECT_EQ(life.destroyed, 1u) << "the outer scope did not end the retired protocol";
+    // The scope over, a clear is no dispatch's: it ends the protocol before it returns.
+    TickLife after;
+    ASSERT_NE(probe.template switch_protocol<TickingProtocol<Probe>>(probe, after), nullptr);
+    probe.clear_protocols();
+    EXPECT_EQ(after.destroyed, 1u) << "the scope left the component marked as dispatching";
+}
+
+/// A component of `Base` shared through `std::enable_shared_from_this`, which counts its destruction.
+template <template <typename> class Base>
+class SharedComponent
+    : public Base<SharedComponent<Base>>
+    , public HoldingSurface
+    , public std::enable_shared_from_this<SharedComponent<Base>> {
+public:
+    using HoldingSurface::HoldingSurface;
+    std::size_t *destroyed = nullptr;
+    ~SharedComponent() {
+        if (destroyed)
+            ++*destroyed;
+    }
+    void
+    wait_for_writes_alone() noexcept {}
+};
+
+/// A shared component whose last owner lets it go under its dispatch scope lives until the scope ends.
+template <typename Shared>
+void
+expect_a_scope_to_hold_a_shared_component() {
+    auto        pair      = make_stream_pair();
+    std::size_t destroyed = 0u;
+    TickLife    life;
+    auto        owner = std::make_shared<Shared>(pair.probe);
+    owner->destroyed  = &destroyed;
+    auto *protocol    = owner->template switch_protocol<TickingProtocol<Shared>>(*owner, life);
+    ASSERT_NE(protocol, nullptr);
+    {
+        auto scope = owner->dispatch_scope();
+        protocol->tick();
+        owner.reset(); // the last owner lets go
+        EXPECT_EQ(destroyed, 0u) << "the component was destroyed under its own dispatch scope";
+    }
+    EXPECT_EQ(destroyed, 1u) << "the scope did not let the component go";
+    EXPECT_EQ(life.destroyed, 1u);
+    EXPECT_EQ(life.destroyed_in_tick, 0u);
+}
+
+} // namespace async_bases_protocol_scope_test
+
+TEST_F(AsyncIoBaseTest, AnInputsTimerDrivenClearUnderItsDispatchScopeEndsTheProtocolWithTheScope) {
+    async_bases_protocol_scope_test::expect_a_timer_driven_clear_to_end_with_its_scope<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsTimerDrivenClearUnderItsDispatchScopeEndsTheProtocolWithTheScope) {
+    async_bases_protocol_scope_test::expect_a_timer_driven_clear_to_end_with_its_scope<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, ADispatchScopeInsideAnotherChangesNothing) {
+    async_bases_protocol_scope_test::expect_a_scope_inside_a_dispatch_to_change_nothing<async_bases_framing_test::HoldingInput>();
+    async_bases_protocol_scope_test::expect_a_scope_inside_a_dispatch_to_change_nothing<async_bases_framing_test::HoldingDuplex>();
+}
+
+// A shared component whose last owner lets it go under its dispatch scope -- a server releasing a session its timer
+// ended -- lives until the scope ends: the scope holds it, as the read pass does.
+TEST_F(AsyncIoBaseTest, ADispatchScopeHoldsASharedComponentUntilItEnds) {
+    using async_bases_protocol_scope_test::SharedComponent;
+    async_bases_protocol_scope_test::expect_a_scope_to_hold_a_shared_component<SharedComponent<qb::io::async::input>>();
+    async_bases_protocol_scope_test::expect_a_scope_to_hold_a_shared_component<SharedComponent<qb::io::async::io>>();
+}

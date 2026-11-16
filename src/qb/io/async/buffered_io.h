@@ -82,6 +82,13 @@ public:
         _protocol_list.clear(_on_message);
     }
 
+    /// Marks the caller's scope as a dispatch of this stream's protocols, as `io`'s dispatch_scope() (Huly QB-1248): a
+    /// clear_protocols() made under it retires them until the scope ends.
+    [[nodiscard]] detail::dispatch_guard<&buffered_io::_protocol_list, &buffered_io::_on_message, buffered_io>
+    dispatch_scope() noexcept {
+        return {*this, detail::keep_alive(static_cast<_Derived &>(*this))};
+    }
+
     [[nodiscard]] IProtocol *
     protocol() noexcept {
         return _protocol; // never null; "no protocol set" is the NoProtocol sentinel → compare against no_protocol()

@@ -399,7 +399,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   readability: the peer, waiting for that message, sent nothing more and the connection stalled until a timeout (an
   `ENOBUFS` there ended it); a write waiting for the peer kept writability watched and the loop dispatched it on every
   pass. A TLS 1.3 KeyUpdate the peer requests is answered by the next `write()`, never by a read.
-  _(ssl/socket.h:719-722, :733-736, :749-752; ssl/socket.cpp:1242-1253, :1278-1282, :787-798, :889-896; io.h:3876-3877, :2574-2581, :2665-2684, :3120-3121, :3936-3939, :2640-2648, :2982-2983, :2995-3001)_
+  _(ssl/socket.h:719-722, :733-736, :749-752; ssl/socket.cpp:1242-1253, :1278-1282, :787-798, :889-896; io.h:3914-3915, :2593-2600, :2684-2703, :3158-3159, :3974-3977, :2659-2667, :3020-3021, :3033-3039)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -448,20 +448,20 @@ Inherit a CRTP helper to get a transport, in/out buffers, and protocol wiring. D
 - UDP: `qb::io::use<T>::udp::server`, `::udp::client` (datagram-oriented, no per-peer session demux). A datagram
   carries whole frames: what the protocol leaves of one is reported as `event::pending_read`, then dropped (since 3.3).
 - QUIC/HTTP3: `qb::io::use<T>::quic::{client,server,io_handler}` (needs `QB_HAS_QUIC`).
-- **To stop taking input for a while, `pause_reading()` (3.4, Huly QB-86).** _(io.h:1102, :3064)_
+- **To stop taking input for a while, `pause_reading()` (3.4, Huly QB-86).** _(io.h:1121, :3102)_
   Not `stop()`, not `EV_READ` taken off the watcher: on `input<>` and `io<>` nothing is read and nothing the input
   buffer holds is dispatched until `resume_reading()`; a pause from a handler makes its message the dispatch's
-  last -- the loop tests `_read_paused` before each message. _(io.h:1433)_
+  last -- the loop tests `_read_paused` before each message. _(io.h:1452)_
   `ready_to_read()`, `start()`, the output's drain, `held_input()` and a TLS write pass keep it, and a readiness the
-  loop already collected is taken back: the read pass tests nothing. `resume_reading()` frames what the pause left. _(io.h:1119, :3080)_
+  loop already collected is taken back: the read pass tests nothing. `resume_reading()` frames what the pause left. _(io.h:1138, :3118)_
   Its dispatch reads first and frames the old input before the new; a read that finds nothing frames it all the same,
-  in `frame_held_input_first()`: a peer that has sent everything is not waited for. _(io.h:1598, :2744)_
+  in `frame_held_input_first()`: a peer that has sent everything is not waited for. _(io.h:1617, :2763)_
   An end of stream that read meets is read again by a dispatch of its own once the answers are written -- over TLS
-  a close_notify the peer sends alone leaves the socket silent once read. _(io.h:1644, :2808)_
+  a close_notify the peer sends alone leaves the socket silent once read. _(io.h:1663, :2827)_
   Writes go on; a datagram's remaining frames wait with the pause; a lingering close reads on. Paused, a session sees
   its peer's close at its next write or once it resumes -- bound it with `with_timeout`. Over TLS the reads OpenSSL
-  needs are made all the same, what they bring left unframed (`tls_read_needed()`). _(io.h:2701)_
-  `reset_io_state()` and `reset_for_reconnect()` end the pause. _(io.h:4126-4135, :4164-4169)_
+  needs are made all the same, what they bring left unframed (`tls_read_needed()`). _(io.h:2720)_
+  `reset_io_state()` and `reset_for_reconnect()` end the pause. _(io.h:4164-4173, :4202-4207)_
 - A server-associated TCP session's `ip()` returns an owned `std::string` from its socket's lazy peer-IP cache. Failed/non-IP lookups are not cached; socket moves transfer the cache, while close, raw release and low-level connection attempts invalidate it. After a raw-handle/static-helper peer mutation, call `transport().invalidate_peer_ip()`. Custom transports without a compatible `peer_ip()` retain their endpoint fallback. _(src/qb/io/async/tcp/client.h:153-167; src/qb/io/system/sys__socket.h:1218-1229)_
 - QUIC `smoothed_rtt(connection_id)` is an optional per-peer duration, not the server's aggregate statistic. `set_accepting_connections(false)` asks a live listener to refuse new handshakes while known CIDs continue; check its boolean result. Custom backends inherit `nullopt` / `false` defaults, so callers must choose an explicit fallback rather than assume these capabilities exist. Neither endpoint call creates a missing backend. _(src/qb/io/quic/backend.h:84-88; src/qb/io/async/quic/endpoint.h:398-406; src/qb/io/quic.cpp:725-745,1761-1769)_
 - QUIC `extend_stream_credit` updates the backend immediately. The endpoint flushes it synchronously outside event dispatch and batches it until the current handlers unwind inside dispatch; direct native callers explicitly drain packets after granting credit. _(src/qb/io/async/quic/endpoint.h:566-579; src/qb/io/quic.cpp:585-602)_
@@ -982,7 +982,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2953-2986, :2595-2602, :3596-3603, :4164-4170)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2991-3024, :2614-2621, :3634-3641, :4202-4208)_
 - **`clear_protocols()` from the read loop's dispatch** (a protocol's `onMessage()`, the handler it hands the message
   to, anything they call) detaches every protocol at once — `protocol()` is the `NoProtocol` sentinel, a protocol
   switched in afterwards is the active one — and destroys them once that dispatch has returned, not under the
@@ -991,7 +991,11 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   protocols that touch their state after their handler (qbm-http's WebSocket and HTTP/1.1, qbm-redis's; Huly QB-1278).
   Either way they end one at a time, front to back, the sentinel already active: a destructor's `switch_protocol()`
   is kept, its `clear_protocols()` joins. `reset_for_reconnect()`
-  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2885-2887, :3909, :4155-4156; protocol.h:397-419)_
+  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2904-2906, :3947, :4193-4194; protocol.h:398-420)_
+- **A protocol's call from outside the read loop -- a timer's, `on(pending_write)`'s -- is a dispatch under
+  `auto scope = dispatch_scope();`** (3.4, Huly QB-1248): a `clear_protocols()` under it retires the protocols, which
+  end with the scope; inside a dispatch under way it changes nothing. _(io.h:994, :2924; buffered_io.h:88)_
+  The guard sets the read loop's own flag and ends what it retired as the read loop does. _(protocol.h:488-507)_
 - **A standalone io's `dispose()` ends its transport** (Huly QB-1060, QB-1270): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
@@ -1004,7 +1008,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `linger()` of zero close at once; an acceptor keeps its socket and port, a datagram object its socket. Closing the
   transport again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
   returned. In 3.3 the half-closed descriptor stayed in the object: a peer that kept writing blocked for ever.
-  _(io.h:4054, :4096-4101; teardown.h:227-272, :89-95)_
+  _(io.h:4092, :4134-4139; teardown.h:227-272, :89-95)_
 - **A socket the loop is closing after its peer is that thread's** (Huly QB-1270): a blocking `async::run()` returns
   when the last one is gone — up to `linger()` later against a silent peer, at once when the peer closes or
   `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
@@ -1041,7 +1045,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   session without it; a session saved with `get_session()` resumes after either side closed (it did not once its
   connection was closed, through 3.3). Kernel TLS: never enabled by qb; with it the loop would not read the
   descriptor raw -- close at once (`set_linger(qb::duration::zero())`).
-  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2508, :4056; ssl/socket.cpp:1111-1145, :1148-1152)_
+  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2527, :4094; ssl/socket.cpp:1111-1145, :1148-1152)_
 - **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
   after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
   — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to
@@ -1049,10 +1053,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   closes with the session and what was queued is dropped (resources win over delivery; `close_after_deliver()` is the
   path that waits); so does a session a size guard ended, one that lingered, one with `linger()` zero. The server's
   `disconnected(id)` override finds a handed-over session's transport closed: read the peer in `on(event::disconnected&&)`.
-  _(io.h:4072-4091)_
+  _(io.h:4110-4129)_
 - **A server's session closes after its peer** (Huly QB-1089): once its `close_after_deliver()` output is
-  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2499-2523, from :3795),
-  then reads and drops what the peer still sends (`linger_read()`, io.h:2536-2546, from :3950-3954) until the peer
+  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2518-2542, from :3833),
+  then reads and drops what the peer still sends (`linger_read()`, io.h:2555-2565, from :3988-3992) until the peer
   closes, the socket fails, or `linger()` elapses (2 s; `set_linger(qb::duration)`, zero closes at once); only then
   does `dispose()` run. A session whose read cap is 0 drains nothing: its linger ends at the peer's next octet. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`
