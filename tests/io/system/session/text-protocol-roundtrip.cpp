@@ -421,7 +421,8 @@ using linger_clock = std::chrono::steady_clock;
 std::atomic<bool>        g_destroyed{false};
 std::atomic<bool>        g_delivered{false};
 std::atomic<int>         g_disconnected{0};
-qb::duration             g_linger = 2s;
+qb::duration             g_linger      = 2s;
+bool                     g_pause_first = false; ///< The session pauses its reads before it answers and closes.
 linger_clock::time_point g_delivered_at{};
 linger_clock::time_point g_destroyed_at{};
 
@@ -441,6 +442,8 @@ public:
 
     void
     on(Protocol::message &&) {
+        if (g_pause_first)
+            pause_reading();
         *this << "goodbye" << Protocol::end;
         close_after_deliver();
     }
@@ -517,7 +520,8 @@ reset(qb::duration linger) {
     g_destroyed.store(false);
     g_delivered.store(false);
     g_disconnected.store(0);
-    g_linger = linger;
+    g_linger      = linger;
+    g_pause_first = false;
 }
 
 [[nodiscard]] bool
@@ -1033,4 +1037,66 @@ TEST_F(SessionRoundtripTest, SessionConstructorHasNoSocketButTheHookDoes) {
     EXPECT_FALSE(g_ctor_saw_open_socket.load()) << "the session constructor must NOT be assumed to own a socket";
     EXPECT_NE(g_ctor_setopt_result.load(), 0) << "set_optval from a constructor addresses fd -1 and fails silently";
     EXPECT_TRUE(g_hook_saw_open_socket.load()) << "on(IOSession&) is the hook that runs with the socket installed";
+}
+
+// A pause made during a lingering close leaves the linger reading: the peer's close still ends it at once, not at its
+// bound (30 s here) -- reads paused there would no longer see the peer's EOF.
+TEST_F(SessionRoundtripTest, APauseMadeDuringALingeringCloseLeavesItReadingForItsPeer) {
+    using namespace linger_test;
+    reset(30s);
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return g_delivered.load() && saw_end.load(); }, 5s));
+    pump_for(20ms);
+    ASSERT_TRUE(any_lingering(server)) << "the case proves nothing: the session is not lingering";
+    for (auto &[id, session] : server.sessions())
+        session->pause_reading();
+    EXPECT_TRUE(server.sessions().begin()->second->is_reading()) << "the pause took a lingering close's reads away";
+
+    const auto closed_at = linger_clock::now();
+    release.store(true);
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "the peer's close no longer ended the linger";
+    peer.join();
+    EXPECT_LT(g_destroyed_at - closed_at, 2s) << "the linger ran to its bound instead of the peer's close";
+    EXPECT_EQ(g_disconnected.load(), 1);
+    EXPECT_EQ(server.session_count(), 0u);
+}
+
+// A pause made before close_after_deliver(): the drain delivers the answer, and the lingering close that follows reads
+// on for its peer -- the peer's close ends it at once, not at its bound (30 s here).
+TEST_F(SessionRoundtripTest, APauseMadeBeforeACloseAfterDeliverLeavesItsLingerReadingForItsPeer) {
+    using namespace linger_test;
+    reset(30s);
+    g_pause_first = true;
+    LingerServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    PeerView          view;
+    std::atomic<bool> saw_end{false}, release{false};
+    std::thread       peer([&] { run_peer(port, view, saw_end, release); });
+
+    ASSERT_TRUE(pump_until([&] { return g_delivered.load() && saw_end.load(); }, 5s)) << "the answer of a paused session never left";
+    pump_for(20ms);
+    EXPECT_TRUE(view.eof) << "the peer must read EOF once the answer is out (error " << view.error << ")";
+    EXPECT_NE(view.received.find("goodbye"), std::string::npos);
+    ASSERT_TRUE(any_lingering(server)) << "the case proves nothing: the session is not lingering";
+    EXPECT_TRUE(server.sessions().begin()->second->reading_paused());
+    EXPECT_TRUE(server.sessions().begin()->second->is_reading()) << "the pause took a lingering close's reads away";
+
+    const auto closed_at = linger_clock::now();
+    release.store(true);
+    EXPECT_TRUE(pump_until([&] { return g_destroyed.load(); }, 5s)) << "the peer's close no longer ended the linger";
+    peer.join();
+    EXPECT_LT(g_destroyed_at - closed_at, 2s) << "the linger ran to its bound instead of the peer's close";
+    EXPECT_EQ(g_disconnected.load(), 1);
+    EXPECT_EQ(server.session_count(), 0u);
 }

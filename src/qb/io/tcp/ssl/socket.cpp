@@ -1186,10 +1186,10 @@ socket::read(void *data, std::size_t size) noexcept {
     auto ret = handCheck();
     if (ret == 1) {
         ERR_clear_error(); // empty the thread error queue so SSL_get_error is reliable (see handCheck)
-        ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
+        ret               = SSL_read(ssl_handle(), data, static_cast<int>(size));
+        _read_wants_write = false; // every read clears it, data or not: set again below when this one must write first
         if (ret > 0)
             return ret;
-        _read_wants_write = false; // anything but data from here on: set again below when the read must write first
         if (ret == 0) {
             // SSL_ERROR_ZERO_RETURN: peer sent close_notify, clean SSL shutdown.
             // The underlying TCP socket is now at EOF; epoll will keep reporting EV_READ

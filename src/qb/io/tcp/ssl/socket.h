@@ -702,8 +702,8 @@ public:
     [[nodiscard]] bool handshake_complete() const noexcept;
 
     /**
-     * @brief Whether the `read()` that just answered -1 with a would-block must WRITE before it can read: it is made
-     *        again when the socket can take a write, not when it is readable (Huly QB-1270).
+     * @brief Whether the last `read()` answered -1 with a would-block because it must WRITE before it can read: it is
+     *        made again when the socket can take a write, not when it is readable (Huly QB-1270).
      * @details A read writes when a handshake message answers what it read -- a TLS 1.2 client's ClientHello answering
      *          its server's HelloRequest, a server's answer to a renegotiation its context allows the client, a TLS 1.3
      *          client's Certificate and Finished answering a post-handshake CertificateRequest, a server's own
@@ -711,10 +711,10 @@ public:
      *          a socket error that write met and it lets the session go on after (`ENOBUFS`, an `EINTR` from a BIO that
      *          fails a write with it; it does not say whether such an error met the read's own write or its receive,
      *          and a read made again on a writable socket is made at once). The peer usually waits for that message
-     *          before it sends anything more: a read made again on readability alone waits for ever. Meaningful right
-     *          after `read()` answered -1, as `handshake_wants_write()` is after `handshake_status()` answered 0: the
-     *          io objects read it there, watch writability too, and read again when it comes. A TLS 1.3 KeyUpdate the
-     *          peer requests is answered by this side's next `write()`, never by a read (OpenSSL's choice; measured).
+     *          before it sends anything more: a read made again on readability alone waits for ever. Set by that read,
+     *          cleared by the next, one that returns data included: it holds while the read waits for writability. The io
+     *          objects read it after the -1, watch writability too, and read again then. A TLS 1.3 KeyUpdate the peer
+     *          requests is answered by this side's next `write()`, never by a read (OpenSSL's choice; measured).
      */
     [[nodiscard]] bool
     read_wants_write() const noexcept {

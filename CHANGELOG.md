@@ -32,8 +32,9 @@ policy.
   write first -- a handshake message answering what it read, a server's handshake flight -- and the socket could not
   take that write: read again when the socket can take a write. `[[nodiscard]] bool write_wants_read() const noexcept`
   is true after a `write()` that answered `0` because OpenSSL waits for the peer's next handshake message: write again
-  once a read has taken it. Each is meaningful right after that answer, as `handshake_wants_write()` is after
-  `handshake_status()` answered `0`: a flag the call left, read with no I/O and no OpenSSL call. `[[nodiscard]] bool
+  once a read has taken it. `read_wants_write()` holds until the next read, which clears it -- one that returns data
+  included --; `write_wants_read()` is meaningful right after its answer, as `handshake_wants_write()` is after
+  `handshake_status()` answered `0`: each a flag the call left, read with no I/O and no OpenSSL call. `[[nodiscard]] bool
   rehandshaking() const noexcept` is true while a handshake is under way on a connection whose first one completed -- a
   TLS 1.2 renegotiation, a TLS 1.3 post-handshake message being taken or answered --: OpenSSL's `SSL_in_init()` once
   connected, no I/O. OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone. The io
@@ -294,6 +295,37 @@ policy.
   members, and the format-check lane passes `1`. Its VAR-DEF rule also refuses, since this change, a class's static data
   member defined out of class `const` but not `inline` (`const int C::k = 5;`): `const` gives internal linkage to a
   namespace variable only, and that definition is a strong external symbol the script passed.
+
+- **`qb::io::async::input<>` and `io<>`: `pause_reading()`, `resume_reading()` and `reading_paused()` (Huly QB-86).**
+  `void pause_reading() noexcept` stops a component's reads: its transport is read no more, and no message is dispatched
+  -- of what its input buffer already holds either -- until `void resume_reading() noexcept`; a pause made from a
+  message's handler makes that message the dispatch's last. Every path that arms readability keeps it --
+  `ready_to_read()` (no effect while paused), `start()` (a `stop()` and a `start()` keep the pause), the drain of an
+  `io`'s output, a TLS write pass that leaves output queued, what a transport holds below its descriptor
+  (`held_input()`) --, and a read readiness the loop has already collected is taken back, where readability taken off
+  the watcher came back with any of them; the read pass itself tests nothing. `resume_reading()` arms readability again
+  and frames what the pause left in the input buffer: in the dispatch under way when called from it, else in a dispatch
+  of its own, which reads first and frames the old input before the new -- a read that finds nothing frames it all the
+  same, so a peer that has sent everything is not waited for: an end of stream that read meets is read again by a
+  dispatch of its own once the answers are written, over TLS too, where a close_notify the peer sends alone leaves the
+  socket silent once read, and a socket error ends the component with that error --, or, for a component stopped
+  before that dispatch ran, from its next `start()` made with the protocol in place; a pause that stopped no framing
+  feeds nothing. Output still leaves while reads are paused. The rest
+  of a datagram the pause interrupted is kept and framed before the next datagram is read; only its incomplete tail is
+  dropped then. While paused, a component learns of its peer's close or reset at its next write or once reading resumes
+  -- measured under kqueue, poll and select, reasoned for epoll --; its own timeout (`with_timeout`) still bounds the
+  wait. Over TLS, the reads a handshake under way needs are made all the same -- the first handshake's and a later one's
+  (`rehandshaking()`), a read that must write first (`read_wants_write()`) and a write that waits for the peer's
+  handshake message (`write_wants_read()`) among them -- and what they bring waits in the input buffer, unframed, under
+  the read cap -- a read the cap refuses ends the connection (`-3`), and one that fails or meets the peer's end ends it,
+  as unpaused; writability alone that the pause left -- output queued, an empty arm -- gets readability back beside it
+  at the resume. A `close_after_deliver()` drain and its linger read as before, a pause made before or during them
+  included. The pause is the component's: a transport another component takes over (`extractSession()`) starts unpaused
+  there, without the input buffer -- what the pause left goes with the extracted session, unframed.
+  `qb::io::tcp::ssl::socket::read()` clears `read_wants_write()` on every read, one that returns data included: left set
+  after a read that wrote first and then took data, it read as a read still waiting, and a pause made in that data's
+  handler read on. `[[nodiscard]] bool reading_paused() const noexcept` tells the state; `reset_io_state()` and `io`'s
+  `reset_for_reconnect()` end it. A QUIC or HTTP/3 stream (`buffered_io`) has no pause.
 
 ### Changed
 

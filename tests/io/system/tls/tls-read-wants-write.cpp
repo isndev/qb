@@ -388,11 +388,14 @@ public:
     std::size_t answered_in_handshake = 0;     ///< Answers queued while a handshake after the first was under way.
     bool        arm_on_ping           = false; ///< Whether a "ping" makes an empty arm (`publish()` with no operand).
     bool        marked_at_arm         = false; ///< `read_wants_write()` when that arm was made: the read's mark.
+    bool        pause_at_first_ping   = false; ///< Whether the first "ping" pauses the reads.
 
     void
     on(Protocol::message &&message) {
         if (message.text == "ping") {
             ++pings;
+            if (pause_at_first_ping && pings == 1u)
+                this->pause_reading();
             if (answer) {
                 if (SSL_in_init(this->transport().ssl_handle()) == 1) // OpenSSL's own: the witness builds on qb 3.3 too
                     ++answered_in_handshake;
@@ -511,6 +514,9 @@ public:
     std::size_t pings        = 0;
     std::size_t disconnected = 0;
     int         system_error = -99;
+    std::size_t pause_at     = 0;     ///< The ping (1-based) whose handler pauses the reads; 0: none.
+    bool        pause_again  = false; ///< Every ping after it pauses them too.
+    std::size_t stop_at      = 0;     ///< The ping (1-based) whose handler stops the input; 0: none.
 
     qb::io::tcp::ssl::socket &
     transport() noexcept {
@@ -546,8 +552,13 @@ public:
 
     void
     on(Protocol::message &&message) {
-        if (message.text == "ping")
-            ++pings;
+        if (message.text != "ping")
+            return;
+        ++pings;
+        if (pause_at != 0u && (pings == pause_at || (pause_again && pings > pause_at)))
+            this->pause_reading();
+        if (pings == stop_at)
+            this->stop();
     }
     void
     on(qb::io::async::event::disconnected &&event) noexcept {
@@ -563,14 +574,16 @@ public:
 
 // One server session per case: what it saw.
 struct State {
-    std::size_t pings          = 0;
-    std::size_t disconnected   = 0;
-    int         system_error   = -99;
-    SSL        *ssl            = nullptr;
-    int         refuse_first   = 0;     ///< The session's first writes refused "try again": its handshake flight.
-    int         fail_first     = 0;     ///< ...or the first one failed once with this system error.
-    bool        greet          = false; ///< The session queues a greeting before its handshake completed.
-    std::size_t pending_writes = 0;     ///< `pending_write` events: a write pass that left output queued.
+    std::size_t           pings           = 0;
+    std::size_t           disconnected    = 0;
+    int                   system_error    = -99;
+    SSL                  *ssl             = nullptr;
+    int                   refuse_first    = 0;     ///< The session's first writes refused "try again": its handshake flight.
+    int                   fail_first      = 0;     ///< ...or the first one failed once with this system error.
+    bool                  greet           = false; ///< The session queues a greeting before its handshake completed.
+    std::size_t           pending_writes  = 0;     ///< `pending_write` events: a write pass that left output queued.
+    bool                  pause_at_accept = false; ///< The session pauses its reads once accepted; `resume` resumes them.
+    std::function<void()> resume;
 };
 State *g_state = nullptr;
 
@@ -613,6 +626,12 @@ public:
         }
         if (g_state->greet)
             session << "hello\n";
+        if (g_state->pause_at_accept) {
+            session.pause_reading();
+            g_state->resume = [&session] {
+                session.resume_reading();
+            };
+        }
     }
 };
 
@@ -1406,10 +1425,10 @@ TEST_F(TlsReadWantsWrite, AReadWhoseReceiveFailedOnceReadsAgainWhileOutputWaits)
     EXPECT_EQ(client.disconnected, 0u);
 }
 
-// An empty arm (publish() with no operand) earns its eos: after a read that waited to write and then took data, the mark
-// it left must not make that write pass the read's. TLS 1.3: the client's Certificate is refused once; the data queued
-// behind the CertificateRequest ends the wait, and its handler makes the arm while the mark is still left (the next read
-// that finds nothing clears it).
+// An empty arm (publish() with no operand) earns its eos after a read that waited to write and then took data: that read
+// cleared the mark of its wait, and the write pass is the arm's. TLS 1.3: the client's Certificate is refused once; the
+// data queued behind the CertificateRequest ends the wait, and its handler makes the arm, the mark already cleared -- a
+// mark left behind read as a read still waiting (Huly QB-86).
 TEST_F(TlsReadWantsWrite, AnEmptyArmAfterAReadThatWaitedToWriteEarnsItsEos) {
     RawContext context{RawContext::role::server};
     RawPeer    peer{context, RawContext::role::server};
@@ -1430,7 +1449,7 @@ TEST_F(TlsReadWantsWrite, AnEmptyArmAfterAReadThatWaitedToWriteEarnsItsEos) {
     const std::size_t eos = client.eos;
     ASSERT_TRUE(peer.pump_until([&] { return client.pings == 1u; })) << "the data behind the CertificateRequest was never read";
     ASSERT_EQ(refuse::would_block, 0) << "the case proves nothing: the read wrote no Certificate";
-    ASSERT_TRUE(client.marked_at_arm) << "the case proves nothing: the read that took the data left no mark";
+    EXPECT_FALSE(client.marked_at_arm) << "the read that took the data left the mark of its wait";
     EXPECT_TRUE(pump_while_not([&] { return client.eos == eos + 1; }, 2000ms)) << "the empty arm's eos never came";
     pump(20ms);
     EXPECT_EQ(client.eos, eos + 1) << "one empty arm, one eos";
@@ -2007,4 +2026,1022 @@ TEST_F(TlsReadWantsWrite, AnswersHeldBackByARenegotiationLeaveWhenTheReadsInPiec
     EXPECT_EQ(client.disconnected, 0u);
     EXPECT_EQ(peer.received, "pong\npong\n");
     EXPECT_LE(most, 2 * kCap / kCap + 3) << "a pass dispatched the session more often than the record's pieces";
+}
+
+// Reads paused while the client writes more than its socket takes: the write passes that leave output queued watch
+// writability alone, the drain leaves readability off, and what the peer sent meanwhile is read once reading resumes.
+TEST_F(TlsReadWantsWrite, AClientsPausedReadsStayPausedThroughTheWritesOfItsBulk) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(client.transport().set_optval(SOL_SOCKET, SO_SNDBUF, 8192), 0);
+    client.pause_reading();
+    const std::size_t read_before = client.bytes_read();
+    ASSERT_TRUE(peer.write("ping\nping\nping\n"));
+    const std::string bulk(kBulk * 4, 'b');
+    client << bulk;
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the socket took the bulk whole";
+    bool       armed = false; // readability watched after a pass, while the bulk was written
+    const bool all   = peer.pump_until([&] {
+        armed = armed || (client.watching() & EV_READ) != 0;
+        return peer.received.size() >= bulk.size() || client.disconnected != 0u;
+    });
+    pump(20ms);
+    std::cout << "[ MEASURED ] a paused client's bulk (" << OpenSSL_version(OPENSSL_VERSION) << "): the peer read " << peer.received.size()
+              << ", " << client.pending_writes << " pending_write, the client read " << client.bytes_read() - read_before << ", pings "
+              << client.pings << ", watching " << spell(client.watching()) << '\n';
+    ASSERT_TRUE(all) << "the bulk never arrived";
+    EXPECT_EQ(peer.received, bulk);
+    EXPECT_GE(client.pending_writes, 1u) << "the case proves nothing: no write pass left output queued";
+    EXPECT_FALSE(armed) << "a write pass that left output queued armed the reads of a paused client";
+    EXPECT_EQ(client.bytes_read(), read_before) << "a client whose reads are paused read what its peer sent";
+    EXPECT_EQ(client.pings, 0u);
+    EXPECT_FALSE(client.is_reading()) << "the writes of its output gave a paused client its reads back";
+    EXPECT_EQ(client.disconnected, 0u);
+
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 3u; })) << "what the peer sent during the pause was never read";
+}
+
+// A write that waits for a renegotiation -- the read drives it (rehandshaking()) -- leaves while reads are paused: the
+// read the output waits for is made all the same. Application data sent after it waits for reading to resume.
+TEST_F(TlsReadWantsWrite, AWriteThatWaitsForARenegotiationLeavesWhileReadsArePaused) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(client.transport().ssl_handle()) == 1; }))
+        << "the client never answered the HelloRequest";
+    client.pause_reading();
+    client << "data\n"; // OpenSSL must read the ServerHello before it writes anything
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the write did not wait for the renegotiation";
+    const bool sent =
+        peer.pump_until([&] { return (SSL_renegotiate_pending(peer.ssl) == 0 && peer.received == "data\n") || client.disconnected != 0u; });
+    std::cout << "[ MEASURED ] a write waiting for a renegotiation, reads paused (" << OpenSSL_version(OPENSSL_VERSION)
+              << "): renegotiation pending " << SSL_renegotiate_pending(peer.ssl) << ", the peer read " << peer.received.size() << ", queued "
+              << client.out().size() << ", watching " << spell(client.watching()) << '\n';
+    ASSERT_TRUE(sent) << "the renegotiation or the write never completed while reads were paused";
+    EXPECT_EQ(client.disconnected, 0u);
+    EXPECT_TRUE(client.reading_paused());
+
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(client.pings, 0u) << "a client whose reads are paused read application data no handshake needed";
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "what the peer sent during the pause was never read";
+}
+
+// An empty arm (publish() with nothing) while reads are paused: the write pass that takes nothing earns its eos, as any
+// empty arm's -- the writability it watched alone is no read's -- and readability stays off.
+TEST_F(TlsReadWantsWrite, AnEmptyArmWhileReadsArePausedEarnsItsEos) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    client.pause_reading();
+    const std::size_t eos = client.eos;
+    client.publish();
+    ASSERT_TRUE(pump_while_not([&] { return client.eos == eos + 1; })) << "the empty arm of a client whose reads are paused earned no eos";
+    pump(20ms);
+    EXPECT_EQ(client.eos, eos + 1);
+    EXPECT_FALSE(client.is_reading()) << "the empty arm gave a paused client its reads back";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(client.pings, 0u);
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "what the peer sent during the pause was never read";
+}
+
+// A greeting queued before the handshake completed by a session whose reads are paused from its accept: the write that
+// waits for the handshake's next message (write_wants_read()) takes it itself on each readiness, and the greeting
+// leaves; what the client sends then waits for reading to resume.
+TEST_F(TlsReadWantsWrite, AGreetingQueuedBeforeTheHandshakeLeavesWhileReadsArePaused) {
+    state.greet           = true;
+    state.pause_at_accept = true;
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(start_server(0));
+    ASSERT_EQ(peer.tcp.connect_v4("127.0.0.1", server_port), qb::io::SocketStatus::Done);
+    ASSERT_NO_FATAL_FAILURE(peer.attach());
+    int        theirs   = 0;
+    const auto deadline = steady::now() + kBound;
+    while ((theirs = peer.handshake_step()) == 0 && steady::now() < deadline) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_EQ(theirs, 1) << "the handshake never completed while the session's reads were paused";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received == "hello\n"; })) << "the greeting never arrived";
+    ASSERT_TRUE(static_cast<bool>(state.resume)) << "the case proves nothing: the session did not pause";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(state.pings, 0u) << "a session whose reads are paused read application data no write waited for";
+    EXPECT_EQ(state.disconnected, 0u);
+    state.resume();
+    EXPECT_TRUE(pump_while_not([&] { return state.pings == 1u; })) << "what the client sent during the pause was never read";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received == "hello\npong\n"; })) << "the answer never arrived";
+}
+
+// A read that must write first -- the ClientHello answering a HelloRequest, refused by a full socket -- is a read the
+// handshake under way needs: it is made while reads are paused, once the socket drains, and the renegotiation completes
+// during the pause; the writability it watched earns no eos, and application data the peer sends then waits for the
+// resume.
+TEST_F(TlsReadWantsWrite, AReadThatMustWriteFirstIsMadeWhileReadsArePaused) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    const std::size_t eos = client.eos;
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::while_full = true; // the ClientHello: refused while the socket reports no room, until the peer reads
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    pump(50ms);
+    ASSERT_EQ(client.disconnected, 0u) << "the client ended the connection (system error " << client.system_error << ")";
+    ASSERT_TRUE(client.transport().read_wants_write()) << "the case proves nothing: the client's read did not wait to write";
+    client.pause_reading();
+    ASSERT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled || peer.failed != SSL_ERROR_NONE; }))
+        << "the peer could not read what it was sent";
+    const bool renegotiated = peer.pump_until([&] { return SSL_renegotiate_pending(peer.ssl) == 0 || peer.failed != SSL_ERROR_NONE; });
+    pump(20ms);
+    std::cout << "[ MEASURED ] a read that must write first, reads paused (" << OpenSSL_version(OPENSSL_VERSION) << "): renegotiation pending "
+              << SSL_renegotiate_pending(peer.ssl) << ", eos " << client.eos - eos << ", watching " << spell(client.watching()) << '\n';
+    EXPECT_TRUE(renegotiated) << "the read the renegotiation needed waited for the resume";
+    EXPECT_EQ(peer.failed, SSL_ERROR_NONE);
+    EXPECT_EQ(client.eos, eos) << "an eos for the writability that was the read's";
+    EXPECT_TRUE(client.reading_paused());
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(client.pings, 0u) << "a client whose reads are paused dispatched application data";
+
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "what the peer sent during the pause was never read";
+    EXPECT_EQ(client.eos, eos);
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// An empty arm made while reads are paused, resume_reading() at once, before any pass: writability alone was the
+// pause's, not a read waiting to write -- the empty arm earns its eos, and the client reads again.
+TEST_F(TlsReadWantsWrite, AnEmptyArmMadeWhileReadsArePausedEarnsItsEosWhenTheyResumeAtOnce) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    const std::size_t eos = client.eos;
+    client.pause_reading();
+    client.publish();
+    client.resume_reading();
+    EXPECT_TRUE(client.is_reading()) << "resume_reading() left the watcher on writability alone, watching " << spell(client.watching());
+    ASSERT_TRUE(pump_while_not([&] { return client.eos == eos + 1; })) << "the empty arm earned no eos";
+    ASSERT_TRUE(peer.write("ping\n"));
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "the client does not read again";
+    EXPECT_EQ(client.eos, eos + 1);
+}
+
+// ...and over a socket full, its peer reading nothing, no output queued: once resumed, the client reads what its peer
+// sends while the socket is still full, and the empty arm earns its eos once the peer has drained it.
+TEST_F(TlsReadWantsWrite, AClientResumedOverAFullSocketReadsWhatItsPeerSends) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    ASSERT_EQ(client.out().size(), 0u);
+    const std::size_t eos = client.eos;
+    client.pause_reading();
+    client.publish(); // an empty arm: told once the socket has taken what it holds
+    client.resume_reading();
+    ASSERT_TRUE(peer.write("ping\n"));
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; }, 500ms))
+        << "a resumed client did not read what its peer sent while the socket was full, watching " << spell(client.watching());
+    ASSERT_FALSE(writable_now(client.transport().native_handle())) << "the case proves nothing: the socket drained";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled && client.eos == eos + 1; }))
+        << "the empty arm earned no eos once the socket drained";
+    EXPECT_EQ(client.eos, eos + 1);
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// ...and resumed while that read still waits, the socket full: writability alone is the read's, kept -- once the socket
+// drains, the read is made, its writability earns no eos, and the renegotiation completes.
+TEST_F(TlsReadWantsWrite, AReadThatMustWriteFirstResumedBeforeItsSocketDrainsWaitsForWritability) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    const std::size_t eos = client.eos;
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::while_full = true; // the ClientHello: refused while the socket reports no room, until the peer reads
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    pump(50ms);
+    ASSERT_TRUE(client.transport().read_wants_write()) << "the case proves nothing: the client's read did not wait to write";
+    client.pause_reading();
+    pump(20ms);
+    client.resume_reading();
+    EXPECT_EQ(client.watching() & (EV_READ | EV_WRITE), EV_WRITE) << "resume_reading() watched readability beside a read that waits to write";
+    const bool renegotiated = peer.pump_until(
+        [&] { return (peer.received.size() >= filled && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE; });
+    EXPECT_TRUE(renegotiated) << "the read that had to write first was never made";
+    EXPECT_EQ(client.eos, eos) << "an eos for the writability that was the read's";
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// A renegotiation the server asked for, the client's reads paused with output queued, and application data the server
+// sends behind its HelloRequest before it reads the ClientHello: the reads the renegotiation needs are made, and nothing
+// they bring is dispatched until reading resumes -- the framing loop tests the pause before each message.
+TEST_F(TlsReadWantsWrite, ApplicationDataThatARenegotiationsReadsBringWaitsForThePauseToEnd) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(client.transport().ssl_handle()) == 1; }))
+        << "the client never answered the HelloRequest";
+    client.pause_reading();
+    client << "data\n"; // waits for the renegotiation, which the read drives
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the write did not wait for the renegotiation";
+    for (int record = 0; record < 3; ++record)
+        ASSERT_TRUE(peer.write("ping\n"));
+    pump(100ms);
+    EXPECT_EQ(client.pings, 0u) << "a client whose reads are paused dispatched what a renegotiation's reads brought";
+    const bool done =
+        peer.pump_until([&] { return (SSL_renegotiate_pending(peer.ssl) == 0 && peer.received == "data\n") || client.disconnected != 0u; });
+    pump(50ms);
+    EXPECT_TRUE(done) << "the renegotiation or the write never completed";
+    EXPECT_EQ(client.pings, 0u);
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 3u; })) << "what the renegotiation's reads brought was not framed at the resume";
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// ...and a server that never completes it, sending record after record: the pause holds all the same.
+TEST_F(TlsReadWantsWrite, APeerThatNeverCompletesARenegotiationDoesNotEndThePause) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(client.transport().ssl_handle()) == 1; }));
+    client.pause_reading();
+    client << "data\n";
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u);
+    for (int record = 0; record < 200; ++record) {
+        ASSERT_TRUE(peer.write("ping\n"));
+        qb::io::async::run(EVRUN_NOWAIT);
+    }
+    pump(100ms);
+    EXPECT_EQ(client.pings, 0u) << "a peer's records defeated the pause";
+    EXPECT_TRUE(client.reading_paused());
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// Output queued over a full socket while reads are paused, resumed while it is still full: readability back beside the
+// writability the output watches -- what the peer sends is read -- and the output still leaves with one eos.
+TEST_F(TlsReadWantsWrite, AClientResumedWithOutputQueuedOverAFullSocketReadsAndDelivers) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+    const std::size_t eos = client.eos;
+    client.pause_reading();
+    client << "queued\n";
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the output left";
+    client.resume_reading();
+    EXPECT_EQ(client.watching() & (EV_READ | EV_WRITE), EV_READ | EV_WRITE) << "resume_reading() left writability alone";
+    ASSERT_TRUE(peer.write("ping\n"));
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; }, 500ms)) << "the client did not read while its socket was full";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled + 7 && client.eos == eos + 1; })) << "the output never left";
+    EXPECT_EQ(client.eos, eos + 1);
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+namespace tls_read_wants_write_test {
+
+/// A client whose read-side hooks pause and resume at once -- 1: on(eof), 2: on(pending_read) --, capped so that a pass
+/// that would never end does.
+template <typename Base>
+class KickingClient : public Base {
+public:
+    std::size_t pings = 0, kicks = 0, cap = 2000;
+    int         mode           = 0;
+    bool        pause_at_first = false; ///< the handler of the first ping pauses the reads
+    void
+    kick() {
+        if (kicks < cap) {
+            ++kicks;
+            this->pause_reading();
+            this->resume_reading();
+        }
+    }
+    void
+    on(qb::io::async::event::eof &&) {
+        if (mode == 1)
+            kick();
+    }
+    void
+    on(qb::io::async::event::pending_read &&) {
+        if (mode == 2)
+            kick();
+    }
+};
+class TlsKickingClient : public KickingClient<qb::io::use<TlsKickingClient>::tcp::ssl::client<>> {
+public:
+    using Protocol = qb::protocol::text::command<TlsKickingClient>;
+    void
+    on(Protocol::message &&message) {
+        if (message.text == "ping" && ++pings == 1u && pause_at_first)
+            this->pause_reading();
+    }
+    using KickingClient::on;
+};
+class TcpKickingClient : public KickingClient<qb::io::use<TcpKickingClient>::tcp::client<>> {
+public:
+    using Protocol = qb::protocol::text::command<TcpKickingClient>;
+    void
+    on(Protocol::message &&message) {
+        if (message.text == "ping")
+            ++pings;
+    }
+    using KickingClient::on;
+};
+
+/// The most pause-and-resume runs a single loop pass made, over `budget` of passes.
+template <typename Client>
+std::size_t
+most_kicks_a_pass(Client &client, std::chrono::milliseconds budget) {
+    std::size_t most     = 0;
+    const auto  deadline = steady::now() + budget;
+    while (steady::now() < deadline && client.kicks < client.cap) {
+        const std::size_t before = client.kicks;
+        qb::io::async::run(EVRUN_NOWAIT);
+        most = std::max(most, client.kicks - before);
+        std::this_thread::sleep_for(1ms);
+    }
+    return most;
+}
+
+} // namespace tls_read_wants_write_test
+
+// A pause that stopped no framing feeds nothing at its resume, over TLS too: a hook that pauses and resumes at once
+// runs once a dispatch. The resume of a TLS io<> used to feed a read every time, which -- OpenSSL answering 0 for a
+// read that finds nothing -- ran the hook again within the same pass, without end.
+TEST_F(TlsReadWantsWrite, AHookThatPausesAndResumesAtOnceRunsOnceADispatchOverTls) {
+    for (int mode = 1; mode <= 2; ++mode) {
+        RawContext       context{RawContext::role::server};
+        RawPeer          peer{context, RawContext::role::server};
+        TlsKickingClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        client.mode = mode;
+        ASSERT_TRUE(peer.write(mode == 1 ? "ping\n" : "ping\npi")); // mode 2: a message, then an incomplete one
+        const std::size_t most = most_kicks_a_pass(client, 300ms);
+        std::cout << "[ MEASURED ] TLS io<>, the " << (mode == 1 ? "eof" : "pending_read") << " hook pausing and resuming: at most " << most
+                  << " runs in a pass, " << client.kicks << " in all\n";
+        EXPECT_GE(client.kicks, 1u) << "the case proves nothing: the hook never ran";
+        EXPECT_LT(most, 10u) << "a pass ran the hook without end: the cap stopped it";
+        EXPECT_EQ(client.pings, 1u);
+        client.disconnect();
+        pump(20ms);
+    }
+}
+
+// The same over plain TCP, the raw peer accepted on the fixture's listener.
+TEST_F(TlsReadWantsWrite, AHookThatPausesAndResumesAtOnceRunsOnceADispatchOverTcp) {
+    for (int mode = 1; mode <= 2; ++mode) {
+        TcpKickingClient client;
+        ASSERT_EQ(client.transport().connect_v4("127.0.0.1", port), qb::io::SocketStatus::Done);
+        qb::io::tcp::socket peer;
+        ASSERT_EQ(listener.accept(peer), qb::io::SocketStatus::Done);
+        client.start();
+        pump(20ms);
+        client.mode            = mode;
+        const std::string sent = mode == 1 ? "ping\n" : "ping\npi";
+        ASSERT_EQ(peer.write(sent.data(), sent.size()), static_cast<int>(sent.size()));
+        const std::size_t most = most_kicks_a_pass(client, 300ms);
+        EXPECT_GE(client.kicks, 1u) << "the case proves nothing: the hook never ran";
+        EXPECT_LT(most, 10u) << "a pass ran the hook without end: the cap stopped it";
+        EXPECT_EQ(client.pings, 1u);
+        peer.close();
+        client.disconnect();
+        pump(20ms);
+    }
+}
+
+// A session whose reads are paused from its accept, with nothing to write: the reads its first handshake needs are made
+// all the same, and the handshake completes during the pause; what the client sends then waits for reading to resume.
+TEST_F(TlsReadWantsWrite, AFirstHandshakeCompletesWhileReadsArePaused) {
+    state.pause_at_accept = true;
+    RawContext context{RawContext::role::client};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_NO_FATAL_FAILURE(start_server(0));
+    ASSERT_EQ(peer.tcp.connect_v4("127.0.0.1", server_port), qb::io::SocketStatus::Done);
+    ASSERT_NO_FATAL_FAILURE(peer.attach());
+    int        theirs   = 0;
+    const auto deadline = steady::now() + kBound;
+    while ((theirs = peer.handshake_step()) == 0 && steady::now() < deadline) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_TRUE(static_cast<bool>(state.resume)) << "the case proves nothing: the session did not pause";
+    ASSERT_EQ(theirs, 1) << "a session whose reads are paused never completed its first handshake";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(state.pings, 0u) << "a session whose reads are paused dispatched what its peer sent after the handshake";
+    EXPECT_EQ(state.disconnected, 0u);
+    state.resume();
+    EXPECT_TRUE(pump_while_not([&] { return state.pings == 1u; })) << "what the client sent during the pause was never read";
+    EXPECT_TRUE(peer.pump_until([&] { return peer.received == "pong\n"; })) << "the answer never arrived";
+}
+
+// A pause that stopped the framing, resumed from outside a dispatch: the dispatch it feeds frames the rest -- OpenSSL
+// answers 0 for its read, nothing being on the wire -- and leaves no mark behind, so a hook that then pauses and resumes
+// at once still runs once a dispatch.
+TEST_F(TlsReadWantsWrite, AResumedDispatchThatFramedAllLeavesNoMarkForAHookToLoopOn) {
+    RawContext       context{RawContext::role::server};
+    RawPeer          peer{context, RawContext::role::server};
+    TlsKickingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    client.pause_at_first = true;
+    ASSERT_TRUE(peer.write("ping\nping\n")); // one record: one read brings both
+    ASSERT_TRUE(pump_while_not([&] { return client.pings == 1u && client.reading_paused(); })) << "the first ping never came";
+    pump(20ms);
+    ASSERT_EQ(client.pings, 1u) << "the case proves nothing: the pause did not stop the framing";
+    client.mode = 1; // from here on, the eof hook pauses and resumes at once
+    client.resume_reading();
+    const std::size_t most = most_kicks_a_pass(client, 300ms);
+    EXPECT_EQ(client.pings, 2u) << "the resume did not frame what the input held";
+    EXPECT_GE(client.kicks, 1u) << "the case proves nothing: the hook never ran";
+    EXPECT_LT(most, 10u) << "a pass ran the hook without end: the resumed dispatch left a mark";
+    client.disconnect();
+    pump(20ms);
+}
+
+// A TLS component on input<> alone, paused before its first handshake completed: the reads that handshake needs are
+// made all the same, and it completes during the pause; what the peer sends then waits for reading to resume.
+TEST_F(TlsReadWantsWrite, AnInputsFirstHandshakeCompletesWhileItsReadsArePaused) {
+    RawContext context{RawContext::role::server};
+    RawPeer    peer{context, RawContext::role::server};
+    PingInput  input;
+    input.transport().set_insecure();
+    const int ret = input.transport().n_connect(qb::io::endpoint{"127.0.0.1", port}, "localhost");
+    const int err = qb::io::socket::get_last_errno();
+    ASSERT_TRUE(ret == 0 || qb::io::socket_no_error(err)) << "n_connect: " << ret << ", error " << err;
+    ASSERT_EQ(listener.accept(peer.tcp), qb::io::SocketStatus::Done);
+    ASSERT_NO_FATAL_FAILURE(peer.attach());
+    ASSERT_GE(input.transport().handshake_status(), 0); // the ClientHello leaves
+    ASSERT_GE(peer.handshake_step(), 0);                // the server's flight answers it
+    ASSERT_FALSE(input.transport().handshake_complete()) << "the case proves nothing: the handshake already completed";
+    ASSERT_NE(input.switch_protocol<PingInput::Protocol>(input), nullptr);
+    input.start();
+    input.pause_reading();
+    int        theirs   = 0;
+    const auto deadline = steady::now() + kBound;
+    while ((theirs != 1 || !input.transport().handshake_complete()) && steady::now() < deadline) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        theirs = theirs == 1 ? 1 : peer.handshake_step();
+        std::this_thread::sleep_for(1ms);
+    }
+    ASSERT_TRUE(input.reading_paused());
+    ASSERT_TRUE(input.transport().handshake_complete()) << "a paused input never completed its first handshake";
+    ASSERT_EQ(theirs, 1);
+    pump(20ms);
+    EXPECT_FALSE(input.is_reading()) << "readability stayed on once the handshake needed no more reads";
+    const std::size_t read_before = input.bytes_read();
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(input.pings, 0u) << "a paused input dispatched what its peer sent after the handshake";
+    EXPECT_EQ(input.bytes_read(), read_before) << "a paused input read what its peer sent after the handshake";
+    input.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return input.pings == 1u; })) << "what the peer sent during the pause was never read";
+    EXPECT_EQ(input.disconnected, 0u);
+}
+
+// A HelloRequest taken while OpenSSL holds a record it could not write whole, then reads paused: the record's departure
+// asks for the read that starts the renegotiation, which the pause puts off -- nothing on the socket announces it any
+// more --; the resume makes it, and the renegotiation completes.
+TEST_F(TlsReadWantsWrite, ARenegotiationARecordsDepartureAskedForWhilePausedStartsAtTheResume) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    SSL *const ssl = client.transport().ssl_handle();
+    ASSERT_NO_FATAL_FAILURE(refuse::install(ssl));
+    refuse::half_once        = 1;
+    const std::string record = std::string(1000, 'x') + "\n";
+    client.publish(record);
+    pump(20ms);
+    ASSERT_TRUE(refuse::hold) << "the case proves nothing: no record was taken in half";
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's HelloRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    ASSERT_EQ(client.pings, 1u) << "the case proves nothing: the data behind the HelloRequest was not read";
+    ASSERT_EQ(SSL_renegotiate_pending(ssl), 1) << "the case proves nothing: the client did not take the HelloRequest";
+    client.pause_reading();
+    refuse::hold               = false; // the record leaves: its departure asks for a read
+    const std::string expected = record + "pong\n";
+    (void) peer.pump_until([&] { return peer.received == expected || peer.failed != SSL_ERROR_NONE || client.disconnected != 0u; });
+    pump(50ms);
+    std::cout << "[ MEASURED ] a renegotiation put off by a pause (" << OpenSSL_version(OPENSSL_VERSION) << "): the peer read "
+              << peer.received.size() << " of " << expected.size() << ", renegotiation pending " << SSL_renegotiate_pending(peer.ssl)
+              << ", disconnected " << client.disconnected << '\n';
+    ASSERT_EQ(client.disconnected, 0u);
+    client.resume_reading();
+    const bool done = peer.pump_until([&] {
+        return (peer.received == expected && SSL_renegotiate_pending(peer.ssl) == 0) || peer.failed != SSL_ERROR_NONE
+               || client.disconnected != 0u;
+    });
+    EXPECT_TRUE(done) << "the renegotiation never completed after the resume";
+    EXPECT_EQ(peer.failed, SSL_ERROR_NONE);
+    EXPECT_EQ(SSL_renegotiate_pending(peer.ssl), 0);
+    EXPECT_EQ(client.disconnected, 0u);
+}
+
+// A write that already waits for a renegotiation -- the ServerHello -- when reads are paused: the pause leaves the read
+// that handshake needs, and the write completes during the pause.
+TEST_F(TlsReadWantsWrite, AWriteThatAlreadyWaitsForARenegotiationLeavesThoughReadsArePausedAfterIt) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(client.transport().ssl_handle()) == 1; }))
+        << "the client never answered the HelloRequest";
+    client << "data\n"; // OpenSSL must read the ServerHello before it writes anything
+    pump(20ms);
+    ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the write did not wait for the renegotiation";
+    client.pause_reading(); // after the write began to wait
+    EXPECT_TRUE(client.is_reading()) << "the pause took the read the renegotiation needs";
+    const bool sent =
+        peer.pump_until([&] { return (SSL_renegotiate_pending(peer.ssl) == 0 && peer.received == "data\n") || client.disconnected != 0u; });
+    ASSERT_TRUE(sent) << "the renegotiation or the write never completed while reads were paused";
+    EXPECT_EQ(client.disconnected, 0u);
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(client.pings, 0u) << "a client whose reads are paused dispatched application data";
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "what the peer sent during the pause was never read";
+}
+
+// A renegotiation under way, nothing queued, when reads are paused: its reads are made all the same and it completes
+// during the pause; application data the peer sends then waits for reading to resume.
+TEST_F(TlsReadWantsWrite, ARenegotiationUnderWayCompletesWhileReadsArePaused) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingClient client;
+    client.answer = false;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+    client.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(client.transport().ssl_handle()) == 1; }))
+        << "the client never answered the HelloRequest";
+    ASSERT_EQ(client.out().size(), 0u) << "the case proves nothing: output is queued";
+    client.pause_reading();
+    const bool done = peer.pump_until([&] { return SSL_renegotiate_pending(peer.ssl) == 0 || client.disconnected != 0u; });
+    pump(20ms);
+    ASSERT_TRUE(done) << "a renegotiation under way never completed while reads were paused";
+    EXPECT_EQ(SSL_in_init(client.transport().ssl_handle()), 0);
+    EXPECT_EQ(client.disconnected, 0u);
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(client.pings, 0u) << "a client whose reads are paused dispatched application data";
+    client.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return client.pings == 1u; })) << "what the peer sent during the pause was never read";
+}
+
+// ...and the same on input<> alone: a renegotiation under way when its reads are paused completes during the pause, the
+// peer's application data waiting for the resume.
+TEST_F(TlsReadWantsWrite, AnInputsRenegotiationUnderWayCompletesWhileItsReadsArePaused) {
+    RawContext context{RawContext::role::server, TLS1_2_VERSION};
+    RawPeer    peer{context, RawContext::role::server};
+    PingInput  input;
+    ASSERT_NO_FATAL_FAILURE(connect_to(peer, input.transport()));
+    ASSERT_NE(input.switch_protocol<PingInput::Protocol>(input), nullptr);
+    input.start();
+    pump(20ms);
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(input.transport().ssl_handle()) == 1; }))
+        << "the input never answered the HelloRequest";
+    input.pause_reading();
+    const bool done = peer.pump_until([&] { return SSL_renegotiate_pending(peer.ssl) == 0 || input.disconnected != 0u; });
+    pump(20ms);
+    ASSERT_TRUE(done) << "a renegotiation under way never completed while the input's reads were paused";
+    EXPECT_EQ(SSL_in_init(input.transport().ssl_handle()), 0);
+    EXPECT_EQ(input.disconnected, 0u);
+    ASSERT_TRUE(peer.write("ping\n"));
+    pump(50ms);
+    EXPECT_EQ(input.pings, 0u) << "an input whose reads are paused dispatched application data";
+    input.resume_reading();
+    EXPECT_TRUE(pump_while_not([&] { return input.pings == 1u; })) << "what the peer sent during the pause was never read";
+}
+
+namespace tls_read_wants_write_test {
+
+/// Ends the process, loudly, if the test thread stops beating: a loop pass that never returns.
+struct PassWatchdog {
+    std::atomic<long> beat{0};
+    std::atomic<bool> stop{false};
+    std::thread       thread;
+    explicit PassWatchdog(const char *what)
+        : thread([this, what] {
+            long last  = -1;
+            auto since = steady::now();
+            while (!stop.load()) {
+                std::this_thread::sleep_for(50ms);
+                if (const long now = beat.load(); now != last) {
+                    last  = now;
+                    since = steady::now();
+                } else if (steady::now() - since > 5s) {
+                    std::fprintf(stderr, "[%s] a loop pass never returned\n", what);
+                    std::abort();
+                }
+            }
+        }) {}
+    ~PassWatchdog() {
+        stop.store(true);
+        thread.join();
+    }
+};
+
+/// An empty arm a session paused from its accept makes before its first handshake completed.
+class ArmPauseServer;
+class ArmPauseSession : public qb::io::use<ArmPauseSession>::tcp::ssl::client<ArmPauseServer> {
+public:
+    using Protocol  = qb::protocol::text::command<ArmPauseSession>;
+    std::size_t eos = 0;
+    explicit ArmPauseSession(IOServer &server)
+        : client(server) {}
+    void
+    on(Protocol::message &&) {}
+    void
+    on(qb::io::async::event::eos &&) {
+        ++eos;
+    }
+};
+ArmPauseSession *g_arm_session = nullptr;
+class ArmPauseServer : public qb::io::use<ArmPauseServer>::tcp::ssl::server<ArmPauseSession> {
+public:
+    void
+    on(IOSession &session) {
+        g_arm_session = &session;
+        session.pause_reading();
+        session.publish(); // an empty arm: its eos tells the output is all out
+    }
+};
+
+void
+expect_an_empty_arm_to_leave_a_paused_handshake_its_reads(int max_version) {
+    g_arm_session = nullptr;
+    ArmPauseServer server;
+    server.transport().init(
+        qb::io::ssl::Context::server(qb::io::test::ssl_resource_path("cert.pem"), qb::io::test::ssl_resource_path("key.pem")));
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), 0);
+    const auto server_port = server.transport().local_endpoint().port();
+    server.start();
+    RawContext context{RawContext::role::client, max_version};
+    RawPeer    peer{context, RawContext::role::client};
+    ASSERT_EQ(peer.tcp.connect_v4("127.0.0.1", server_port), qb::io::SocketStatus::Done);
+    ASSERT_NO_FATAL_FAILURE(peer.attach());
+    int        theirs   = 0;
+    const auto deadline = steady::now() + kBound;
+    while ((theirs = peer.handshake_step()) == 0 && steady::now() < deadline) {
+        qb::io::async::run(EVRUN_NOWAIT);
+        std::this_thread::sleep_for(1ms);
+    }
+    pump(50ms);
+    ASSERT_NE(g_arm_session, nullptr);
+    EXPECT_EQ(theirs, 1) << "the first handshake of a paused session that made an empty arm never completed";
+    EXPECT_TRUE(g_arm_session->transport().handshake_complete());
+    EXPECT_TRUE(g_arm_session->reading_paused());
+    server.sessions().begin()->second->disconnect();
+    pump(20ms);
+}
+
+} // namespace tls_read_wants_write_test
+
+// A renegotiation under way when reads are paused, the server sending records past the read cap: the read the cap
+// refuses ends the connection (-3), as it does unpaused -- the dispatch used to feed itself the read again within one
+// loop pass, without end.
+TEST_F(TlsReadWantsWrite, ARenegotiationsReadsPastTheCapEndThePausedConnection) {
+    for (const bool pause : {false, true}) {
+        PassWatchdog dog{pause ? "paused" : "unpaused"};
+        RawContext   context{RawContext::role::server, TLS1_2_VERSION};
+        RawPeer      peer{context, RawContext::role::server};
+        PingClient   client;
+        client.answer = false;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        client.set_max_read_buffer_size(20000);
+        ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+        ERR_clear_error();
+        ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+        // The client's loop alone: the peer never reads the ClientHello, so the renegotiation stays under way -- the
+        // client waits for the ServerHello -- while the records below arrive. A peer that read it could complete the
+        // handshake first, and a paused client then reads no more (the case's premise gone, not its contract).
+        for (int i = 0; i < 2000 && SSL_in_init(client.transport().ssl_handle()) != 1; ++i) {
+            qb::io::async::run(EVRUN_NOWAIT);
+            ++dog.beat;
+            std::this_thread::sleep_for(1ms);
+        }
+        ASSERT_EQ(SSL_in_init(client.transport().ssl_handle()), 1) << "the client never answered the HelloRequest";
+        if (pause)
+            client.pause_reading();
+        const std::string record(16000, 'x'); // no line end: one message larger than the cap
+        for (int r = 0; r < 3 && client.disconnected == 0u; ++r) {
+            ERR_clear_error();
+            (void) SSL_write(peer.ssl, record.data(), static_cast<int>(record.size()));
+            const auto until = steady::now() + 30ms;
+            while (steady::now() < until) {
+                qb::io::async::run(EVRUN_NOWAIT);
+                ++dog.beat;
+            }
+        }
+        const auto until = steady::now() + 5s; // a bound for a loaded host: the loop ends at the disconnection
+        while (steady::now() < until && client.disconnected == 0u) {
+            qb::io::async::run(EVRUN_NOWAIT);
+            ++dog.beat;
+        }
+        EXPECT_EQ(client.disconnected, 1u) << (pause ? "paused" : "unpaused") << ": a read the cap refuses ends the connection";
+        EXPECT_EQ(client.reason, -3);
+    }
+}
+
+TEST_F(TlsReadWantsWrite, AnEmptyArmLeavesAPausedTls12HandshakeItsReads) {
+    expect_an_empty_arm_to_leave_a_paused_handshake_its_reads(TLS1_2_VERSION);
+}
+
+TEST_F(TlsReadWantsWrite, AnEmptyArmLeavesAPausedTls13HandshakeItsReads) {
+    expect_an_empty_arm_to_leave_a_paused_handshake_its_reads(0);
+}
+
+namespace tls_read_wants_write_test {
+
+/// A renegotiation under way when reads are paused, its read bringing application data held unframed, then the peer's
+/// end -- its FIN or a reset, no close_notify: the read that meets it ends the paused connection as it would unpaused,
+/// not dispatched on every pass. `Object` is a client on io<> or on input<> alone.
+template <typename Object>
+void
+expect_a_paused_renegotiation_to_end_with_its_peer(TlsReadWantsWrite &, RawPeer &peer, Object &object, bool reset) {
+    ASSERT_EQ(SSL_renegotiate(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1);
+    ASSERT_TRUE(pump_while_not([&] { return SSL_in_init(object.transport().ssl_handle()) == 1; }))
+        << "the client never answered the HelloRequest";
+    object.pause_reading();
+    ASSERT_TRUE(peer.write("ping\n")); // a read of the renegotiation's while paused: its framing held
+    pump(50ms);
+    ASSERT_EQ(object.pings, 0u);
+    if (reset) {
+        ::linger zero{1, 0};
+        ASSERT_EQ(peer.tcp.set_optval(SOL_SOCKET, SO_LINGER, zero), 0);
+    }
+    peer.tcp.close(); // no close_notify
+    EXPECT_TRUE(pump_while_not([&] { return object.disconnected == 1u; }, 1000ms)) << "a paused connection outlived its peer's end";
+}
+
+} // namespace tls_read_wants_write_test
+
+TEST_F(TlsReadWantsWrite, APausedRenegotiationWithInputHeldEndsWhenThePeerCloses) {
+    for (const bool reset : {false, true}) {
+        RawContext context{RawContext::role::server, TLS1_2_VERSION};
+        RawPeer    peer{context, RawContext::role::server};
+        PingClient client;
+        client.answer = false;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport()));
+        client.start();
+        pump(20ms);
+        expect_a_paused_renegotiation_to_end_with_its_peer(*this, peer, client, reset);
+    }
+}
+
+TEST_F(TlsReadWantsWrite, AnInputsPausedRenegotiationWithInputHeldEndsWhenThePeerCloses) {
+    for (const bool reset : {false, true}) {
+        RawContext context{RawContext::role::server, TLS1_2_VERSION};
+        RawPeer    peer{context, RawContext::role::server};
+        PingInput  input;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, input.transport()));
+        ASSERT_NE(input.switch_protocol<PingInput::Protocol>(input), nullptr);
+        input.start();
+        pump(20ms);
+        expect_a_paused_renegotiation_to_end_with_its_peer(*this, peer, input, reset);
+    }
+}
+
+namespace tls_read_wants_write_test {
+
+/// TLS 1.3 post-handshake authentication, the client's answer refused `refusals` times: the read that must write first is
+/// made again once writability comes, writes the client's Certificate and Finished, and goes on to take the "ping" the
+/// peer sent behind its CertificateRequest -- data, whose handler pauses the client's reads.
+void
+pause_behind_a_certificate_request(RawPeer &peer, PingClient &client, int refusals) {
+    ASSERT_EQ(SSL_version(client.transport().ssl_handle()), TLS1_3_VERSION);
+    client.answer              = false;
+    client.pause_at_first_ping = true;
+    client.start();
+    pump(20ms);
+    ASSERT_NO_FATAL_FAILURE(refuse::install(client.transport().ssl_handle()));
+    refuse::would_block = refusals;
+    SSL_set_verify(peer.ssl, SSL_VERIFY_PEER, [](int, X509_STORE_CTX *) { return 1; });
+    ASSERT_EQ(SSL_verify_client_post_handshake(peer.ssl), 1);
+    ERR_clear_error();
+    ASSERT_EQ(SSL_do_handshake(peer.ssl), 1) << "the peer's CertificateRequest was not sent";
+    ASSERT_TRUE(peer.write("ping\n"));
+    ASSERT_TRUE(peer.pump_until([&] { return client.pings == 1u || client.disconnected != 0u; }));
+    pump(20ms);
+    ASSERT_EQ(refuse::would_block, 0) << "the case proves nothing: the read wrote nothing";
+    ASSERT_EQ(client.disconnected, 0u);
+    ASSERT_TRUE(client.reading_paused());
+    EXPECT_FALSE(read_mark(client.transport())) << refusals << ": the read that took the data left the mark of its wait";
+}
+
+/// What the handler of the ping a pause held does at the peer's end: nothing, pause again, or stop the input.
+enum class at_end { nothing, pause_again, stop };
+
+/// The peer's close_notify ALONE -- its TCP connection kept open -- while an input<> is paused with a ping held: the
+/// resume frames it and sees the end once. A held ping's handler that pauses again, or stops the input, leaves the end
+/// to the next resume, or to the next start().
+void
+expect_a_held_ping_and_the_peers_close_notify_to_end_an_input_once(RawPeer &peer, PingInput &input, at_end then) {
+    const bool again  = then == at_end::pause_again;
+    input.pause_at    = 1u;
+    input.pause_again = again;
+    input.stop_at     = then == at_end::stop ? 2u : 0u;
+    ASSERT_TRUE(peer.write("ping\nping\n"));
+    ASSERT_TRUE(pump_while_not([&] { return input.pings != 0u; })) << "the first ping never came";
+    pump(30ms);
+    ASSERT_TRUE(input.reading_paused());
+    ASSERT_EQ(input.pings, 1u) << "a paused input dispatched what it held";
+    ERR_clear_error();
+    ASSERT_GE(SSL_shutdown(peer.ssl), 0) << "the peer's close_notify was not sent";
+    pump(50ms);
+    ASSERT_EQ(input.disconnected, 0u) << "a paused input saw its peer's end";
+    input.resume_reading();
+    if (then != at_end::nothing) {
+        ASSERT_TRUE(pump_while_not([&] { return input.pings == 2u; }, 2000ms)) << "what the input held was never framed";
+        pump(50ms);
+        EXPECT_EQ(input.disconnected, 0u) << (again ? "an input paused again" : "a stopped input") << " saw its peer's end";
+        if (again) {
+            ASSERT_TRUE(input.reading_paused());
+            input.resume_reading();
+        } else
+            input.start();
+    }
+    EXPECT_TRUE(pump_while_not([&] { return input.disconnected != 0u; }, 2000ms))
+        << static_cast<int>(then) << ": the peer's close_notify, read by the resumed dispatch, never ended the input";
+    pump(50ms);
+    EXPECT_EQ(input.disconnected, 1u) << "the end was reported more than once";
+    EXPECT_EQ(input.pings, 2u);
+}
+
+} // namespace tls_read_wants_write_test
+
+// A read that had to write first, made again, took data (Huly QB-86): the transport's mark of the wait went with it --
+// left behind, it read as a read still waiting, and a pause made in that data's handler read on. An empty arm while
+// paused earns its eos and reads nothing; the same with no refusal.
+TEST_F(TlsReadWantsWrite, AnEmptyArmWhilePausedAfterAReadThatWroteFirstEarnsItsEosAndReadsNothing) {
+    for (const int refusals : {1, 0}) {
+        RawContext context{RawContext::role::server};
+        RawPeer    peer{context, RawContext::role::server};
+        PingClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport(), [](SSL *ssl) { SSL_set_post_handshake_auth(ssl, 1); }));
+        ASSERT_NO_FATAL_FAILURE(pause_behind_a_certificate_request(peer, client, refusals));
+        ASSERT_TRUE(peer.write("more\n")); // in the socket: what a read made while paused would take
+        pump(30ms);
+        const std::size_t read = client.bytes_read(), eos = client.eos;
+        client.publish(); // an empty arm
+        EXPECT_TRUE(pump_while_not([&] { return client.eos == eos + 1; }, 500ms)) << refusals << ": the empty arm earned no eos";
+        pump(30ms);
+        EXPECT_EQ(client.bytes_read(), read) << refusals << ": a paused client read what its peer sent";
+        EXPECT_EQ(client.pings, 1u);
+    }
+}
+
+// ...output queued over a full socket while paused, then the resume: readability goes back beside writability, and what
+// the peer sends is read while the socket stays full.
+TEST_F(TlsReadWantsWrite, AClientResumedOverAFullSocketAfterAReadThatWroteFirstReadsWhatItsPeerSends) {
+    ASSERT_EQ(listener.set_optval(SOL_SOCKET, SO_RCVBUF, kPeerWindow), 0); // the peer's window, inherited at accept
+    for (const int refusals : {1, 0}) {
+        RawContext context{RawContext::role::server};
+        RawPeer    peer{context, RawContext::role::server};
+        PingClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport(), [](SSL *ssl) { SSL_set_post_handshake_auth(ssl, 1); }));
+        ASSERT_NO_FATAL_FAILURE(pause_behind_a_certificate_request(peer, client, refusals));
+        ASSERT_NO_FATAL_FAILURE(fill_send_buffer(client));
+        client << "queued\n";
+        pump(20ms);
+        ASSERT_GT(client.out().size(), 0u) << "the case proves nothing: the output left";
+        client.resume_reading();
+        EXPECT_EQ(client.watching() & (EV_READ | EV_WRITE), EV_READ | EV_WRITE) << refusals << ": resume_reading() left writability alone";
+        ASSERT_TRUE(peer.write("ping\n"));
+        EXPECT_TRUE(pump_while_not([&] { return client.pings == 2u; }, 500ms))
+            << refusals << ": the client did not read while its socket was full";
+        EXPECT_TRUE(peer.pump_until([&] { return peer.received.size() >= filled + 7; })) << "the output never left";
+        EXPECT_EQ(client.disconnected, 0u);
+    }
+}
+
+// ...a stop() and a start() while paused: the start() arms nothing a pause holds off, and nothing is read.
+TEST_F(TlsReadWantsWrite, AStopAndAStartWhilePausedAfterAReadThatWroteFirstReadNothing) {
+    for (const int refusals : {1, 0}) {
+        RawContext context{RawContext::role::server};
+        RawPeer    peer{context, RawContext::role::server};
+        PingClient client;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, client.transport(), [](SSL *ssl) { SSL_set_post_handshake_auth(ssl, 1); }));
+        ASSERT_NO_FATAL_FAILURE(pause_behind_a_certificate_request(peer, client, refusals));
+        ASSERT_TRUE(peer.write("more\n"));
+        pump(30ms);
+        const std::size_t read = client.bytes_read(), eos = client.eos;
+        client.stop();
+        client.start();
+        EXPECT_EQ(client.watching() & (EV_READ | EV_WRITE), 0) << refusals << ": a paused client's start() armed " << spell(client.watching());
+        pump(100ms);
+        EXPECT_EQ(client.bytes_read(), read) << refusals << ": a paused client read what its peer sent";
+        EXPECT_EQ(client.eos, eos) << refusals << ": an eos nobody asked for";
+        EXPECT_TRUE(client.reading_paused());
+    }
+}
+
+// The peer ends its sending side with its close_notify alone while an input<> is paused with input held: the resume
+// frames it and sees the end once -- the read that meets the close_notify takes it, the socket says nothing more, and
+// the end is read again by a dispatch of its own; paused again, by the next resume's; stopped, by the next start()'s
+// (Huly QB-86).
+TEST_F(TlsReadWantsWrite, AnInputsHeldInputIsFramedAndThePeersCloseNotifyAloneEndsItOnce) {
+    for (const at_end then : {at_end::nothing, at_end::pause_again, at_end::stop}) {
+        RawContext context{RawContext::role::server};
+        RawPeer    peer{context, RawContext::role::server};
+        PingInput  input;
+        ASSERT_NO_FATAL_FAILURE(connect_to(peer, input.transport()));
+        ASSERT_NE(input.switch_protocol<PingInput::Protocol>(input), nullptr);
+        input.start();
+        pump(20ms);
+        expect_a_held_ping_and_the_peers_close_notify_to_end_an_input_once(peer, input, then);
+    }
 }

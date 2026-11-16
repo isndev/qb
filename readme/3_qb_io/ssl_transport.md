@@ -348,7 +348,7 @@ Key behaviors verified in the header:
   error reported). Not a read's write: a TLS 1.3 KeyUpdate the peer requests is answered by this
   side's next write, never by its read (OpenSSL's choice, measured with OpenSSL 3.5, 3.6 and 4.1),
   and nothing waits for it.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1210-1211 (WANT_WRITE: the read must write first), :1212-1233 (a socket error OpenSSL lets the session go on after, kept), :1242-1253 (-1, a would-block, read_wants_write()), :1278-1282 (WANT_READ: write() 0, write_wants_read()), :787-798 (a handshake step's error kept), :889-896 (a blocking connect fails on it); qb/src/qb/io/tcp/ssl/socket.h:719-722 (read_wants_write), :733-736 (write_wants_read), :749-752 (rehandshaking); qb/src/qb/io/async/io.h:3428-3429 (io<>: the read that waits to write), :2363-2370 (writability alone), :2449-2467 (the read made again, the empty arm's eos, readability for a write that waits for the peer), :3314 (the write pass), :2693-2694 (an empty arm while the read waits), :3473-3476, :2406-2415 (a handshake after the first: the read drives it), :3307-3308, :2428-2432 (a record OpenSSL held has left: a read follows), :1528-1529, :1594-1597 (input<>), :2090-2093, :2155-2157 (output<>) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1210-1211 (WANT_WRITE: the read must write first), :1212-1233 (a socket error OpenSSL lets the session go on after, kept), :1242-1253 (-1, a would-block, read_wants_write()), :1278-1282 (WANT_READ: write() 0, write_wants_read()), :787-798 (a handshake step's error kept), :889-896 (a blocking connect fails on it); qb/src/qb/io/tcp/ssl/socket.h:719-722 (read_wants_write), :733-736 (write_wants_read), :749-752 (rehandshaking); qb/src/qb/io/async/io.h:3876-3877 (io<>: the read that waits to write), :2574-2581 (writability alone), :2665-2684 (the read made again, the empty arm's eos, readability for a write that waits for the peer), :3751 (the write pass), :3120-3121 (an empty arm while the read waits), :3936-3939, :2618-2627 (a handshake after the first: the read drives it), :3744-3745, :2640-2648 (a record OpenSSL held has left: a read follows), :1722-1723, :1801-1804 (input<>), :2299-2302, :2364-2366 (output<>) -->
 - **`disconnect()` ends the TLS stream before it closes the socket (3.4, Huly QB-1270).** TLS has
   its own end of stream, the `close_notify` alert: a peer that reads the TCP FIN without it cannot
   tell a stream its sender ended from one something cut, and OpenSSL 3 reports it as an error
@@ -608,13 +608,13 @@ what the transport holds: the read made when writability comes takes it. A read 
 a fed dispatch that meets the peer's handshake message waits for writability as one the socket's
 readiness dispatched (3.4, Huly QB-1270).
 
-<!-- src: qb/src/qb/io/async/io.h:3428-3431 (async::io: the read that must write first returns before the feed), :2636-2637 (its start() keeps the wait), :2647-2653 (its ready_to_read() too), :1526-1531 (async::input: the same read), :1031-1032 (its start()), :1043-1050 (its ready_to_read()) -->
+<!-- src: qb/src/qb/io/async/io.h:3876-3885 (async::io: the read that must write first returns before the feed), :2982-2983 (its start() keeps the wait), :2995-3001 (its ready_to_read() too), :1719-1729 (async::input: the same read), :1040-1042 (its start()), :1055-1062 (its ready_to_read()) -->
 
 Until 3.4 a read asked for a whole 64 KiB bucket, larger than any record, or was refused:
 nothing could be left behind -- the second read `stcp::read()` then made of `SSL_pending()`
 never ran, and is gone -- and a cap below the bucket read nothing at all (Huly QB-86).
 
-<!-- src: qb/src/qb/io/transport/stcp.h:44-76 (the transport, its read), :86-90 (held_input), :100-103 (last_read_filled); qb/src/qb/io/async/io.h:3723-3730 (the dispatch it asks for), :3742-3752 (after a read), :1032, :2638 (start() asks once), :1051, :2655 (ready_to_read() too) -->
+<!-- src: qb/src/qb/io/transport/stcp.h:44-76 (the transport, its read), :86-90 (held_input), :100-103 (last_read_filled); qb/src/qb/io/async/io.h:4190-4197 (the dispatch it asks for), :4209-4219 (after a read), :1042, :2984 (start() asks once), :1063, :3003 (ready_to_read() too) -->
 
 ### SSL context helpers
 

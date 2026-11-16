@@ -2453,6 +2453,11 @@ public:
     void
     wait_for_writes_alone() noexcept {} // an input has no such state
 
+    void
+    reset_state() noexcept {
+        reset_io_state();
+    }
+
     /// A stopped watcher that is no longer set for reads: what `ready_to_read()` starts.
     void
     watch_nothing() noexcept {
@@ -2469,6 +2474,11 @@ public:
     void
     wait_for_writes_alone() noexcept {
         this->_async_event.set(EV_WRITE);
+    }
+
+    void
+    reset_state() noexcept {
+        reset_io_state();
     }
 };
 
@@ -2744,4 +2754,675 @@ TEST_F(AsyncIoBaseTest, InputReadyToReadReadsWhatItsTransportHolds) {
         pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "ready_to_read() reads what the transport still holds"));
     EXPECT_EQ(probe.messages, kFourMessages);
     EXPECT_FALSE(probe.runaway);
+}
+
+// ===========================================================================
+// pause_reading() and resume_reading(): a component whose reads are paused reads nothing and dispatches nothing -- no
+// path that arms readability ends the pause, a start() included -- and resume_reading() frames what its input already
+// holds, without waiting for an octet more. A component paused its reads by taking readability off its watcher, and every
+// path that arms it gave them back: the drain of its output, ready_to_read(), a restart, what its transport holds.
+// ===========================================================================
+namespace async_bases_read_pause_test {
+using namespace async_bases_framing_test;
+
+/// Four octets are a message; the handler of message `pause_at` pauses its component's reads -- and resumes them at
+/// once with `resume_in_handler`. `reads_seen` holds the transport's read count at each message.
+template <typename Io>
+class PausingFourOctets : public qb::io::async::AProtocol<Io> {
+public:
+    std::size_t              pause_at          = 0u;
+    bool                     resume_in_handler = false;
+    std::vector<std::size_t> reads_seen;
+
+    PausingFourOctets(Io &io, std::size_t at, bool resume = false) noexcept
+        : qb::io::async::AProtocol<Io>(io)
+        , pause_at(at)
+        , resume_in_handler(resume) {}
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return this->_io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        this->_io.messages.emplace_back(this->_io.in().begin(), size);
+        reads_seen.push_back(this->_io.reads);
+        if (this->_io.messages.size() == pause_at) {
+            this->_io.pause_reading();
+            if (resume_in_handler)
+                this->_io.resume_reading();
+        }
+    }
+
+    void
+    reset() noexcept final {}
+};
+
+/// The transport holds the input: once paused, none of it is read, whatever arms readability; resumed, it all is.
+template <typename Probe>
+void
+expect_a_paused_component_reads_nothing_until_it_resumes() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 2u), nullptr);
+    probe.held = "aaaabbbbccccdddd";
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages before the pause"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"})) << "a component whose reads are paused was dispatched";
+    EXPECT_EQ(probe.held, "ccccdddd");
+    EXPECT_EQ(probe.reads, 2u) << "a component whose reads are paused was read";
+    EXPECT_TRUE(probe.reading_paused());
+    EXPECT_FALSE(probe.is_reading());
+
+    probe.ready_to_read(); // each arms readability, and feeds it for what the transport holds: none ends the pause
+    EXPECT_FALSE(probe.is_reading()) << "ready_to_read() armed the reads of a paused component";
+    probe.stop();
+    probe.start();
+    EXPECT_FALSE(probe.is_reading()) << "a start() armed the reads of a paused component";
+    run_nowait_iterations();
+    EXPECT_EQ(probe.reads, 2u) << "ready_to_read() or a restart read a component whose reads are paused";
+    EXPECT_FALSE(probe.is_reading());
+    EXPECT_TRUE(probe.reading_paused());
+
+    probe.resume_reading();
+    EXPECT_FALSE(probe.reading_paused());
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "resume_reading() reads what the transport holds"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// One read brought the whole input; the pause, at its first message, keeps the rest unframed. resume_reading()'s
+/// dispatch reads first, and the transport has nothing left to give: that read would block, and the input is framed all
+/// the same -- a dispatch fed for it alone used to end at that read, before its framing.
+template <typename Probe>
+void
+expect_resume_frames_what_the_input_holds() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    auto *protocol = probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u);
+    ASSERT_NE(protocol, nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 16u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the message before the pause"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa"})) << "the rest of the input was framed past the pause";
+    EXPECT_EQ(probe.pendingRead(), 12u);
+    EXPECT_EQ(probe.reads, 1u);
+
+    probe.resume_reading();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "resume_reading() frames what the input holds"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages) << "what the input held was not framed, or framed twice";
+    EXPECT_EQ(protocol->reads_seen, (std::vector<std::size_t>{1u, 2u, 2u, 2u}))
+        << "resume_reading()'s dispatch framed the input without its read, or framed it in a dispatch of its own";
+    EXPECT_EQ(probe.pendingRead(), 0u);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// Paused and resumed by the same handler: the dispatch frames the rest of the input as if neither had been made, once.
+template <typename Probe>
+void
+expect_a_pause_resumed_inside_its_dispatch_frames_on() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u, true), nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 16u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the input framed through the pause"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages) << "a pause resumed inside its own dispatch kept the input unframed, or framed it twice";
+    EXPECT_EQ(probe.reads, 1u);
+    EXPECT_FALSE(probe.reading_paused());
+    EXPECT_TRUE(probe.is_reading());
+}
+
+/// A read readiness already pending when reads are paused -- start() fed it for what the transport holds -- reads nothing.
+template <typename Probe>
+void
+expect_a_readiness_pending_at_the_pause_reads_nothing() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 0u), nullptr);
+    probe.held = "aaaabbbb";
+
+    probe.start(); // feeds a dispatch for what the transport holds
+    probe.pause_reading();
+    run_nowait_iterations();
+    EXPECT_EQ(probe.reads, 0u) << "a readiness pending at the pause read the transport";
+    EXPECT_TRUE(probe.messages.empty());
+    EXPECT_FALSE(probe.is_reading());
+
+    probe.resume_reading();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages after the resume"));
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"}));
+}
+
+/// One read brought part of the input, the transport holds the rest; the pause, at the first message, keeps both:
+/// resume_reading()'s dispatch reads what the transport holds, and frames the input in order, the old before the new.
+template <typename Probe>
+void
+expect_resume_frames_then_reads_what_the_transport_holds() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    auto *protocol = probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u);
+    ASSERT_NE(protocol, nullptr);
+    probe.held     = "aaaabbbbccccddddeeeeffff";
+    probe.per_read = 16u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the message before the pause"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa"}));
+    EXPECT_EQ(probe.held, "eeeeffff") << "a component whose reads are paused read what its transport holds";
+
+    probe.resume_reading();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 6u || probe.runaway; }, "the input, then what the transport holds"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff"}));
+    EXPECT_EQ(protocol->reads_seen, (std::vector<std::size_t>{1u, 2u, 2u, 2u, 2u, 2u}))
+        << "resume_reading()'s dispatch did not frame the old input and the new in one pass";
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// Stopped between resume_reading() and the dispatch it fed: the start() feeds the dispatch that frames what the input
+/// holds -- the transport has nothing to raise an event with, and that dispatch's read would block.
+template <typename Probe>
+void
+expect_a_component_stopped_before_its_resumed_dispatch_frames_from_its_start() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    auto *protocol = probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u);
+    ASSERT_NE(protocol, nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 16u;
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the message before the pause"));
+    probe.resume_reading(); // feeds the dispatch that frames the input...
+    probe.stop();           // ...which the stop drops
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages.size(), 1u) << "a stopped component was dispatched";
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the input framed from the start()"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_EQ(protocol->reads_seen, (std::vector<std::size_t>{1u, 2u, 2u, 2u}));
+}
+
+/// resume_reading() fed the dispatch that frames the input; the component is stopped before it ran, its protocols
+/// cleared, and started again before the next protocol is switched in -- the order a start() before switch_protocol<P>()
+/// allows: it is not dispatched without a protocol; the next start(), with the protocol in, frames the input.
+template <typename Probe>
+void
+expect_a_resumed_component_restarted_before_its_protocol_waits_for_it() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u), nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 6u; // the first read leaves "bb" unframed
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the first message"));
+    probe.resume_reading(); // feeds the dispatch that frames the input...
+    probe.stop();           // ...which the stop drops
+    probe.clear_protocols();
+    probe.start(); // no protocol yet
+    run_nowait_iterations();
+    EXPECT_TRUE(probe.is_connected()) << "a component restarted before its protocol was dispatched without one, and ended";
+    probe.stop();
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the input once the protocol is in"));
+    EXPECT_EQ(probe.messages, kFourMessages);
+}
+
+/// Resumed twice, then paused and resumed again before the dispatch the first resume fed has run: every message is
+/// framed once, and nothing loops.
+template <typename Probe>
+void
+expect_pauses_and_resumes_before_the_fed_dispatch_frame_each_message_once() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u), nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 16u;
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the first message"));
+    probe.resume_reading();
+    probe.resume_reading(); // nothing more
+    probe.pause_reading();
+    probe.resume_reading();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the rest of the input"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// A component destroyed with the dispatch resume_reading() fed still pending -- with a disconnect()'s too, or paused and
+/// resumed again: the loop runs on (the sanitizers watch the rest).
+template <typename Probe>
+void
+expect_a_component_destroyed_with_a_fed_dispatch_pending_leaves_the_loop_sound() {
+    auto pair = make_stream_pair();
+    for (int how = 0; how < 3; ++how) {
+        {
+            auto probe = std::make_unique<Probe>(pair.probe);
+            ASSERT_NE(probe->template switch_protocol<PausingFourOctets<Probe>>(*probe, 1u), nullptr);
+            probe->held     = "aaaabbbbccccdddd";
+            probe->per_read = 16u;
+            probe->start();
+            ASSERT_TRUE(pass_until([&] { return !probe->messages.empty(); }, "the first message"));
+            probe->resume_reading(); // a fed dispatch pending
+            if (how == 1)
+                probe->disconnect();
+            if (how == 2) {
+                probe->pause_reading();
+                probe->resume_reading();
+            }
+        }
+        run_nowait_iterations();
+    }
+}
+
+/// A component whose on(pending_read) pauses and resumes at once (mode 0, capped), or resumes a pause a message handler
+/// made (mode 1).
+template <typename Base>
+class Kicking
+    : public Base
+    , public HoldingSurface {
+public:
+    using HoldingSurface::HoldingSurface;
+    int         mode          = 0;
+    std::size_t pending_reads = 0;
+    std::size_t cap           = 100000;
+    void
+    wait_for_writes_alone() noexcept {}
+    void
+    on(qb::io::async::event::pending_read &&) noexcept {
+        ++pending_reads;
+        if (mode == 0) {
+            if (pending_reads < cap) {
+                this->pause_reading();
+                this->resume_reading();
+            }
+        } else if (this->reading_paused())
+            this->resume_reading();
+    }
+};
+class KickingInput : public Kicking<qb::io::async::input<KickingInput>> {
+public:
+    using Kicking::Kicking;
+};
+class KickingDuplex : public Kicking<qb::io::async::io<KickingDuplex>> {
+public:
+    using Kicking::Kicking;
+};
+
+/// An incomplete frame buffered, on(pending_read) pausing and resuming at once: the pause stopped no framing, so the
+/// resume feeds no dispatch -- one loop pass dispatches the component once, not until something else ends it.
+template <typename Probe>
+void
+expect_a_pause_resumed_from_pending_read_to_feed_nothing() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.held     = "aaaabb"; // one message and an incomplete one
+    probe.per_read = 16u;
+    probe.start();
+    qb::io::async::run(EVRUN_NOWAIT); // one loop pass
+    EXPECT_LT(probe.pending_reads, 10u) << "a pause resumed from on(pending_read) fed a dispatch that fed itself";
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa"}));
+}
+
+/// Paused by the handler of message 1, resumed from on(pending_read) of the same dispatch: every message is framed.
+template <typename Probe>
+void
+expect_a_pause_resumed_from_pending_read_to_frame_the_rest() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u), nullptr);
+    probe.held     = "aaaabbbbccccdddd";
+    probe.per_read = 16u;
+    probe.mode     = 1;
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "the four messages"));
+    run_nowait_iterations();
+    EXPECT_EQ(probe.messages, kFourMessages);
+    EXPECT_FALSE(probe.runaway);
+}
+
+/// reset_io_state() ends the pause with the rest of the connection's state.
+template <typename Probe>
+void
+expect_a_reset_component_is_no_longer_paused() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 0u), nullptr);
+    probe.held = "aaaa";
+
+    probe.start();
+    probe.pause_reading();
+    probe.stop();
+    probe.reset_state();
+    EXPECT_FALSE(probe.reading_paused());
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the message after the reset"));
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa"}));
+}
+
+} // namespace async_bases_read_pause_test
+
+TEST_F(AsyncIoBaseTest, AnInputWhoseReadsArePausedReadsNothingUntilTheyResume) {
+    async_bases_read_pause_test::expect_a_paused_component_reads_nothing_until_it_resumes<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexWhoseReadsArePausedReadsNothingUntilTheyResume) {
+    async_bases_read_pause_test::expect_a_paused_component_reads_nothing_until_it_resumes<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputsResumedReadsFrameWhatItsInputHolds) {
+    async_bases_read_pause_test::expect_resume_frames_what_the_input_holds<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsResumedReadsFrameWhatItsInputHolds) {
+    async_bases_read_pause_test::expect_resume_frames_what_the_input_holds<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputPausedAndResumedInsideOneDispatchFramesOn) {
+    async_bases_read_pause_test::expect_a_pause_resumed_inside_its_dispatch_frames_on<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexPausedAndResumedInsideOneDispatchFramesOn) {
+    async_bases_read_pause_test::expect_a_pause_resumed_inside_its_dispatch_frames_on<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputPausedWithAReadinessPendingReadsNothing) {
+    async_bases_read_pause_test::expect_a_readiness_pending_at_the_pause_reads_nothing<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexPausedWithAReadinessPendingReadsNothing) {
+    async_bases_read_pause_test::expect_a_readiness_pending_at_the_pause_reads_nothing<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputsResumedReadsFrameItsInputThenReadWhatItsTransportHolds) {
+    async_bases_read_pause_test::expect_resume_frames_then_reads_what_the_transport_holds<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsResumedReadsFrameItsInputThenReadWhatItsTransportHolds) {
+    async_bases_read_pause_test::expect_resume_frames_then_reads_what_the_transport_holds<async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputStoppedBeforeItsResumedDispatchFramesItsInputFromItsStart) {
+    async_bases_read_pause_test::expect_a_component_stopped_before_its_resumed_dispatch_frames_from_its_start<
+        async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexStoppedBeforeItsResumedDispatchFramesItsInputFromItsStart) {
+    async_bases_read_pause_test::expect_a_component_stopped_before_its_resumed_dispatch_frames_from_its_start<
+        async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputResumedThenRestartedBeforeItsProtocolIsNotDispatchedWithoutIt) {
+    async_bases_read_pause_test::expect_a_resumed_component_restarted_before_its_protocol_waits_for_it<
+        async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexResumedThenRestartedBeforeItsProtocolIsNotDispatchedWithoutIt) {
+    async_bases_read_pause_test::expect_a_resumed_component_restarted_before_its_protocol_waits_for_it<
+        async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputsPausesAndResumesBeforeTheFedDispatchFrameEachMessageOnce) {
+    async_bases_read_pause_test::expect_pauses_and_resumes_before_the_fed_dispatch_frame_each_message_once<
+        async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsPausesAndResumesBeforeTheFedDispatchFrameEachMessageOnce) {
+    async_bases_read_pause_test::expect_pauses_and_resumes_before_the_fed_dispatch_frame_each_message_once<
+        async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputDestroyedWithAFedDispatchPendingLeavesTheLoopSound) {
+    async_bases_read_pause_test::expect_a_component_destroyed_with_a_fed_dispatch_pending_leaves_the_loop_sound<
+        async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexDestroyedWithAFedDispatchPendingLeavesTheLoopSound) {
+    async_bases_read_pause_test::expect_a_component_destroyed_with_a_fed_dispatch_pending_leaves_the_loop_sound<
+        async_bases_framing_test::HoldingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputsPauseResumedFromPendingReadFeedsNothingWithAnIncompleteFrame) {
+    async_bases_read_pause_test::expect_a_pause_resumed_from_pending_read_to_feed_nothing<async_bases_read_pause_test::KickingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsPauseResumedFromPendingReadFeedsNothingWithAnIncompleteFrame) {
+    async_bases_read_pause_test::expect_a_pause_resumed_from_pending_read_to_feed_nothing<async_bases_read_pause_test::KickingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputsPauseResumedFromPendingReadFramesTheRest) {
+    async_bases_read_pause_test::expect_a_pause_resumed_from_pending_read_to_frame_the_rest<async_bases_read_pause_test::KickingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsPauseResumedFromPendingReadFramesTheRest) {
+    async_bases_read_pause_test::expect_a_pause_resumed_from_pending_read_to_frame_the_rest<async_bases_read_pause_test::KickingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, AnInputWhoseIoStateIsResetIsNoLongerPaused) {
+    async_bases_read_pause_test::expect_a_reset_component_is_no_longer_paused<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexWhoseIoStateIsResetIsNoLongerPaused) {
+    async_bases_read_pause_test::expect_a_reset_component_is_no_longer_paused<async_bases_framing_test::HoldingDuplex>();
+}
+
+// The drain of a duplex's output arms readability again (handle_write()): a duplex whose reads are paused keeps them
+// paused through it, and reads none of what its peer sent meanwhile until it resumes them.
+TEST_F(AsyncIoBaseTest, ADuplexsPausedReadsStayPausedThroughTheDrainOfItsOutput) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().start();
+    session.base().pause_reading();
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    session.publish(std::string_view{"pong"});
+    ASSERT_TRUE(pass_until([&] { return session.eos_events >= 1u; }, "the output drained"));
+    EXPECT_EQ(reply_of(pair.peer, 4), "pong");
+    run_nowait_iterations();
+    EXPECT_FALSE(session.base().is_reading()) << "the drain of its output gave a paused duplex its reads back";
+    EXPECT_EQ(session.base().bytes_read(), 0u) << "a paused duplex read what its peer sent";
+    EXPECT_TRUE(session.messages.empty());
+
+    session.base().resume_reading();
+    ASSERT_TRUE(pass_until([&] { return !session.messages.empty(); }, "the message sent while paused"));
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+    EXPECT_EQ(session.base().bytes_read(), 4u);
+}
+
+// A component reset for a new connection reads again: the pause is the connection's, as its other state.
+TEST_F(AsyncIoBaseTest, ADuplexResetForReconnectIsNoLongerPaused) {
+    auto            pair = make_stream_pair();
+    PipeDuplexProbe session{pair.probe};
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().start();
+    session.base().pause_reading();
+    session.base().stop();
+    session.reset_for_next_connection();
+    EXPECT_FALSE(session.base().reading_paused());
+    ASSERT_NE(session.base().switch_protocol<FourByteDuplexProtocol>(session), nullptr);
+    session.base().start();
+    EXPECT_TRUE(session.base().is_reading());
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    ASSERT_TRUE(pass_until([&] { return !session.messages.empty(); }, "the message after the reset"));
+    EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+}
+
+namespace async_bases_resume_test {
+using namespace async_bases_framing_test;
+
+/// A component that counts its disconnections, on an in-memory transport over a socket pair.
+template <typename Base>
+class Counting
+    : public Base
+    , public HoldingSurface {
+public:
+    using HoldingSurface::HoldingSurface;
+    std::size_t disconnections = 0;
+    void
+    wait_for_writes_alone() noexcept {}
+    void
+    on(qb::io::async::event::disconnected &&) noexcept {
+        ++disconnections;
+    }
+    [[nodiscard]] bool
+    active() const noexcept {
+        return this->_async_event.is_active();
+    }
+};
+class CountingInput : public Counting<qb::io::async::input<CountingInput>> {
+public:
+    using Counting::Counting;
+};
+class CountingDuplex : public Counting<qb::io::async::io<CountingDuplex>> {
+public:
+    using Counting::Counting;
+};
+
+/// A server session's shape: dispose() stops the watcher and tells the server, which the component outlives here.
+struct TellingServer {
+    std::size_t told = 0;
+    void
+    disconnected(int) noexcept {
+        ++told;
+    }
+};
+template <typename Base>
+class SessionShaped : public Counting<Base> {
+public:
+    using Counting<Base>::Counting;
+    constexpr static const bool has_server = true;
+    TellingServer               told_server;
+    TellingServer &
+    server() noexcept {
+        return told_server;
+    }
+    [[nodiscard]] int
+    id() const noexcept {
+        return 7;
+    }
+};
+class SessionInput : public SessionShaped<qb::io::async::input<SessionInput>> {
+public:
+    using SessionShaped::SessionShaped;
+};
+class SessionDuplex : public SessionShaped<qb::io::async::io<SessionDuplex>> {
+public:
+    using SessionShaped::SessionShaped;
+};
+
+/// Paused outside a dispatch, then disconnect()ed, then resumed: the disconnection still comes, the peer quiet. The
+/// resume used to restart an input's running watcher, which dropped the dispatch the disconnect() had fed.
+template <typename Probe>
+void
+expect_a_disconnect_to_survive_a_resume() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.start();
+    run_nowait_iterations();
+    probe.pause_reading();
+    run_nowait_iterations();
+    probe.disconnect();
+    probe.resume_reading();
+    EXPECT_TRUE(pass_until([&] { return probe.disconnections > 0; }, "the disconnection, the peer sending nothing"))
+        << "resume_reading() lost the disconnection a disconnect() made while paused";
+    EXPECT_EQ(probe.disconnections, 1u);
+}
+
+/// Paused, then disposed by disconnect(); its owner resumes it with the peer's bytes waiting: the disposed component
+/// is not started again -- an input's resume used to start its stopped watcher, dispatched on every pass after.
+template <typename Probe>
+void
+expect_a_disposed_component_to_stay_stopped_though_it_resumes() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<FourOctets<Probe>>(probe), nullptr);
+    probe.start();
+    run_nowait_iterations();
+    probe.pause_reading();
+    probe.disconnect();
+    ASSERT_TRUE(pass_until([&] { return probe.disconnections > 0; }, "disposed"));
+    ASSERT_FALSE(probe.active());
+    ASSERT_TRUE(deliver(pair, "abcd"));
+    probe.resume_reading();
+    EXPECT_FALSE(probe.active()) << "resume_reading() started a disposed component again";
+    EXPECT_EQ(dispatched_over(200), 0u) << "a disposed component was dispatched after its resume";
+    EXPECT_EQ(probe.disconnections, 1u);
+    EXPECT_EQ(probe.told_server.told, 1u);
+    probe.stop();
+}
+
+} // namespace async_bases_resume_test
+
+TEST_F(AsyncIoBaseTest, AnInputPausedThenDisconnectedIsDisconnectedThoughItResumes) {
+    async_bases_resume_test::expect_a_disconnect_to_survive_a_resume<async_bases_resume_test::CountingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexPausedThenDisconnectedIsDisconnectedThoughItResumes) {
+    async_bases_resume_test::expect_a_disconnect_to_survive_a_resume<async_bases_resume_test::CountingDuplex>();
+}
+
+TEST_F(AsyncIoBaseTest, ADisposedInputSessionStaysStoppedThoughItResumes) {
+    async_bases_resume_test::expect_a_disposed_component_to_stay_stopped_though_it_resumes<async_bases_resume_test::SessionInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADisposedDuplexSessionStaysStoppedThoughItResumes) {
+    async_bases_resume_test::expect_a_disposed_component_to_stay_stopped_though_it_resumes<async_bases_resume_test::SessionDuplex>();
+}
+
+namespace async_bases_read_pause_test {
+
+/// A pause that stopped the framing, then a resume whose dispatch read what the transport held and framed it all: no
+/// mark is left behind -- a later pause and resume made outside a dispatch feed nothing, and nothing more is read.
+template <typename Probe>
+void
+expect_no_mark_left_once_the_resumed_dispatch_framed_all() {
+    auto  pair = make_stream_pair();
+    Probe probe{pair.probe};
+    ASSERT_NE(probe.template switch_protocol<PausingFourOctets<Probe>>(probe, 1u), nullptr);
+    probe.held = "aaaabbbb";
+
+    probe.start();
+    ASSERT_TRUE(pass_until([&] { return !probe.messages.empty() || probe.runaway; }, "the message before the pause"));
+    run_nowait_iterations();
+    ASSERT_EQ(probe.reads, 1u);
+    probe.resume_reading();
+    ASSERT_TRUE(pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the message the transport held"));
+    run_nowait_iterations();
+    ASSERT_EQ(probe.held, "") << "the case proves nothing: the transport still holds input";
+    const std::size_t reads = probe.reads;
+
+    probe.pause_reading(); // outside a dispatch: it stops no framing
+    probe.resume_reading();
+    run_nowait_iterations();
+    EXPECT_EQ(probe.reads, reads) << "a resume after a pause that stopped no framing fed a dispatch: a mark was left behind";
+    EXPECT_EQ(probe.messages, (std::vector<std::string>{"aaaa", "bbbb"}));
+    EXPECT_FALSE(probe.runaway);
+}
+
+} // namespace async_bases_read_pause_test
+
+TEST_F(AsyncIoBaseTest, AnInputsResumedDispatchThatFramedAllLeavesNoMarkBehind) {
+    async_bases_read_pause_test::expect_no_mark_left_once_the_resumed_dispatch_framed_all<async_bases_framing_test::HoldingInput>();
+}
+
+TEST_F(AsyncIoBaseTest, ADuplexsResumedDispatchThatFramedAllLeavesNoMarkBehind) {
+    async_bases_read_pause_test::expect_no_mark_left_once_the_resumed_dispatch_framed_all<async_bases_framing_test::HoldingDuplex>();
 }

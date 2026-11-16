@@ -91,6 +91,13 @@ concept tls_io = requires(T &component) {
     { component.transport().write_wants_read() } -> std::same_as<bool>;
     { component.transport().rehandshaking() } -> std::same_as<bool>;
 };
+
+/// A TLS component whose transport tells whether its first handshake has completed: a pause keeps the reads that
+/// handshake needs (`pause_reading()`).
+template <typename T>
+concept tls_first_handshake = tls_io<T> && requires(T &component) {
+    { component.transport().handshake_complete() } -> std::same_as<bool>;
+};
 } // namespace detail
 
 /**
@@ -886,6 +893,8 @@ class input : public base<input<_Derived>, event::io> {
     std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
     std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
     std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
+    bool        _read_paused            = false;               /**< pause_reading(): no read, no message dispatched, until resume_reading(). */
+    bool _frame_held = false; /**< A pause stopped the framing: resume_reading()'s dispatch frames the rest (frame_held_input_first()). */
 
 public:
     using base_io_t                        = input<_Derived>; /**< Base I/O type alias for CRTP. */
@@ -1028,18 +1037,21 @@ public:
         _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
-        this->_async_event.start(Derived.transport().native_handle(), read_events());
+        this->_async_event.start(Derived.transport().native_handle(),
+                                 _read_paused && !tls_read_needed() ? read_events() & ~EV_READ : read_events());
         feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
+        frame_held_input();
     }
 
     /**
      * @brief Ensures the I/O watcher is listening for read events (`EV_READ`).
      * @details If the internal `event::io` watcher (from the `base` class) is not currently set to listen for `EV_READ`,
      *          this method restarts it for `EV_READ` -- reads were paused -- and feeds it for what the transport holds.
+     *          Nothing while reading is paused (pause_reading()).
      */
     void
     ready_to_read() noexcept {
-        if (!(this->_async_event.events & EV_READ)) {
+        if (!(this->_async_event.events & EV_READ) && !_read_paused) {
             if constexpr (detail::tls_io<_Derived>) {
                 // A TLS read that waits to write reads again once that write leaves (Huly QB-1270).
                 if ((this->_async_event.events & EV_WRITE) && this->_async_event.is_active())
@@ -1071,6 +1083,60 @@ public:
     [[nodiscard]] bool
     is_reading() const noexcept {
         return (this->_async_event.events & EV_READ) != 0;
+    }
+
+    /**
+     * @brief Pauses reading: the transport is read no more, and no message is dispatched -- of what the input already
+     *        holds either -- until resume_reading(). Every path that arms readability honours it: ready_to_read() (no
+     *        effect while paused), a start(), what the transport holds (`held_input()`); a read readiness the loop
+     *        has already collected is taken back.
+     * @details A component that only took readability off its watcher had it armed again by any of those. A message
+     *          being dispatched when it is called is the dispatch's last: the rest of the input waits. Over TLS, the
+     *          reads a handshake under way needs -- the first handshake's, a later one's (`rehandshaking()`), a read that
+     *          must write first among them -- are made all the same, and what they bring waits in the input, under the
+     *          read cap. A peer's close or reset is seen once reading resumes; a
+     *          timeout of the component's own (`with_timeout`) still bounds the wait. A stop() and a start() keep the
+     *          pause; reset_io_state() ends it, and resume_reading() does not start a disposed component again. Idempotent.
+     */
+    void
+    pause_reading() noexcept {
+        _read_paused = true;
+        if (!tls_read_needed())
+            hold_readability();
+    }
+
+    /**
+     * @brief Ends a pause_reading(): readability is armed again, as ready_to_read() arms it -- a stopped input is started
+     *        --, and what the pause left in the input is framed: by the dispatch under way when called from one, else by
+     *        a dispatch fed here or, after a stop() before it ran, by the next start() made with its protocol in place --
+     *        a start() before switch_protocol<P>() feeds nothing, as for what the transport holds. That dispatch reads
+     *        first and frames the old input before the new; a read that finds nothing -- it would block, meets the
+     *        peer's close or a socket error, or finds the input at its cap -- frames it all the same
+     *        (frame_held_at_exit(), frame_held_at_end()). A datagram component frames it before it reads. Nothing when
+     *        reading is not paused.
+     */
+    void
+    resume_reading() noexcept {
+        if (!std::exchange(_read_paused, false) || _is_disposed)
+            return; // a disposed component is not started again
+        if (this->_async_event.is_active() && !(this->_async_event.events & EV_READ)) {
+            // The pause took readability off a watcher left running: given back in place -- start() stops a watcher first,
+            // and drops what is pending for it (the dispatch a disconnect() made meanwhile feeds).
+            this->_async_event.set(read_events());
+            feed_held_input();
+        } else
+            ready_to_read();
+        if (!_protocol->ok())
+            return; // without its protocol, a dispatch would end the component
+        // From a handler of the dispatch under way, that dispatch frames on: the pause stopped no framing yet.
+        if (_frame_held && this->_async_event.is_active()) // the pause left input to frame: a dispatch of its own frames it
+            this->_async_event.feed_event(EV_READ);
+    }
+
+    /// Whether reading is paused (pause_reading()).
+    [[nodiscard]] bool
+    reading_paused() const noexcept {
+        return _read_paused;
     }
 
     /**
@@ -1363,7 +1429,15 @@ private:
         std::size_t ret = 0u;
 
         _on_message = true;
-        while ((ret = this->_protocol->getMessageSize()) > 0) {
+        for (;;) {
+            if (_read_paused) [[unlikely]] { // pause_reading(): none dispatched -- from a handler, its message was the last
+                held_by_pause();             // what the input holds is framed once reading resumes (resume_reading())
+                break;
+            }
+            if ((ret = this->_protocol->getMessageSize()) == 0) {
+                _frame_held = false; // every whole frame dispatched: nothing held
+                break;
+            }
             const auto frame_exceeds_pending = [&]() noexcept {
                 if (!this->_protocol->should_flush())
                     return false;
@@ -1452,9 +1526,11 @@ private:
         }
         // A datagram carries whole frames (Huly QB-303). What the protocol left is an incomplete frame of THIS
         // datagram's sender, just reported as `pending_read`; kept, it became the head of the next datagram's
-        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state.
+        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state -- not
+        // when a pause stopped the framing: what it left is the rest of the datagram's frames, framed once reading
+        // resumes (by a hook just above too).
         if constexpr (detail::resets_input_per_read<_Derived>) {
-            if (Derived.pendingRead()) {
+            if (Derived.pendingRead() && !_frame_held) {
                 Derived.in().reset();
                 this->_protocol->reset();
             }
@@ -1463,6 +1539,114 @@ private:
 
     QB_NOINLINE void         feed_held_input() noexcept; ///< A transport's held input is read readiness: at the end of this file.
     QB_MSVC_FORCEINLINE void feed_held_input(std::size_t taken) noexcept; ///< After a read that took `taken` octets: the test before that feed.
+
+    /// resume_reading() left input to frame on a stopped component: its start() feeds the dispatch that frames it -- with
+    /// its protocol in place: a read dispatch without one ends the component, as for feed_held_input().
+    void
+    frame_held_input() noexcept {
+        if (unlikely(_frame_held) && !_read_paused && this->_async_event.is_active() && _protocol->ok())
+            this->_async_event.feed_event(EV_READ);
+    }
+
+    /// Over TLS, whether OpenSSL needs a read while reading is paused: a handshake under way, the first or a later one
+    /// (`rehandshaking()`). The pause holds application data, never a read OpenSSL needs (`pause_reading()`). Never for a
+    /// plain transport.
+    [[nodiscard]] bool
+    tls_read_needed() noexcept {
+        if constexpr (detail::tls_io<_Derived>) {
+            if constexpr (detail::tls_first_handshake<_Derived>) {
+                if (!Derived.transport().handshake_complete())
+                    return true;
+            }
+            return Derived.transport().rehandshaking();
+        } else
+            return false;
+    }
+
+    /// pause_reading(): readability off, and a read readiness the loop has already collected taken back -- set() changes
+    /// the watched events in place and leaves what is pending -- with what else was pending given back.
+    QB_NOINLINE QB_COLD void
+    hold_readability() noexcept {
+        if (this->_async_event.events & EV_READ)
+            this->_async_event.set(this->_async_event.events & ~EV_READ);
+        if (const int pending = ev_clear_pending(this->_async_event.loop, &this->_async_event); pending & ~EV_READ)
+            this->_async_event.feed_event(pending & ~EV_READ);
+    }
+
+    /// The framing loop met a pause: what the input holds waits for resume_reading(). Over TLS a read OpenSSL needed may
+    /// have brought it: readability off once OpenSSL needs no more.
+    QB_NOINLINE QB_COLD void
+    held_by_pause() noexcept {
+        if constexpr (requires { Derived.pendingRead(); }) {
+            if (Derived.pendingRead() != 0) // input left to frame: the resume owes it a dispatch
+                _frame_held = true;
+        } else
+            _frame_held = true;
+        if constexpr (detail::tls_io<_Derived>) {
+            if (!tls_read_needed())
+                hold_readability();
+        }
+    }
+
+    /**
+     * @brief The dispatch resume_reading() fed, its read finding nothing behind what the pause left -- it would block,
+     *        met the peer's close or a socket error, or found the input at its cap --, or, on a datagram transport,
+     *        before its read: that input is framed now (frame_held_at_exit() for a read's exits). False: the component
+     *        ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_input_first() {
+        _frame_held = false;
+        if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&input::_protocol_list, &input::_on_message>(alive, *this))
+            return false;
+        Derived.eof();
+        handle_post_read();
+        if (!_read_paused) // a handler paused again: what the transport holds waits for the resume
+            feed_held_input();
+        return true;
+    }
+
+    /**
+     * @brief A read of the dispatch resume_reading() fed found nothing behind what the pause left -- it would block, or
+     *        found the input at its cap, met again on the next pass --: framed first. False: the component ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_at_exit() {
+        return frame_held_input_first();
+    }
+
+    /**
+     * @brief The read of the dispatch resume_reading() fed met the peer's end (`error` 0) or a socket error (`error`, the
+     *        read's errno): what the pause left is framed first. A socket error is met once only -- a reset reads as an
+     *        end of stream after it --: the component ends with it here. The end is read again (read_end_again()).
+     *        False: the component ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_at_end(int const error) {
+        if (!frame_held_input_first())
+            return false;
+        if (error == 0) {
+            read_end_again();
+            return true;
+        }
+#ifdef _WIN32
+        WSASetLastError(error); // what the error label reports
+#else
+        errno = error; // what the error label reports
+#endif
+        return false;
+    }
+    /// The peer's end, met by a read once what a pause left was framed: a dispatch fed here reads it again, as an
+    /// unpaused component's next pass meets it -- over TLS the descriptor may say nothing more once OpenSSL has read a
+    /// close_notify the peer sent alone, and OpenSSL answers that read at once. A handler that paused again, or stopped
+    /// the component, leaves that read to the dispatch the resume or the next start() owes it (`_frame_held`).
+    void
+    read_end_again() noexcept {
+        if (!_read_paused && this->_async_event.is_active())
+            this->_async_event.feed_event(EV_READ);
+        else
+            _frame_held = true;
+    }
 
     /**
      * @brief Internal I/O event handler, called by the listener when `event::io` triggers for read readiness.
@@ -1521,20 +1705,43 @@ private:
         }
 
         if (likely(event._revents & EV_READ)) {
-            auto ret = static_cast<std::size_t>(Derived.read());
+            if constexpr (detail::resets_input_per_read<_Derived>) {
+                // A datagram transport frames what a pause left before it reads: the rest of one datagram and the head
+                // of the next would make one frame (Huly QB-303). The next datagram waits for the next pass.
+                if (_frame_held && !_read_paused) [[unlikely]] {
+                    if (!frame_held_input_first())
+                        goto error;
+                    return;
+                }
+            }
+            const auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
-                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                const int error = qb::io::socket::get_last_errno();
+                if (qb::io::socket::not_recv_error(error)) {
                     if constexpr (detail::tls_io<_Derived>) {
                         if (Derived.transport().read_wants_write())
                             watch_write_for_read();
                     }
+                    if (!_frame_held || _read_paused) [[likely]]
+                        return;
+                    if (!frame_held_at_exit()) // resume_reading()'s dispatch: what the pause left framed first
+                        goto error;
                     return;
                 }
-                goto error;
+                if (!_frame_held || _read_paused) [[likely]] // paused: a TLS handshake read ends as it would unpaused
+                    goto error;
+                if (!frame_held_at_end(error))
+                    goto error;
+                return;
             }
 
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
+                if (_frame_held && !_read_paused) [[unlikely]] { // what the pause left fills the input: framed first
+                    if (!frame_held_at_exit())
+                        goto error;
+                    return;
+                }
                 _system_error = 0;
                 _reason       = -3; // Buffer size limit exceeded (DoS protection)
                 goto error;
@@ -1670,6 +1877,8 @@ protected:
         _on_message   = false;
         _reason       = 0;
         _system_error = 0;
+        _read_paused  = false; // the pause is the connection's
+        _frame_held   = false;
     }
 };
 
@@ -2244,10 +2453,12 @@ class io : public base<io<_Derived>, event::io> {
     int                   _system_error = 0;         /**< Stores the system error code (errno) if an I/O error occurred. */
     bool                  _tls_arm      = false;     /**< TLS: an empty arm made while a read waits to write -- its eos (Huly QB-1270). */
     bool                  _tls_held     = false;     /**< TLS: OpenSSL holds a record the socket did not take (Huly QB-1270). */
-    std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
-    std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
-    std::size_t _bytes_written          = 0;                   /**< Total number of bytes written to the transport. */
-    std::size_t _messages_processed     = 0;                   /**< Total number of messages successfully processed. */
+    bool                  _read_paused  = false;     /**< pause_reading(): no read, no message dispatched, until resume_reading(). */
+    bool _frame_held = false; /**< A pause stopped the framing: resume_reading()'s dispatch frames the rest (frame_held_input_first()). */
+    std::size_t _max_message_size   = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
+    std::size_t _bytes_read         = 0;                   /**< Total number of bytes read from the transport. */
+    std::size_t _bytes_written      = 0;                   /**< Total number of bytes written to the transport. */
+    std::size_t _messages_processed = 0;                   /**< Total number of messages successfully processed. */
 
     /**
      * @brief The bound of a lingering close (Huly QB-1089): armed when a server session's close_after_deliver()
@@ -2373,7 +2584,7 @@ class io : public base<io<_Derived>, event::io> {
     /// while close_after_deliver() drains, its read pass off (Huly QB-294).
     QB_NOINLINE QB_COLD void
     rearm_queued_output() noexcept {
-        const int want = _protocol->ok() ? EV_READ | EV_WRITE : EV_WRITE;
+        const int want = _protocol->ok() && (!_read_paused || tls_read_needed()) ? EV_READ | EV_WRITE : EV_WRITE;
         if ((this->_async_event.events & (EV_READ | EV_WRITE)) != want)
             this->_async_event.set(want);
     }
@@ -2386,7 +2597,8 @@ class io : public base<io<_Derived>, event::io> {
             if (Derived.transport().read_wants_write())
                 return EV_WRITE;
         }
-        return Derived.pendingWrite() ? EV_READ | EV_WRITE : EV_READ;
+        const int read = _read_paused && !tls_read_needed() ? EV_NONE : EV_READ; // pause_reading()
+        return Derived.pendingWrite() ? read | EV_WRITE : read;
     }
 
     /**
@@ -2427,8 +2639,12 @@ class io : public base<io<_Derived>, event::io> {
     QB_NOINLINE QB_COLD void
     tls_held_flushed() noexcept {
         _tls_held = false;
-        if (_protocol->ok())
+        if (!_protocol->ok())
+            return;
+        if (!_read_paused || tls_read_needed())
             this->_async_event.feed_event(EV_READ);
+        else
+            _frame_held = true; // paused: the dispatch resume_reading() feeds makes that read
     }
 
     /**
@@ -2448,7 +2664,8 @@ class io : public base<io<_Derived>, event::io> {
     QB_NOINLINE QB_COLD bool
     tls_took_nothing() noexcept {
         if (!Derived.pendingWrite()) {
-            if ((this->_async_event.events & EV_READ) || _reason || !_protocol->ok())
+            if ((this->_async_event.events & EV_READ) || _reason || !_protocol->ok()
+                || (_read_paused && !Derived.transport().read_wants_write())) // readability off for the pause: an empty arm
                 return false;
             this->_async_event.set(EV_READ);
             this->_async_event.feed_event(EV_READ);
@@ -2464,6 +2681,135 @@ class io : public base<io<_Derived>, event::io> {
             Derived.on(std::move(evt__pending_write));
         }
         return true;
+    }
+
+    /// resume_reading() left input to frame on a stopped component: its start() feeds the dispatch that frames it -- with
+    /// its protocol in place: a read dispatch without one ends the component, as for feed_held_input().
+    void
+    frame_held_input() noexcept {
+        if (unlikely(_frame_held) && !_read_paused && this->_async_event.is_active() && _protocol->ok())
+            this->_async_event.feed_event(EV_READ);
+    }
+
+    /**
+     * @brief Over TLS, whether OpenSSL needs a read while reading is paused: a handshake under way, the first or a later
+     *        one (`rehandshaking()`) -- a write that waits for the peer's handshake message (`write_wants_read()`) waits
+     *        within one. The pause holds application data, never a read OpenSSL needs (`pause_reading()`). Never for a
+     *        plain transport.
+     */
+    [[nodiscard]] bool
+    tls_read_needed() noexcept {
+        if constexpr (detail::tls_io<_Derived>) {
+            if constexpr (detail::tls_first_handshake<_Derived>) {
+                if (!Derived.transport().handshake_complete())
+                    return true;
+            }
+            return Derived.transport().rehandshaking();
+        } else
+            return false;
+    }
+
+    /// pause_reading(): readability off, and a read readiness the loop has already collected taken back -- set() changes
+    /// the watched events in place and leaves what is pending -- with what else was pending given back.
+    QB_NOINLINE QB_COLD void
+    hold_readability() noexcept {
+        if (this->_async_event.events & EV_READ)
+            this->_async_event.set(this->_async_event.events & ~EV_READ);
+        if (const int pending = ev_clear_pending(this->_async_event.loop, &this->_async_event); pending & ~EV_READ)
+            this->_async_event.feed_event(pending & ~EV_READ);
+    }
+
+    /// The framing loop met a pause: what the input holds waits for resume_reading(). Over TLS a read OpenSSL needed may
+    /// have brought it: readability off once OpenSSL needs no more.
+    QB_NOINLINE QB_COLD void
+    held_by_pause() noexcept {
+        if constexpr (requires { Derived.pendingRead(); }) {
+            if (Derived.pendingRead() != 0) // input left to frame: the resume owes it a dispatch
+                _frame_held = true;
+        } else
+            _frame_held = true;
+        if constexpr (detail::tls_io<_Derived>) {
+            if (!tls_read_needed())
+                hold_readability();
+        }
+    }
+
+    /**
+     * @brief The dispatch resume_reading() fed, its read finding nothing behind what the pause left -- it would block,
+     *        met the peer's close or a socket error, or found the input at its cap --, or, on a datagram transport,
+     *        before its read: that input is framed now (frame_held_at_exit() for a read's exits, which also writes its
+     *        output). False: the component ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_input_first() {
+        _frame_held = false;
+        if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&io::_protocol_list, &io::_on_message>(alive, *this))
+            return false;
+        Derived.eof();
+        handle_post_read();
+        if (!_read_paused) // a handler paused again: what the transport holds waits for the resume
+            feed_held_input();
+        return true;
+    }
+
+    /// What frame_held_at_exit() or frame_held_at_end() framed queued: written in the same dispatch, as the read pass writes what its messages
+    /// queue -- over TLS, a handshake after the first is left to the read that drives it. False: the component ends.
+    QB_NOINLINE QB_COLD bool
+    drain_held_output() {
+        if (!Derived.pendingWrite())
+            return true;
+        if constexpr (detail::tls_io<_Derived>) {
+            if (Derived.transport().rehandshaking() && _protocol->ok()) {
+                tls_read_drives(true);
+                return true;
+            }
+        }
+        return handle_write();
+    }
+
+    /**
+     * @brief A read of the dispatch resume_reading() fed found nothing behind what the pause left -- it would block, or
+     *        found the input at its cap, met again on the next pass --: framed first, its output written. False: the
+     *        component ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_at_exit() {
+        return frame_held_input_first() && drain_held_output();
+    }
+
+    /**
+     * @brief The read of the dispatch resume_reading() fed met the peer's end (`error` 0) or a socket error (`error`, the
+     *        read's errno): what the pause left is framed first. A socket error is met once only -- a reset reads as an
+     *        end of stream after it --: the component ends with it here. At the end, what was framed is written and the
+     *        end read again (read_end_again()). False: the component ends.
+     */
+    QB_NOINLINE QB_COLD bool
+    frame_held_at_end(int const error) {
+        if (!frame_held_input_first())
+            return false;
+        if (error == 0) {
+            if (!drain_held_output())
+                return false;
+            read_end_again();
+            return true;
+        }
+#ifdef _WIN32
+        WSASetLastError(error); // what the error label reports
+#else
+        errno = error; // what the error label reports
+#endif
+        return false;
+    }
+    /// The peer's end, met by a read once what a pause left was framed: a dispatch fed here reads it again, as an
+    /// unpaused component's next pass meets it -- over TLS the descriptor may say nothing more once OpenSSL has read a
+    /// close_notify the peer sent alone, and OpenSSL answers that read at once. A handler that paused again, or stopped
+    /// the component, leaves that read to the dispatch the resume or the next start() owes it (`_frame_held`).
+    void
+    read_end_again() noexcept {
+        if (!_read_paused && this->_async_event.is_active())
+            this->_async_event.feed_event(EV_READ);
+        else
+            _frame_held = true;
     }
 
 public:
@@ -2636,14 +2982,16 @@ public:
         // A TLS read that waited to write when the object was stopped waits for writability alone (start_events()).
         this->_async_event.start(Derived.transport().native_handle(), start_events());
         feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
+        frame_held_input();
     }
 
     /**
      * @brief Ensures the I/O watcher is listening for read events: adds `EV_READ` if not set, and feeds it for what the transport holds.
+     *        Nothing while reading is paused (pause_reading()).
      */
     void
     ready_to_read() noexcept {
-        if (!(this->_async_event.events & EV_READ)) {
+        if (!(this->_async_event.events & EV_READ) && !_read_paused) {
             if constexpr (detail::tls_io<_Derived>) {
                 // A TLS read that waits to write (writability alone, protocol ok) reads again once that write leaves
                 // (Huly QB-1270): OpenSSL reads nothing before it, and readability watched meanwhile would dispatch the
@@ -2675,6 +3023,85 @@ public:
     [[nodiscard]] bool
     is_reading() const noexcept {
         return (this->_async_event.events & EV_READ) != 0;
+    }
+
+    /**
+     * @brief Pauses reading, as `input`'s: the transport is read no more, and no message is dispatched -- of what the
+     *        input already holds either -- until resume_reading(); output still leaves. Every path that arms readability
+     *        honours it: ready_to_read() (no effect while paused), a start(), the drain of the output, what the
+     *        transport holds (`held_input()`); a read readiness the loop has already collected is taken back.
+     * @details A component that only took readability off its watcher had it armed again by any of those. A message
+     *          being dispatched when it is called is the dispatch's last: the rest of the input waits. Over TLS, the
+     *          reads a handshake under way needs are made all the same -- the first handshake's, a later one's
+     *          (`rehandshaking()`), a read that must write first and a write that waits for the peer's handshake message
+     *          (`write_wants_read()`) among them -- and what they bring waits in the input, under the read cap;
+     *          is_reading() reports such a read. A peer's close or reset is seen at the next write, or once reading resumes; a timeout
+     *          of the component's own (`with_timeout`) still bounds the wait. A close_after_deliver() drain and its
+     *          linger read as before, a pause made before or during them included. A stop() and a start() keep the
+     *          pause; reset_io_state() and reset_for_reconnect() end it. Idempotent.
+     * @note **Example Usage:** a consumer that bounds what it holds.
+     * @code
+     * #include <qb/io/async.h>
+     * #include <qb/io/protocol/text.h>
+     * class Consumer : public qb::io::use<Consumer>::tcp::client<> {
+     * public:
+     *   using Protocol = qb::protocol::text::command<Consumer>;
+     *   std::size_t held = 0; // messages handed on, not consumed yet
+     *   void on(Protocol::message &&) {
+     *     ++held;
+     *     if (held == 64)
+     *       this->pause_reading(); // this message is the dispatch's last
+     *   }
+     *   void consumed() { // the consumer caught up
+     *     --held;
+     *     if (held == 16)
+     *       this->resume_reading(); // frames what the input held, whether the peer sends more or not
+     *   }
+     * };
+     * @endcode
+     */
+    void
+    pause_reading() noexcept {
+        _read_paused = true;
+        if (!_lingering && !tls_read_needed()) // a lingering close reads on, for its peer's end
+            hold_readability();
+    }
+
+    /**
+     * @brief Ends a pause_reading(), as `input`'s: readability is armed again, as ready_to_read() arms it, and what the
+     *        pause left in the input is framed: by the dispatch under way when called from one, else by a dispatch fed
+     *        here or, for a stopped component, by its next start() made with its protocol in place. That dispatch reads
+     *        first and frames the old input before the new; a read that finds nothing -- it would block, meets the
+     *        peer's close or a socket error, or finds the input at its cap -- frames it all the same, its output written
+     *        in the same dispatch (frame_held_at_exit(), frame_held_at_end()). A datagram component frames it before it
+     *        reads. Nothing when reading is not paused.
+     */
+    void
+    resume_reading() noexcept {
+        if (!std::exchange(_read_paused, false))
+            return;
+        if constexpr (detail::tls_io<_Derived>) {
+            // Writability alone the pause left -- output queued, an empty arm --, not a read that waits to write, which
+            // ready_to_read() takes writability alone for: readability back beside it.
+            if ((this->_async_event.events & (EV_READ | EV_WRITE)) == EV_WRITE && _protocol->ok() && !Derived.transport().read_wants_write()) {
+                this->_async_event.set(this->_async_event.events | EV_READ);
+                feed_held_input(); // what OpenSSL holds is read from here, as ready_to_read() would have it
+            }
+        }
+        ready_to_read();
+        if (!_protocol->ok())
+            return; // without its protocol, a dispatch would end the component
+        // From a handler of the dispatch under way, that dispatch frames on: the pause stopped no framing yet.
+        // The pause left input to frame -- or, over TLS, put off the read a held record's departure asks for, which no
+        // readiness of the socket announces (tls_held_flushed()) --: a dispatch of its own frames it, or makes it.
+        if (_frame_held && this->_async_event.is_active())
+            this->_async_event.feed_event(EV_READ);
+    }
+
+    /// Whether reading is paused (pause_reading()).
+    [[nodiscard]] bool
+    reading_paused() const noexcept {
+        return _read_paused;
     }
 
     /**
@@ -3189,7 +3616,15 @@ private:
         std::size_t ret = 0u;
 
         _on_message = true;
-        while ((ret = this->_protocol->getMessageSize()) > 0) {
+        for (;;) {
+            if (_read_paused) [[unlikely]] { // pause_reading(): none dispatched -- from a handler, its message was the last
+                held_by_pause();             // what the input holds is framed once reading resumes (resume_reading())
+                break;
+            }
+            if ((ret = this->_protocol->getMessageSize()) == 0) {
+                _frame_held = false; // every whole frame dispatched: nothing held
+                break;
+            }
             const auto frame_exceeds_pending = [&]() noexcept {
                 if (!this->_protocol->should_flush())
                     return false;
@@ -3287,9 +3722,11 @@ private:
         }
         // A datagram carries whole frames (Huly QB-303). What the protocol left is an incomplete frame of THIS
         // datagram's sender, just reported as `pending_read`; kept, it became the head of the next datagram's
-        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state.
+        // frame -- another sender's, answered to that sender. Dropped here with the protocol's partial state -- not
+        // when a pause stopped the framing: what it left is the rest of the datagram's frames, framed once reading
+        // resumes (by a hook just above too).
         if constexpr (detail::resets_input_per_read<_Derived>) {
-            if (Derived.pendingRead()) {
+            if (Derived.pendingRead() && !_frame_held) {
                 Derived.in().reset();
                 this->_protocol->reset();
             }
@@ -3357,7 +3794,7 @@ private:
                 // the reason here, where MSVC kept it in a register on the drain check every write passes.
                 return begin_linger();
             }
-            this->_async_event.set(EV_READ);
+            this->_async_event.set(_read_paused && !tls_read_needed() ? EV_NONE : EV_READ); // pause_reading()
             if constexpr (qb::has_on<_Derived, event::eos>) {
                 auto evt__eos = event::eos{};
                 Derived.on(std::move(evt__eos));
@@ -3418,23 +3855,49 @@ private:
         if (_reason)
             goto error;
 
-        if (event._revents & EV_READ && _protocol->ok()) { // sentinel ok()==false → skip read when unset
+        if constexpr (detail::resets_input_per_read<_Derived>) {
+            // A datagram transport frames what a pause left before it reads: the rest of one datagram and the head of the
+            // next would make one frame (Huly QB-303). The next datagram waits for the next pass.
+            if (_frame_held && !_read_paused && (event._revents & EV_READ) && _protocol->ok()) [[unlikely]] {
+                if (!frame_held_input_first())
+                    goto error;
+                ok = true;
+            }
+        }
+        if ((!detail::resets_input_per_read<_Derived> || !ok) && event._revents & EV_READ
+            && _protocol->ok()) { // sentinel ok()==false → skip read when unset
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
-            auto ret = static_cast<std::size_t>(Derived.read());
+            const auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
-                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                const int error = qb::io::socket::get_last_errno();
+                if (qb::io::socket::not_recv_error(error)) {
                     if constexpr (detail::tls_io<_Derived>) {
-                        if (Derived.transport().read_wants_write())
+                        if (Derived.transport().read_wants_write()) {
                             watch_write_for_read();
+                            return; // what a pause left is framed by the read made again once writability comes
+                        }
                     }
+                    if (!_frame_held || _read_paused) [[likely]]
+                        return;
+                    if (!frame_held_at_exit()) // resume_reading()'s dispatch: what the pause left framed first
+                        goto error;
                     return;
                 }
-                goto error;
+                if (!_frame_held || _read_paused) [[likely]] // paused: a TLS handshake read ends as it would unpaused
+                    goto error;
+                if (!frame_held_at_end(error))
+                    goto error;
+                return;
             }
 
             // Check for buffer size limit exceeded (DoS protection)
             if (unlikely(ret == static_cast<std::size_t>(-2))) {
+                if (_frame_held && !_read_paused) [[unlikely]] { // what the pause left fills the input: framed first
+                    if (!frame_held_at_exit())
+                        goto error;
+                    return;
+                }
                 _system_error = 0;
                 _reason       = -3; // Buffer size limit exceeded (DoS protection)
                 goto error;
@@ -3668,6 +4131,8 @@ protected:
         _on_message   = false;
         _reason       = 0;
         _system_error = 0;
+        _read_paused  = false; // the pause is the connection's
+        _frame_held   = false;
         end_linger();
     }
 
@@ -3700,6 +4165,8 @@ protected:
         Derived.in().reset();
         Derived.out().reset();
         clear_protocols();
+        _read_paused = false; // the pause is the previous connection's, as its buffers
+        _frame_held  = false;
     }
 
 private:
@@ -3724,7 +4191,7 @@ template <typename _Derived>
 QB_NOINLINE void
 input<_Derived>::feed_held_input() noexcept {
     if constexpr (requires { Derived.held_input(); }) {
-        if (this->_async_event.is_active() && _protocol->ok() && Derived.held_input() != 0)
+        if (this->_async_event.is_active() && !_read_paused && _protocol->ok() && Derived.held_input() != 0)
             this->_async_event.feed_event(EV_READ);
     }
 }
