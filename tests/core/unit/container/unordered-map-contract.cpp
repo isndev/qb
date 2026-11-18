@@ -1030,29 +1030,68 @@ TYPED_TEST(IcaseMapLookup, AKeyLongerThanTheStackBufferIsConvertedAndStillFound)
     EXPECT_EQ(counting_fold_trait::folds, 0);
 }
 
+namespace {
+
+/// The three folds of one text -- into a buffer, onto itself, and writing only what changes -- against the reference.
+/// Returns how many bytes the fold changes, so a caller can prove its texts did put the folds to work.
+std::size_t
+expect_the_three_folds_agree(const std::string &in, const char *where) {
+    const std::size_t n = in.size();
+    std::string       expected(in);
+    std::size_t       changed = 0;
+    for (auto &c : expected) {
+        const char folded = reference_lower(c);
+        changed += folded != c;
+        c = folded;
+    }
+    std::string out(n, '\0');
+    qb::string_to_lower::fold(in.data(), out.data(), n);
+    EXPECT_EQ(out, expected) << "into a buffer, " << where << ", n=" << n;
+    std::string in_place(in);
+    qb::string_to_lower::fold(in_place.data(), in_place.data(), n);
+    EXPECT_EQ(in_place, expected) << "in place, " << where << ", n=" << n;
+    std::string changed_only(in);
+    qb::string_to_lower::fold_in_place(changed_only.data(), n);
+    EXPECT_EQ(changed_only, expected) << "fold_in_place, " << where << ", n=" << n;
+    return changed;
+}
+
+} // namespace
+
 TEST(StringToLower, FoldAgreesWithTheByteWiseReferenceAtEveryLengthAndWordBoundary) {
-    // Every byte value, letters placed on both sides of every eight-byte boundary.
+    // Every byte value, then letters around both ends of the range: every window of up to forty bytes, from EVERY
+    // start. Until 3.4 the starts stopped at 24, so no window reached the first capital (the byte 65) and the three
+    // folds were compared with the reference only over texts a fold leaves as they are: a fold that lowercased nothing
+    // past its first byte, or skipped its last word, passed every comparison here.
     std::string source;
     for (int b = 0; b < 256; ++b)
         source.push_back(static_cast<char>(b));
     source += "aZ-AzZ@[`{Az";
+    std::size_t changed = 0;
     for (std::size_t n = 0; n <= 40; ++n) {
-        for (std::size_t start = 0; start + n <= source.size() && start < 24; ++start) {
-            const std::string in = source.substr(start, n);
-            std::string       expected(in);
-            for (auto &c : expected)
-                c = reference_lower(c);
-            std::string out(n, '\0');
-            qb::string_to_lower::fold(in.data(), out.data(), n);
-            EXPECT_EQ(out, expected) << "into a buffer, n=" << n << " start=" << start;
-            std::string in_place(in);
-            qb::string_to_lower::fold(in_place.data(), in_place.data(), n);
-            EXPECT_EQ(in_place, expected) << "in place, n=" << n << " start=" << start;
-            std::string changed_only(in);
-            qb::string_to_lower::fold_in_place(changed_only.data(), n);
-            EXPECT_EQ(changed_only, expected) << "fold_in_place, n=" << n << " start=" << start;
-        }
+        for (std::size_t start = 0; start + n <= source.size(); ++start)
+            changed += expect_the_three_folds_agree(source.substr(start, n), ("start=" + std::to_string(start)).c_str());
     }
+    EXPECT_GT(changed, 20000u) << "the windows must cross the capitals: a fold is only compared where it changes a byte";
+
+    // Drawn texts, capitals among the bytes that sit on each side of them and the same letters with the high bit set:
+    // a capital at any place in a word, a word with one capital or eight, a tail with a capital only in its last bytes.
+    const std::string alphabet = std::string("AZMQ@[`{azmq-_ 09\xC1\xDA\xE1\xFA\x7F\x80\xFF") + '\0';
+    std::uint64_t     state    = 0x9E3779B97F4A7C15ULL;
+    const auto        draw     = [&state](std::uint64_t bound) {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        return static_cast<std::size_t>(state % bound);
+    };
+    std::size_t drawn_changed = 0;
+    for (int text = 0; text < 20000; ++text) {
+        std::string in(draw(66), '\0'); // 0..65 bytes: under a word, whole words, every tail
+        for (auto &c : in)
+            c = alphabet[draw(alphabet.size())];
+        drawn_changed += expect_the_three_folds_agree(in, "drawn");
+    }
+    EXPECT_GT(drawn_changed, 50000u) << "four letters in twenty-five are capitals: the drawn texts must hold them";
     EXPECT_EQ(qb::string_to_lower::convert("Content-Type"), "content-type");
     EXPECT_EQ(qb::string_to_lower::convert(std::string("ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`")), "abcdefghijklmnopqrstuvwxyz[\\]^_`");
     EXPECT_EQ(qb::string_to_lower::convert(std::string_view("\x80\xC1\xDA\xFF"
@@ -1243,25 +1282,33 @@ TEST(IcaseMapNoexcept, TheMoveMembersAreAsNothrowAsTheBaseMapsOwn) {
     EXPECT_THROW(target = std::move(source), std::bad_alloc);
 }
 
-// A key the caller gives up is folded where it is and handed on, never copied: the const overload of
+// A key the caller gives up is folded in the buffer it brought, never copied: the const overload of
 // string_to_lower::convert() copies it first, one allocation a key past the small-string capacity (Huly QB-1216: three a
-// browser's HTTP/2 request). The rvalue overload builds no string at all -- its result is the caller's -- and its fold
-// writes only what it changes (Huly QB-1248, and FoldInPlaceWritesNothingIntoATextAlreadyLowercase above).
+// browser's HTTP/2 request). The result is nonetheless a string of its OWN, as in 3.3, where the const overload served an
+// rvalue: a caller that binds a reference to it, or walks it in a range-for, holds a live object after the argument is
+// gone. An overload returning a reference to its argument -- what the map's own path needs, and keeps to itself -- read a
+// destroyed temporary in both lines below (Huly QB-1248).
 TEST(UnorderedMapContract, AKeyTheCallerGivesUpIsFoldedInPlaceNotCopied) {
-    static_assert(std::is_same_v<decltype(qb::string_to_lower::convert(std::declval<std::string>())), std::string &&>,
-                  "the caller's string, handed back: no string is built for a key that is given up");
+    static_assert(std::is_same_v<decltype(qb::string_to_lower::convert(std::declval<std::string>())), std::string>,
+                  "a string of its own: a reference to the argument would outlive a temporary in the caller's hands");
+    static_assert(noexcept(qb::string_to_lower::convert(std::declval<std::string>())), "a move and a fold: nothing to throw");
+    const std::string &kept = qb::string_to_lower::convert(std::string(40, 'Q'));
+    EXPECT_EQ(kept, std::string(40, 'q')) << "bound to a reference, the result outlives the temporary it was made from";
+    std::size_t letters = 0;
+    for (const char c : qb::string_to_lower::convert(std::string(40, 'Q')))
+        letters += c == 'q';
+    EXPECT_EQ(letters, 40u) << "walked in a range-for, likewise";
+
     std::string       key(40, 'X'); // past every small-string capacity: the bytes live in a heap buffer
     const char *const buffer = key.data();
     const std::string folded = qb::string_to_lower::convert(std::move(key));
     EXPECT_EQ(folded, std::string(40, 'x'));
     EXPECT_EQ(folded.data(), buffer) << "the caller's buffer, folded and moved on, not a copy";
 
-    std::string   short_key = "Content-Type"; // inside every small-string buffer
-    std::string &&handed    = qb::string_to_lower::convert(std::move(short_key));
-    EXPECT_EQ(&handed, &short_key) << "the caller's string itself";
-    EXPECT_EQ(short_key, "content-type");
+    std::string short_key = "Content-Type"; // inside every small-string buffer
+    EXPECT_EQ(qb::string_to_lower::convert(std::move(short_key)), "content-type");
     std::string seven = "FIELD12"; // under eight bytes: the byte-wise fold
-    EXPECT_EQ(std::string(qb::string_to_lower::convert(std::move(seven))), "field12");
+    EXPECT_EQ(qb::string_to_lower::convert(std::move(seven)), "field12");
 
     const std::string spelled(40, 'Y');
     std::string       copied_from = spelled;
@@ -1273,6 +1320,149 @@ TEST(UnorderedMapContract, AKeyTheCallerGivesUpIsFoldedInPlaceNotCopied) {
     map[std::move(name)] = 1;
     EXPECT_TRUE(map.has(std::string(40, 'z')));
     EXPECT_TRUE(map.has(std::string(40, 'Z')));
+}
+
+namespace unordered_map_contract_test {
+
+/// `string_to_lower` counting the path an insert takes: a string built (`convert`), or a key folded where it is.
+struct counting_in_place_trait {
+    inline static int converts = 0;
+    inline static int in_place = 0;
+
+    template <std::size_t N>
+    static std::string
+    convert(const char (&str)[N]) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static std::string
+    convert(std::string const &str) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static std::string
+    convert(std::string &&str) {
+        ++converts;
+        return qb::string_to_lower::convert(std::move(str));
+    }
+    static std::string
+    convert(std::string_view const &str) {
+        ++converts;
+        return qb::string_to_lower::convert(str);
+    }
+    static void
+    fold(const char *src, char *dst, std::size_t n) noexcept {
+        qb::string_to_lower::fold(src, dst, n);
+    }
+    static void
+    fold_in_place(char *text, std::size_t n) noexcept {
+        ++in_place;
+        qb::string_to_lower::fold_in_place(text, n);
+    }
+    static void
+    reset() noexcept {
+        converts = in_place = 0;
+    }
+};
+
+} // namespace unordered_map_contract_test
+
+template <typename Map>
+class IcaseMapGivenUpKey : public ::testing::Test {};
+using InPlaceIcaseMaps =
+    ::testing::Types<qb::icase_basic_map<qb::unordered_map<std::string, int, qb::string_hash, std::equal_to<>>,
+                                         unordered_map_contract_test::counting_in_place_trait>,
+                     qb::icase_basic_map<std::map<std::string, int, std::less<>>, unordered_map_contract_test::counting_in_place_trait>>;
+TYPED_TEST_SUITE(IcaseMapGivenUpKey, InPlaceIcaseMaps);
+
+// The map's own path for a std::string given as a non-const rvalue: folded where the caller holds it and moved in as it
+// is -- the trait builds no string, and the stored key lives in the very buffer the caller's did. Every other key form
+// is converted, and what the caller still owns is left as it was.
+TYPED_TEST(IcaseMapGivenUpKey, AnInsertFoldsItWhereItIsAndMovesItIn) {
+    using unordered_map_contract_test::counting_in_place_trait;
+    TypeParam map;
+    // Forty bytes: past every small-string capacity, so a buffer's address tells a move from a copy.
+    std::string       first         = "X-Emplaced-" + std::string(29, 'A');
+    std::string       second        = "X-Try-Emplaced-" + std::string(25, 'B');
+    std::string       third         = "X-Subscripted-" + std::string(26, 'C');
+    const char *const first_buffer  = first.data();
+    const char *const second_buffer = second.data();
+    const char *const third_buffer  = third.data();
+    counting_in_place_trait::reset();
+    EXPECT_TRUE(map.emplace(std::move(first), 1).second);
+    EXPECT_TRUE(map.try_emplace(std::move(second), 2).second);
+    map[std::move(third)] = 3;
+    EXPECT_EQ(counting_in_place_trait::converts, 0) << "a key given up is not converted into another string";
+    EXPECT_EQ(counting_in_place_trait::in_place, 3) << "it is folded where it is, once an insert";
+    ASSERT_EQ(map.size(), 3u);
+    const auto stored = [&map](std::string_view key) {
+        return map.find(key)->first.data();
+    };
+    EXPECT_EQ(stored("x-emplaced-" + std::string(29, 'a')), first_buffer) << "emplace: the caller's buffer is the stored key's";
+    EXPECT_EQ(stored("x-try-emplaced-" + std::string(25, 'b')), second_buffer) << "try_emplace: likewise";
+    EXPECT_EQ(stored("x-subscripted-" + std::string(26, 'c')), third_buffer) << "operator[]: likewise";
+    EXPECT_EQ(map.find("X-SUBSCRIPTED-" + std::string(26, 'c'))->second, 3);
+
+    // What the caller does not give up is converted, and left as it was.
+    std::string            lvalue = "Content-Type";
+    const std::string      fixed  = "Content-Length";
+    const std::string_view view   = "Transfer-Encoding";
+    counting_in_place_trait::reset();
+    map.emplace(lvalue, 4);
+    map.try_emplace(std::move(fixed), 5); // a const rvalue cannot be folded where it is
+    map[view]     = 6;
+    map["Accept"] = 7;
+    EXPECT_EQ(counting_in_place_trait::converts, 4);
+    EXPECT_EQ(counting_in_place_trait::in_place, 0);
+    EXPECT_EQ(lvalue, "Content-Type");
+    EXPECT_EQ(fixed, "Content-Length");
+    EXPECT_EQ(map.size(), 7u);
+    EXPECT_TRUE(map.has("content-type") && map.has("CONTENT-LENGTH") && map.has("transfer-encoding") && map.has("accept"));
+}
+
+// A key given up for a key the map ALREADY holds stays with the caller: not moved from (try_emplace and operator[]
+// promise that of every map), but folded -- the fold comes before the map can say whether it holds the key, and a
+// lookup first would cost every insert of a new key a second one. The stored key and its value are as they were.
+TYPED_TEST(IcaseMapGivenUpKey, AKeyTheMapAlreadyHoldsStaysWithTheCallerFolded) {
+    TypeParam         map;
+    const std::string spelled = "X-Already-There-" + std::string(24, 'D');
+    std::string       lowered = spelled;
+    for (auto &c : lowered)
+        c = reference_lower(c);
+    map[spelled]             = 1;
+    const char *const stored = map.find(spelled)->first.data();
+
+    std::string       again  = spelled;
+    const char *const buffer = again.data();
+    const auto        tried  = map.try_emplace(std::move(again), 2);
+    EXPECT_FALSE(tried.second);
+    EXPECT_EQ(tried.first->second, 1) << "the value the map held";
+    EXPECT_EQ(again, lowered) << "try_emplace: the key is left with the caller, folded";
+    EXPECT_EQ(again.data(), buffer) << "try_emplace: and not moved from";
+
+    std::string       once_more   = spelled;
+    const char *const more_buffer = once_more.data();
+    EXPECT_EQ(map[std::move(once_more)], 1);
+    EXPECT_EQ(once_more, lowered) << "operator[]: the key is left with the caller, folded";
+    EXPECT_EQ(once_more.data(), more_buffer) << "operator[]: and not moved from";
+
+    EXPECT_EQ(map.size(), 1u);
+    EXPECT_EQ(map.find(spelled)->first.data(), stored) << "the stored key is the one the map had";
+}
+
+// emplace() promises less than try_emplace() of a standard map: an argument it does not insert may have been moved into a
+// node that is then dropped. qb::unordered_map's only reads its arguments on a hit, so the shipped icase_unordered_map
+// leaves a key given up for a key it already holds exactly as try_emplace() does.
+TEST(UnorderedMapContract, EmplaceOfAKeyTheHashMapAlreadyHoldsLeavesItWithTheCallerFolded) {
+    qb::icase_unordered_map<int> map;
+    const std::string            spelled = "X-Already-There-" + std::string(24, 'E');
+    map.emplace(spelled, 1);
+    std::string       again  = spelled;
+    const char *const buffer = again.data();
+    EXPECT_FALSE(map.emplace(std::move(again), 2).second);
+    EXPECT_EQ(again, "x-already-there-" + std::string(24, 'e'));
+    EXPECT_EQ(again.data(), buffer);
+    EXPECT_EQ(map.at(spelled), 1);
 }
 
 // A LOOKUP never consumes its key, whatever its value category: the converting branch -- a base map without heterogeneous

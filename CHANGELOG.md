@@ -432,17 +432,27 @@ policy.
 - **An icase map folds a key the caller gives up where it is, instead of copying it first (Huly QB-1216).**
   `qb::string_to_lower::convert()` had overloads for a string literal, a `const std::string &` and a `std::string_view`, so
   `emplace()`, `try_emplace()` and `operator[]` given an rvalue `std::string` copied it, folded the copy and dropped the
-  original -- one allocation a key past the small-string capacity (three a browser's HTTP/2 request in qbm-http). The new
-  `convert(std::string &&) noexcept` folds the string where it is and hands it back -- its result is the caller's
-  string, no string is built -- and an insert with an rvalue key takes it. Its fold is the new `fold_in_place()`, which
-  writes only the bytes a fold changes: a key already lowercase (the name of a query parameter, of an HTTP/2 header)
-  reaches the map unwritten. Folded whole and returned by value, as it was on the development branch until then, the
-  string object was reloaded whole right behind the fold's narrower stores into its small-string buffer -- a load no
-  store can forward, which waits for the store buffer to drain -- and with MSVC 19.51, whose move constructor is that
-  load, 32 bytes wide, a short key moved into a map cost more than the copy it saved (Huly QB-1248, on the uri's query
-  map with its other change: `BM_Uri_ParseQueryHeavy` 2 831 -> 2 502 ns at sixteen keys and 11 793 -> 10 139 ns at
-  sixty-four on an i9-12900K, where 3.3.0 reads 2 549 and 10 521; g++ 14 runs 29 359 -> 28 731 instructions and 1 543 ->
-  1 483 ns for the sixteen).
+  original -- one allocation a key past the small-string capacity (three a browser's HTTP/2 request in qbm-http). An
+  insert now folds such a key where the caller holds it and moves it into the map as it is: no string is built. The
+  fold is the new `string_to_lower::fold_in_place()`, which writes only the bytes a fold changes: a key already
+  lowercase (the name of a query parameter, of an HTTP/2 header) reaches the map unwritten. Folded whole into a string
+  returned by value, as it was on the development branch until then, the string object was reloaded whole right behind
+  the fold's narrower stores into its small-string buffer -- a load no store can forward, which waits for the store
+  buffer to drain -- and with MSVC 19.51, whose move constructor is that load, 32 bytes wide, a short key moved into a
+  map cost more than the copy it saved (Huly QB-1248, on the uri's query map with its other change:
+  `BM_Uri_ParseQueryHeavy` 2 831 -> 2 502 ns at sixteen keys and 11 793 -> 10 139 ns at sixty-four on an i9-12900K,
+  where 3.3.0 reads 2 549 and 10 521; g++ 14 runs 29 359 -> 28 731 instructions and 1 543 -> 1 483 ns for the sixteen).
+  What a caller can see: a `std::string` passed as a non-const rvalue is given up, inserted or not. A key the map did
+  not hold is moved into it. A key it already holds stays with the caller of `try_emplace()` or `operator[]`, not moved
+  from but FOLDED -- the fold comes before the map can say whether it holds the key, and a lookup first would cost every
+  new key a second one -- and `emplace()` leaves it as the base map's `emplace` leaves an argument it does not insert
+  (`qb::unordered_map` only reads it). Until 3.3 such a key was copied and left as it was; an lvalue, a const string, a
+  view and a literal still are. A trait of your own gets the same path by offering
+  `static void fold_in_place(char *, std::size_t)`; without it the map converts every key, as before.
+  `string_to_lower::convert()` itself gains a `std::string &&` overload for a direct caller: the folded text in the
+  buffer the argument brought, no allocation, returned as a string of its own like every other overload's result -- a
+  reference bound to it outlives the argument, as it did when the const overload served an rvalue -- and the argument
+  is left moved from, where that overload left it intact.
   A lookup never consumes its key: the converting branch of a lookup (a base map without heterogeneous lookup; neither
   shipped alias takes it) converts a const view of the key. Measured with qbm-http's HTTP/2 server moving the name (its own
   commit): 3 allocations and ~620 instructions fewer a request; on its own over the shipped request path it reads +4.4..6.0 %

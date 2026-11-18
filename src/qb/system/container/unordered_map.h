@@ -112,8 +112,8 @@ using unordered_map = ska::unordered_map<K, V, H, E, A>;
  *
  * Provides the ASCII case folding the case-insensitive maps key on: `fold()` lowercases bytes
  * in place or into a caller's buffer, eight at a time, `fold_in_place()` where they are and writing
- * only what changes; the `convert()` overloads return the folded copy as a `std::string`, or the
- * string itself when the caller gives it up.
+ * only what changes; the `convert()` overloads return the folded text as a `std::string` of its
+ * own -- a copy, or, for a string the caller gives up, that string's own buffer moved on.
  */
 class string_to_lower {
     /**
@@ -240,22 +240,25 @@ public:
     }
 
     /**
-     * @brief Lowercases a string the caller gives up where it is, and hands it back
+     * @brief Lowercases a string the caller gives up, in the buffer it brought
      *
-     * The rvalue overload: a key moved into `emplace()`, `try_emplace()` or `operator[]` is folded in the
-     * buffer it brought and goes on into the map as it is, where the const overload copies it first -- one
-     * allocation a key past the small-string capacity (three a browser's HTTP/2 request, Huly QB-1216).
-     * No string is built here: the result is `str` itself, and `fold_in_place()` writes only what it
-     * changes, so a key already lowercase reaches the map unwritten. Folded whole and returned by value, a
-     * short key moved into a map cost MSVC more than the copy it saved (Huly QB-1248).
+     * The rvalue overload: nothing is copied -- past the small-string capacity the result owns the very
+     * buffer `str` came with, where the const overload allocates another (Huly QB-1216) -- and the result is
+     * a string of its own, as every other overload's is: it may be kept, by value or through a reference
+     * bound to it, after `str` is gone, as the code written when the const overload served an rvalue does.
+     * The string is moved first and folded where it lands, by `fold_in_place()`: nothing here loads a string
+     * object behind the fold's narrower stores into its small-string buffer (Huly QB-1248). An icase map does
+     * not come through here for a key it is given up: it folds that key where the caller holds it
+     * (`icase_basic_map`).
      *
-     * @param str The input string, consumed
-     * @return `str`, lowercased: a reference to the caller's string, not a new one -- use it before `str` dies
+     * @param str The input string, consumed: left moved from
+     * @return std::string The same text, lowercased, in the buffer `str` brought
      */
-    [[nodiscard]] static std::string &&
+    [[nodiscard]] static std::string
     convert(std::string &&str) noexcept {
-        fold_in_place(str.data(), str.size());
-        return std::move(str);
+        std::string folded(std::move(str));
+        fold_in_place(folded.data(), folded.size());
+        return folded;
     }
 
     /**
@@ -295,8 +298,14 @@ struct string_hash {
  * This template class wraps any map type to provide case-insensitive
  * string keys by converting keys to lowercase before operations.
  *
- * The stored key is the folded one (`_Trait::convert`), built once, when a key is INSERTED
- * (`emplace`, `try_emplace`, `operator[]`). A lookup (`find`, `at`, `has`, `erase(key)`) builds
+ * The stored key is the folded one, made once, when a key is INSERTED (`emplace`, `try_emplace`,
+ * `operator[]`). `_Trait::convert` builds it -- except for a `std::string` the caller gives up (a
+ * non-const rvalue) under a trait that offers `fold_in_place()`: that key is folded where the caller
+ * holds it and moved into the map as it is, no string built and a key already lowercase not written
+ * at all (Huly QB-1216, QB-1248). A key given up is the caller's no more, inserted or not: when the
+ * map already holds it, `try_emplace` and `operator[]` leave it where it was, not moved from but
+ * FOLDED, and `emplace` leaves it as the base map's `emplace` leaves an argument it does not insert
+ * (`qb::unordered_map` reads it and no more). A lookup (`find`, `at`, `has`, `erase(key)`) builds
  * nothing: when the base map accepts a `std::string_view` key and the trait offers `fold()`,
  * the key is folded into a buffer on the stack and looked up as a view -- no `std::string`, no
  * allocation, whatever the key's length -- and only a key longer than that buffer goes through
@@ -319,6 +328,9 @@ class icase_basic_map : _Map {
 
     /// Whether the trait folds into a caller's buffer.
     static constexpr bool trait_folds = requires(const char *s, char *d, std::size_t n) { _Trait::fold(s, d, n); };
+
+    /// Whether the trait folds a text where it is.
+    static constexpr bool trait_folds_in_place = requires(char *s, std::size_t n) { _Trait::fold_in_place(s, n); };
 
     /// The bytes of a key, as a view: `N - 1` for a character array (a string literal),
     /// `std::string_view` for anything that converts to one.
@@ -358,6 +370,26 @@ class icase_basic_map : _Map {
         }
     }
 
+    /**
+     * @brief The key an insert hands the base map: a `std::string` the caller gives up, folded where the
+     *        caller holds it, when the trait folds in place; what `_Trait::convert` builds for any other key.
+     *
+     * The first is a reference to the caller's own string, which is why it stays in here: the base map moves
+     * from it, or leaves it, before the insert returns. No public function hands such a reference out -- a
+     * caller that kept it would hold a temporary argument past its end -- and `string_to_lower::convert()`
+     * returns a string of its own for every argument (Huly QB-1248).
+     */
+    template <typename T>
+    [[nodiscard]] static decltype(auto)
+    stored_key(T &&key) {
+        if constexpr (trait_folds_in_place && std::is_same_v<T, std::string>) {
+            _Trait::fold_in_place(key.data(), key.size());
+            return std::move(key);
+        } else {
+            return _Trait::convert(std::forward<T>(key));
+        }
+    }
+
 public:
     /** @brief Default constructor */
     icase_basic_map() = default;
@@ -390,14 +422,16 @@ public:
      *
      * @tparam T Key type
      * @tparam _Args Value constructor argument types
-     * @param key The key (will be converted to lowercase)
+     * @param key The key (will be converted to lowercase). A `std::string` given as a non-const rvalue is given
+     *            up: folded where it is, then moved into the map -- or, when the map already holds that key,
+     *            left as the base map's `emplace` leaves an argument it does not insert, folded.
      * @param args Arguments to construct the value
      * @return Result of the underlying map's emplace operation
      */
     template <typename T, typename... _Args>
     auto
     emplace(T &&key, _Args &&...args) {
-        return static_cast<base_t &>(*this).emplace(_Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
+        return static_cast<base_t &>(*this).emplace(stored_key(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
@@ -405,14 +439,16 @@ public:
      *
      * @tparam T Key type
      * @tparam _Args Value constructor argument types
-     * @param key The key (will be converted to lowercase)
+     * @param key The key (will be converted to lowercase). A `std::string` given as a non-const rvalue is given
+     *            up: folded where it is, then moved into the map -- or, when the map already holds that key,
+     *            left with the caller, not moved from but folded.
      * @param args Arguments to construct the value
      * @return Result of the underlying map's try_emplace operation
      */
     template <typename T, typename... _Args>
     auto
     try_emplace(T &&key, _Args &&...args) {
-        return static_cast<base_t &>(*this).try_emplace(_Trait::convert(std::forward<T>(key)), std::forward<_Args>(args)...);
+        return static_cast<base_t &>(*this).try_emplace(stored_key(std::forward<T>(key)), std::forward<_Args>(args)...);
     }
 
     /**
@@ -453,13 +489,15 @@ public:
      * @brief Access or insert a value by key, with the key converted to lowercase
      *
      * @tparam T Key type
-     * @param key The key (will be converted to lowercase)
+     * @param key The key (will be converted to lowercase). A `std::string` given as a non-const rvalue is given
+     *            up: folded where it is, then moved into the map -- or, when the map already holds that key,
+     *            left with the caller, not moved from but folded.
      * @return Reference to the value associated with the key
      */
     template <typename T>
     auto &
     operator[](T &&key) {
-        return static_cast<base_t &>(*this)[_Trait::convert(std::forward<T>(key))];
+        return static_cast<base_t &>(*this)[stored_key(std::forward<T>(key))];
     }
 
     /**
