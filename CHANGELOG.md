@@ -9,6 +9,32 @@ policy.
 
 ### Added
 
+- **`pause_reading()`, `resume_reading()` and `reading_paused()` on `qb::io::async::io` and `qb::io::async::input`: a
+  component suspends and resumes its READING (Huly QB-1270).** A handler that cannot take the next message yet -- a
+  request it must finish first, a consumer behind it that is full -- had `stop()`, which stops the watcher whole
+  (nothing is written either) and does not end the read pass under way: the messages one read had brought kept
+  coming. `void pause_reading() noexcept`, called from the handler of a message, makes that message the last of its
+  read pass -- it is consumed whole and what follows stays in the input buffer --; called from anywhere else, no
+  message is delivered from then on. Readability is no longer watched, so a peer that keeps sending fills the
+  socket's buffer and is slowed down by its own transport; writing goes on. `void resume_reading() noexcept` watches
+  readability again and hands what the suspension retained to the protocol FROM THE LOOP, in a dispatch it asks for,
+  before anything is read again: never from inside the call, and a peer's end of stream is seen after it, once.
+  `[[nodiscard]] bool reading_paused() const noexcept` says whether the reading is suspended. A suspension lasts
+  until the resume or the end of the connection: `dispose()` clears it once `on(event::disconnected&&)` has returned,
+  and so do `reset_io_state()` and `reset_for_reconnect()`, so a client that connects again reads. `start()` neither
+  makes nor ends one -- a `pause_reading()` made in a session's constructor holds from the first start, and a
+  `stop()` and a `start()` leave a suspension --; it only asks again for the slice a resume had asked for, when a
+  `stop()` dropped that dispatch or the resume was made while stopped. `ready_to_read()` has no effect under a
+  suspension. `close_after_deliver()` and its lingering close go through it, a close with nothing queued watching for
+  its peer's end as a component that reads does; after a `disconnect()` what was retained is never delivered. A peer
+  that closes is learned of at the next write or at the resume, not before: an inactivity timeout bounds that wait.
+  Over TLS a handshake under way is read until it completes, a read that must write first is made again when its
+  write leaves, and a read the loop is asked for all the same is still made; the application data such a read
+  brings is retained up to the read cap, which ends the connection as it does for any read. Stream transports only:
+  the calls do not compile on a datagram transport, whose every read is one datagram. An acceptor is an `input<>`
+  whose read accepts a connection: a server that suspends its reading accepts nothing -- the connections wait in the
+  listen backlog -- until it resumes. A component that never suspends pays one byte of state, tested with the
+  disconnection reason in the branch the slicing loop already had, and one test at the head of the read branch.
 - **`qb::io::tcp::ssl::socket::close_notify()`, `quiet_shutdown()` and `mark_cut()`: the TLS end of stream, sent or
   withheld (Huly QB-1270).** `bool close_notify() noexcept` writes this side's `close_notify` alert once and never
   waits for the peer's -- OpenSSL's fast shutdown; it answers whether the alert was handed to the socket, leaves the
@@ -26,18 +52,23 @@ policy.
   holds names a descriptor it no longer owns; a `read()` or a `write()` afterwards fails. qb-io calls it when the io
   object that owns the socket ends its own connection and the loop takes the descriptor (the defect it closes is
   under Fixed).
-- **`qb::io::tcp::ssl::socket::read_wants_write()`, `write_wants_read()` and `rehandshaking()`: the direction a TLS read
-  or write waits for when it is not its own, and a handshake under way after the first (Huly QB-1270).** `[[nodiscard]]
-  bool read_wants_write() const noexcept` is true after a `read()` that answered `-1` with a would-block because it must
-  write first -- a handshake message answering what it read, a server's handshake flight -- and the socket could not
-  take that write: read again when the socket can take a write. `[[nodiscard]] bool write_wants_read() const noexcept`
-  is true after a `write()` that answered `0` because OpenSSL waits for the peer's next handshake message: write again
-  once a read has taken it. Each is meaningful right after that answer, as `handshake_wants_write()` is after
-  `handshake_status()` answered `0`: a flag the call left, read with no I/O and no OpenSSL call. `[[nodiscard]] bool
-  rehandshaking() const noexcept` is true while a handshake is under way on a connection whose first one completed -- a
-  TLS 1.2 renegotiation, a TLS 1.3 post-handshake message being taken or answered --: OpenSSL's `SSL_in_init()` once
-  connected, no I/O. OpenSSL takes the peer's application data during such a handshake from `SSL_read()` alone. The io
-  objects watch what the three say (the defects they close are under Fixed); a socket driven by hand does the same.
+- **`qb::io::tcp::ssl::socket::read_wants_write()`, `write_wants_read()`, `rehandshaking()` and `handshaking()`: the
+  direction a TLS read or write waits for when it is not its own, and a handshake under way (Huly QB-1270).**
+  `[[nodiscard]] bool read_wants_write() const noexcept` is true after a `read()` that answered `-1` with a would-block
+  because it must write first -- a handshake message answering what it read, a server's handshake flight -- and the
+  socket could not take that write: read again when the socket can take a write. The next `read()` lowers it whatever
+  it answers, data included, so it can be asked later as well: the io objects ask it to tell a read that waits to
+  write from a component whose reading is suspended. `[[nodiscard]] bool write_wants_read() const noexcept` is true
+  after a `write()` that answered `0` because OpenSSL waits for the peer's next handshake message: write again once a
+  read has taken it. That one is meaningful right after that answer only, as `handshake_wants_write()` is after
+  `handshake_status()` answered `0`: a write that succeeds does not lower it. Each is a flag the call left, read with
+  no I/O and no OpenSSL call. `[[nodiscard]] bool rehandshaking() const noexcept` is true while a handshake is under
+  way on a connection whose first one completed -- a TLS 1.2 renegotiation, a TLS 1.3 post-handshake message being
+  taken or answered --: OpenSSL's `SSL_in_init()` once connected, no I/O. `[[nodiscard]] bool handshaking() const
+  noexcept` is `SSL_in_init()` whether the first handshake completed or not: what the transport still has to read
+  when its component's reading is suspended. OpenSSL takes the peer's application data during a handshake after the
+  first from `SSL_read()` alone. The io objects watch what the four say (the defects they close are under Fixed); a
+  socket driven by hand does the same.
 - **A TCP session reads and sets its transport's write-buffer cap: `max_write_buffer_size()` and
   `set_max_write_buffer_size()` on `qb::io::async::tcp::client` (Huly QB-86).** The session -- what
   `qb::io::use<S>::tcp::client` and its TLS form build on, the server-associated and the standalone form alike --
@@ -848,6 +879,15 @@ policy.
 
 ### Fixed
 
+- **A session whose transport was extracted is no longer dispatched (Huly QB-1270).** `io_handler::extractSession()`
+  moved the session's IO object out and erased the session, and left its watcher as it was. A session nobody else
+  held was destroyed there, and its destructor stopped the watcher. One that was still held -- a `shared_ptr` kept
+  across a protocol upgrade -- kept watching a descriptor that was its new owner's: the peer's next octets dispatched
+  it, its read of a transport it no longer had failed, and it was handed `event::disconnected` on a connection that
+  went on. `extractSession()` now stops the session's watcher before the transport leaves, through the base's own
+  `stop()` -- a `stop()` the session declares for something else is not called. A session that stopped it itself in
+  `on(event::extracted&&)` loses nothing: the second stop is a no-op. Only the IO object leaves, as before: input the
+  session had read and not consumed stays in its buffer.
 - **A deferred callback that runs the loop no longer waits for ever for what `defer()` delivers: the loop it runs
   drains the deferred queue (Huly QB-1246).** The queue was drained by one drain at a time, and a `run()` reached from
   inside a deferred callback drained nothing. A callback that waited by pumping the loop -- `run_sync()` of an
@@ -2472,6 +2512,9 @@ policy.
 
 ### Documentation
 
+- **`qb::io::transport::udp::read()` documented `0` as "the read would block".** `0` is a datagram of no octets, whose
+  sender still becomes the reply target; a read that would block answers a negative value, told apart by the system
+  error as for any socket. The code was right and is unchanged.
 - **`scripts/check-changelog.py`: every paragraph of `[Unreleased]` ends its sentence, and no headline is cut off or
   written twice (Huly QB-1221).** qbm-http's `[Unreleased]` carried for four days an entry cut off on "(the", left
   beside the rewrite that replaced it, and every guard passed it. The script, shared by the four repositories and run

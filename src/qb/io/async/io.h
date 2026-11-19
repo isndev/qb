@@ -91,6 +91,32 @@ concept tls_io = requires(T &component) {
     { component.transport().write_wants_read() } -> std::same_as<bool>;
     { component.transport().rehandshaking() } -> std::same_as<bool>;
 };
+
+/**
+ * @brief A component whose transport also says that a handshake is under way from the connection's first octet
+ *        (`handshaking()`): what it still has to read while its component's reading is suspended. Spelled over the
+ *        type, as `tls_io` and `has_socket_transport` are (MSVC 19.51 and requirements written on `*this`).
+ */
+template <typename T>
+concept says_handshaking = requires(T &component) {
+    { component.transport().handshaking() } -> std::same_as<bool>;
+};
+
+/**
+ * @brief Where a component's READING stands (`pause_reading()` / `resume_reading()`, Huly QB-1270): one byte, read
+ *        with the disconnection reason -- the slicing loop tests both in one branch.
+ * @details `read_suspended`: no message is handed to the protocol, and readability is not watched for the
+ *          application. `read_resumed`: reading was resumed with input the suspension had retained -- the next
+ *          dispatch slices it before anything is read; owed until then, a `stop()` and a `start()` included.
+ */
+enum read_state : std::uint8_t { read_flowing = 0, read_suspended = 1, read_resumed = 2 };
+
+/// What the read branch of a dispatch does once `suspended_read()` has looked at a component that is not flowing.
+enum class suspended_dispatch : std::uint8_t {
+    served,   ///< nothing more to read in this dispatch: it counts as served, and the write pass follows
+    returned, ///< the dispatch is over (a read that would block)
+    failed    ///< the read failed, or a handler ended the connection: dispose
+};
 } // namespace detail
 
 /**
@@ -881,6 +907,7 @@ class input : public base<input<_Derived>, event::io> {
     detail::protocol_list _protocol_list;            /**< Owned protocols; one a dispatch cleared ends once it has returned (QB-1278). */
     bool                  _on_message  = false; /**< Internal flag to prevent re-entrant calls to `on(event::io&)` during message processing. */
     bool                  _is_disposed = false; /**< Internal flag to ensure `dispose()` is called only once. */
+    std::uint8_t          _read_paused = 0;     /**< Where reading stands, a `detail::read_state` (`pause_reading()`). */
     int                   _reason      = 0;     /**< Stores the reason for disconnection if initiated by `disconnect()`. */
     int                   _system_error = 0;    /**< Stores the system error code (errno) if an I/O error occurred. */
     std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
@@ -1023,6 +1050,8 @@ public:
         // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
+        // The reading stays where it stands: a suspension made before this start -- in a constructor, or under a
+        // stop() -- holds from it (read_events()), and it ends with the connection, never with a start.
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;
@@ -1030,6 +1059,10 @@ public:
         Derived.transport().set_nonblocking(true);
         this->_async_event.start(Derived.transport().native_handle(), read_events());
         feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
+        if (_read_paused == detail::read_resumed) [[unlikely]] {
+            _read_paused = detail::read_flowing;
+            slice_retained_from_loop(); // a resume made while stopped, or whose dispatch a stop() dropped: asked again
+        }
     }
 
     /**
@@ -1040,6 +1073,8 @@ public:
     void
     ready_to_read() noexcept {
         if (!(this->_async_event.events & EV_READ)) {
+            if (_read_paused == detail::read_suspended)
+                return; // reading is suspended (`pause_reading()`): `resume_reading()` is what reads again
             if constexpr (detail::tls_io<_Derived>) {
                 // A TLS read that waits to write reads again once that write leaves (Huly QB-1270).
                 if ((this->_async_event.events & EV_WRITE) && this->_async_event.is_active())
@@ -1050,6 +1085,74 @@ public:
             this->_async_event.start(Derived.transport().native_handle(), read_events());
             feed_held_input(); // reading resumes: what the transport holds is read from here, as from start()
         }
+    }
+
+    /**
+     * @brief Suspends READING: from this call no message is handed to the protocol until `resume_reading()`.
+     * @details Called from the handler of a message, that message is the last of its read pass: it is consumed
+     *          whole, and what follows it in the buffer -- the rest of what one read brought -- stays there. Called
+     *          from anywhere else, no message is delivered from then on. Readability is no longer watched, so a peer
+     *          that keeps sending fills the socket's buffer and is slowed down by its own transport. `stop()` is
+     *          another thing: it stops the watcher whole, and a read pass under way still goes to its end.
+     *
+     *          The contract (Huly QB-1270):
+     *          - `ready_to_read()` has no effect while reading is suspended; `resume_reading()` is what reads again.
+     *          - The suspension lasts until `resume_reading()`, or until the connection ends: `dispose()` clears it
+     *            once `on(event::disconnected&&)` has returned, and so does `reset_io_state()`. `start()` neither
+     *            makes nor ends one -- a `pause_reading()` made
+     *            before the first `start()`, in a session's constructor, holds from that start, and a `stop()` and a
+     *            `start()` under a suspension leave it --; it asks again for the slice a resume had asked for, when
+     *            a `stop()` dropped that dispatch or the resume was made while stopped. A transport another
+     *            component takes over (`extractSession()`, a WebSocket upgrade) starts there unsuspended -- without
+     *            what this component had retained, which stays in its buffer as any input it had not consumed.
+     *          - `disconnect()` ends the connection as it always does. What the suspension retained is then never
+     *            delivered: it stays in the buffer as any input that was not consumed does, until the object is
+     *            destroyed or its `in()` is reset for another connection.
+     *          - A peer that closes is learned of at the resume, not before: nothing watches the socket for the
+     *            application meanwhile. An inactivity timeout bounds that wait.
+     *          - Over TLS a handshake under way -- the first, or a renegotiation that had begun -- is read until it
+     *            completes, and a readiness the loop had already queued is still read. The application data such a
+     *            read brings stays in the buffer. A renegotiation the peer asks for under the suspension waits for the
+     *            resume, its request unread.
+     *          - A component with no protocol in place is ended by the first readiness dispatched to it, as it
+     *            always was: a suspension keeps that away over TCP, where nothing is watched, not over TLS, whose
+     *            handshake is read. Install the protocol before `start()`.
+     *          Not for a datagram transport, whose every read is one datagram: the call does not compile there.
+     *
+     *          The usual shape is one request at a time: the handler of a request calls `pause_reading()` and starts
+     *          its work, and whatever completes that work calls `resume_reading()` -- the next request, already in the
+     *          buffer or still in the socket, is then handed to the protocol from the loop.
+     */
+    void
+    pause_reading() noexcept
+    requires(!detail::resets_input_per_read<_Derived>)
+    {
+        _read_paused = detail::read_suspended;
+        suspend_read_interest();
+    }
+
+    /**
+     * @brief Resumes the reading `pause_reading()` suspended; no effect when it is not suspended.
+     * @details Readability is watched again. What the suspension retained -- complete messages already in the buffer,
+     *          octets a TLS session already holds -- is handed to the protocol FROM THE LOOP, in the dispatch this
+     *          call asks for, before anything is read again: never from inside this call, whoever makes it. A peer
+     *          that closed meanwhile is seen after that, once. Called from the handler that suspended, before it
+     *          returns, the read pass simply goes on.
+     */
+    void
+    resume_reading() noexcept
+    requires(!detail::resets_input_per_read<_Derived>)
+    {
+        if (_read_paused != detail::read_suspended)
+            return;
+        _read_paused = detail::read_flowing;
+        resume_read_interest();
+    }
+
+    /// Whether reading is suspended (`pause_reading()`), `resume_reading()` not called since.
+    [[nodiscard]] bool
+    reading_paused() const noexcept {
+        return _read_paused == detail::read_suspended;
     }
 
     /**
@@ -1396,11 +1499,24 @@ private:
             protocol->onMessage(ret);
             // Update statistics: message successfully processed
             ++_messages_processed;
-            if (unlikely(_reason)) {
-                if (likely(old_should_flush))
-                    Derived.flush(ret);
-                _on_message = false;
-                return false;
+            // One branch for the two things that end the pass here: a reason, and a suspension of reading. The
+            // attribute, not `unlikely()`: clang and MSVC lay a block out by it alone, and this one is not small.
+            if ((_reason | _read_paused) != 0) [[unlikely]] {
+                if (_reason) {
+                    if (likely(old_should_flush))
+                        Derived.flush(ret);
+                    _on_message = false;
+                    return false;
+                }
+                // The handler of this message suspended reading (`pause_reading()`): it is the last of the pass,
+                // consumed whole, and what follows it stays in the buffer for the resume. Neither an error nor an
+                // end. A message that suspends AND ends the protocol ends it: the test below, as before.
+                if (_read_paused == detail::read_suspended && this->_protocol->ok()) {
+                    if (likely(old_should_flush))
+                        Derived.flush(ret);
+                    _on_message = false;
+                    return true;
+                }
             }
             // Check if the CURRENT protocol became invalid — OR was dropped entirely by onMessage()
             // (clear_protocols() with no replacement). Both are caught by ok() alone: after a clear,
@@ -1521,6 +1637,12 @@ private:
         }
 
         if (likely(event._revents & EV_READ)) {
+            // Reading suspended, or resumed with input the suspension retained: off this path (`suspended_read()`).
+            if (_read_paused != detail::read_flowing) [[unlikely]] {
+                if (suspended_read() == detail::suspended_dispatch::failed)
+                    goto error;
+                return;
+            }
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
                 if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
@@ -1579,13 +1701,16 @@ private:
         this->_async_event.set(EV_WRITE);
     }
 
-    /// The events a start() arms: a TLS read that waited to write when the object was stopped waits for writability.
+    /// The events a start() arms: a TLS read that waited to write when the object was stopped waits for writability;
+    /// a component whose reading is suspended watches nothing, unless its transport needs the reads itself.
     [[nodiscard]] int
     read_events() noexcept {
         if constexpr (detail::tls_io<_Derived>) {
             if (Derived.transport().read_wants_write())
                 return EV_WRITE;
         }
+        if (_read_paused == detail::read_suspended && !transport_needs_read()) [[unlikely]]
+            return EV_NONE; // reading suspended before this start (`pause_reading()`): nothing is watched for the application
         return EV_READ;
     }
 
@@ -1594,6 +1719,113 @@ private:
     read_after_write() noexcept {
         this->_async_event.set(EV_READ);
         this->_async_event.feed_event(EV_READ);
+    }
+
+    // ---- Reading suspended (`pause_reading()`, Huly QB-1270): everything but two tests is here, out of line -------
+
+    /// Whether the transport itself needs reads while the application's are suspended: a TLS handshake under way, the
+    /// first or a later one (`handshaking()`). A transport of one's own that declares `rehandshaking()` alone is asked
+    /// that: its first handshake then waits for the resume.
+    [[nodiscard]] bool
+    transport_needs_read() noexcept {
+        if constexpr (detail::says_handshaking<_Derived>)
+            return Derived.transport().handshaking();
+        else if constexpr (detail::tls_io<_Derived>)
+            return Derived.transport().rehandshaking();
+        else
+            return false;
+    }
+
+    /// Whether the suspension retained input: messages already in the buffer, octets the transport already holds.
+    [[nodiscard]] bool
+    retains_input() noexcept {
+        bool retained = false;
+        if constexpr (requires { Derived.pendingRead(); })
+            retained = Derived.pendingRead() != 0;
+        if constexpr (requires { Derived.held_input(); })
+            retained = retained || Derived.held_input() != 0;
+        return retained;
+    }
+
+    /// Readability is no longer watched for the application -- unless the transport needs the reads itself.
+    QB_NOINLINE QB_COLD void
+    suspend_read_interest() noexcept {
+        if ((this->_async_event.events & EV_READ) && !transport_needs_read())
+            this->_async_event.set(this->_async_event.events & ~EV_READ);
+    }
+
+    /// The resume, outside a read pass: readability watched again -- the mask alone, a stopped watcher stays stopped
+    /// --, and, when the suspension retained input, the dispatch that slices it asked of the loop
+    /// (`slice_retained_from_loop()`).
+    QB_NOINLINE QB_COLD void
+    resume_read_interest() noexcept {
+        if (!(this->_async_event.events & EV_READ)) {
+            bool read_waits_to_write = false; // a TLS read that waits to write reads again once that write leaves
+            if constexpr (detail::tls_io<_Derived>)
+                read_waits_to_write = (this->_async_event.events & EV_WRITE) && Derived.transport().read_wants_write();
+            if (!read_waits_to_write)
+                this->_async_event.set(this->_async_event.events | EV_READ);
+        }
+        if (_on_message)
+            return; // the handler that suspended resumed before it returned: its read pass goes on by itself
+        slice_retained_from_loop();
+    }
+
+    /// What a suspension retained is sliced by a dispatch asked of the loop, never by the call that ends the
+    /// suspension. Owed (`read_resumed`) from here until that dispatch: a watcher that is stopped is asked nothing now,
+    /// and a `stop()` drops what was asked -- `start()` asks again.
+    QB_NOINLINE QB_COLD void
+    slice_retained_from_loop() noexcept {
+        if (_protocol->ok() && retains_input()) {
+            _read_paused = detail::read_resumed;
+            if (this->_async_event.is_active())
+                this->_async_event.feed_event(EV_READ);
+        }
+    }
+
+    /**
+     * @brief The read branch of a dispatch for a component whose reading is not flowing.
+     * @details Resumed with input retained: that input is sliced, then nothing more is done in this dispatch --
+     *          readability is watched again, so what the socket holds, an end included, comes at the next pass, after
+     *          what was retained and once; what a TLS session holds is asked for (`feed_held_input()`). Suspended:
+     *          nothing is read for the application, and the dispatch -- a readiness queued before the suspension -- is
+     *          served; over TLS the read is OpenSSL's (a handshake, which it may begin), what it brings is retained, and
+     *          readability is watched for as long as that handshake lasts.
+     */
+    QB_NOINLINE QB_COLD auto
+    suspended_read() noexcept -> detail::suspended_dispatch {
+        if (_read_paused == detail::read_resumed) {
+            _read_paused = detail::read_flowing;
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&input::_protocol_list, &input::_on_message>(alive, *this))
+                return detail::suspended_dispatch::failed;
+            Derived.eof();
+            handle_post_read();
+            feed_held_input();
+            return detail::suspended_dispatch::served;
+        }
+        if constexpr (detail::tls_io<_Derived>) {
+            const auto ret = static_cast<std::size_t>(Derived.read());
+            if (ret == static_cast<std::size_t>(-1)) {
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                    if (Derived.transport().read_wants_write())
+                        watch_write_for_read();
+                    return detail::suspended_dispatch::returned;
+                }
+                return detail::suspended_dispatch::failed;
+            }
+            if (ret == static_cast<std::size_t>(-2)) {
+                _system_error = 0;
+                _reason       = -3; // Buffer size limit exceeded (DoS protection)
+                return detail::suspended_dispatch::failed;
+            }
+            _bytes_read += ret;
+            // A handshake that read BEGAN -- a renegotiation the peer had asked for, which OpenSSL starts at its next
+            // read -- needs the peer's answer: readability again, until the read that completes it drops it (below).
+            if (!(this->_async_event.events & EV_READ) && transport_needs_read())
+                this->_async_event.set(this->_async_event.events | EV_READ);
+        }
+        suspend_read_interest();
+        return detail::suspended_dispatch::served;
     }
 
 protected:
@@ -1635,6 +1867,10 @@ protected:
                 }
             });
         }
+        // The connection has ended, and the suspension of its reading with it -- once the hook that is told so has
+        // returned: it still reads what the reading was (`reading_paused()`), and a suspension it asks for is the dead
+        // connection's too. The next connection of a reused object reads.
+        _read_paused = detail::read_flowing;
 
         if constexpr (_Derived::has_server) {
             // Stopped first: a session somebody still holds after this must not be dispatched again (Huly QB-1270).
@@ -1668,6 +1904,7 @@ protected:
     reset_io_state() noexcept {
         _is_disposed  = false;
         _on_message   = false;
+        _read_paused  = detail::read_flowing;
         _reason       = 0;
         _system_error = 0;
     }
@@ -2244,6 +2481,7 @@ class io : public base<io<_Derived>, event::io> {
     int                   _system_error = 0;         /**< Stores the system error code (errno) if an I/O error occurred. */
     bool                  _tls_arm      = false;     /**< TLS: an empty arm made while a read waits to write -- its eos (Huly QB-1270). */
     bool                  _tls_held     = false;     /**< TLS: OpenSSL holds a record the socket did not take (Huly QB-1270). */
+    std::uint8_t          _read_paused  = 0;         /**< Where reading stands, a `detail::read_state` (`pause_reading()`). */
     std::size_t _max_message_size       = QB_MAX_MESSAGE_SIZE; /**< Maximum allowed message size for DoS protection. Configurable at runtime. */
     std::size_t _bytes_read             = 0;                   /**< Total number of bytes read from the transport. */
     std::size_t _bytes_written          = 0;                   /**< Total number of bytes written to the transport. */
@@ -2373,7 +2611,7 @@ class io : public base<io<_Derived>, event::io> {
     /// while close_after_deliver() drains, its read pass off (Huly QB-294).
     QB_NOINLINE QB_COLD void
     rearm_queued_output() noexcept {
-        const int want = _protocol->ok() ? EV_READ | EV_WRITE : EV_WRITE;
+        const int want = _protocol->ok() ? read_interest() | EV_WRITE : EV_WRITE; // no readability under a suspension
         if ((this->_async_event.events & (EV_READ | EV_WRITE)) != want)
             this->_async_event.set(want);
     }
@@ -2386,7 +2624,7 @@ class io : public base<io<_Derived>, event::io> {
             if (Derived.transport().read_wants_write())
                 return EV_WRITE;
         }
-        return Derived.pendingWrite() ? EV_READ | EV_WRITE : EV_READ;
+        return Derived.pendingWrite() ? read_interest() | EV_WRITE : read_interest(); // none under a suspension
     }
 
     /**
@@ -2431,6 +2669,138 @@ class io : public base<io<_Derived>, event::io> {
             this->_async_event.feed_event(EV_READ);
     }
 
+    // ---- Reading suspended (`pause_reading()`, Huly QB-1270): everything but two tests is here, out of line -------
+
+    /// The readability a component watches for the application: none while its reading is suspended, unless the
+    /// transport needs the reads itself. What a drain and a re-arm of queued output set, where they set `EV_READ`.
+    [[nodiscard]] int
+    read_interest() noexcept {
+        if (_read_paused == detail::read_suspended) [[unlikely]]
+            return suspended_read_interest();
+        return EV_READ;
+    }
+
+    QB_NOINLINE QB_COLD int
+    suspended_read_interest() noexcept {
+        return reads_watched_under_a_suspension() ? EV_READ : EV_NONE;
+    }
+
+    /// Whether readability is watched although the reading is suspended: by the transport (a handshake under way), by
+    /// a lingering close reading its peer out, or by a close under way -- `close_after_deliver()`, a protocol that is
+    /// not ok: the read pass is off, and with nothing queued the peer's end is all that close waits for. Asked
+    /// wherever a suspended component's watch is computed -- at the suspension, at a drain, at a `start()` --, so that
+    /// a `stop()` and a `start()` leave a close what it watched.
+    [[nodiscard]] bool
+    reads_watched_under_a_suspension() noexcept {
+        return _lingering || (!_protocol->ok() && _protocol != no_protocol()) || transport_needs_read();
+    }
+
+    /// Whether the transport itself needs reads while the application's are suspended: a TLS handshake under way, the
+    /// first or a later one (`handshaking()`). A transport of one's own that declares `rehandshaking()` alone is asked
+    /// that: its first handshake then waits for the resume.
+    [[nodiscard]] bool
+    transport_needs_read() noexcept {
+        if constexpr (detail::says_handshaking<_Derived>)
+            return Derived.transport().handshaking();
+        else if constexpr (detail::tls_io<_Derived>)
+            return Derived.transport().rehandshaking();
+        else
+            return false;
+    }
+
+    /// Whether the suspension retained input: messages already in the buffer, octets the transport already holds.
+    [[nodiscard]] bool
+    retains_input() noexcept {
+        bool retained = false;
+        if constexpr (requires { Derived.pendingRead(); })
+            retained = Derived.pendingRead() != 0;
+        if constexpr (requires { Derived.held_input(); })
+            retained = retained || Derived.held_input() != 0;
+        return retained;
+    }
+
+    /// Readability is no longer watched for the application -- unless something else still reads
+    /// (`reads_watched_under_a_suspension()`: the transport, a lingering close, a close under way).
+    QB_NOINLINE QB_COLD void
+    suspend_read_interest() noexcept {
+        if ((this->_async_event.events & EV_READ) && !reads_watched_under_a_suspension())
+            this->_async_event.set(this->_async_event.events & ~EV_READ);
+    }
+
+    /// The resume, outside a read pass: readability watched again -- the mask alone, a stopped watcher stays stopped
+    /// --, and, when the suspension retained input, the dispatch that slices it asked of the loop
+    /// (`slice_retained_from_loop()`).
+    QB_NOINLINE QB_COLD void
+    resume_read_interest() noexcept {
+        if (!(this->_async_event.events & EV_READ)) {
+            bool read_waits_to_write = false; // a TLS read that waits to write reads again once that write leaves
+            if constexpr (detail::tls_io<_Derived>)
+                read_waits_to_write = (this->_async_event.events & EV_WRITE) && _protocol->ok() && Derived.transport().read_wants_write();
+            if (!read_waits_to_write)
+                this->_async_event.set(this->_async_event.events | EV_READ);
+        }
+        if (_on_message)
+            return; // the handler that suspended resumed before it returned: its read pass goes on by itself
+        slice_retained_from_loop();
+    }
+
+    /// What a suspension retained is sliced by a dispatch asked of the loop, never by the call that ends the
+    /// suspension. Owed (`read_resumed`) from here until that dispatch: a watcher that is stopped is asked nothing now,
+    /// and a `stop()` drops what was asked -- `start()` asks again.
+    QB_NOINLINE QB_COLD void
+    slice_retained_from_loop() noexcept {
+        if (_protocol->ok() && retains_input()) {
+            _read_paused = detail::read_resumed;
+            if (this->_async_event.is_active())
+                this->_async_event.feed_event(EV_READ);
+        }
+    }
+
+    /**
+     * @brief The read branch of a dispatch for a component whose reading is not flowing.
+     * @details Resumed with input retained: that input is sliced, then nothing more is read in this dispatch --
+     *          readability is watched again, so what the socket holds, an end included, comes at the next pass, after
+     *          what was retained and once; what a TLS session holds is asked for (`feed_held_input()`). Suspended:
+     *          nothing is read for the application, and the dispatch -- a readiness queued before the suspension -- is
+     *          served; over TLS the read is OpenSSL's (a handshake, which it may begin), what it brings is retained, and
+     *          readability is watched for as long as that handshake lasts.
+     */
+    QB_NOINLINE QB_COLD auto
+    suspended_read() noexcept -> detail::suspended_dispatch {
+        if (_read_paused == detail::read_resumed) {
+            _read_paused = detail::read_flowing;
+            if (const bool alive = process_messages(); !_protocol_list.end_dispatch<&io::_protocol_list, &io::_on_message>(alive, *this))
+                return detail::suspended_dispatch::failed;
+            Derived.eof();
+            handle_post_read();
+            feed_held_input();
+            return detail::suspended_dispatch::served;
+        }
+        if constexpr (detail::tls_io<_Derived>) {
+            const auto ret = static_cast<std::size_t>(Derived.read());
+            if (ret == static_cast<std::size_t>(-1)) {
+                if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
+                    if (Derived.transport().read_wants_write())
+                        watch_write_for_read();
+                    return detail::suspended_dispatch::returned;
+                }
+                return detail::suspended_dispatch::failed;
+            }
+            if (ret == static_cast<std::size_t>(-2)) {
+                _system_error = 0;
+                _reason       = -3; // Buffer size limit exceeded (DoS protection)
+                return detail::suspended_dispatch::failed;
+            }
+            _bytes_read += ret;
+            // A handshake that read BEGAN -- a renegotiation the peer had asked for, which OpenSSL starts at its next
+            // read -- needs the peer's answer: readability again, until the read that completes it drops it (below).
+            if (!(this->_async_event.events & EV_READ) && transport_needs_read())
+                this->_async_event.set(this->_async_event.events | EV_READ);
+        }
+        suspend_read_interest();
+        return detail::suspended_dispatch::served;
+    }
+
     /**
      * @brief A TLS write pass that took nothing (Huly QB-1270): whether this answered the dispatch.
      * @details Nothing queued, readability watched: an empty arm (`ready_to_write()`, `publish()` with no operand),
@@ -2449,6 +2819,10 @@ class io : public base<io<_Derived>, event::io> {
     tls_took_nothing() noexcept {
         if (!Derived.pendingWrite()) {
             if ((this->_async_event.events & EV_READ) || _reason || !_protocol->ok())
+                return false;
+            // Writability alone is also what a SUSPENDED component watches when it is asked for an empty arm
+            // (`pause_reading()`): that one is answered as any write pass answers it -- the transport says which.
+            if (_read_paused == detail::read_suspended && !Derived.transport().read_wants_write())
                 return false;
             this->_async_event.set(EV_READ);
             this->_async_event.feed_event(EV_READ);
@@ -2622,6 +2996,8 @@ public:
         // to keep the async transport surface minimal (native_handle/read/write/set_nonblocking/close).
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
+        // The reading stays where it stands: a suspension made before this start -- in a constructor, or under a
+        // stop() -- holds from it (start_events()), and it ends with the connection, never with a start.
         _is_disposed  = false;
         _on_message   = false;
         _reason       = 0;
@@ -2636,6 +3012,10 @@ public:
         // A TLS read that waited to write when the object was stopped waits for writability alone (start_events()).
         this->_async_event.start(Derived.transport().native_handle(), start_events());
         feed_held_input(); // what the transport already holds is read from here: a restart, a transport taken over
+        if (_read_paused == detail::read_resumed) [[unlikely]] {
+            _read_paused = detail::read_flowing;
+            slice_retained_from_loop(); // a resume made while stopped, or whose dispatch a stop() dropped: asked again
+        }
     }
 
     /**
@@ -2644,6 +3024,8 @@ public:
     void
     ready_to_read() noexcept {
         if (!(this->_async_event.events & EV_READ)) {
+            if (_read_paused == detail::read_suspended)
+                return; // reading is suspended (`pause_reading()`): `resume_reading()` is what reads again
             if constexpr (detail::tls_io<_Derived>) {
                 // A TLS read that waits to write (writability alone, protocol ok) reads again once that write leaves
                 // (Huly QB-1270): OpenSSL reads nothing before it, and readability watched meanwhile would dispatch the
@@ -2654,6 +3036,78 @@ public:
             this->_async_event.set(this->_async_event.events | EV_READ);
             feed_held_input(); // reading resumes: what the transport holds is read from here, as from start()
         }
+    }
+
+    /**
+     * @brief Suspends READING: from this call no message is handed to the protocol until `resume_reading()`.
+     * @details Called from the handler of a message, that message is the last of its read pass: it is consumed
+     *          whole, and what follows it in the buffer -- the rest of what one read brought -- stays there. Called
+     *          from anywhere else, no message is delivered from then on. Readability is no longer watched, so a peer
+     *          that keeps sending fills the socket's buffer and is slowed down by its own transport; writing goes on.
+     *          `stop()` is another thing: it stops the watcher whole -- nothing is written either --, and a read pass
+     *          under way still goes to its end.
+     *
+     *          The contract (Huly QB-1270):
+     *          - `ready_to_read()` has no effect while reading is suspended; `resume_reading()` is what reads again.
+     *          - The suspension lasts until `resume_reading()`, or until the connection ends: `dispose()` clears it
+     *            once `on(event::disconnected&&)` has returned, and so does `reset_io_state()`. `start()` neither
+     *            makes nor ends one -- a `pause_reading()` made
+     *            before the first `start()`, in a session's constructor, holds from that start, and a `stop()` and a
+     *            `start()` under a suspension leave it --; it asks again for the slice a resume had asked for, when
+     *            a `stop()` dropped that dispatch or the resume was made while stopped. A transport another
+     *            component takes over (`extractSession()`, a WebSocket upgrade) starts there unsuspended -- without
+     *            what this component had retained, which stays in its buffer as any input it had not consumed.
+     *          - `close_after_deliver()` and the lingering close that follows it go through a suspension -- with
+     *            nothing queued the close watches for its peer's end as a component that reads does --, and
+     *            `disconnect()` ends the connection as it always does. What the suspension retained is then never
+     *            delivered: it stays in the buffer as any input that was not consumed does, for the object's
+     *            destruction or its `reset_for_reconnect()`, which clears the suspension too.
+     *          - A peer that closes is learned of at the next write or at the resume, not before: nothing watches
+     *            the socket for the application meanwhile. An inactivity timeout bounds that wait.
+     *          - Over TLS a handshake under way -- the first, or a renegotiation that had begun -- is read until it
+     *            completes, and a read the loop is asked for all the same is still made: a readiness already queued,
+     *            the read that follows a record OpenSSL had held. The application data such a read brings stays in
+     *            the buffer, up to the read cap, which ends the connection as it always does. A renegotiation the
+     *            peer asks for under the suspension waits for the resume, its request unread.
+     *          - A component with no protocol in place is ended by the first readiness dispatched to it, as it
+     *            always was: a suspension keeps that away over TCP, where nothing is watched, not over TLS, whose
+     *            handshake is read. Install the protocol before `start()`.
+     *          Not for a datagram transport, whose every read is one datagram: the call does not compile there.
+     *
+     *          The usual shape is one request at a time: the handler of a request calls `pause_reading()` and starts
+     *          its work, and whatever completes that work calls `resume_reading()` -- the next request, already in the
+     *          buffer or still in the socket, is then handed to the protocol from the loop.
+     */
+    void
+    pause_reading() noexcept
+    requires(!detail::resets_input_per_read<_Derived>)
+    {
+        _read_paused = detail::read_suspended;
+        suspend_read_interest();
+    }
+
+    /**
+     * @brief Resumes the reading `pause_reading()` suspended; no effect when it is not suspended.
+     * @details Readability is watched again. What the suspension retained -- complete messages already in the buffer,
+     *          octets a TLS session already holds -- is handed to the protocol FROM THE LOOP, in the dispatch this
+     *          call asks for, before anything is read again: never from inside this call, whoever makes it. A peer
+     *          that closed meanwhile is seen after that, once. Called from the handler that suspended, before it
+     *          returns, the read pass simply goes on.
+     */
+    void
+    resume_reading() noexcept
+    requires(!detail::resets_input_per_read<_Derived>)
+    {
+        if (_read_paused != detail::read_suspended)
+            return;
+        _read_paused = detail::read_flowing;
+        resume_read_interest();
+    }
+
+    /// Whether reading is suspended (`pause_reading()`), `resume_reading()` not called since.
+    [[nodiscard]] bool
+    reading_paused() const noexcept {
+        return _read_paused == detail::read_suspended;
     }
 
     /**
@@ -2689,7 +3143,9 @@ public:
         } else if constexpr (detail::tls_io<_Derived>) {
             // Writability watched already, readability not: a TLS read waits to write (watch_write_for_read()), and
             // the write pass that comes is asked for too -- an empty arm earns its eos (Huly QB-1270). Kept aside,
-            // not in the watcher: readability watched would dispatch the read again on every pass.
+            // not in the watcher: readability watched would dispatch the read again on every pass. A component
+            // whose reading is suspended is marked here too, for nothing: the write pass it asked for lowers the
+            // mark with the eos it earns, and `tls_took_nothing()` asks the transport, not the mark, which it is.
             if (unlikely(!(this->_async_event.events & EV_READ)))
                 _tls_arm = true;
         }
@@ -3005,6 +3461,14 @@ public:
         // Unconditional: NoProtocol::not_ok() is a no-op, so on the shared sentinel this does nothing
         // (it stays immutable / thread-safe) — no `== no_protocol()` guard needed.
         _protocol->not_ok();
+        // A component whose reading is suspended may be watching nothing (`pause_reading()`): nothing would dispatch
+        // it again, and with nothing queued this close waited for ever. Readability, as a component that reads
+        // watches it -- the read pass is off from here, so it serves the close alone: the peer's end, or its next
+        // octets, end the connection as they do for any other. With something watched -- output queued, an empty
+        // arm, a TLS read that waits to write -- the write pass that comes takes the close from there. A watcher
+        // that is stopped keeps what is set here for nothing: `start()` computes the same (`start_events()`).
+        if (_read_paused == detail::read_suspended && !(this->_async_event.events & (EV_READ | EV_WRITE)))
+            this->_async_event.set(EV_READ);
     }
 
     /**
@@ -3218,16 +3682,29 @@ private:
             const bool old_should_flush = protocol->should_flush();
             protocol->onMessage(ret);
             ++_messages_processed;
-            if (unlikely(_reason)) {
-                if (likely(old_should_flush))
-                    Derived.flush(ret);
-                if (Derived.pendingWrite()) {
-                    this->ready_to_write();
+            // One branch for the two things that end the pass here: a reason, and a suspension of reading. The
+            // attribute, not `unlikely()`: clang and MSVC lay a block out by it alone, and this one is not small.
+            if ((_reason | _read_paused) != 0) [[unlikely]] {
+                if (_reason) {
+                    if (likely(old_should_flush))
+                        Derived.flush(ret);
+                    if (Derived.pendingWrite()) {
+                        this->ready_to_write();
+                        _on_message = false;
+                        return true;
+                    }
+                    _on_message = false;
+                    return false;
+                }
+                // The handler of this message suspended reading (`pause_reading()`): it is the last of the pass,
+                // consumed whole, and what follows it stays in the buffer for the resume. Neither an error nor an
+                // end. A message that suspends AND ends the protocol ends it: the test below, as before.
+                if (_read_paused == detail::read_suspended && this->_protocol->ok()) {
+                    if (likely(old_should_flush))
+                        Derived.flush(ret);
                     _on_message = false;
                     return true;
                 }
-                _on_message = false;
-                return false;
             }
             // !ok() OR _protocol dropped entirely by onMessage() (clear_protocols() → the NoProtocol
             // sentinel, whose ok() is false). Caught by ok() alone — no per-message null check.
@@ -3357,7 +3834,7 @@ private:
                 // the reason here, where MSVC kept it in a register on the drain check every write passes.
                 return begin_linger();
             }
-            this->_async_event.set(EV_READ);
+            this->_async_event.set(read_interest()); // readability alone again -- none under a suspension
             if constexpr (qb::has_on<_Derived, event::eos>) {
                 auto evt__eos = event::eos{};
                 Derived.on(std::move(evt__eos));
@@ -3421,6 +3898,20 @@ private:
         if (event._revents & EV_READ && _protocol->ok()) { // sentinel ok()==false → skip read when unset
             constexpr const std::size_t invalid_ret = static_cast<std::size_t>(-1);
 
+            // Reading suspended, or resumed with input the suspension retained: off this path (`suspended_read()`).
+            if (_read_paused != detail::read_flowing) [[unlikely]] {
+                switch (suspended_read()) {
+                    case detail::suspended_dispatch::returned:
+                        return;
+                    case detail::suspended_dispatch::failed:
+                        goto error;
+                    case detail::suspended_dispatch::served:
+                        break;
+                }
+                ok = true; // served: a dispatch that read nothing for the application is not one that did nothing
+                goto read_served;
+            }
+
             auto ret = static_cast<std::size_t>(Derived.read());
             if (unlikely(ret == invalid_ret)) {
                 if (qb::io::socket::not_recv_error(qb::io::socket::get_last_errno())) {
@@ -3451,6 +3942,7 @@ private:
             feed_held_input(ret);
             ok = true;
         }
+    read_served:
 
         // Drain any output that piled up during process_messages() in the same
         // invocation, instead of waiting for libev to fire a separate EV_WRITE.
@@ -3469,7 +3961,7 @@ private:
             if constexpr (detail::tls_io<_Derived>) {
                 // Output queued during a TLS handshake after the first: the read drives it, the output waits for its end
                 // (Huly QB-1270) -- not during a close_after_deliver() drain, whose read pass is off (ok() false). The
-                // queue tested first, the protocol's virtual ok() last: a handshake is rarely under way.
+                // queue tested first, the protocol's ok() last: a handshake is rarely under way.
                 if (Derived.pendingWrite() && Derived.transport().rehandshaking() && _protocol->ok()) {
                     tls_read_drives(ok);
                     return;
@@ -3604,6 +4096,10 @@ protected:
                 }
             });
         }
+        // The connection has ended, and the suspension of its reading with it -- once the hook that is told so has
+        // returned: it still reads what the reading was (`reading_paused()`), and a suspension it asks for is the dead
+        // connection's too. The next connection of a reused object reads.
+        _read_paused = detail::read_flowing;
 
         if constexpr (_Derived::has_server) {
             // The watcher of a disposed session is stopped here, whoever ended the connection: the server releases
@@ -3666,6 +4162,7 @@ protected:
                   "for on(event::disconnected&&)");
         _is_disposed  = false;
         _on_message   = false;
+        _read_paused  = detail::read_flowing;
         _reason       = 0;
         _system_error = 0;
         end_linger();
@@ -3700,6 +4197,7 @@ protected:
         Derived.in().reset();
         Derived.out().reset();
         clear_protocols();
+        _read_paused = detail::read_flowing; // nothing is retained any more: a suspension would make the next connection deaf
     }
 
 private:
@@ -3724,7 +4222,7 @@ template <typename _Derived>
 QB_NOINLINE void
 input<_Derived>::feed_held_input() noexcept {
     if constexpr (requires { Derived.held_input(); }) {
-        if (this->_async_event.is_active() && _protocol->ok() && Derived.held_input() != 0)
+        if (this->_async_event.is_active() && _read_paused != detail::read_suspended && _protocol->ok() && Derived.held_input() != 0)
             this->_async_event.feed_event(EV_READ);
     }
 }
@@ -3756,7 +4254,8 @@ template <typename _Derived>
 QB_NOINLINE void
 io<_Derived>::feed_held_input() noexcept {
     if constexpr (requires { Derived.held_input(); }) {
-        if (this->_async_event.is_active() && (this->_async_event.events & EV_READ) && _protocol->ok() && Derived.held_input() != 0)
+        if (this->_async_event.is_active() && (this->_async_event.events & EV_READ) && _read_paused != detail::read_suspended && _protocol->ok()
+            && Derived.held_input() != 0)
             this->_async_event.feed_event(EV_READ);
     }
 }

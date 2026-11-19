@@ -1187,9 +1187,12 @@ socket::read(void *data, std::size_t size) noexcept {
     if (ret == 1) {
         ERR_clear_error(); // empty the thread error queue so SSL_get_error is reliable (see handCheck)
         ret = SSL_read(ssl_handle(), data, static_cast<int>(size));
+        // Whatever this read answers, data included: set again below when it must write first. Left raised by a read
+        // that brought data, it was "meaningful right after a -1" only; a component whose reading is suspended asks it
+        // later, to tell a read that waits to write from a suspension (io<>::tls_took_nothing(), Huly QB-1270).
+        _read_wants_write = false;
         if (ret > 0)
             return ret;
-        _read_wants_write = false; // anything but data from here on: set again below when the read must write first
         if (ret == 0) {
             // SSL_ERROR_ZERO_RETURN: peer sent close_notify, clean SSL shutdown.
             // The underlying TCP socket is now at EOF; epoll will keep reporting EV_READ

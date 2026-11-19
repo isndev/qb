@@ -711,9 +711,11 @@ public:
      *          a socket error that write met and it lets the session go on after (`ENOBUFS`, an `EINTR` from a BIO that
      *          fails a write with it; it does not say whether such an error met the read's own write or its receive,
      *          and a read made again on a writable socket is made at once). The peer usually waits for that message
-     *          before it sends anything more: a read made again on readability alone waits for ever. Meaningful right
-     *          after `read()` answered -1, as `handshake_wants_write()` is after `handshake_status()` answered 0: the
-     *          io objects read it there, watch writability too, and read again when it comes. A TLS 1.3 KeyUpdate the
+     *          before it sends anything more: a read made again on readability alone waits for ever. Set by the
+     *          `read()` that answered -1 so, as `handshake_wants_write()` is by a `handshake_status()` that answered 0,
+     *          and lowered by the next `read()`, whatever that one answers -- data included (3.4): the io objects read
+     *          it after the -1, watch writability too, and read again when it comes; a component whose reading is
+     *          suspended asks it later, to tell that wait from its suspension. A TLS 1.3 KeyUpdate the
      *          peer requests is answered by this side's next `write()`, never by a read (OpenSSL's choice; measured).
      */
     [[nodiscard]] bool
@@ -749,6 +751,17 @@ public:
     [[nodiscard]] bool
     rehandshaking() const noexcept {
         return _connected && _ssl_handle && SSL_in_init(_ssl_handle.get()) == 1;
+    }
+
+    /**
+     * @brief Whether a handshake is under way on this connection: the first one, or a later one (`rehandshaking()`).
+     * @details What a component whose reading is suspended asks (`io<>::pause_reading()`, Huly QB-1270): OpenSSL
+     *          completes a handshake from reads, so the reads it needs go on through a suspension. OpenSSL's
+     *          `SSL_in_init()`: no I/O.
+     */
+    [[nodiscard]] bool
+    handshaking() const noexcept {
+        return _ssl_handle && SSL_in_init(_ssl_handle.get()) == 1;
     }
 
     /**

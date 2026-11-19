@@ -272,7 +272,9 @@ public:
     /**
      * @brief Extract a session's IO object
      *
-     * Removes the session with the given UUID and returns its IO object.
+     * Removes the session with the given UUID and returns its IO object. The session stops watching the
+     * descriptor before it gives it away: one that is still held somewhere is never dispatched for it again (its own
+     * `disconnect()` still ends it). What it had read and not consumed stays in its buffer -- only the IO object leaves.
      *
      * @param ident The UUID of the session to extract
      * @return A pair containing the IO object and a boolean indicating success
@@ -315,12 +317,17 @@ private:
             return false;
     }
 
-    /// The transport of a session that is being extracted. Output the session still has queued dies with it -- what
-    /// was queued before its extracted hook ran (`queued`), or after: a hook that empties the queue drops that output
-    /// all the same. A TLS stream is marked cut first, so that its next owner's close does not tell the peer it is
-    /// whole (Huly QB-1270).
+    /// The transport of a session that is being extracted. The session stops watching the descriptor first: it is its
+    /// next owner's from here, and a session somebody still held -- a `shared_ptr` kept across a protocol upgrade --
+    /// was dispatched for that owner's octets, failed the read of a transport it no longer had, and was told it had
+    /// disconnected (Huly QB-1270). Output the session still has queued dies with it -- what was queued before its
+    /// extracted hook ran (`queued`), or after: a hook that empties the queue drops that output all the same. A TLS
+    /// stream is marked cut first, so that its next owner's close does not tell the peer it is whole (Huly QB-1270).
     [[nodiscard]] static typename _Session::transport_io_type
     take_transport_(_Session &session, bool queued) {
+        // The base's own stop(), by name: a session may declare a `stop()` of its own that means something else.
+        if constexpr (requires { static_cast<typename _Session::base_io_t &>(session).stop(); })
+            static_cast<typename _Session::base_io_t &>(session).stop();
         detail::mark_cut_stream(session.transport(), queued || output_queued_(session));
         return std::move(session.transport());
     }

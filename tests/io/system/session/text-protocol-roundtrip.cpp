@@ -456,7 +456,9 @@ public:
         g_disconnected.fetch_add(1);
     }
 
-    // The extraction contract: a session that gives its socket away stops watching it.
+    // What a 3.3 session had to do itself. Since 3.4 `extractSession()` stops the watcher of the session it takes the
+    // socket from, after this hook (ASessionHeldPastItsExtractionIsNotDispatchedAgain): with this stop() made first,
+    // that one finds nothing left to stop.
     void
     on(qb::io::async::event::extracted &&) {
         stop();
@@ -747,6 +749,90 @@ TEST_F(SessionRoundtripTest, ExtractingALingeringSessionCancelsItsLinger) {
     sock.close();
     release.store(true);
     peer.join();
+}
+
+// =============================================================================
+// A session whose transport was extracted is not dispatched again
+// =============================================================================
+
+namespace extracted_held {
+
+int g_disconnected = 0; ///< `disconnected` events the session was handed
+int g_messages     = 0; ///< messages it was handed
+
+class HeldServer;
+
+/// A session with NO `extracted` hook: nothing of its own stops its watcher when its transport is taken.
+class HeldSession : public use<HeldSession>::tcp::client<HeldServer> {
+public:
+    using Protocol = qb::protocol::text::command<HeldSession>;
+
+    explicit HeldSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&) {
+        ++g_messages;
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+
+    [[nodiscard]] bool
+    watching() const noexcept {
+        return this->_async_event.is_active();
+    }
+};
+
+class HeldServer : public use<HeldServer>::tcp::server<HeldSession> {};
+
+} // namespace extracted_held
+
+// A session somebody still holds once its transport was taken (`extractSession()`: a `shared_ptr` kept across a
+// protocol upgrade) watches nothing any more -- the descriptor is its new owner's. It kept its watcher on it: the peer's
+// next octets dispatched the session, whose read of a transport it no longer has failed, and it was told it had
+// disconnected, on a connection that goes on under its new owner.
+TEST_F(SessionRoundtripTest, ASessionHeldPastItsExtractionIsNotDispatchedAgain) {
+    using namespace extracted_held;
+    g_disconnected = 0;
+    g_messages     = 0;
+    HeldServer server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    qb::io::tcp::socket peer;
+    ASSERT_EQ(peer.connect_v4("127.0.0.1", port), SocketStatus::Done);
+    ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 5s));
+    const auto id      = server.sessions().begin()->first;
+    auto       session = server.session(id); // kept alive past the extraction
+    auto [sock, ok]    = server.extractSession(id);
+    ASSERT_TRUE(ok);
+    EXPECT_FALSE(session->watching()) << "a session whose transport was taken still watches the descriptor";
+
+    const std::string_view line = "for the new owner\n";
+    ASSERT_EQ(peer.write(line.data(), line.size()), static_cast<int>(line.size()));
+    linger_test::pump_for(100ms);
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+    EXPECT_EQ(g_messages, 0);
+    // The octets are the new owner's: read until they are all there, or a deadline a loaded host does not reach.
+    std::string got;
+    ASSERT_EQ(sock.set_nonblocking(true), 0);
+    const auto deadline = linger_test::linger_clock::now() + 5s;
+    while (got.size() < line.size() && linger_test::linger_clock::now() < deadline) {
+        char      chunk[64];
+        const int n = sock.read(chunk, sizeof chunk);
+        if (n > 0)
+            got.append(chunk, static_cast<std::size_t>(n));
+        else
+            linger_test::pump_for(1ms);
+    }
+    EXPECT_EQ(got, line);
+    session.reset();
+    sock.close();
+    peer.close();
 }
 
 // =============================================================================

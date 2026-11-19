@@ -84,6 +84,7 @@ qb_add_test(MODULE qb-io TIER system NAME tls-worker-deadline SOURCES tls/tls-wo
 # --- session (text/binary command loopback / json / text protocol roundtrip) ---
 qb_add_test(MODULE qb-io TIER system NAME text-session-loopback SOURCES session/text-session-loopback.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME session-json          SOURCES session/session-json.cpp          DEPENDS ${PROJECT_NAME} REQUIRES network)
+qb_add_test(MODULE qb-io TIER system NAME read-suspension       SOURCES session/read-suspension.cpp       DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME text-protocol-roundtrip SOURCES session/text-protocol-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network)
 qb_add_test(MODULE qb-io TIER system NAME varint-netstring-roundtrip SOURCES session/varint-netstring-roundtrip.cpp DEPENDS ${PROJECT_NAME} REQUIRES network) # Huly QB-80
 # --- io (blocking + async file ops, the logger at a fork's exit) / quic (native + loopback handshake) ---
@@ -157,6 +158,7 @@ if (QB_HAS_SSL)
         foreach (_ssl_dep qb-io-test-system-ssl-socket-loopback
                 qb-io-test-system-secure-transport-loopback
                 qb-io-test-system-tls-text-roundtrip
+                qb-io-test-system-read-suspension
                 qb-io-test-system-tls-peer-verification
                 qb-io-test-system-tls-starttls-upgrade
                 qb-io-test-system-session-json

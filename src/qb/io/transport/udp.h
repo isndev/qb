@@ -342,9 +342,9 @@ public:
 
     /**
      * @brief Read a single datagram from the UDP socket.
-     * @return Number of bytes read on success (size of the datagram).
-     *         Returns a negative value on error (e.g., from `socket::recvfrom`).
-     *         Returns 0 if the read operation would block (in non-blocking mode and no data available).
+     * @return Number of bytes read on success (size of the datagram); 0 for a datagram of no octets, whose sender
+     *         still becomes the reply target. A negative value on error (what `recvfrom` answered) -- a read that
+     *         would block included, told apart by the system error, as for any socket.
      * @details Reads a datagram into the internal input buffer (`_in_buffer`).
      *          Upon successful read, `_remote_source` is updated with the sender's endpoint,
      *          and `setDestination(_remote_source)` is called to set this as the default reply-to target.
