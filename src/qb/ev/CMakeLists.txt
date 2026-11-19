@@ -344,7 +344,7 @@ set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/ev
 # second definition. Source does not change: a translation unit that includes ev.h still writes
 # `ev_run`, through the `#define`s the generated ev_config.h carries -- the prefix-header form
 # BoringSSL ships. The list is every name ev.h declares with EV_API_DECL / EV_API_DATA_DECL --
-# 88, the watcher families this build leaves out included, so enabling one needs nothing here --
+# 89, the watcher families this build leaves out included, so enabling one needs nothing here --
 # but ev_rt_now: ev.h exports it only without EV_MULTIPLICITY, which the generated config pins to
 # 1, and under multiplicity ev.c defines it as the loop member it reads (renaming it breaks ev.c);
 # qb's qb-io-test-unit-embedded-loop-symbols reads the built archive on each toolchain and fails
@@ -353,7 +353,7 @@ set(QB_EV_CONFIG_OUT "${CMAKE_CURRENT_BINARY_DIR}/include/${QB_EV_HEADER_DIR}/ev
 # own epoll_* on Linux must keep its name. Standalone, the block is empty: qev's API is libev's.
 set(QB_EV_EXPORTED_NAMES
     ev_active_count ev_active_count_addr ev_async_send ev_async_start ev_async_stop ev_backend
-    ev_break ev_check_start ev_check_stop ev_child_start ev_child_stop ev_cleanup_start
+    ev_break ev_break_state ev_check_start ev_check_stop ev_child_start ev_child_stop ev_cleanup_start
     ev_cleanup_stop ev_clear_pending ev_clock_now ev_default_loop ev_default_loop_ptr ev_depth
     ev_embed_start ev_embed_stop ev_embed_sweep ev_embeddable_backends ev_feed_event
     ev_feed_fd_event ev_feed_signal ev_feed_signal_event ev_fork_start ev_fork_stop ev_idle_start

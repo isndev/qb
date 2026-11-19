@@ -848,6 +848,59 @@ policy.
 
 ### Fixed
 
+- **A deferred callback that runs the loop no longer waits for ever for what `defer()` delivers: the loop it runs
+  drains the deferred queue (Huly QB-1246).** The queue was drained by one drain at a time, and a `run()` reached from
+  inside a deferred callback drained nothing. A callback that waited by pumping the loop -- `run_sync()` of an
+  awaitable, `run_until()` of a flag, a module's `await()` -- therefore never saw anything delivered through `defer()`,
+  which is how qb-io delivers a connect refused at once: `defer([] { run_sync(connect(refused)); })` span at full
+  speed, the queue never empty (so the pump never parked) and never drained (so it never emptied). A loop run from a
+  deferred callback is now a turn of its own inside that callback's: its drain runs the callbacks queued behind the
+  one that pumps, and those queued meanwhile, in queue order, each once; the enclosing drain then runs only what is
+  left of its own snapshot, so no callback runs twice and none queued after a drain began is run by it; one generation
+  a turn holds inside the nested turn as outside; `clear()` ends every drain on the stack. Under a blocking run,
+  nothing queued waits on the poll: `defer()` feeds the in-loop drain unless that drain is running a callback at that
+  moment -- what is deferred under it is served by the drain's own re-arm, or by the tail of the pump it was deferred
+  in (the feed was skipped whenever a drain was on the stack, any drain, so a run that only a break ends, opened from a
+  deferred callback, never served what its own handlers deferred, and what a callback drained at the tail of a nested
+  turn deferred waited on the poll of the blocking loop above it) --, a blocking run opened from a callback being
+  drained hands the queue to that drain on entry, and the count of blocking runs on the stack is 32 bits wide (a byte
+  read zero with 256 of them, and the drain stood down in the 256th).
+  **What a program can see.** A deferred callback B can now run while a deferred callback A is on the stack, as soon
+  as A runs the loop -- as a watcher's handler always could under a loop run from a handler. Until now B waited for A
+  to return, whatever A did. Code that pumps the loop from a deferred callback and relied on no other deferred
+  callback running meanwhile has to protect what it relied on; code that hung there now returns. Such turns nest as
+  deep as the callbacks pump: N queued callbacks that each pump the loop are N turns deep on the stack when the last
+  one runs, and the stack is the only bound.
+  **A break asked while something pumps is kept by the run it is for.** `break_one()` / `async::break_parent()` are
+  for the innermost run that only a break ends (`run()` with no flag, `async::run()`). The loop holds a break for the
+  `ev_run` in progress only, and a pump begins one at every pass. A callback queued behind one that pumps used to run
+  after it, in the run's own drain, where its break ended the run; it now runs inside the pump, where its break would
+  be lost at the pump's next pass and the run would never end. So the run keeps the request, and ends -- before it
+  polls again -- once whatever pumped has returned to it: a deferred callback of the run, whatever it pumped with; a
+  watcher's handler that pumped with the library's pumps (`async::run(flag)`, `run_once()`, `run_until()`,
+  `run_for()`, `run_sync()`, `run_once_for()`) or with `EVRUN_ONCE` turns. That ends the run in orders in which the
+  break was ALREADY lost: asked by a handler or a callback under any of those pumps, or before one pumped in the same
+  iteration -- a watchdog timer that fires under a `run_sync()` now ends the main loop it was armed for. New
+  `listener::relay_break()` is the last statement of a pump written by hand over `run(EVRUN_NOWAIT)` in a watcher's
+  handler; without it the run does not end when that handler returns: the request stays kept, and is said again the
+  next time the run itself drains a deferred callback or one of those pumps returns to it. A run of that kind opened
+  under another is ended by its own break alone, and a break the outer one keeps outlives it. A break names no run: a
+  callback queued behind one that OPENS such a run is drained by that run, and a break it asks ends that run (it ran
+  after it, and ended the outer one). The request is said again only from the run that keeps it -- under a pass of
+  another pump a break ends that pass and nothing else, before it polls when it is said as the pass begins -- and only
+  when the loop holds no break: the loop is asked, through qev's new `ev_break_state()`
+  (`ev::loop_ref::break_state()`), so `loop().break_loop(ev::ALL)`, the loop's own call, is never narrowed by it; it is
+  not kept either. And a break still ends the `ev_run` it is asked in, as it always did: a pass or a park of a pump
+  under the run, before it polls when it is asked as that pass begins.
+  **A listener destroyed by one of its own deferred callbacks**, when that callback returns, stops the process on a
+  line that says so. The drain and the `run()` under it are member functions of the destroyed object; they read its
+  freed members until now. A callback that ends the process (`exit()`) is not concerned: it does not return.
+  Proved by `tests/io/unit/async/listener-defer-nested.cpp`: 43 cases, 32 of them failing on the listener as
+  it was (given an empty `relay_break()`, the one member the file calls that it lacked). Fifty mutants of
+  `listener.h` and `coroutine/utils.h`, one at a time: 43 fail the cases, the compiler refuses one, six survive --
+  three equivalent, one that costs time and nothing else (`BM_Defer_BlockingRunChain` holds it), one that leaves a
+  flag nothing reads again, one a second lock on a rule `defer()` already holds.
+
 - **A `qb::io::uri` read or parse that cannot allocate is reported as a failed read instead of terminating the process
   (Huly QB-1248).** The readers of a uri are `noexcept` -- `read_origin_form()`, `read_absolute_form()`,
   `read_authority_form()`, `origin_form()`, `absolute_form()`, `authority_form()`, the factory `uri::parse()`, the

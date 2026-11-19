@@ -76,6 +76,21 @@ detail::refuse_after_thread_loop(char const *const request) noexcept {
     std::terminate();
 }
 
+// The named stop of `listener::_drain_queued()`: a deferred callback destroyed the listener that was draining it, and
+// returned. The drain is in a member function of the destroyed object, and so is the `run()` under it; a blocking
+// run has libev's own frames on the loop that went with it. Nothing can be read, so nothing is: the line, and the
+// stop. A callback that ENDS the process (`exit()`) never comes here -- it does not return. `fputs`, like the stop
+// above.
+void
+detail::refuse_listener_destroyed_under_its_drain() noexcept {
+    std::fputs("qb: a listener was destroyed by one of its own deferred callbacks, which then returned into the drain "
+               "that was running it -- that drain, and the run() under it, are member functions of the destroyed "
+               "listener. Destroy a listener after its run() has returned\n",
+               stderr);
+    std::fflush(stderr);
+    std::terminate();
+}
+
 // The one line of a `listener::reset_coro_scheduler()` asked while one of that scheduler's coroutines is executing.
 // `fputs`, like the named stop above: a reset is asked from anywhere, a static destructor included.
 void

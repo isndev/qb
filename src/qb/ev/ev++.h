@@ -185,6 +185,11 @@ struct loop_ref {
         ev_break(EV_AX_ how);
     }
 
+    int
+    break_state() const EV_NOEXCEPT {
+        return ev_break_state(EV_AX);
+    }
+
     void
     post_fork() EV_NOEXCEPT {
         ev_loop_fork(EV_AX);

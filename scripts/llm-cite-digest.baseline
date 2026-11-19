@@ -74,7 +74,7 @@ llm/qb.llm.api.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine o
 llm/qb.llm.api.md	coroutine/cancellation.h:189-206	46df22c06e52	struct child_state final : state {
 llm/qb.llm.api.md	coroutine/cancellation.h:520-541	e827eda2278d	inline cancellation_token
 llm/qb.llm.api.md	coroutine/cancellation.h:830-830	ffff25485ea6	state->result.emplace(co_await state->inner_task);
-llm/qb.llm.api.md	coroutine/utils.h:389-389	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.api.md	coroutine/utils.h:399-399	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.api.md	crypto.h:1055-1055	9613fb7d2235	static std::vector<unsigned char> x25519_key_exchange(const std::vect...
 llm/qb.llm.api.md	crypto.h:1067-1067	d0e7c7fb5535	static std::vector<unsigned char> x25519_key_exchange(const std::stri...
 llm/qb.llm.api.md	crypto.h:1093-1110	1893285b514b	static std::string encrypt_with_metadata(const std::vector<unsigned c...
@@ -89,7 +89,7 @@ llm/qb.llm.api.md	generator.h:356-356	3afa8eb31568	promise_type() noexcept = def
 llm/qb.llm.api.md	generator.h:412-412	882d0e02a5aa	yield_value(std::type_identity_t<U> value) {
 llm/qb.llm.api.md	generator.h:93-93	09bccb7c2dbd	frame_alignment() noexcept {
 llm/qb.llm.api.md	generator.h:98-98	cbf342ea7cd4	operator new(std::size_t size) {
-llm/qb.llm.api.md	listener.h:1955-1971	d9f67615fd6a	inline void
+llm/qb.llm.api.md	listener.h:2161-2177	d9f67615fd6a	inline void
 llm/qb.llm.api.md	metrics.h:108-108	664921c42466	is_integer() const noexcept {
 llm/qb.llm.api.md	metrics.h:158-158	7f0ed0f59cf3	struct histogram_sample {
 llm/qb.llm.api.md	metrics.h:175-175	4fec3c2dbb3e	class family {
@@ -109,14 +109,14 @@ llm/qb.llm.api.md	offload.h:240-240	2c8069f7c8d0	class offload_awaiter final : p
 llm/qb.llm.api.md	offload.h:302-302	fec5045b6b24	offload(F &&fn, Args &&...args) {
 llm/qb.llm.api.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.api.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
-llm/qb.llm.api.md	scheduler.h:400-400	9764932307e8	struct parked_coroutine {
-llm/qb.llm.api.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.api.md	scheduler.h:775-775	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
-llm/qb.llm.api.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.api.md	scheduler.h:794-794	8cd772062a6b	suspension_tracking() noexcept {
-llm/qb.llm.api.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
-llm/qb.llm.api.md	scheduler.h:808-808	1acc0272cc17	void dump(std::ostream &os) const;
-llm/qb.llm.api.md	scheduler.h:983-986	1cdfb1dc422b	[[nodiscard]] bool
+llm/qb.llm.api.md	scheduler.h:405-405	9764932307e8	struct parked_coroutine {
+llm/qb.llm.api.md	scheduler.h:773-773	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.api.md	scheduler.h:780-780	bfcf25cd125c	spawn(std::string_view name, Callable fn) {
+llm/qb.llm.api.md	scheduler.h:795-795	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.api.md	scheduler.h:799-799	8cd772062a6b	suspension_tracking() noexcept {
+llm/qb.llm.api.md	scheduler.h:809-809	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.api.md	scheduler.h:813-813	1acc0272cc17	void dump(std::ostream &os) const;
+llm/qb.llm.api.md	scheduler.h:988-991	1cdfb1dc422b	[[nodiscard]] bool
 llm/qb.llm.api.md	spawn.h:125-133	2cea84d8a328	struct SpawnRequest : qb::Request<spawn_result> {
 llm/qb.llm.api.md	spawn.h:145-180	253a72a055f9	class Spawner : public qb::ServiceActor<Spawner> {
 llm/qb.llm.api.md	spawn.h:233-252	e9b74f792d7f	template <class A, class... Args>
@@ -247,18 +247,18 @@ llm/qb.llm.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine outli
 llm/qb.llm.md	coroutine/cancellation.h:1262-1262	733ec14c540c	with_deadline_owned(task<T> operation, std::chrono::steady_clock::tim...
 llm/qb.llm.md	coroutine/cancellation.h:189-212	9fb6c087ede8	struct child_state final : state {
 llm/qb.llm.md	coroutine/cancellation.h:314-328	2c207f4373a0	// Every still-linked public hook is noexcept and is dispatched before
-llm/qb.llm.md	coroutine/scheduler.h:1009-1013	26fa5d69b282	current() {
+llm/qb.llm.md	coroutine/scheduler.h:1014-1018	26fa5d69b282	current() {
 llm/qb.llm.md	coroutine/task.h:211-211	03e5017e8c12	class CoroutineFrameAllocator {
 llm/qb.llm.md	coroutine/task.h:220-220	ff761a1dcfcc	static constexpr std::size_t kAlign     = QB_LOCKFREE_CACHELINE_BYTES;
 llm/qb.llm.md	coroutine/utils.h:228-228	c6608bac00ef	run_for(qb::duration duration) {
-llm/qb.llm.md	coroutine/utils.h:294-294	49516cd6ffac	run_sync(Awaitable &&awaitable)
-llm/qb.llm.md	coroutine/utils.h:389-389	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
+llm/qb.llm.md	coroutine/utils.h:302-302	49516cd6ffac	run_sync(Awaitable &&awaitable)
+llm/qb.llm.md	coroutine/utils.h:399-399	28acf5a5fc82	pin_frame_copy(T &copy) noexcept {
 llm/qb.llm.md	crypto.h:105-116	51e14a279751	template <typename Step>
 llm/qb.llm.md	crypto.h:122-127	d1e0d208ae9b	inline int
 llm/qb.llm.md	crypto.h:33-44	0e90de8e08fe	// This header used to `#error "missing OpenSSL Library"` when QB_HAS...
 llm/qb.llm.md	crypto.h:666-668	951a022022dd	* @return Vector containing the decrypted data or empty if authentica...
 llm/qb.llm.md	crypto.h:908-914	225ca9a0d77c	* Returns an empty string if the token is invalid or expired.
-llm/qb.llm.md	ev++.h:780-780	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
+llm/qb.llm.md	ev++.h:785-785	ff2366882bf0	set(const char *path, ev_tstamp interval = 0.) EV_NOEXCEPT {
 llm/qb.llm.md	file.h:115-115	b1f6c4d76864	explicit file(std::filesystem::path const &fname, int flags = O_RDWR)...
 llm/qb.llm.md	file.h:139-139	a820f6e858fb	int open(std::filesystem::path const &fname, int flags = O_RDWR, int ...
 llm/qb.llm.md	file.h:368-368	5a73f68df7e0	[[nodiscard]] std::filesystem::path self_path();
@@ -295,10 +295,10 @@ llm/qb.llm.md	lingering_close.cpp:46-46	3fb443641aec	constexpr std::size_t socke
 llm/qb.llm.md	lingering_close.cpp:58-58	7f93e02c4e88	constexpr std::size_t byte_budget = std::size_t{16} << 20;
 llm/qb.llm.md	lingering_close.h:56-56	a746dcd44a4e	void close_after_peer(::socket_type socket, qb::duration bound) noexc...
 llm/qb.llm.md	lingering_close.h:65-65	39764eb52022	std::size_t release_closing_sockets() noexcept;
-llm/qb.llm.md	listener.h:1935-1947	9bb119dec73f	inline void
-llm/qb.llm.md	listener.h:1955-1971	d9f67615fd6a	inline void
-llm/qb.llm.md	listener.h:2010-2010	cc6b74b785e4	defer(_Func &&func) {
-llm/qb.llm.md	listener.h:2043-2043	d3424619f351	run_until(bool const &status) {
+llm/qb.llm.md	listener.h:2141-2153	9bb119dec73f	inline void
+llm/qb.llm.md	listener.h:2161-2177	d9f67615fd6a	inline void
+llm/qb.llm.md	listener.h:2218-2218	cc6b74b785e4	defer(_Func &&func) {
+llm/qb.llm.md	listener.h:2251-2251	d3424619f351	run_until(bool const &status) {
 llm/qb.llm.md	metrics.h:208-208	7a5b17981653	class snapshot {
 llm/qb.llm.md	metrics.h:283-283	c90dbf2c7516	void describe_dispatch(snapshot &snap, qb::TimingStats const &stats, ...
 llm/qb.llm.md	metrics_registry.h:178-178	33a57aecca79	class Registry final : public detail::basic_registry<detail::registry...
@@ -316,11 +316,11 @@ llm/qb.llm.md	request.h:110-110	34270c98a08c	class ask_operation {
 llm/qb.llm.md	request.h:192-192	54e40aa6bc8d	class ask_emplace_operation {
 llm/qb.llm.md	request.h:267-267	caff73e28888	qb::io::async::pin_frame_copy(req); // QB-213: the copy stays at its ...
 llm/qb.llm.md	resilience.h:468-468	322b61e18000	qb::io::async::pin_frame_copy(req);                                  ...
-llm/qb.llm.md	scheduler.h:400-400	9764932307e8	struct parked_coroutine {
-llm/qb.llm.md	scheduler.h:731-760	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
-llm/qb.llm.md	scheduler.h:768-768	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
-llm/qb.llm.md	scheduler.h:790-790	d4378b7b6e55	bool set_suspension_tracking(bool on);
-llm/qb.llm.md	scheduler.h:804-804	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
+llm/qb.llm.md	scheduler.h:405-405	9764932307e8	struct parked_coroutine {
+llm/qb.llm.md	scheduler.h:736-765	2673fad18211	* @brief Spawn a callable (lambda/functor) as a coroutine — closure i...
+llm/qb.llm.md	scheduler.h:773-773	7dc21eb4cb92	void spawn(std::string_view name, task<void> &&t);
+llm/qb.llm.md	scheduler.h:795-795	d4378b7b6e55	bool set_suspension_tracking(bool on);
+llm/qb.llm.md	scheduler.h:809-809	1ef3f88ff236	[[nodiscard]] std::vector<parked_coroutine> dump() const;
 llm/qb.llm.md	socket.cpp:1170-1177	6710cfd699de	socket::release_handle() noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:414-420	8cdd532fc651	valid_raw(std::uint64_t raw) noexcept {
 llm/qb.llm.md	src/qb/core/ActorId.h:435-478	4b567f72bffc	static constexpr std::uint64_t NotFound        = 0;

@@ -137,6 +137,11 @@ is_gone_thread_listener(void const *listener) noexcept {
 /// `detail::cleanup_scheduler()`, `listener::release()`, `listener::defer()`).
 [[noreturn]] void refuse_after_thread_loop(char const *request) noexcept;
 
+/// The named stop of a listener that one of its own deferred callbacks destroyed, when that callback returns into the
+/// drain that ran it (Huly QB-1246): that drain, and the `run()` it returns to, read the listener. Out of line and
+/// defined in listener.cpp, like the stop above: it names no member, for there is none left to read.
+[[noreturn]] void refuse_listener_destroyed_under_its_drain() noexcept;
+
 /// The one line of a `listener::reset_coro_scheduler()` that cannot be served -- asked while one of that scheduler's
 /// coroutines is executing. Written to `stderr` with `fputs`, as the named stop is.
 void report_refused_scheduler_reset(void const *scheduler) noexcept;

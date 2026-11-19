@@ -142,6 +142,9 @@ qb_add_test(MODULE qb-io TIER unit NAME ssl-context-guards     SOURCES ssl/ssl-c
 qb_add_test(MODULE qb-io TIER unit NAME async-transport-traits SOURCES async/async-transport-traits.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-clear-reentrant-defer SOURCES async/listener-clear-reentrant-defer.cpp DEPENDS ${PROJECT_NAME})
 qb_add_test(MODULE qb-io TIER unit NAME listener-has-work SOURCES async/listener-has-work.cpp DEPENDS ${PROJECT_NAME})
+# listener-defer-nested: a deferred callback that runs the loop opens a new turn inside its own (Huly QB-1246); every
+# pump in it is bounded, so against a listener that refuses the nested drain its cases fail, they do not hang.
+qb_add_test(MODULE qb-io TIER unit NAME listener-defer-nested SOURCES async/listener-defer-nested.cpp DEPENDS ${PROJECT_NAME} LABELS coroutine)
 qb_add_test(MODULE qb-io TIER unit NAME listener-io-cadence SOURCES async/listener-io-cadence.cpp DEPENDS ${PROJECT_NAME})
 # listener-timer-gate pins the pass that does not run the loop: nothing pending, no wake, no poll, no timer within reach (QB-190).
 # Its timing verdicts are read pass by pass on the loop's own clock, no longer as a 2 ms lateness bound on the test's

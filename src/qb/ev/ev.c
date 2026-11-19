@@ -5151,6 +5151,17 @@ ev_break(EV_P_ int how) EV_NOEXCEPT {
     loop_done = how;
 }
 
+/* The break the loop holds: what ev_break last asked, until an ev_run takes it -- every ev_run
+ * clears it as it begins, and the ev_run that ends on EVBREAK_ONE resets it (EVBREAK_ALL stays, for
+ * the runs around it). An embedder that keeps a break request of its own across nested runs -- qb
+ * keeps one for the run it is meant for, which a pump under that run makes the loop forget (Huly
+ * QB-1246) -- says it again only when this reads EVBREAK_CANCEL, and so leaves a break asked
+ * meanwhile as it is. Owner thread only, like any loop read. */
+int
+ev_break_state(EV_P) EV_NOEXCEPT {
+    return loop_done;
+}
+
 void
 ev_ref(EV_P) EV_NOEXCEPT {
     ++activecnt;

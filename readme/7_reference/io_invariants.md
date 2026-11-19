@@ -69,7 +69,7 @@ registry, or as a member — never relocate them.
 ## 2. `async::init()` and listener teardown
 
 - `qb::io::async::init()` is a deliberate **no-op**
-  (`src/qb/io/async/listener.h:1936-1939`). `listener::current` is a
+  (`src/qb/io/async/listener.h:2142-2145`). `listener::current` is a
   self-initializing `thread_local`; `init()` exists only as an explicit
   "this thread uses qb-io" marker. It must **not** clear the listener: it is
   called from multi-threaded test fixtures that have already constructed objects
@@ -78,21 +78,30 @@ registry, or as a member — never relocate them.
 - To reset event-loop state (for example in a unit-test teardown), call
   `listener::current.clear()` directly — never via `init()`.
 - `listener::clear()` (and the destructor) **detach** watchers without
-  **deleting** them (`src/qb/io/async/listener.h:1025,1058-1059,1102-1104`). Each `async::base`
+  **deleting** them (`src/qb/io/async/listener.h:1155,1187-1188,1231-1233`). Each `async::base`
   still holds a reference to its embedded event, so the owning object's
   destructor performs the final unregister and delete. Deleting in `clear()`
   would leave a dangling `_async_event`.
 - `clear()` runs the loop four times with `EVRUN_NOWAIT`, not `EVRUN_ONCE`,
   because under a monotonic-clock + timerfd libev build the loop can pick a
   multi-million-second wait time when `timercnt == 0`, which would wedge thread
-  teardown (`src/qb/io/async/listener.h:1112-1117`). This is intentional; do not
+  teardown (`src/qb/io/async/listener.h:1241-1246`). This is intentional; do not
   "simplify" it to a single `EVRUN_ONCE`.
-- `clear()` runs no deferred callback. It holds the drain guard for the whole
-  call and drops the queue on entry and again on exit, so work deferred while it
+- `clear()` runs no deferred callback. It holds the queue for the whole
+  call and drops it on entry and again on exit, so work deferred while it
   tears down — by a released closure, by the capture of a loop-owned timer it
   destroys, by a coroutine its flush passes resume — is dropped and its captured
-  state released, never run (`src/qb/io/async/listener.h:1040-1049,1119`; Huly
-  QB-276). Called from a deferred callback, it also ends that drain.
+  state released, never run (`src/qb/io/async/listener.h:1167-1178,1249`; Huly
+  QB-276). Called from a deferred callback, it also ends that drain — and every
+  drain on the stack, when that callback runs under a turn another one opened
+  (section 3): what it drops counts as taken off the queue, which is what each
+  drain's bound is read against.
+- A listener is not destroyed by one of its own deferred callbacks, unless that
+  callback ends the process (`exit()`). The drain that runs the callback and
+  the `run()` under it are member functions of the listener, and a blocking run
+  has the loop's own frames on the stack: nothing can go on. A callback that
+  destroys its listener and returns stops the process on a line that says so;
+  until 3.4 the drain went on reading the freed object (Huly QB-1246).
 
 ---
 
@@ -102,21 +111,66 @@ registry, or as a member — never relocate them.
   coroutine body or an actor handler that is already executing under
   `CoroutineScheduler::run_ready()`. `ensure_not_inside_ready_drain()` asserts
   in debug builds and throws `std::logic_error` in release
-  (`src/qb/io/async/listener.h:1956`).
+  (`src/qb/io/async/listener.h:2162`).
 - The same applies to the synchronous coroutine bridges `run_sync()` and
-  `run_for()` (`src/qb/io/async/coroutine/utils.h:294`, `:228`): they are for
+  `run_for()` (`src/qb/io/async/coroutine/utils.h:302`, `:228`): they are for
   test setup/teardown and non-coroutine entry points only. Each calls
   `ensure_not_inside_ready_drain()` on entry, so a re-entrant call asserts in
   debug and throws `std::logic_error` in release
-  (`src/qb/io/async/coroutine/utils.h:297`, `:229`). A second, deeper
+  (`src/qb/io/async/coroutine/utils.h:305`, `:229`). A second, deeper
   per-scheduler `in_run_ready_` guard inside `run_ready()` itself makes a
   nested drain a no-op: it resumes nothing and returns `0`
-  (`src/qb/io/async/coroutine/scheduler.h:895-897`). That is what the member
+  (`src/qb/io/async/coroutine/scheduler.h:900-902`). That is what the member
   `listener::run()` meets when it is nested inside a drain — the library
   drains `Redis::await()` and `Transaction::await()` run one from a coroutine
   body: the pass runs its watchers and deferred callbacks and leaves the
   coroutines it made ready to the enclosing drain. Until 3.3 the guard
   asserted, and a debug build aborted there (Huly QB-253).
+- When a **deferred callback** does pump the loop — `run_sync()`, `run_until()`,
+  the member `run()`, a module's `await()`: a standalone program or a test, not
+  an actor — that pump is a turn of its own, nested in the callback's. Its drain
+  takes everything queued at that moment, what is left of the enclosing drain's
+  snapshot included, in queue order, each callback once; the enclosing drain
+  then runs only what is left of its own snapshot, never a callback queued after
+  it began. One generation a turn holds inside the nested turn as outside it. So
+  a deferred callback can run while another is on the stack, exactly as a
+  watcher's handler can under a loop run from a handler: what a callback relies
+  on across a pump of its own is the callback's to protect. And such turns nest
+  as deep as the callbacks pump: N queued callbacks that each pump the loop are
+  N turns deep on the stack when the last one runs, and the stack is the only
+  bound. Until 3.4 a nested `run()` drained nothing, and a callback that waited
+  by pumping for something `defer()` was to deliver — a connect refused at once
+  is delivered that way — span for ever, the queue never empty and never drained
+  (Huly QB-1246). Under a blocking run nothing queued waits on the poll either:
+  `defer()` feeds the in-loop drain, unless that drain is running a callback at
+  that moment — what is deferred under it is served by the drain's own re-arm,
+  or by the tail of the pump it was deferred in — and a blocking run opened from
+  a callback being drained hands the queue to that drain on entry. While a
+  blocking run is on the stack the in-loop drain serves every pass of the loop,
+  those of a non-blocking pump run from one of its handlers included: there two
+  generations are a poll of the loop apart.
+- A **break** (`listener::break_one()`, `async::break_parent()`) is for the
+  innermost run that only a break ends — `run()` with no flag — and that run
+  keeps it. The loop itself holds a break for the `ev_run` in progress only, and
+  a pump begins one at every pass: a break asked while a handler or a deferred
+  callback of the run pumped, or before one pumped in the same iteration, was
+  lost until 3.4, and the run never ended. Since 3.4 a callback queued behind
+  one that pumps runs inside the pump, where it used to run after it, in the
+  run's own drain (Huly QB-1246). The run now ends, before it polls again, once
+  whatever pumped has returned to it: a deferred callback of the run, whatever
+  it pumped with; a watcher's handler that pumped with the library's pumps
+  (`async::run(flag)`, `run_once()`, `run_until()`, `run_for()`, `run_sync()`,
+  a module's `await()`) or with `EVRUN_ONCE` turns. A pump written by hand over
+  `run(EVRUN_NOWAIT)` in a handler ends with `listener::relay_break()`; without
+  it the run does not end when that handler returns: the request stays kept, and
+  is said again only the next time the run itself drains a deferred callback, or
+  one of those pumps returns to it. Under a pass of another pump it is not said
+  again: a break there ends that pass and nothing else — which `break_one()`
+  itself still does to the pass it is asked under, as it always did. A
+  run of that kind opened under another is ended by its own break alone; a
+  break names no run, though, and a deferred callback that such an inner run
+  drains asks its break of the inner run. `loop().break_loop(ev::ALL)`, the
+  loop's own call, is not kept.
 - `input` / `io` add a second, single-thread re-entrance guard: `on(event::io)`
   returns immediately when `_on_message` is already set, preventing recursive
   message processing within the same thread
@@ -128,7 +182,7 @@ registry, or as a member — never relocate them.
 > Built with `-DQB_EV_USE_TIMERFD=ON` and with only `ev_io` watchers active
 > (no heap timers, `timercnt == 0`), a single `run_once()` can block for libev's
 > internal maximum wait time. Drive manual pumps with `run_until(...)` or
-> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:2019-2022`).
+> `run(EVRUN_NOWAIT)` instead (`src/qb/io/async/listener.h:2227-2230`).
 
 ---
 
@@ -430,7 +484,7 @@ with I/O lifetime are:
 
 - The entire layer is **strictly mono-thread (cooperative)**. One
   `CoroutineScheduler` belongs to exactly one thread — the VirtualCore worker or
-  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:209-213`).
+  the listener's I/O thread (`src/qb/io/async/coroutine/scheduler.h:214-218`).
   Resuming or pushing from another thread is undefined behavior; cross-thread
   wake-ups go through the actor mailbox.
 - A thread's scheduler is its `listener::current` loop's, created on first use:
@@ -439,7 +493,7 @@ with I/O lifetime are:
   is bound, so a waiter queued before anything bound a scheduler is drained by
   that loop. `schedule_via_current()` used to assert in debug and drop the
   handle in release, and `current()` to create a private scheduler no loop pumped
-  (`src/qb/io/async/coroutine/scheduler.h:1009-1013`, `:1354-1364`).
+  (`src/qb/io/async/coroutine/scheduler.h:1014-1018`, `:1359-1369`).
 - **Awaiters must remain alive until `await_resume()`**
   (`src/qb/io/async/coroutine/awaiter.h:30-33`). Never create a temporary
   awaiter that goes out of scope before resumption; watchers are stopped in
@@ -458,11 +512,11 @@ with I/O lifetime are:
   QB-1246).
 - `spawn()` takes ownership of the coroutine handle and runs it to completion
   even if the original `task` object is destroyed
-  (`src/qb/io/async/coroutine/scheduler.h:600-615`). Pass a callable to `spawn`
+  (`src/qb/io/async/coroutine/scheduler.h:605-620`). Pass a callable to `spawn`
   **without invoking it** (`spawn(f)`, not `spawn(f())`): creating a coroutine
   from a temporary lambda with reference or loop-variable captures dangles after
   the first suspension. `spawn(Callable)` moves the closure into an owning frame
-  (`src/qb/io/async/coroutine/scheduler.h:754-760`).
+  (`src/qb/io/async/coroutine/scheduler.h:759-765`).
 
 ---
 
@@ -505,7 +559,7 @@ with I/O lifetime are:
 - The `file_watcher<>` / `directory_watcher<>` **own the watched path string for
   the watcher's lifetime**. Their `start()` takes a `std::filesystem::path`, but
   qev's `ev_stat` stores the narrow `const char *` it is given **without
-  copying** (`src/qb/ev/ev++.h:780`). `start()` therefore stashes
+  copying** (`src/qb/ev/ev++.h:785`). `start()` therefore stashes
   `fpath.string()` in the watcher's own `_watched_path` member and passes
   `_watched_path.c_str()` to the watcher (`src/qb/io/async/io.h:656-657`, `:824-825`).
   Do not pass a temporary's `c_str()` straight to the underlying `ev::stat`, and

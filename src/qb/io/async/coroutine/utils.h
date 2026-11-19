@@ -263,6 +263,7 @@ run_for(qb::duration duration) {
     if (listener::current.has_coro_scheduler()) {
         listener::current.coro_scheduler().run_ready();
     }
+    listener::current.relay_break(); // a break asked under this pump is the run's to hear (`listener::break_one()`)
 }
 
 /**
@@ -283,6 +284,13 @@ run_for(qb::duration duration) {
  * // With return value:
  * auto reply = run_sync(redis.get("key"));
  * @endcode
+ *
+ * It pumps the thread's loop until the awaitable completes, and that pump is a loop turn like any other: called
+ * from a watcher's handler or from a deferred callback, it dispatches the other handlers and runs the other
+ * deferred callbacks while the caller is on the stack (`listener::defer()`). Since 3.4 that includes the deferred
+ * callbacks when the caller is itself one: until then a `run_sync()` there waited for ever for an awaitable that a
+ * deferred callback completes -- a connect refused at once is one (Huly QB-1246). Not from a coroutine the scheduler
+ * is resuming: it throws `std::logic_error`, after an assertion in a debug build.
  *
  * @tparam Awaitable The awaitable type (task, connect_awaiter, etc.)
  * @param awaitable The awaitable to execute
@@ -338,6 +346,7 @@ run_sync(Awaitable &&awaitable)
             done = true;
         });
         pump(done);
+        listener::current.relay_break(); // a break asked under this pump is the run's to hear (`listener::break_one()`)
         if (error) {
             std::rethrow_exception(error);
         }
@@ -356,6 +365,7 @@ run_sync(Awaitable &&awaitable)
             done = true;
         });
         pump(done);
+        listener::current.relay_break();
         if (error) {
             std::rethrow_exception(error);
         }
