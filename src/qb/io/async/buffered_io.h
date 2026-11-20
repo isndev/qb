@@ -77,9 +77,20 @@ public:
 
     void
     clear_protocols() {
-        // From process_input()'s dispatch they end once it has returned: one may be running under the caller (QB-1278).
+        // From process_input()'s dispatch, and from under a protocol_pass(), they end once the outermost of those has
+        // returned: one may be running under the caller (QB-1278).
         _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
         _protocol_list.clear(_on_message);
+    }
+
+    /// Opens a pass, as `io<>::protocol_pass()` does: until the object it returns is destroyed, `clear_protocols()`
+    /// retires the protocols instead of destroying them. For code that runs a member function of this component's
+    /// protocol outside `process_input()` and from which application code can be reached. Passes nest, with each
+    /// other and with `process_input()`'s dispatch. One call's scope: an automatic object of the function that runs
+    /// the protocol, never kept, never held across a coroutine's suspension.
+    [[nodiscard]] auto
+    protocol_pass() noexcept {
+        return detail::protocol_list::pass<&buffered_io::_protocol_list, &buffered_io::_on_message, buffered_io>{*this};
     }
 
     [[nodiscard]] IProtocol *
@@ -362,7 +373,8 @@ protected:
 
     void
     reset_buffered_io_state() noexcept {
-        _on_message   = false;
+        // Not the dispatch flag: it is process_input()'s own, and a handler that resets its component is still
+        // under it (Huly QB-1278).
         _is_disposed  = false;
         _reason       = 0;
         _system_error = 0;

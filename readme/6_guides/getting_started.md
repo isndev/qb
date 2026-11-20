@@ -310,7 +310,7 @@ The primitive you may have expected here, `qb::io::async::callback(func, delay)`
 
 For inactivity timeouts, coroutine-based async flows, and the full event-loop surface available to actors, see [Asynchronous operations inside actors](../5_core_io_integration/async_in_actors.md).
 
-<!-- src: qb/src/qb/io/async/io.h:433-474, qb/src/qb/io/async/io.h:385-393,418,574-582, qb/src/qb/core/Actor.h:1532,2339-2341, qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:823-834, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
+<!-- src: qb/src/qb/io/async/io.h:446-487, qb/src/qb/io/async/io.h:398-406,431,587-595, qb/src/qb/core/Actor.h:1532,2339-2341, qb/src/qb/core/Actor.h:870-873, qb/src/qb/core/Actor.cpp:823-834, examples/01-actors/06-doing-things-later.cpp, examples/01-actors/06-doing-things-later.cpp:249-252 -->
 
 ## 6. Build and run
 

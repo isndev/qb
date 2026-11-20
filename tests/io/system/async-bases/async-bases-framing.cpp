@@ -153,6 +153,14 @@ class PipeInputProbe : public qb::io::async::input<PipeInputProbe> {
 public:
     using base_io_t = qb::io::async::input<PipeInputProbe>;
 
+    /// What the loop does to a watcher whose descriptor it found dead (libev's fd_kill()): it stops it, then reports
+    /// an error to it.
+    void
+    killed_by_the_loop() noexcept {
+        this->_async_event.stop();
+        this->_async_event.feed_event(EV_ERROR | EV_READ | EV_WRITE);
+    }
+
     std::vector<std::string> messages;
     std::size_t              pending_read_events    = 0u;
     std::size_t              eof_events             = 0u;
@@ -166,6 +174,10 @@ public:
     base_io_t &
     base() noexcept {
         return *this;
+    }
+    void
+    reset_state() noexcept {
+        reset_io_state();
     }
     base_io_t const &
     base() const noexcept {
@@ -429,6 +441,14 @@ class PipeDuplexProbe : public qb::io::async::io<PipeDuplexProbe> {
 
 public:
     using base_io_t = qb::io::async::io<PipeDuplexProbe>;
+
+    /// What the loop does to a watcher whose descriptor it found dead (libev's fd_kill()): it stops it, then reports
+    /// an error to it.
+    void
+    killed_by_the_loop() noexcept {
+        this->_async_event.stop();
+        this->_async_event.feed_event(EV_ERROR | EV_READ | EV_WRITE);
+    }
 
     std::vector<std::string> messages;
     std::size_t              pending_read_events    = 0u;
@@ -2091,6 +2111,18 @@ public:
         life.in_dispatch          = false;
     }
 
+    /// A member function the component runs OUTSIDE the read loop -- a sweep from on(pending_write), an abort from a
+    /// timer -- that reaches a handler and touches its own state after it.
+    void
+    sweep() noexcept {
+        auto &life       = _life;
+        life.in_dispatch = true;
+        _handler(this->_io);
+        ++_frames; // freed memory if the handler ended the protocol under this member function
+        life.frames_after_handler = _frames;
+        life.in_dispatch          = false;
+    }
+
     void
     reset() noexcept final {
         _frames = 0u;
@@ -2100,6 +2132,13 @@ public:
 template <typename Io>
 void
 clear_in_handler(Io &io) {
+    io.base().clear_protocols();
+}
+
+template <typename Io>
+void
+clear_under_a_pass_in_handler(Io &io) {
+    const auto pass = io.base().protocol_pass(); // a function of the component that opens a pass, called by a handler
     io.base().clear_protocols();
 }
 
@@ -2346,6 +2385,762 @@ TEST_F(AsyncIoBaseTest, InputClearProtocolsOutsideADispatchEndsTheProtocolsAtOnc
     ASSERT_NE(input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &no_handler<PipeInputProbe>), nullptr);
     input.base().clear_protocols();
     EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
+}
+
+// ---- A pass opened outside the read loop (protocol_pass(), Huly QB-1278) -------------------------------------------
+//
+// A component that runs a member function of its protocol outside the read loop -- a sweep from on(pending_write), an
+// abort from a timer -- and lets application code be reached from it holds a pass across the call: a handler that
+// clears the protocols there used to destroy the protocol under its own member function.
+
+TEST_F(AsyncIoBaseTest, DuplexClearProtocolsUnderAPassEndsTheProtocolOnceThePassReturned) {
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        auto           *protocol =
+            session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_in_handler<PipeDuplexProbe>);
+        ASSERT_NE(protocol, nullptr);
+        {
+            const auto pass = session.base().protocol_pass();
+            protocol->sweep();
+            EXPECT_EQ(life.destroyed, 0u) << "destroyed under the pass that covers its member function";
+            EXPECT_EQ(session.base().protocol(), qb::io::async::no_protocol()) << "cleared all the same: out of reach";
+        }
+        EXPECT_EQ(life.frames_after_handler, 1u) << "the protocol finished its member function after the handler cleared it";
+        EXPECT_EQ(life.destroyed, 1u) << "the pass ends the cleared protocol when it returns";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own member function";
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, InputClearProtocolsUnderAPassEndsTheProtocolOnceThePassReturned) {
+    ProtocolLifetime life;
+    {
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        auto *protocol = input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &clear_in_handler<PipeInputProbe>);
+        ASSERT_NE(protocol, nullptr);
+        {
+            const auto pass = input.base().protocol_pass();
+            protocol->sweep();
+            EXPECT_EQ(life.destroyed, 0u) << "destroyed under the pass that covers its member function";
+        }
+        EXPECT_EQ(life.frames_after_handler, 1u);
+        EXPECT_EQ(life.destroyed, 1u) << "the pass ends the cleared protocol when it returns";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own member function";
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexClearThenSwitchUnderAPassKeepsTheNewProtocolAndEndsTheOld) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    PipeDuplexProbe  session{pair.probe};
+    auto *protocol = session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_then_switch_in_handler);
+    ASSERT_NE(protocol, nullptr);
+    {
+        const auto pass = session.base().protocol_pass();
+        protocol->sweep();
+        EXPECT_EQ(life.destroyed, 0u);
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "the old protocol ends with the pass";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u);
+    EXPECT_NE(session.base().protocol(), qb::io::async::no_protocol()) << "the protocol switched in after the clear is kept";
+    EXPECT_NE(session.base().protocol(), protocol);
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAPassOpenedByAHandlerLeavesTheClearedProtocolToItsReadPass) {
+    // The handler calls a function of its component that opens a pass and clears under it: when that pass returns,
+    // the read loop's own onMessage() is still running.
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life,
+                                                                                       &clear_under_a_pass_in_handler<PipeDuplexProbe>),
+                  nullptr);
+        session.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        ASSERT_TRUE(pass_until([&] { return session.disconnected_events > 0u; }, "the session ends once it has no protocol"));
+
+        EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+        EXPECT_EQ(life.frames_after_handler, 1u) << "the protocol finished its onMessage() after the handler's pass returned";
+        EXPECT_EQ(life.destroyed, 1u) << "the read pass ends it once the dispatch has returned";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed by the handler's pass, under the read loop's onMessage()";
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, InputAPassOpenedByAHandlerLeavesTheClearedProtocolToItsReadPass) {
+    ProtocolLifetime life;
+    {
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        ASSERT_NE(
+            input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &clear_under_a_pass_in_handler<PipeInputProbe>),
+            nullptr);
+        input.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        ASSERT_TRUE(pass_until([&] { return input.disconnected_events > 0u; }, "the input ends once it has no protocol"));
+
+        EXPECT_EQ(life.frames_after_handler, 1u);
+        EXPECT_EQ(life.destroyed, 1u);
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed by the handler's pass, under the read loop's onMessage()";
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAReadPassThatRunsUnderAPassLeavesTheClearedProtocolToThePass) {
+    // The code a pass covers ran the loop -- a module's await(), a run_until() -- and the loop dispatched the
+    // component, whose handler cleared the protocols: that read pass returns under the member function the pass covers.
+    ProtocolLifetime life;
+    {
+        auto            pair = make_stream_pair();
+        PipeDuplexProbe session{pair.probe};
+        ASSERT_NE(session.base().switch_protocol<DispatchingProtocol<PipeDuplexProbe>>(session, life, &clear_in_handler<PipeDuplexProbe>),
+                  nullptr);
+        session.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        {
+            const auto pass = session.base().protocol_pass();
+            ASSERT_TRUE(
+                pass_until([&] { return session.disconnected_events > 0u; }, "the read pass ran, and the session ended with no protocol"));
+            EXPECT_EQ(session.messages, (std::vector<std::string>{"abcd"}));
+            EXPECT_EQ(life.destroyed, 0u) << "ended by the read pass that ran under the pass";
+        }
+        EXPECT_EQ(life.destroyed, 1u) << "the pass ends it when it returns";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u);
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+TEST_F(AsyncIoBaseTest, InputAReadPassThatRunsUnderAPassLeavesTheClearedProtocolToThePass) {
+    ProtocolLifetime life;
+    {
+        auto           pair = make_stream_pair();
+        PipeInputProbe input{pair.probe};
+        ASSERT_NE(input.base().switch_protocol<DispatchingProtocol<PipeInputProbe>>(input, life, &clear_in_handler<PipeInputProbe>), nullptr);
+        input.base().start();
+        ASSERT_TRUE(deliver(pair, "abcd"));
+        {
+            const auto pass = input.base().protocol_pass();
+            ASSERT_TRUE(pass_until([&] { return input.disconnected_events > 0u; }, "the read pass ran, and the input ended with no protocol"));
+            EXPECT_EQ(life.destroyed, 0u) << "ended by the read pass that ran under the pass";
+        }
+        EXPECT_EQ(life.destroyed, 1u) << "the pass ends it when it returns";
+        EXPECT_EQ(life.destroyed_in_dispatch, 0u);
+    }
+    EXPECT_EQ(life.destroyed, 1u) << "destroyed once";
+}
+
+// ---- A pass and a handler that re-arms its component (the first independent review's finding) ----------------------
+//
+// A handler that ends its protocols and re-arms its component -- clear_protocols(), then start() or
+// reset_io_state(), the order a client's reconnect code uses -- is still under the read loop's onMessage(). The
+// clear retired the protocol under that read pass, which ends it once it has returned; a pass open across the
+// sequence, or opened after it, leaves it to that read pass.
+
+namespace async_bases_framing_test {
+
+template <typename Io>
+void
+clear_then_start_in_handler(Io &io) {
+    io.base().clear_protocols();
+    io.base().start();
+}
+
+template <typename Io>
+void
+clear_then_start_under_a_pass_in_handler(Io &io) {
+    const auto pass = io.base().protocol_pass();
+    io.base().clear_protocols();
+    io.base().start();
+}
+
+template <typename Io>
+void
+clear_and_start_then_a_pass_in_handler(Io &io) {
+    io.base().clear_protocols();
+    io.base().start();
+    const auto pass = io.base().protocol_pass(); // covers nothing that clears: any function of the component that holds one
+}
+
+void
+clear_then_reset_io_state_in_handler(PipeDuplexProbe &io) {
+    io.base().clear_protocols();
+    io.reset_state(); // reset_io_state()
+}
+
+void
+clear_then_reset_io_state_under_a_pass_in_handler(PipeDuplexProbe &io) {
+    const auto pass = io.base().protocol_pass();
+    io.base().clear_protocols();
+    io.reset_state();
+}
+
+/// One frame to a probe whose handler is `handler`: the frame is dispatched, and the protocol the handler cleared ends
+/// once, after its own onMessage() has returned.
+template <typename Probe>
+::testing::AssertionResult
+one_frame_ends_its_protocol_after_its_dispatch(void (*handler)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, handler) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    if (!deliver(pair, "abcd"))
+        return ::testing::AssertionFailure() << "the frame could not be sent";
+    if (!pass_until([&] { return life.destroyed > 0u; }, "the cleared protocol ends"))
+        return ::testing::AssertionFailure() << "the cleared protocol never ended";
+    if (probe.messages != std::vector<std::string>{"abcd"})
+        return ::testing::AssertionFailure() << "the frame was not dispatched";
+    if (life.destroyed_in_dispatch != 0u)
+        return ::testing::AssertionFailure() << "destroyed under its own onMessage(): destroyed_in_dispatch=" << life.destroyed_in_dispatch
+                                             << " destroyed=" << life.destroyed << " frames_after_handler=" << life.frames_after_handler;
+    if (life.destroyed != 1u || life.frames_after_handler != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed << " frames_after_handler=" << life.frames_after_handler;
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+using namespace async_bases_framing_test;
+
+// With no pass: the read pass ends what it retired -- a handler that re-arms its component no longer lowers the flag
+// under it (QB-1278).
+TEST_F(AsyncIoBaseTest, DuplexClearThenStartFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeDuplexProbe>(&clear_then_start_in_handler<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexClearThenResetIoStateFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeDuplexProbe>(&clear_then_reset_io_state_in_handler));
+}
+
+TEST_F(AsyncIoBaseTest, InputClearThenStartFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeInputProbe>(&clear_then_start_in_handler<PipeInputProbe>));
+}
+
+// With a pass in the handler's call tree: the same.
+TEST_F(AsyncIoBaseTest, DuplexAPassAcrossAClearThenAStartFromAHandlerLeavesTheProtocolToItsReadPass) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeDuplexProbe>(&clear_then_start_under_a_pass_in_handler<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAPassAcrossAClearThenAResetIoStateFromAHandlerLeavesTheProtocolToItsReadPass) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeDuplexProbe>(&clear_then_reset_io_state_under_a_pass_in_handler));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAPassOpenedAfterAClearAndAStartFromAHandlerLeavesTheProtocolToItsReadPass) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeDuplexProbe>(&clear_and_start_then_a_pass_in_handler<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAPassAcrossAClearThenAStartFromAHandlerLeavesTheProtocolToItsReadPass) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeInputProbe>(&clear_then_start_under_a_pass_in_handler<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAPassOpenedAfterAClearAndAStartFromAHandlerLeavesTheProtocolToItsReadPass) {
+    EXPECT_TRUE(one_frame_ends_its_protocol_after_its_dispatch<PipeInputProbe>(&clear_and_start_then_a_pass_in_handler<PipeInputProbe>));
+}
+
+// ---- The dispatch flag is the read pass's own (the second independent review's finding) ---------------------------
+//
+// A handler that re-arms its component -- start(), reset_io_state() -- used to zero the dispatch flag, which is also
+// the guard that keeps the loop from dispatching a component under its own onMessage(). When that handler, or a
+// function of the component it called, then ran the loop (a synchronous wait), the component was dispatched again
+// under the handler, and that nested read pass ended the protocol the first had retired: under its onMessage(),
+// with a pass or without one.
+
+namespace async_bases_framing_test {
+
+StreamPair *g_rearmed_pair              = nullptr; // the connection the handler's own loop would read
+std::size_t g_asked                     = 0u;      // read passes that reached the protocol switched in by the handler
+std::size_t g_asked_under_the_handler   = 0u;      // ... while the handler was still running
+bool        g_loop_was_run_by_a_handler = false;
+
+/// The protocol the handler switches in: frames nothing, counts the read passes that reach it.
+template <typename Io>
+class CountingFramer : public qb::io::async::AProtocol<Io> {
+public:
+    explicit CountingFramer(Io &io) noexcept
+        : qb::io::async::AProtocol<Io>(io) {}
+    std::size_t
+    getMessageSize() noexcept final {
+        ++g_asked;
+        return 0u;
+    }
+    void
+    onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+};
+
+template <typename Io>
+void
+clear_and_switch(Io &io) {
+    io.base().clear_protocols(); // retired under this read pass
+    (void) io.base().template switch_protocol<CountingFramer<Io>>(io);
+}
+
+/// The loop, run from the handler -- a synchronous wait on something else -- with octets waiting for the component.
+template <typename Io>
+void
+run_the_loop_from_the_handler(Io &) {
+    const std::size_t asked = g_asked;
+    EXPECT_TRUE(deliver(*g_rearmed_pair, "wxyz"));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (g_asked == asked && std::chrono::steady_clock::now() < deadline)
+        (void) qb::io::async::run(EVRUN_NOWAIT);
+    g_asked_under_the_handler += g_asked - asked;
+    g_loop_was_run_by_a_handler = true;
+}
+
+template <typename Io>
+void
+start_again_then_run_the_loop(Io &io) {
+    clear_and_switch(io);
+    io.base().start();
+    run_the_loop_from_the_handler(io);
+}
+
+template <typename Io>
+void
+start_again_then_run_the_loop_under_a_pass(Io &io) {
+    clear_and_switch(io);
+    io.base().start();
+    const auto pass = io.base().protocol_pass(); // a function of the component that runs the loop
+    run_the_loop_from_the_handler(io);
+}
+
+template <typename Io>
+void
+reset_then_run_the_loop(Io &io) {
+    clear_and_switch(io);
+    io.reset_state(); // reset_io_state()
+    run_the_loop_from_the_handler(io);
+}
+
+template <typename Io>
+void
+reset_then_run_the_loop_under_a_pass(Io &io) {
+    clear_and_switch(io);
+    io.reset_state();
+    const auto pass = io.base().protocol_pass();
+    run_the_loop_from_the_handler(io);
+}
+
+/// One frame to a probe whose handler re-arms it and runs the loop: the component is not dispatched under its own
+/// onMessage(), and the protocol the handler cleared ends once, after that onMessage() has returned.
+template <typename Probe>
+::testing::AssertionResult
+a_rearmed_component_is_not_dispatched_under_its_own_dispatch(void (*handler)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair       = make_stream_pair();
+    g_rearmed_pair              = &pair;
+    g_asked                     = 0u;
+    g_asked_under_the_handler   = 0u;
+    g_loop_was_run_by_a_handler = false;
+    Probe probe{pair.probe};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, handler) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    if (!deliver(pair, "abcd"))
+        return ::testing::AssertionFailure() << "the frame could not be sent";
+    const bool ended = pass_until([&] { return life.destroyed > 0u; }, "the cleared protocol ends");
+    g_rearmed_pair   = nullptr;
+    if (!ended)
+        return ::testing::AssertionFailure() << "the cleared protocol never ended";
+    if (!g_loop_was_run_by_a_handler)
+        return ::testing::AssertionFailure() << "the handler never ran the loop: the case tested nothing";
+    if (g_asked_under_the_handler != 0u)
+        return ::testing::AssertionFailure() << "the component was dispatched " << g_asked_under_the_handler
+                                             << " time(s) under its own onMessage(): destroyed_in_dispatch=" << life.destroyed_in_dispatch;
+    if (life.destroyed_in_dispatch != 0u)
+        return ::testing::AssertionFailure() << "destroyed under its own onMessage(): destroyed_in_dispatch=" << life.destroyed_in_dispatch;
+    if (life.destroyed != 1u || life.frames_after_handler != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed << " frames_after_handler=" << life.frames_after_handler;
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexAHandlerThatStartsAgainThenRunsTheLoopIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeDuplexProbe>(&start_again_then_run_the_loop<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAHandlerThatStartsAgainThenRunsTheLoopUnderAPassIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeDuplexProbe>(
+        &start_again_then_run_the_loop_under_a_pass<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAHandlerThatResetsItsStateThenRunsTheLoopIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeDuplexProbe>(&reset_then_run_the_loop<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAHandlerThatResetsItsStateThenRunsTheLoopUnderAPassIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(
+        a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeDuplexProbe>(&reset_then_run_the_loop_under_a_pass<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAHandlerThatStartsAgainThenRunsTheLoopIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeInputProbe>(&start_again_then_run_the_loop<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAHandlerThatStartsAgainThenRunsTheLoopUnderAPassIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeInputProbe>(
+        &start_again_then_run_the_loop_under_a_pass<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAHandlerThatResetsItsStateThenRunsTheLoopIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeInputProbe>(&reset_then_run_the_loop<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAHandlerThatResetsItsStateThenRunsTheLoopUnderAPassIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(
+        a_rearmed_component_is_not_dispatched_under_its_own_dispatch<PipeInputProbe>(&reset_then_run_the_loop_under_a_pass<PipeInputProbe>));
+}
+
+// ---- A protocol's destructor that resumes the reading (the third independent review's finding) --------------------
+//
+// Retired protocols end with the component's dispatch flag raised -- what their destructors saw when a clear destroyed
+// at once -- and resume_reading() read that flag as "the handler that suspended is still in its read pass, which goes
+// on by itself". No read pass is on the stack while they end: a protocol whose destructor handed over to its successor
+// and resumed the reading left what the suspension had retained in the buffer until the peer wrote again -- at the end
+// of a read pass, on the code as it was too, and at the end of a pass. The ending says what it is
+// (protocol_list::ending()), and the resume asks the loop as it does from anywhere else.
+
+namespace async_bases_framing_test {
+
+/// The first frame's handler suspends the reading: the second frame of the same read is retained.
+template <typename Io>
+void
+suspend_at_the_first_frame(Io &io) {
+    if (io.messages.size() == 1u)
+        io.base().pause_reading();
+}
+
+/// ...and ends its protocol in that read pass, its successor in place before the handler returns.
+void
+suspend_then_hand_over_duplex(PipeDuplexProbe &io) {
+    if (io.messages.size() != 1u)
+        return;
+    io.base().pause_reading();
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+}
+
+void
+suspend_then_hand_over_input(PipeInputProbe &io) {
+    if (io.messages.size() != 1u)
+        return;
+    io.base().pause_reading();
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+}
+
+/// What the ended protocol's destructor does: the reading resumed -- its successor is in place already...
+template <typename Io>
+void
+resume_in_the_destructor(Io &io) {
+    io.base().resume_reading();
+}
+
+/// ...or installed here first, when the protocol was ended outside its own handler.
+void
+hand_over_in_the_destructor_duplex(PipeDuplexProbe &io) {
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+    io.base().resume_reading();
+}
+
+void
+hand_over_in_the_destructor_input(PipeInputProbe &io) {
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+    io.base().resume_reading();
+}
+
+enum class ended_by { a_clear_outside_any_pass, a_pass, its_read_pass };
+
+/// Two frames in one read; the first suspends the reading; the protocol is ended -- `how` -- and its destructor
+/// resumes. The peer writes nothing more: the second frame is delivered by the resume alone.
+template <typename Probe>
+::testing::AssertionResult
+a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained(ended_by how, void (*handler)(Probe &), void (*on_destroy)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, handler, on_destroy) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    if (!deliver(pair, "abcdefgh"))
+        return ::testing::AssertionFailure() << "the frames could not be sent";
+    if (how == ended_by::its_read_pass) {
+        if (!pass_until([&] { return life.destroyed > 0u; }, "the first frame, and the end of its protocol"))
+            return ::testing::AssertionFailure() << "the first frame was not dispatched";
+    } else {
+        if (!pass_until([&] { return !probe.messages.empty(); }, "the first frame"))
+            return ::testing::AssertionFailure() << "the first frame was not dispatched";
+        run_nowait_iterations();
+        if (probe.messages != std::vector<std::string>{"abcd"} || !probe.base().reading_paused() || probe.pendingRead() != 4u)
+            return ::testing::AssertionFailure() << "setup: messages=" << probe.messages.size() << " paused=" << probe.base().reading_paused()
+                                                 << " retained=" << probe.pendingRead();
+        if (how == ended_by::a_pass) {
+            const auto pass = probe.base().protocol_pass(); // a function of the component that runs its protocol outside the read loop
+            probe.base().clear_protocols();
+            if (life.destroyed != 0u)
+                return ::testing::AssertionFailure() << "ended under the pass";
+        } else {
+            probe.base().clear_protocols();
+        }
+    }
+    if (life.destroyed != 1u || life.destroyed_in_dispatch != 0u || probe.base().reading_paused())
+        return ::testing::AssertionFailure() << "the destructor did not hand over: destroyed=" << life.destroyed
+                                             << " destroyed_in_dispatch=" << life.destroyed_in_dispatch
+                                             << " paused=" << probe.base().reading_paused();
+    if (!pass_until([&] { return probe.messages.size() >= 2u; }, "the frame the suspension retained"))
+        return ::testing::AssertionFailure() << "the retained frame waits for the peer's next write: messages=" << probe.messages.size()
+                                             << " retained=" << probe.pendingRead();
+    if (probe.messages != std::vector<std::string>{"abcd", "efgh"})
+        return ::testing::AssertionFailure() << "messages=" << probe.messages.size();
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromTheDestructorOfAProtocolItsReadPassEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::its_read_pass, &suspend_then_hand_over_duplex, &resume_in_the_destructor<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromTheDestructorOfAProtocolAPassEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::a_pass, &suspend_at_the_first_frame<PipeDuplexProbe>, &hand_over_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromTheDestructorOfAProtocolAClearEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::a_clear_outside_any_pass, &suspend_at_the_first_frame<PipeDuplexProbe>, &hand_over_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromTheDestructorOfAProtocolItsReadPassEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::its_read_pass, &suspend_then_hand_over_input, &resume_in_the_destructor<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromTheDestructorOfAProtocolAPassEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::a_pass, &suspend_at_the_first_frame<PipeInputProbe>, &hand_over_in_the_destructor_input));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromTheDestructorOfAProtocolAClearEndedDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::a_clear_outside_any_pass, &suspend_at_the_first_frame<PipeInputProbe>, &hand_over_in_the_destructor_input));
+}
+
+// ---- ...and a destructor that then runs the loop (the fourth independent review's finding) -------------------------
+//
+// What a destructor asks of the LOOP for its component while the retired protocols end -- the slice a resume owes, the
+// teardown a disconnect() fed -- is dispatched to a component whose flag is raised: on(event::io&) returns at once, as
+// it must under a read pass. A destructor that then ran the loop itself (a synchronous wait) used that dispatch up, and
+// nothing asked again once the ending was over: the retained input, or the teardown, waited for the peer's next write.
+// The component is told when the ending is over (protocols_ended()), and asks again.
+
+namespace async_bases_framing_test {
+
+/// The loop, run by a destructor before it returns: a synchronous wait on something else.
+void
+run_the_loop_from_a_destructor() {
+    for (int i = 0; i < 4; ++i)
+        (void) qb::io::async::run(EVRUN_NOWAIT);
+}
+
+template <typename Io>
+void
+resume_then_run_the_loop_in_the_destructor(Io &io) {
+    io.base().resume_reading();
+    run_the_loop_from_a_destructor();
+}
+
+void
+hand_over_then_run_the_loop_in_the_destructor_duplex(PipeDuplexProbe &io) {
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+    io.base().resume_reading();
+    run_the_loop_from_a_destructor();
+}
+
+void
+hand_over_then_run_the_loop_in_the_destructor_input(PipeInputProbe &io) {
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+    io.base().resume_reading();
+    run_the_loop_from_a_destructor();
+}
+
+template <typename Io>
+void
+disconnect_then_run_the_loop_in_the_destructor(Io &io) {
+    io.base().disconnect();
+    run_the_loop_from_a_destructor();
+}
+
+/// The first frame's handler ends its protocol in that read pass, its successor in place before it returns.
+void
+hand_over_at_the_first_frame_duplex(PipeDuplexProbe &io) {
+    if (io.messages.size() != 1u)
+        return;
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+}
+
+void
+hand_over_at_the_first_frame_input(PipeInputProbe &io) {
+    if (io.messages.size() != 1u)
+        return;
+    io.base().clear_protocols();
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+}
+
+/// One frame; the protocol is ended -- `how` -- and its destructor disconnects, then runs the loop. The peer writes
+/// nothing more: the teardown comes from the event disconnect() fed, asked again once the ending is over.
+template <typename Probe>
+::testing::AssertionResult
+a_disconnect_from_an_ended_protocols_destructor_is_torn_down(ended_by how, void (*handler)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, handler,
+                                                                          &disconnect_then_run_the_loop_in_the_destructor<Probe>)
+        == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    if (!deliver(pair, "abcd"))
+        return ::testing::AssertionFailure() << "the frame could not be sent";
+    if (how == ended_by::its_read_pass) {
+        if (!pass_until([&] { return life.destroyed > 0u; }, "the first frame, and the end of its protocol"))
+            return ::testing::AssertionFailure() << "the first frame was not dispatched";
+    } else {
+        if (!pass_until([&] { return !probe.messages.empty(); }, "the first frame"))
+            return ::testing::AssertionFailure() << "the first frame was not dispatched";
+        run_nowait_iterations();
+        if (probe.disconnected_events != 0u || life.destroyed != 0u)
+            return ::testing::AssertionFailure() << "setup: disconnected=" << probe.disconnected_events << " destroyed=" << life.destroyed;
+        if (how == ended_by::a_pass) {
+            const auto pass = probe.base().protocol_pass(); // a function of the component that runs its protocol outside the read loop
+            probe.base().clear_protocols();
+            if (life.destroyed != 0u)
+                return ::testing::AssertionFailure() << "ended under the pass";
+        } else {
+            probe.base().clear_protocols();
+        }
+    }
+    if (life.destroyed != 1u || life.destroyed_in_dispatch != 0u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed << " destroyed_in_dispatch=" << life.destroyed_in_dispatch;
+    if (!pass_until([&] { return probe.disconnected_events > 0u; }, "the teardown the destructor's disconnect() asked for"))
+        return ::testing::AssertionFailure() << "the teardown waits for the peer's next write: disconnected=" << probe.disconnected_events;
+    run_nowait_iterations();
+    if (probe.disconnected_events != 1u)
+        return ::testing::AssertionFailure() << "torn down " << probe.disconnected_events << " times";
+    return ::testing::AssertionSuccess();
+}
+
+/// Nothing was refused: nothing is asked. Here a component whose teardown has run -- a disconnection is still
+/// recorded on it, and a dispatch fed to it now would be one nobody asked for.
+template <typename Probe>
+::testing::AssertionResult
+an_ending_asks_nothing_of_a_component_that_is_torn_down() {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &no_handler<Probe>) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    probe.base().disconnect();
+    if (!pass_until([&] { return probe.disconnected_events > 0u; }, "the teardown"))
+        return ::testing::AssertionFailure() << "the component was never torn down";
+    run_nowait_iterations();
+    {
+        const auto pass = probe.base().protocol_pass(); // the application ends the protocols of the connection that is over
+        probe.base().clear_protocols();
+    }
+    if (life.destroyed != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed;
+    const std::size_t dispatched = dispatched_over(20);
+    if (dispatched != 0u)
+        return ::testing::AssertionFailure() << "a component that is torn down was dispatched " << dispatched
+                                             << " time(s) once its protocols ended";
+    if (probe.disconnected_events != 1u)
+        return ::testing::AssertionFailure() << "torn down " << probe.disconnected_events << " times";
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromADestructorThatThenRunsTheLoopAtTheEndOfItsReadPassDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::its_read_pass, &suspend_then_hand_over_duplex, &resume_then_run_the_loop_in_the_destructor<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromADestructorThatThenRunsTheLoopAtTheEndOfAPassDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::a_pass, &suspend_at_the_first_frame<PipeDuplexProbe>, &hand_over_then_run_the_loop_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAResumeFromADestructorThatThenRunsTheLoopUnderAClearDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeDuplexProbe>(
+        ended_by::a_clear_outside_any_pass, &suspend_at_the_first_frame<PipeDuplexProbe>,
+        &hand_over_then_run_the_loop_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromADestructorThatThenRunsTheLoopAtTheEndOfItsReadPassDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::its_read_pass, &suspend_then_hand_over_input, &resume_then_run_the_loop_in_the_destructor<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromADestructorThatThenRunsTheLoopAtTheEndOfAPassDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::a_pass, &suspend_at_the_first_frame<PipeInputProbe>, &hand_over_then_run_the_loop_in_the_destructor_input));
+}
+
+TEST_F(AsyncIoBaseTest, InputAResumeFromADestructorThatThenRunsTheLoopUnderAClearDeliversWhatWasRetained) {
+    EXPECT_TRUE(a_resume_from_an_ended_protocols_destructor_delivers_what_was_retained<PipeInputProbe>(
+        ended_by::a_clear_outside_any_pass, &suspend_at_the_first_frame<PipeInputProbe>, &hand_over_then_run_the_loop_in_the_destructor_input));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexADisconnectFromADestructorThatThenRunsTheLoopAtTheEndOfItsReadPassIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeDuplexProbe>(ended_by::its_read_pass,
+                                                                                              &hand_over_at_the_first_frame_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexADisconnectFromADestructorThatThenRunsTheLoopAtTheEndOfAPassIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeDuplexProbe>(ended_by::a_pass, &no_handler<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexADisconnectFromADestructorThatThenRunsTheLoopUnderAClearIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeDuplexProbe>(ended_by::a_clear_outside_any_pass,
+                                                                                              &no_handler<PipeDuplexProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputADisconnectFromADestructorThatThenRunsTheLoopAtTheEndOfItsReadPassIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeInputProbe>(ended_by::its_read_pass,
+                                                                                             &hand_over_at_the_first_frame_input));
+}
+
+TEST_F(AsyncIoBaseTest, InputADisconnectFromADestructorThatThenRunsTheLoopAtTheEndOfAPassIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeInputProbe>(ended_by::a_pass, &no_handler<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, InputADisconnectFromADestructorThatThenRunsTheLoopUnderAClearIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_an_ended_protocols_destructor_is_torn_down<PipeInputProbe>(ended_by::a_clear_outside_any_pass,
+                                                                                             &no_handler<PipeInputProbe>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAnEndingAsksNothingOfAComponentThatIsTornDown) {
+    EXPECT_TRUE(an_ending_asks_nothing_of_a_component_that_is_torn_down<PipeDuplexProbe>());
+}
+
+TEST_F(AsyncIoBaseTest, InputAnEndingAsksNothingOfAComponentThatIsTornDown) {
+    EXPECT_TRUE(an_ending_asks_nothing_of_a_component_that_is_torn_down<PipeInputProbe>());
 }
 
 // =============================================================================
@@ -2744,4 +3539,420 @@ TEST_F(AsyncIoBaseTest, InputReadyToReadReadsWhatItsTransportHolds) {
         pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "ready_to_read() reads what the transport still holds"));
     EXPECT_EQ(probe.messages, kFourMessages);
     EXPECT_FALSE(probe.runaway);
+}
+
+// ---- A dispatch refused while the protocols end is asked again (the fifth independent review's findings) -------------
+//
+// What the component refuses under its raised flag while its retired protocols end is kept, and handed back once the
+// ending is over: the slice a resume owes and the teardown a disconnect() fed (above), and the feed start() and
+// ready_to_read() make for input the transport holds below its descriptor, which nothing on the socket will ever
+// announce. Only what was refused: a component stopped after its disconnect() -- stop() dropped the event the
+// disconnect had fed -- is not torn down by the end of its protocols, and a stop() made after the refusal still drops
+// what was asked.
+
+namespace async_bases_framing_test {
+
+/// Four octets a message, as FourOctets; its destructor calls `hook` once, when armed.
+template <typename Io>
+class RearmingProtocol : public qb::io::async::AProtocol<Io> {
+public:
+    using hook_t = void (*)(Io &);
+
+    RearmingProtocol(Io &io, bool &armed, hook_t hook) noexcept
+        : qb::io::async::AProtocol<Io>(io)
+        , _armed(armed)
+        , _hook(hook) {}
+
+    ~RearmingProtocol() override {
+        if (_armed) {
+            _armed = false;
+            _hook(this->_io);
+        }
+    }
+
+    std::size_t
+    getMessageSize() noexcept final {
+        return this->_io.pendingRead() >= 4u ? 4u : 0u;
+    }
+
+    void
+    onMessage(std::size_t size) noexcept final {
+        this->_io.messages.emplace_back(this->_io.in().begin(), size);
+        if (this->_io.messages.size() == this->_io.stop_after)
+            this->_io.stop();
+    }
+
+    void
+    reset() noexcept final {}
+
+private:
+    bool  &_armed;
+    hook_t _hook;
+};
+
+/// The destructor re-arms its component for the protocol it installs -- start() feeds a dispatch for what the
+/// transport holds --, then runs the loop.
+template <typename Io>
+void
+rearm_then_run_the_loop_in_the_destructor(Io &io) {
+    (void) io.template switch_protocol<FourOctets<Io>>(io);
+    io.start();
+    run_the_loop_from_a_destructor();
+}
+
+/// The same through ready_to_read(), on a watcher set for nothing.
+void
+ready_to_read_then_run_the_loop_in_the_destructor(HoldingInput &io) {
+    (void) io.switch_protocol<FourOctets<HoldingInput>>(io);
+    io.watch_nothing();
+    io.ready_to_read();
+    run_the_loop_from_a_destructor();
+}
+
+/// Sixteen octets held below the descriptor; the handler of the second message stops the component. The protocol is
+/// then ended under a pass, and its destructor re-arms the component for its successor and runs the loop. Nobody
+/// writes to the socket: the two messages left are read because the dispatch that was refused is asked again.
+template <typename Probe>
+::testing::AssertionResult
+what_the_transport_holds_is_read_after_a_destructor_rearmed_and_ran_the_loop(void (*hook)(Probe &)) {
+    bool  armed = false; // outlives the probe: the protocol's destructor reads it
+    auto  pair  = make_stream_pair();
+    Probe probe{pair.probe};
+    struct Disarm {
+        bool &armed;
+        ~Disarm() {
+            armed = false;
+        }
+    } disarm{armed};
+    if (probe.template switch_protocol<RearmingProtocol<Probe>>(probe, armed, hook) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.held       = "aaaabbbbccccdddd";
+    probe.stop_after = 2u;
+    probe.start();
+    if (!pass_until([&] { return probe.messages.size() >= 2u || probe.runaway; }, "the messages before the stop"))
+        return ::testing::AssertionFailure() << "setup: the first two messages were not read";
+    run_nowait_iterations();
+    if (probe.messages.size() != 2u || probe.held != "ccccdddd")
+        return ::testing::AssertionFailure() << "setup: messages=" << probe.messages.size() << " held=" << probe.held.size();
+    probe.stop_after = 0u;
+    armed            = true;
+    {
+        const auto pass = probe.protocol_pass(); // a function of the component that runs its protocol outside the read loop
+        probe.clear_protocols();
+    }
+    if (armed)
+        return ::testing::AssertionFailure() << "the protocol did not end";
+    if (!pass_until([&] { return probe.messages.size() >= 4u || probe.runaway; }, "what the transport holds"))
+        return ::testing::AssertionFailure() << "what the transport holds was never read: messages=" << probe.messages.size()
+                                             << " held=" << probe.held.size();
+    if (probe.messages != kFourMessages || probe.runaway)
+        return ::testing::AssertionFailure() << "messages=" << probe.messages.size() << " runaway=" << probe.runaway;
+    return ::testing::AssertionSuccess();
+}
+
+/// A started component; disconnect(); stop() -- the event the disconnect fed goes with the watcher. Its protocols are
+/// then ended under a pass, by a destructor that asks nothing: nothing was refused, so nothing is asked.
+template <typename Probe>
+::testing::AssertionResult
+an_ending_asks_nothing_of_a_component_stopped_after_its_disconnect() {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &no_handler<Probe>) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    run_nowait_iterations();
+    probe.base().disconnect();
+    probe.base().stop();
+    if (dispatched_over(20) != 0u || probe.disconnected_events != 0u)
+        return ::testing::AssertionFailure() << "setup: a stopped component was dispatched";
+    {
+        const auto pass = probe.base().protocol_pass();
+        probe.base().clear_protocols();
+    }
+    if (life.destroyed != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed;
+    const std::size_t dispatched = dispatched_over(20);
+    if (dispatched != 0u || probe.disconnected_events != 0u)
+        return ::testing::AssertionFailure() << "a stopped component was dispatched " << dispatched << " time(s) and torn down "
+                                             << probe.disconnected_events << " time(s) once its protocols ended";
+    return ::testing::AssertionSuccess();
+}
+
+void
+hand_over_run_the_loop_then_stop_in_the_destructor_duplex(PipeDuplexProbe &io) {
+    hand_over_then_run_the_loop_in_the_destructor_duplex(io);
+    io.base().stop();
+}
+
+void
+hand_over_run_the_loop_then_stop_in_the_destructor_input(PipeInputProbe &io) {
+    hand_over_then_run_the_loop_in_the_destructor_input(io);
+    io.base().stop();
+}
+
+/// Two frames; the first suspends the reading. The protocol ends under a pass; its destructor hands over, resumes,
+/// runs the loop -- the slice is refused -- and then STOPS its component: what was asked is dropped, as a stop()
+/// drops it, and start() asks again.
+template <typename Probe>
+::testing::AssertionResult
+a_stop_made_after_the_refusal_drops_what_was_asked_and_start_asks_again(void (*on_destroy)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &suspend_at_the_first_frame<Probe>, on_destroy)
+        == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    if (!deliver(pair, "abcdefgh"))
+        return ::testing::AssertionFailure() << "the frames could not be sent";
+    if (!pass_until([&] { return !probe.messages.empty(); }, "the first frame"))
+        return ::testing::AssertionFailure() << "the first frame was not dispatched";
+    run_nowait_iterations();
+    if (probe.messages.size() != 1u || !probe.base().reading_paused() || probe.pendingRead() != 4u)
+        return ::testing::AssertionFailure() << "setup: messages=" << probe.messages.size() << " retained=" << probe.pendingRead();
+    {
+        const auto pass = probe.base().protocol_pass();
+        probe.base().clear_protocols();
+    }
+    if (life.destroyed != 1u || probe.base().reading_paused())
+        return ::testing::AssertionFailure() << "the destructor did not hand over";
+    const std::size_t dispatched = dispatched_over(20);
+    if (dispatched != 0u || probe.messages.size() != 1u)
+        return ::testing::AssertionFailure() << "a stopped component was dispatched " << dispatched
+                                             << " time(s): messages=" << probe.messages.size();
+    probe.base().start();
+    if (!pass_until([&] { return probe.messages.size() >= 2u; }, "the slice start() asks again"))
+        return ::testing::AssertionFailure() << "start() did not ask again for what was retained: messages=" << probe.messages.size();
+    if (probe.messages != std::vector<std::string>{"abcd", "efgh"})
+        return ::testing::AssertionFailure() << "messages=" << probe.messages.size();
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, InputWhatTheTransportHoldsIsReadAfterADestructorRearmedAndRanTheLoop) {
+    EXPECT_TRUE(what_the_transport_holds_is_read_after_a_destructor_rearmed_and_ran_the_loop<HoldingInput>(
+        &rearm_then_run_the_loop_in_the_destructor<HoldingInput>));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexWhatTheTransportHoldsIsReadAfterADestructorRearmedAndRanTheLoop) {
+    EXPECT_TRUE(what_the_transport_holds_is_read_after_a_destructor_rearmed_and_ran_the_loop<HoldingDuplex>(
+        &rearm_then_run_the_loop_in_the_destructor<HoldingDuplex>));
+}
+
+TEST_F(AsyncIoBaseTest, InputWhatTheTransportHoldsIsReadAfterADestructorCalledReadyToReadAndRanTheLoop) {
+    EXPECT_TRUE(what_the_transport_holds_is_read_after_a_destructor_rearmed_and_ran_the_loop<HoldingInput>(
+        &ready_to_read_then_run_the_loop_in_the_destructor));
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAnEndingAsksNothingOfAComponentStoppedAfterItsDisconnect) {
+    EXPECT_TRUE(an_ending_asks_nothing_of_a_component_stopped_after_its_disconnect<PipeDuplexProbe>());
+}
+
+TEST_F(AsyncIoBaseTest, InputAnEndingAsksNothingOfAComponentStoppedAfterItsDisconnect) {
+    EXPECT_TRUE(an_ending_asks_nothing_of_a_component_stopped_after_its_disconnect<PipeInputProbe>());
+}
+
+TEST_F(AsyncIoBaseTest, DuplexAStopMadeAfterTheRefusalDropsWhatWasAskedAndStartAsksAgain) {
+    EXPECT_TRUE(a_stop_made_after_the_refusal_drops_what_was_asked_and_start_asks_again<PipeDuplexProbe>(
+        &hand_over_run_the_loop_then_stop_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, InputAStopMadeAfterTheRefusalDropsWhatWasAskedAndStartAsksAgain) {
+    EXPECT_TRUE(a_stop_made_after_the_refusal_drops_what_was_asked_and_start_asks_again<PipeInputProbe>(
+        &hand_over_run_the_loop_then_stop_in_the_destructor_input));
+}
+
+namespace async_bases_framing_test {
+
+/// A started component its application stopped; its protocols end under a pass, and their destructor disconnects it,
+/// then runs the loop. The event disconnect() feeds a watcher -- started or not -- is dispatched there and refused: it
+/// is asked again whatever the watcher's state, as disconnect() asked.
+template <typename Probe>
+::testing::AssertionResult
+a_disconnect_from_the_destructor_of_a_stopped_component_is_torn_down() {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &no_handler<Probe>,
+                                                                          &disconnect_then_run_the_loop_in_the_destructor<Probe>)
+        == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    run_nowait_iterations();
+    probe.base().stop();
+    {
+        const auto pass = probe.base().protocol_pass();
+        probe.base().clear_protocols();
+    }
+    if (life.destroyed != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed;
+    if (!pass_until([&] { return probe.disconnected_events > 0u; }, "the teardown the destructor's disconnect() asked for"))
+        return ::testing::AssertionFailure() << "the teardown of a stopped component was lost: disconnected=" << probe.disconnected_events;
+    run_nowait_iterations();
+    if (probe.disconnected_events != 1u)
+        return ::testing::AssertionFailure() << "torn down " << probe.disconnected_events << " times";
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexADisconnectFromTheDestructorOfAStoppedComponentThatThenRunsTheLoopIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_the_destructor_of_a_stopped_component_is_torn_down<PipeDuplexProbe>());
+}
+
+TEST_F(AsyncIoBaseTest, InputADisconnectFromTheDestructorOfAStoppedComponentThatThenRunsTheLoopIsTornDown) {
+    EXPECT_TRUE(a_disconnect_from_the_destructor_of_a_stopped_component_is_torn_down<PipeInputProbe>());
+}
+
+namespace async_bases_framing_test {
+
+std::size_t g_dispatched_by_the_destructors_loop = 0u;
+
+/// The loop, run by a destructor until it has dispatched something -- the readiness of the octets that are waiting.
+void
+run_the_loop_from_a_destructor_until_it_dispatches() {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    while (g_dispatched_by_the_destructors_loop == 0u && std::chrono::steady_clock::now() < deadline)
+        g_dispatched_by_the_destructors_loop += static_cast<std::size_t>(qb::io::async::run(EVRUN_NOWAIT));
+}
+
+/// The destructor installs a successor and runs the loop -- octets are waiting: a readability is refused --, then
+/// disconnects and stops its component: stop() drops the event disconnect() fed. What was refused was a readiness,
+/// and a readiness is not asked again of a stopped watcher: the component is not torn down.
+void
+run_the_loop_then_disconnect_and_stop_in_the_destructor_duplex(PipeDuplexProbe &io) {
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+    run_the_loop_from_a_destructor_until_it_dispatches();
+    io.base().disconnect();
+    io.base().stop();
+}
+
+void
+run_the_loop_then_disconnect_and_stop_in_the_destructor_input(PipeInputProbe &io) {
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+    run_the_loop_from_a_destructor_until_it_dispatches();
+    io.base().disconnect();
+    io.base().stop();
+}
+
+template <typename Probe>
+::testing::AssertionResult
+a_refused_readiness_does_not_bring_back_a_disconnection_a_stop_dropped(void (*on_destroy)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &no_handler<Probe>, on_destroy) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    run_nowait_iterations();
+    g_dispatched_by_the_destructors_loop = 0u;
+    {
+        const auto pass = probe.base().protocol_pass();
+        probe.base().clear_protocols();
+        if (!deliver(pair, "abcd")) // readable when the destructor runs the loop, at the end of this pass
+            return ::testing::AssertionFailure() << "the frame could not be sent";
+    }
+    if (life.destroyed != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed;
+    if (g_dispatched_by_the_destructors_loop == 0u)
+        return ::testing::AssertionFailure() << "the destructor's loop dispatched nothing: the case tested nothing";
+    const std::size_t dispatched = dispatched_over(20);
+    if (dispatched != 0u || probe.disconnected_events != 0u)
+        return ::testing::AssertionFailure() << "a stopped component was dispatched " << dispatched << " time(s) and torn down "
+                                             << probe.disconnected_events << " time(s) once its protocols ended";
+    if (!probe.messages.empty())
+        return ::testing::AssertionFailure() << "the readiness was not refused: the case tested nothing (messages=" << probe.messages.size()
+                                             << ")";
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexARefusedReadinessDoesNotBringBackADisconnectionAStopDropped) {
+    EXPECT_TRUE(a_refused_readiness_does_not_bring_back_a_disconnection_a_stop_dropped<PipeDuplexProbe>(
+        &run_the_loop_then_disconnect_and_stop_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, InputARefusedReadinessDoesNotBringBackADisconnectionAStopDropped) {
+    EXPECT_TRUE(a_refused_readiness_does_not_bring_back_a_disconnection_a_stop_dropped<PipeInputProbe>(
+        &run_the_loop_then_disconnect_and_stop_in_the_destructor_input));
+}
+
+// ---- What "more than a readiness" covers (the seventh independent review's findings) --------------------------------
+
+TEST_F(AsyncIoBaseTest, WhatARefusedDispatchWasForIsKeptInThreeBits) {
+    using qb::io::async::detail::refused_for;
+    EXPECT_EQ(refused_for(EV_READ), 1u);
+    EXPECT_EQ(refused_for(EV_WRITE), 2u);
+    EXPECT_EQ(refused_for(EV_READ | EV_WRITE), 3u);
+    EXPECT_EQ(refused_for(EV_UNDEF), 7u) << "the event a disconnect() feeds: more than a readiness";
+    EXPECT_EQ(refused_for(EV_ERROR | EV_READ | EV_WRITE), 7u) << "what the loop reports for a dead descriptor: more than a readiness";
+    EXPECT_EQ(refused_for(EV_ERROR), 4u);
+    EXPECT_EQ(refused_for(0), 0u);
+}
+
+namespace async_bases_framing_test {
+
+/// The destructor installs a successor; the descriptor dies and the loop finds out -- it stops the watcher and reports
+/// an error to it --; then the destructor runs the loop: the error is dispatched there, and refused.
+void
+the_descriptor_dies_then_run_the_loop_in_the_destructor_duplex(PipeDuplexProbe &io) {
+    (void) io.base().switch_protocol<FourByteDuplexProtocol>(io);
+    io.transport().close();
+    io.killed_by_the_loop();
+    run_the_loop_from_a_destructor();
+}
+
+void
+the_descriptor_dies_then_run_the_loop_in_the_destructor_input(PipeInputProbe &io) {
+    (void) io.base().switch_protocol<FourByteInputProtocol>(io);
+    io.transport().close();
+    io.killed_by_the_loop();
+    run_the_loop_from_a_destructor();
+}
+
+/// An error the loop reported while the protocols ended is more than a readiness: it is asked again whatever the
+/// watcher's state -- the loop stopped it --, and the component learns that its descriptor is dead. No disconnection
+/// is recorded on it: nothing but what was refused says so.
+template <typename Probe>
+::testing::AssertionResult
+an_error_the_loop_reported_while_the_protocols_ended_is_not_lost(void (*on_destroy)(Probe &)) {
+    ProtocolLifetime life;
+    auto             pair = make_stream_pair();
+    Probe            probe{pair.probe};
+    DisarmOnExit     disarm{life};
+    if (probe.base().template switch_protocol<DispatchingProtocol<Probe>>(probe, life, &no_handler<Probe>, on_destroy) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    probe.base().start();
+    run_nowait_iterations();
+    {
+        const auto pass = probe.base().protocol_pass();
+        probe.base().clear_protocols();
+    }
+    if (life.destroyed != 1u || probe.disconnected_events != 0u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed << " disconnected=" << probe.disconnected_events;
+    if (!pass_until([&] { return probe.disconnected_events > 0u; }, "the end a dead descriptor asks for"))
+        return ::testing::AssertionFailure() << "the component was never told that its descriptor is dead";
+    run_nowait_iterations();
+    if (probe.disconnected_events != 1u)
+        return ::testing::AssertionFailure() << "torn down " << probe.disconnected_events << " times";
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace async_bases_framing_test
+
+TEST_F(AsyncIoBaseTest, DuplexAnErrorTheLoopReportedWhileTheProtocolsEndedIsNotLost) {
+    EXPECT_TRUE(an_error_the_loop_reported_while_the_protocols_ended_is_not_lost<PipeDuplexProbe>(
+        &the_descriptor_dies_then_run_the_loop_in_the_destructor_duplex));
+}
+
+TEST_F(AsyncIoBaseTest, InputAnErrorTheLoopReportedWhileTheProtocolsEndedIsNotLost) {
+    EXPECT_TRUE(an_error_the_loop_reported_while_the_protocols_ended_is_not_lost<PipeInputProbe>(
+        &the_descriptor_dies_then_run_the_loop_in_the_destructor_input));
 }

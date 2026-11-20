@@ -134,7 +134,7 @@ qb caps inbound work per connection to resist oversized-message denial of servic
 
 Every protocol-driven I/O component carries a `_max_message_size`, initialized to `QB_MAX_MESSAGE_SIZE` (**100 MB** by default — note that a stale doc comment on `max_message_size()` in `qb/io/async/io.h` says 10 MB; the macro definition in `config.h` is the source of truth). A frame larger than the limit marks the protocol invalid and disconnects with reason `-2` ("message too large").
 
-<!-- src: qb/src/qb/io/config.h:174-176 (QB_MAX_MESSAGE_SIZE = 100MB), qb/src/qb/io/async/io.h:601,913,2485 (_max_message_size members), :1482-1485,:3668-3671 (reason -2, message too large) -->
+<!-- src: qb/src/qb/io/config.h:174-176 (QB_MAX_MESSAGE_SIZE = 100MB), qb/src/qb/io/async/io.h:614,926,2554 (_max_message_size members), :1521-1524,:3782-3785 (reason -2, message too large) -->
 
 100 MB is generous for most services. Lower it per component to match the largest legitimate message you accept:
 
@@ -145,7 +145,7 @@ this->set_max_message_size(1 * 1024 * 1024);
 
 You can read the active limit back with `max_message_size()`. Setting it too low rejects legitimate traffic; too high re-opens the DoS surface — size it to the workload.
 
-<!-- src: qb/src/qb/io/async/io.h:1249-1252 (max_message_size), :1276-1277 (set_max_message_size); the second copy lives on the bidirectional base, :3273-3275, :3304-3305 -->
+<!-- src: qb/src/qb/io/async/io.h:1287-1290 (max_message_size), :1314-1315 (set_max_message_size); the second copy lives on the bidirectional base, :3386-3388, :3417-3418 -->
 
 The framework also defines input/output buffer ceilings in the same header for the same reason; see [config.h](../../src/qb/io/config.h) for `QB_MAX_MESSAGE_SIZE` and the buffer-limit macros, all overridable at compile time with `-D`.
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1482-1485,3668-3671 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:977,983,996 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1521-1524,3782-3785 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:977,983,996 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

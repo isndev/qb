@@ -348,7 +348,7 @@ Key behaviors verified in the header:
   error reported). Not a read's write: a TLS 1.3 KeyUpdate the peer requests is answered by this
   side's next write, never by its read (OpenSSL's choice, measured with OpenSSL 3.5, 3.6 and 4.1),
   and nothing waits for it.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1213-1214 (WANT_WRITE: the read must write first), :1215-1236 (a socket error OpenSSL lets the session go on after, kept), :1245-1256 (-1, a would-block, read_wants_write()), :1281-1285 (WANT_READ: write() 0, write_wants_read()), :787-798 (a handshake step's error kept), :889-896 (a blocking connect fails on it); qb/src/qb/io/tcp/ssl/socket.h:721-724 (read_wants_write), :735-738 (write_wants_read), :751-754 (rehandshaking); qb/src/qb/io/async/io.h:3919-3920 (io<>: the read that waits to write), :2601-2608 (writability alone), :2819-2841 (the read made again, the empty arm's eos, readability for a write that waits for the peer), :3791 (the write pass), :3149-3150 (an empty arm while the read waits), :3965-3968, :2644-2653 (a handshake after the first: the read drives it), :3784-3785, :2666-2670 (a record OpenSSL held has left: a read follows), :1650-1651, :1719-1722 (input<>), :2327-2330, :2392-2394 (output<>) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1213-1214 (WANT_WRITE: the read must write first), :1215-1236 (a socket error OpenSSL lets the session go on after, kept), :1245-1256 (-1, a would-block, read_wants_write()), :1281-1285 (WANT_READ: write() 0, write_wants_read()), :787-798 (a handshake step's error kept), :889-896 (a blocking connect fails on it); qb/src/qb/io/tcp/ssl/socket.h:721-724 (read_wants_write), :735-738 (write_wants_read), :751-754 (rehandshaking); qb/src/qb/io/async/io.h:4042-4043 (io<>: the read that waits to write), :2670-2677 (writability alone), :2907-2929 (the read made again, the empty arm's eos, readability for a write that waits for the peer), :3905 (the write pass), :3262-3263 (an empty arm while the read waits), :4088-4091, :2713-2722 (a handshake after the first: the read drives it), :3898-3899, :2735-2739 (a record OpenSSL held has left: a read follows), :1698-1699, :1767-1770 (input<>), :2396-2399, :2461-2463 (output<>) -->
 - **`disconnect()` ends the TLS stream before it closes the socket (3.4, Huly QB-1270).** TLS has
   its own end of stream, the `close_notify` alert: a peer that reads the TCP FIN without it cannot
   tell a stream its sender ended from one something cut, and OpenSSL 3 reports it as an error
@@ -608,7 +608,7 @@ what the transport holds: the read made when writability comes takes it. A read 
 a fed dispatch that meets the peer's handshake message waits for writability as one the socket's
 readiness dispatched (3.4, Huly QB-1270).
 
-<!-- src: qb/src/qb/io/async/io.h:3919-3922 (async::io: the read that must write first returns before the feed), :3012-3013 (its start() keeps the wait), :3029-3035 (its ready_to_read() too), :1648-1653 (async::input: the same read), :1060-1061 (its start()), :1078-1085 (its ready_to_read()) -->
+<!-- src: qb/src/qb/io/async/io.h:4042-4045 (async::io: the read that must write first returns before the feed), :3124-3125 (its start() keeps the wait), :3141-3147 (its ready_to_read() too), :1696-1701 (async::input: the same read), :1097-1098 (its start()), :1115-1122 (its ready_to_read()) -->
 
 A component whose reading is suspended (`pause_reading()`, see
 [Protocols](./protocols.md#suspending-and-resuming-the-reading)) is not dispatched for what its
@@ -624,13 +624,13 @@ component watches for an empty write arm: the io layer tells the two apart by
 answers -- a read that brought data used to leave it raised, and it was meaningful right
 after a -1 only (3.4, Huly QB-1270).
 
-<!-- src: qb/src/qb/io/async/io.h:4257 (async::io: nothing fed under a suspension), :4225 (async::input), :2734-2745 (the resume asks for what was retained), :2702-2709 (the transport's own reads), :2797-2798 (a handshake a suspended read began), :2825-2826 (a read that waits to write, or a suspended component's empty arm); qb/src/qb/io/tcp/ssl/socket.h:763-765 (handshaking); qb/src/qb/io/tcp/ssl/socket.cpp:1189-1193 (read_wants_write lowered by every read) -->
+<!-- src: qb/src/qb/io/async/io.h:4382 (async::io: nothing fed under a suspension), :4350 (async::input), :2803-2817 (the resume asks for what was retained), :2771-2778 (the transport's own reads), :2885-2886 (a handshake a suspended read began), :2913-2914 (a read that waits to write, or a suspended component's empty arm); qb/src/qb/io/tcp/ssl/socket.h:763-765 (handshaking); qb/src/qb/io/tcp/ssl/socket.cpp:1189-1193 (read_wants_write lowered by every read) -->
 
 Until 3.4 a read asked for a whole 64 KiB bucket, larger than any record, or was refused:
 nothing could be left behind -- the second read `stcp::read()` then made of `SSL_pending()`
 never ran, and is gone -- and a cap below the bucket read nothing at all (Huly QB-86).
 
-<!-- src: qb/src/qb/io/transport/stcp.h:44-76 (the transport, its read), :86-90 (held_input), :100-103 (last_read_filled); qb/src/qb/io/async/io.h:4221-4228 (the dispatch it asks for), :4240-4250 (after a read), :1061, :3014 (start() asks once), :1086, :3037 (ready_to_read() too) -->
+<!-- src: qb/src/qb/io/transport/stcp.h:44-76 (the transport, its read), :86-90 (held_input), :100-103 (last_read_filled); qb/src/qb/io/async/io.h:4346-4353 (the dispatch it asks for), :4365-4375 (after a read), :1098, :3126 (start() asks once), :1123, :3149 (ready_to_read() too) -->
 
 ### SSL context helpers
 

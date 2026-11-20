@@ -32,6 +32,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -773,6 +774,18 @@ public:
         life.in_dispatch          = false;
     }
 
+    /// A member function the component runs OUTSIDE process_input() -- a sweep, an abort -- that reaches a handler
+    /// and touches its own state after it.
+    void
+    sweep() noexcept {
+        auto &life       = _life;
+        life.in_dispatch = true;
+        _handler(_io);
+        ++_frames; // freed memory if the handler ended the protocol under this member function
+        life.frames_after_handler = _frames;
+        life.in_dispatch          = false;
+    }
+
     void
     reset() noexcept final {
         _frames = 0u;
@@ -887,6 +900,22 @@ TEST(BufferedIoSession, ClearProtocolsOutsideADispatchEndsTheProtocolsAtOnce) {
     ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_in_handler), nullptr);
     session.clear_protocols();
     EXPECT_EQ(life.destroyed, 1u) << "outside a dispatch, clear_protocols() destroys what it ends before it returns";
+}
+
+TEST(BufferedIoSession, ClearProtocolsUnderAPassEndsTheProtocolOnceThePassReturned) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    auto                    *protocol = session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_in_handler);
+    ASSERT_NE(protocol, nullptr);
+    {
+        const auto pass = session.protocol_pass();
+        protocol->sweep(); // outside process_input(): the pass keeps the protocol while its member function runs
+        EXPECT_EQ(life.destroyed, 0u) << "destroyed under the pass that covers its member function";
+        EXPECT_EQ(session.protocol(), qb::io::async::no_protocol()) << "cleared all the same: out of reach";
+    }
+    EXPECT_EQ(life.frames_after_handler, 1u) << "the protocol finished its member function after the handler cleared it";
+    EXPECT_EQ(life.destroyed, 1u) << "the pass ends the cleared protocol when it returns";
+    EXPECT_EQ(life.destroyed_in_dispatch, 0u) << "destroyed under its own member function";
 }
 
 // =============================================================================
@@ -1022,8 +1051,8 @@ TEST(ProtocolList, AClearOutsideADispatchEndsEveryProtocolAtOnce) {
 }
 
 TEST(ProtocolList, AClearThatFindsRetiredProtocolsRetiresToo) {
-    // Retired entries mean a dispatch is on the stack, even when the dispatch flag was lost under it (a
-    // reset_io_state() from a handler): the running protocol must not be destroyed by a second clear.
+    // Retired entries mean a clear is under way -- a dispatch on the stack, or a destructor running --: a second
+    // clear joins it whatever it is told, and the running protocol is not destroyed by it.
     EndingRecord   running, switched_in;
     ListOwner      owner;
     protocol_list &list = owner.list;
@@ -1072,4 +1101,486 @@ TEST(ProtocolList, ARetiredProtocolsDestructorThatClearsEndsEveryProtocolInTheSa
     EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear retired it, and the same call ended it";
     EXPECT_TRUE(live.flag_when_destroyed);
     EXPECT_FALSE(in_dispatch);
+}
+
+// ---- A pass opened outside the read loop (protocol_pass(), Huly QB-1278) --------------------------------------------
+//
+// Code that runs a protocol's member function outside the read loop -- a sweep from `on(pending_write)`, an abort
+// from a timer -- holds a pass: a clear made under it retires, and the outermost pass ends what was retired. The
+// list's own half is pinned here, against its owner's dispatch flag; `buffered_io<>`'s above and at the end of this
+// file; `io<>`'s and `input<>`'s in async-bases-framing.cpp.
+
+namespace {
+
+using list_pass = protocol_list::pass<&ListOwner::list, &ListOwner::in_dispatch, ListOwner>;
+
+} // namespace
+
+TEST(ProtocolList, AClearUnderAPassRetiresAndThePassEndsItWhenItReturns) {
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    list.push_back(std::make_unique<EndingProtocol>(record, &in_dispatch));
+    {
+        const list_pass pass{owner};
+        list.clear(in_dispatch); // no read pass on the stack: the pass alone retires
+        EXPECT_EQ(record.destroyed, 0u) << "destroyed under the pass: the member function that opened it is still running";
+    }
+    EXPECT_EQ(record.destroyed, 1u) << "the pass ends what a clear retired under it";
+    EXPECT_TRUE(record.flag_when_destroyed) << "it ends under the dispatch flag, as a protocol a read pass retired";
+    EXPECT_FALSE(in_dispatch) << "the flag is the read loop's again";
+}
+
+TEST(ProtocolList, APassThatSawNoClearEndsNothing) {
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list = owner.list;
+    list.push_back(std::make_unique<EndingProtocol>(record));
+    {
+        const list_pass pass{owner};
+    }
+    EXPECT_EQ(record.destroyed, 0u);
+    list.clear(false);
+    EXPECT_EQ(record.destroyed, 1u) << "and once it has returned a clear destroys at once again";
+}
+
+TEST(ProtocolList, PassesNestAndTheOutermostEndsWhatWasRetired) {
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list = owner.list;
+    list.push_back(std::make_unique<EndingProtocol>(record));
+    {
+        const list_pass outer{owner};
+        {
+            const list_pass inner{owner};
+            list.clear(false);
+        }
+        EXPECT_EQ(record.destroyed, 0u) << "the inner pass returned under the outer one: its caller is still running";
+    }
+    EXPECT_EQ(record.destroyed, 1u);
+}
+
+TEST(ProtocolList, APassOpenedUnderAReadPassLeavesWhatWasRetiredToThatReadPass) {
+    // A handler calls a function of its component that opens a pass: the read loop's own protocol is on the stack.
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    list.push_back(std::make_unique<EndingProtocol>(record, &in_dispatch));
+    in_dispatch = true; // the read loop is dispatching
+    {
+        const list_pass pass{owner};
+        list.clear(in_dispatch);
+    }
+    EXPECT_EQ(record.destroyed, 0u) << "the pass returned, the read pass has not: its onMessage() is still running";
+    in_dispatch = false; // the read loop has returned
+    EXPECT_TRUE(end_dispatch(owner, true));
+    EXPECT_EQ(record.destroyed, 1u);
+}
+
+TEST(ProtocolList, AReadPassThatEndsUnderAPassLeavesWhatItRetiredToThePass) {
+    // The code a pass covers ran the loop, and the loop dispatched the component: that read pass ends under the
+    // member function that opened the pass.
+    EndingRecord   record;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    list.push_back(std::make_unique<EndingProtocol>(record));
+    {
+        const list_pass pass{owner};
+        in_dispatch = true;
+        list.clear(in_dispatch);
+        in_dispatch = false;
+        EXPECT_FALSE(end_dispatch(owner, false)) << "the read pass's verdict passes through";
+        EXPECT_EQ(record.destroyed, 0u) << "ended by a read pass that ran under the pass";
+    }
+    EXPECT_EQ(record.destroyed, 1u);
+}
+
+TEST(ProtocolList, AProtocolSwitchedInAfterAClearUnderAPassIsKeptAndASecondClearEndsIt) {
+    EndingRecord   first, kept, second, between;
+    ListOwner      owner;
+    protocol_list &list = owner.list;
+    list.push_back(std::make_unique<EndingProtocol>(first));
+    {
+        const list_pass pass{owner};
+        list.clear(false);
+        list.push_back(std::make_unique<EndingProtocol>(kept)); // the new active protocol
+    }
+    EXPECT_EQ(first.destroyed, 1u);
+    EXPECT_EQ(kept.destroyed, 0u) << "switched in after the clear: kept";
+
+    list.push_back(std::make_unique<EndingProtocol>(second));
+    {
+        const list_pass pass{owner};
+        list.clear(false);
+        list.push_back(std::make_unique<EndingProtocol>(between));
+        list.clear(false); // joins the clear under way: what was switched in between ends too
+        EXPECT_EQ(kept.destroyed + second.destroyed + between.destroyed, 0u);
+    }
+    EXPECT_EQ(kept.destroyed, 1u);
+    EXPECT_EQ(second.destroyed, 1u);
+    EXPECT_EQ(between.destroyed, 1u);
+}
+
+TEST(ProtocolList, AProtocolAPassEndsMaySwitchClearOrOpenAPassFromItsDestructor) {
+    EndingRecord   switching, next, clearing, live;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+    list.push_back(std::make_unique<EndingProtocol>(switching, &in_dispatch, [&] { list.push_back(std::make_unique<EndingProtocol>(next)); }));
+    {
+        const list_pass pass{owner};
+        list.clear(false);
+    }
+    EXPECT_EQ(switching.destroyed, 1u);
+    EXPECT_EQ(next.destroyed, 0u) << "switched in by the destructor: kept";
+
+    // A destructor that opens a pass of its own and clears under it: the flag is set while a pass ends its protocols,
+    // so that inner pass leaves what it retired to the ending under way -- which destroys it in the same call.
+    list.push_back(std::make_unique<EndingProtocol>(clearing, nullptr, [&] {
+        const list_pass inner{owner};
+        list.clear(in_dispatch);
+    }));
+    list.push_back(std::make_unique<EndingProtocol>(live, &in_dispatch));
+    {
+        const list_pass pass{owner};
+        list.clear(false);
+    }
+    EXPECT_EQ(next.destroyed, 1u);
+    EXPECT_EQ(clearing.destroyed, 1u);
+    EXPECT_EQ(live.destroyed, 1u) << "the destructor's clear joined the ending under way";
+    EXPECT_TRUE(live.flag_when_destroyed);
+    EXPECT_FALSE(in_dispatch);
+}
+
+TEST(ProtocolList, ADestructorRunByAClearOutsideAnyPassMayOpenAPassAndClear) {
+    // No pass and no dispatch: the clear destroys at once, flag clear. Its first protocol's destructor opens a pass
+    // and clears under it; that pass ends what is left when it returns, inside the clear that is destroying.
+    EndingRecord   clearing, live;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+    list.push_back(std::make_unique<EndingProtocol>(clearing, nullptr, [&] {
+        const list_pass inner{owner};
+        list.clear(in_dispatch);
+        EXPECT_EQ(live.destroyed, 0u) << "retired under the destructor's own pass";
+    }));
+    list.push_back(std::make_unique<EndingProtocol>(live, &in_dispatch));
+    list.clear(false);
+    EXPECT_EQ(clearing.destroyed, 1u);
+    EXPECT_EQ(live.destroyed, 1u) << "once";
+    EXPECT_TRUE(live.flag_when_destroyed) << "ended by the destructor's pass, under the dispatch flag";
+    EXPECT_FALSE(in_dispatch);
+    EXPECT_TRUE(end_dispatch(owner, true));
+    EXPECT_EQ(live.destroyed, 1u) << "nothing retired is left behind";
+}
+
+TEST(ProtocolList, AReadPassThatEndsUnderAPassHandsWhatItRetiredToThatPassOnce) {
+    // Two read passes in a row under one pass (the code it covers runs the loop twice), each with a handler that
+    // clears: each leaves what it retired to the pass, and the pass ends all of it.
+    EndingRecord   first, second;
+    ListOwner      owner;
+    protocol_list &list        = owner.list;
+    bool          &in_dispatch = owner.in_dispatch;
+    list.push_back(std::make_unique<EndingProtocol>(first));
+    {
+        const list_pass pass{owner};
+        in_dispatch = true;
+        list.clear(in_dispatch);
+        in_dispatch = false;
+        EXPECT_TRUE(end_dispatch(owner, true));
+        list.push_back(std::make_unique<EndingProtocol>(second));
+        in_dispatch = true;
+        list.clear(in_dispatch);
+        in_dispatch = false;
+        EXPECT_TRUE(end_dispatch(owner, true));
+        EXPECT_EQ(first.destroyed + second.destroyed, 0u) << "ended by a read pass that ran under the pass";
+    }
+    EXPECT_EQ(first.destroyed, 1u);
+    EXPECT_EQ(second.destroyed, 1u);
+}
+
+TEST(ProtocolList, TheEndingSaysWhatItIsToTheDestructorsItRuns) {
+    // The dispatch flag is raised while retired protocols end, as it is under a read pass. `ending()` is what tells a
+    // destructor -- and what it calls: `resume_reading()` -- that no read pass is on the stack to pick up after it.
+    EndingRecord   by_a_read_pass, by_a_pass, at_once;
+    ListOwner      owner;
+    protocol_list &list                  = owner.list;
+    bool          &in_dispatch           = owner.in_dispatch;
+    bool           ending_by_a_read_pass = false, ending_by_a_pass = false, ending_at_once = true;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+
+    EXPECT_FALSE(list.ending());
+    list.push_back(std::make_unique<EndingProtocol>(by_a_read_pass, &in_dispatch, [&] { ending_by_a_read_pass = list.ending(); }));
+    in_dispatch = true; // a read pass, whose handler clears
+    list.clear(in_dispatch);
+    EXPECT_FALSE(list.ending()) << "retired is not ending: the read pass is on the stack";
+    in_dispatch = false;
+    EXPECT_TRUE(end_dispatch(owner, true));
+    EXPECT_EQ(by_a_read_pass.destroyed, 1u);
+    EXPECT_TRUE(by_a_read_pass.flag_when_destroyed);
+    EXPECT_TRUE(ending_by_a_read_pass) << "the end of a read pass";
+    EXPECT_FALSE(list.ending()) << "over once they have ended";
+
+    list.push_back(std::make_unique<EndingProtocol>(by_a_pass, &in_dispatch, [&] { ending_by_a_pass = list.ending(); }));
+    {
+        const list_pass pass{owner};
+        list.clear(in_dispatch);
+        EXPECT_FALSE(list.ending()) << "a pass that is open is not an ending";
+    }
+    EXPECT_EQ(by_a_pass.destroyed, 1u);
+    EXPECT_TRUE(by_a_pass.flag_when_destroyed);
+    EXPECT_TRUE(ending_by_a_pass) << "the end of a pass";
+    EXPECT_FALSE(list.ending());
+
+    // A clear outside any pass destroys with the flag clear: nothing to tell apart. And the endings above left no pass
+    // behind them: this clear destroys before it returns.
+    list.push_back(std::make_unique<EndingProtocol>(at_once, &in_dispatch, [&] { ending_at_once = list.ending(); }));
+    list.clear(in_dispatch);
+    EXPECT_EQ(at_once.destroyed, 1u) << "an ending that left its mark behind makes every later clear retire";
+    EXPECT_FALSE(at_once.flag_when_destroyed);
+    EXPECT_FALSE(ending_at_once);
+}
+
+namespace {
+
+// An owner the list tells: what it refused while its protocols ended comes back to it, once, when they have.
+struct ToldOwner {
+    protocol_list              list;
+    bool                       in_dispatch = false;
+    std::vector<std::uint32_t> handed_back;
+
+    void
+    protocols_ended(std::uint32_t refused) {
+        handed_back.push_back(refused);
+    }
+};
+
+using told_pass = protocol_list::pass<&ToldOwner::list, &ToldOwner::in_dispatch, ToldOwner>;
+
+} // namespace
+
+TEST(ProtocolList, WhatAnOwnerRefusedWhileItsProtocolsEndedIsHandedBackOnce) {
+    static_assert(protocol_list::told<ToldOwner>);
+    static_assert(!protocol_list::told<ListOwner>, "an owner with no protocols_ended() is told nothing");
+    EndingRecord   first, second, third, fourth;
+    ToldOwner      owner;
+    protocol_list &list = owner.list;
+    ArmEndingHooks armed; // disarms the hooks before `list` dies
+
+    list.dispatch_refused(1u); // under a read pass, or under nothing: not kept -- only an ending is followed by nothing
+    list.push_back(std::make_unique<EndingProtocol>(first, &owner.in_dispatch, [&] { list.dispatch_refused(1u); }));
+    list.push_back(std::make_unique<EndingProtocol>(second, &owner.in_dispatch, [&] {
+        list.dispatch_refused(4u);
+        const told_pass inner{owner}; // a pass opened and closed by a destructor leaves what was refused where it is
+    }));
+    {
+        const told_pass pass{owner};
+        list.clear(owner.in_dispatch);
+        EXPECT_TRUE(owner.handed_back.empty());
+    }
+    EXPECT_EQ(first.destroyed + second.destroyed, 2u);
+    ASSERT_EQ(owner.handed_back.size(), 1u) << "once, when the ending is over";
+    EXPECT_EQ(owner.handed_back.front(), 5u) << "what each destructor's loop was refused, together: a readiness, then more";
+    EXPECT_FALSE(owner.in_dispatch);
+    EXPECT_FALSE(list.ending());
+
+    // As it was given: one bit refused, one bit handed back -- by the end of a read pass here.
+    list.push_back(std::make_unique<EndingProtocol>(third, &owner.in_dispatch, [&] { list.dispatch_refused(2u); }));
+    owner.in_dispatch = true;
+    list.clear(owner.in_dispatch);
+    owner.in_dispatch = false;
+    EXPECT_TRUE((list.end_dispatch<&ToldOwner::list, &ToldOwner::in_dispatch>(true, owner)));
+    EXPECT_EQ(third.destroyed, 1u);
+    ASSERT_EQ(owner.handed_back.size(), 2u);
+    EXPECT_EQ(owner.handed_back.back(), 2u);
+
+    // Nothing is left behind, and an ending in which nothing was refused hands nothing back.
+    list.push_back(std::make_unique<EndingProtocol>(fourth, &owner.in_dispatch));
+    {
+        const told_pass pass{owner};
+        list.clear(owner.in_dispatch);
+    }
+    EXPECT_EQ(fourth.destroyed, 1u);
+    EXPECT_EQ(owner.handed_back.size(), 2u);
+    list.push_back(std::make_unique<EndingProtocol>(fourth, &owner.in_dispatch));
+    list.clear(owner.in_dispatch);
+    EXPECT_EQ(fourth.destroyed, 2u) << "a clear outside any pass destroys before it returns: no mark was left in the count";
+}
+
+#ifndef NDEBUG
+TEST(ProtocolListDeathTest, AComponentDestroyedUnderAPassStopsOnAnAssertion) {
+    // A pass holds a reference to its component: one that outlives it would write into freed memory when it returns.
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    EXPECT_DEATH(
+        {
+            auto                    *owner = new ListOwner;
+            std::optional<list_pass> kept; // what the type cannot refuse: a pass kept past its call
+            kept.emplace(*owner);
+            delete owner;
+        },
+        "outlived its component");
+}
+#endif
+
+// ---- A pass and a handler that resets its component (the first independent review's finding) -----------------------
+//
+// A handler that ends its protocols and resets its component -- `clear_protocols()`, then
+// `reset_buffered_io_state()` -- is still under `process_input()`, which ends what it retired once it has returned;
+// a pass open across the sequence leaves it to that dispatch.
+
+namespace {
+
+void
+buffered_clear_then_reset_in_handler(BufferedProbe &io) {
+    io.clear_protocols();
+    io.reset_state(); // reset_buffered_io_state(): until 3.4 it zeroed the dispatch flag under process_input()
+}
+
+void
+buffered_clear_then_reset_under_a_pass_in_handler(BufferedProbe &io) {
+    const auto pass = io.protocol_pass();
+    io.clear_protocols();
+    io.reset_state();
+}
+
+void
+buffered_clear_under_a_pass_in_handler(BufferedProbe &io) {
+    const auto pass = io.protocol_pass(); // a function of the component that opens a pass, called by a handler
+    io.clear_protocols();
+}
+
+::testing::AssertionResult
+ended_once_after_its_dispatch(BufferedProtocolLifetime const &life) {
+    if (life.destroyed_in_dispatch != 0u)
+        return ::testing::AssertionFailure() << "destroyed under its own onMessage(): destroyed_in_dispatch=" << life.destroyed_in_dispatch
+                                             << " destroyed=" << life.destroyed << " frames_after_handler=" << life.frames_after_handler;
+    if (life.destroyed != 1u || life.frames_after_handler != 1u)
+        return ::testing::AssertionFailure() << "destroyed=" << life.destroyed << " frames_after_handler=" << life.frames_after_handler;
+    return ::testing::AssertionSuccess();
+}
+
+} // namespace
+
+TEST(BufferedIoSession, ClearThenResetStateFromAHandlerEndsTheProtocolOnceItsDispatchReturned) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_then_reset_in_handler), nullptr);
+    session.append("abcd");
+    (void) session.process_input();
+    EXPECT_TRUE(ended_once_after_its_dispatch(life));
+}
+
+TEST(BufferedIoSession, APassAcrossAClearThenAResetStateFromAHandlerLeavesTheProtocolToItsDispatch) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_then_reset_under_a_pass_in_handler), nullptr);
+    session.append("abcd");
+    (void) session.process_input();
+    EXPECT_TRUE(ended_once_after_its_dispatch(life));
+}
+
+TEST(BufferedIoSession, APassOpenedByAHandlerLeavesTheClearedProtocolToItsDispatch) {
+    // The base whose dispatch ends with its flag still set: the pass a handler opens returns under process_input().
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_under_a_pass_in_handler), nullptr);
+    session.append("abcd");
+    EXPECT_FALSE(session.process_input());
+    EXPECT_TRUE(ended_once_after_its_dispatch(life));
+}
+
+TEST(BufferedIoSession, AProcessInputThatRunsUnderAPassLeavesTheClearedProtocolToThePass) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    ASSERT_NE(session.switch_protocol<DispatchingBufferedProtocol>(session, life, &buffered_clear_in_handler), nullptr);
+    session.append("abcd");
+    {
+        const auto pass = session.protocol_pass(); // the code a pass covers runs process_input() (QUIC: a stream's process())
+        EXPECT_FALSE(session.process_input());
+        EXPECT_EQ(life.destroyed, 0u) << "ended by a dispatch that ran under the pass";
+    }
+    EXPECT_TRUE(ended_once_after_its_dispatch(life));
+}
+
+// ---- The dispatch flag is process_input()'s own (the second independent review's finding) -------------------------
+//
+// A handler that resets its component (`reset_buffered_io_state()`) used to zero the dispatch flag, which is also
+// the guard that keeps `process_input()` from dispatching under its own `onMessage()`: a second `process_input()`
+// made from that handler -- QUIC runs a stream's `process()` from many places -- then ended the protocol the first
+// had retired, under it.
+
+namespace {
+
+std::size_t g_buffered_asked                   = 0u;    // dispatches that reached the protocol switched in by the handler
+std::size_t g_buffered_asked_under_the_handler = 0u;    // ... while the handler was still running
+bool        g_buffered_processed_again         = false; // the handler made its own process_input()
+
+/// The protocol the handler switches in: frames nothing, counts the dispatches that reach it.
+class BufferedCountingFramer : public qb::io::async::AProtocol<BufferedProbe> {
+public:
+    explicit BufferedCountingFramer(BufferedProbe &io) noexcept
+        : AProtocol(io) {}
+    std::size_t
+    getMessageSize() noexcept final {
+        ++g_buffered_asked;
+        return 0u;
+    }
+    void
+    onMessage(std::size_t) noexcept final {}
+    void
+    reset() noexcept final {}
+};
+
+void
+buffered_reset_then_process_again(BufferedProbe &io) {
+    io.clear_protocols(); // retired under this dispatch
+    (void) io.switch_protocol<BufferedCountingFramer>(io);
+    io.reset_state(); // reset_buffered_io_state()
+    const std::size_t asked = g_buffered_asked;
+    io.append("wxyz");
+    (void) io.process_input(); // the stream processed again, from the handler
+    g_buffered_asked_under_the_handler += g_buffered_asked - asked;
+    g_buffered_processed_again = true;
+}
+
+void
+buffered_reset_then_process_again_under_a_pass(BufferedProbe &io) {
+    const auto pass = io.protocol_pass(); // a function of the component that processes the stream again
+    buffered_reset_then_process_again(io);
+}
+
+::testing::AssertionResult
+a_reset_component_is_not_dispatched_under_its_own_dispatch(void (*handler)(BufferedProbe &)) {
+    BufferedProtocolLifetime life;
+    BufferedProbe            session;
+    g_buffered_asked                   = 0u;
+    g_buffered_asked_under_the_handler = 0u;
+    g_buffered_processed_again         = false;
+    if (session.switch_protocol<DispatchingBufferedProtocol>(session, life, handler) == nullptr)
+        return ::testing::AssertionFailure() << "the protocol was refused";
+    session.append("abcd");
+    (void) session.process_input();
+    if (g_buffered_asked_under_the_handler != 0u)
+        return ::testing::AssertionFailure() << "the component was dispatched " << g_buffered_asked_under_the_handler
+                                             << " time(s) under its own onMessage(): destroyed_in_dispatch=" << life.destroyed_in_dispatch;
+    if (!g_buffered_processed_again)
+        return ::testing::AssertionFailure() << "the handler never processed the stream again: the case tested nothing";
+    if (g_buffered_asked == 0u)
+        return ::testing::AssertionFailure() << "the dispatch never went on to the protocol the handler switched in";
+    return ended_once_after_its_dispatch(life);
+}
+
+} // namespace
+
+TEST(BufferedIoSession, AHandlerThatResetsItsStateThenProcessesAgainIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_reset_component_is_not_dispatched_under_its_own_dispatch(&buffered_reset_then_process_again));
+}
+
+TEST(BufferedIoSession, AHandlerThatResetsItsStateThenProcessesAgainUnderAPassIsNotDispatchedUnderItsOwnDispatch) {
+    EXPECT_TRUE(a_reset_component_is_not_dispatched_under_its_own_dispatch(&buffered_reset_then_process_again_under_a_pass));
 }

@@ -401,7 +401,7 @@ auto s = co_await qb::io::async::tcp::connect<qb::io::transport::stcp>(std::move
   readability: the peer, waiting for that message, sent nothing more and the connection stalled until a timeout (an
   `ENOBUFS` there ended it); a write waiting for the peer kept writability watched and the loop dispatched it on every
   pass. A TLS 1.3 KeyUpdate the peer requests is answered by the next `write()`, never by a read.
-  _(ssl/socket.h:721-724, :735-738, :751-754; ssl/socket.cpp:1245-1256, :1281-1285, :787-798, :889-896; io.h:3919-3920, :2601-2608, :2819-2841, :3149-3150, :3965-3968, :2666-2670, :3012-3013, :3029-3035)_
+  _(ssl/socket.h:721-724, :735-738, :751-754; ssl/socket.cpp:1245-1256, :1281-1285, :787-798, :889-896; io.h:4042-4043, :2670-2677, :2907-2929, :3262-3263, :4088-4091, :2735-2739, :3124-3125, :3141-3147)_
 
 ### What a parked coroutine waits on — `dump()` (3.3)
 
@@ -666,7 +666,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **Blocking work** — `callback(fn)` calls `fn` inline; `callback(fn, delay > 0)` runs it later on
   the **same** core. Neither makes a blocking call non-blocking. Prefer a non-blocking API or
   `co_await ctx.offload(fn, copied_values...)` inside an actor coroutine; a worker actor is another
-  option only when placed on a different core and returning the result by event. _(io.h:423-459;
+  option only when placed on a different core and returning the result by event. _(io.h:436-472;
   Actor.h:2378-2408; offload.h:302)_
 
 ## Invariants & gotchas (cite-backed; violating these = UB, terminate, or miscompile)
@@ -868,7 +868,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   A `DownEvent` whose type the watcher did not register is an `unhandled` dead letter; internal watch events never are.
   _(VirtualCore.cpp:1401-1420, :1844-1859, :1903-1933, :1969-2001)_
 - **One listener per thread; never share I/O objects across threads.** Construct and destroy an async
-  object on the same thread whose `listener::current` it bound to. _(async/listener.h:87-99; async/io.h:132-137, :152-153, :161-165)_
+  object on the same thread whose `listener::current` it bound to. _(async/listener.h:87-99; async/io.h:145-150, :165-166, :174-178)_
 - **Don't call `async::run`/`run_once`/`run_until`/`run_sync`/`run_for` from inside a coroutine or actor
   handler** already under the scheduler — throws `std::logic_error` (asserts in debug). Inside an actor,
   drive coroutines via `spawn()` (or `spawn_detached()`), never `run_sync`. _(listener.h:2161-2177; mixin.h:63-71)_
@@ -881,7 +881,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
 - **`async::init()` is a no-op** (the listener is a self-initializing `thread_local`). Do **not**
   `listener::current.clear()` to "re-init" — it destroys live objects' kernel watchers and dangles
   them. _(listener.h:2141-2153)_
-- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:428-468)_ _(listener.h:2218)_
+- **`callback(fn)` and `callback(fn, delay<=0)` run `fn` inline immediately,** not next iteration — despite the name they do NOT defer. To break re-entrancy (run after the current handler unwinds) use **`qb::io::async::defer(fn)`**, never a bare `callback` or a magic tiny-delay timer. _(io.h:441-481)_ _(listener.h:2218)_
 - **Coroutine lambdas with reference/loop-variable captures dangle after the first suspension.** Store
   the lambda in a variable, pass loop vars by value, and pass `spawn_detached`/`spawn` the callable
   without trailing `()` so its closure is moved into an owning frame. _(scheduler.h:736-765)_
@@ -964,22 +964,33 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   module-load, pgsql server-side COPY) deliberately stay `std::string`. _(file.h:115, :139, :368; ssl/socket.h:96)_
 - **`file_watcher`/`directory_watcher` own their watched path string.** qev's `ev_stat` stores the path
   **pointer** without copying, so the watcher keeps a `std::string _watched_path` alive for its lifetime — never
-  hand `ev::stat` a temporary's `c_str()`. _(io.h:679-682; ev++.h:785)_
+  hand `ev::stat` a temporary's `c_str()`. _(io.h:692-695; ev++.h:785)_
 - **Reusing one io object for the next connection** (a client that is itself the io of every connection it
   opens): `disconnect()` defers `dispose()` to the watcher's next dispatch — a `start()` or `reset_io_state()`
   before it loses the disconnection, and so does a `start()` from inside `on(event::disconnected&&)` (debug
   assertions). A standalone client that needs the teardown done when it returns calls the protected
   `disconnect_now()`; `reset_for_reconnect()` clears both buffers and the protocols before the next transport is
-  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:2981-3019, :2622-2628, :3633-3640, :4196-4201)_
+  installed; `start()` arms writing at once when `out()` already holds data. _(io.h:3091-3131, :2691-2697, :3746-3753, :4321-4326)_
 - **`clear_protocols()` from the read loop's dispatch** (a protocol's `onMessage()`, the handler it hands the message
   to, anything they call) detaches every protocol at once — `protocol()` is the `NoProtocol` sentinel, a protocol
   switched in afterwards is the active one — and destroys them once that dispatch has returned, not under the
-  `onMessage()` the read loop runs (unless the handler zeroed the flag with `start()`/`reset_io_state()` first);
-  outside it, it destroys them before it returns. Before 3.4 it destroyed on the spot, a use-after-free in the
+  `onMessage()` the read loop runs -- a handler that re-arms its component (`start()`, `reset_io_state()`) included:
+  since 3.4 those no longer zero the dispatch flag, which is the read pass's own --; outside it, and outside a
+  `protocol_pass()`, it destroys them before it returns. Before 3.4 it destroyed on the spot, a use-after-free in the
   protocols that touch their state after their handler (qbm-http's WebSocket and HTTP/1.1, qbm-redis's; Huly QB-1278).
   Either way they end one at a time, front to back, the sentinel already active: a destructor's `switch_protocol()`
-  is kept, its `clear_protocols()` joins. `reset_for_reconnect()`
-  stays out of handlers: it empties `in()` under the dispatch. _(io.h:2913-2915, :3937, :4187-4188; protocol.h:397-419)_
+  is kept, its `clear_protocols()` joins. A component that runs a member function of its protocol OUTSIDE the read
+  loop (from `on(event::pending_write&&)` / `on(event::eos&&)`, a timer, its own interface) and lets application code
+  be reached from it holds `const auto pass = this->protocol_pass();` across the call (3.4): a clear under the pass
+  retires as under the dispatch, and the outermost pass ends what was retired; with no pass the clear destroys the
+  protocol under its own member function. A pass does nothing else -- the component is still dispatched, its teardown
+  is not held --, nests with the read loop's dispatch, and is one call's scope: never kept, never held across a
+  suspension. Retired protocols end with the dispatch flag raised and no read pass on the stack: a destructor that
+  calls `resume_reading()` there asks the loop for what the suspension retained, as from anywhere else, and a
+  dispatch refused during the ending (the destructor ran the loop itself) is asked again once it is over.
+  _(protocol.h:538-557, :476-482, :500-506; io.h:3024-3026, :1028-1030; buffered_io.h:92-94)_
+  `reset_for_reconnect()`
+  stays out of handlers: it empties `in()` under the dispatch. _(io.h:3004-3006, :4060, :4312-4313; protocol.h:418-454)_
 - **A standalone io's `dispose()` ends its transport** (Huly QB-1060, QB-1270): once the watcher is stopped, after
   `on(event::disconnected&&)` — which still sees it as the connection left it — and before `on(event::dispose&&)`.
   When the peer's EOF or a socket error ended the connection it is closed (`disconnect()` if any, then `close()`):
@@ -992,7 +1003,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   `linger()` of zero close at once; an acceptor keeps its socket and port, a datagram object its socket. Closing the
   transport again in `on(event::dispose&&)` is harmless. Install the next connection's transport once `dispose()` has
   returned. In 3.3 the half-closed descriptor stayed in the object: a peer that kept writing blocked for ever.
-  _(io.h:4083, :4129-4134; teardown.h:227-272, :89-95)_
+  _(io.h:4206, :4252-4257; teardown.h:227-272, :89-95)_
 - **A socket the loop is closing after its peer is that thread's** (Huly QB-1270): a blocking `async::run()` returns
   when the last one is gone — up to `linger()` later against a silent peer, at once when the peer closes or
   `linger()` is zero; an engine never waits (its cores stop, the sockets close with them). The bound runs on the
@@ -1029,7 +1040,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   session without it; a session saved with `get_session()` resumes after either side closed (it did not once its
   connection was closed, through 3.3). Kernel TLS: never enabled by qb; with it the loop would not read the
   descriptor raw -- close at once (`set_linger(qb::duration::zero())`).
-  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2535, :4085; ssl/socket.cpp:1111-1145, :1148-1152)_
+  _(teardown.h:108-111, :253-258, :161-165, :129-134; io.h:2604, :4208; ssl/socket.cpp:1111-1145, :1148-1152)_
 - **A server's session that ends its own connection (`disconnect()`, a framing error) is released at once and closed
   after its peer too** (Huly QB-1270): disposed at the next dispatch, its watcher stopped (a disposed session somebody still holds — `server.session(id)`
   — is no longer dispatched on every pass), and, when everything it had queued was written, its descriptor given to
@@ -1037,10 +1048,10 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   closes with the session and what was queued is dropped (resources win over delivery; `close_after_deliver()` is the
   path that waits); so does a session a size guard ended, one that lingered, one with `linger()` zero. The server's
   `disconnected(id)` override finds a handed-over session's transport closed: read the peer in `on(event::disconnected&&)`.
-  _(io.h:4105-4124)_
+  _(io.h:4228-4247)_
 - **A server's session closes after its peer** (Huly QB-1089): once its `close_after_deliver()` output is
-  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2526-2550, from :3835),
-  then reads and drops what the peer still sends (`linger_read()`, io.h:2563-2573, from :3979-3983) until the peer
+  delivered and `event::eos` reported, it shuts its sending side down (`begin_linger()`, io.h:2595-2619, from :3949),
+  then reads and drops what the peer still sends (`linger_read()`, io.h:2632-2642, from :4102-4106) until the peer
   closes, the socket fails, or `linger()` elapses (2 s; `set_linger(qb::duration)`, zero closes at once); only then
   does `dispose()` run. A session whose read cap is 0 drains nothing: its linger ends at the peer's next octet. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`
@@ -1061,7 +1072,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   application's is retained up to the read cap. `async::io` and `async::input`, stream transports only: the calls do
   not compile on a datagram transport. A server is an `input<>` whose read accepts: suspended, it accepts nothing
   and the connections wait in the listen backlog. `stop()` is another thing -- it stops the watcher whole.
-  _(io.h:3082-3087, :3098-3105, :3702-3707, :3902-3913, :2769-2802, :2734-2745, :3027-3028, :4099-4102, :2694-2696)_
+  _(io.h:3194-3199, :3211-3218, :3816-3821, :4025-4036, :2857-2890, :2803-2817, :3139-3140, :4222-4225, :2763-2765)_
 - **An optional I/O handler the detection cannot see is never called — silently.** `disconnected`, `eos`,
   `pending_read`, `dispose`, ... are dispatched under `if constexpr (qb::has_on<D, Evt>)`: it probes an RVALUE, so
   take `on(Evt&&)` or `on(Evt const&)`, never `on(Evt&)`; and it is access-checked inside the `has_method_on` struct,

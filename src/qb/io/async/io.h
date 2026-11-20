@@ -111,6 +111,19 @@ concept says_handshaking = requires(T &component) {
  */
 enum read_state : std::uint8_t { read_flowing = 0, read_suspended = 1, read_resumed = 2 };
 
+/// What a dispatch the component refused was for, in the three bits the protocol list keeps while retired protocols
+/// end (`protocol_list::dispatch_refused()`): readability, writability, and anything more -- the event a
+/// `disconnect()` feeds, an error the loop reports.
+enum refused_dispatch : std::uint32_t { refused_read = 1u, refused_write = 2u, refused_more = 4u };
+
+[[nodiscard]] constexpr std::uint32_t
+refused_for(int const revents) noexcept {
+    static_assert(EV_READ == static_cast<int>(refused_read) && EV_WRITE == static_cast<int>(refused_write));
+    const auto          bits      = static_cast<std::uint32_t>(revents);
+    const std::uint32_t readiness = refused_read | refused_write;
+    return (bits & readiness) | ((bits & ~readiness) != 0u ? static_cast<std::uint32_t>(refused_more) : 0u);
+}
+
 /// What the read branch of a dispatch does once `suspended_read()` has looked at a component that is not flowing.
 enum class suspended_dispatch : std::uint8_t {
     served,   ///< nothing more to read in this dispatch: it counts as served, and the write pass follows
@@ -985,13 +998,35 @@ public:
 
     /**
      * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
-     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
-     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
+     * @details One rule: a protocol is not destroyed under a pass. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call, a handler that has re-armed its component
+     *          (`start()`, `reset_io_state()`) included -- and from under a `protocol_pass()` they end once the
+     *          outermost of those has returned (Huly QB-1278). Outside any pass they are destroyed before it
+     *          returns.
      */
     void
     clear_protocols() {
         _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
         _protocol_list.clear(_on_message);
+    }
+
+    /**
+     * @brief Opens a pass: until the object it returns is destroyed, `clear_protocols()` retires the protocols
+     *        instead of destroying them, as it does under the read loop's dispatch (Huly QB-1278).
+     * @details For code that runs a member function of this component's protocol OUTSIDE the read loop -- from
+     *          `on(event::pending_read&&)` or `on(event::eof&&)`, from a timer, from a call the application makes --
+     *          when application code can be reached from it: with no pass, a `clear_protocols()` made there destroys
+     *          the protocol whose member function is still running. Hold the pass across that call:
+     *          `const auto pass = this->protocol_pass();`. Passes nest, with each other and with the read loop's
+     *          dispatch; the protocols a clear retired end when the outermost of them returns, the dispatch flag
+     *          set while they end, as for any retired protocol. Nothing else changes under a pass: the component
+     *          is still dispatched, and its teardown is not held. A pass is one call's scope -- an automatic object
+     *          of the function that runs the protocol, never kept and never held across a coroutine's suspension:
+     *          it holds a reference to its component, not a share, and retires every clear for as long as it lives.
+     */
+    [[nodiscard]] auto
+    protocol_pass() noexcept {
+        return detail::protocol_list::pass<&input::_protocol_list, &input::_on_message, input>{*this};
     }
 
     [[nodiscard]] IProtocol *
@@ -1051,9 +1086,11 @@ public:
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
         // The reading stays where it stands: a suspension made before this start -- in a constructor, or under a
-        // stop() -- holds from it (read_events()), and it ends with the connection, never with a start.
+        // stop() -- holds from it (read_events()), and it ends with the connection, never with a start. So does the
+        // dispatch flag: it is the read pass's own, set when it begins and cleared at each of its exits, and a
+        // start() made from one of its handlers must not lower the guard under it -- the loop that handler then
+        // ran dispatched the component again, under its own onMessage() (Huly QB-1278).
         _is_disposed  = false;
-        _on_message   = false;
         _reason       = 0;
         _system_error = 0;
         Derived.transport().set_nonblocking(true);
@@ -1137,7 +1174,8 @@ public:
      *          octets a TLS session already holds -- is handed to the protocol FROM THE LOOP, in the dispatch this
      *          call asks for, before anything is read again: never from inside this call, whoever makes it. A peer
      *          that closed meanwhile is seen after that, once. Called from the handler that suspended, before it
-     *          returns, the read pass simply goes on.
+     *          returns, the read pass simply goes on -- a protocol's destructor is not that handler: called by one
+     *          while the retired protocols end, it asks the loop too.
      */
     void
     resume_reading() noexcept
@@ -1455,6 +1493,7 @@ public:
 
 private:
     friend class listener::RegisteredKernelEvent<event::io, input>;
+    friend class detail::protocol_list; // protocols_ended()
 
     /**
      * @brief Processes messages from the input buffer using the protocol.
@@ -1614,8 +1653,17 @@ private:
         // C++ goto-past-initialization rules.
         std::shared_ptr<void> _self_guard;
 
-        if (_on_message)
+        if (_on_message) {
+            // Refused. Under a read pass, what the component itself asked this dispatch for is made good when the
+            // handler returns: the slicing loop tests a disconnection, goes on after a resume, and the read's end
+            // feeds held input again -- not a readiness the loop reported by itself, which a level-triggered
+            // backend reports again, nor an error it reported for a descriptor closed behind it. Under the end of
+            // retired protocols nothing follows: the list keeps what was refused and hands it back
+            // (protocols_ended()).
+            static_assert(detail::protocol_list::told<base_io_t>, "befriend detail::protocol_list: it calls protocols_ended()");
+            _protocol_list.dispatch_refused(detail::refused_for(event._revents));
             return;
+        }
 
         if constexpr (qb::has_shared_from_this<_Derived>) {
             try {
@@ -1766,8 +1814,11 @@ private:
             if (!read_waits_to_write)
                 this->_async_event.set(this->_async_event.events | EV_READ);
         }
-        if (_on_message)
-            return; // the handler that suspended resumed before it returned: its read pass goes on by itself
+        // The handler that suspended resumed before it returned: its read pass goes on by itself. Not a protocol's
+        // destructor that resumes while the retired protocols end: the flag is raised around that too, and no
+        // read pass follows it (Huly QB-1278).
+        if (_on_message && !_protocol_list.ending())
+            return;
         slice_retained_from_loop();
     }
 
@@ -1781,6 +1832,22 @@ private:
             if (this->_async_event.is_active())
                 this->_async_event.feed_event(EV_READ);
         }
+    }
+
+    /// The retired protocols have ended, and a dispatch of this component was REFUSED while they did
+    /// (`detail::protocol_list::dispatch_refused()`): one of their destructors ran the loop under the raised flag,
+    /// and no slicing loop follows an ending to make good what that dispatch was for -- the slice a
+    /// `resume_reading()` owes, the teardown a `disconnect()` fed, input the transport holds below its descriptor.
+    /// Asked of the loop again, as it was asked: what was more than a readiness -- the event a `disconnect()` feeds,
+    /// an error the loop reported -- whatever the watcher's state, as it was fed; a readiness only of a watcher still
+    /// started -- a `stop()` made since drops what was asked, and `start()` asks again. Nothing here reads the
+    /// component's own state: what was not refused is not asked (Huly QB-1278).
+    QB_NOINLINE QB_COLD void
+    protocols_ended(std::uint32_t const refused) noexcept {
+        if ((refused & detail::refused_more) != 0u)
+            detail::feed_own_watcher(this->_async_event, EV_UNDEF);
+        else if (this->_async_event.is_active())
+            this->_async_event.feed_event(static_cast<int>(refused));
     }
 
     /**
@@ -1895,15 +1962,17 @@ protected:
      * After `dispose()` sets `_is_disposed = true`, subsequent calls to `dispose()`
      * are no-ops, preventing `on(disconnected)` from firing on the next connection drop.
      * Call this before restarting I/O on the same object (e.g. for auto-reconnect) to
-     * restore a clean slate identical to the freshly-constructed state.
+     * restore a clean slate identical to the freshly-constructed state -- the dispatch flag
+     * aside, which is the read pass's own: a handler that resets its component is still under one.
      *
      * @pre The old async event must be stopped and the old transport socket closed
      *      before calling this — typically done from within the reconnect setup path.
      */
     void
     reset_io_state() noexcept {
+        // Not the dispatch flag: it is the read pass's own, and a handler that resets its component is still
+        // under one (Huly QB-1278).
         _is_disposed  = false;
-        _on_message   = false;
         _read_paused  = detail::read_flowing;
         _reason       = 0;
         _system_error = 0;
@@ -2739,8 +2808,11 @@ class io : public base<io<_Derived>, event::io> {
             if (!read_waits_to_write)
                 this->_async_event.set(this->_async_event.events | EV_READ);
         }
-        if (_on_message)
-            return; // the handler that suspended resumed before it returned: its read pass goes on by itself
+        // The handler that suspended resumed before it returned: its read pass goes on by itself. Not a protocol's
+        // destructor that resumes while the retired protocols end: the flag is raised around that too, and no
+        // read pass follows it (Huly QB-1278).
+        if (_on_message && !_protocol_list.ending())
+            return;
         slice_retained_from_loop();
     }
 
@@ -2754,6 +2826,22 @@ class io : public base<io<_Derived>, event::io> {
             if (this->_async_event.is_active())
                 this->_async_event.feed_event(EV_READ);
         }
+    }
+
+    /// The retired protocols have ended, and a dispatch of this component was REFUSED while they did
+    /// (`detail::protocol_list::dispatch_refused()`): one of their destructors ran the loop under the raised flag,
+    /// and no slicing loop follows an ending to make good what that dispatch was for -- the slice a
+    /// `resume_reading()` owes, the teardown a `disconnect()` fed, input the transport holds below its descriptor.
+    /// Asked of the loop again, as it was asked: what was more than a readiness -- the event a `disconnect()` feeds,
+    /// an error the loop reported -- whatever the watcher's state, as it was fed; a readiness only of a watcher still
+    /// started -- a `stop()` made since drops what was asked, and `start()` asks again. Nothing here reads the
+    /// component's own state: what was not refused is not asked (Huly QB-1278).
+    QB_NOINLINE QB_COLD void
+    protocols_ended(std::uint32_t const refused) noexcept {
+        if ((refused & detail::refused_more) != 0u)
+            detail::feed_own_watcher(this->_async_event, EV_UNDEF);
+        else if (this->_async_event.is_active())
+            this->_async_event.feed_event(static_cast<int>(refused));
     }
 
     /**
@@ -2906,13 +2994,35 @@ public:
 
     /**
      * @brief Ends every owned protocol; the NoProtocol sentinel is active once it returns, or what a destructor switched in.
-     * @details Outside a dispatch they are destroyed before it returns. From the read loop's dispatch -- a protocol's
-     *          `onMessage()`, the handler it calls, anything they call -- they end once it has returned (Huly QB-1278).
+     * @details One rule: a protocol is not destroyed under a pass. From the read loop's dispatch -- a protocol's
+     *          `onMessage()`, the handler it calls, anything they call, a handler that has re-armed its component
+     *          (`start()`, `reset_io_state()`) included -- and from under a `protocol_pass()` they end once the
+     *          outermost of those has returned (Huly QB-1278). Outside any pass they are destroyed before it
+     *          returns.
      */
     void
     clear_protocols() {
         _protocol = no_protocol(); // first: a destructor's switch_protocol() stays the active one; never null
         _protocol_list.clear(_on_message);
+    }
+
+    /**
+     * @brief Opens a pass: until the object it returns is destroyed, `clear_protocols()` retires the protocols
+     *        instead of destroying them, as it does under the read loop's dispatch (Huly QB-1278).
+     * @details For code that runs a member function of this component's protocol OUTSIDE the read loop -- from
+     *          `on(event::pending_write&&)` or `on(event::eos&&)`, from a timer, from a call the application makes --
+     *          when application code can be reached from it: with no pass, a `clear_protocols()` made there destroys
+     *          the protocol whose member function is still running. Hold the pass across that call:
+     *          `const auto pass = this->protocol_pass();`. Passes nest, with each other and with the read loop's
+     *          dispatch; the protocols a clear retired end when the outermost of them returns, the dispatch flag
+     *          set while they end, as for any retired protocol. Nothing else changes under a pass: the component
+     *          is still dispatched, and its teardown is not held. A pass is one call's scope -- an automatic object
+     *          of the function that runs the protocol, never kept and never held across a coroutine's suspension:
+     *          it holds a reference to its component, not a share, and retires every clear for as long as it lives.
+     */
+    [[nodiscard]] auto
+    protocol_pass() noexcept {
+        return detail::protocol_list::pass<&io::_protocol_list, &io::_on_message, io>{*this};
     }
 
     [[nodiscard]] IProtocol *
@@ -2997,9 +3107,11 @@ public:
         if (unlikely(Derived.transport().native_handle() == qb::io::invalid_socket))
             return;
         // The reading stays where it stands: a suspension made before this start -- in a constructor, or under a
-        // stop() -- holds from it (start_events()), and it ends with the connection, never with a start.
+        // stop() -- holds from it (start_events()), and it ends with the connection, never with a start. So does the
+        // dispatch flag: it is the read pass's own, set when it begins and cleared at each of its exits, and a
+        // start() made from one of its handlers must not lower the guard under it -- the loop that handler then
+        // ran dispatched the component again, under its own onMessage() (Huly QB-1278).
         _is_disposed  = false;
-        _on_message   = false;
         _reason       = 0;
         _system_error = 0;
         if constexpr (detail::tls_io<_Derived>)
@@ -3092,7 +3204,8 @@ public:
      *          octets a TLS session already holds -- is handed to the protocol FROM THE LOOP, in the dispatch this
      *          call asks for, before anything is read again: never from inside this call, whoever makes it. A peer
      *          that closed meanwhile is seen after that, once. Called from the handler that suspended, before it
-     *          returns, the read pass simply goes on.
+     *          returns, the read pass simply goes on -- a protocol's destructor is not that handler: called by one
+     *          while the retired protocols end, it asks the loop too.
      */
     void
     resume_reading() noexcept
@@ -3641,6 +3754,7 @@ protected:
 
 private:
     friend class listener::RegisteredKernelEvent<event::io, io>;
+    friend class detail::protocol_list; // protocols_ended()
 
     /**
      * @brief Processes messages from the input buffer using the protocol.
@@ -3880,8 +3994,17 @@ private:
         std::shared_ptr<void> _self_guard;
         bool                  ok = false; // Declare early to avoid goto bypassing initialization
 
-        if (_on_message)
+        if (_on_message) {
+            // Refused. Under a read pass, what the component itself asked this dispatch for is made good when the
+            // handler returns: the slicing loop tests a disconnection, goes on after a resume, and the read's end
+            // feeds held input again -- not a readiness the loop reported by itself, which a level-triggered
+            // backend reports again, nor an error it reported for a descriptor closed behind it. Under the end of
+            // retired protocols nothing follows: the list keeps what was refused and hands it back
+            // (protocols_ended()).
+            static_assert(detail::protocol_list::told<base_io_t>, "befriend detail::protocol_list: it calls protocols_ended()");
+            _protocol_list.dispatch_refused(detail::refused_for(event._revents));
             return;
+        }
 
         if constexpr (qb::has_shared_from_this<_Derived>) {
             try {
@@ -4147,7 +4270,8 @@ protected:
      * After `dispose()` sets `_is_disposed = true`, subsequent calls to `dispose()`
      * are no-ops, preventing `on(disconnected)` from firing on the next connection drop.
      * Call this before restarting I/O on the same object (e.g. for auto-reconnect) to
-     * restore a clean slate identical to the freshly-constructed state.
+     * restore a clean slate identical to the freshly-constructed state -- the dispatch flag
+     * aside, which is the read pass's own: a handler that resets its component is still under one.
      *
      * @pre The old async event must be stopped and the old transport socket closed
      *      before calling this — typically done from within the reconnect setup path.
@@ -4160,8 +4284,9 @@ protected:
         assert(!(_reason != 0 && !_is_disposed)
                && "io::reset_io_state() while a disconnect() is pending: its dispose() has not run yet -- wait "
                   "for on(event::disconnected&&)");
+        // Not the dispatch flag: it is the read pass's own, and a handler that resets its component is still
+        // under one (Huly QB-1278).
         _is_disposed  = false;
-        _on_message   = false;
         _read_paused  = detail::read_flowing;
         _reason       = 0;
         _system_error = 0;

@@ -27,7 +27,9 @@
 #ifndef QB_IO_ASYNC_PROTOCOL_H
 #define QB_IO_ASYNC_PROTOCOL_H
 
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <qb/utility/abi.h> /* QB_ABI_ANCHOR */
@@ -389,10 +391,29 @@ namespace detail {
  *          entries mean a clear is under way (a dispatch on the stack, or a destructor running), so a clear that
  *          finds some joins it rather than destroying under it. The component's own destruction is not a clear: no
  *          protocol destructor may call back into a component that is being destroyed.
+ *
+ *          A component also runs member functions of its protocol OUTSIDE the read loop, and opens a `pass` across
+ *          them: a clear under a pass retires too, and the outermost of the passes and the read pass on the stack
+ *          ends what was retired. The dispatch flag is the read pass's own -- nothing lowers it under one, a handler
+ *          that re-arms its component (`start()`, `reset_io_state()`) included, which is also what keeps the loop
+ *          from dispatching a component under its own `onMessage()`. It is raised in one other place, around the
+ *          END of retired protocols (above), where no slicing loop is running any more: `ending()` tells the two
+ *          apart, for what a destructor asks of its component that a slicing loop would pick up when its handler
+ *          returns (`resume_reading()`). And a dispatch the component REFUSES under its raised flag is lost when
+ *          that flag is an ending's -- a destructor ran the loop --: no slicing loop follows to make good what the
+ *          dispatch was for. The component says what it refuses (`dispatch_refused()`), the list keeps it for the
+ *          length of the ending and hands it back (`protocols_ended()`), and the component asks the loop again.
  */
 class protocol_list {
     std::vector<std::unique_ptr<IProtocol>> _owned;
-    std::size_t _ending = 0u; /**< Leading entries of `_owned` a clear ended: retired by a dispatch, or being destroyed. */
+    std::uint32_t                           _ending = 0u; /**< Leading entries of `_owned` a clear ended: retired, or being destroyed. */
+    std::uint32_t                           _passes = 0u; /**< The passes alive: the component's (`pass`), and the ending's own. */
+
+    /// What end_retired() leaves in `_passes` while it destroys: the ending is a pass of its own, the last one.
+    static constexpr std::uint32_t ending_pass = 0x80000000u;
+    /// Beside it, for the length of an ending: what the component refused to be dispatched for (three bits of its own).
+    static constexpr std::uint32_t refused_mask  = 0x70000000u;
+    static constexpr unsigned      refused_shift = 28u;
 
     QB_NOINLINE void
     destroy_ending() noexcept {
@@ -411,15 +432,35 @@ class protocol_list {
     template <auto List, auto Flag, typename Owner>
     QB_NOINLINE static void
     end_retired(Owner &owner) noexcept {
+        protocol_list &list = owner.*List;
+        // A pass the component opened is alive -- this read pass ran under it, through a loop pass its code made --:
+        // the protocols end when THAT pass returns, not under it.
+        if (list._passes != 0u)
+            return;
         bool      &in_dispatch = owner.*Flag;
         const bool outer       = in_dispatch;
         in_dispatch            = true;
-        (owner.*List).destroy_ending();
+        list._passes |= ending_pass; // none is alive here (above): the ending is one, and says so (`ending()`)
+        list.destroy_ending();
+        const std::uint32_t refused = (list._passes & refused_mask) >> refused_shift;
+        list._passes &= ~(ending_pass | refused_mask);
         in_dispatch = outer;
+        // A dispatch the component refused while they ended -- a destructor ran the loop under the raised flag -- is
+        // handed back: no slicing loop follows an ending to make good what it was for.
+        if (refused != 0u) [[unlikely]] {
+            if constexpr (told<Owner>)
+                owner.protocols_ended(refused);
+        }
     }
 
 public:
-    protocol_list()                                 = default;
+    protocol_list() = default;
+    /// A pass holds a reference to its component: one that outlives it writes into freed memory when it returns.
+    ~protocol_list() noexcept {
+        assert(_passes == 0u
+               && "a protocol_pass() outlived its component: a pass is one call's scope -- or a protocol's "
+                  "destructor destroyed the component that was ending it");
+    }
     protocol_list(protocol_list const &)            = delete; // `_ending` counts entries of this very vector: never copied nor moved
     protocol_list &operator=(protocol_list const &) = delete;
 
@@ -434,10 +475,34 @@ public:
     void
     clear(bool in_dispatch) noexcept {
         const bool joining = _ending != 0u;
-        _ending            = _owned.size();
-        if (in_dispatch || joining)
+        _ending            = static_cast<std::uint32_t>(_owned.size());
+        if (in_dispatch || joining || _passes != 0u)
             return;
         destroy_ending();
+    }
+
+    /// Whether `Owner` is told what it refused during an ending (`protocols_ended(std::uint32_t)`). Asked here, where
+    /// the list's friends are known: an owner that means to be told asserts on it -- a member the list cannot name
+    /// would be skipped without a word.
+    template <typename Owner>
+    static constexpr bool told = requires(Owner &owner, std::uint32_t refused) { owner.protocols_ended(refused); };
+
+    /// The component refused a dispatch under its raised flag. Under a read pass the slicing loop makes good, when
+    /// the handler returns, what the component itself had asked that dispatch for; under an ending nothing does:
+    /// `what` -- three bits of the component's own -- is kept, and handed back once the ending is over
+    /// (`protocols_ended()`).
+    void
+    dispatch_refused(std::uint32_t what) noexcept {
+        if (ending())
+            _passes |= (what << refused_shift) & refused_mask;
+    }
+
+    /// Whether retired protocols are ending right now. The dispatch flag is raised around that as it is under a read
+    /// pass, but no slicing loop is running any more: nothing picks up, when a destructor returns, what it asked of
+    /// its component -- a `resume_reading()` asks the loop, as it does from anywhere else.
+    [[nodiscard]] bool
+    ending() const noexcept {
+        return (_passes & ending_pass) != 0u;
     }
 
     /// Ends the protocols retired during the dispatch that just returned, `owner.*Flag` (the component's dispatch flag)
@@ -450,6 +515,46 @@ public:
             end_retired<List, Flag>(owner);
         return result;
     }
+
+    /**
+     * @brief A pass the component opens: while one is alive, `clear()` retires (Huly QB-1278).
+     * @details What a component's `protocol_pass()` returns. Code that runs a protocol's member function outside the
+     *          read loop's dispatch -- from `on(event::pending_write&&)`, a timer, a call the application makes --
+     *          and from which application code can be reached holds one for as long as that member function may be
+     *          on the stack. Passes nest, with each other and with the read loop's: the protocols a clear retired
+     *          end when the OUTERMOST returns. A pass that returns ends them itself unless a read pass is on the
+     *          stack (`owner.*Flag`: the read pass's own flag, which nothing else lowers), which then ends them in
+     *          its `end_dispatch()`; a read pass that returns under a pass leaves them to it. They end with the
+     *          component's dispatch flag set, as any retired protocol.
+     *
+     *          One call's scope: an automatic object of the function that runs the protocol. It holds a reference
+     *          to its component, not a share, and counts for as long as it lives -- kept past that call, or across
+     *          a coroutine's suspension, it would retire every clear until it died and write into its component
+     *          after it. The type refuses a copy, a move and an unqualified `new`; it cannot refuse a pass placed in another
+     *          object that outlives the call (an `optional`, a member, a coroutine's frame). A build with
+     *          assertions stops when a component is destroyed under one.
+     */
+    template <auto List, auto Flag, typename Owner>
+    class [[nodiscard]] pass {
+        Owner &_owner;
+
+    public:
+        explicit pass(Owner &owner) noexcept
+            : _owner(owner) {
+            ++(_owner.*List)._passes;
+        }
+        pass(pass const &)                       = delete;
+        pass        &operator=(pass const &)     = delete;
+        static void *operator new(std::size_t)   = delete; // one call's scope: never kept
+        static void *operator new[](std::size_t) = delete;
+
+        ~pass() noexcept {
+            protocol_list &list = _owner.*List;
+            // The outermost pass ends what was retired, unless a read pass is on the stack: that one does.
+            if (--list._passes == 0u && list._ending != 0u && !(_owner.*Flag)) [[unlikely]]
+                end_retired<List, Flag>(_owner);
+        }
+    };
 };
 
 } // namespace detail

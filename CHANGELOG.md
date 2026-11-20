@@ -9,6 +9,29 @@ policy.
 
 ### Added
 
+- **`protocol_pass()` on `qb::io::async::io`, `qb::io::async::input` and `qb::io::async::buffered_io`: a component
+  that runs its protocol outside the read loop keeps it from being destroyed under its own member function (Huly
+  QB-1278).** `clear_protocols()` retires the protocols when it is called from the read loop's dispatch, and destroys
+  them before it returns anywhere else. But the read loop is not the only place a protocol's member function runs: a
+  session calls its protocol from `on(event::pending_write&&)` or `on(event::eos&&)`, from a timer, from its own
+  public interface, and such a function may reach application code -- an observer, a completion callback, a lifecycle
+  hook -- and go on after it. A clear made there destroyed the protocol under that function. `[[nodiscard]] auto
+  protocol_pass() noexcept` returns an object under which a clear retires instead, as under the dispatch; held
+  across the call (`const auto pass = this->protocol_pass();`), it ends what was retired when it returns. Passes
+  nest, with each other and with the read loop's dispatch, and the outermost of those on the stack ends the
+  protocols: a pass opened by a handler leaves them to its read pass, and a read pass that ran under a pass -- its
+  code ran the loop -- leaves them to that pass. They end as any retired protocol does, the dispatch flag raised;
+  a destructor that resumes the reading there (`resume_reading()`) is not the handler that suspended it -- no read
+  pass follows an ending --, so that resume asks the loop for what the suspension retained, as it does from anywhere
+  else; and a dispatch the component refused there -- the destructor asked the loop for that slice, for the teardown
+  of a `disconnect()`, for input the transport holds, then ran the loop itself -- is asked again once the ending is
+  over. A pass does that one thing -- the component is still dispatched under it and its teardown is not held --,
+  costs an increment and a decrement when nothing is cleared, and nothing on the read path: the object keeps its
+  size. It is one call's scope, an automatic object of the function that runs the protocol: the type refuses a copy,
+  a move and an unqualified `new`, it must not be placed in an object that outlives the call nor held across a
+  coroutine's suspension, and a build with assertions stops when a component is destroyed under one. Nothing changes
+  for code that opens none: a clear outside any pass destroys before it returns. The modules that run their protocol
+  outside the read loop adopt it in their own entries.
 - **`pause_reading()`, `resume_reading()` and `reading_paused()` on `qb::io::async::io` and `qb::io::async::input`: a
   component suspends and resumes its READING (Huly QB-1270).** A handler that cannot take the next message yet -- a
   request it must finish first, a consumer behind it that is full -- had `stop()`, which stops the watcher whole
@@ -879,6 +902,20 @@ policy.
 
 ### Fixed
 
+- **`start()` and `reset_io_state()` no longer lower the dispatch flag under the read pass that is running (Huly
+  QB-1278).** `_on_message`, the flag the slicing loop raises while it dispatches, is also the guard that keeps the
+  loop from dispatching a component under its own `onMessage()`, what makes `clear_protocols()` retire, and what
+  makes `disconnect_now()` leave its teardown to the end of the dispatch. `start()` and `reset_io_state()` of
+  `async::io` and `async::input`, and `buffered_io`'s `reset_buffered_io_state()`, zeroed it. Outside a dispatch
+  that write did nothing -- every exit of the slicing loop clears the flag. From a handler -- a client that re-arms
+  itself for its next connection from a reply -- it lowered all three under the read pass on the stack: a
+  `clear_protocols()` made afterwards destroyed the protocol whose `onMessage()` was running (the case the entry
+  below had left documented), and when the handler then ran the loop -- a synchronous wait -- the component was
+  dispatched again under itself, and that nested read pass ended the protocol the first one had retired:
+  heap-use-after-free, on `io`, `input` and `buffered_io` alike. The five writes are gone: the flag is the read
+  pass's own, set when it begins and cleared when it ends. What changes for a handler that re-arms its component:
+  it is still under its dispatch until it returns -- its component is not dispatched again before that, a clear
+  still retires, and a `disconnect_now()` still waits for the dispatch to end.
 - **A session whose transport was extracted is no longer dispatched (Huly QB-1270).** `io_handler::extractSession()`
   moved the session's IO object out and erased the session, and left its watcher as it was. A session nobody else
   held was destroyed there, and its destructor stopped the watcher. One that was still held -- a `shared_ptr` kept
@@ -1342,7 +1379,9 @@ policy.
     destructor of one that ends the active protocol ends the session at its next I/O event, as a clear outside a
     dispatch does. Outside the read loop's dispatch the protocols are destroyed before the call returns, as before --
     an `onMessage()` a protocol runs itself (the HTTP/1.1 end-of-stream flush from `on(event::disconnected&&)`)
-    and a handler that zeroed the flag with `start()` or `reset_io_state()` before clearing included; `switch_protocol()`
+    included, unless the component holds a `protocol_pass()` across it (above). This entry first listed a second
+    case, a handler that zeroed the flag with `start()` or `reset_io_state()` before clearing: those no longer
+    lower the flag (the first entry of this section). `switch_protocol()`
     still destroys nothing. Every clear, at once or deferred, now ends its protocols one at a time, front to back (the
     order they were switched in; libc++'s `vector::clear()` destroyed them back to front), each out of the list
     before its destructor runs, the sentinel already active: a destructor's `switch_protocol()` installs a
@@ -1355,9 +1394,10 @@ policy.
     `on(event::disconnected&&)` -- no; the WebSocket client's launch (`ws/ws.h`), held until its disconnected dispatch
     has returned -- no. qbm-pgsql: `install_link_()` (`pgsql.h`), from a connect attempt or an adopted transport, a
     coroutine resumed outside the connection's dispatch -- no. qbm-redis: `install_link_()` (`redis.h`), from an
-    attempt or `setup_connection()`, which refuses while a connection is up -- no; it also zeroes the dispatch flag
-    (`reset_io_state()`) after the clear, which the protocol list covers anyway: retired protocols mean a dispatch is
-    on the stack, so a second clear retires too. qb-examples: `06-modules/ws/02-chat-client.cpp`, from an actor event
+    attempt or `setup_connection()` -- no. (This census first answered "no" for both modules on grounds that did not
+    hold: a reply handler that had just called `disconnect()` passed `setup_connection()`'s refusal, and an attempt
+    begun in a handler that then ran the loop completed under it. Both modules now install a link only once the last
+    link's teardown is over -- their own entries.) qb-examples: `06-modules/ws/02-chat-client.cpp`, from an actor event
     while disconnected -- no. All keep the immediate destruction. `reset_for_reconnect()` stays forbidden from a
     handler, for its buffers: the dispatch frees the message's bytes from the `in()` it empties.
   - **Cost: one load and one branch per read pass, nothing per message.** The owner is
