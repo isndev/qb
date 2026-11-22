@@ -531,3 +531,17 @@ if (NOT (QB_SANITIZE MATCHES "thread" AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" 
     AND NOT (MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug"))
     qb_add_test(MODULE qb-io TIER unit NAME uri-alloc SOURCES core/uri-alloc.cpp DEPENDS ${PROJECT_NAME})
 endif ()
+# build-contract-verdict (Huly QB-1248): the build contracts' verdict (cmake/check_build_contract.cmake) judged on
+# outputs planted in a languageless fixture, nothing compiled -- a verdict that accepted a unit that builds, a second
+# error, another reason or an output it read nothing of would turn every contract green -- qb-io's five and qbm-http's
+# two -- and no contract could tell (build-contracts/contract-verdict/check.cmake). The fixture is built with Ninja or
+# GNU make: under another generator, with no Ninja that runs on the PATH, the entry is skipped and says so. The
+# contracts' environment: CLICOLOR_FORCE=1.
+add_test(NAME qb-io-test-unit-build-contract-verdict
+         COMMAND "${CMAKE_COMMAND}" "-DVERDICT=${QB_ROOT_DIR}/cmake/check_build_contract.cmake"
+                 "-DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/build-contract-verdict" "-DGENERATOR=${CMAKE_GENERATOR}"
+                 "-DPLATFORM=${CMAKE_GENERATOR_PLATFORM}" "-DTOOLSET=${CMAKE_GENERATOR_TOOLSET}"
+                 "-DMAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}" "-DCONFIG=$<CONFIG>"
+                 -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/contract-verdict/check.cmake")
+set_tests_properties(qb-io-test-unit-build-contract-verdict PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 120
+                     ENVIRONMENT "CLICOLOR_FORCE=1" SKIP_REGULAR_EXPRESSION "build-contract-verdict: SKIPPED")

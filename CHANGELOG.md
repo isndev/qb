@@ -359,7 +359,17 @@ policy.
   linked with the suite, so that the contract's unit is otherwise sound, compiled without coverage instrumentation,
   and listed in the global property `QB_BUILD_CONTRACT_TARGETS`, which the coverage targets build -- never in
   `QB_TEST_TARGETS`. qb-io's five contracts hold `io_handler::extractSession()`'s refusals of a member
-  `inactivity_timer_t` it cannot use (Changed below); qbm-http's two, its server sessions' reserved name.
+  `inactivity_timer_t` it cannot use (Changed below); qbm-http's two, its server sessions' reserved name. The verdict
+  is held too, since no contract could tell a verdict that accepts what it must refuse:
+  `qb-io-test-unit-build-contract-verdict` judges outputs planted in a languageless fixture, nothing compiled, every
+  output planted judged and each held to its own text and to the verdict's reason. It fails when the verdict refuses
+  the one error -- in GCC's form, coloured or not, MSVC's, beside a note and a source excerpt, ending with a
+  backslash, built in the configuration it is asked (a multi-config fixture, where a Ninja 1.10 or newer runs) -- or
+  accepts a unit that builds, a second error (a plain one, one after a line holding a square bracket, a lone `]` or
+  GCC's `[with T = int]`, a `fatal error`, `operator|`, GCC's `sorry, unimplemented`, one that starts its line, one
+  after a note ending with a backslash), another reason (the message only in a note or a source excerpt beside
+  another error), a failure that printed no error line, a warning, or a severity word in a language it does not
+  read.
 
 ### Changed
 

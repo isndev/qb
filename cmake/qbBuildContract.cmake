@@ -6,8 +6,8 @@
 # A build contract holds a compile-time refusal -- a static_assert -- in place. Its unit must not compile: the ctest
 # entry builds it on demand and passes when the build fails with ONE error, the one MESSAGE matches; a unit that
 # compiles, or one refused for another reason too, fails it (the verdict is cmake/check_build_contract.cmake, run with
-# `cmake -P`). Its control -- the same unit with CONTROL_DEFINITION defined, the refused shape replaced by a sound one --
-# is the target of the entry's name: built and linked with the suite, so that the contract's unit is otherwise sound;
+# `cmake -P`). Its control -- the same unit with CONTROL_DEFINITION defined, the refused shape replaced by a sound one
+# -- is the target of the entry's name: built and linked with the suite, so that the contract's unit is otherwise sound;
 # compiled without coverage instrumentation -- it is no code of the suite's, and no report counts it; its link keeps the
 # runtime the instrumented libraries need --; listed in the global property QB_BUILD_CONTRACT_TARGETS, which the
 # coverage targets build before the run that runs the contracts, never in QB_TEST_TARGETS: it is no test executable.
@@ -16,15 +16,16 @@
 #                         CONTROL_DEFINITION <macro> [LABELS <label>...])
 #
 # The entry and the control are <module>-test-unit-<name>, the refused target <module>-contract-<name> (out of ALL).
-# MESSAGE holds no `;`, `[` or `]` (the verdict reads its output with them replaced). An argument that follows no
-# keyword is refused; a word after LINK or LABELS is read as one of their values. The entry runs with CLICOLOR_FORCE=1,
-# so that Ninja keeps the compiler's colours as Make does: in every lane off Windows the verdict reads coloured output
-# (the twenty-second independent review found it read none) -- cl and clang-cl print none into a pipe, and qb asks
-# none of them, so the Windows lanes read plain diagnostics, Ninja's `FAILED:` alone coloured. The nested build
-# compiles the unit and whatever it depends on that is out of date, with CMAKE_BUILD_PARALLEL_LEVEL when it is set, in
-# ctest's environment and LANGUAGE=C (the verdict's header says why) -- an environment which must be the compiler's (a
-# developer prompt on Windows with Ninja); two at once would race on the generator's state, hence one lock,
-# qb-nested-build, for every contract.
+# MESSAGE holds no `;`, `[` or `]` (the verdict reads its output with them replaced, and every backslash as `/`: a
+# MESSAGE that names a path writes it with `/`). An argument that follows no keyword is refused; a word after LINK or
+# LABELS is read as one of their values. The entry runs with CLICOLOR_FORCE=1, so that Ninja keeps the compiler's
+# colours as Make does: in every lane off Windows the verdict reads coloured output (the twenty-second independent
+# review found it read none) -- cl and clang-cl print none into a pipe, and qb asks none of them, so the Windows lanes
+# read plain diagnostics, Ninja's `FAILED:` alone coloured. The nested build compiles the unit and whatever it depends
+# on that is out of date, with CMAKE_BUILD_PARALLEL_LEVEL when it is set, in ctest's environment and LANGUAGE=C (the
+# verdict's header says why) -- an environment which must be the compiler's (a developer prompt on Windows with
+# Ninja); two at once would race on the generator's state, hence one lock, qb-nested-build, for every contract. The
+# verdict itself is held by qb-io-test-unit-build-contract-verdict (tests/io/unit/build-contracts/contract-verdict).
 
 function(qb_add_build_contract)
     # PARSE_ARGV: a value is read as it was written, a `;` included, so that the refusal below sees it.

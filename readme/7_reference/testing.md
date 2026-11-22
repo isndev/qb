@@ -118,7 +118,18 @@ shape replaced by a sound one, built with the suite, compiled without coverage i
 written outside `bin/tests`; the function lists it in the global property `QB_BUILD_CONTRACT_TARGETS`, which the
 coverage targets build, never in `QB_TEST_TARGETS`, the list of test executables. Such an entry compiles whatever the
 contract's unit depends on that is out of date, so run it where the compiler works (a developer prompt on Windows with
-Ninja).
+Ninja). The verdict has an entry of its own, `qb-io-test-unit-build-contract-verdict`
+(`qb/tests/io/unit/build-contracts/contract-verdict/check.cmake`): it compiles nothing, judges outputs planted in a
+languageless fixture, holds each case to its own output and to the verdict's reason, and fails when the verdict
+refuses the one expected error -- in GCC's form, coloured or not, MSVC's, beside a note and a source excerpt, ending
+with a backslash -- or accepts a unit that builds, a second error, another reason (the message only in a note or a
+source excerpt, beside another error), a failure that printed no error line, a warning, or an output in a language
+it does not read: a verdict that accepted what it must refuse would turn every contract green, which no contract
+could tell. It builds the fixture with Ninja or GNU make -- MSBuild adds `error MSB8066` and NMake `fatal error U1077`
+to a custom command that fails -- under another generator with a Ninja found on the `PATH`, and is skipped, saying
+so, when none runs. The verdict's `--config` is held by a multi-config fixture (Ninja Multi-Config: under a Ninja
+generator the tree's own Ninja, otherwise one found on the `PATH`); when there is none, or it does not run, or it is
+older than 1.10, the entry's last line says the configuration was not held.
 
 ### Running under sanitizers
 

@@ -32,6 +32,9 @@
 # ninja's `FAILED:`, clang's `1 error generated.` and a source excerpt printed with its gutter (`  405 | ...`, code that
 # may hold a label -- one printed without it, by a Clang before 17 or under -fno-diagnostics-show-line-numbers, is read,
 # and can only fail a contract). A second error in the same line as the first is not read.
+# A custom command that fails under MSBuild gets an `error MSB8066` of MSBuild's own beside what it printed (whose lines
+# MSBuild may give codes of its own): MSB8066 never matches a message, so such an output is refused -- a refused compile
+# under the Visual Studio generator and MSVC prints cl's own `error C2338` once, and nothing else (measured).
 # Every output is held to the one error. A toolchain whose severity word the verdict cannot read -- one translated
 # where LANGUAGE does not reach -- fails every contract, with the lines it printed: a red the log explains, not a pass
 # on an output no line of which was read (the twenty-fourth: a judgement on the message alone, kept for such an output,
@@ -64,8 +67,11 @@ string(ASCII 7 _bc_bel)
 string(REGEX REPLACE "${_bc_esc}\\[[0-?]*[ -/]*[@-~]" "" _bc_text "${_bc_out}")
 string(REGEX REPLACE "${_bc_esc}\\][^${_bc_bel}${_bc_esc}]*(${_bc_bel}|${_bc_esc}\\\\)" "" _bc_text "${_bc_text}")
 string(REPLACE "\r" "" _bc_text "${_bc_text}")
-# Then nothing that can split or join a list element: `;` and the square brackets -- a `;` inside `[...]` stays in its
-# element -- are replaced, and the lines become the elements.
+# Then nothing that can split or join a list element: `;`, the square brackets -- a `;` inside `[...]` stays in its
+# element -- and the backslash -- one that ends a line escapes the `;` that line's end becomes, joining it to the next
+# (the review of qb-io-test-unit-build-contract-verdict: a note ending in `\` took the error after it, two errors read
+# as one) -- are replaced, and the lines become the elements.
+string(REPLACE "\\" "/" _bc_text "${_bc_text}")
 string(REPLACE ";" "," _bc_text "${_bc_text}")
 string(REPLACE "[" "(" _bc_text "${_bc_text}")
 string(REPLACE "]" ")" _bc_text "${_bc_text}")
