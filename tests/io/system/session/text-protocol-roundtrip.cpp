@@ -835,6 +835,471 @@ TEST_F(SessionRoundtripTest, ASessionHeldPastItsExtractionIsNotDispatchedAgain) 
     peer.close();
 }
 
+namespace extracted_timed {
+
+int g_timeouts     = 0; ///< inactivity timeouts the session ran
+int g_disconnected = 0; ///< `disconnected` events the session was handed
+int g_own_ticks    = 0; ///< ticks of the timer a session keeps for something of its own
+
+class TimedServer;
+
+/// A session with an inactivity timer (`use<T>::timeout`) and NO `extracted` hook: nothing of its own stops that
+/// timer when its transport is taken. Its timeout does what a session's does: it disconnects.
+class TimedSession
+    : public use<TimedSession>::tcp::client<TimedServer>
+    , public use<TimedSession>::timeout {
+public:
+    using Protocol = qb::protocol::text::command<TimedSession>;
+
+    explicit TimedSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(qb::io::async::event::timer const &) {
+        ++g_timeouts;
+        this->disconnect();
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class TimedServer : public use<TimedServer>::tcp::server<TimedSession> {};
+
+class FinalTimedServer;
+
+/// The same session declared final, naming nothing (the eighteenth independent review): the probe cannot derive from
+/// it, the name is looked up in it directly and not found, and its `use<T>::timeout` is found by its type.
+class FinalTimedSession final
+    : public use<FinalTimedSession>::tcp::client<FinalTimedServer>
+    , public use<FinalTimedSession>::timeout {
+public:
+    using Protocol = qb::protocol::text::command<FinalTimedSession>;
+
+    explicit FinalTimedSession(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(qb::io::async::event::timer const &) {
+        ++g_timeouts;
+        this->disconnect();
+    }
+
+    void
+    on(qb::io::async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class FinalTimedServer : public use<FinalTimedServer>::tcp::server<FinalTimedSession> {};
+
+/// A timer a session keeps, as a base, for something of its own: one tick, `g_own_ticks`.
+struct OwnTimer : async::with_timeout<OwnTimer> {
+    OwnTimer()
+        : async::with_timeout<OwnTimer>(qb::duration::zero()) {}
+    void
+    on(async::event::timer const &) {
+        ++g_own_ticks;
+    }
+};
+
+class TwoTimersServer;
+
+/// The same session with a second `with_timeout` base, its own timer: the extraction finds the inactivity one by its
+/// type (the deduction of either base was ambiguous, and stopped neither), and leaves the other alone.
+class TwoTimersSession
+    : public use<TwoTimersSession>::tcp::client<TwoTimersServer>
+    , public use<TwoTimersSession>::timeout
+    , public OwnTimer {
+public:
+    using Protocol = qb::protocol::text::command<TwoTimersSession>;
+
+    explicit TwoTimersSession(IOServer &server)
+        : client(server) {}
+
+    [[nodiscard]] async::with_timeout<TwoTimersSession> &
+    inactivity() noexcept {
+        return *this;
+    }
+    [[nodiscard]] OwnTimer &
+    own_timer() noexcept {
+        return *this;
+    }
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(async::event::timer const &) {
+        ++g_timeouts;
+        this->disconnect();
+    }
+
+    void
+    on(async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class TwoTimersServer : public use<TwoTimersServer>::tcp::server<TwoTimersSession> {};
+
+/// A session of @p Server, connected, then extracted and held, its inactivity timer of 100 ms armed right before the
+/// extraction (@p arm): the loop runs four of its timeouts, then @p check reads the session.
+template <typename Server, typename Arm, typename Check>
+void
+hold_past_the_extraction(Arm &&arm, Check &&check) {
+    Server server;
+    ASSERT_EQ(server.transport().listen_v4(0, "127.0.0.1"), SocketStatus::Done);
+    const auto port = server.transport().local_endpoint().port();
+    server.start();
+
+    qb::io::tcp::socket peer;
+    ASSERT_EQ(peer.connect_v4("127.0.0.1", port), SocketStatus::Done);
+    ASSERT_TRUE(pump_until([&] { return server.session_count() == 1u; }, 5s));
+    const auto id      = server.sessions().begin()->first;
+    auto       session = server.session(id); // kept alive past the extraction
+    arm(*session);
+    auto [sock, ok] = server.extractSession(id);
+    ASSERT_TRUE(ok);
+    async::run_for(400ms); // four timeouts
+    check(*session);
+    session.reset();
+    sock.close();
+    peer.close();
+}
+
+/// The inactivity timer a session has through a base, as qbm-http's server sessions have theirs: its timeout,
+/// `g_timeouts`, disconnects the session, as a session's does.
+template <typename _Self>
+struct InactivityTimer : async::with_timeout<InactivityTimer<_Self>> {
+    InactivityTimer()
+        : async::with_timeout<InactivityTimer<_Self>>(qb::duration::zero()) {}
+    void
+    on(async::event::timer const &) {
+        ++g_timeouts;
+        static_cast<_Self &>(*this).disconnect();
+    }
+};
+
+/// An inactivity timer whose type declares a `setTimeout()` of its own, which sets a timer the type holds, not itself
+/// (the twenty-second independent review): the extraction stops the named type's `with_timeout`, and never calls that
+/// `setTimeout()`.
+template <typename _Self>
+struct HidingTimer : async::with_timeout<HidingTimer<_Self>> {
+    OwnTimer held;       ///< the timer the hiding `setTimeout()` sets
+    int      hidden = 0; ///< calls of the hiding `setTimeout()`
+    HidingTimer()
+        : async::with_timeout<HidingTimer<_Self>>(qb::duration::zero()) {}
+    void
+    setTimeout(qb::duration timeout) noexcept { // hides the with_timeout's own
+        ++hidden;
+        held.setTimeout(timeout);
+    }
+    [[nodiscard]] async::with_timeout<HidingTimer<_Self>> &
+    timer() noexcept {
+        return *this;
+    }
+    void
+    on(async::event::timer const &) {
+        ++g_timeouts;
+        static_cast<_Self &>(*this).disconnect();
+    }
+};
+
+class HidingTimerServer;
+
+/// A session that names that timer as its inactivity timer.
+class HidingTimerSession
+    : public use<HidingTimerSession>::tcp::client<HidingTimerServer>
+    , public HidingTimer<HidingTimerSession> {
+public:
+    using Protocol           = qb::protocol::text::command<HidingTimerSession>;
+    using inactivity_timer_t = HidingTimer<HidingTimerSession>;
+
+    explicit HidingTimerSession(IOServer &server)
+        : client(server) {}
+
+    [[nodiscard]] HidingTimer<HidingTimerSession> &
+    inactivity() noexcept {
+        return *this;
+    }
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class HidingTimerServer : public use<HidingTimerServer>::tcp::server<HidingTimerSession> {};
+
+class NamedTimerServer;
+
+/// A session that keeps a `use<T>::timeout` of its own beside the inactivity timer it has through a base, and names the
+/// inactivity one (`inactivity_timer_t`).
+class NamedTimerSession
+    : public use<NamedTimerSession>::tcp::client<NamedTimerServer>
+    , public InactivityTimer<NamedTimerSession>
+    , public use<NamedTimerSession>::timeout {
+public:
+    using Protocol           = qb::protocol::text::command<NamedTimerSession>;
+    using inactivity_timer_t = InactivityTimer<NamedTimerSession>;
+
+    explicit NamedTimerSession(IOServer &server)
+        : client(server)
+        , async::with_timeout<NamedTimerSession>(qb::duration::zero()) {}
+
+    [[nodiscard]] InactivityTimer<NamedTimerSession> &
+    inactivity() noexcept {
+        return *this;
+    }
+    [[nodiscard]] async::with_timeout<NamedTimerSession> &
+    own_timer() noexcept {
+        return *this;
+    }
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(async::event::timer const &) {
+        ++g_own_ticks;
+    }
+
+    void
+    on(async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class NamedTimerServer : public use<NamedTimerServer>::tcp::server<NamedTimerSession> {};
+
+class FinalNamedTimerServer;
+
+/// The same session declared final: the probe cannot derive from it, and the name -- a public alias -- is looked up
+/// in it directly (the seventeenth independent review: no case read that branch).
+class FinalNamedTimerSession final
+    : public use<FinalNamedTimerSession>::tcp::client<FinalNamedTimerServer>
+    , public InactivityTimer<FinalNamedTimerSession>
+    , public use<FinalNamedTimerSession>::timeout {
+public:
+    using Protocol           = qb::protocol::text::command<FinalNamedTimerSession>;
+    using inactivity_timer_t = InactivityTimer<FinalNamedTimerSession>;
+
+    explicit FinalNamedTimerSession(IOServer &server)
+        : client(server)
+        , async::with_timeout<FinalNamedTimerSession>(qb::duration::zero()) {}
+
+    [[nodiscard]] InactivityTimer<FinalNamedTimerSession> &
+    inactivity() noexcept {
+        return *this;
+    }
+    [[nodiscard]] async::with_timeout<FinalNamedTimerSession> &
+    own_timer() noexcept {
+        return *this;
+    }
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(async::event::timer const &) {
+        ++g_own_ticks;
+    }
+
+    void
+    on(async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class FinalNamedTimerServer : public use<FinalNamedTimerServer>::tcp::server<FinalNamedTimerSession> {};
+
+class DerivedTimedServer;
+
+/// A session whose inactivity timer is its base's `use<Base>::timeout` -- the type the server registers derives from that
+/// base, with no `with_timeout` of its own type: found by deduction.
+class TimedBase
+    : public use<TimedBase>::tcp::client<DerivedTimedServer>
+    , public use<TimedBase>::timeout {
+public:
+    using Protocol = qb::protocol::text::command<TimedBase>;
+
+    explicit TimedBase(IOServer &server)
+        : client(server) {}
+
+    void
+    on(Protocol::message &&) {}
+
+    void
+    on(async::event::timer const &) {
+        ++g_timeouts;
+        this->disconnect();
+    }
+
+    void
+    on(async::event::disconnected &&) {
+        ++g_disconnected;
+    }
+};
+
+class DerivedTimedSession : public TimedBase {
+public:
+    explicit DerivedTimedSession(DerivedTimedServer &server);
+};
+
+class DerivedTimedServer : public use<DerivedTimedServer>::tcp::server<DerivedTimedSession> {};
+
+DerivedTimedSession::DerivedTimedSession(DerivedTimedServer &server)
+    : TimedBase(server) {}
+
+} // namespace extracted_timed
+
+// A session somebody still holds once its transport was taken is not timed out either (Huly QB-1248's twelfth
+// independent review): its inactivity timer stayed armed, and at its expiry the session ran its timeout and
+// disconnected -- the server told of a session it no longer has, on a connection that goes on under its new owner.
+// The timer is stopped, its duration with it: getTimeout() reads 0.
+TEST_F(SessionRoundtripTest, ASessionHeldPastItsExtractionIsNotTimedOut) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<TimedServer>([](TimedSession &session) { session.setTimeout(100ms); },
+                                                                  [](TimedSession &session) {
+                                                                      EXPECT_EQ(session.getTimeout(), qb::duration::zero())
+                                                                          << "the timer was not stopped, its duration with it";
+                                                                  }));
+    EXPECT_EQ(g_timeouts, 0) << "the timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+}
+
+// The same for a final session that names nothing (the eighteenth independent review): the probe's final branch finds
+// no name, and the `use<T>::timeout` base is found by its type and stopped.
+TEST_F(SessionRoundtripTest, AFinalSessionHeldPastItsExtractionIsNotTimedOut) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<FinalTimedServer>([](FinalTimedSession &session) { session.setTimeout(100ms); },
+                                                                       [](FinalTimedSession &session) {
+                                                                           EXPECT_EQ(session.getTimeout(), qb::duration::zero())
+                                                                               << "the timer was not stopped, its duration with it";
+                                                                       }));
+    EXPECT_EQ(g_timeouts, 0) << "the timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+}
+
+// The same for a session with a second timer of its own as a base (the thirteenth independent review): the inactivity
+// timer is the `use<T>::timeout` base, found by its type, and stopped; the other is left to run.
+TEST_F(SessionRoundtripTest, ASessionWithATimerOfItsOwnHeldPastItsExtractionIsNotTimedOut) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    g_own_ticks    = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<TwoTimersServer>(
+        [](TwoTimersSession &session) {
+            session.inactivity().setTimeout(100ms);
+            session.own_timer().setTimeout(50ms);
+        },
+        [](TwoTimersSession &session) {
+            EXPECT_EQ(session.inactivity().getTimeout(), qb::duration::zero());
+            EXPECT_EQ(session.own_timer().getTimeout(), qb::duration(50ms)) << "the extraction stopped the session's own timer";
+        }));
+    EXPECT_EQ(g_timeouts, 0) << "the inactivity timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+    EXPECT_EQ(g_own_ticks, 1) << "the extraction stopped a timer the session keeps for something of its own";
+}
+
+// A session that names its inactivity timer (`inactivity_timer_t`, as qbm-http's server sessions name theirs) has that
+// one stopped, and a `use<T>::timeout` it keeps of its own left to tick (the fourteenth independent review: found by
+// its type, the session's own timer was stopped, and the inactivity one left to time the session out).
+TEST_F(SessionRoundtripTest, ASessionThatNamesItsInactivityTimerHasThatOneStoppedAtItsExtraction) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    g_own_ticks    = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<NamedTimerServer>(
+        [](NamedTimerSession &session) {
+            session.inactivity().setTimeout(100ms);
+            session.own_timer().setTimeout(50ms);
+        },
+        [](NamedTimerSession &session) {
+            EXPECT_EQ(session.inactivity().getTimeout(), qb::duration::zero()) << "the timer the session names was not stopped";
+            EXPECT_EQ(session.own_timer().getTimeout(), qb::duration(50ms)) << "the extraction stopped the session's own timer";
+        }));
+    EXPECT_EQ(g_timeouts, 0) << "the inactivity timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+    EXPECT_EQ(g_own_ticks, 1) << "the extraction stopped a timer the session keeps for something of its own";
+}
+
+// The same for the session declared final (the seventeenth independent review): the probe cannot derive from it, the
+// name is looked up in it directly -- a public alias, seen --, and that timer stopped.
+TEST_F(SessionRoundtripTest, AFinalSessionThatNamesItsInactivityTimerHasThatOneStoppedAtItsExtraction) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    g_own_ticks    = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<FinalNamedTimerServer>(
+        [](FinalNamedTimerSession &session) {
+            session.inactivity().setTimeout(100ms);
+            session.own_timer().setTimeout(50ms);
+        },
+        [](FinalNamedTimerSession &session) {
+            EXPECT_EQ(session.inactivity().getTimeout(), qb::duration::zero()) << "the timer the session names was not stopped";
+            EXPECT_EQ(session.own_timer().getTimeout(), qb::duration(50ms)) << "the extraction stopped the session's own timer";
+        }));
+    EXPECT_EQ(g_timeouts, 0) << "the inactivity timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+    EXPECT_EQ(g_own_ticks, 1) << "the extraction stopped a timer the session keeps for something of its own";
+}
+
+// A session that names its inactivity timer through a type with a `setTimeout()` of its own -- one that sets a timer
+// that type holds, not itself -- has the named `with_timeout` stopped, and that `setTimeout()` is never called (the
+// twenty-second independent review: no case held it; called by the extraction, it would stop the timer the type holds,
+// and leave the inactivity one to time the session out).
+TEST_F(SessionRoundtripTest, ASessionThatNamesATimerHidingItsSetTimeoutHasItsWithTimeoutStoppedAtItsExtraction) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    g_own_ticks    = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<HidingTimerServer>(
+        [](HidingTimerSession &session) {
+            session.inactivity().timer().setTimeout(100ms);
+            session.inactivity().held.setTimeout(50ms);
+        },
+        [](HidingTimerSession &session) {
+            EXPECT_EQ(session.inactivity().timer().getTimeout(), qb::duration::zero()) << "the named with_timeout was not stopped";
+            EXPECT_EQ(session.inactivity().hidden, 0) << "the extraction called the named type's own setTimeout()";
+            EXPECT_EQ(session.inactivity().held.getTimeout(), qb::duration(50ms)) << "the extraction stopped the timer the named type holds";
+        }));
+    EXPECT_EQ(g_timeouts, 0) << "the inactivity timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+    EXPECT_EQ(g_own_ticks, 1) << "the extraction stopped the timer the named type holds";
+}
+
+// The same for a session whose inactivity timer belongs to a base it derives from (`use<Base>::timeout`, the session
+// type registered deriving from that base, the fourteenth independent review): found by deduction, and stopped.
+TEST_F(SessionRoundtripTest, ASessionWhoseTimerIsItsBasesHeldPastItsExtractionIsNotTimedOut) {
+    using namespace extracted_timed;
+    g_timeouts     = 0;
+    g_disconnected = 0;
+    ASSERT_NO_FATAL_FAILURE(hold_past_the_extraction<DerivedTimedServer>(
+        [](DerivedTimedSession &session) { static_cast<TimedBase &>(session).setTimeout(100ms); },
+        [](DerivedTimedSession &session) {
+            EXPECT_EQ(static_cast<TimedBase &>(session).getTimeout(), qb::duration::zero()) << "the timer was not stopped";
+        }));
+    EXPECT_EQ(g_timeouts, 0) << "the timeout of a session whose transport was taken ran";
+    EXPECT_EQ(g_disconnected, 0) << "a session whose transport was taken was told it disconnected";
+}
+
 // =============================================================================
 // io_handler::stream() broadcasts to every live session
 // =============================================================================

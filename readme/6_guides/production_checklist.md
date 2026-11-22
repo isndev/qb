@@ -155,7 +155,7 @@ The framework also defines input/output buffer ceilings in the same header for t
 
 `qb::io::event::Config` defines compile-time `constexpr` hints — a default poll timeout of 100 ms, a 64-event-per-poll batch, and a `MAX_CONNECTIONS` value of 10000 — but these are **not** wired into the event loop or the accept path; nothing in the framework reads them. The header itself describes `MAX_CONNECTIONS` as "a conceptual maximum ... a soft limit or a hint for sizing internal structures, rather than a hard enforced limit." The real per-handler connection cap is `QB_DEFAULT_MAX_SESSIONS` (default `0`, unlimited), settable at runtime with `set_max_sessions()`; beyond that, OS fd limits apply.
 
-<!-- src: qb/src/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/src/qb/io/config.h:223-236 (QB_DEFAULT_MAX_SESSIONS), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions) -->
+<!-- src: qb/src/qb/io/system/ev_config.h:44-82 (unenforced constants), qb/src/qb/io/config.h:223-236 (QB_DEFAULT_MAX_SESSIONS), qb/src/qb/io/async/io_handler.h:228 (set_max_sessions) -->
 
 ### Idle latency vs. CPU
 
@@ -341,7 +341,7 @@ qb does not bundle a metrics exporter; instrument these signals from your applic
 | Shutdown latency | Time from signal to `join()` return | A drain that exceeds the orchestrator grace period gets SIGKILLed; tune `setLatency`. |
 | Log volume / level | The log file and roll behavior | `DEBUG`/`VERBOSE` left on in production inflates I/O and obscures real `WARN`/`ERROR` events. |
 
-<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1521-1524,3782-3785 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:977,983,996 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:171 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
+<!-- src: qb/src/qb/core/Main.cpp:895-897 (LOG_CRIT/stderr on init failure), :901-904 (hasError), qb/src/qb/io/async/io.h:1521-1524,3782-3785 (disconnect reason -2), qb/src/qb/io/tcp/ssl/socket.h:977,983,996 (introspection + get_last_ssl_error_string), qb/src/qb/io/async/io_handler.h:228 (set_max_sessions), qb/src/qb/io/system/ev_config.h:82 (MAX_CONNECTIONS hint) -->
 
 **Checklist**
 

@@ -193,7 +193,7 @@ The install exports `qbConfig.cmake` and a `SameMajorVersion` version file. It a
 bundled `FindArgon2` / `FindNgtcp2` / `FindZstd` / `FindBrotli` modules **when, and only when, the
 corresponding feature was actually enabled in this build** — `FindArgon2.cmake` if `QB_HAS_ARGON2`,
 `FindNgtcp2.cmake` if `QB_HAS_QUIC`, `FindZstd.cmake` and `FindBrotli.cmake` with their codecs
-(`CMakeLists.txt:353-368`). They travel with the package because `qbConfig.cmake` calls
+(`CMakeLists.txt:357-372`). They travel with the package because `qbConfig.cmake` calls
 `find_dependency(Argon2)` / `find_dependency(Ngtcp2)` and the others by name and a consumer has no way
 to invent them; a build with those features off needs none. `qbFoundLibraries.cmake` travels always:
 with it `qbConfig.cmake` searches again, in the consumer's build directory, a library an update

@@ -25,6 +25,7 @@
 #ifndef QB_IO_ASYNC_IO_HANDLER_H
 #define QB_IO_ASYNC_IO_HANDLER_H
 
+#include <type_traits>
 #include <vector>
 #include <qb/system/container/unordered_map.h>
 #include <qb/utility/type_traits.h> // qb::has_on — the two dispatch if-constexpr below test it
@@ -34,6 +35,62 @@
 #include <qb/io/config.h>
 
 namespace qb::io::async {
+
+template <typename _Derived>
+class with_timeout; // io.h: the inactivity timer a session may have (`use<T>::timeout`)
+
+namespace inactivity_name_ {
+/// Whether a session has a member NAMED `inactivity_timer_t`, whatever its access or kind (Huly QB-1248's sixteenth
+/// independent review): lookup of the name in a class deriving from the session and from a fallback that declares it
+/// is ambiguous exactly when the session has one -- lookup precedes access checking. A final session cannot be
+/// derived from: the name is looked up in it directly, and only a public member type of that name is seen there --
+/// refused unless it names a usable public base; any other member of that name is ignored (the seventeenth
+/// and eighteenth). A session whose destructor is `final` is declared `final` itself (its destructor's `final` is then
+/// redundant): the probe derives from it.
+struct fallback {
+    struct inactivity_timer_t {};
+};
+template <typename _Session>
+struct probe
+    : _Session
+    , fallback {};
+// A function template's deduction, not a requires-expression: MSVC 19.51 makes the ambiguity a hard error there (C2385).
+template <typename _Probe>
+std::false_type test(typename _Probe::inactivity_timer_t *); // found once: the fallback's alone
+template <typename _Probe>
+std::true_type test(...); // ambiguous: the session has one too
+/// A final session's: the name looked up in it, a public member type alone seen.
+template <typename _Session>
+concept names_it_publicly = requires { typename _Session::inactivity_timer_t; };
+template <typename _Session, bool = std::is_final_v<_Session>>
+struct declared : decltype(test<probe<_Session>>(nullptr)) {};
+template <typename _Session>
+struct declared<_Session, true> : std::bool_constant<names_it_publicly<_Session>> {};
+/// The `with_timeout` a named type is, or has as its one base, found by deduction: the timer the extraction stops,
+/// through that base -- never a `setTimeout()` the named type declares of its own, which may reach another timer, or
+/// none (the twenty-first independent review).
+template <typename _Derived>
+with_timeout<_Derived> &
+as_timer(with_timeout<_Derived> &timer) noexcept {
+    return timer;
+}
+/// The name a session declares is usable: it names a public base of the session -- an accessible, unambiguous one,
+/// which a pointer to the session converts to (an alias of a reference to it too): never a type the session only
+/// converts to, whose timer was stopped in place of the inactivity timer, nor the session itself (the twentieth
+/// independent review) -- that is a `with_timeout`, or has exactly one as a base.
+template <typename _Session>
+concept usable =
+    requires { typename _Session::inactivity_timer_t; }
+    && (!std::is_same_v<std::remove_cvref_t<typename _Session::inactivity_timer_t>, _Session>)
+    && std::is_convertible_v<_Session *, std::add_pointer_t<typename _Session::inactivity_timer_t>> && requires(_Session &timed) {
+           inactivity_name_::as_timer(static_cast<typename _Session::inactivity_timer_t &>(timed)).setTimeout(qb::duration::zero());
+       };
+/// The concept read through a class template: every compiler checks the name's access from here, never from the
+/// `io_handler` a session may befriend -- g++ and clang accepted a private name there, MSVC refused it (the twenty-first
+/// independent review).
+template <typename _Session>
+struct usable_t : std::bool_constant<usable<_Session>> {};
+} // namespace inactivity_name_
 
 /**
  * @class io_handler
@@ -273,8 +330,14 @@ public:
      * @brief Extract a session's IO object
      *
      * Removes the session with the given UUID and returns its IO object. The session stops watching the
-     * descriptor before it gives it away: one that is still held somewhere is never dispatched for it again (its own
-     * `disconnect()` still ends it). What it had read and not consumed stays in its buffer -- only the IO object leaves.
+     * descriptor before it gives it away, and its inactivity timer stops -- the one it names (a public type
+     * `inactivity_timer_t` naming a public base that is a `with_timeout`, or has exactly one as a base, stopped through
+     * that `with_timeout`: a base a pointer to the session converts to -- one naming the session itself, or a type it
+     * only converts to, does not compile --; any other member of that name does not compile either, but in a final
+     * session, where only a public member type of that name is seen; a session whose destructor is `final` is declared
+     * `final`), else its public `use<T>::timeout` base, else a base template's; `getTimeout()` reads 0 after: one that
+     * is still held somewhere is never dispatched for it again, nor timed out (its own `disconnect()` still ends it).
+     * What it had read and not consumed stays in its buffer -- only the IO object leaves.
      *
      * @param ident The UUID of the session to extract
      * @return A pair containing the IO object and a boolean indicating success
@@ -328,8 +391,42 @@ private:
         // The base's own stop(), by name: a session may declare a `stop()` of its own that means something else.
         if constexpr (requires { static_cast<typename _Session::base_io_t &>(session).stop(); })
             static_cast<typename _Session::base_io_t &>(session).stop();
+        // Its inactivity timer too: held past its extraction, its timeout ran and disconnected -- and told the server of
+        // -- a session whose connection goes on under its next owner (Huly QB-1248's twelfth independent review). The
+        // one the session names first (`inactivity_timer_t`: qbm-http's server sessions name their base template's, so
+        // that a `use<S>::timeout` a session type keeps of its own is not taken for it -- the fourteenth), then the
+        // `use<T>::timeout` base by its type, then the one a base template has, by deduction. Any other `with_timeout`
+        // the session keeps, for something of its own, is left alone; a private one is out of reach, and stays armed.
+        // Any other member of that name -- a private alias, a data member, a name inherited twice -- is a compile error:
+        // ignored, it let another timer be stopped, or none (the fifteenth and sixteenth). So is a name for the session
+        // itself, or for a type it only converts to: no base, a conversion reached another timer (the twentieth); and a
+        // base that is no `with_timeout` and has none: its own `setTimeout()` reached another timer, or none (the
+        // twenty-first) -- the named one is stopped through its `with_timeout`. A final session is out of the probe's
+        // reach: there a public member type alone is seen (the seventeenth and eighteenth).
+        if constexpr (inactivity_name_::declared<_Session>::value) {
+            static_assert(inactivity_name_::usable_t<_Session>::value,
+                          "inactivity_timer_t must name a public base of the session that is a with_timeout, or has exactly one: "
+                          "the timer io_handler::extractSession() stops");
+            if constexpr (inactivity_name_::usable_t<_Session>::value) // refused above: its message the only error
+                inactivity_name_::as_timer(static_cast<typename _Session::inactivity_timer_t &>(session)).setTimeout(qb::duration::zero());
+        } else if constexpr (std::is_base_of_v<with_timeout<_Session>, _Session>) {
+            if constexpr (requires { static_cast<with_timeout<_Session> &>(session); })
+                static_cast<with_timeout<_Session> &>(session).setTimeout(qb::duration::zero());
+        } else if constexpr (requires { stop_timer_(session); }) {
+            stop_timer_(session);
+        }
         detail::mark_cut_stream(session.transport(), queued || output_queued_(session));
         return std::move(session.transport());
+    }
+
+    /// The inactivity timer a session has through a base template (a `with_timeout<B>` base for a B other than the
+    /// session's own type), stopped through that base -- a session may declare a `setTimeout()` of its own that means
+    /// something else. Two such bases make the deduction ambiguous: neither is stopped -- a session that keeps two
+    /// names its inactivity timer (`inactivity_timer_t`).
+    template <typename _Timed>
+    static void
+    stop_timer_(with_timeout<_Timed> &timer) noexcept {
+        timer.setTimeout(qb::duration::zero());
     }
 
 public:

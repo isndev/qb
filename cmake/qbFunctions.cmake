@@ -1606,3 +1606,6 @@ include(${CMAKE_CURRENT_LIST_DIR}/qbRuntimeDlls.cmake)
 
 # The census of an embedded copy's link names (Huly QB-1139), appended for the same reason.
 include(${CMAKE_CURRENT_LIST_DIR}/qbSymbolPrefix.cmake)
+
+# Build contracts, a unit that must not compile (Huly QB-1248), appended for the same reason.
+include(${CMAKE_CURRENT_LIST_DIR}/qbBuildContract.cmake)

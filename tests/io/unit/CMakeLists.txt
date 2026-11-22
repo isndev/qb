@@ -126,6 +126,20 @@ add_test(NAME qb-io-test-unit-openssl-link-order
          COMMAND "${CMAKE_COMMAND}" "-DLINKS=$<JOIN:$<TARGET_PROPERTY:${PROJECT_NAME},LINK_LIBRARIES>,|>"
                  "-DQB_HAS_SSL=${QB_HAS_SSL}" -P "${CMAKE_CURRENT_SOURCE_DIR}/build-contracts/openssl-link-order/check.cmake")
 set_tests_properties(qb-io-test-unit-openssl-link-order PROPERTIES LABELS "tier:unit;module:qb-io" TIMEOUT 60)
+# Build contracts (Huly QB-1248; qb_add_build_contract(), cmake/qbBuildContract.cmake): a session with a member
+# `inactivity_timer_t` io_handler::extractSession() cannot use does not compile where it is extracted
+# (take_transport_()'s static_assert). Each refused shape has its unit, beside its control -- the same unit with a
+# usable name, the target of the entry's name.
+function(qb_io_build_contract NAME UNIT)
+    qb_add_build_contract(MODULE qb-io NAME ${NAME} SOURCE build-contracts/inactivity-timer-name/${UNIT}.cpp
+                          LINK ${PROJECT_NAME} CONTROL_DEFINITION QB_CONTRACT_CONTROL
+                          MESSAGE "inactivity_timer_t must name a public base of the session")
+endfunction()
+qb_io_build_contract(inactivity-timer-name unusable)          # a data member of that name
+qb_io_build_contract(inactivity-timer-not-a-base not-a-base)  # a type the session only converts to
+qb_io_build_contract(inactivity-timer-itself itself)          # a reference to the session itself
+qb_io_build_contract(inactivity-timer-not-a-timer not-a-timer) # a base that is no with_timeout, and has none
+qb_io_build_contract(inactivity-timer-befriended befriended)  # a private name, the extraction a friend
 # Compile crypto.cpp privately with the test-owned secure_random_fill definition.
 # Linking qb-io here would bring its amalgamated sampler and entropy source too.
 qb_add_test(MODULE qb-io TIER unit NAME crypto-random-refill

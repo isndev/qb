@@ -66,8 +66,8 @@ llm/qb.llm.api.md	VirtualCore.h:1693-1695	61c0b8a45ff7	Actor::spawn_detached(std
 llm/qb.llm.api.md	VirtualCore.h:1693-1702	5626538722c5	Actor::spawn_detached(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1707-1710	dc577fe91929	Actor::spawn(std::string_view name, Func &&func) const {
 llm/qb.llm.api.md	VirtualCore.h:1707-1718	4592a4bd1df3	Actor::spawn(std::string_view name, Func &&func) const {
-llm/qb.llm.api.md	async/io_handler.h:140-141	882119ee1afd	[[nodiscard]] session_map_t &
-llm/qb.llm.api.md	async/io_handler.h:149-150	09bf0b8927e8	[[nodiscard]] std::size_t
+llm/qb.llm.api.md	async/io_handler.h:197-198	882119ee1afd	[[nodiscard]] session_map_t &
+llm/qb.llm.api.md	async/io_handler.h:206-207	09bf0b8927e8	[[nodiscard]] std::size_t
 llm/qb.llm.api.md	combinators.h:72-72	f1f1a4f9f866	to_task(task<T> &&t) noexcept {
 llm/qb.llm.api.md	container/growable_ring.h:60-60	6ccfe2d90a0b	class growable_ring {
 llm/qb.llm.api.md	coroutine-detached.cpp:878-938	e89ffa7ebc88	// 16. Coroutine outlives its actor — shared_ptr RAII counter must no...

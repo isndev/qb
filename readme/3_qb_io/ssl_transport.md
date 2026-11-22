@@ -398,7 +398,7 @@ Key behaviors verified in the header:
   the octets are missing from the middle of the stream, so whoever ends it sends no
   `close_notify`. Reads and writes go on; the mark travels with the socket and ends with the
   session.
-  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1165-1167 (mark_cut); qb/src/qb/io/async/io_handler.h:327-333 (take_transport_) -->
+  <!-- src: qb/src/qb/io/tcp/ssl/socket.cpp:1165-1167 (mark_cut); qb/src/qb/io/async/io_handler.h:390-420 (take_transport_) -->
 - **A saved session resumes after its connection was closed (3.4).** Every close tells OpenSSL that
   this side's end of the session is recorded (`SSL_SENT_SHUTDOWN`), with the alert or without it —
   and so does a socket destroyed, assigned or re-`init()`ed while still connected, which writes

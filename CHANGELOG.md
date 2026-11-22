@@ -349,8 +349,34 @@ policy.
   member defined out of class `const` but not `inline` (`const int C::k = 5;`): `const` gives internal linkage to a
   namespace variable only, and that definition is a strong external symbol the script passed.
 
+- **`qb_add_build_contract()` (`cmake/qbBuildContract.cmake`): a compile-time refusal held by a ctest entry (Huly
+  QB-1248).** The entry builds, on demand, a unit that must not compile, and passes when the build fails with one
+  error, the `static_assert`'s message (`cmake/check_build_contract.cmake`, run with `cmake -P`): a unit that
+  compiles, or one refused for another reason too, fails it. The output is read with its terminal colours removed --
+  qb asks GCC and Clang for them off Windows, which Make and a forced Ninja keep -- and the nested build runs under
+  `LANGUAGE=C`, so that GCC's diagnostics are read in English; an output whose severity the verdict cannot read fails,
+  with the lines it printed. The same unit, a control definition set, is the target of the entry's name: built and
+  linked with the suite, so that the contract's unit is otherwise sound, compiled without coverage instrumentation,
+  and listed in the global property `QB_BUILD_CONTRACT_TARGETS`, which the coverage targets build -- never in
+  `QB_TEST_TARGETS`. qb-io's five contracts hold `io_handler::extractSession()`'s refusals of a member
+  `inactivity_timer_t` it cannot use (Changed below); qbm-http's two, its server sessions' reserved name.
+
 ### Changed
 
+- **`io_handler::extractSession()` refuses at compile time a session with a member `inactivity_timer_t` it cannot use
+  (Huly QB-1248).** The name is the one `extractSession()` reads for the inactivity timer it stops (Fixed: "A session
+  whose transport was extracted is no longer dispatched, nor timed out"). A session type with a member of that name
+  other than a public type naming a public base that is a `with_timeout` (`use<T>::timeout`), or has exactly one as a
+  base -- a private alias (in a session that befriends its `io_handler` too), a data member, a function, an alias
+  template, a name inherited from two bases, a private one hiding a public one, one naming the session itself (no
+  base: its own `use<T>::timeout` is found by its type), a type the session only converts to, a base that is no
+  `with_timeout` and has none -- no longer compiles where it is extracted: ignored, the extraction stopped the
+  session's own timer, or none; reached through a conversion, or through a base's own `setTimeout()`, another timer
+  was stopped in place of the inactivity timer. The named timer is stopped through its `with_timeout`; an alias of a
+  reference to the base counts as the base. A refused name prints the `static_assert`'s message as its only error. A
+  final session cannot be probed: only a public member type of that name is seen there (refused unless it names a
+  usable public base), and any other member of that name is ignored. A session whose destructor is `final` is declared
+  `final` itself to be extracted (its destructor's `final` is then redundant): the probe derives from it.
 - **A TLS connection this side ends sends `close_notify` before the FIN, and never waits for the peer's: an OpenSSL
   peer reads a clean end of stream where it read an unexpected EOF (Huly QB-1270).** TLS has its own end of stream,
   and until now qb sent none: a browser, curl, nginx or any OpenSSL 3 program that read a connection qb had ended got
@@ -916,15 +942,28 @@ policy.
   pass's own, set when it begins and cleared when it ends. What changes for a handler that re-arms its component:
   it is still under its dispatch until it returns -- its component is not dispatched again before that, a clear
   still retires, and a `disconnect_now()` still waits for the dispatch to end.
-- **A session whose transport was extracted is no longer dispatched (Huly QB-1270).** `io_handler::extractSession()`
-  moved the session's IO object out and erased the session, and left its watcher as it was. A session nobody else
-  held was destroyed there, and its destructor stopped the watcher. One that was still held -- a `shared_ptr` kept
-  across a protocol upgrade -- kept watching a descriptor that was its new owner's: the peer's next octets dispatched
-  it, its read of a transport it no longer had failed, and it was handed `event::disconnected` on a connection that
-  went on. `extractSession()` now stops the session's watcher before the transport leaves, through the base's own
-  `stop()` -- a `stop()` the session declares for something else is not called. A session that stopped it itself in
-  `on(event::extracted&&)` loses nothing: the second stop is a no-op. Only the IO object leaves, as before: input the
-  session had read and not consumed stays in its buffer.
+- **A session whose transport was extracted is no longer dispatched, nor timed out (Huly QB-1270, QB-1248).**
+  `io_handler::extractSession()` moved the session's IO object out and erased the session, and left its watcher and
+  its inactivity timer as they were. A session nobody else held was destroyed there, and its destructor stopped both.
+  One that was still held -- a `shared_ptr` kept across a protocol upgrade -- kept watching a descriptor that was its
+  new owner's: the peer's next octets dispatched it, its read of a transport it no longer had failed, and it was
+  handed `event::disconnected` on a connection that went on; and at its timer's expiry it ran its timeout and
+  disconnected, the server told of a session it no longer had (found by the reviews of Huly QB-1248).
+  `extractSession()` now stops the session's watcher before the transport leaves, through the base's own `stop()` -- a
+  `stop()` the session declares for something else is not called --, and its inactivity timer: the one the session
+  names, a public type `inactivity_timer_t` naming a public base that is a `with_timeout`, or has exactly one as a
+  base, which a pointer to the session converts to, stopped through that `with_timeout` --
+  `using inactivity_timer_t = ...;` as a rule -- (qbm-http's HTTP/1.1 and HTTP/2 server sessions name their base
+  template's, so that a `use<S>::timeout` a session type keeps of its own is not taken for it; any other member of
+  that name -- a private alias, a data member, a function, a name inherited from two bases, one naming the session
+  itself, a type the session only converts to, a base that is no `with_timeout` -- does not compile, but in a final
+  session, where only a public type is seen), else its `use<T>::timeout` base, found by its type, else the one
+  `with_timeout` a base template has, found by deduction -- two found, neither is stopped: a session that keeps
+  another names its inactivity timer. Any other `with_timeout` the session keeps is left to tick; a private one is out
+  of reach and stays armed. Stopped, the timer's duration is gone: `getTimeout()` reads 0, and a holder that restarts
+  the session sets it again. A session that stopped its watcher itself in `on(event::extracted&&)` loses nothing: the
+  second stop is a no-op; one that re-arms its timer there finds it stopped once the transport has left. Only the IO
+  object leaves, as before: input the session had read and not consumed stays in its buffer.
 - **A deferred callback that runs the loop no longer waits for ever for what `defer()` delivers: the loop it runs
   drains the deferred queue (Huly QB-1246).** The queue was drained by one drain at a time, and a `run()` reached from
   inside a deferred callback drained nothing. A callback that waited by pumping the loop -- `run_sync()` of an

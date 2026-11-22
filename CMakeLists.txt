@@ -255,6 +255,10 @@ elseif (CMAKE_BUILD_TYPE STREQUAL "Debug" AND NOT WIN32 AND QB_BUILD_COVERAGE)
                 list(APPEND QB_COVERAGE_DEPENDENCIES ${QB_TEST_TARGETS})
                 list(REMOVE_DUPLICATES QB_COVERAGE_DEPENDENCIES)
             endif ()
+            # The build contracts' controls (Huly QB-1248): built before the run, which runs their contracts; no test
+            # executable of the report's, and compiled without coverage instrumentation, so no report counts them.
+            get_property(_qb_cov_contracts GLOBAL PROPERTY QB_BUILD_CONTRACT_TARGETS)
+            list(APPEND QB_COVERAGE_DEPENDENCIES ${_qb_cov_contracts})
         endif ()
 
         # One writer, three readers (CodeCoverage.cmake, SETUP_COVERAGE_RUN banner).

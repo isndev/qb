@@ -389,7 +389,7 @@ registry, or as a member — never relocate them.
   releases the timer whatever ended the linger (`src/qb/io/async/io.h:4209`),
   `disconnect()` still aborts at once, a server's teardown destroys a lingering
   session with no wait, and `extractSession()` takes one out of it
-  (`src/qb/io/async/io_handler.h:290-291`). Closing at once closed a socket
+  (`src/qb/io/async/io_handler.h:353-354`). Closing at once closed a socket
   with unread input: the reset failed the peer's send, and on Windows dropped
   the answer it had received and not read.
 - `dispose()` **completes even when a hook throws.** Both hooks run inside
@@ -422,7 +422,7 @@ registry, or as a member — never relocate them.
 ## 7. Sessions in `io_handler<Session>`
 
 - `io_handler::registerSession` enforces the session cap **before** allocation
-  (`src/qb/io/async/io_handler.h:231-234`). If `_max_sessions > 0` and the
+  (`src/qb/io/async/io_handler.h:288-291`). If `_max_sessions > 0` and the
   registry is full, it closes the incoming I/O (which already owns an open fd,
   and possibly an `SSL*`) and returns `nullptr` — no `Session` is allocated. This
   prevents a connection flood from amplifying into heap pressure.
@@ -432,7 +432,7 @@ registry, or as a member — never relocate them.
   or define `QB_DEFAULT_MAX_SESSIONS` before including the header, on any
   network-facing server.
 - `extractSession()` **stops the session's watcher before its transport leaves**
-  (`src/qb/io/async/io_handler.h:329-330`, 3.4): the descriptor is its
+  (`src/qb/io/async/io_handler.h:392-393`, 3.4): the descriptor is its
   next owner's from there. A session somebody still held -- a `shared_ptr` kept
   across a protocol upgrade -- kept its watcher on it: the peer's next octets
   dispatched it, its read of a transport it no longer had failed, and it was
@@ -440,7 +440,7 @@ registry, or as a member — never relocate them.
   Only the IO object leaves: input the session had read and not consumed stays
   in its buffer.
 - `stream()` / `stream_if()` fan-out reuses a persistent `_broadcast_scratch`
-  vector (`src/qb/io/async/io_handler.h:117`) so broadcasting to N sessions
+  vector (`src/qb/io/async/io_handler.h:174`) so broadcasting to N sessions
   costs O(N) reads, not O(N²) allocations.
 
 ---

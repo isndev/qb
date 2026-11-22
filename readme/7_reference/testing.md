@@ -8,7 +8,7 @@ How the qb test suite is organized, how to build and run it with CTest and Googl
 
 ## Summary
 
-qb ships its unit and integration tests as GoogleTest executables, registered with CTest by the `qb_add_test` CMake helper. Tests are built only when `QB_BUILD_TESTS` is `ON` (the repo-root build forces it on). GoogleTest is resolved system-first, with a pinned from-source fallback through FetchContent. Every registered test runs from `${CMAKE_BINARY_DIR}/bin/tests`, carries `tier:<tier>` and `module:<module>` CTest labels, and has a per-tier timeout (unit 60 s, system 120 s, integration 300 s). An optional `QB_BUILD_COVERAGE` flag adds lcov/gcovr report targets on Debug, non-Windows builds.
+qb ships its unit and integration tests as GoogleTest executables, registered with CTest by the `qb_add_test` CMake helper. Tests are built only when `QB_BUILD_TESTS` is `ON` (the repo-root build forces it on). GoogleTest is resolved system-first, with a pinned from-source fallback through FetchContent. Every test registered by `qb_add_test` runs from `${CMAKE_BINARY_DIR}/bin/tests`, carries `tier:<tier>` and `module:<module>` CTest labels, and has a per-tier timeout (unit 60 s, system 120 s, integration 300 s). An optional `QB_BUILD_COVERAGE` flag adds lcov/gcovr report targets on Debug, non-Windows builds.
 
 This page is for contributors building and running the suite, and for anyone adding a new test. It does not document the actor or I/O APIs the tests exercise — see the relevant reference pages for those.
 
@@ -97,9 +97,28 @@ Some qb-io suites exist only when their optional dependency is present:
 - **Crypto tests** (the `unit/crypto/` group — `crypto-primitives`, `crypto-jwt`, `kdf-and-tokens`, `asymmetric-keys`, … — registered with `REQUIRES ssl`) build only under `QB_HAS_SSL` (OpenSSL).
 - **Compression tests** (`unit/compression/compression-codec`, registered with `REQUIRES compression`) build only under `QB_HAS_COMPRESSION` (zlib); `compression-zstd` / `compression-brotli` (`REQUIRES compression zstd` / `brotli`, 3.3) only with the opt-in codec, all three on the shared `codec_contract.h`.
 
-<!-- src: qb/tests/io/unit/CMakeLists.txt:76-133 -->
+<!-- src: qb/tests/io/unit/CMakeLists.txt:76-147,150,217-218 -->
 
 Without the corresponding library these suites are not configured at all — they do not appear as skipped, they do not exist. QUIC has two registration shapes: `quic-endpoint-loop` requires `quic ssl network` and is absent without QUIC, while `quic-handshake` requires only `network` (`qb/tests/io/system/CMakeLists.txt:93-94`). The latter runs its negative availability cases when `QB_HAS_QUIC` is absent (`qb/tests/io/system/quic/quic-handshake.cpp:94-106`). Some multi-core core tests require more than one hardware thread; their cases skip on a single-core host (`qb/tests/core/system/engine/main-lifecycle.cpp:175-178`).
+
+### Build contracts
+
+`qb/tests/io/unit/build-contracts/` holds the fixtures of qb-io's build contracts -- tests of how qb is built rather
+than of what it does: scripts CTest runs with `cmake -P`, fixture projects configured apart, witnesses linked into a
+program, a decoy include tree. Most of their CTest entries run CMake rather than a test executable, in the CTest
+directory of their CMakeLists.txt rather than `bin/tests`, with timeouts of their own. One kind holds a compile-time
+refusal (Huly QB-1248): `qb_add_build_contract()` (`qb/cmake/qbBuildContract.cmake`) registers an entry
+`<module>-test-unit-<name>` that runs `cmake --build` of the same tree for its own target `<module>-contract-<name>`,
+which is out of `ALL`, and passes when that build fails with one error, the `static_assert`'s message
+(`qb/cmake/check_build_contract.cmake`, the nested build under `LANGUAGE=C` so that GCC's diagnostics are read in
+English) -- a unit that compiles, or one refused for another reason too, fails it.
+qb-io's are `qb-io-test-unit-inactivity-timer-name`, `-not-a-base`, `-itself`, `-not-a-timer` and `-befriended`;
+qbm-http registers its own. The target of the entry's name is the contract's control -- the same unit with the refused
+shape replaced by a sound one, built with the suite, compiled without coverage instrumentation and never run --,
+written outside `bin/tests`; the function lists it in the global property `QB_BUILD_CONTRACT_TARGETS`, which the
+coverage targets build, never in `QB_TEST_TARGETS`, the list of test executables. Such an entry compiles whatever the
+contract's unit depends on that is out of date, so run it where the compiler works (a developer prompt on Windows with
+Ninja).
 
 ### Running under sanitizers
 
@@ -250,7 +269,7 @@ numbers:
 | `qb-coverage-xml` | gcovr | Cobertura XML |
 | `qb-coverage-html` | gcovr | HTML report |
 
-<!-- src: qb/CMakeLists.txt:274-300, qb/cmake/CodeCoverage.cmake -->
+<!-- src: qb/CMakeLists.txt:278-304, qb/cmake/CodeCoverage.cmake -->
 
 The exclusion list filters out system headers, benchmarks, modules, the vendored forks, examples, and the test sources themselves so the report reflects framework code (`qb/CMakeLists.txt:215-233`). A typical run:
 

@@ -1056,7 +1056,7 @@ Introspection: `has_active_coroutines()`, `active_coroutine_count()`, `has_coro_
   does `dispose()` run. A session whose read cap is 0 drains nothing: its linger ends at the peer's next octet. Closing at once reset a peer still sending — its send failed, and on Windows the reset
   dropped the answer it had not read. `lingering()` says a session is closing (never open work); `disconnect()`
   still aborts at once; a server's teardown destroys a lingering session without waiting; `extractSession()` takes
-  one out of it (`cancel_linger()`, io_handler.h:290-291). Bounded in time alone: it is what lets a peer that
+  one out of it (`cancel_linger()`, io_handler.h:353-354). Bounded in time alone: it is what lets a peer that
   is still sending read the answer.
 - **Suspend the reading instead of queueing what you cannot take yet (3.4, Huly QB-1270).** `pause_reading()` in the
   handler of a message makes it the last of its read pass -- consumed whole, the rest of what one read brought stays
